@@ -24,6 +24,7 @@
 use crate::map::entities::EntityCategory;
 use crate::rules::object_type::{FactoryType, ObjectCategory, ObjectType};
 use crate::rules::prerequisite::{Prerequisite, PrerequisiteGroup};
+use crate::rules::rule_policy::DoubleOwnedPolicy;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::house_state::HouseState;
 use crate::sim::house_tracking::HouseTracking;
@@ -48,8 +49,10 @@ pub enum CanBuild {
 
 /// `HouseClass::CanBuild @ 0x004F7870` for house `owner` and type `obj`.
 ///
-/// A type VERA's room bans ([`crate::sim::game_options::RoomBans`]) is
-/// refused first, whatever the flags. With `skip_tech` (the first flag),
+/// A type VERA's room bans ([`crate::sim::game_options::RoomBans`]) or a
+/// Wasm module's `ProductionAllowed` answer disallows, or a module's
+/// `AllowType` forbids, is refused first, whatever the flags. With
+/// `skip_tech` (the first flag),
 /// only the build limit is asked ([`build_limit`]). Otherwise, in order (`0x004F7889..0x004F7BE5`):
 /// - `TechnoType+0xC98` refuses; only the constructor writes it, with 0
 ///   (`0x007113CC`);
@@ -103,13 +106,24 @@ pub fn can_build(
     if sim.session.game_options().bans.bans_type(obj) {
         return CanBuild::No;
     }
+    // VERA extension, Wasm module `ProductionAllowed` (RFC 0001 appendix
+    // 4.5, `sim::ext_modules::decide`): a type a module disallowed to this
+    // house at the latest once-per-frame step is refused here, at
+    // CanBuild's entry, whatever the flags, as a room ban is. Without a
+    // refusal kept this is one branch.
+    // A Wasm module's `AllowType` forbid (RFC 0001 appendix 5.3, VERA-only)
+    // refuses the type to this house the same way, on every route.
+    if sim.module_refuses_production(rules, owner, obj) || sim.ext_module_forbids(rules, owner, obj)
+    {
+        return CanBuild::No;
+    }
     if skip_tech {
         return build_limit(sim, rules, owner, obj, count_in_production);
     }
     let Some(house) = sim.houses.get(&owner) else {
         return CanBuild::No;
     };
-    let controlled_by_human = house.is_controlled_by_human(sim.session.game_mode_nonzero());
+    let controlled_by_human = house.is_controlled_by_human(sim.session.rule_policy());
     let ares = rules.ares_form();
     let status = requirements_met(sim, rules, owner, house, obj);
     let bypass_prerequisites = status == RequirementStatus::Overridden;
@@ -137,6 +151,30 @@ pub fn can_build(
         }
     }
     build_limit(sim, rules, owner, obj, count_in_production)
+}
+
+/// VERA, for a Wasm module's house order (RFC 0001 6g): whether `owner`'s
+/// player could choose `obj`, as [`can_build`]'s human arm asks it. A house
+/// no human controls is answered Yes there without its prerequisites, so a
+/// module's order adds the human arm's requirements and prerequisites
+/// (`0x004F7BF1..0x004F7F52`) to CanBuild's own answer.
+pub(crate) fn buildable_by_player(
+    sim: &Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    obj: &ObjectType,
+) -> bool {
+    if can_build(sim, rules, owner, obj, false, true) == CanBuild::No {
+        return false;
+    }
+    let Some(house) = sim.houses.get(&owner) else {
+        return false;
+    };
+    match requirements_met(sim, rules, owner, house, obj) {
+        RequirementStatus::Overridden => true,
+        RequirementStatus::Complete => owns_prerequisites(sim, rules, house, obj),
+        _ => false,
+    }
 }
 
 /// `HouseClass::CanBuild`'s qualification ahead of the prerequisites
@@ -176,7 +214,7 @@ pub(crate) fn requirements_met(
     let trainer = sim.debug_flags_for(owner);
     #[cfg(not(feature = "debug-tools"))]
     let _ = owner;
-    let controlled_by_human = house.is_controlled_by_human(sim.session.game_mode_nonzero());
+    let controlled_by_human = house.is_controlled_by_human(sim.session.rule_policy());
     let override_on_map = obj.prerequisite_override.iter().any(|&entry| {
         if rules.ares_form() {
             // Ares3.0 qualification10021FF0 calls
@@ -251,7 +289,7 @@ pub(crate) fn requirements_met(
     }
     // Ares disabled-shell predicate10021A00..10021A6A bypasses this
     // skirmish-shell restriction in mode0, before inspecting the Type.
-    if (!rules.ares_form() || sim.session.game_mode_nonzero())
+    if (!rules.ares_form() || sim.session.rule_policy().uses_room_options())
         && !sim.session.game_options().super_weapons
         && obj.category == ObjectCategory::Building
         && let Some(super_weapon) = obj.super_weapon.as_deref()
@@ -569,7 +607,7 @@ fn build_limit(
     let ares = rules.ares_form();
     if ares
         && sim.houses.get(&owner).is_some_and(|house| {
-            !house.is_controlled_by_human(sim.session.game_mode_nonzero())
+            !house.is_controlled_by_human(sim.session.rule_policy())
                 && rules.ares_ai_bypasses_build_limit(house.difficulty().table_index())
         })
     {
@@ -582,9 +620,8 @@ fn build_limit(
         type_id.is_some_and(|type_id| {
             sim.production
                 .factories()
-                .iter_insertion_ordered()
-                .into_iter()
-                .any(|factory| {
+                .holders_insertion_ordered()
+                .any(|(_, factory)| {
                     factory.owner() == owner
                         && factory.object().is_some_and(|object| {
                             object.type_id == type_id && object.entity_id.is_some()
@@ -828,7 +865,7 @@ fn captured_vehicle_thief_count(
                     .filter(|entity| {
                         entity.category() == EntityCategory::Unit
                             && entity.owner() == owner
-                            && entity.capture_infantry_type_index.get() == index
+                            && entity.seldom.capture_infantry_type_index.get() == index
                     })
                     .fold(0i32, |count, _| count.wrapping_add(1))
             })
@@ -860,6 +897,48 @@ pub fn object_find_factory(
         require_online,
         false,
     )
+}
+
+/// What `HouseExt::FindFactory` (Ares.dll `10020D40`) finds for an object's
+/// type among its owner's factories ([`ares_object_factory`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AresObjectFactory {
+    /// No factory fits (state 1).
+    Missing,
+    /// Only factories without power or deactivated fit (state 2).
+    Unpowered,
+    /// A factory that fits, the primary first (states 3 and 4).
+    Found(u64),
+}
+
+/// Ares' sidebar cameo click asks `HouseExt::FindFactory(owner, type, false,
+/// true, false, true)` (`10020D40`) for the ready product `object_id` itself
+/// (SidebarClass_ProcessCameoClick_Power, Ares.dll `10025170`, hook
+/// `0x006AB312`, in place of the stock `FindFactory(0, 0)`): any fitting
+/// factory without power or deactivated only counts as
+/// [`AresObjectFactory::Unpowered`], and the first powered one or the
+/// primary answers.
+pub fn ares_object_factory(sim: &Simulation, rules: &RuleSet, object_id: u64) -> AresObjectFactory {
+    let Some(object) = sim.entities().get(object_id) else {
+        return AresObjectFactory::Missing;
+    };
+    let Some(object_type) = sim.entity_object_type(object, rules) else {
+        return AresObjectFactory::Missing;
+    };
+    match query_factory(
+        sim,
+        rules,
+        object.owner(),
+        object_type,
+        false,
+        true,
+        false,
+        true,
+    ) {
+        FactorySearch::Online(id) | FactorySearch::Primary(id) => AresObjectFactory::Found(id),
+        FactorySearch::Offline => AresObjectFactory::Unpowered,
+        FactorySearch::Missing | FactorySearch::BuildLimitRefused => AresObjectFactory::Missing,
+    }
 }
 
 /// Original ObjectType5F7900, scanned in House+6C insertion order. A first
@@ -1035,8 +1114,8 @@ fn scan_factories<'a>(
         return FactorySearch::BuildLimitRefused;
     }
     let factory_type = FactoryType::for_category(obj.category);
-    let game_mode_nonzero = sim.session.game_mode_nonzero();
-    let ownable = get_ownable(obj, rules, game_mode_nonzero);
+    let double_owned = sim.session.rule_policy().double_owned();
+    let ownable = get_ownable(obj, rules, double_owned);
     let naval_unit = obj.category == ObjectCategory::Vehicle && obj.naval;
     let mut candidate = FactorySearch::Missing;
     for FactoryCandidate {
@@ -1051,15 +1130,15 @@ fn scan_factories<'a>(
             && (rules.ares_form()
                 || !require_can_build
                 || can_build(sim, rules, building.owner(), obj, true, true) == CanBuild::Yes)
-            && ownable & get_ownable(building_type, rules, game_mode_nonzero) != 0
+            && ownable & get_ownable(building_type, rules, double_owned) != 0
             && if !skip_busy_airfield
                 && obj.category == ObjectCategory::Aircraft
-                && !building.radio_contacts.is_empty()
+                && !building.seldom.radio_contacts.is_empty()
             {
                 // 0x005F79C7..0x005F79FB: unless arg1 skips it, an
                 // AircraftType (`What_Am_I` 3) needs a free contact slot in a
                 // factory In_Radio_Contact (0x0065AE30, 0x0065ADC0).
-                building.radio_contacts.first_free().is_some()
+                building.seldom.radio_contacts.first_free().is_some()
             } else {
                 // 0x005F7A09..0x005F7A49: a naval UnitType needs a naval
                 // factory, anything else a non-naval one.
@@ -1244,8 +1323,8 @@ pub(crate) fn toggle_factory_primary(sim: &mut Simulation, rules: &RuleSet, id: 
 /// `TechnoTypeClass::Get_Ownable @ 0x00711EC0` (vtable `+0x70` of every
 /// TechnoType class): every house for a `DoubleOwned=` type outside a
 /// campaign, else the `Owner=` houses (`+0x6CC`).
-fn get_ownable(obj: &ObjectType, rules: &RuleSet, game_mode_nonzero: bool) -> u32 {
-    if obj.double_owned && game_mode_nonzero {
+fn get_ownable(obj: &ObjectType, rules: &RuleSet, policy: DoubleOwnedPolicy) -> u32 {
+    if obj.double_owned && policy == DoubleOwnedPolicy::AllCountries {
         return 0x7FFF_FFFF;
     }
     obj.owner_mask(rules)

@@ -153,7 +153,7 @@ impl Simulation {
             emp_remaining: entity.emp_remaining(),
             health: entity.health.current(),
             powered: object.powered,
-            power_drain: power_system::native_building_power_drain(object.power),
+            power_drain: object.power_drain(),
             powered_special: object.powered_special,
             owner_outage: self.building_power_outage(id),
             needs_engineer: object.needs_engineer,
@@ -204,7 +204,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         if self
             .substrate
@@ -247,7 +247,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let Some(operational) = self.building_operational_state(id, rules) else {
             return;
@@ -343,7 +343,7 @@ impl Simulation {
     /// loss with none of those re-adds in between (an owner toggling the
     /// charge already re-adds); case 2 needs a same-frame coincidence.
     fn gap_supercharge_deciding_client(&self) -> Option<InternedId> {
-        if self.session.game_mode().is_network() {
+        if self.session.execution_topology().is_lockstep() {
             return None;
         }
         self.session.current_house()

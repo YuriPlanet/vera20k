@@ -14,9 +14,9 @@ cargo install wasm-bindgen-cli --version 0.2.127 --locked
 python3 tools/wasm/build.py
 ```
 
-构建工具使用 `--target wasm32-unknown-unknown --no-default-features --features wasm` 将客户端库构建为 `cdylib`，再将绑定代码和不含游戏资源的宿主页面打包到 `target/wasm-dist/`。默认使用玩家下载的 `wasm` profile：按体积优化、fat LTO、单个 codegen unit、不含符号名，构建耗时是 `fast` 的数倍（2026-11-09 实测：单人版 Wasm 为 16.5 MB，brotli 压缩后 4.6 MB；`fast` 为 45.6 MB 和 10.3 MB）。修改代码时可加 `--profile fast`，也可加 `--profile release`。工具会检查绑定 CLI 与 lockfile 的版本是否一致，并为引擎设置 8 MiB 的 Wasm 栈。它还会先为主机构建 `src/bin/snapshot-layout.rs`：浏览器版引擎把存档布局 ID（`VERA20K_SNAPSHOT_LAYOUT`）编译进去，而不是在运行时追踪存档类型。桌面版的产物类型、默认 feature 和构建命令保持不变。
+构建工具使用 `--target wasm32-unknown-unknown --no-default-features --features wasm` 将客户端库构建为 `cdylib`，再将绑定代码、宿主页面、冰面地形和遭遇战地图打包到 `target/wasm-dist/`。默认使用玩家下载的 `wasm` profile：按体积优化、fat LTO、单个 codegen unit、不含符号名，构建耗时是 `fast` 的数倍（2026-11-09 实测：单人版 Wasm 为 16.5 MB，brotli 压缩后 4.6 MB；`fast` 为 45.6 MB 和 10.3 MB）。修改代码时可加 `--profile fast`，也可加 `--profile release`。工具会检查绑定 CLI 与 lockfile 的版本是否一致，并为引擎设置 8 MiB 的 Wasm 栈。它还会先为主机构建 `src/bin/snapshot-layout.rs`：浏览器版引擎把存档布局 ID（`VERA20K_SNAPSHOT_LAYOUT`）编译进去，而不是在运行时追踪存档类型。桌面版的产物类型、默认 feature 和构建命令保持不变。
 
-浏览器版引擎不内嵌任何界面字体。这些字体（Noto Sans、Noto Sans CJK 及 19 种文字的字体，约 30 MB）和 Unifont 的 CJK 字形表连同许可证复制到 `pkg/fonts/`。引擎加载后立即开始获取用于补画 GAME.FNT 缺字的 Noto Sans 和字形表，两者都到达后 `fonts_ready()` 才 resolve：调用 `start_game` 或 `start_spawn` 前需先 await 它，否则这两个函数会报错。其余字体在文字首次需要只有该字体才有的字符时（例如聊天里的泰文名字）才获取。托管该包的站点也必须提供这个目录。每个 URL 带有文件版本，浏览器在引擎更新后仍可沿用已缓存的字体。浏览器版不设置窗口图标。
+浏览器版引擎不内嵌任何界面字体。这些字体（Noto Sans、Noto Sans CJK 及 19 种文字的字体，约 30 MB）和 Unifont 的 CJK 字形表连同许可证复制到 `pkg/fonts/`。引擎加载后立即开始获取用于补画 GAME.FNT 缺字的 Noto Sans 和字形表，两者都到达后 `fonts_ready()` 才 resolve：调用 `start_game` 或 `start_spawn` 前需先 await 它，否则这两个函数会报错。其余字体在文字首次需要只有该字体才有的字符时（例如聊天里的泰文名字）才获取。托管该包的站点也必须提供这个目录。每个 URL 带有文件版本，浏览器在引擎更新后仍可沿用已缓存的字体。托管方还需在绑定代码旁提供 `pkg/Terrain/vera_ice.mix` 和 `pkg/Terrain/vera_ice_tiles.ini`。引擎会将它们读入虚拟目录 `/Terrain/`。探测带有 `VeraIce=yes` 的地图前也要等待 `fonts_ready()`。缺少这些文件时，其他地图仍可启动。浏览器版不设置窗口图标。
 
 可选联机版的构建命令：
 
@@ -43,13 +43,13 @@ python3 -m tools.cargo_run -- rustc -p vera20k --lib \
 python3 -m http.server 8000 --bind 127.0.0.1 --directory target/wasm-dist
 ```
 
-在支持 WebGPU 或 WebGL2 的浏览器中打开 `http://localhost:8000`。页面要求安全上下文，即 HTTPS 或 localhost。选择已解压的《尤里的复仇》零售资源目录，然后点击 Start。构建包不包含游戏资源。单机版不会上传资源；联机时可以通过现有地图传输协议分享所选地图，其他零售资源仍留在本地。点击 Start 时会准备音频，以满足浏览器自动播放策略。资源字节保存在内存中，因此较大的游戏安装目录需要较多浏览器内存。
+在支持 WebGPU 或 WebGL2 的浏览器中打开 `http://localhost:8000`。页面要求安全上下文，即 HTTPS 或 localhost。选择已解压的《尤里的复仇》零售资源目录，然后点击 Start。单机版只在本地读取玩家选择的文件。联机时可以通过现有地图传输协议分享所选地图，其他零售资源仍留在本地。点击 Start 时会准备音频，以满足浏览器自动播放策略。资源字节保存在内存中，因此较大的游戏安装目录需要较多浏览器内存。
 
 宿主页面通过当前 origin 的 IndexedDB 恢复设置和存档，并排队保存后续写入。页面会显示存储失败和待写入状态。引擎先完成内存写入，异步存储事务随后才会完成；关闭页面前应等待已保存状态。清除站点数据会删除这些副本。持久化回调只上报 `/saves/` 下的文件，也就是 `restore_user_file` 接受的范围。需要录像的宿主在启动前注册 `set_replay_callback((name, bytes) => ...)`，对局结束或局内读档时会收到关闭的录像段，引擎不保留副本。未注册时录像会被丢弃，自带页面就是如此。导入的零售资源不会持久化，每次访问都会重新读取。在支持 File System Access API 的浏览器（Chrome、Edge）中，启动页会在单独的 `vera20k-wasm-launcher` 数据库中保存所选文件夹的读取句柄，下次访问时可一键继续；其它浏览器需要再次选择文件夹。
 
 ## 多线程构建（实验性）
 
-`--threads` 让每个 tick 在绘制旁边的模拟 Web Worker 上运行，tick 内的并行工作运行在由 Web Worker 组成的 Rayon 线程池上，可以和 `--network`、`--lan` 同时使用。它需要固定版本的 nightly，因为标准库要带 Wasm atomics 重新编译。桌面版和默认浏览器包仍使用 stable。
+`--threads` 让每个 tick 在绘制旁边的模拟 Web Worker 上运行，tick 内的并行工作运行在由 Web Worker 组成的 Rayon 线程池上，可以和 `--network`、`--lan` 同时使用。它需要固定版本的 nightly，因为标准库要带 Wasm atomics 重新编译。桌面版和默认浏览器包仍使用 stable。这个选项不计入[构建校验](Networking.md#build-check)：多线程包可以和不带它构建的同一个包联机。
 
 ```sh
 rustup toolchain install nightly-2026-10-15 --profile minimal --component rust-src --target wasm32-unknown-unknown
@@ -74,7 +74,7 @@ python3 tools/wasm/serve.py
 
 只有同时启用 `wasm-net` 和浏览器目标，才会启用 Fetch、WS socket 和延后的联机加载等待。桌面构建（包括启用 `wasm-net` 的构建）仍使用原生 UDP、阻塞 HTTPS 和线程调度。仅启用 `wasm` 的单机包仍会在网络入口明确返回不支持错误。浏览器不支持 LAN 发现和直接 UDP 连接。
 
-此单线程预览版也不支持随机地图生成和同步 GPU 截图／捕获，仍以已有安装地图为目标。非美式键盘布局中需要 Shift 的标点快捷键尚未完全映射。聊天框通过引擎在激活时加到页面上的隐藏 textarea 接收输入法文字（`src/web/ime.rs`），宿主页面无需为此添加标记。大型图集工作和同步存档准备仍可能阻塞浏览器事件循环；运行和性能验证尚待完成。
+浏览器版也不支持在独立线程上生成地图的“生成地图”对话框，以及同步 GPU 截图／捕获。选择地图的“在线地图”行和在线登录页的玩家人数同样不可用：游戏在独立线程上从大厅读取它们（`src/app/worker.rs`）。页面改用 `generate_map(input)` 生成随机地图文件（[随机地图](spawn.md#random-maps)）：多线程包在线程池启动后于池中的 Worker 上生成，否则在页面线程上生成。非美式键盘布局中需要 Shift 的标点快捷键尚未完全映射。聊天框通过引擎在激活时加到页面上的隐藏 textarea 接收输入法文字（`src/web/ime.rs`），宿主页面无需为此添加标记。大型图集工作和同步存档准备仍可能阻塞浏览器事件循环；运行和性能验证尚待完成。
 
 ## 检查
 
@@ -117,12 +117,12 @@ finish/leave 收尾完成后发送 `match-ended`，随即请求退出引擎，�
 `engine-exited`。普通菜单启动仍保留结算和返回菜单流程。未开始对局的启动
 失败不生成虚假的对局结束事件。
 
-旧的 `spawn:finished:<json>` 状态通知保留一次。
+旧的 `spawn:finished:<json>` 状态通知保留一次。因 `ExpectedRulesDigest` 不符而被拒的启动，会在该报告中加上 `"failure": "rules_mismatch"` 和本游戏的 `rules_parts`（[规则分项](spawn.md#rules-parts)）。
 
 `engine-exited` 回调返回后，同一页面可以再次调用 `start_spawn`：先用
 `import_spawn_file` 导入下一局的文件，调用 `prepare_audio`，并传入新的画布。
 已导入的游戏资源会保留，所以 `import_file` 仍被拒绝，更换游戏目录需要新页面；
-`restore_user_file` 和 `probe` 在两局之间可用，每局都会重新读取设置。输出用的
+`restore_user_file`、`probe` 和 `generate_map` 在两局之间可用，每局都会重新读取设置。输出用的
 `AudioContext` 也会保留，所以后续启动不需要新的用户手势。一局在 `/spawn` 下的
 文件在退出时删除。`can_start_spawn()` 表示能否再次启动；对局运行中、`start_game`
 之后和 panic 之后都为 false，这些情况需要新页面/实例。线性内存不会缩小，宿主可在

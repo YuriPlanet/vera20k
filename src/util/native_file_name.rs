@@ -69,6 +69,7 @@ unsafe extern "system" {
         attributes: u32,
         template: *mut std::ffi::c_void,
     ) -> *mut std::ffi::c_void;
+    fn MoveFileExA(from: *const i8, to: *const i8, flags: u32) -> i32;
     fn DeleteFileA(name: *const i8) -> i32;
     fn FindFirstFileA(pattern: *const i8, data: *mut FindData) -> *mut std::ffi::c_void;
     fn FindNextFileA(handle: *mut std::ffi::c_void, data: *mut FindData) -> i32;
@@ -77,35 +78,26 @@ unsafe extern "system" {
 
 /// Open exactly the ANSI name, retaining truncated native action bytes.
 #[cfg(windows)]
-pub fn open(
-    directory: &Path,
-    name: &NativeFileName,
-    write: bool,
-) -> std::io::Result<std::fs::File> {
+fn open_read(directory: &Path, name: &NativeFileName) -> std::io::Result<std::fs::File> {
     use std::os::windows::io::FromRawHandle;
     let path = name.full_path(directory)?;
-    // RawFile 0x0065CB50: write = GENERIC_WRITE / share 0 / CREATE_ALWAYS.
-    let (access, share, creation, flags) = if write {
-        (0x40000000, 0, 2, 0x80)
-    } else {
-        (0x80000000, 3, 3, 0x08000080)
-    };
     // SAFETY: path is NUL-terminated; optional pointers are null. Successful
     // ownership transfers once to File, whose Drop closes the returned handle.
     let handle = unsafe {
         CreateFileA(
             path.as_ptr(),
-            access,
-            share,
+            0x80000000,
+            3,
             std::ptr::null(),
-            creation,
-            flags,
+            3,
+            0x08000080,
             std::ptr::null_mut(),
         )
     };
     if handle as isize == -1 {
         return Err(std::io::Error::last_os_error());
     }
+    // SAFETY: a valid handle CreateFileA just returned, owned by nothing else.
     Ok(unsafe { std::fs::File::from_raw_handle(handle) })
 }
 
@@ -132,25 +124,48 @@ pub fn available(directory: &Path, name: &NativeFileName) -> bool {
     if handle as isize == -1 {
         return false;
     }
+    // SAFETY: a valid handle CreateFileA just returned, owned by nothing else.
     drop(unsafe { std::fs::File::from_raw_handle(handle) });
     true
 }
 #[cfg(not(windows))]
 pub fn available(directory: &Path, name: &NativeFileName) -> bool {
-    open(directory, name, false).is_ok()
+    super::file_system::exists(directory.join(name.display_text()))
 }
 
-#[cfg(not(windows))]
-pub fn open(
+pub fn read_limited(
     directory: &Path,
     name: &NativeFileName,
-    write: bool,
-) -> std::io::Result<std::fs::File> {
-    let path = directory.join(name.display_text());
-    if write {
-        std::fs::File::create(path)
-    } else {
-        std::fs::File::open(path)
+    limit: usize,
+) -> std::io::Result<Vec<u8>> {
+    let too_large =
+        || std::io::Error::new(std::io::ErrorKind::InvalidData, "file exceeds size limit");
+    #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+    {
+        let bytes = super::file_system::read_shared(directory.join(name.display_text()))?;
+        return if bytes.len() <= limit {
+            Ok(bytes.to_vec())
+        } else {
+            Err(too_large())
+        };
+    }
+    #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+    {
+        use std::io::Read;
+        #[cfg(windows)]
+        let file = open_read(directory, name)?;
+        #[cfg(not(windows))]
+        let file = std::fs::File::open(directory.join(name.display_text()))?;
+        if file.metadata()?.len() > limit as u64 {
+            return Err(too_large());
+        }
+        let mut bytes = Vec::new();
+        file.take((limit as u64).saturating_add(1))
+            .read_to_end(&mut bytes)?;
+        if bytes.len() > limit {
+            return Err(too_large());
+        }
+        Ok(bytes)
     }
 }
 
@@ -166,7 +181,40 @@ pub fn delete(directory: &Path, name: &NativeFileName) -> std::io::Result<()> {
 }
 #[cfg(not(windows))]
 pub fn delete(directory: &Path, name: &NativeFileName) -> std::io::Result<()> {
-    std::fs::remove_file(directory.join(name.display_text()))
+    super::file_system::remove_file(directory.join(name.display_text()))
+}
+
+/// Publish the entire file at once. A new slot cannot overwrite another
+/// writer's file if both games happened to allocate the same name.
+pub fn write(
+    directory: &Path,
+    name: &NativeFileName,
+    bytes: &[u8],
+    overwrite: bool,
+) -> std::io::Result<()> {
+    #[cfg(not(windows))]
+    {
+        let path = directory.join(name.display_text());
+        if !overwrite {
+            return super::file_system::write_new(path, bytes);
+        }
+        #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+        return super::file_system::write(path, bytes);
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+        super::file_system::write_staged(directory, bytes, |stage| std::fs::rename(stage, path))
+    }
+    #[cfg(windows)]
+    super::file_system::write_staged(directory, bytes, |stage| {
+        let staged =
+            std::ffi::CString::new(super::native_string::acp_encode(&stage.to_string_lossy()))?;
+        let target = name.full_path(directory)?;
+        // SAFETY: both paths are NUL terminated for the duration of the call.
+        // MOVEFILE_REPLACE_EXISTING (1) is only set on confirmed overwrite.
+        if unsafe { MoveFileExA(staged.as_ptr(), target.as_ptr(), u32::from(overwrite)) } == 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        Ok(())
+    })
 }
 
 #[cfg(windows)]
@@ -192,6 +240,7 @@ pub fn enumerate(directory: &Path, pattern: &str) -> Vec<(NativeFileName, u32, u
     };
     // SAFETY: FindData is the C-layout WIN32_FIND_DATAA with initialized storage.
     let mut data: FindData = unsafe { std::mem::zeroed() };
+    // SAFETY: `pattern` is NUL-terminated and `data` is a writable record.
     let handle = unsafe { FindFirstFileA(pattern.as_ptr(), &mut data) };
     if handle as isize == -1 {
         return Vec::new();
@@ -199,6 +248,8 @@ pub fn enumerate(directory: &Path, pattern: &str) -> Vec<(NativeFileName, u32, u
     struct FindHandle(*mut std::ffi::c_void);
     impl Drop for FindHandle {
         fn drop(&mut self) {
+            // SAFETY: the handle came from a successful FindFirstFileA and
+            // is closed once, here.
             unsafe {
                 FindClose(self.0);
             }

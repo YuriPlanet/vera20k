@@ -77,6 +77,28 @@ pub fn trace_draws<T>(run: impl FnOnce() -> T) -> (T, Vec<serde_json::Value>) {
     (result, trace)
 }
 
+/// Keeps this thread's draws out of a running [`trace_draws`] until it drops
+/// ([`untraced_draws`]).
+#[cfg(any(test, feature = "test-support"))]
+pub(crate) struct UntracedDraws(Option<Vec<serde_json::Value>>);
+
+#[cfg(any(test, feature = "test-support"))]
+impl Drop for UntracedDraws {
+    fn drop(&mut self) {
+        DRAW_TRACE.set(self.0.take());
+    }
+}
+
+/// Leave this thread's draws out of a running [`trace_draws`] while the guard
+/// lives. Work the worker pool shares with the thread that asked for it
+/// ([`crate::sim::parallel`]) draws only on private copies of a stream, and
+/// a worker's share never reaches the trace: the asking thread's share stays
+/// out too, so a trace does not depend on which thread took an item.
+#[cfg(any(test, feature = "test-support"))]
+pub(crate) fn untraced_draws() -> UntracedDraws {
+    UntracedDraws(DRAW_TRACE.take())
+}
+
 /// A draw's backtrace without this machine's checkout and home prefixes, so a
 /// saved trace names `src/...` and `~/...` and compares across checkouts.
 #[cfg(any(test, feature = "test-support"))]
@@ -117,27 +139,107 @@ pub struct SimRng {
     disabled: u8,
     index_a: i32,
     index_b: i32,
-    state: Vec<u32>,
+    /// Held inline, so a copy (a local anim's constructor stream, a scan's
+    /// disguise roll) is a memcpy and not a heap allocation. Saved, traced
+    /// and hashed as the `Vec<u32>` it once was: a length, then the words.
+    #[serde(with = "table")]
+    state: [u32; RNG_TABLE_LEN],
+    /// The live object pass's turn streams (`sim::world::turn_streams`),
+    /// set only while a pass that drew a key runs, so never saved: a save
+    /// falls between frames.
+    #[serde(skip)]
+    turns: TurnStreams,
 }
 
-/// Owner of process Main886B88. The frontend and retained playback
-/// capabilities address the app's cell; a scenario's simulation draws its own
-/// cell, seeded from the app's at install, so the simulation thread and the
-/// app share no RNG (docs/sim-thread.md). Main remains outside Scenario saves
-/// and the deterministic world hash.
-#[derive(Debug)]
+/// The Scenario stream's turn part (VERA-only, sim-scale;
+/// `sim::world::turn_streams`): while a Logic slot's turn runs, every raw
+/// draw comes from that turn's own generator and the table and its cursors
+/// stay as they are. It lives in the value, so a copy made in a turn draws
+/// what the turn would draw next and, dropped, leaves the turn where it was,
+/// as a dropped copy leaves the table today; written back, it carries its
+/// draws with it.
+#[derive(Debug, Clone, Copy, Default)]
+struct TurnStreams {
+    /// The pass's key: the frame in the high half, the pass's one raw
+    /// draw from the table in the low half.
+    key: Option<u64>,
+    /// The running turn's generator.
+    turn: Option<TurnStream>,
+}
+
+/// One Logic slot's generator: SplitMix64 (Steele, Lea and Flood, "Fast
+/// Splittable Pseudorandom Number Generators", OOPSLA 2014, with the
+/// constants of Vigna's `splitmix64.c`), started at `key ^ object`. Each
+/// draw adds the golden gamma to the state and mixes it; the raw word is the
+/// mix's high half. Integer arithmetic only, so every platform draws the
+/// same words.
+#[derive(Debug, Clone, Copy)]
+struct TurnStream {
+    /// The stable id of the object whose slot this is.
+    object: u64,
+    state: u64,
+    /// Debug builds: the table and cursors as the turn began, which only
+    /// a table draw or a replaced stream could change.
+    #[cfg(debug_assertions)]
+    table_at_entry: u64,
+}
+
+impl TurnStream {
+    const GAMMA: u64 = 0x9E37_79B9_7F4A_7C15;
+
+    #[inline]
+    fn draw(&mut self) -> u32 {
+        self.state = self.state.wrapping_add(Self::GAMMA);
+        let mut z = self.state;
+        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+        ((z ^ (z >> 31)) >> 32) as u32
+    }
+}
+
+/// The RNG table's wire form: a sequence, as a `Vec<u32>` writes and reads
+/// it, so saves made while the table was a `Vec` load unchanged. A table of
+/// another length is refused when it is read.
+mod table {
+    use super::RNG_TABLE_LEN;
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub(super) fn serialize<S: Serializer>(
+        words: &[u32; RNG_TABLE_LEN],
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(words)
+    }
+
+    pub(super) fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<[u32; RNG_TABLE_LEN], D::Error> {
+        let words = Vec::<u32>::deserialize(deserializer)?;
+        // The save-layout tracer reads one made-up word.
+        if crate::util::save_codec::layout::describing() {
+            return Ok([0; RNG_TABLE_LEN]);
+        }
+        words.try_into().map_err(|words: Vec<u32>| {
+            serde::de::Error::custom(format!(
+                "the random number table holds {} words, not {RNG_TABLE_LEN}",
+                words.len()
+            ))
+        })
+    }
+}
+
+/// Owner of the app's process Main886B88 cell. It sits behind a lock because
+/// two threads draw it: the frontend and presentation on the main thread, and
+/// the audio output thread, which draws playlist picks on refill through a
+/// retained [`MainRngDraws`]. A scenario's simulation owns its Main as a plain
+/// [`SimRng`] drawn through `&mut`, seeded from this cell at install
+/// ([`crate::sim::world::Simulation::install_fresh_process_main`]), so the
+/// simulation thread and the app share no RNG (docs/sim-thread.md). Main
+/// remains outside Scenario saves and the deterministic world hash. A clone
+/// shares this one cell.
+#[derive(Debug, Clone)]
 pub struct MainRng {
     state: Arc<Mutex<SimRng>>,
-}
-
-/// A copy shares the one process cell, as every Main owner does: the
-/// presentation frame of a world draws the same cursor as the world.
-impl Clone for MainRng {
-    fn clone(&self) -> Self {
-        Self {
-            state: Arc::clone(&self.state),
-        }
-    }
 }
 
 impl MainRng {
@@ -152,52 +254,14 @@ impl MainRng {
         }
     }
 
-    /// Bind another owner slot at a process/scenario handoff. The native
-    /// object stays in place, including draws made while a load is prepared.
-    pub(super) fn shared_owner(&self) -> Self {
-        Self {
-            state: Arc::clone(&self.state),
-        }
-    }
-
-    /// A cell of its own at this cursor, sharing nothing with this one: the
-    /// presentation copy of the world's (docs/sim-thread.md), and the
-    /// simulation's own cell at a scenario install
-    /// ([`crate::sim::world::Simulation::install_fresh_process_main`]).
-    pub(crate) fn detached_copy(&self) -> Self {
-        self.staged_copy()
-    }
-
-    /// Stage a transactional saved-load candidate. Draws made while the load
-    /// is prepared advance this copy; `install_from` moves it into the process
-    /// cell on commit, and a rejected load drops it with the cell untouched.
-    pub(super) fn staged_copy(&self) -> Self {
-        self.state.lock().expect("Main RNG poisoned").clone().into()
-    }
-
-    /// Move the finished bootstrap cursor into the retained process cell.
-    /// The app must synchronously cancel outgoing playback before this seam;
-    /// the staged bootstrap must have relinquished its terrain draw handles.
-    pub(super) fn install_from(&self, staged: Self) {
-        if Arc::ptr_eq(&self.state, &staged.state) {
-            return;
-        }
-        let state = Arc::try_unwrap(staged.state)
-            .expect("fresh Main bootstrap has no retained draw capabilities")
-            .into_inner()
-            .expect("Main RNG poisoned");
-        *self.state.lock().expect("Main RNG poisoned") = state;
+    /// Move a finished bootstrap or loaded cursor into the process cell. The
+    /// app must synchronously cancel outgoing playback before this seam.
+    pub(super) fn install(&self, cursor: SimRng) {
+        *self.state.lock().expect("Main RNG poisoned") = cursor;
     }
 
     pub fn next_u32(&self) -> u32 {
         self.state.lock().expect("Main RNG poisoned").next_u32()
-    }
-
-    pub(crate) fn next_range_i32_inclusive(&self, low: i32, high: i32) -> i32 {
-        self.state
-            .lock()
-            .expect("Main RNG poisoned")
-            .next_range_i32_inclusive(low, high)
     }
 
     /// Observe one coherent boundary while callback draws can run elsewhere.
@@ -209,7 +273,7 @@ impl MainRng {
     }
 
     /// A detached, draw-free cursor checkpoint. It never grants another live
-    /// owner of the process cell; replay construction may retain this value.
+    /// owner of the process cell.
     pub fn checkpoint(&self) -> SimRng {
         self.state.lock().expect("Main RNG poisoned").clone()
     }
@@ -222,25 +286,6 @@ impl MainRng {
     pub fn native_state_hex(&self) -> String {
         self.logical_state().native_state_hex()
     }
-
-    /// An explicitly detached test reference, never a live draw capability.
-    #[cfg(any(test, feature = "test-support"))]
-    pub fn snapshot_for_test(&self) -> SimRng {
-        self.checkpoint()
-    }
-
-    #[cfg(any(test, feature = "test-support"))]
-    pub(crate) fn into_rng_for_test(self) -> SimRng {
-        Arc::try_unwrap(self.state)
-            .expect("test Main has no retained draw capabilities")
-            .into_inner()
-            .expect("Main RNG poisoned")
-    }
-
-    #[cfg(any(test, feature = "test-support"))]
-    pub(crate) fn index_b(&self) -> i32 {
-        self.logical_state().index_b
-    }
 }
 
 impl From<SimRng> for MainRng {
@@ -251,30 +296,9 @@ impl From<SimRng> for MainRng {
     }
 }
 
-// Native fixture adapters only. The live Simulation field is serde-skipped:
-// saves never serialize or replace process Main886B88.
-#[cfg(any(test, feature = "test-support"))]
-impl serde::Serialize for MainRng {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        serde::Serialize::serialize(&*self.state.lock().expect("Main RNG poisoned"), serializer)
-    }
-}
-
-#[cfg(any(test, feature = "test-support"))]
-impl<'de> serde::Deserialize<'de> for MainRng {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        <SimRng as serde::Deserialize>::deserialize(deserializer).map(Self::from)
-    }
-}
-
-/// Retained process Main draws. Clone shares the owner's cell; it cannot
-/// seed, replace, borrow simulation state or expose an independent cursor.
+/// Retained draws on the app's process Main cell, for the main thread and
+/// the audio output thread. Clone shares the owner's cell; it cannot seed,
+/// replace, borrow simulation state or expose an independent cursor.
 #[derive(Clone)]
 pub struct MainRngDraws {
     state: Arc<Mutex<SimRng>>,
@@ -332,9 +356,9 @@ impl SimRngLogicalState {
 
 impl SimRng {
     /// Reject malformed external cursor checkpoints before any indexed draw.
+    /// The table's length was checked when it was read.
     pub fn valid_checkpoint(&self) -> bool {
-        self.state.len() == RNG_TABLE_LEN
-            && (0..RNG_TABLE_LEN as i32).contains(&self.index_a)
+        (0..RNG_TABLE_LEN as i32).contains(&self.index_a)
             && (0..RNG_TABLE_LEN as i32).contains(&self.index_b)
     }
 
@@ -344,7 +368,8 @@ impl SimRng {
             disabled: 0,
             index_a: 0,
             index_b: native_random::LAG as i32,
-            state: Vec::from(native_random::seeded_words(seed as u32)),
+            state: native_random::seeded_words(seed as u32),
+            turns: TurnStreams::default(),
         }
     }
 
@@ -358,7 +383,8 @@ impl SimRng {
             disabled,
             index_a: i32::try_from(index_a).expect("MapGen cursor A fits native i32"),
             index_b: i32::try_from(index_b).expect("MapGen cursor B fits native i32"),
-            state: Vec::from(words),
+            state: words,
+            turns: TurnStreams::default(),
         }
     }
 
@@ -375,11 +401,22 @@ impl SimRng {
         )
     }
 
-    /// Compact deterministic fingerprint of the full internal state.
+    /// Compact deterministic fingerprint of the full internal state, with a
+    /// running turn's generator (never between frames).
     ///
     /// This is for tests and debug comparisons. Use `hash_state` when feeding
     /// the authoritative world hash so every field contributes directly.
     pub fn state(&self) -> u64 {
+        let table = self.table_state();
+        match self.turns.turn {
+            Some(turn) => crate::util::fnv::fnv1a64_fold_bytes(table, &turn.state.to_le_bytes()),
+            None => table,
+        }
+    }
+
+    /// [`Self::state`] without the turn part: the disabled byte, both
+    /// cursors and the table.
+    fn table_state(&self) -> u64 {
         let mut hash = crate::util::fnv::FNV1A64_OFFSET_BASIS;
         let mut mix = |value: u64| {
             hash = crate::util::fnv::fnv1a64_fold_bytes(hash, &value.to_le_bytes());
@@ -391,6 +428,77 @@ impl SimRng {
             mix(u64::from(word));
         }
         hash
+    }
+
+    /// Whether this stream is `other` but for a running turn's generator:
+    /// the disabled byte, both cursors, the table and the pass's key alike.
+    /// A turn never changes anything else ([`Self::leave_turn`] checks it in
+    /// debug builds), so a copy a turn drew on answers yes against the
+    /// stream it was copied from.
+    pub fn equal_but_for_turn(&self, other: &SimRng) -> bool {
+        self.disabled == other.disabled
+            && self.index_a == other.index_a
+            && self.index_b == other.index_b
+            && self.state == other.state
+            && self.turns.key == other.turns.key
+    }
+
+    /// The live object pass begins with turn streams on
+    /// (`sim::world::turn_streams`): take one raw draw from the table as the
+    /// pass's key, with `frame` in its high half so no two passes share one.
+    pub(crate) fn begin_turn_streams(&mut self, frame: u32) {
+        debug_assert!(self.turns.turn.is_none(), "a pass began inside a turn");
+        let word = self.next_u32();
+        self.turns.key = Some((u64::from(frame) << 32) | u64::from(word));
+    }
+
+    /// The pass is over: every later draw takes the table again.
+    pub(crate) fn end_turn_streams(&mut self) {
+        self.turns = TurnStreams::default();
+    }
+
+    /// `object`'s Logic slot begins: while the pass has a key, its draws
+    /// come from its own generator, started at `key ^ object`, until
+    /// [`Self::leave_turn`]. Without a key it draws from the table as ever.
+    pub(crate) fn enter_turn(&mut self, object: u64) {
+        let Some(key) = self.turns.key else {
+            return;
+        };
+        self.turns.turn = Some(TurnStream {
+            object,
+            state: key ^ object,
+            #[cfg(debug_assertions)]
+            table_at_entry: self.table_state(),
+        });
+    }
+
+    /// `object`'s Logic slot is over. Debug builds panic when the turn
+    /// changed anything but its generator: a table draw, or a stream
+    /// replaced or reseeded inside the turn.
+    pub(crate) fn leave_turn(&mut self, object: u64) {
+        let turn = self.turns.turn.take();
+        #[cfg(debug_assertions)]
+        if self.turns.key.is_some() {
+            let turn = turn.unwrap_or_else(|| {
+                panic!("object {object}'s turn replaced the Scenario stream's turn part")
+            });
+            assert_eq!(
+                turn.object, object,
+                "object {object}'s slot ended in object {}'s turn",
+                turn.object
+            );
+            assert_eq!(
+                self.table_state(),
+                turn.table_at_entry,
+                "object {object}'s turn changed the Scenario table or its cursors"
+            );
+        }
+        let _ = (turn, object);
+    }
+
+    /// Whether a pass's key is set (`sim::world::turn_streams`).
+    pub(crate) fn has_turn_key(&self) -> bool {
+        self.turns.key.is_some()
     }
 
     /// Borrow every logical field without copying or exposing mutation.
@@ -430,7 +538,8 @@ impl SimRng {
             disabled: bytes[0],
             index_a: word(4) as i32,
             index_b: word(8) as i32,
-            state: (12..0x3f4).step_by(4).map(word).collect(),
+            state: std::array::from_fn(|i| word(12 + i * 4)),
+            turns: TurnStreams::default(),
         }
     }
 
@@ -440,25 +549,24 @@ impl SimRng {
     #[cfg(any(test, feature = "test-support"))]
     pub fn with_next_draws_for_test(draws: &[u32]) -> Self {
         assert!(draws.len() <= 125, "the lagged words must stay zero");
-        let mut state = vec![0; RNG_TABLE_LEN];
+        let mut state = [0; RNG_TABLE_LEN];
         state[..draws.len()].copy_from_slice(draws);
         Self {
             disabled: 0,
             index_a: 0,
             index_b: 125,
             state,
+            turns: TurnStreams::default(),
         }
     }
 
     /// Copy every logical field into immutable boundary evidence.
     pub fn logical_state(&self) -> SimRngLogicalState {
-        let mut words = [0; RNG_TABLE_LEN];
-        words.copy_from_slice(&self.state);
         SimRngLogicalState {
             disabled: self.disabled,
             index_a: self.index_a,
             index_b: self.index_b,
-            words,
+            words: self.state,
         }
     }
 
@@ -481,11 +589,17 @@ impl SimRng {
     }
 
     /// Hash the complete RNG state for deterministic replay/desync checks.
+    /// An array hashes as its slice, the length and then the words, as the
+    /// `Vec` the table once was did.
     pub fn hash_state(&self, hasher: &mut impl Hasher) {
         self.disabled.hash(hasher);
         self.index_a.hash(hasher);
         self.index_b.hash(hasher);
         self.state.hash(hasher);
+        // A running turn's generator, which no frame boundary sees.
+        if let Some(turn) = &self.turns.turn {
+            turn.state.hash(hasher);
+        }
     }
 
     /// Advance and return next random u64.
@@ -502,6 +616,24 @@ impl SimRng {
             return 0;
         }
 
+        // A running turn's draws come from its own generator
+        // (`sim::world::turn_streams`); the table stays as it is.
+        if let Some(turn) = self.turns.turn.as_mut() {
+            let value = turn.draw();
+            #[cfg(any(test, feature = "test-support"))]
+            DRAW_TRACE.with_borrow_mut(|trace| {
+                if let Some(trace) = trace {
+                    let callers = std::backtrace::Backtrace::force_capture().to_string();
+                    trace.push(serde_json::json!({
+                        "stream": "turn", "turn_object": turn.object, "value": value,
+                        "logic_object": DRAW_LOGIC_OBJECT.get(),
+                        "callers": portable_callers(callers),
+                    }));
+                }
+            });
+            return value;
+        }
+
         let a = self.index_a as usize;
         let b = self.index_b as usize;
         let (mut lead, mut lagged) = (a, b);
@@ -514,7 +646,7 @@ impl SimRng {
             if let Some(trace) = trace {
                 let callers = std::backtrace::Backtrace::force_capture().to_string();
                 trace.push(serde_json::json!({
-                    "before_indices": [a, b], "value": value,
+                    "stream": "table", "before_indices": [a, b], "value": value,
                     "logic_object": DRAW_LOGIC_OBJECT.get(),
                     "callers": portable_callers(callers),
                 }));
@@ -761,7 +893,8 @@ mod tests {
                 disabled: bytes[0],
                 index_a: word(4) as i32,
                 index_b: word(8) as i32,
-                state: (0..250).map(|i| word(12 + i * 4)).collect(),
+                state: std::array::from_fn(|i| word(12 + i * 4)),
+                turns: Default::default(),
             }
         }
         let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
@@ -1042,5 +1175,134 @@ mod tests {
             ranged.native_state_hex(),
             "same cursor advance"
         );
+    }
+
+    /// The table as it was saved while it was a `Vec<u32>`, under the same
+    /// serde names, so its bytes, traced layout and hash are the old ones.
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[serde(rename = "SimRng")]
+    struct VecTableRng {
+        disabled: u8,
+        index_a: i32,
+        index_b: i32,
+        state: Vec<u32>,
+    }
+
+    #[test]
+    fn the_inline_table_keeps_the_vec_bytes_layout_and_hash() {
+        use crate::util::save_codec;
+        use std::hash::Hasher;
+
+        let mut rng = SimRng::new(0x5EED);
+        for _ in 0..77 {
+            rng.next_u32();
+        }
+        let old = VecTableRng {
+            disabled: rng.disabled,
+            index_a: rng.index_a,
+            index_b: rng.index_b,
+            state: rng.state.to_vec(),
+        };
+        let old_bytes = save_codec::serialize(&old).unwrap();
+        assert_eq!(save_codec::serialize(&rng).unwrap(), old_bytes);
+        let loaded: SimRng = save_codec::deserialize(&old_bytes).unwrap();
+        assert_eq!(loaded.logical_state(), rng.logical_state());
+        assert_eq!(
+            save_codec::layout::describe::<SimRng>().unwrap(),
+            save_codec::layout::describe::<VecTableRng>().unwrap()
+        );
+
+        let mut new_hash = std::collections::hash_map::DefaultHasher::new();
+        rng.hash_state(&mut new_hash);
+        let mut old_hash = std::collections::hash_map::DefaultHasher::new();
+        std::hash::Hash::hash(&old.disabled, &mut old_hash);
+        std::hash::Hash::hash(&old.index_a, &mut old_hash);
+        std::hash::Hash::hash(&old.index_b, &mut old_hash);
+        std::hash::Hash::hash(&old.state, &mut old_hash);
+        assert_eq!(new_hash.finish(), old_hash.finish());
+    }
+
+    #[test]
+    fn a_table_of_another_length_is_refused_when_read() {
+        let short = VecTableRng {
+            disabled: 0,
+            index_a: 0,
+            index_b: 0,
+            state: vec![1; 249],
+        };
+        let bytes = crate::util::save_codec::serialize(&short).unwrap();
+        let error = crate::util::save_codec::deserialize::<SimRng>(&bytes)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("holds 249 words, not 250"), "{error}");
+    }
+
+    /// Object 42's and 43's first words in the pass of frame 7 whose table
+    /// draw is `0x12345678`: Vigna's reference `splitmix64.c` `next()` from
+    /// `0x0000000712345678 ^ id`, each output's high half.
+    const TURN_42: [u32; 4] = [0x06bb_4e99, 0x418a_7724, 0x2ebb_1fb7, 0x680b_647a];
+    const TURN_43: [u32; 4] = [0xd00a_e455, 0xbba2_2da9, 0xf625_cf44, 0x91a8_58a7];
+
+    /// A turn draws SplitMix64 from the pass's key and its object's id alone:
+    /// another table that gives the pass the same word and frame gives the
+    /// turn the same words, entering again starts them again, and the table
+    /// draws on after the turns as if they had drawn nothing.
+    #[test]
+    fn a_turn_draws_its_own_stream_from_the_pass_key_and_its_object() {
+        let turn = |rng: &mut SimRng, object| {
+            rng.enter_turn(object);
+            let words: Vec<u32> = (0..4).map(|_| rng.next_u32()).collect();
+            rng.leave_turn(object);
+            words
+        };
+        let mut rng = SimRng::with_next_draws_for_test(&[0x1234_5678, 0xAAAA_0001, 0xAAAA_0002]);
+        rng.begin_turn_streams(7);
+        assert_eq!(turn(&mut rng, 42), TURN_42);
+        assert_eq!(turn(&mut rng, 43), TURN_43);
+        assert_eq!(turn(&mut rng, 42), TURN_42);
+        assert_eq!(rng.next_u32(), 0xAAAA_0001, "a draw outside a turn");
+        rng.end_turn_streams();
+        assert_eq!(rng.next_u32(), 0xAAAA_0002);
+
+        let mut other = SimRng::with_next_draws_for_test(&[5, 6, 0x1234_5678]);
+        let _ = (other.next_u32(), other.next_u32());
+        other.begin_turn_streams(7);
+        assert_eq!(turn(&mut other, 43), TURN_43);
+    }
+
+    /// A copy made in a turn draws what the turn would draw next. Dropped, it
+    /// leaves the turn where it was, as a dropped copy leaves the table;
+    /// written back, it carries its draws, and differs from the stream it
+    /// was copied from only in the turn's generator. Debug builds check as a
+    /// turn ends that it changed nothing else: a stream copied before the
+    /// turn, drawn on and written back in it, names the object.
+    #[cfg(debug_assertions)]
+    #[test]
+    #[should_panic(expected = "object 42's turn replaced the Scenario stream's turn part")]
+    fn a_copy_made_in_a_turn_keeps_its_draws_only_when_written_back() {
+        let mut rng = SimRng::with_next_draws_for_test(&[0x1234_5678, 1]);
+        rng.begin_turn_streams(7);
+        let mut before_the_turn = rng.clone();
+        rng.enter_turn(42);
+        {
+            let mut dropped = rng.clone();
+            assert_eq!(dropped.next_u32(), TURN_42[0]);
+        }
+        let mut kept = rng.clone();
+        assert_eq!(kept.next_u32(), TURN_42[0]);
+        assert!(kept.equal_but_for_turn(&rng));
+        assert_ne!(
+            kept.state(),
+            rng.state(),
+            "the state names the turn's draws"
+        );
+        rng = kept;
+        assert_eq!(rng.next_u32(), TURN_42[1]);
+        rng.leave_turn(42);
+
+        rng.enter_turn(42);
+        let _ = before_the_turn.next_u32();
+        rng = before_the_turn;
+        rng.leave_turn(42);
     }
 }

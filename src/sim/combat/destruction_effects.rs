@@ -172,8 +172,8 @@ impl Simulation {
         anims: &mut Vec<ExplosionEffect>,
     ) -> Result<(), crate::util::native_x87::NativeX87Error> {
         let native_unique_id = self.next_native_runtime_id();
-        let config =
-            name.and_then(|name| rules.art().anim_runtime_config(&name.to_ascii_uppercase()));
+        // The lookup matches the name in ASCII uppercase, on the stack.
+        let config = name.and_then(|name| rules.art().anim_runtime_config(name));
         let mut draws = if let Some(config) = config {
             crate::sim::anim_class::anim_constructor_draws(config, coord, &mut self.scenario_rng)?
         } else {
@@ -252,7 +252,7 @@ impl Simulation {
                 crate::sim::anim_class::AnimConstructorInput::Runtime,
                 crate::sim::anim_class::AnimConstructorInput::Preconsumed,
             ),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         ) {
             Ok(anim) => anim,
             Err(error) => {
@@ -329,9 +329,9 @@ impl Simulation {
         rules: &RuleSet,
     ) -> crate::rules::ares_warhead::HouseSelector {
         use crate::rules::ares_warhead::HouseSelector;
-        let (selector, make_infantry) = rules
-            .art()
-            .anim_runtime_config(&self.interner.resolve(type_id).to_ascii_uppercase())
+        let (selector, make_infantry) = self
+            .interner
+            .anim_type_config(type_id, rules)
             .map_or((HouseSelector::Invoker, -1), |config| {
                 (config.ares_make_infantry_owner, config.make_infantry)
             });
@@ -463,7 +463,7 @@ impl Simulation {
         unit_id: u64,
         anims: &mut Vec<ExplosionEffect>,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(entity) = self.substrate.entities.get(unit_id) else {
             return;
@@ -563,7 +563,7 @@ impl Simulation {
         ignore_defenses: bool,
         anims: &mut Vec<ExplosionEffect>,
         mut commit_smudge: impl FnMut(&mut Simulation, SmudgeSpawnRequest),
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         // 1. `0x004415F9..0x00441617`.
         self.clear_building_damage_fire_slots(building_id, rules);
@@ -572,12 +572,17 @@ impl Simulation {
         if rules.ares()
             && let Some(building) = self.substrate.entities.get_mut(building_id)
         {
-            building.ares.display_production_to.clear();
+            building.seldom.ares.display_production_to.clear();
         }
         // Ares Destroy_SensorArray10016CA0 (hook4416A2) removes an active
         // sensor array ahead of the gap and RevealToAll steps.
         if rules.ares() {
-            self.ares_sensor_array_dispatch(building_id, false, rules, None);
+            self.ares_sensor_array_dispatch(
+                building_id,
+                false,
+                rules,
+                Some(rules.overlay_registry()),
+            );
         }
         let Some(entity) = self.substrate.entities.get(building_id) else {
             return;
@@ -602,7 +607,8 @@ impl Simulation {
         // building releases its sight for the current house
         // (`ReReveal(0, 0, 1, PlayerPtr)`).
         if object.reveal_to_all
-            && (self.session.game_mode().is_network() || !self.house_is_human_player(owner))
+            && (self.session.execution_topology().is_lockstep()
+                || !self.house_is_human_player(owner))
         {
             //441718 excludes only this represented player's own building.
             self.rereveal_sight_to_current_house(building_id, rules, true);
@@ -622,7 +628,7 @@ impl Simulation {
                 .filter(|name| !name.is_empty())
         {
             self.sound_events.emit(SimSoundEvent::VocAtCoord {
-                sound_id: sound_id.to_owned(),
+                sound_id: rules.sound_name(sound_id),
                 coordinate: location,
                 flags: 0,
             });
@@ -727,9 +733,10 @@ impl Simulation {
         // 10. Ares 3.0 BuildingClass_Destroy_Refinery (10023DA0, hook
         // 0x441B30) replaces the stock spill to 0x441C0C: the store leaves
         // the building and House, spilling with TiberiumSpill
-        // (`sim::ares_tiberium_storage`). The stock spill has no store to
-        // read without Ares.
-        if rules.ares() {
+        // (`sim::ares_tiberium_storage`), when the money takes its Ares form
+        // (`RuleSet::ares_form`), as everything that fills the store. The
+        // stock spill has no store to read without it.
+        if rules.ares_form() {
             self.ares_destroy_refinery_storage(building_id, rules, effects);
         }
 

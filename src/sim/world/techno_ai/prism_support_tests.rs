@@ -235,6 +235,7 @@ impl Fixture {
             });
             entity.mission_leaf.set_building_ready_latch(1);
             entity
+                .seldom
                 .rearm_timer
                 .set_for_test(CdTimer::started(FRAME - 100, 0));
         }
@@ -309,6 +310,7 @@ impl Fixture {
                 .as_i64()
                 .map_or(PAUSED_START_FRAME, |relative| FRAME + relative as i32);
             entity
+                .seldom
                 .rearm_timer
                 .set_for_test(CdTimer::started(start, rearm[1].as_i64().unwrap() as i32));
         }
@@ -401,8 +403,8 @@ impl Fixture {
         let rearm = &native["rearm"];
         assert_eq!(
             [
-                entity.rearm_timer.start_frame(),
-                entity.rearm_timer.duration()
+                entity.seldom.rearm_timer.start_frame(),
+                entity.seldom.rearm_timer.duration()
             ],
             [0, 1].map(|index| rearm[index].as_i64().unwrap() as i32),
             "{at} {name} rearm"
@@ -521,7 +523,7 @@ fn prism_recruitment_matches_the_original() {
             target,
             0,
             FireError::Ok,
-            ObjectAiCtx::default(),
+            &mut ObjectAiCtx::default(),
             &mut false,
         );
         assert_eq!(
@@ -694,6 +696,7 @@ fn prism_support_bonus_matches_the_original() {
             Some(3) => {
                 let entity = fixture.sim.substrate.entities.get_mut(master).unwrap();
                 entity
+                    .seldom
                     .rearm_timer
                     .set_for_test(CdTimer::started(FRAME, ROF));
             }
@@ -706,7 +709,7 @@ fn prism_support_bonus_matches_the_original() {
                 &mut fixture.sim,
                 master,
                 &fixture.rules,
-                ObjectAiCtx::default(),
+                &mut ObjectAiCtx::default(),
                 &mut false,
             )
         });
@@ -823,7 +826,7 @@ fn prism_support_beam_matches_the_original() {
             &mut fixture.sim,
             supporter,
             &fixture.rules,
-            ObjectAiCtx::default(),
+            &mut ObjectAiCtx::default(),
             &mut false,
         );
         assert!(fixture.sim.fire_events.is_empty(), "{name}");
@@ -867,8 +870,7 @@ fn apply_event(fixture: &mut Fixture, action: &str, building: u64) {
                     building,
                     None,
                     &fixture.rules,
-                    None,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .unwrap();
         }
@@ -946,7 +948,7 @@ fn prism_cadence_matches_the_original() {
                     &mut fixture.sim,
                     id,
                     &fixture.rules,
-                    ObjectAiCtx::default(),
+                    &mut ObjectAiCtx::default(),
                     &mut false,
                 );
                 let entity = fixture.sim.substrate.entities.get_mut(id).unwrap();
@@ -1005,7 +1007,7 @@ fn prism_cadence_matches_the_original() {
                         &mut fixture.sim,
                         id,
                         &fixture.rules,
-                        ObjectAiCtx::default(),
+                        &mut ObjectAiCtx::default(),
                         &mut false,
                     )
                 });
@@ -1152,6 +1154,7 @@ fn ares_prism_modifier_retains_percent_across_map_layers_and_scales_one_shot() {
             .entities
             .get_mut(master)
             .unwrap()
+            .seldom
             .ares
             .ares_prism
             .set_modifier_reserve_for_test(modifier);
@@ -1183,6 +1186,7 @@ fn network(fixture: &Fixture, id: u64) -> crate::sim::world::AresPrismForwarding
         .entities
         .get(id)
         .unwrap()
+        .seldom
         .ares
         .ares_prism
         .clone()
@@ -1198,7 +1202,7 @@ fn ares_attack(fixture: &mut Fixture, id: u64) {
         target,
         0,
         FireError::Ok,
-        ObjectAiCtx::default(),
+        &mut ObjectAiCtx::default(),
         &mut false,
     );
 }
@@ -1210,7 +1214,7 @@ fn ares_visit(fixture: &mut Fixture, ids: &[u64]) {
             &mut fixture.sim,
             id,
             &fixture.rules,
-            ObjectAiCtx::default(),
+            &mut ObjectAiCtx::default(),
             &mut false,
         );
     }
@@ -1317,7 +1321,7 @@ fn ares_prism_master_recruits_its_whole_network_in_one_visit() {
         assert!(entity.building.pending_building_fire.pending().is_none());
         let reload = entity.ammo_reload_timer();
         assert_eq!([reload.start_frame(), reload.duration()], [FRAME, 45]);
-        assert_eq!(entity.rearm_timer.remaining(FRAME), 0);
+        assert_eq!(entity.seldom.rearm_timer.remaining(FRAME), 0);
     }
     assert!(network(&fixture, master).senders().is_empty());
     assert_eq!(
@@ -1367,7 +1371,7 @@ fn ares_prism_chains_relay_their_reserves_to_the_master() {
         .sim;
     for id in [master, link, end] {
         let entity = restored.substrate.entities.get(id).unwrap();
-        assert_eq!(entity.ares.ares_prism, network(&fixture, id));
+        assert_eq!(entity.seldom.ares.ares_prism, network(&fixture, id));
     }
     let hash = restored.state_hash();
     restored
@@ -1375,6 +1379,7 @@ fn ares_prism_chains_relay_their_reserves_to_the_master() {
         .entities
         .get_mut(end)
         .unwrap()
+        .seldom
         .ares
         .ares_prism = Default::default();
     assert_ne!(restored.state_hash(), hash);
@@ -1427,15 +1432,7 @@ fn ares_prism_break_support_and_a_sale_break_up_the_network() {
         .attack_target
         .set_for_test(Some(target));
     assert_eq!(
-        fire_error_at(
-            &fixture.sim,
-            &fixture.rules,
-            breaker,
-            Some(target),
-            0,
-            true,
-            None
-        ),
+        fire_error_at(&fixture.sim, &fixture.rules, breaker, Some(target), 0, true,),
         FireError::Ok
     );
     ares_attack(&mut fixture, breaker);
@@ -1456,7 +1453,7 @@ fn ares_prism_break_support_and_a_sale_break_up_the_network() {
         master,
         crate::sim::production::SellOrder::Player,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     let entity = fixture.sim.substrate.entities.get(master).unwrap();
     assert!(entity.building.pending_building_fire.pending().is_none());

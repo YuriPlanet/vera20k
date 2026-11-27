@@ -1,0 +1,24 @@
+[package]
+name = "muster-field"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "A playtest mod: hire mercenaries, merge them, watch one battle fight itself"
+
+[lib]
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+
+[dependencies]
+vera20k-sdk = { path = "../../rust/vera20k-sdk" }
+muster-field-data = { path = "data" }
+
+[profile.release]
+opt-level = "s"
+lto = true
+panic = "abort"
+strip = true
+
+[workspace]
+members = ["data", "ui"]
+default-members = [".", "ui"]

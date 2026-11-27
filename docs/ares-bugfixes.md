@@ -2,8 +2,8 @@
 
 Ares 3.0 corrects a set of gamemd behaviours
 in `Misc/Bugfixes.cpp`, `Misc/Bugfixes.Safeguards.cpp`,
-`Misc/Bugfixes.Buffer.cpp` and `Misc/Bugfixes.Perf.cpp`; these take no INI
-keys. Every build makes these corrections when the game plays Ares
+`Misc/Bugfixes.Buffer.cpp` and `Misc/Bugfixes.Perf.cpp`, plus the crate fix
+in `Misc/Savegame.cpp`; these take no INI keys. Every build makes these corrections when the game plays Ares
 ([Ares](ares.md)); other games keep the original behaviour, bugs included. Each Rust
 port sits in the engine owner of the hooked gamemd function, behind the game's
 Ares switch (`rules::ares_switch`), with the Ares.dll function
@@ -59,9 +59,10 @@ as Ares in every game); **residual** (gameplay, but its host is unported);
 | `0x469467` | `1005C600` | Temporal warps a Foot in the Air or Top layer too | ported: `temporal::temporal_detonation` |
 | `0x472198` | `1005C6C0` | No mind-control link to a parasite in limbo | presentation |
 | `0x47243F` | `1005C680` | A captured computer building queues Guard, no fate roll | ported: `capture_manager::decide_unit_fate` |
-| `0x4748A0` | `1005CC40` | ReadPip without the default-as-index distortion; integer values | presentation: `Pip=`/`OccupyPip=` colours only; not ported |
+| `0x4748A0` | `1005CC40` | ReadPip without the default-as-index distortion; integer values | ported: `IniSection::read_pip` (`rules/ini_value.rs`); a negative integer keeps the current frame |
 | `0x4759D4` | `1005CD00` | WriteEdge with an out-of-range edge | n/a: INI writer |
 | `0x47F9A4` | `1005C6F0` | Walls drawn in their owner's colour | presentation |
+| `0x483BF1`, `0x565215` | `1006ADE0`, `1006AEC0` | A loaded save keeps its crates: CellClass::Load no longer clears a CRATE or WCRATE overlay (179, 242) and Map's no-init constructor no longer empties the crate slots (#895374, `Misc/Savegame.cpp`) | ported: `Simulation::restore_map_authority_after_user_load` skips `reset_crates_after_user_load` |
 | `0x48A4F9` | `1005D070` | A negative damage packet selects its explosion by magnitude | ported: `detonation_anim::select_with_context` |
 | `0x4B5EB0`, `0x4B5F9E`, `0x4B619F` | `1005C8B0`, `1005C890`, `1005C870` | Drop pod trailer smoke without a weapon, report divide by zero, no AtmosphereEntry anim when unset | superweapon: the DropPod locomotor (`0x004B5B70`, `0x004B6040`) has no port yet |
 | `0x4C6DDB` | `1005CE40` | An ARCHIVE event does not give a selling object without an archive one | ported: `world_commands::execute_archive_event` |
@@ -93,7 +94,7 @@ as Ares in every game); **residual** (gameplay, but its host is unported);
 | `0x62C2ED`, `0x62CDE8` | `1005CFE0`, `1005CFA0` | Gas and fire particles name their Techno owner and its house as attacker | ported: `particles::gas`, `particles::fire` (no test: attribution only) |
 | `0x65D8FB`, `0x65EC4A` | `1005D170` | Reinforcements (actions 7, 80, 107) need an existing house, not a defeated `Player@X` one in multiplayer | ported: `team_script_vm::reinforcements` (no test) |
 | `0x671152` | `1005D040` | PrismSupportModifier | ported earlier (`ruleset`) |
-| `0x69281E` | `1005C790` | Power-toggle cursor action | presentation: power-toggle mode is unreachable in VERA |
+| `0x69281E` | `1005C790` | Power-toggle cursor action | ported: `app::input::power_mode::admits` ([ares-commands.md](ares-commands.md)) |
 | `0x699C1C` | `1005CA80` | Clears the PKT INI between files | n/a: loader plumbing |
 | `0x6B7D50` | `1005D0A0` | CountDockedSpawns counts dead nodes with a finished stopped timer | presentation: only pips, NoSpawnAlt and the digital display read it |
 | `0x6E20D8` | `1005D150` | DestroyAttached passes over a receiver that survives instead of looping | ported: `trigger_runtime` action 32 (covered by `destroy_attached_*` tests) |
@@ -136,14 +137,14 @@ as Ares in every game); **residual** (gameplay, but its host is unported);
 | `0x75D660`, `0x75DAE6` | `1005C080`, `1005C0E0` | WarheadType AnimList, DebrisMaximums, DebrisTypes through ParseList at `0x75D660`; the later debris reads skipped | ported: `process_warhead_family`, `WarheadType::debris_maximums` |
 | `0x772462` | `1005C0F0` | WeaponType `Anim=` through ParseList | ported: `process_weapon_family` |
 | `0x511D16` | `1005BE70` | Country veteran lists through ParseList | ported earlier (`process_house_family`) |
-| `0x4750EC`, `0x475107` | `1005BED0`, `1005BEF0` | ReadHouseTypesList (Owner, RequiredHouses, ForbiddenHouses, SecretHouses) reads into the 0x800 buffer | ported: `object_type` house lists; residual: Phobos `SuperWeaponSidebar.*Houses` (same reader) keep 0x80 in an ares+phobos build |
+| `0x4750EC`, `0x475107` | `1005BED0`, `1005BEF0` | ReadHouseTypesList (Owner, RequiredHouses, ForbiddenHouses, SecretHouses) reads into the 0x800 buffer | ported: `object_type` house lists; residual: Phobos `SuperWeaponSidebar.*Houses` (same reader) keep 0x80 in a `phobos` build when the game plays Ares |
 | `0x47527C`, `0x475297` | `1005BED0`, `1005BEF0` | GetAlliesBitfield buffer | ported earlier (`read_houses_list`) |
 | `0x7274AF`, `0x7274C8`, `0x727529`, `0x727544` | `1005BED0`, `1005BEF0`, `1005C070` | Trigger `[Events]`/`[Actions]` lines read into the 0x800 buffer | n/a: the INI loader (`0x00525A60`) keeps 511 bytes of a line, so a value never fills the original 512-byte buffer |
 | `0x6A9348` | `1005BF00` | Cameo tooltip formatted with `_TRUNCATE` | n/a: buffer guard; VERA builds the tooltip as a String |
 | `0x70CAD8` | `1005BF80` | A railgun line that meets the ground no longer rolls the destroyable-cliff collapse there | ported: `railgun::line_damage` |
 | `0x489562` | `1005BE20` | DamageArea rolls the impact cell's destroyable cliff (RandomRanged(0,99) < CollapseChance), after the airborne receivers and before the spread walk | ported: `world_receiver::collect_area` |
 | `0x48A634`, `0x5FF86E`, `0x422FCC`, `0x550BCA`, `0x62CEC9`, `0x6D7847`, `0x420F40` | `1005E090`, `1005E190`, `1005E020`, `1005E0B0`, `1005E170`, `1005E1B0`, `1005E000` | Detail effects (warhead flash, spotlights, anims, lasers, particles, pixel sparkles, alpha shapes) stay on while the frame rate meets the game speed's target (`RulesExt::DetailsCurrentlyEnabled` `1002A6C0`: `fps >= 60/clamp(GameSpeed,1,6)` before the Rules hysteresis is asked) | presentation: not ported; `app::presentation::detail::DetailState` has no game-speed input |
-| `0x551A30` | `1005E0D0` | The Ground layer's single adjacent Y-sort pass becomes a full `std::sort` of one fifteenth of the layer per frame (`CurrentFrame % 15`, a quarter chunk overlap, the last window to the end) | presentation: not ported; only draw order and the hashed Ground order change, and no gameplay reader depends on that order (crate recipients) |
+| `0x551A30` | `1005E0D0` | The Ground layer's single adjacent Y-sort pass becomes a full `std::sort` of one fifteenth of the layer per frame (`CurrentFrame % 15`, a quarter chunk overlap, the last window to the end) | n/a: VERA's simulation keeps Ground unordered and its picture sorts the whole layer every frame (`Simulation::ground_draw_order`), which this fix approaches |
 | `0x5F6612` | `1005E140` | UnInit announces the object's expiry only when Limbo fails; a successful Limbo's own Destroy(1) broadcast is the only one | residual: VERA keeps both broadcasts and their order around Limbo's steps; a difference shows only where a listener treats the repeat or the earlier broadcast differently (the dead-building anim slot); separate lifecycle mechanism |
 | `0x725A1F` | `1005E040` | A `[General] Behind=` anim's expiry is not announced to the anim listeners | n/a: only its owner holds a Behind anim, and the owner drops it before destroying it (`techno_ai` behind indicator) |
 | `0x6F90F8`, `0x707EEA`, `0x70133E`, `0x458E1E` | `1005E210`, `1005E1D0`, `1005E1F0`, `1005E070` | `max`/`min` macros no longer call GetWeaponRange / GetFoundationWidth twice | n/a: the same results (`70133E`'s second passenger scan recomputes the same minimum) |

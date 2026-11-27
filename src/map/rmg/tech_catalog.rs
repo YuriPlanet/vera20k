@@ -6,8 +6,10 @@
 //! yields an empty catalog, and the placement phase then places nothing.
 
 use crate::map::rmg::phases::tech_buildings::TechType;
+use crate::map::rmg::phases::urban_areas::SpawnFoots;
 use crate::rules::foundation::{FOUNDATION_TABLE, read_foundation};
 use crate::rules::ini_parser::IniFile;
+use crate::rules::ruleset::RuleSet;
 
 /// Build the catalog from the BuildingType IDs of `[AI]
 /// NeutralTechBuildings=` and a merged art INI.
@@ -49,7 +51,6 @@ pub fn resolve(names: &[String], art: &IniFile) -> Vec<TechType> {
 /// authored towns of the theater use. The farms and landmarks of the
 /// Countryside and Landmark Extras are the buildings `extras` names
 /// (`RMGMD.INI [Extras] Farms=`, `Landmarks=`).
-#[allow(clippy::too_many_arguments)]
 pub fn resolve_vera_urban(
     rules: &crate::rules::ruleset::RuleSet,
     art: &IniFile,
@@ -269,6 +270,163 @@ pub fn resolve_vera_urban(
         trees: street_trees(theater_name),
         farms: named(&extras.farms),
         landmarks: named(&extras.landmarks),
+        derelicts: named(&if extras.derelicts.is_empty() {
+            crate::map::rmg::extras::derelict_types_from_lists(
+                rules.build_const_types(),
+                &rules.build_barracks_types,
+                &rules.build_tech_types,
+                &rules.build_weapons_types,
+            )
+        } else {
+            extras.derelicts.clone()
+        }),
+        civilians: spawn_civilians(rules),
+        animals: spawn_animals(rules),
+        wild: spawn_wild(rules),
+    }
+}
+
+/// Whether the Rules say a type can stand only on water: `SpeedType=Float`
+/// or `FloatBeach`, or `MovementZone=Water`. The Bront (`DNOB`) and every
+/// navy hull answer yes; amphibious types (`SpeedType=Amphibious`) do not,
+/// since the land takes them as well.
+fn water_only(object: &crate::rules::object_type::ObjectType) -> bool {
+    use crate::rules::locomotor_type::{MovementZone, SpeedType};
+    matches!(object.speed_type, SpeedType::Float | SpeedType::FloatBeach)
+        || object.movement_zone == MovementZone::Water
+}
+
+/// The ids `keep` accepts, split into the ones that stand on land and the
+/// ones that stand on water. Order follows the registry in both lists.
+fn split_by_water<'a>(
+    rules: &RuleSet,
+    ids: impl Iterator<Item = &'a String>,
+    keep: impl Fn(&crate::rules::object_type::ObjectType) -> bool,
+) -> (Vec<String>, Vec<String>) {
+    let mut land = Vec::new();
+    let mut water = Vec::new();
+    for id in ids {
+        let Some(object) = rules.object(id) else {
+            continue;
+        };
+        if !keep(object) {
+            continue;
+        }
+        if water_only(object) {
+            water.push(id.clone());
+        } else {
+            land.push(id.clone());
+        }
+    }
+    (land, water)
+}
+
+/// Civilian infantry and vehicles for the extra-Civilians slider.
+///
+/// The rules' own tags decide membership, so a mod gets its own civilians for
+/// free: an infantry with `Civilian=yes`, or a vehicle of `TechLevel=-1` that
+/// may not start in multiplayer (the buses, taxis and trucks a town already
+/// places). Every type must actually be defined. Order follows the registry,
+/// so the catalog is stable across runs and machines.
+fn spawn_civilians(rules: &RuleSet) -> SpawnFoots {
+    // COW is Civilian=yes but also `Name=Animal Cow`; leave it to the Animals
+    // slider so the three sliders are disjoint.
+    let is_civilian = |object: &crate::rules::object_type::ObjectType| {
+        object.civilian
+            && !object
+                .name
+                .as_deref()
+                .is_some_and(|name| name.starts_with("Animal "))
+    };
+    let is_traffic = |object: &crate::rules::object_type::ObjectType| {
+        object.tech_level < 0
+            && !object.allowed_to_start_in_multiplayer
+            // `Category=Transport` is the civilian fleet; Support (miners,
+            // tugs) and AirPower (the Hind) are props or machinery, not town
+            // traffic.
+            && object.techno_category
+                == crate::rules::ini_value::TechnoTypeCategory::TransportVehicle
+            // The dinosaurs are `TechLevel=-1` vehicles too; they belong to
+            // the Animals slider alone.
+            && !object
+                .name
+                .as_deref()
+                .is_some_and(|name| name.starts_with("Animal "))
+    };
+    let (infantry, water_infantry) = split_by_water(rules, rules.infantry_ids.iter(), is_civilian);
+    let (vehicles, water_vehicles) = split_by_water(rules, rules.vehicle_ids.iter(), is_traffic);
+    SpawnFoots {
+        infantry,
+        vehicles,
+        water_infantry,
+        water_vehicles,
+    }
+}
+
+/// Animals for the Animals slider: `Name=Animal …` in the rules, across both
+/// foot registries so the dinosaurs (vehicles) are included alongside the cow
+/// and the bears (infantry). The Bront is `MovementZone=Water`, so it lands
+/// in the water lists and spawns at sea.
+fn spawn_animals(rules: &RuleSet) -> SpawnFoots {
+    let animal = |object: &crate::rules::object_type::ObjectType| {
+        object
+            .name
+            .as_deref()
+            .is_some_and(|name| name.starts_with("Animal "))
+    };
+    let (infantry, water_infantry) = split_by_water(rules, rules.infantry_ids.iter(), animal);
+    let (vehicles, water_vehicles) = split_by_water(rules, rules.vehicle_ids.iter(), animal);
+    SpawnFoots {
+        infantry,
+        vehicles,
+        water_infantry,
+        water_vehicles,
+    }
+}
+
+/// Player-buildable infantry and vehicles for the Neutral Defenders slider:
+/// the set a human can build and fight with — a `TechLevel` of 0 or more, an
+/// owner, a construction prerequisite (campaign-only props and heroes have
+/// none), and a weapon. They stand on Neutral so no player house gains them.
+///
+/// The support and transport types a player can build are left out: the
+/// miners (`Harvester=`), the engineer, the spy (`Infiltrate=`), and the MCV
+/// (`DeploysInto=`) stand there doing nothing. `AllowedToStartInMultiplayer`
+/// is deliberately not the test: retail rules mark 138 types `no` there —
+/// every navy hull, the Guardian GI and the tanks' heavier cousins among
+/// them — which narrowed the slider to the six basic infantry and tanks.
+/// Navy hulls (`SpeedType=Float`) land in the water lists, so a raised slider
+/// garrisons the sea as well as the land.
+fn spawn_wild(rules: &RuleSet) -> SpawnFoots {
+    let buildable = |object: &crate::rules::object_type::ObjectType| {
+        object.tech_level >= 0
+            && !object.owner.is_empty()
+            && !object.civilian
+            && !object.harvester
+            && !object.engineer
+            && !object.infiltrate
+            && object.deploys_into.is_none()
+            // The choppers a war factory sells (`Category=AirPower`) need an
+            // airfield pad, not open ground: leave them out.
+            && !matches!(
+                object.techno_category,
+                crate::rules::ini_value::TechnoTypeCategory::AirCombatSupport
+                    | crate::rules::ini_value::TechnoTypeCategory::AirTransport
+            )
+            && !object.prerequisite.is_empty()
+            && object.weapon_list.iter().any(|weapon| weapon.is_some())
+            && !object
+                .name
+                .as_deref()
+                .is_some_and(|name| name.starts_with("Animal "))
+    };
+    let (infantry, water_infantry) = split_by_water(rules, rules.infantry_ids.iter(), buildable);
+    let (vehicles, water_vehicles) = split_by_water(rules, rules.vehicle_ids.iter(), buildable);
+    SpawnFoots {
+        infantry,
+        vehicles,
+        water_infantry,
+        water_vehicles,
     }
 }
 
@@ -276,9 +434,10 @@ pub fn resolve_vera_urban(
 /// their streets (the same survey): temperate kinds, snow-laden ones on Snow
 /// and palms and cacti on Desert.
 fn street_trees(theater_name: &str) -> Vec<String> {
-    let range = match theater_name.to_ascii_uppercase().as_str() {
-        "SNOW" => 20..=28,
-        "DESERT" => 31..=36,
+    use crate::rules::object_image::ImageTheater;
+    let range = match ImageTheater::from_name(theater_name) {
+        ImageTheater::Snow => 20..=28,
+        ImageTheater::Desert => 31..=36,
         _ => 1..=12,
     };
     range.map(|index| format!("TREE{index:02}")).collect()

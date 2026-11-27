@@ -110,7 +110,7 @@ fn script68_converts_in_place_keeps_team_and_updates_native_counts_health_ammo_a
     );
     let count = sim.entities().len();
     sim.take_looks();
-    sim.team_step_script(team, &rules, None, FrameEffects::empty());
+    sim.team_step_script(team, &rules, None, &mut FrameEffects::empty());
     assert_eq!(
         sim.take_looks().entities,
         crate::sim::Touched::Ids(members[..2].to_vec()),
@@ -199,12 +199,16 @@ fn script68_converts_in_place_keeps_team_and_updates_native_counts_health_ammo_a
         .light()
         .unwrap();
     let visit = |sim: &mut Simulation, id| {
-        sim.object_ai_visit_one(id, Some(&rules), crate::sim::world::ObjectAiCtx::default());
+        sim.object_ai_visit_one(
+            id,
+            Some(&rules),
+            &mut crate::sim::world::ObjectAiCtx::default(),
+        );
     };
     visit(&mut sim, light_id);
     let before_turn = sim.building_spotlight(light_id, None, &rules).unwrap();
     assert_eq!(before_turn.glow_flags, 4);
-    sim.detach_all_pointer_expired(foot_id, &rules, None, FrameEffects::empty());
+    sim.detach_all_pointer_expired(foot_id, &rules, &mut FrameEffects::empty());
     assert!(
         sim.building_spotlight(light_id, None, &rules).is_some(),
         "cloak-style detach retains the light's parent"
@@ -287,7 +291,7 @@ fn script68_converts_in_place_keeps_team_and_updates_native_counts_health_ammo_a
             .building_spotlight(light_id, None, &rules)
             .is_some()
     );
-    restored.techno_deactivate(foot_id, &rules, FrameEffects::empty());
+    restored.techno_deactivate(foot_id, &rules, &mut FrameEffects::empty());
     assert!(
         restored
             .entities()
@@ -303,7 +307,7 @@ fn script68_converts_in_place_keeps_team_and_updates_native_counts_health_ammo_a
             .building_spotlight(light_id, None, &rules)
             .is_none()
     );
-    restored.techno_reactivate(foot_id, &rules, FrameEffects::empty());
+    restored.techno_reactivate(foot_id, &rules, &mut FrameEffects::empty());
     let recreated = restored
         .entities()
         .get(foot_id)
@@ -313,7 +317,7 @@ fn script68_converts_in_place_keeps_team_and_updates_native_counts_health_ammo_a
         .light()
         .unwrap();
     assert_ne!(recreated, light_id);
-    restored.team_step_script(team, &rules, None, FrameEffects::empty());
+    restored.team_step_script(team, &rules, None, &mut FrameEffects::empty());
     assert_eq!(restored.team_script_vm.team(team).unwrap().cursor(), 1);
     assert_eq!(
         restored
@@ -328,7 +332,7 @@ fn script68_converts_in_place_keeps_team_and_updates_native_counts_health_ammo_a
             .resolve(restored.entities().get(members[0]).unwrap().type_ref()),
         "NEW"
     );
-    restored.techno_limbo_with_rules(foot_id, &rules, None);
+    restored.techno_limbo_with_rules(foot_id, &rules);
     assert!(
         restored
             .building_spotlight(recreated, None, &rules)
@@ -353,7 +357,7 @@ fn script68_converts_in_place_keeps_team_and_updates_native_counts_health_ammo_a
 #[test]
 fn a_stock_game_keeps_script68_inert_without_type_or_count_writes() {
     let (mut sim, rules, team, members) = scene();
-    sim.team_step_script(team, &rules, None, FrameEffects::empty());
+    sim.team_step_script(team, &rules, None, &mut FrameEffects::empty());
     assert_eq!(
         sim.interner
             .resolve(sim.entities().get(members[0]).unwrap().type_ref()),

@@ -1,6 +1,7 @@
 //! Test root selection through the retained VFS and actual Rules/AI readers.
 use super::*;
 use crate::map::source::test_support::TestDirectory;
+use crate::rules::rule_policy::RulePolicy;
 use crate::util::ini_roots::{IniProfile, IniRootConfig};
 
 fn ai(tag: &str) -> Vec<u8> {
@@ -13,35 +14,88 @@ fn ai(tag: &str) -> Vec<u8> {
     ).into_bytes()
 }
 
-fn write_mo(dir: &TestDirectory) {
+fn custom_config() -> IniRootConfig {
+    IniRootConfig {
+        profile: IniProfile::Custom,
+        rules: Some("rules-alt.ini".into()),
+        art: Some("art-alt.ini".into()),
+        ai: Some("ai-alt.ini".into()),
+        ..Default::default()
+    }
+}
+
+/// VERA: a network match of the original game that seats no computer reads
+/// the AI INI a retail install ships, whatever the game folder holds. One
+/// that seats a computer, a match off the network and a selected mod's read
+/// the folder's.
+#[test]
+fn a_network_match_without_computers_reads_the_original_ai_ini() {
+    use crate::assets::asset_manager::MediaArchiveMode;
+    use crate::assets::asset_manager::test_support::audio_test_install;
+    use crate::map::source::test_support::make_new_format_mix_bytes;
+    let dir = audio_test_install("match-ai-file");
+    let shipped = ai("ORIGINAL");
+    let local = make_new_format_mix_bytes(&[("aimd.ini", shipped.as_slice())]);
+    std::fs::remove_file(dir.path().join("localmd.mix")).unwrap();
+    std::fs::write(
+        dir.path().join("ra2md.mix"),
+        make_new_format_mix_bytes(&[("localmd.mix", &local)]),
+    )
+    .unwrap();
+    std::fs::write(dir.path().join("aimd.ini"), ai("FOLDER")).unwrap();
+    let assets = AssetManager::new(dir.path(), MediaArchiveMode::STOCK_DIGITAL).unwrap();
+    let team = |file| {
+        crate::rules::team_ai_ini::TeamAiIniRegistry::load_for_match(
+            &assets,
+            &IniFile::empty(),
+            RulePolicy::stock_multiplayer(),
+            file,
+        )
+        .unwrap()
+        .team_types[0]
+            .id
+            .clone()
+    };
+    assert_eq!(match_ai_file(&assets, true, false), AiFile::Original);
+    assert_eq!(team(AiFile::Original), "TEAMORIGINAL");
+    assert_eq!(match_ai_file(&assets, true, true), AiFile::GameFolder);
+    assert_eq!(match_ai_file(&assets, false, false), AiFile::GameFolder);
+    assert_eq!(team(AiFile::GameFolder), "TEAMFOLDER");
+
+    let mod_dir = dir.path().join("mods-under-test").join("Ai");
+    std::fs::create_dir_all(&mod_dir).unwrap();
+    let modded =
+        AssetManager::with_mod(dir.path(), Some(&mod_dir), MediaArchiveMode::STOCK_DIGITAL)
+            .unwrap();
+    assert_eq!(match_ai_file(&modded, true, false), AiFile::GameFolder);
+}
+
+fn write_custom(dir: &TestDirectory) {
     dir.write(
-        "rulesmo.ini",
+        "rules-alt.ini",
         b"[VehicleTypes]\n0=TEST\n[TEST]\nStrength=250\n[General]\nBuildSpeed=.7\n",
     );
-    dir.write("artmo.ini", b"[TEST]\nVoxel=yes\n");
-    dir.write("aimo.ini", &ai("MO"));
+    dir.write("art-alt.ini", b"[TEST]\nVoxel=yes\n");
+    dir.write("ai-alt.ini", &ai("ALT"));
 }
 
 #[test]
-fn ini_roots_mo_triplet_reaches_rules_art_and_standalone_ai_without_yr_mixing() {
+fn ini_roots_custom_triplet_reaches_rules_art_and_standalone_ai_without_yr_mixing() {
     let dir = TestDirectory::new("ini-roots-production");
-    write_mo(&dir);
+    write_custom(&dir);
     dir.write(
         "rulesmd.ini",
         b"[VehicleTypes]\n0=TEST\n[TEST]\nStrength=100\n",
     );
     dir.write("artmd.ini", b"[TEST]\nVoxel=no\n");
     dir.write("aimd.ini", &ai("YR"));
-    let config = IniRootConfig {
-        profile: IniProfile::Mo,
-        ..Default::default()
-    };
+    let config = custom_config();
     let assets = AssetManager::from_loose_root_for_test(dir.path())
         .with_ini_roots(&config)
         .unwrap();
     let sources = RetailRulesSources::select(&assets).unwrap();
-    assert_eq!(sources.rulesmd.source.logical_name, "rulesmo.ini");
-    assert_eq!(sources.artmd.source.logical_name, "artmo.ini");
+    assert_eq!(sources.rulesmd.source.logical_name, "rules-alt.ini");
+    assert_eq!(sources.artmd.source.logical_name, "art-alt.ini");
     let (_, _, mut owner) = sources
         .into_startup(Default::default(), Default::default())
         .unwrap()
@@ -58,12 +112,12 @@ fn ini_roots_mo_triplet_reaches_rules_art_and_standalone_ai_without_yr_mixing() 
     let registry = crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(
         &assets,
         &IniFile::empty(),
-        false,
+        RulePolicy::stock_campaign(),
     )
     .unwrap();
-    assert_eq!(registry.team_types[0].id, "TEAMMO");
-    assert_eq!(registry.scripts[0].id, "SCRIPTMO");
-    assert_eq!(registry.task_forces[0].id, "FORCEMO");
+    assert_eq!(registry.team_types[0].id, "TEAMALT");
+    assert_eq!(registry.scripts[0].id, "SCRIPTALT");
+    assert_eq!(registry.task_forces[0].id, "FORCEALT");
     let saved = crate::util::save_codec::serialize(&art).unwrap();
     let restored: IniFile = crate::util::save_codec::deserialize(&saved).unwrap();
     assert_eq!(restored.content_hash(), art.content_hash());
@@ -82,25 +136,10 @@ fn ini_roots_process_diagnostics_freeze_selected_names_and_hashes() {
             "aimd.ini",
         ),
         (
-            IniRootConfig {
-                profile: IniProfile::Mo,
-                ..Default::default()
-            },
-            "rulesmo.ini",
-            "artmo.ini",
-            "aimo.ini",
-        ),
-        (
-            IniRootConfig {
-                profile: IniProfile::Custom,
-                rules: Some("r.ini".into()),
-                art: Some("a.ini".into()),
-                ai: Some("i.ini".into()),
-                ..Default::default()
-            },
-            "r.ini",
-            "a.ini",
-            "i.ini",
+            custom_config(),
+            "rules-alt.ini",
+            "art-alt.ini",
+            "ai-alt.ini",
         ),
     ] {
         let dir = TestDirectory::new("ini-roots-diagnostic-names");
@@ -146,65 +185,74 @@ fn ini_roots_process_diagnostics_freeze_selected_names_and_hashes() {
 }
 
 #[test]
-fn ini_roots_auto_freezes_provider_selection_and_default_yr_stays_explicit() {
+fn ini_roots_custom_selection_stays_frozen_and_auto_requires_stock_sources() {
     let dir = TestDirectory::new("ini-roots-auto");
-    write_mo(&dir);
+    write_custom(&dir);
     let auto = IniRootConfig {
         profile: IniProfile::Auto,
         ..Default::default()
     };
     let assets = AssetManager::from_loose_root_for_test(dir.path())
-        .with_ini_roots(&auto)
+        .with_ini_roots(&custom_config())
         .unwrap();
-    assert_eq!(assets.ini_roots().profile(), IniProfile::Mo);
+    assert_eq!(assets.ini_roots().profile(), IniProfile::Custom);
     // A later mount changes availability, not the frozen selection.
     let mut assets = assets;
-    let payload = crate::map::source::test_support::make_new_format_mix_bytes(&[(
-        "rulesmd.ini",
-        b"[YR]\nValue=yes\n",
-    )]);
+    let stock_ai = ai("YR");
+    let payload = crate::map::source::test_support::make_new_format_mix_bytes(&[
+        ("rulesmd.ini", b"[YR]\nValue=yes\n"),
+        ("artmd.ini", b"[TEST]\nVoxel=no\n"),
+        ("aimd.ini", &stock_ai),
+    ]);
     dir.write("other.mix", &payload);
     assets.load_all_disk_mixes().unwrap();
     assert!(assets.contains("rulesmd.ini"));
-    assert_eq!(assets.ini_roots().profile(), IniProfile::Mo);
-    assert!(RetailRulesSources::select(&assets).is_ok());
+    assert_eq!(assets.ini_roots().profile(), IniProfile::Custom);
+    assert_eq!(
+        RetailRulesSources::select(&assets)
+            .unwrap()
+            .rulesmd
+            .source
+            .logical_name,
+        "rules-alt.ini"
+    );
     let default_assets = AssetManager::from_loose_root_for_test(dir.path());
     assert_eq!(default_assets.ini_roots().profile(), IniProfile::Yr);
     assert!(
         RetailRulesSources::select(&default_assets).is_err(),
-        "default YR must not silently select MO"
+        "default YR must not silently select custom roots"
     );
     assert!(
         AssetManager::from_loose_root_for_test(dir.path())
             .with_ini_roots(&auto)
-            .is_ok(),
+            .is_err(),
         "unmounted MIX is not part of this provider"
     );
-    assert!(
-        assets.with_ini_roots(&auto).is_err(),
-        "a fresh Auto decision must reject partial alternate roots"
+    let reselected = assets.with_ini_roots(&auto).unwrap();
+    assert_eq!(reselected.ini_roots().profile(), IniProfile::Yr);
+    assert_eq!(
+        RetailRulesSources::select(&reselected)
+            .unwrap()
+            .rulesmd
+            .source
+            .logical_name,
+        "rulesmd.ini"
     );
 }
 
 #[test]
 fn ini_roots_empty_loose_winner_does_not_fall_through_to_archive_or_yr() {
     let dir = TestDirectory::new("ini-roots-empty");
-    write_mo(&dir);
-    dir.write("aimo.ini", b"");
+    write_custom(&dir);
+    dir.write("ai-alt.ini", b"");
     dir.write("aimd.ini", &ai("YR"));
     let payload =
-        crate::map::source::test_support::make_new_format_mix_bytes(&[("aimo.ini", &ai("MO"))]);
+        crate::map::source::test_support::make_new_format_mix_bytes(&[("ai-alt.ini", &ai("ALT"))]);
     dir.write("other.mix", &payload);
     let mut assets = AssetManager::from_loose_root_for_test(dir.path());
     assets.load_all_disk_mixes().unwrap();
-    let error = assets
-        .with_ini_roots(&IniRootConfig {
-            profile: IniProfile::Mo,
-            ..Default::default()
-        })
-        .err()
-        .unwrap();
-    assert!(error.to_string().contains("aimo.ini"));
+    let error = assets.with_ini_roots(&custom_config()).err().unwrap();
+    assert!(error.to_string().contains("ai-alt.ini"));
 }
 
 #[test]
@@ -229,15 +277,15 @@ fn ini_roots_custom_sources_use_the_same_physical_selector() {
     let registry = crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(
         &assets,
         &IniFile::empty(),
-        false,
+        RulePolicy::stock_campaign(),
     )
     .unwrap();
     assert_eq!(registry.team_types[0].id, "TEAMCUSTOM");
 }
 
 #[test]
-#[ignore = "requires VERA20K_INI_ROOT_TEST_DIR; read-only local MOD source probe, not a game load"]
-fn ini_roots_real_install_reads_selected_mo_triplet_with_explicit_tooling_mix_scan() {
+#[ignore = "requires VERA20K_INI_ROOT_TEST_DIR and VERA20K_INI_ROOT_TEST_RULES/ART/AI; read-only local MOD source probe, not a game load"]
+fn ini_roots_real_install_reads_selected_custom_triplet_with_explicit_tooling_mix_scan() {
     let path = std::path::PathBuf::from(
         std::env::var_os("VERA20K_INI_ROOT_TEST_DIR").expect("set VERA20K_INI_ROOT_TEST_DIR"),
     );
@@ -245,7 +293,17 @@ fn ini_roots_real_install_reads_selected_mo_triplet_with_explicit_tooling_mix_sc
     assets.load_all_disk_mixes().unwrap();
     let assets = assets
         .with_ini_roots(&IniRootConfig {
-            profile: IniProfile::Mo,
+            profile: IniProfile::Custom,
+            rules: Some(
+                std::env::var("VERA20K_INI_ROOT_TEST_RULES")
+                    .expect("set VERA20K_INI_ROOT_TEST_RULES"),
+            ),
+            art: Some(
+                std::env::var("VERA20K_INI_ROOT_TEST_ART").expect("set VERA20K_INI_ROOT_TEST_ART"),
+            ),
+            ai: Some(
+                std::env::var("VERA20K_INI_ROOT_TEST_AI").expect("set VERA20K_INI_ROOT_TEST_AI"),
+            ),
             ..Default::default()
         })
         .unwrap();

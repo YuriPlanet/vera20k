@@ -31,14 +31,12 @@ mod wall_placement;
 // Re-export everything so external code can still use `production::X`.
 pub use self::factory::{
     CancelOutcome, Factory, FactoryHolder, FactoryRegistry, FactoryView, PRODUCTION_STEPS,
-    PendingObject, STEP_RATE_MAX, STEP_RATE_MIN, StepOutcome, TimeToBuildInputs,
+    PendingObject, ProductionState, STEP_RATE_MAX, STEP_RATE_MIN, StepOutcome, TimeToBuildInputs,
     category_for_object, time_to_build, type_base_build_time, type_build_time,
 };
 pub(crate) use self::factory_lifecycle::enqueue_selected;
-pub(crate) use self::factory_lifecycle::suspend_production;
-pub use self::factory_lifecycle::{
-    FactoryRestoreError, ready_building_entity_for_owner, validate_restored_factory_state,
-};
+pub(crate) use self::factory_lifecycle::{suspend_production, validate_restored_factory_state};
+pub use self::factory_lifecycle::{FactoryRestoreError, ready_building_entity_for_owner};
 pub use self::factory_lifecycle::{
     ProductionCancellation, cancel_production_for_owner, enqueue_by_type,
 };
@@ -59,8 +57,12 @@ pub use self::production_queue::{
     dispatch_production_changes_for_tests, publish_production_changes_for_tests,
 };
 pub(crate) use self::production_refinery::spawn_building_free_unit;
-pub use self::production_repair::{RepairControl, repair_step_cost, toggle_repair};
-pub use self::production_repair::{buildings_wanting_repair, can_repair_building};
+pub use self::production_repair::{
+    RepairControl, repair_remaining, repair_step_cost, toggle_repair,
+};
+pub use self::production_repair::{
+    buildings_wanting_repair, can_repair_building, player_repair_type_admits,
+};
 pub(crate) use self::production_repair::{engineer_repair, update_repair_and_power};
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) use self::production_sell::begin_selling;
@@ -89,10 +91,13 @@ pub use self::production_types::*;
 // Re-exports for external consumers (files outside production/ that previously
 // imported private submodules directly).
 pub(crate) use self::can_build::ares_build_limit_remaining;
-pub(crate) use self::can_build::owns_prerequisites;
+pub(crate) use self::can_build::{buildable_by_player, owns_prerequisites};
 pub use self::can_build::{CanBuild, can_build, primary_factory_category};
 pub(crate) use self::can_build::{RequirementStatus, requirements_met};
-pub use self::can_build::{can_select_factory_primary, find_factory, object_find_factory};
+pub use self::can_build::{
+    AresObjectFactory, ares_object_factory, can_select_factory_primary, find_factory,
+    object_find_factory,
+};
 pub(crate) use self::can_build::{initialize_factory_primary, toggle_factory_primary};
 pub(crate) use self::factory_ai::{
     AiPlacementTimer, detach_all as detach_building_factory, factory_ai,

@@ -182,6 +182,7 @@ fn a_game_with_ares_mix_resolves_base_mixes_and_ares_mix_ahead_of_langmd() {
                 selected_mod.then_some(mod_dir.path()),
                 MediaArchiveMode::STOCK_DIGITAL,
                 setting,
+                &ArchiveNames::default(),
             )
             .unwrap();
             assets.resolve_ref(name).unwrap().source_archive.to_owned()
@@ -204,4 +205,74 @@ fn a_game_with_ares_mix_resolves_base_mixes_and_ares_mix_ahead_of_langmd() {
             assert_eq!(source("probe.csf", true), archive);
         }
     }
+}
+
+#[test]
+fn configured_archive_names_mount_in_the_existing_slots() {
+    let directory = audio_test_install("configured-archives");
+    directory.write_mix("expandmd01.mix", "unrelated.bin", b"fixture");
+    let names = ArchiveNames {
+        expansion_prefix: "addon".into(),
+        map_prefix: "arenas".into(),
+        multiplayer: "network-assets.mix".into(),
+        theme: "music_assets.mix".into(),
+        movie_prefix: "videos".into(),
+    };
+    for name in [
+        "arenas03.mix",
+        "network-assets.mix",
+        "music_assets.mix",
+        "videos03.mix",
+    ] {
+        directory.write_mix(name, "unrelated.bin", b"fixture");
+    }
+    directory.write_mix("addon01.mix", "priority.bin", b"lower");
+    directory.write_mix("addon99.mix", "priority.bin", b"higher");
+    let assets = AssetManager::with_mod_and_ares(
+        directory.path(),
+        None,
+        MediaArchiveMode::STOCK_DIGITAL,
+        crate::util::ares_launch::AresSetting::Auto,
+        &names,
+    )
+    .unwrap();
+    for name in [
+        "addon99.mix",
+        "addon01.mix",
+        "arenas03.mix",
+        "network-assets.mix",
+        "music_assets.mix",
+        "videos03.mix",
+    ] {
+        assert!(assets.archive(name).is_some(), "{name}");
+    }
+    for name in ["expandmd01.mix", "mapsmd03.mix", "multimd.mix"] {
+        assert!(assets.archive(name).is_none(), "{name}");
+    }
+    assert_eq!(assets.get_ref("priority.bin"), Some(&b"higher"[..]));
+    assert_eq!(assets.archive_names(), &names);
+}
+
+#[test]
+fn missing_configured_media_keeps_the_native_base_fallbacks() {
+    let directory = audio_test_install("configured-media-fallback");
+    directory.write_mix("maps03.mix", "map.bin", b"base map");
+    directory.write_mix("movies03.mix", "movie.bin", b"base movie");
+    let names = ArchiveNames {
+        map_prefix: "arenas".into(),
+        movie_prefix: "videos".into(),
+        ..Default::default()
+    };
+    let assets = AssetManager::with_mod_and_ares(
+        directory.path(),
+        None,
+        MediaArchiveMode::STOCK_DIGITAL,
+        crate::util::ares_launch::AresSetting::Auto,
+        &names,
+    )
+    .unwrap();
+    assert_eq!(assets.get_ref("map.bin"), Some(&b"base map"[..]));
+    assert_eq!(assets.get_ref("movie.bin"), Some(&b"base movie"[..]));
+    assert!(assets.archive("mapsmd03.mix").is_none());
+    assert!(assets.archive("movmd03.mix").is_none());
 }

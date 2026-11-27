@@ -123,11 +123,7 @@ fn every_build_option_is_the_one_its_type_gets_alone() {
 fn ares_factory_under_emp_attempts_no_construction_option() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules, owner, yard) = draw_state_world();
-    sim.discover_techno(
-        yard,
-        owner,
-        crate::sim::world::UninitContext::new(&rules, None),
-    );
+    sim.discover_techno(yard, owner, crate::sim::world::UninitContext::new(&rules));
     assert!(!initial_construction_options(&sim, &rules).is_empty());
     sim.substrate
         .entities
@@ -171,14 +167,10 @@ fn house_pass_carries_stored_building_order_before_recalculation() {
         .spawn_object("BuildFactory", "H", 12, 12, 0, &rules)
         .unwrap();
     for id in [earlier, later] {
-        sim.discover_techno(
-            id,
-            owner,
-            crate::sim::world::UninitContext::new(&rules, None),
-        );
+        sim.discover_techno(id, owner, crate::sim::world::UninitContext::new(&rules));
     }
-    sim.change_owner_with_rules(earlier, other, &rules, None, Default::default());
-    sim.change_owner_with_rules(earlier, owner, &rules, None, Default::default());
+    sim.change_owner_with_rules(earlier, other, &rules, None, &mut Default::default());
+    sim.change_owner_with_rules(earlier, owner, &rules, None, &mut Default::default());
     let inf = sim.interner.get("Inf").unwrap();
     let build = sim.interner.get("Build").unwrap();
     assert_eq!(initial_construction_options(&sim, &rules), [inf, build]);
@@ -190,10 +182,9 @@ fn house_pass_carries_stored_building_order_before_recalculation() {
         .advance_app_frame(
             &[],
             &rules,
-            None,
             22,
             crate::sim::world::TickLane::Ordinary,
-            Default::default(),
+            &mut Default::default(),
         )
         .unwrap();
     let reached: Vec<_> = result
@@ -310,12 +301,13 @@ fn construction_options_match_original_gates_type_order_limit_and_warp_grant() {
                 }
             }
             if row["limbo"].as_bool() == Some(true) {
-                sim.techno_limbo_with_rules(factory, &rules, None);
+                sim.techno_limbo_with_rules(factory, &rules);
             }
             sim.substrate
                 .entities
                 .get_mut(factory)
                 .unwrap()
+                .seldom
                 .discovery
                 .set_discovered_by_current_house_for_test(
                     row["discovered"].as_bool().unwrap_or(true),
@@ -337,7 +329,7 @@ fn construction_options_match_original_gates_type_order_limit_and_warp_grant() {
                         .get_mut(lab)
                         .unwrap()
                         .assign_secret_lab_fallback((ObjectCategory::Infantry, id));
-                    sim.change_owner_with_rules(lab, owner, &rules, None, Default::default());
+                    sim.change_owner_with_rules(lab, owner, &rules, None, &mut Default::default());
                 }
                 let label = format!("{} / {}", row["name"], phase["name"]);
                 for call in phase["can_build"].as_array().unwrap() {

@@ -88,13 +88,13 @@ fn ares_common_launch_constructs_hidden_anim_and_sound_only_on_admitted_fire() {
     assert!(anim.hidden_for(Some(owner)) && anim.hidden_for(None));
     let launch_sounds = || {
         sim.sound_events.as_slice().iter().filter(|event| {
-        matches!(event, SimSoundEvent::VocAtCoord { sound_id, .. } if sound_id == "Launch")
+        matches!(event, SimSoundEvent::VocAtCoord { sound_id, .. } if sound_id.name_in(&rules) == "Launch")
     }).count()
     };
     assert_eq!(launch_sounds(), 1);
     assert!(sim.sound_events.as_slice().iter().any(|event| {
         matches!(event, SimSoundEvent::VocAtCoord { sound_id, coordinate, flags: 0 }
-            if sound_id == "Launch" && coordinate.x == ground[0]
+            if sound_id.name_in(&rules) == "Launch" && coordinate.x == ground[0]
                 && coordinate.y == ground[1] && coordinate.z == ground[2] - 9)
     }));
     let count = sim.anims().count();
@@ -105,7 +105,7 @@ fn ares_common_launch_constructs_hidden_anim_and_sound_only_on_admitted_fire() {
             .as_slice()
             .iter()
             .filter(|event| {
-                matches!(event, SimSoundEvent::VocAtCoord { sound_id, .. } if sound_id == "Launch")
+                matches!(event, SimSoundEvent::VocAtCoord { sound_id, .. } if sound_id.name_in(&rules) == "Launch")
             })
             .count(),
         1
@@ -360,7 +360,8 @@ fn fire(
     cell: (u16, u16),
 ) -> bool {
     let owner_name = sim.interner.resolve(owner).to_owned();
-    sim.apply_command_with_overlays(
+    (sim.apply_command_with_overlays(
+        crate::sim::command::CommandSender::Player(None),
         &owner_name,
         &Command::LaunchSuperWeapon {
             sw_type_id: sw_type,
@@ -369,8 +370,8 @@ fn fire(
         },
         rules,
         None,
-        FrameEffects::default(),
-    )
+        &mut FrameEffects::default(),
+    )).is_ok()
 }
 
 #[test]
@@ -619,7 +620,7 @@ fn ares_generic_warhead_ai_offensive_and_none_use_normal_firing() {
             &rules,
             owner,
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
         assert_eq!(
             sim.entities().get(target).unwrap().health.current(),
@@ -727,7 +728,7 @@ fn mono_player_and_ai_queries_keep_independent_requirements() {
         &rules,
         owner,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert_eq!(sim.entities().get(target).unwrap().health.current(), 125);
     assert!(!sim.super_weapons[&owner][&sw_type].is_ready);
@@ -738,7 +739,7 @@ fn mono_fire_into_shroud_allows_explored_fog_but_not_never_explored_cell() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules, owner, sw_type, target) =
         fixture("[Strike]\nSW.FireIntoShroud=no\n", "Russians");
-    sim.fog = crate::sim::vision::FogState::new(32, 32);
+    *sim.fog = crate::sim::vision::FogState::new(32, 32);
     assert!(!fire(&mut sim, &rules, owner, sw_type, (15, 15)));
     assert!(sim.super_weapons[&owner][&sw_type].is_ready);
     sim.fog.reveal_cells_for_owner(owner, [(15, 15)]);

@@ -44,7 +44,7 @@ fn factory_fixture(
             0,
             0,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect("construct actual held graph");
     let type_id = saved.interner().get(type_name).unwrap();
@@ -82,7 +82,6 @@ fn prepare_saved(
         .write_named("factory.bin", &snapshot_bytes(saved, &rules))
         .expect("write matching-header snapshot");
     state.runtime.resources_mut().rules = rules;
-    state.runtime.resources_mut().overlay_registry = OverlayTypeRegistry::empty();
     state.runtime.resources_mut().terrain_template = Some(load_fixture_terrain());
     let before = state.baseline();
     let result = PreparedLoad::from_repository(
@@ -105,6 +104,10 @@ fn prepare_saved(
 
 #[test]
 fn wallet_survives_prepared_load_and_active_cancellation() {
+    crate::test_fixture::on_game_stack(wallet_survives_prepared_load_and_active_cancellation_body);
+}
+
+fn wallet_survives_prepared_load_and_active_cancellation_body() {
     let rules = factory_rules();
     let mut saved = load_fixture_simulation(true);
     saved.intern_rule_type_ids(&rules);
@@ -148,14 +151,17 @@ fn wallet_survives_prepared_load_and_active_cancellation() {
         .set_buildings_for_test(1);
     // Execute the build start before saving: it constructs the held graph and
     // arms its timer. A queue kernel alone is intentionally not a running build.
-    assert!(crate::sim::production::enqueue_by_type(
-        &mut saved,
-        &rules,
-        "Americans",
-        "PARENT",
-        crate::sim::world::FrameEffects::default(),
-        false,
-    ));
+    assert!(
+        crate::sim::production::enqueue_by_type(
+            &mut saved,
+            &rules,
+            "Americans",
+            "PARENT",
+            &mut crate::sim::world::FrameEffects::default(),
+            false,
+        )
+        .is_ok()
+    );
     // Seed a partially paid held object, then exercise a different live credit
     // writer before saving. The old factory balance could be stale at this edge.
     for _ in 0..5 {
@@ -200,7 +206,7 @@ fn wallet_survives_prepared_load_and_active_cancellation() {
                 &[],
                 67,
                 crate::sim::world::TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .expect("restored active frame");
         reference
@@ -208,7 +214,7 @@ fn wallet_survives_prepared_load_and_active_cancellation() {
                 &[],
                 67,
                 crate::sim::world::TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .expect("uninterrupted active frame");
         assert_eq!(
@@ -240,11 +246,11 @@ fn wallet_survives_prepared_load_and_active_cancellation() {
         &runtime.resources.rules,
         "Americans",
         crate::sim::production::ProductionCancellation::Type {
-            type_id: "PARENT",
+            type_id: "PARENT".into(),
             naval: false
         },
         false,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     ));
     assert_eq!(
         crate::sim::production::credits_for_owner(&runtime.simulation, "Americans"),
@@ -255,7 +261,7 @@ fn wallet_survives_prepared_load_and_active_cancellation() {
             &[],
             67,
             crate::sim::world::TickLane::Ordinary,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect("restored frame");
     let economy = runtime.simulation.houses()[&owner].economy();
@@ -361,7 +367,7 @@ fn factory_restore_preserves_supported_held_states_and_constructor_graphs() {
                 if label != "unpublished-complete" {
                     assert!(
                         !crate::sim::production::dispatch_production_changes_for_tests(
-                            &mut saved, &rules, None
+                            &mut saved, &rules
                         )
                     );
                     assert!(
@@ -378,8 +384,7 @@ fn factory_restore_preserves_supported_held_states_and_constructor_graphs() {
             }
             "retained-playfield" => {
                 saved
-                    .entities_mut_for_test()
-                    .get_mut(parent)
+                    .entity_mut_for_test(parent)
                     .unwrap()
                     .set_in_playfield(true);
             }
@@ -396,7 +401,7 @@ fn factory_restore_preserves_supported_held_states_and_constructor_graphs() {
                         0,
                         0,
                         &rules,
-                        crate::sim::world::FrameEffects::default(),
+                        &mut crate::sim::world::FrameEffects::default(),
                     )
                     .unwrap();
             }
@@ -432,7 +437,7 @@ fn factory_restore_preserves_supported_held_states_and_constructor_graphs() {
                     entity.lifecycle,
                     entity.in_playfield(),
                     entity.techno_ctor_random_word(),
-                    entity.spawn_owner_id,
+                    entity.seldom.spawn_owner_id,
                     entity.spawn_manager.as_ref().map(|manager| {
                         manager
                             .slots()
@@ -440,7 +445,7 @@ fn factory_restore_preserves_supported_held_states_and_constructor_graphs() {
                             .map(|slot| slot.spawn())
                             .collect::<Vec<_>>()
                     }),
-                    entity.slave.owner(),
+                    entity.seldom.slave.owner(),
                     entity.slave_manager.clone(),
                 )
             })
@@ -481,13 +486,13 @@ fn factory_restore_preserves_supported_held_states_and_constructor_graphs() {
                     entity.lifecycle,
                     entity.in_playfield(),
                     entity.techno_ctor_random_word(),
-                    entity.spawn_owner_id,
+                    entity.seldom.spawn_owner_id,
                     entity.spawn_manager.as_ref().map(|manager| manager
                         .slots()
                         .iter()
                         .map(|slot| slot.spawn())
                         .collect::<Vec<_>>()),
-                    entity.slave.owner(),
+                    entity.seldom.slave.owner(),
                     entity.slave_manager.clone(),
                 ))
                 .collect::<Vec<_>>(),
@@ -582,13 +587,12 @@ fn factory_restore_rejects_inconsistent_roots() {
                     .entity_id = Some(parent);
             }
             "revealed-root" => saved
-                .entities_mut_for_test()
-                .get_mut(parent)
+                .entity_mut_for_test(parent)
                 .unwrap()
                 .lifecycle
                 .set_in_limbo_for_test(false),
             "marked-root" => {
-                let entity = saved.entities_mut_for_test().get_mut(parent).unwrap();
+                let entity = saved.entity_mut_for_test(parent).unwrap();
                 entity.lifecycle.set_cell_marked_for_test(true);
             }
             "logic-root" => saved.set_logic_order_for_test(vec![parent]),
@@ -641,27 +645,24 @@ fn factory_restore_rejects_inconsistent_roots() {
                 .entities_mut_for_test()
                 .change_owner(parent, InternedId::from_index(u32::MAX)),
             "wrong-type" => saved
-                .entities_mut_for_test()
-                .get_mut(parent)
+                .entity_mut_for_test(parent)
                 .unwrap()
                 .set_type_ref_for_test(other),
             "concrete-category" => {
                 saved
-                    .entities_mut_for_test()
-                    .get_mut(parent)
+                    .entity_mut_for_test(parent)
                     .unwrap()
                     .set_category_for_test(crate::map::entities::EntityCategory::Infantry);
             }
             "manager-owned-root" => saved
-                .entities_mut_for_test()
-                .get_mut(parent)
+                .entity_mut_for_test(parent)
                 .unwrap()
+                .seldom
                 .spawn_owner_id
                 .set_for_test(Some(parent)),
             "child-root-alias" => {
                 let manager = saved
-                    .entities_mut_for_test()
-                    .get_mut(parent)
+                    .entity_mut_for_test(parent)
                     .unwrap()
                     .slave_manager
                     .as_mut()
@@ -690,6 +691,15 @@ fn factory_restore_rejects_inconsistent_roots() {
                 source_registry: "FactoryRegistry",
                 ..
             })) if label == "missing-entity" => {}
+            // The snapshot's saved-id walk refuses an id past the
+            // save's name table before the factory checks run.
+            Err(PreparedLoadError::Restore(SnapshotRestoreError::UnknownSavedId(_)))
+                if matches!(label, "idle-owner-index" | "tail-type-index") => {}
+            // The held object's owner is checked by the entity walk.
+            Err(PreparedLoadError::Restore(SnapshotRestoreError::UnknownInternedId {
+                field: "owner",
+                ..
+            })) if label == "unknown-held-owner" => {}
             Err(error) => panic!("{label}: unexpected earlier failure {error}"),
             Ok(_) => panic!("{label}: inconsistent factory was admitted"),
         }

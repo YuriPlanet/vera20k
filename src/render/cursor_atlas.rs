@@ -259,6 +259,7 @@ use crate::assets::pal_file::Palette;
 use crate::assets::shp_file::ShpFile;
 use crate::render::batch::{BatchRenderer, BatchTexture};
 use crate::render::gpu::GpuContext;
+use crate::render::shell_ui_style_assets::{decode_ui_shp, ui_art_candidates};
 use image::RgbaImage;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -702,13 +703,21 @@ const CURSOR_DEFS: &[(CursorId, usize, usize, u64, CursorHotspot)] = &[
 /// cursor draws from.
 fn load_mouse_shape(asset_manager: &AssetManager) -> Option<(ShpFile, Palette)> {
     // Init_Game 0x0052BA60 converts MOUSEPAL.PAL like every palette load.
-    let palette = asset_manager
-        .get_ref("mousepal.pal")
-        .and_then(|data| Palette::from_bytes(data).ok())?;
+    let palette = ui_art_candidates(asset_manager, "mousepal.pal")
+        .find_map(|asset| Palette::from_bytes(asset.bytes).ok())?;
     // MouseClass::One_Time (0x005BDF30) loads MOUSE.SHA and nothing else;
     // MouseClass__FreeCursorShapes (0x005BE940) frees it at shutdown, which
     // dropping this owner covers.
-    let shp = if let Some(load) = asset_manager.load_file_from_mix("mouse.sha") {
+    let shp = if asset_manager.mod_dir().is_some() {
+        ui_art_candidates(asset_manager, "mouse.sha").find_map(|asset| {
+            let shp = decode_ui_shp(asset.bytes).ok()?;
+            if shp.frames.is_empty() {
+                return None;
+            }
+            log::debug!("Mouse cursor shape resolved from {}", asset.source);
+            Some(shp)
+        })?
+    } else if let Some(load) = asset_manager.load_file_from_mix("mouse.sha") {
         ShpFile::from_bytes(&load.bytes).ok()?
     } else {
         ShpFile::from_bytes(asset_manager.get_ref("mouse.sha")?).ok()?

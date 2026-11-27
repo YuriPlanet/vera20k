@@ -33,10 +33,11 @@ fn sinking_waterline_envelope_preserves_native_short_without_changing_simulation
         None,
         None,
         None,
-    );
+    )
+    .unwrap();
     let loaded = GameSnapshot::load_validated(&bytes, 1, 2, LOAD_FIXTURE_MAP_NAME).unwrap();
     assert_eq!(loaded.sinking_waterlines, waterlines);
-    assert_eq!(loaded.sim.state_hash(), hash);
+    assert_eq!(loaded.into_simulation_for_test().state_hash(), hash);
     assert_eq!(
         GameSnapshot::read_header(&bytes).unwrap().description,
         "waterline"
@@ -45,7 +46,7 @@ fn sinking_waterline_envelope_preserves_native_short_without_changing_simulation
     let headless = GameSnapshot::save_validated(&sim, 1, 2, "headless", 3);
     let loaded = GameSnapshot::load_validated(&headless, 1, 2, LOAD_FIXTURE_MAP_NAME).unwrap();
     assert!(loaded.sinking_waterlines.is_empty());
-    assert_eq!(loaded.sim.state_hash(), hash);
+    assert_eq!(loaded.into_simulation_for_test().state_hash(), hash);
 }
 
 #[test]
@@ -93,9 +94,9 @@ fn sinking_waterline_load_replaces_presentation_only_after_commit() {
         None,
         None,
         None,
-    );
+    )
+    .unwrap();
     let terrain = load_fixture_terrain();
-    let registry = OverlayTypeRegistry::empty();
     let mut presentation = SinkingWaterlines::default();
     presentation.restore([(id, 7), (999, 8)]);
     let outgoing = presentation.saved();
@@ -104,7 +105,7 @@ fn sinking_waterline_load_replaces_presentation_only_after_commit() {
     let outgoing_lights = lighting.anim_intensities().clone();
     let hash = sim.state_hash();
     let rng = sim.rng_state();
-    // Fail after deserialization and cache rebuild. No presentation can be
+    // Fail after snapshot decoding. No presentation can be
     // released from this unsuccessful candidate, and the running world stays.
     assert!(matches!(
         PreparedLoad::prepare_candidate(
@@ -112,10 +113,9 @@ fn sinking_waterline_load_replaces_presentation_only_after_commit() {
             Some(&sim),
             Some(LOAD_FIXTURE_MAP_HASH),
             Some(&rules),
-            Some(&terrain),
             None,
         ),
-        Err(PreparedLoadError::MissingOverlayRegistry)
+        Err(PreparedLoadError::MissingTerrainTemplate)
     ));
     assert_eq!(presentation.saved(), outgoing);
     assert_eq!(*lighting.anim_intensities(), outgoing_lights);
@@ -128,7 +128,6 @@ fn sinking_waterline_load_replaces_presentation_only_after_commit() {
         Some(LOAD_FIXTURE_MAP_HASH),
         Some(&rules),
         Some(&terrain),
-        Some(&registry),
     )
     .unwrap();
     assert_eq!(prepared.sinking_waterlines, [(id, waterline)]);

@@ -239,12 +239,11 @@ fn native_physical_hills_tyre_constructor_flight_and_host_retirement() {
                 "before visit{visit}"
             );
         }
-        sim.visit_voxel_anim(id, rules, crate::sim::world::FrameEffects::default())
+        sim.visit_voxel_anim(id, rules, &mut crate::sim::world::FrameEffects::default())
             .unwrap();
         sim.process_pending_delete_with(
             rules,
-            Some(rules.overlay_registry()),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
             1,
             sim.session().started(),
         );
@@ -326,7 +325,7 @@ fn retail_hills_harv_death_admits_a_cliff_tyre_and_retires_its_display() {
             102,
             63,
         ));
-    sim.interner = crate::sim::intern::test_interner();
+    *sim.interner = crate::sim::intern::test_interner();
     assert!(matches!(
         sim.reveal(miner),
         crate::sim::world::RevealOutcome::Revealed { .. }
@@ -339,7 +338,7 @@ fn retail_hills_harv_death_admits_a_cliff_tyre_and_retires_its_display() {
         miner,
         rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     let ids = sim.voxel_anims().ids();
     assert!(!ids.is_empty(), "stock HARV death must admit its TIREs");
@@ -355,12 +354,11 @@ fn retail_hills_harv_death_admits_a_cliff_tyre_and_retires_its_display() {
                 .voxel_anims()
                 .get(id)
                 .map(|piece| piece.bounce().clone());
-            sim.visit_voxel_anim(id, rules, crate::sim::world::FrameEffects::default())
+            sim.visit_voxel_anim(id, rules, &mut crate::sim::world::FrameEffects::default())
                 .unwrap();
             sim.process_pending_delete_with(
                 rules,
-                Some(rules.overlay_registry()),
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
                 1,
                 sim.session().started(),
             );

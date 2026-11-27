@@ -27,7 +27,8 @@ pub(crate) struct MatchState {
     /// a body that calls it an error rather than a desync.
     pub(crate) frame_stopped: bool,
     /// Physical byte transport and packet progress for an installed match.
-    /// Session owns the accepted participant roster and checksum history.
+    /// Session owns the accepted participant roster; `sim_runtime` (`SimHost`)
+    /// owns the checksum history.
     pub(crate) live_network: Option<crate::net::live_commands::LiveCommandSession>,
     /// LAN visit transport before the match, then discovery metadata while the
     /// same sockets are owned by live_network. Session owns admitted endpoints.
@@ -93,9 +94,11 @@ pub(crate) struct MatchState {
     /// The debug pause (`J` hotkey): the simulation is frozen
     /// without an in-scenario modal. Every modal transition ends it.
     pub(crate) debug_pause: bool,
-    /// Effective simulation ticks per second — controls game speed.
-    /// Default follows retail/YR skirmish stored game speed 1.
-    pub(crate) sim_speed_tps: u32,
+    /// The match's client extension modules (`ui.wasm`, RFC 0001 section
+    /// 10) and their nodes; `None` for a match without any, which then
+    /// pays nothing for them. Built when the world is installed, dropped
+    /// with it ([`crate::app::ui_modules`]).
+    pub(crate) ui_modules: Option<crate::app::ui_modules::UiModules>,
 }
 
 impl MatchState {
@@ -112,19 +115,20 @@ impl MatchState {
     /// menus: those menus never stop the score clock. Audio still combines
     /// every physical pause through presentation_paused.
     pub(crate) fn elapsed_clock_paused(&self, screen: &crate::ui::game_screen::GameScreen) -> bool {
-        elapsed_clock_pause_for_screen(
-            screen,
-            self.session_mode(),
-            self.match_presentation.in_game_menu.is_open(),
-            self.match_presentation
-                .radar_anim
-                .as_ref()
-                .is_some_and(|radar| radar.movie_pause()),
-            self.sim_runtime
-                .runtime()
-                .is_some_and(|runtime| runtime.simulation.session().scenario_paused()),
-            self.match_presentation.commander_feedback.result_waits(),
-        )
+        self.match_presentation.narrative_sync.pending()
+            || elapsed_clock_pause_for_screen(
+                screen,
+                self.session_mode(),
+                self.match_presentation.in_game_menu.is_open(),
+                self.match_presentation
+                    .radar_anim
+                    .as_ref()
+                    .is_some_and(|radar| radar.movie_pause()),
+                self.sim_runtime
+                    .runtime()
+                    .is_some_and(|runtime| runtime.simulation.session().scenario_paused()),
+                self.match_presentation.commander_feedback.result_waits(),
+            )
     }
 
     pub(crate) fn paused(&self) -> bool {
@@ -133,6 +137,7 @@ impl MatchState {
 
     pub(crate) fn local_paused(&self) -> bool {
         self.match_presentation.in_game_menu.is_open()
+            || self.match_presentation.narrative_sync.pending()
             || self.debug_pause
             || self
                 .match_presentation
@@ -175,6 +180,7 @@ impl MatchState {
             .is_some_and(|rt| rt.simulation.pending_network_failure().is_some())
             || self.debug_pause
             || self.multiplayer_paused()
+            || self.match_presentation.narrative_sync.pending()
             || super::scenario_pause::blocks_main_tick(
                 self.session_mode(),
                 self.sim_runtime
@@ -201,14 +207,80 @@ impl MatchState {
             .and_then(|runtime| scenario_local_owner(&runtime.simulation))
     }
 
-    /// Bring VERA's relation colours up to date with the world, as the local
-    /// house sees it.
+    /// Immutable view of the running simulation (F10): the read boundary
+    /// presentation cones consume. `None` outside a match. Sites that also
+    /// hold `&mut` match parts keep the `sim_runtime` field chain and call
+    /// `rt.view()` directly for split borrows.
+    pub(crate) fn sim_view(&self) -> Option<crate::sim::runtime::SimView<'_>> {
+        self.sim_runtime.runtime().map(|rt| rt.view())
+    }
+
+    /// Current terrain authority, replaced together with the running world on
+    /// map load and restore. No presentation height projection is retained.
+    pub(crate) fn resolved_terrain(
+        &self,
+    ) -> Option<&crate::map::resolved_terrain::ResolvedTerrainGrid> {
+        self.sim_runtime.runtime()?.simulation.resolved_terrain()
+    }
+
+    /// The immutable base resolved-terrain template for the active match
+    /// (static rendering + restore); never the live sim grid.
+    pub(crate) fn terrain_template(
+        &self,
+    ) -> Option<&crate::map::resolved_terrain::ResolvedTerrainGrid> {
+        self.sim_runtime
+            .runtime()
+            .and_then(|rt| rt.resources.terrain_template.as_ref())
+    }
+
+    /// Bring VERA's colour override up to date with the world, as the local
+    /// house sees it: the relation bands (Alt+A) or the team bands (Alt+T),
+    /// whichever toggle is on.
     pub(crate) fn refresh_relation_colors(&mut self) {
-        if let Some(runtime) = self.sim_runtime.runtime() {
-            let sim = &runtime.simulation;
-            self.match_presentation
-                .rebuild_relation_color_map(sim, scenario_local_owner(sim));
+        // Teams are the match's REAL launch teams and never change, while the
+        // alliance graph does; cache them the first time a team-colour view
+        // asks, and never rebuild per frame.
+        if self.match_presentation.team_colors && self.match_presentation.team_by_owner.is_none() {
+            let teams = self.launch_teams_by_owner();
+            self.match_presentation.team_by_owner = Some(teams);
         }
+        let Some(runtime) = self.sim_runtime.runtime() else {
+            return;
+        };
+        let sim = &runtime.simulation;
+        let map = self.match_presentation.colour_override(
+            sim,
+            scenario_local_owner(sim),
+            self.match_presentation.team_by_owner.as_ref(),
+            &runtime.resources.rules.enemy_team_palette,
+        );
+        self.match_presentation.set_colour_override(map);
+    }
+
+    /// Each launched House's real team, keyed by its owner name in upper case.
+    /// `normalized_launch_slots`' `owner_name` is exactly the name the sim
+    /// interner registered for that house. An observer's seat carries no team:
+    /// it has no side to colour.
+    fn launch_teams_by_owner(&self) -> std::collections::HashMap<String, Option<u8>> {
+        let launch = self
+            .session
+            .network_setup()
+            .or_else(|| self.startup.offline_launch());
+        let mut teams = std::collections::HashMap::new();
+        let Some(launch) = launch else {
+            return teams;
+        };
+        for slot in crate::sim::scenario_bootstrap::normalized_launch_slots(launch) {
+            let team = match slot.team() {
+                crate::skirmish_launch::LaunchTeam::Team(team) => Some(team),
+                crate::skirmish_launch::LaunchTeam::None => None,
+            };
+            teams.insert(
+                slot.owner_name.to_ascii_uppercase(),
+                if slot.observer { None } else { team },
+            );
+        }
+        teams
     }
 }
 
@@ -405,7 +477,6 @@ mod tests {
 /// Native current House A83D4C is saved67F802, loaded67F9F3 and swizzled67FA0E.
 /// Do not retain a separate app owner across Simulation replacement or infer it
 /// from selection/human flags. Save validation owns reference validity.
-/// Evidence: docs/research/PHASE3_CURRENT_HOUSE_IDENTITY_GHIDRA_REPORT.md.
 pub(crate) fn scenario_local_owner(simulation: &crate::sim::world::Simulation) -> Option<&str> {
     simulation
         .session()

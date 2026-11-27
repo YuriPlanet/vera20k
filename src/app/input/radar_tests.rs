@@ -31,6 +31,7 @@ fn query<'a>(sim: &'a Simulation, rules: &'a RuleSet, selected: &'a [u64]) -> Ac
         selected,
         modifier: OrderModifier::Normal,
         force_move_key: false,
+        force_fire_key: false,
         order_mode: OrderMode::Move,
         planning: false,
         mouse_over: false,
@@ -48,6 +49,7 @@ fn planning<'a>(sim: &'a Simulation, rules: &'a RuleSet, selected: &'a [u64]) ->
 fn ctrl<'a>(sim: &'a Simulation, rules: &'a RuleSet, selected: &'a [u64]) -> ActionQuery<'a> {
     ActionQuery {
         modifier: OrderModifier::ForceFire,
+        force_fire_key: true,
         ..query(sim, rules, selected)
     }
 }
@@ -111,7 +113,7 @@ fn the_radar_asks_can_enter_cell() {
         ..query(&sim, &rules, &selected)
     };
     assert_eq!(
-        tactical.selection_action(RIVER, None),
+        tactical.selection_action(RIVER, None).0,
         Some(CursorFeedbackKind::Move)
     );
 }
@@ -206,11 +208,12 @@ fn a_forced_ivan_over_a_bombed_dot_has_no_radar_action() {
     let selected = [ivan];
     let forced = ActionQuery {
         modifier: OrderModifier::ForceFire,
+        force_fire_key: true,
         ..query(&sim, &rules, &selected)
     };
     let (cell, object) = dot(&sim, tank);
     assert_eq!(
-        forced.selection_action(cell, object),
+        forced.selection_action(cell, object).0,
         Some(CursorFeedbackKind::NoIvanBomb)
     );
     assert_eq!(action(&forced, None, cell, object), None);
@@ -236,8 +239,7 @@ fn ctrl_over_shroud_keeps_a_buildings_attack() {
     let pillbox = spawn(&mut sim, &rules, "GAPILL", (12, 5));
     let tank = spawn(&mut sim, &rules, "MTNK", (4, 6));
     let deactivated = spawn(&mut sim, &rules, "MTNK", (12, 6));
-    sim.entities_mut_for_test()
-        .get_mut(deactivated)
+    sim.entity_mut_for_test(deactivated)
         .unwrap()
         .deactivated
         .set_for_test(true);
@@ -260,7 +262,7 @@ fn ctrl_over_shroud_keeps_a_buildings_attack() {
         mouse_over: true,
         ..ctrl(&sim, &rules, &pillboxes)
     };
-    let kind = tactical.selection_action(GROUND, None).unwrap();
+    let kind = tactical.selection_action(GROUND, None).0.unwrap();
     assert_eq!(
         crate::app::input::cursor::shrouded_cell_feedback(kind, tactical.lead_moves_to_shroud()),
         CursorFeedbackKind::Move

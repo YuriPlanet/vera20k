@@ -1,5 +1,6 @@
-//! VeraX AutoLoad: Ctrl+D loads the selected infantry and vehicles into the
-//! selected transports that are nearby and have room.
+//! AutoLoad transport planning, used by the Ctrl+D smart command. Loads the
+//! selected infantry and vehicles into the selected transports that are nearby
+//! and have room.
 //!
 //! The hotkey emits only ordinary Enter missions — the same command a click on
 //! a carrier produces (Foot `ClickedAction` `0x004D74E0` ->
@@ -14,9 +15,6 @@
 //! Occupy / Absorb chains, not EnterTransport, so only vehicle carriers are
 //! collected.
 
-use crate::app::AppState;
-use crate::app::input::commands::{preferred_local_owner_name, schedule_command};
-use crate::app::input::dispatch::selected_stable_ids_in_order;
 use crate::map::entities::EntityCategory;
 use crate::rules::object_type::ObjectType;
 use crate::rules::ruleset::RuleSet;
@@ -235,6 +233,7 @@ fn collect_facts(
     rules: &RuleSet,
     selected: &[u64],
 ) -> (Vec<PassengerFact>, Vec<TransportFact>) {
+    let control = sim.control_projection();
     let mut passengers = Vec::new();
     let mut transports = Vec::new();
     for &id in selected {
@@ -244,7 +243,7 @@ fn collect_facts(
         if !entity.is_alive() || entity.death.is_dying() {
             continue;
         }
-        if entity.passenger_role.is_inside_transport() {
+        if entity.passenger_role().is_inside_transport() {
             continue;
         }
         let Some(object) = sim.interner().object_type(entity.type_ref(), rules) else {
@@ -261,9 +260,9 @@ fn collect_facts(
         let pos = object_center_xy(entity);
         // ClickedAction's Enter arm (0x004D76C6) requires vt+A0. A loaded
         // carrier also keeps its transport role for this AutoLoad plan.
-        if sim.techno_player_controllable(id, rules)
+        if sim.local_techno_controllable_with(&control, id, rules)
             && entity
-                .passenger_role
+                .passenger_role()
                 .cargo()
                 .is_none_or(PassengerCargo::is_empty)
         {
@@ -293,7 +292,7 @@ fn transport_fact(
         return None;
     }
     let cargo = entity
-        .passenger_role
+        .passenger_role()
         .cargo()
         .cloned()
         .unwrap_or_else(|| PassengerCargo::new(object.passengers as u32, object.size_limit));
@@ -325,35 +324,6 @@ pub(crate) fn autoload_orders(sim: &Simulation, rules: &RuleSet, selected: &[u64
     .collect()
 }
 
-/// The Ctrl+D press: plan from the live selection and queue the orders.
-pub(crate) fn hotkey_pressed(state: &mut AppState) {
-    let Some(owner) = preferred_local_owner_name(state) else {
-        return;
-    };
-    let orders = {
-        let Some(runtime) = state.match_state.sim_runtime.runtime() else {
-            return;
-        };
-        let sim = &runtime.simulation;
-        let rules = &runtime.resources.rules;
-        let selected = selected_stable_ids_in_order(
-            Some(sim),
-            Some(rules),
-            &state.match_state.input.selection_order,
-            state.match_state.input.selection_order_pending,
-        );
-        autoload_orders(sim, rules, &selected)
-    };
-    if orders.is_empty() {
-        return;
-    }
-    let count = orders.len();
-    for order in orders {
-        schedule_command(state, &owner, order);
-    }
-    log::info!("VeraX AutoLoad: issued {count} enter orders");
-}
-
-#[cfg(all(test, tests_app_input_a_c, feature = "verax"))]
+#[cfg(all(test, tests_app_input_a_c))]
 #[path = "autoload_tests.rs"]
 mod tests;

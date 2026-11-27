@@ -45,7 +45,7 @@ fn world(rules: &RuleSet) -> Simulation {
         construct_house_supers(&mut sim, rules, owner, false);
     }
     sim.session.game_options_mut_for_test().super_weapons = true;
-    sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(32, 32, |x, y| {
+    *sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(32, 32, |x, y| {
         super::cell_receiver_tests::test_terrain_cell(x, y)
     }));
     sim.set_playfield_bounds_for_test(Some(super::cell_receiver_tests::test_playfield_bounds()));
@@ -68,10 +68,10 @@ fn active(sim: &Simulation, owner: &str, name: &str) -> bool {
 
 fn recheck(sim: &mut Simulation, rules: &RuleSet, owner: &str) {
     let owner = sim.interner.get(owner).unwrap();
-    sim.recheck_house_tech_tree(owner, rules);
+    sim.recheck_house_tech_tree(owner, rules, &mut Default::default());
     // Revocation itself requests a follow-up tail. Settle it so each next
     // lifecycle change must publish its own invalidation, not inherit one.
-    sim.recheck_house_tech_tree(owner, rules);
+    sim.recheck_house_tech_tree(owner, rules, &mut Default::default());
     assert!(!sim.houses.get_mut(&owner).unwrap().take_tech_recheck());
 }
 
@@ -152,7 +152,7 @@ fn black_widow_upgrade_switches_grants_at_the_existing_dirty_house_tail() {
         id,
         (15, 15),
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
         false
     ));
     sim.sound_events.clear_for_test();
@@ -182,14 +182,14 @@ fn capture_moves_last_negative_and_grants_between_both_houses() {
     recheck(&mut sim, &rules, OWNER);
     recheck(&mut sim, &rules, OTHER);
     let other = sim.interner.get(OTHER).unwrap();
-    sim.change_owner_with_rules(first, other, &rules, None, FrameEffects::default());
+    sim.change_owner_with_rules(first, other, &rules, None, &mut FrameEffects::default());
     recheck(&mut sim, &rules, OWNER);
     recheck(&mut sim, &rules, OTHER);
     assert!(!active(&sim, OWNER, NORMAL), "one negative still remains");
     assert!(active(&sim, OWNER, ALPHA));
     assert!(!active(&sim, OTHER, NORMAL));
     assert!(active(&sim, OTHER, ALPHA));
-    sim.change_owner_with_rules(second, other, &rules, None, FrameEffects::default());
+    sim.change_owner_with_rules(second, other, &rules, None, &mut FrameEffects::default());
     recheck(&mut sim, &rules, OWNER);
     recheck(&mut sim, &rules, OTHER);
     assert!(active(&sim, OWNER, NORMAL));
@@ -213,7 +213,7 @@ fn limbo_buildings_do_not_satisfy_auxiliary_or_block_as_negative() {
     assert!(allowed(&sim, &rules, OWNER, NORMAL));
     recheck(&mut sim, &rules, OWNER);
     assert!(active(&sim, OWNER, NORMAL));
-    sim.techno_limbo_with_rules(auxiliary, &rules, None);
+    sim.techno_limbo_with_rules(auxiliary, &rules);
     assert!(!allowed(&sim, &rules, OWNER, NORMAL));
     recheck(&mut sim, &rules, OWNER);
     assert!(!active(&sim, OWNER, NORMAL));
@@ -233,7 +233,14 @@ fn command_refusal_preserves_charge_state_and_rng_then_same_command_launches() {
     };
     sim.sound_events.clear_for_test();
     let before = sim.state_hash();
-    sim.apply_command_with_overlays(OWNER, &command, &rules, None, FrameEffects::default());
+    let _ = sim.apply_command_with_overlays(
+        crate::sim::command::CommandSender::Player(None),
+        OWNER,
+        &command,
+        &rules,
+        None,
+        &mut FrameEffects::default(),
+    );
     assert_eq!(
         sim.state_hash(),
         before,
@@ -245,7 +252,14 @@ fn command_refusal_preserves_charge_state_and_rng_then_same_command_launches() {
     );
     spawn(&mut sim, &rules, "GASCEA", OWNER, 8);
     sim.sound_events.clear_for_test();
-    sim.apply_command_with_overlays(OWNER, &command, &rules, None, FrameEffects::default());
+    let _ = sim.apply_command_with_overlays(
+        crate::sim::command::CommandSender::Player(None),
+        OWNER,
+        &command,
+        &rules,
+        None,
+        &mut FrameEffects::default(),
+    );
     assert!(!sim.super_weapons[&owner][&id].is_ready);
     assert!(
         sim.sound_events
@@ -268,11 +282,11 @@ fn unavailable_ai_does_not_enter_target_search_or_draw_rng() {
         .get_mut(&owner)
         .unwrap()
         .set_player_control_for_test(false);
-    assert!(!sim.houses[&owner].is_controlled_by_human(sim.session.game_mode_nonzero()));
+    assert!(!sim.houses[&owner].is_controlled_by_human(sim.session.rule_policy()));
     ready(&mut sim, NORMAL);
     let before = sim.state_hash();
     ai_fire::AI_FIRE_LOG.set(Some(Vec::new()));
-    ai_fire::try_fire(&mut sim, &rules, owner, None, FrameEffects::default());
+    ai_fire::try_fire(&mut sim, &rules, owner, None, &mut FrameEffects::default());
     let observed = ai_fire::AI_FIRE_LOG.take().unwrap();
     assert_eq!(observed, vec![ai_fire::AiFireEvent::TryFire]);
     assert_eq!(sim.state_hash(), before);
@@ -299,7 +313,7 @@ fn snapshot_retains_counts_and_pending_recheck_without_new_availability_state() 
         .sim;
     // Static map authority is supplied by resources, not this synthetic
     // header-only snapshot. Reattach it before rebuilding derived indexes.
-    restored.resolved_terrain = sim.resolved_terrain.clone();
+    *restored.resolved_terrain = (*sim.resolved_terrain).clone();
     restored.restore_after_snapshot_load().unwrap();
     // This header-only fixture does not restore a full map's navigation
     // resources. Compare the promised persistent owners, not a full-world
@@ -478,7 +492,7 @@ fn generic_warhead_uses_the_same_gate_before_damage_and_charge() {
         id,
         (15, 10),
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
         false
     ));
     assert_eq!(sim.state_hash(), before);
@@ -492,7 +506,7 @@ fn generic_warhead_uses_the_same_gate_before_damage_and_charge() {
         id,
         (15, 10),
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
         false
     ));
     assert_eq!(sim.entities().get(target).unwrap().health.current(), 925);
@@ -507,7 +521,7 @@ fn generic_warhead_uses_the_same_gate_before_damage_and_charge() {
         id,
         (15, 10),
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
         false
     ));
     assert_eq!(sim.state_hash(), before);

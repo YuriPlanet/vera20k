@@ -11,6 +11,18 @@
 //! ## Dependency rules
 //! - Part of map/ — depends on assets/ (MIX archives), rules/ (INI parser), util/ (base64, lzo).
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable
+    )
+)]
+
+use std::borrow::Cow;
 use std::collections::HashMap;
 #[cfg(any(test, feature = "test-support"))]
 use std::path::Path;
@@ -506,14 +518,14 @@ pub fn load_from_path(path: &Path) -> Result<MapFile, MapError> {
 /// Callers recording source identity can hash this same buffer before passing
 /// ownership here. Wrapped maps retain the existing inner-entry selection.
 pub fn load_from_bytes(bytes: Vec<u8>) -> Result<MapFile, MapError> {
-    MapFile::from_ini(ini_from_file_bytes(bytes)?)
+    MapFile::from_ini(ini_from_file_bytes(bytes.into())?)
 }
 
 /// Select and parse the map INI without decoding terrain or preview packs.
 /// Menu metadata and full loading share this raw/wrapped-file decision.
-pub(crate) fn ini_from_file_bytes(bytes: Vec<u8>) -> Result<IniFile, MapError> {
+pub(crate) fn ini_from_file_bytes(bytes: Cow<'_, [u8]>) -> Result<IniFile, MapError> {
     if is_mix_header(&bytes) {
-        let archive: MixArchive = MixArchive::from_bytes(bytes)?;
+        let archive = MixArchive::from_bytes(bytes.into_owned())?;
         pick_map_ini(&archive, false)
     } else {
         Ok(IniFile::from_bytes(&bytes)?)
@@ -621,18 +633,19 @@ fn pick_map_ini(archive: &MixArchive, transferred: bool) -> Result<IniFile, MapE
             validate_transfer_text(data)?;
         }
         match IniFile::from_bytes(data) {
-            Ok(ini) if ini.section("Map").is_some() => {
-                if !transferred {
-                    return Ok(ini);
+            Ok(ini) => match ini.section("Map").map(|map| map.name == "Map") {
+                Some(_) if !transferred => return Ok(ini),
+                Some(exact_name) => {
+                    if selected.is_some() || !exact_name {
+                        return Err(MapError::InvalidTransferContent("Ambiguous MIX map member"));
+                    }
+                    selected = Some(ini);
                 }
-                if selected.is_some() || ini.section("Map").unwrap().name != "Map" {
-                    return Err(MapError::InvalidTransferContent("Ambiguous MIX map member"));
-                }
-                selected = Some(ini);
-            }
-            Ok(ini) if transferred => validate_map_description(&ini)?,
+                None if transferred => validate_map_description(&ini)?,
+                None => {}
+            },
             Err(error) if transferred => return Err(error.into()),
-            _ => {}
+            Err(_) => {}
         }
     }
     selected.ok_or(MapError::MissingIsoMapPack)
@@ -644,13 +657,10 @@ pub fn parse_header(ini: &IniFile) -> Result<MapHeader, MapError> {
         .section("Map")
         .ok_or(MapError::MissingSection { name: "Map".into() })?;
 
-    // `Read_Map_Section_And_IsoMapPacks @ 0x004ACE70`: the theater name read
-    // (`0x00475870`, 0x80 bytes), `Fill` as a 0x20-byte ReadString, ReadInt
-    // `Level`, and ReadRect for both rectangles.
-    let theater: String = map_section
-        .read_name("Theater", 0x80)
-        .unwrap_or("TEMPERATE")
-        .to_uppercase();
+    // `Read_Map_Section_And_IsoMapPacks @ 0x004ACE70`: the theater read
+    // ([`crate::rules::object_image::read_map_theater`]), `Fill` as a
+    // 0x20-byte ReadString, ReadInt `Level`, and ReadRect for both rectangles.
+    let theater = crate::rules::object_image::read_map_theater(ini);
     let fill = map_section.read_string("Fill", "Clear", 0x20);
     let level = map_section.read_int("Level", 0);
 
@@ -994,7 +1004,7 @@ mod tests {
         let cache = root.path().join("NetworkMaps");
         let dimensions =
             format!("[Map]\nSize=0,0,513,512\n[IsoMapPack5]\n1={ONE_CELL_ISO_MAP_PACK}\n");
-        let error = crate::map::source::install_received_map(
+        let error = crate::map::source::test_support::install_received_map(
             &cache,
             dimensions.as_bytes().to_vec(),
             &crate::util::sha256::sha256_hex(dimensions.as_bytes()),
@@ -1015,7 +1025,7 @@ mod tests {
         for (index, line) in packed.as_bytes().chunks(72).enumerate() {
             bomb.push_str(&format!("{index}={}\n", std::str::from_utf8(line).unwrap()));
         }
-        let error = crate::map::source::install_received_map(
+        let error = crate::map::source::test_support::install_received_map(
             &cache,
             bomb.as_bytes().to_vec(),
             &crate::util::sha256::sha256_hex(bomb.as_bytes()),

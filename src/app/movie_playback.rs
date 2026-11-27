@@ -6,7 +6,7 @@ use crate::app::movie_subtitles::{Subtitle, SubtitleTrack};
 use crate::assets::bink_audio::BinkAudioDecoder;
 use crate::assets::bink_file::BinkFile;
 use crate::audio::movie_stream::MovieAudioStream;
-use crate::render::bink_movie::{BinkMovieStep, BinkMovieSurface};
+use crate::render::bink_movie::{BinkMovieStep, BinkMovieSurface, MovieSoundTiming};
 use crate::util::time::Instant;
 use anyhow::Result;
 
@@ -18,18 +18,53 @@ struct Soundtrack {
 }
 
 impl Soundtrack {
-    fn open(file: &BinkFile, mixer: &rodio::mixer::Mixer, volume: f32) -> Option<Self> {
+    fn open(
+        file: &BinkFile,
+        mixer: &rodio::mixer::Mixer,
+        volume: f32,
+        active: bool,
+    ) -> Option<Self> {
         let track = file.header.audio_tracks.first().copied()?;
         let decoder = BinkAudioDecoder::new(track)
             .map_err(|err| log::warn!("Movie soundtrack unavailable: {err}"))
             .ok()?;
-        let stream =
-            MovieAudioStream::connect(mixer, decoder.sample_rate(), decoder.channels(), volume)?;
+        let stream = MovieAudioStream::connect_with_activity(
+            mixer,
+            decoder.sample_rate(),
+            decoder.channels(),
+            volume,
+            active,
+        )?;
         Some(Self {
             decoder,
             stream,
             next_frame: 0,
         })
+    }
+
+    /// Bink's sound service (0x10008C1B) reanchors the video timer after a
+    /// device underrun. Use the PCM position delivered to the rodio mixer;
+    /// its synthetic silence does not advance the picture.
+    fn timing(&self, file: &BinkFile) -> MovieSoundTiming {
+        let Some(position) = self.stream.take_underrun_position() else {
+            return MovieSoundTiming::Playing;
+        };
+        // 0x10008A23..4A and 0x10008C37 leave the tail to finish normally.
+        let tail_frames =
+            (3 * u64::from(file.header.fps_num) / (4 * u64::from(file.header.fps_den))) as usize;
+        if self.next_frame > file.frame_index.len().saturating_sub(tail_frames) {
+            return MovieSoundTiming::Playing;
+        }
+        // A track can end before its picture. Only recover if another packet
+        // will refill it; after the last packet, lack of samples is expected.
+        if (self.next_frame..file.frame_index.len()).any(|i| {
+            file.audio_packets(i)
+                .is_ok_and(|packets| packets.iter().any(|packet| packet.track_index == 0))
+        }) {
+            MovieSoundTiming::Underrun(position)
+        } else {
+            MovieSoundTiming::Playing
+        }
     }
 
     /// Decode and queue every audio packet of frames before `until`.
@@ -62,7 +97,8 @@ impl Soundtrack {
 pub(crate) struct MoviePlayback {
     surface: BinkMovieSurface,
     soundtrack: Option<Soundtrack>,
-    last_step: Instant,
+    /// None until the first serviced frame after a resume.
+    last_step: Option<Instant>,
     ended: bool,
     /// The VoiceVolume last given to the soundtrack.
     voice_volume: f32,
@@ -81,9 +117,10 @@ impl MoviePlayback {
         mixer: Option<&rodio::mixer::Mixer>,
         voice_volume: f32,
         mut subtitles: Option<SubtitleTrack>,
+        active: bool,
     ) -> Self {
         let mut soundtrack =
-            mixer.and_then(|mixer| Soundtrack::open(surface.file(), mixer, voice_volume));
+            mixer.and_then(|mixer| Soundtrack::open(surface.file(), mixer, voice_volume, active));
         // Frame 0 is decoded on construction; queue its audio (the preload).
         if let Some(soundtrack) = soundtrack.as_mut() {
             soundtrack.feed(surface.file(), surface.next_frame());
@@ -94,31 +131,23 @@ impl MoviePlayback {
         Self {
             surface,
             soundtrack,
-            last_step: Instant::now(),
+            last_step: active.then(Instant::now),
             ended: false,
             voice_volume,
-            paused: false,
+            paused: !active,
             capture_hold: false,
             subtitles,
         }
     }
 
-    /// Decode due frames, running `0x006C9C60` after each one as
-    /// `0x00432E40` does after BinkDoFrame.
-    fn step_surface(
-        &mut self,
-        gpu: &crate::render::gpu::GpuContext,
-        elapsed_secs: f64,
-    ) -> Result<BinkMovieStep> {
-        let first = self.surface.next_frame();
-        let step = self.surface.step(gpu, elapsed_secs)?;
+    /// Run 0x006C9C60 for each frame decoded since `first`, as 0x00432E40 does.
+    fn advance_subtitles(&mut self, first: usize) {
         if let Some(subtitles) = self.subtitles.as_mut() {
             // Bink's one-based FrameNum of each frame just decoded.
             for frame in first + 1..=self.surface.next_frame() {
                 subtitles.advance(frame as u32);
             }
         }
-        Ok(step)
     }
 
     /// The subtitle on screen, if any.
@@ -134,14 +163,10 @@ impl MoviePlayback {
             return;
         }
         self.paused = !active;
-        if let Some(soundtrack) = self.soundtrack.as_ref() {
-            if active {
-                soundtrack.stream.resume();
-            } else {
-                soundtrack.stream.pause();
-            }
+        self.last_step = None;
+        if !active && let Some(soundtrack) = self.soundtrack.as_ref() {
+            soundtrack.stream.pause();
         }
-        self.last_step = Instant::now();
     }
 
     /// `0x00432E40` re-reads VoiceVolume `[0x00A8EB9C]` every frame and calls
@@ -169,9 +194,25 @@ impl MoviePlayback {
             return Ok(false);
         }
         let now = Instant::now();
-        let elapsed = now.duration_since(self.last_step).as_secs_f64();
-        self.last_step = now;
-        let step = self.step_surface(gpu, elapsed)?;
+        let elapsed = if let Some(last) = self.last_step.replace(now) {
+            now.duration_since(last).as_secs_f64()
+        } else {
+            // BinkPause(0) 0x1000A5DA clears the DLL timer origin. BinkWait
+            // initializes it on its next call (0x10009B90). Keep the audio
+            // paused through any wait for a drawable surface, too.
+            self.surface.resume_clock();
+            if let Some(soundtrack) = self.soundtrack.as_ref() {
+                soundtrack.stream.resume();
+            }
+            0.0
+        };
+        let first = self.surface.next_frame();
+        let sound = self
+            .soundtrack
+            .as_ref()
+            .map_or(MovieSoundTiming::Silent, |s| s.timing(self.surface.file()));
+        let step = self.surface.step_with_sound(gpu, elapsed, sound)?;
+        self.advance_subtitles(first);
         if let Some(soundtrack) = self.soundtrack.as_mut() {
             soundtrack.feed(self.surface.file(), self.surface.next_frame());
         }
@@ -193,12 +234,11 @@ impl MoviePlayback {
         gpu: &crate::render::gpu::GpuContext,
         target: usize,
     ) -> Result<()> {
-        let frame_time = 1.0 / self.surface.fps().max(1.0);
-        while self.surface.next_frame() <= target {
-            if matches!(self.step_surface(gpu, frame_time)?, BinkMovieStep::Ended) {
-                break;
-            }
-        }
+        let first = self.surface.next_frame();
+        let end = target.saturating_add(1).min(self.surface.frame_count());
+        self.surface
+            .advance_frames(gpu, end.saturating_sub(first))?;
+        self.advance_subtitles(first);
         self.capture_hold = true;
         Ok(())
     }
@@ -237,7 +277,7 @@ mod tests {
         let file = BinkFile::parse(bytes.to_vec().into()).unwrap();
         let music = crate::audio::music::MusicPlayer::new()
             .expect("configure an output device before running this control");
-        let mut soundtrack = Soundtrack::open(&file, music.mixer(), 1.0).unwrap();
+        let mut soundtrack = Soundtrack::open(&file, music.mixer(), 1.0, true).unwrap();
         soundtrack.stream.pause();
         soundtrack.feed(&file, 3);
         soundtrack.stream.resume();
@@ -255,7 +295,7 @@ mod tests {
             NonZero::new(channels).unwrap(),
             NonZero::new(u32::from(track.sample_rate)).unwrap(),
         );
-        let mut soundtrack = Soundtrack::open(file, &mixer, volume).unwrap();
+        let mut soundtrack = Soundtrack::open(file, &mixer, volume, true).unwrap();
         assert_eq!(
             soundtrack.stream.sample_rate(),
             u32::from(track.sample_rate)
@@ -281,18 +321,39 @@ mod tests {
         assert_eq!(output.next(), Some(0.0));
     }
 
+    fn synthetic_movie(case: &serde_json::Value) -> BinkFile {
+        let bytes = case["bik_hex"]
+            .as_str()
+            .unwrap()
+            .as_bytes()
+            .chunks_exact(2)
+            .map(|p| u8::from_str_radix(std::str::from_utf8(p).unwrap(), 16).unwrap())
+            .collect::<Vec<_>>();
+        BinkFile::parse(bytes.into()).unwrap()
+    }
+
+    #[test]
+    fn movie_opened_while_inactive_keeps_its_soundtrack_preload() {
+        let corpus = crate::test_fixture::json("tools/bink_audio_oracle.json");
+        let file = synthetic_movie(&corpus["synthetic"][0]);
+        let (mixer, mut output) = rodio::mixer::mixer(
+            NonZero::new(1).unwrap(),
+            NonZero::new(u32::from(file.header.audio_tracks[0].sample_rate)).unwrap(),
+        );
+        let mut soundtrack = Soundtrack::open(&file, &mixer, 1.0, false).unwrap();
+        soundtrack.feed(&file, 1);
+        // Read well past this clip's initial audio packet with the window hidden.
+        assert!(output.by_ref().take(4096).all(|sample| sample == 0.0));
+        soundtrack.stream.resume();
+        assert!(output.take(1024).any(|sample| sample != 0.0));
+    }
+
     #[test]
     fn soundtrack_feed_preserves_ffmpeg_pcm_and_stereo_through_rodio() {
         let corpus = crate::test_fixture::json("tools/bink_audio_oracle.json");
         let pcm = crate::test_fixture::bytes("tests/fixtures/bink_audio/synthetic.f32le");
         for case in corpus["synthetic"].as_array().unwrap() {
-            let text = case["bik_hex"].as_str().unwrap();
-            let bytes: Vec<u8> = text
-                .as_bytes()
-                .chunks_exact(2)
-                .map(|p| u8::from_str_radix(std::str::from_utf8(p).unwrap(), 16).unwrap())
-                .collect();
-            let file = BinkFile::parse(bytes.into()).unwrap();
+            let file = synthetic_movie(case);
             let offset = case["pcm_offset"].as_u64().unwrap() as usize;
             let len = case["sample_count"].as_u64().unwrap() as usize * 4;
             let expected: Vec<f32> = pcm[offset..offset + len]
@@ -300,6 +361,67 @@ mod tests {
                 .map(|p| f32::from_le_bytes(p.try_into().unwrap()))
                 .collect();
             assert_soundtrack_output(&file, &expected, 0.5, case["name"].as_str().unwrap());
+        }
+    }
+
+    #[test]
+    fn retail_intro_stall_resumes_at_the_first_unplayed_pcm_sample() {
+        let Some((_, mut assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        assets.load_nested("MOVIES01.MIX").unwrap();
+        let bytes = assets
+            .archive("MOVIES01.MIX")
+            .unwrap()
+            .get_by_name("A00_F00E.BIK")
+            .unwrap();
+        let file = BinkFile::parse(bytes.to_vec().into()).unwrap();
+        let (mixer, mut output) =
+            rodio::mixer::mixer(NonZero::new(2).unwrap(), NonZero::new(44_100).unwrap());
+        let mut soundtrack = Soundtrack::open(&file, &mixer, 1.0, true).unwrap();
+        soundtrack.feed(&file, 1);
+        // Two seconds of output, of which only the 34,560 stereo frames
+        // in the retail preload are movie time. The rest was silence.
+        assert_eq!(output.by_ref().take(176_400).count(), 176_400);
+        use crate::render::bink_movie::BinkFrameClock;
+        use crate::util::time::Duration;
+        let mut clock = BinkFrameClock::default();
+        let (num, den) = (file.header.fps_num, file.header.fps_den);
+        let first = soundtrack.next_frame;
+        let due = clock.frames_due(
+            Duration::from_secs(2),
+            first,
+            num,
+            den,
+            soundtrack.timing(&file),
+        );
+        let next = first + due;
+        assert_eq!(next - 1, 11);
+        soundtrack.feed(&file, next);
+        // At 783.673 ms of real PCM the next frame is due at 800 ms.
+        assert_eq!(
+            clock.frames_due(
+                Duration::from_millis(16),
+                next,
+                num,
+                den,
+                soundtrack.timing(&file)
+            ),
+            0
+        );
+        assert_eq!(
+            clock.frames_due(
+                Duration::from_millis(1),
+                next,
+                num,
+                den,
+                soundtrack.timing(&file)
+            ),
+            1
+        );
+        // FFmpeg's first stereo pair in the following packet, at PCM frame 34,560.
+        for expected in [-0.035_147_775_f32, -0.055_132_65] {
+            assert!((output.next().unwrap() - expected).abs() < 1.0 / 32_768.0);
         }
     }
 
@@ -342,7 +464,7 @@ mod tests {
                     NonZero::new(channels).unwrap(),
                     NonZero::new(rate).unwrap(),
                 );
-                let mut soundtrack = Soundtrack::open(&file, &mixer, 1.0).unwrap();
+                let mut soundtrack = Soundtrack::open(&file, &mixer, 1.0, true).unwrap();
                 assert_eq!(
                     (
                         soundtrack.stream.sample_rate(),

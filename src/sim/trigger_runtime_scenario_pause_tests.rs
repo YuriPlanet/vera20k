@@ -17,7 +17,7 @@ fn action(sim: &mut Simulation, kind: i32, value: i32) -> Vec<TriggerEffect> {
         &mut effects,
         crate::rules::ruleset::RuleSet::empty_for_test(),
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     ));
     effects
 }
@@ -148,7 +148,7 @@ fn counted_logic_tag_emits_pause_requests_in_authored_order() {
     let effects = sim.advance_triggers(
         crate::rules::ruleset::RuleSet::empty_for_test(),
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert_eq!(
         effects,
@@ -169,6 +169,24 @@ fn counted_logic_tag_emits_pause_requests_in_authored_order() {
     );
     assert!(!sim.session.vein_growth_enabled());
     assert!(sim.trigger_runtime.logic_tags.is_empty());
+}
+
+/// The last 684180 release unlocks the input its outermost 684060 locked,
+/// then resumes; the app applies both paths' effects in this order.
+#[test]
+fn timed_pause_release_unlocks_input_before_it_resumes() {
+    let mut sim = Simulation::with_seed(0);
+    action(&mut sim, 110, 2);
+    assert_eq!(
+        crate::sim::replay::ScenarioServiceInput::ExpireTimedPause.apply(&mut sim),
+        [
+            TriggerEffect::InputLockChanged {
+                locked: false,
+                was_locked: true
+            },
+            TriggerEffect::ScenarioResume
+        ]
+    );
 }
 
 #[test]
@@ -217,9 +235,7 @@ fn chrono_and_timed_trigger_share_one_counter_and_preserve_the_outer_lock() {
     assert!(sim.session.scenario_paused());
     assert!(sim.session.input_locked());
     assert!(
-        sim.session
-            .expire_scenario_pause()
-            .contains(&TriggerEffect::ScenarioResume)
+        Vec::from(sim.session.expire_scenario_pause()).contains(&TriggerEffect::ScenarioResume)
     );
     assert!(!sim.session.scenario_paused());
     assert!(!sim.session.input_locked());
@@ -258,7 +274,7 @@ fn scenario_services_replay_between_production_frames() {
         replay.apply_scenario_service(&mut live.simulation, ScenarioServiceInput::Resume);
         for _ in 0..64 {
             let frame = live
-                .advance_frame(&[], 67, TickLane::Ordinary, FrameEffects::default())
+                .advance_frame(&[], 67, TickLane::Ordinary, &mut FrameEffects::default())
                 .unwrap();
             replay.record_tick(frame.tick.tick, Vec::new(), frame.tick.state_hash);
             if live.simulation.session.scenario_paused() {
@@ -286,7 +302,7 @@ fn scenario_services_replay_between_production_frames() {
         assert!(!live.simulation.session.scenario_paused());
         assert_eq!(live.simulation.session.tick(), paused_tick);
         let resumed = live
-            .advance_frame(&[], 67, TickLane::Ordinary, FrameEffects::default())
+            .advance_frame(&[], 67, TickLane::Ordinary, &mut FrameEffects::default())
             .unwrap();
         replay.record_tick(resumed.tick.tick, Vec::new(), resumed.tick.state_hash);
         // Also retain a service input after the last frame without inventing a tick.
@@ -308,7 +324,7 @@ fn scenario_services_replay_between_production_frames() {
                 &replay,
                 Some(&fixture.resources.rules),
                 None,
-                Some(&fixture.resources.overlay_registry),
+                Some(fixture.resources.rules.overlay_registry()),
                 67,
                 true,
             ),

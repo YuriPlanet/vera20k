@@ -36,12 +36,12 @@ impl Simulation {
         target: Option<crate::sim::combat::TargetKind>,
         destination: Option<crate::sim::combat::TargetKind>,
         rules: &crate::rules::ruleset::RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> MissionType {
         let Some(entity) = self.substrate.entities.get(id) else {
             return mission;
         };
-        let tethered = entity.tether.partner().is_some();
+        let tethered = entity.seldom.tether.partner().is_some();
         let foot = matches!(
             entity.category(),
             crate::map::entities::EntityCategory::Unit
@@ -50,6 +50,7 @@ impl Simulation {
         );
         let break_tether = tethered
             && entity
+                .seldom
                 .radio_contacts
                 .slot(0)
                 .and_then(|contact| self.substrate.entities.get(contact))
@@ -65,7 +66,7 @@ impl Simulation {
         if let Some(entity) = self.substrate.entities.get_mut(id) {
             if break_tether {
                 // `0x004C7342`.
-                entity.tether.release();
+                entity.seldom.tether.release();
             }
             // `0x004C7353`.
             entity.pending_entry.clear();
@@ -82,18 +83,18 @@ impl Simulation {
     /// class override): the class setter `vt+0x480(0, 1)` (`0x0070F859`),
     /// class `vt+0x3C8(0)` (`0x0070F865`), ArchiveTarget (`+0x218`)
     /// cleared (`0x0070F871`), then `Assign_Mission(Guard)` (`0x0070F87B`).
-    /// Callers: the capture reset (`0x00471EA5`)
-    /// and the slave manager (the deploy hand-off `0x006B0D10` and the
-    /// release `0x006B0BC5`).
+    /// Callers include the capture reset (`0x00471EA5`), the slave manager
+    /// (the deploy hand-off `0x006B0D10` and the release `0x006B0BC5`) and
+    /// SetInOpenTransport (`0x00710484`, [`Self::enter_open_topped`]).
     pub(crate) fn reset_orders_to_guard(
         &mut self,
         id: u64,
         rules: &crate::rules::ruleset::RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let now = self.session.binary_frame();
-        self.assign_null_destination(id, rules, None, frame_effects);
-        let _ = self.assign_target_represented(id, None, rules, None, frame_effects);
+        self.assign_null_destination(id, rules, Some(rules.overlay_registry()), frame_effects);
+        let _ = self.assign_target_represented(id, None, rules, frame_effects);
         if let Some(entity) = self.substrate.entities.get_mut(id) {
             entity.set_archive_target(None);
         }
@@ -175,7 +176,7 @@ impl Simulation {
         target: Option<crate::sim::combat::TargetKind>,
         destination: Option<crate::sim::combat::TargetKind>,
         rules: &crate::rules::ruleset::RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let queued =
             self.begin_megamission_retask(id, mission, target, destination, rules, frame_effects);
@@ -186,7 +187,7 @@ impl Simulation {
         }
         self.queue_order_mission(id, queued, rules);
         if let Some(entity) = self.substrate.entities.get_mut(id) {
-            entity.suspended_attack_target.clear();
+            entity.seldom.suspended_attack_target.clear();
             if entity.category() != crate::map::entities::EntityCategory::Structure {
                 entity.navigation.clear_suspended_nav_com();
             }

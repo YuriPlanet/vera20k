@@ -36,6 +36,34 @@ pub(crate) struct CellClassProjectionView {
 /// own authority. Their shared allocation keeps one live identity safe to carry
 /// through app loading workers without copying native's global mutable object
 /// architecture.
+///
+/// The Dummy is saved simulation state ([`SavedSharedCellDummy`]) written
+/// through `&self`, because a miss stamp is part of the lookup itself: every
+/// `Get_CellClass` port ([`NativeCellQuery::lookup`],
+/// [`ResolvedTerrainGrid::native_cell_identity`] and their callers) is a
+/// query, reached through `&ResolvedTerrainGrid` or `&Simulation` from the
+/// simulation, the path and target batches on the worker pool, and the
+/// presentation and input. A retained `NativeCellIdentity::Dummy` reads the
+/// latest stamp, as native's aliased object does, so the code that reads a
+/// Dummy and the code that stamps it must reach the same object; owning it
+/// by `&mut` would make every map read exclusive.
+///
+/// The rules:
+/// - Only the simulation thread stamps or writes the canonical Dummy.
+/// - A pooled task, and a presentation or input read of the live simulation,
+///   that can miss runs inside [`Self::detached`] (or
+///   [`Self::detached_stamps`]), which keeps its stamps on its own thread, or
+///   queries through [`NativeCellQuery::isolated`], which stamps a fork.
+/// - Only stamps are private to a detached run. Every other word (flags,
+///   anchor, overlay, smudge, tube, neighbour count, level) is written by
+///   code that holds `&mut` of the grid, an overlay, smudge or occupation
+///   owner or the Simulation, or by map load on a Dummy no task holds.
+///
+/// A task that broke them would race on saved state, and peers would
+/// desync. The client crate's `architecture_guards::shared_state::
+/// pool_entries_say_how_their_tasks_treat_the_cell_dummy` pins every engine
+/// file that enters the worker pool, each with what its tasks do about the
+/// Dummy, so a new parallel caller has to say which rule it follows.
 #[derive(Debug, Clone)]
 pub struct SharedCellDummy {
     state: Arc<SharedCellDummyState>,
@@ -60,6 +88,19 @@ struct SharedCellDummyState {
     tube_index: AtomicI16,
     /// Retained wrapping CellClass+122; ctor47BD34 initializes zero.
     neighbor_count: AtomicU8,
+}
+
+/// Exact continuation of the fallback Cell, independent of its process identity.
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
+pub(crate) struct SavedSharedCellDummy {
+    cell: u64,
+    land_type: i32,
+    raw_flags: u32,
+    native_anchor: Option<NativeCellIdentity>,
+    overlay: u64,
+    smudge: u64,
+    tube_index: i16,
+    neighbor_count: u8,
 }
 
 thread_local! {
@@ -209,6 +250,15 @@ impl NativeAllocatedCellCursor {
             .map(NativeCellIdentity::Real);
         self.advance(size_width);
         selected
+    }
+
+    /// The coordinate the cursor stands on, then [`Self::advance`]: the walk
+    /// without its cell lookup, for the Size diamond's walk, which knows where
+    /// `Next`'s null falls (`map::playfield::SizeDiamond::allocated_cells`).
+    pub(crate) fn take_coord(&mut self, size_width: i32) -> (i32, i32) {
+        let at = (self.x, self.y);
+        self.advance(size_width);
+        at
     }
 
     /// Next578290's step past the current position.
@@ -409,6 +459,46 @@ impl SharedCellDummy {
         }
     }
 
+    pub(crate) fn saved_continuation(&self) -> SavedSharedCellDummy {
+        SavedSharedCellDummy {
+            cell: self.cell_word(),
+            land_type: self.land_type(),
+            raw_flags: self.raw_flags(),
+            native_anchor: self.native_anchor(),
+            overlay: self.state.overlay.load(Ordering::Relaxed),
+            smudge: self.state.smudge.load(Ordering::Relaxed),
+            tube_index: self.raw_tube_index(),
+            neighbor_count: self.neighbor_count(),
+        }
+    }
+
+    pub(crate) fn restore_saved_continuation(
+        &self,
+        saved: SavedSharedCellDummy,
+        terrain: &ResolvedTerrainGrid,
+    ) -> Result<(), &'static str> {
+        if let Some(NativeCellIdentity::Real(index)) = saved.native_anchor
+            && !terrain
+                .cells()
+                .get(index)
+                .is_some_and(|cell| terrain.cell(cell.rx, cell.ry).is_some())
+        {
+            return Err("fallback Cell anchor is not allocated");
+        }
+        if u8::try_from(saved.land_type)
+            .ok()
+            .and_then(LandType::from_index)
+            .is_none()
+        {
+            return Err("fallback Cell LandType is invalid");
+        }
+        if ((saved.cell >> 40) as u8) > super::build::MAX_TMP_RAMP_TYPE {
+            return Err("fallback Cell slope is outside the native table");
+        }
+        self.apply_saved_continuation(saved);
+        Ok(())
+    }
+
     /// Every modeled byte, as [`Self::fork_query_identity`] copies them: a test
     /// fixture keys a cache on the Dummy state its cached work starts from.
     #[cfg(any(test, feature = "test-support"))]
@@ -498,29 +588,22 @@ impl SharedCellDummy {
     /// Publish an already validated post-Resize candidate onto the retained
     /// process identity. Preserve its later lookup effects; do not reset twice.
     pub fn adopt_prepared_load_state(&self, prepared: &Self) {
+        self.apply_saved_continuation(prepared.saved_continuation());
+    }
+
+    fn apply_saved_continuation(&self, saved: SavedSharedCellDummy) {
         self.state
             .land_type
-            .store(prepared.land_type(), Ordering::Relaxed);
-        let word = prepared.cell_word();
-        self.update_cell_word(|_| word);
-        self.state.overlay.store(
-            prepared.state.overlay.load(Ordering::Relaxed),
-            Ordering::Relaxed,
-        );
-        self.state.smudge.store(
-            prepared.state.smudge.load(Ordering::Relaxed),
-            Ordering::Relaxed,
-        );
-        self.state
-            .raw_flags
-            .store(prepared.raw_flags(), Ordering::Relaxed);
-        self.write_native_anchor(prepared.native_anchor());
+            .store(saved.land_type, Ordering::Relaxed);
+        self.update_cell_word(|_| saved.cell);
+        self.state.overlay.store(saved.overlay, Ordering::Relaxed);
+        self.state.smudge.store(saved.smudge, Ordering::Relaxed);
+        self.write_raw_flags(saved.raw_flags);
+        self.write_native_anchor(saved.native_anchor);
         self.state
             .neighbor_count
-            .store(prepared.neighbor_count(), Ordering::Relaxed);
-        self.state
-            .tube_index
-            .store(prepared.raw_tube_index(), Ordering::Relaxed);
+            .store(saved.neighbor_count, Ordering::Relaxed);
+        self.write_raw_tube_index(saved.tube_index);
     }
 
     /// Stamp only CellClass+0x24, preserving the live level and slope bytes.
@@ -541,6 +624,12 @@ impl SharedCellDummy {
     /// thread: a worker waiting on nested parallel work can run another
     /// task there, so starting from the enclosing copy would make a run's
     /// start depend on where it landed. The enclosing copy resumes after.
+    ///
+    /// Only the coordinate/level/slope word is private to the run: work
+    /// inside it may read the other words but must not write them (see the
+    /// type's rules). The run finds its copy by this Dummy's address, so a
+    /// query that stamps a fork ([`NativeCellQuery::isolated`]) is not
+    /// redirected.
     pub fn detached<R>(&self, work: impl FnOnce() -> R) -> R {
         self.detached_stamps(work).0
     }

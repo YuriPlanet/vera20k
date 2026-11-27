@@ -4,13 +4,14 @@ use std::collections::VecDeque;
 
 use serde::{Deserialize, Serialize};
 
+use super::FRAMEINFO_EVENT_OPCODE;
 use crate::sim::command::{
-    CommandRecord, MEGAMISSION_OPCODE, MEGAMISSION_STAGE_CAPACITY, stage_megamission,
+    CommandRecord, MEGAMISSION_OPCODE, MEGAMISSION_STAGE_CAPACITY, OPTIONS_OPCODE,
+    PAGE_USER_OPCODE, stage_megamission,
 };
 use crate::sim::intern::InternedId;
 
 pub const DO_LIST_CAPACITY: usize = 0x4000;
-const FRAMEINFO_OPCODE: u8 = 0x1c;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DoListInsertion {
@@ -76,11 +77,20 @@ pub struct CommandDispatchClock {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CommandDispatchMode {
-    /// Native staging, as the native-byte lockstep adapter runs offline.
+    /// The original offline scan with its 256-event MegaMission stage. Only
+    /// tests use it; the simulation dispatches as SinglePlayer or Network.
     Offline,
     /// The simulation outside multiplayer, under the single-player bound.
     SinglePlayer,
     Network,
+}
+
+impl CommandDispatchMode {
+    /// Execute_DoList `0x0064C579..0x0064C5A9`: a network game consumes a
+    /// late event without executing it, except FRAMEINFO.
+    pub(crate) fn skips_late(self, opcode: Option<u8>) -> bool {
+        self == Self::Network && opcode != Some(FRAMEINFO_EVENT_OPCODE)
+    }
 }
 
 /// Fallback metadata only for an entry with no native record. A native record
@@ -472,7 +482,7 @@ impl<T: DoListEvent, const CAPACITY: usize> DoList<T, CAPACITY> {
         for entry in self.entries.iter_mut().take(scan_len) {
             if let Some(record) = entry.native_record_mut() {
                 let frame = record.frame_stamp();
-                if record.opcode() != FRAMEINFO_OPCODE
+                if record.opcode() != FRAMEINFO_EVENT_OPCODE
                     && self.retime_window.start < frame
                     && frame < self.retime_window.end
                 {
@@ -523,25 +533,22 @@ impl<T: DoListEvent, const CAPACITY: usize> DoList<T, CAPACITY> {
                 };
 
                 host.before_entry(house, entry, is_late);
-                if is_late
-                    && opcode != Some(FRAMEINFO_OPCODE)
-                    && mode == CommandDispatchMode::Network
-                {
+                if is_late && mode.skips_late(opcode) {
                     host.late_entry(house, entry);
                     summary.late_skipped += 1;
                     continue;
                 }
 
                 match opcode {
-                    Some(FRAMEINFO_OPCODE) => {
+                    Some(FRAMEINFO_EVENT_OPCODE) => {
                         if !is_late && mode == CommandDispatchMode::Network {
                             summary.frame_info_compared +=
                                 usize::from(host.frame_info(house, entry)?);
                         }
                         summary.timing_consumed += 1;
                     }
-                    Some(0x22) => {}
-                    Some(0x0c) if !house.current_player => {}
+                    Some(PAGE_USER_OPCODE) => {}
+                    Some(OPTIONS_OPCODE) if !house.current_player => {}
                     Some(MEGAMISSION_OPCODE) => {
                         if stage_megamission(&mut staged, entry, stage_capacity) {
                             staged_late.push(is_late);

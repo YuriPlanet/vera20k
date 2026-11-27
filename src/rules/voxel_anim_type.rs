@@ -93,6 +93,14 @@ pub struct VoxelAnimType {
     /// `-1` for absent.
     pub start_sound: Option<String>,
     pub stop_sound: Option<String>,
+    /// Tiberian Sun's `BounceSound=` and `ExpireSound=` (Firestorm 2.0
+    /// VoxelAnimType +170/+174), which gamemd no longer reads: played where
+    /// the piece bounces and where it comes down on dry ground. See
+    /// docs/ts-anim-sounds.md.
+    #[serde(default)]
+    pub bounce_sound: Option<String>,
+    #[serde(default)]
+    pub expire_sound: Option<String>,
     /// `+0x2E4`. `AnimType` played on every ground bounce.
     pub bounce_anim: Option<String>,
     /// `+0x2E8`. `AnimType` played when `Duration` runs out.
@@ -105,11 +113,12 @@ pub struct VoxelAnimType {
     pub warhead: Option<String>,
     /// `+0x2FC`. Particle system carried while alive.
     pub attached_system: Option<String>,
-    /// The `ShareBodyData`/`ShareTurretData`/`ShareBarrelData` + `ShareSource`
-    /// group. All three destinations are the single body VXL slot
-    /// (`+0xB0`/`+0xB4`) — the type has only one model — so only the SOURCE
-    /// offset differs between them.
-    pub share_source: Option<String>,
+    /// The `ShareBodyData`/`ShareTurretData`/`ShareBarrelData` flags. All
+    /// three destinations are the single body VXL slot (`+0xB0`/`+0xB4`) —
+    /// the type has only one model — so only the `ShareSource=` offset
+    /// differs between them. Only the ordered Process owner reads the flags
+    /// (`voxel_anim_type_projections`) and resolves `ShareSource=` into
+    /// `model_slots`.
     pub share_body_data: bool,
     pub share_turret_data: bool,
     pub share_barrel_data: bool,
@@ -140,6 +149,8 @@ impl VoxelAnimType {
             spawn_count: 0,
             start_sound: None,
             stop_sound: None,
+            bounce_sound: None,
+            expire_sound: None,
             bounce_anim: None,
             expire_anim: None,
             trailer_anim: None,
@@ -147,7 +158,6 @@ impl VoxelAnimType {
             damage_radius: 0,
             warhead: None,
             attached_system: None,
-            share_source: None,
             share_body_data: false,
             share_turret_data: false,
             share_barrel_data: false,
@@ -179,25 +189,29 @@ impl VoxelAnimType {
 
         // ReadString 0x80 ahead of each type or sound lookup
         // (`0x0074B207`-`0x0074B4C1`). The Type references (`Spawns=`, `BounceAnim=`,
-        // `ExpireAnim=`, `TrailerAnim=`, `Warhead=`, `AttachedSystem=`) keep
-        // the constructor's nulls: only the ordered Process owner reads them
-        // (`VoxelAnimTypeReferences`), and `RuleSet` publishes them.
-        out.spawn_count = section.read_int("SpawnCount", out.spawn_count);
+        // `ExpireAnim=`, `TrailerAnim=`, `Warhead=`, `AttachedSystem=`) and the
+        // `Share*Data=` flags keep the constructor's values: only the ordered
+        // Process owner reads them (`VoxelAnimTypeReferences`,
+        // `voxel_anim_type_projections`), and `RuleSet` publishes them.
+        out.spawn_count = section
+            .read_int("SpawnCount", out.spawn_count)
+            .min(crate::rules::art_data::SPAWN_COUNT_LIMIT);
         out.start_sound = section
             .read_type_name("StartSound", 0x80)
             .map(str::to_string);
         out.stop_sound = section
             .read_type_name("StopSound", 0x80)
             .map(str::to_string);
+        // Firestorm 2.0 VoxelAnimTypeClass::Read_INI reads both after
+        // StartSound= (0x0065F6AA..0x0065F734); gamemd reads neither.
+        out.bounce_sound = section
+            .read_type_name("BounceSound", 0x80)
+            .map(str::to_string);
+        out.expire_sound = section
+            .read_type_name("ExpireSound", 0x80)
+            .map(str::to_string);
         out.damage = read_damage(section, out.damage);
         out.damage_radius = section.read_int("DamageRadius", out.damage_radius);
-
-        out.share_source = section
-            .read_type_name("ShareSource", 0x80)
-            .map(str::to_string);
-        out.share_body_data = section.read_bool("ShareBodyData", false);
-        out.share_turret_data = section.read_bool("ShareTurretData", false);
-        out.share_barrel_data = section.read_bool("ShareBarrelData", false);
         out
     }
 
@@ -282,6 +296,13 @@ mod tests {
         assert_eq!(vat.spawn_count, 0);
         // Literal stores at74ADC4/74AE01 establish the constructor default.
         assert_eq!(vat.max_angular_velocity.bits(), 0x3fc6_56ed_1ce6_4946);
+    }
+
+    #[test]
+    fn a_huge_spawn_count_stops_at_the_spawn_bound() {
+        let ini = section("[HUGE]\nSpawnCount=2147483647\n");
+        let vat = VoxelAnimType::from_ini_section("HUGE", ini.section("HUGE").unwrap());
+        assert_eq!(vat.spawn_count, crate::rules::art_data::SPAWN_COUNT_LIMIT);
     }
 
     #[test]

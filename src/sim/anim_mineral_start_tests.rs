@@ -78,17 +78,15 @@ fn scene(resource_name: &str, map_patch: &str) -> Option<(Simulation, RuleSet)> 
             .unwrap()
             .unwrap();
     assert_eq!(view.overlay_data, 11);
+    *sim.overlay_grid_mut_for_test() = Some(grid);
     crate::sim::runtime::initialize_native_tiberium_queues(
         &mut sim,
         &map.basic,
-        &map.special_flags,
         &rules,
         &overlays,
-        Some(&grid),
         (32, 32),
     )
     .unwrap();
-    sim.install_overlay_grid_for_load(grid);
     assert!(sim.rebuild_dynamic_navigation(&rules));
     sim.install_waypoints(&map.waypoints);
     sim.initialize_trigger_definitions(&map, &Default::default(), None, None, None);
@@ -103,15 +101,13 @@ fn elapsed_trigger_anim_removes_ore_before_action41_sets_no_effects() {
     let Some((mut sim, rules)) = scene("TIB01", "") else {
         return;
     };
-    let overlays = rules.overlay_registry();
     assert_eq!(rules.combat_damage.tiberium_explosion_damage, 0);
     sim.advance_app_frame(
         &[],
         &rules,
-        Some(overlays),
         67,
         TickLane::Ordinary,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
     .unwrap();
 
@@ -201,10 +197,9 @@ fn gem_child_retains_mineral_conversion_and_nonzero_area_preserves_nearby_ore() 
         sim.advance_app_frame(
             &[],
             &rules,
-            Some(overlays),
             67,
             TickLane::Ordinary,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap()
     });
@@ -264,10 +259,9 @@ fn gem_child_retains_mineral_conversion_and_nonzero_area_preserves_nearby_ore() 
         sim.advance_app_frame(
             &[],
             &rules,
-            Some(overlays),
             67,
             TickLane::Ordinary,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap();
         landed |= sim
@@ -298,15 +292,13 @@ fn ares_mineral_start_uses_debris_chance_and_explosion_keys() {
     ) else {
         return;
     };
-    let overlays = rules.overlay_registry();
     let (_, visits) = crate::sim::combat::receiver_fixture::trace_area_visits(|| {
         sim.advance_app_frame(
             &[],
             &rules,
-            Some(overlays),
             67,
             TickLane::Ordinary,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap()
     });

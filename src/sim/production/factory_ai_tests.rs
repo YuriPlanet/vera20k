@@ -147,7 +147,7 @@ fn ai_wall_consumption_keeps_its_accounting_and_one_creation_cue() {
     assert!(wall.wall);
     assert_eq!(wall.to_overlay.as_deref(), Some("PLAIN"));
     let registry = crate::rules::overlay_types::OverlayTypeRegistry::from_ini(&ini, None);
-    f.sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
+    *f.sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
     let mut held = None;
     for _ in 0..3_000 {
         f.sim
@@ -182,7 +182,7 @@ fn ai_wall_consumption_keeps_its_accounting_and_one_creation_cue() {
             else {
                 return None;
             };
-            (sound_id == "FixtureWallCreated").then_some((
+            (sound_id.name_in(&f.rules) == "FixtureWallCreated").then_some((
                 *audible_to,
                 *rx,
                 *ry,
@@ -335,7 +335,7 @@ fn ai_limit_visit(f: &mut Fixture, building: u64) {
         &f.rules,
         building,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
 }
 
@@ -355,7 +355,6 @@ fn without_aibuild_limit_the_war_factories_clone_the_choice() {
 /// production start) a factoryless building skips and the choice slot
 /// clears (`0xC335C4..0xC33616`) — the clone production never exceeds the
 /// limit.
-#[cfg(feature = "npatch")]
 #[test]
 fn aibuild_limit_skips_and_clears_the_choice_at_the_limit() {
     let (mut f, weap_1, weap_2) = ai_limit_fixture("", "AIBuildLimit=1");
@@ -378,7 +377,6 @@ fn aibuild_limit_skips_and_clears_the_choice_at_the_limit() {
 /// A non-positive `AIBuildLimit=` compares by magnitude against the
 /// produced and owned counts (the native negated signed compares), so
 /// `-1` blocks once one tank exists.
-#[cfg(feature = "npatch")]
 #[test]
 fn aibuild_limit_non_positive_compares_the_magnitude() {
     let (mut f, weap_1, _) = ai_limit_fixture("", "AIBuildLimit=-1");
@@ -398,28 +396,34 @@ fn aibuild_limit_non_positive_compares_the_magnitude() {
     );
 }
 
-/// Even an authored zero cap cannot affect a build without NPatch.
-#[cfg(not(feature = "npatch"))]
+/// The key is the switch: an authored `AIBuildLimit=` turns NPatch on
+/// (`rules::npatch_switch`), so an authored zero cap blocks the type.
 #[test]
-fn aibuild_limit_is_ignored_without_npatch() {
+fn aibuild_limit_turns_the_per_game_npatch_switch_on() {
     let (mut f, weap_1, weap_2) = ai_limit_fixture("", "AIBuildLimit=0");
-    assert_eq!(f.rules.object("TANK").unwrap().aibuild_limit, i32::MAX);
+    assert!(f.rules.npatch(), "the authored key turns NPatch on");
+    assert_eq!(f.rules.object("TANK").unwrap().aibuild_limit, 0);
     ai_limit_visit(&mut f, weap_1);
     ai_limit_visit(&mut f, weap_2);
-    assert!(ai_limit_holds(&f, weap_1) && ai_limit_holds(&f, weap_2));
+    assert!(!ai_limit_holds(&f, weap_1), "the zero cap blocks the first");
+    assert!(
+        !ai_limit_holds(&f, weap_2),
+        "the zero cap blocks the second"
+    );
     assert_eq!(
         f.sim.houses[&f.owner]
             .ai_unit_choices()
             .get(UnitChoiceKind::Unit),
-        0,
-        "the ignored extension does not invalidate the standing choice",
+        -1,
+        "the capped arm cleared the standing choice",
     );
 }
 
-/// The legacy global reader is opt-in and requires the compiled capability.
+/// The legacy global reader is opt-in and needs a key to turn NPatch on.
 #[test]
 fn legacy_ai_limit_switch_keeps_default_cloning_and_requires_npatch() {
     let (mut plain, first, second) = ai_limit_fixture("", "BuildLimit=1");
+    assert!(!plain.rules.npatch(), "no NPatch key plays stock");
     assert!(!plain.rules.general.enable_ai_build_limitation);
     ai_limit_visit(&mut plain, first);
     ai_limit_visit(&mut plain, second);
@@ -427,22 +431,47 @@ fn legacy_ai_limit_switch_keeps_default_cloning_and_requires_npatch() {
 
     let (mut limited, first, second) =
         ai_limit_fixture("EnableAIBuildLimitation=yes", "BuildLimit=1");
-    assert_eq!(
-        limited.rules.general.enable_ai_build_limitation,
-        crate::rules::NPATCH_ENABLED
-    );
+    assert!(limited.rules.npatch(), "the key turns NPatch on");
+    assert!(limited.rules.general.enable_ai_build_limitation);
     ai_limit_visit(&mut limited, first);
     ai_limit_visit(&mut limited, second);
     assert!(ai_limit_holds(&limited, first));
-    assert_eq!(
-        ai_limit_holds(&limited, second),
-        !crate::rules::NPATCH_ENABLED
+    assert!(!ai_limit_holds(&limited, second));
+}
+
+/// NPExt ext173 spells the global parallel switch `DisableAIParallelProduction=`
+/// (reader `0xC2BDDA..0xC2BDE7`, gate `0xC2D482`); either name selects the one
+/// field, and neither selection changes a build without the capability.
+#[test]
+fn parallel_ai_switch_accepts_the_extended_builds_name() {
+    let (plain, _, _) = ai_limit_fixture("", "BuildLimit=1");
+    assert!(!plain.rules.general.disable_parallel_ai_queues);
+
+    for key in ["DisableParallelAIQueues", "DisableAIParallelProduction"] {
+        let (named, _, _) = ai_limit_fixture(&format!("{key}=yes"), "BuildLimit=1");
+        assert!(named.rules.general.disable_parallel_ai_queues, "{key}");
+    }
+}
+
+/// With both names in `[General]`, the NPSE name is read first; a value it
+/// cannot parse falls through to the ext173 name, as `ReadBool` would there.
+#[test]
+fn parallel_ai_switch_prefers_the_npse_name_when_both_are_set() {
+    let (npse_wins, _, _) = ai_limit_fixture(
+        "DisableParallelAIQueues=no\nDisableAIParallelProduction=yes",
+        "BuildLimit=1",
     );
+    assert!(!npse_wins.rules.general.disable_parallel_ai_queues);
+
+    let (fallthrough, _, _) = ai_limit_fixture(
+        "DisableParallelAIQueues=maybe\nDisableAIParallelProduction=yes",
+        "BuildLimit=1",
+    );
+    assert!(fallthrough.rules.general.disable_parallel_ai_queues);
 }
 
 /// NPExt173 C2D00D..C2D037 also checks owned counts for a negative cap,
 /// even when no factory has produced an object of this type yet.
-#[cfg(feature = "npatch")]
 #[test]
 fn legacy_negative_ai_limit_includes_owned_unproduced_objects() {
     let (mut f, first, _) = ai_limit_fixture("EnableAIBuildLimitation=yes", "BuildLimit=-1");
@@ -471,10 +500,9 @@ fn legacy_negative_ai_limit_includes_owned_unproduced_objects() {
 /// `CheckBuildLimit` swaps in the runway-pad count for an `AirportBound=`
 /// aircraft instead. A capped aircraft with no airfield would look blocked
 /// through `CanBuild`, but the AI gate has to compare the type's own count.
-#[cfg(feature = "npatch")]
 #[test]
 fn the_gate_compares_an_airport_bound_aircraft_by_its_own_count() {
-    let mut f = fixture_with(
+    let f = fixture_with(
         "[General]\nEnableAIBuildLimitation=yes\nPlacementDelay=.05\n\
          AIAlternateProductionCreditCutoff=10\n\
          [InfantryTypes]\n[AircraftTypes]\n0=HELI\n[VehicleTypes]\n0=TANK\n\
@@ -520,7 +548,6 @@ fn without_the_switch_both_war_factories_clone_the_choice() {
 /// produces, no other starts (`0x45033C` hook, cave `0xC2F07C`); the block
 /// releases through `Exit_Object` and `AbandonProduction`'s reservation
 /// hooks (`0xC33940`, `0xC2EFB4`).
-#[cfg(feature = "npatch")]
 #[test]
 fn disable_parallel_ai_queues_serializes_war_factory_production() {
     let (mut f, weap_1, weap_2) = ai_limit_fixture("DisableParallelAIQueues=yes", "");
@@ -537,7 +564,7 @@ fn disable_parallel_ai_queues_serializes_war_factory_production() {
         &f.rules,
         FactoryHolder::Building(weap_1),
         f.owner,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert!(!ai_limit_holds(&f, weap_1), "the production ended");
     // The abandon clears the standing choice; the house's chooser refills it
@@ -594,7 +621,7 @@ fn parallel_ai_queues_gate_and_category_forbid_control_a_second_factory() {
         &f.rules,
         FactoryHolder::Building(weap_1),
         f.owner,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     f.sim
         .houses
@@ -607,6 +634,96 @@ fn parallel_ai_queues_gate_and_category_forbid_control_a_second_factory() {
         ai_limit_holds(&f, weap_2),
         "the abandon released the forbidden category's slot"
     );
+}
+
+/// The rules of an Ares game (`ImmuneToAbduction=` is an Ares key) with
+/// `AllowParallelAIQueues=no` and two computer war factories.
+fn ares_serial_fixture() -> (Fixture, u64, u64) {
+    let fixture = ai_limit_fixture(
+        "\n[GlobalControls]\nAllowParallelAIQueues=no",
+        "ImmuneToAbduction=yes",
+    );
+    assert!(fixture.0.rules.ares());
+    fixture
+}
+
+fn reset_vehicle_choice(f: &mut Fixture) {
+    f.sim
+        .houses
+        .get_mut(&f.owner)
+        .unwrap()
+        .ai_unit_choices_mut()
+        .set(UnitChoiceKind::Unit, 0);
+}
+
+/// Ares `BuildingClass_Update_Factory` (hook `0x4502F4`, Ares.dll
+/// `10024E00`) under `AllowParallelAIQueues=no`: the first war factory claims
+/// the vehicle slot and the second waits, with no forbid key. The product's
+/// exit (`0x444119`, `10024DC0`) frees the slot whoever holds it.
+#[test]
+fn ares_serial_ai_queues_hold_a_second_war_factory_until_the_exit() {
+    let (mut f, weap_1, weap_2) = ares_serial_fixture();
+    ai_limit_visit(&mut f, weap_1);
+    ai_limit_visit(&mut f, weap_2);
+    assert!(ai_limit_holds(&f, weap_1));
+    assert!(!ai_limit_holds(&f, weap_2), "one war factory at a time");
+    let product = f
+        .sim
+        .production
+        .factories()
+        .building_factory(weap_1)
+        .and_then(|factory| factory.object())
+        .and_then(|object| object.entity_id)
+        .unwrap();
+    exit_produced_object(
+        &mut f.sim,
+        &f.rules,
+        weap_1,
+        product,
+        (8, 9),
+        None,
+        &mut crate::sim::world::FrameEffects::default(),
+    );
+    reset_vehicle_choice(&mut f);
+    ai_limit_visit(&mut f, weap_2);
+    assert!(ai_limit_holds(&f, weap_2), "the exit freed the slot");
+}
+
+/// Ares' slot also frees when the building holding it is removed
+/// (`AnnounceInvalidPointer` `0x7258D0`, `100052B0`) and when a factory
+/// abandons its product (`0x4CA07A`, `10024EE0`). A war factory too poor to
+/// start still claims the slot.
+#[test]
+fn ares_serial_ai_queues_free_the_slot_on_removal_and_abandon() {
+    use crate::sim::ai_base_building::AiFactorySlot;
+    let (mut f, weap_1, weap_2) = ares_serial_fixture();
+    let slot = |f: &Fixture| {
+        f.sim.houses[&f.owner]
+            .ai_production()
+            .parallel_factory(AiFactorySlot::Vehicle)
+    };
+    let set_credits = |f: &mut Fixture, credits| {
+        let house = f.sim.houses.get_mut(&f.owner).unwrap();
+        house.economy_mut().set_credits_for_test(credits);
+    };
+    set_credits(&mut f, 0);
+    ai_limit_visit(&mut f, weap_1);
+    assert_eq!(slot(&f), Some(weap_1), "claimed before the money gate");
+    set_credits(&mut f, 1_000);
+    ai_limit_visit(&mut f, weap_2);
+    assert!(!ai_limit_holds(&f, weap_2));
+    f.sim.uninit_with_rules(weap_1, &f.rules);
+    ai_limit_visit(&mut f, weap_2);
+    assert!(ai_limit_holds(&f, weap_2), "the removal freed the slot");
+    assert_eq!(slot(&f), Some(weap_2));
+    abandon_production(
+        &mut f.sim,
+        &f.rules,
+        FactoryHolder::Building(weap_2),
+        f.owner,
+        &mut crate::sim::world::FrameEffects::default(),
+    );
+    assert_eq!(slot(&f), None, "the abandon freed the slot");
 }
 
 /// Phobos `HouseExt::OnDetach` (hook `0x7258D0`): a war factory too poor to
@@ -721,15 +838,16 @@ const NAVAL_RULES_TAIL: &str = "[InfantryTypes]\n[AircraftTypes]\n[VehicleTypes]
 /// from a naval producer and `House+0x5650` from a land one, so a shipyard and
 /// a war factory stop sharing one vehicle choice. Before this split the
 /// shipyard fetched the war factory's tank, failed the `Naval=` mismatch check
-/// at `0x450343` and idled.
-#[cfg(feature = "npatch")]
+/// at `0x450343` and idled. The fixture's `DisableParallelAIQueues=no` is the
+/// NPatch key that turns the per-game switch on (`rules::npatch_switch`).
 #[test]
 fn a_shipyard_takes_the_naval_choice_while_the_war_factory_keeps_its_own() {
     use crate::rules::object_type::ObjectCategory;
     use crate::sim::ai_unit_choice::UnitChoiceKind;
 
     let mut f = fixture_with(
-        "[General]\nPlacementDelay=.05\nAIAlternateProductionCreditCutoff=10\n\
+        "[General]\nDisableParallelAIQueues=no\nPlacementDelay=.05\n\
+         AIAlternateProductionCreditCutoff=10\n\
          [InfantryTypes]\n[AircraftTypes]\n[VehicleTypes]\n0=TANK\n1=SHIP\n\
          [BuildingTypes]\n0=YARD\n1=PLAIN\n2=WEAP\n3=SYRD\n\
          [YARD]\nStrength=1000\nConstructionYard=yes\nFactory=BuildingType\n\
@@ -780,14 +898,14 @@ fn a_shipyard_takes_the_naval_choice_while_the_war_factory_keeps_its_own() {
         &f.rules,
         weap,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     factory_ai(
         &mut f.sim,
         &f.rules,
         syrd,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(
         held(&f, weap).as_deref(),
@@ -804,7 +922,7 @@ fn a_shipyard_takes_the_naval_choice_while_the_war_factory_keeps_its_own() {
         &f.rules,
         FactoryHolder::Building(syrd),
         f.owner,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     let choices = f.sim.houses[&f.owner].ai_unit_choices();
     assert_eq!(
@@ -824,7 +942,6 @@ fn a_shipyard_takes_the_naval_choice_while_the_war_factory_keeps_its_own() {
 /// #333 fixed exactly the global switch stopping the AI's navy. Two naval
 /// yards still serialize, so the split is not a blanket disable. Each
 /// producer reads its own choice slot, as `0xC2F130` routes them.
-#[cfg(feature = "npatch")]
 #[test]
 fn disable_parallel_ai_queues_keeps_naval_and_ground_counters_apart() {
     use crate::rules::object_type::ObjectCategory;
@@ -887,24 +1004,26 @@ fn disable_parallel_ai_queues_keeps_naval_and_ground_counters_apart() {
     );
 }
 
-/// Extension keys cannot change production in a build without NPatch.
-#[cfg(not(feature = "npatch"))]
+/// Extension keys cannot change production unless the data turns NPatch on;
+/// either global name does, and both serialize the war factories.
 #[test]
-fn npse_switches_are_ignored_without_the_build_capability() {
-    let (mut f, weap_1, weap_2) = ai_limit_fixture("DisableParallelAIQueues=yes", "");
-    assert!(!f.rules.general.disable_parallel_ai_queues);
-    ai_limit_visit(&mut f, weap_1);
-    ai_limit_visit(&mut f, weap_2);
-    assert!(ai_limit_holds(&f, weap_1));
-    assert!(
-        ai_limit_holds(&f, weap_2),
-        "NPSE keys leave stock parallel production intact"
-    );
+fn npse_switch_keys_turn_the_per_game_npatch_switch_on() {
+    for key in ["DisableParallelAIQueues", "DisableAIParallelProduction"] {
+        let (mut f, weap_1, weap_2) = ai_limit_fixture(&format!("{key}=yes"), "");
+        assert!(f.rules.npatch(), "{key} turns NPatch on");
+        assert!(f.rules.general.disable_parallel_ai_queues, "{key}");
+        ai_limit_visit(&mut f, weap_1);
+        ai_limit_visit(&mut f, weap_2);
+        assert!(ai_limit_holds(&f, weap_1), "{key}");
+        assert!(
+            !ai_limit_holds(&f, weap_2),
+            "{key} serializes the second factory"
+        );
+    }
 }
 
 /// NPSE 2.0 C3395E releases before the caller drops the Factory's held
 /// pointer. A scan still sees that pointer and incorrectly blocks a start.
-#[cfg(feature = "npatch")]
 #[test]
 fn parallel_reservation_releases_at_exit_before_factory_cleanup() {
     let (mut f, first, second) = ai_limit_fixture("DisableParallelAIQueues=yes", "");
@@ -926,7 +1045,7 @@ fn parallel_reservation_releases_at_exit_before_factory_cleanup() {
         product,
         (8, 9),
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert!(
         ai_limit_holds(&f, first),
@@ -947,7 +1066,6 @@ fn parallel_reservation_releases_at_exit_before_factory_cleanup() {
 
 /// PointerExpired4CA580 clears only the held pointer; it does not run the
 /// C2EFB4 Abandon release. The remaining reservation must save and hash.
-#[cfg(feature = "npatch")]
 #[test]
 fn parallel_reservation_survives_product_expiry_and_state_roundtrip() {
     let (mut f, first, second) = ai_limit_fixture("DisableParallelAIQueues=yes", "");
@@ -965,7 +1083,7 @@ fn parallel_reservation_survives_product_expiry_and_state_roundtrip() {
     assert!(f.sim.discard_constructed_limbo(
         product,
         &f.rules,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     assert!(!ai_limit_holds(&f, first));
     ai_limit_visit(&mut f, second);
@@ -1003,7 +1121,6 @@ fn parallel_reservation_survives_product_expiry_and_state_roundtrip() {
 }
 
 /// NPSE 2.0 C2F0FB..C2F10F uses one Building counter, regardless of Naval.
-#[cfg(feature = "npatch")]
 #[test]
 fn parallel_building_reservation_does_not_split_on_naval() {
     let ini = RULES

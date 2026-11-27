@@ -66,6 +66,9 @@ impl UnitAtlas {
         let Some(entry) = self.get(key) else {
             return false;
         };
+        // Two owners, once per new shadow pose: the upload queue consumes its
+        // copy when it writes the page, and the retained mask answers
+        // `shadow_pool_bytes` after that.
         self.resident
             .borrow_mut()
             .restage(&entry, sprite.palette_indices.clone());
@@ -152,6 +155,7 @@ impl UnitAtlas {
             height,
             offset_x: offset[0],
             offset_y: offset[1],
+            hd: None,
         })
     }
 }

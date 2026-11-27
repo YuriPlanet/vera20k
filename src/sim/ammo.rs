@@ -65,6 +65,11 @@ impl TechnoAmmo {
         self.current
     }
 
+    /// The type's `Ammo=`, copied at construction.
+    pub const fn max(&self) -> i32 {
+        self.max
+    }
+
     /// Whether the count is exactly zero, which
     /// [`Self::refill_empty_from_type`] refills.
     pub(crate) const fn is_empty(&self) -> bool {
@@ -77,12 +82,6 @@ impl TechnoAmmo {
     pub(crate) fn change_type_capacity(&mut self, maximum: i32) {
         self.current = self.current.min(maximum);
         self.max = maximum;
-    }
-
-    /// The type's `Ammo=`; only the rearm reads it in production.
-    #[cfg(any(test, feature = "test-support"))]
-    pub(crate) const fn max(&self) -> i32 {
-        self.max
     }
 
     /// `AircraftClass::Drop_Payload @ 0x00415C60`'s Ammo writes: one round
@@ -124,6 +123,18 @@ impl TechnoAmmo {
             ),
         );
         self.current = X::ftol_i32_low_masked(X::sub(X::load_i32(self.current), reduction)).max(0);
+    }
+
+    /// A Wasm module's `Ammo` write and `AddAmmo` action (RFC 0001 appendix
+    /// 5.3, 7.1; VERA's own, no native body): the count, clamped to
+    /// `0..=maximum` (the type's `Ammo=`). False, writing nothing, for a type
+    /// without a positive `Ammo=`.
+    pub(crate) fn set_clamped(&mut self, count: i64, maximum: i32) -> bool {
+        if maximum <= 0 {
+            return false;
+        }
+        self.current = count.clamp(0, i64::from(maximum)) as i32;
+        true
     }
 
     /// RELOAD, radio `0x1F` (`0x006F4C9C`): one round more. The receiver has
@@ -179,7 +190,7 @@ impl TechnoAmmo {
     }
 
     /// The `+0x6CC` writers and PointerExpired's clear.
-    pub(crate) fn set_dock(&mut self, dock: Option<u64>) {
+    pub(crate) fn set_dock(&mut self, dock: Option<u64>, _: crate::sim::game_entity::NameNote) {
         self.dock = dock;
     }
 

@@ -5,7 +5,8 @@
 //! (`docs/lobby-protocol.md`): each sentence a key that VERA's language files
 //! hold as `VERA:Lobby<key>`, with the values to fill in. VERA shows the
 //! sentences in the language in use, and the lobby's `text` when a language
-//! file lacks a key, as for a key added to the lobby after this release.
+//! file lacks a key, as for a key added to the lobby after this release, or
+//! a sentence names a value its phrase lacks.
 
 use std::collections::BTreeMap;
 use std::fmt::Display;
@@ -42,8 +43,9 @@ pub(crate) enum PhraseValue {
 }
 
 /// A lobby line's `phrases` in the language in use, or `None` when a
-/// language file lacks one of their keys or a value is malformed, and the
-/// line's own text stands.
+/// language file lacks one of their keys, a sentence names a value its phrase
+/// lacks, a value is malformed or a phrase or join fills past the lobby's chat
+/// limit, and the line's own text stands.
 pub(crate) fn localized(phrases: &[Phrase]) -> Option<String> {
     let sentences = phrases
         .iter()
@@ -71,7 +73,7 @@ impl Phrase {
             .iter()
             .map(|(name, value)| (*name, value as &dyn Display))
             .collect();
-        Some(crate::i18n::fill(&text, &values))
+        filled(&text, &values)
     }
 }
 
@@ -135,10 +137,17 @@ fn joined(items: &[String], middle: &str, end: &str) -> Option<String> {
 
 fn join(key: &str, first: &str, second: &str) -> Option<String> {
     let pattern = crate::i18n::find(key)?;
-    Some(crate::i18n::fill(
-        &pattern,
-        &[("first", &first), ("second", &second)],
-    ))
+    filled(&pattern, &[("first", &first), ("second", &second)])
+}
+
+/// `template` with its values, or `None` when it names a value it lacks or
+/// fills past the lobby's chat limit, which none of its own lines comes near.
+/// Checking each fill bounds the work a line takes: a phrase nested in a
+/// value its sentence names twice doubles at each level, and each join of a
+/// list copies the rest of it again.
+fn filled(template: &str, values: &[(&str, &dyn Display)]) -> Option<String> {
+    crate::i18n::fill_all(template, values)
+        .filter(|line| line.len() <= super::live_service::CHAT_LIMIT_BYTES)
 }
 
 #[cfg(all(test, tests_app))]
@@ -174,6 +183,31 @@ mod tests {
         assert_eq!(localized(&unknown), None, "the lobby's own text stands");
     }
 
+    /// A room's line naming what only one game changes, as `service.js`
+    /// sends it, reads as the lobby's English, its files counted.
+    #[test]
+    fn a_rules_line_naming_changes_reads_as_the_lobby_wrote_it_in_english() {
+        let line: Vec<Phrase> = serde_json::from_str(
+            r#"[{"key":"RulesDifferFromHost","values":{"name":"Guest"}},
+               {"key":"OnlyHas","values":{"name":"Guest","changes":{"and":[
+                {"key":"ChangeAresOn"},
+                {"key":"ChangeFiles","values":{"count":9,"files":{"unit":[
+                 "expandmd10.mix","rulesmd.ini",{"key":"MoreFiles","values":{"count":7}}]}}}]}}},
+               {"key":"OnlyHostHas","values":{"changes":{"and":[
+                {"key":"ChangeFiles","values":{"count":1,"files":{"unit":["artmd.ini"]}}}]}}},
+               {"key":"SameRulesToStart"}]"#,
+        )
+        .unwrap();
+        assert_eq!(
+            localized(&line).as_deref(),
+            Some(
+                "Guest has other rules than the host. Only Guest has Ares set to On in Options \
+                 and the changed files expandmd10.mix, rulesmd.ini, 7 more. Only the host has \
+                 the changed file artmd.ini. Everyone needs the same rules to start."
+            )
+        );
+    }
+
     /// A ranked result, as `service.js` sends it, names its badge with the
     /// player list's badge names and reads as the lobby's English.
     #[test]
@@ -191,5 +225,37 @@ mod tests {
                  Demoted to Private. You left in the first 3 minutes, so it counts as your loss."
             )
         );
+    }
+
+    /// A line that fills past the chat limit leaves the lobby's text: a
+    /// phrase nested in the value its sentence names twice, which doubles at
+    /// each level, also in a value no sentence names, and a run of sentences,
+    /// whose every join copies the rest.
+    #[test]
+    fn a_line_past_the_chat_limit_leaves_the_lobbys_text() {
+        let mut name = r#""x""#.to_owned();
+        for _ in 0..6 {
+            name = format!(r#"{{"key":"AbandonedBy","values":{{"count":1,"name":{name}}}}}"#);
+        }
+        let nested: Vec<Phrase> = serde_json::from_str(&format!("[{name}]")).unwrap();
+        assert_eq!(localized(&nested), None);
+        let unnamed: Vec<Phrase> =
+            serde_json::from_str(&format!(r#"[{{"key":"Ranked","values":{{"x":{name}}}}}]"#))
+                .unwrap();
+        assert_eq!(localized(&unnamed), None, "each fill is bounded");
+        let ranked = Phrase {
+            key: "Ranked".to_owned(),
+            ..Phrase::default()
+        };
+        assert_eq!(localized(&vec![ranked; 300]), None);
+    }
+
+    /// A sentence that names a value its phrase lacks, as a lobby that
+    /// renamed the value would send it, leaves the lobby's text.
+    #[test]
+    fn a_sentence_missing_a_value_leaves_the_lobbys_text() {
+        let line: Vec<Phrase> =
+            serde_json::from_str(r#"[{"key":"WillNotRank","values":{"why":"x"}}]"#).unwrap();
+        assert_eq!(localized(&line), None);
     }
 }

@@ -7,21 +7,6 @@ use winit::window::{UserAttentionType, Window};
 
 use crate::app::frontend::startup_options::ScreenSize;
 use crate::app::match_runtime::frame_pacer::LocalFramePacer;
-use crate::ui::game_screen::GameScreen;
-
-/// Loading uses tactical dimensions only for pending match-resource setup;
-/// its own artwork uses the window directly. Frontend layout and hit testing
-/// must never inherit the match zoom's source size.
-pub(super) fn render_dimensions(
-    screen: &GameScreen,
-    window: (u32, u32),
-    tactical_source: Option<(u32, u32)>,
-) -> (u32, u32) {
-    match screen {
-        GameScreen::MainMenu | GameScreen::MissionResult { .. } => window,
-        GameScreen::Loading | GameScreen::InGame => tactical_source.unwrap_or(window),
-    }
-}
 
 /// Window lifecycle and wall-clock pacing owned by the platform layer.
 ///
@@ -42,7 +27,7 @@ pub(crate) struct PlatformState {
     /// elsewhere. winit 0.30.12 refuses Confined on macOS and pure Wayland, so
     /// there the pointer stays free while `cursor_confined` is on. Only
     /// `input::cursor`'s confinement calls write it. Presentation-only.
-    pub(crate) pointer_held: std::cell::Cell<bool>,
+    pub(crate) pointer_held: bool,
     /// Whether the OS pointer is inside the window's client area, from winit's
     /// enter/leave edges. Outside it the system owns the pointer — the title bar
     /// and resize border need the system arrow, which `DefWindowProc` installs
@@ -69,6 +54,11 @@ pub(crate) struct PlatformState {
     pub(crate) held_modifier_keys: crate::app::input::hotkeys::HeldModifierKeys,
     /// The input method's state for the chat edits (`app::input::ime`).
     pub(crate) ime: crate::app::input::ime::ImeState,
+    /// Whether the shell shows the LAN chat's send key and the narrower chat
+    /// edit beside it. On everywhere by default: a desktop player can also
+    /// send with the key, and the LAN room's layout already asks for it. A
+    /// platform layer may turn it off, or tune it to its input devices.
+    pub(crate) touch_send: bool,
     /// Whether this application currently owns the foreground.
     ///
     /// gamemd tracks the same edge-triggered byte from `WM_ACTIVATEAPP` and
@@ -173,13 +163,14 @@ impl PlatformState {
         Self {
             window,
             cursor_confined: false,
-            pointer_held: std::cell::Cell::new(false),
+            pointer_held: false,
             pointer_in_client: true,
             os_cursor_visible: None,
             hardware_cursor: Default::default(),
             live_modifiers: winit::keyboard::ModifiersState::empty(),
             held_modifier_keys: Default::default(),
             ime: Default::default(),
+            touch_send: true,
             window_active: true,
             pause_on_focus_loss,
             window_hidden: false,
@@ -197,7 +188,7 @@ impl PlatformState {
     }
 
     /// True while the window is deactivated and `pause_on_focus_loss` is
-    /// configured; [`super::AppState::focus_freeze_active`] adds the session
+    /// configured; [`super::focus_freeze_active`] adds the session
     /// gate and is the single gate for the simulation and the message clock.
     /// The audio stop is deliberately not part of it: gamemd gates its primary
     /// output on the activation edge itself, so that gate follows
@@ -213,6 +204,28 @@ impl PlatformState {
     /// cursor. Presentation-only.
     pub(crate) fn owns_pointer(&self) -> bool {
         self.pointer_in_client && self.window_active
+    }
+
+    /// Whether the OS pointer is held in the client area of the active
+    /// window, so a zoomed match clamps each movement to the frame
+    /// (`MatchInputState::set_cursor_from_window`).
+    pub(crate) fn confines_pointer(&self) -> bool {
+        self.pointer_held && self.window_active
+    }
+
+    /// A capture's own presentation choices, which stand in for the Options
+    /// ones; `None` outside captures.
+    pub(crate) fn capture_choices(&self) -> Option<&CapturePresentation> {
+        self.capture_client_size
+            .is_some()
+            .then_some(&self.capture_presentation)
+    }
+
+    /// Client presentation preference; the simulation never reads this option.
+    pub(crate) fn translucent_fog_enabled(&self) -> bool {
+        self.game_config
+            .as_ref()
+            .is_some_and(|config| config.graphics.translucent_fog)
     }
     /// VERA's own (gamemd never flashes its window): while another
     /// application is in front, flash the taskbar button (Windows), bounce

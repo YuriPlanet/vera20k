@@ -70,7 +70,7 @@ fn stale_primary_events_preserve_then_toggle_each_limbo_peer_flag() {
     };
     // This is the original Event17 receiver's accepted retained-state domain.
     // A common retail producer of an already-primary limbo peer is not claimed.
-    sim.techno_limbo_with_rules(first, &rules, None);
+    sim.techno_limbo_with_rules(first, &rules);
     let toggle = |sim: &mut Simulation, entity_id| {
         assert!(sim.apply_command(
             "Americans",
@@ -82,7 +82,7 @@ fn stale_primary_events_preserve_then_toggle_each_limbo_peer_flag() {
     assert!(sim.production.is_primary_factory(first));
     assert!(sim.production.is_primary_factory(second));
     // Full snapshot load reseeds the unsaved Scenario stream to zero.
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     // Compare this owner across full graph registration. Derived navigation
     // and the process RNG streams have their own native load policies.
     let primary_hash = |sim: &Simulation| {
@@ -363,7 +363,10 @@ fn assert_primary_native_state(
             native["flags"],
             "{context}: actor{id} flags"
         );
-        assert_eq!(u8::from(entity.selection.is_selected()), native["selected"]);
+        assert_eq!(
+            u8::from(entity.seldom.selection.is_selected()),
+            native["selected"]
+        );
         assert_eq!(u8::from(entity.lifecycle.cell_marked()), native["marked"]);
         let timer = entity.mission.dispatch_timer();
         assert_eq!(
@@ -483,7 +486,7 @@ fn manual_primary_native_histories_preserve_retained_flags_consumers_and_streams
             supply_primary_actor_flags(&mut sim, id, &case["initial"]["actors"][index]["flags"]);
             let entity = sim.substrate.entities.get_mut(id).unwrap();
             entity.lifecycle.set_cell_marked_for_test(true);
-            entity.selection.set_selected_for_test(false);
+            entity.seldom.selection.set_selected_for_test(false);
             sim.append_house_base_building_for_test(id);
             if actor["primary"].as_u64() == Some(1) {
                 sim.production.set_primary_factory(id);
@@ -492,9 +495,9 @@ fn manual_primary_native_histories_preserve_retained_flags_consumers_and_streams
         }
         sim.sound_events.clear_for_test();
         let seed = corpus["seed"].as_u64().unwrap();
-        sim.main_rng = SimRng::new(seed).into();
-        sim.scenario_rng = SimRng::new(seed);
-        sim.mapgen_rng = SimRng::new(seed);
+        *sim.main_rng = SimRng::new(seed);
+        *sim.scenario_rng = SimRng::new(seed);
+        *sim.mapgen_rng = SimRng::new(seed);
         let assert_rng = |sim: &Simulation, expected: &serde_json::Value| {
             assert_eq!(
                 sim.main_rng.native_state_hex(),
@@ -545,6 +548,7 @@ fn manual_primary_native_histories_preserve_retained_flags_consumers_and_streams
                                 .entities
                                 .get_mut(selected)
                                 .unwrap()
+                                .seldom
                                 .selection
                                 .set_selected_for_test(selected == id);
                         }

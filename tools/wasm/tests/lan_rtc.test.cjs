@@ -143,3 +143,16 @@ test('a peer that leaves mid-handshake cannot stall other peers or its own retur
   await settle();
   assert.deepEqual(answered(), [GUEST, HOST]);
 });
+
+test('a peer that never answers cannot queue unbounded early candidates', async () => {
+  const {api, sockets, peers, runTimers} = fixture();
+  api.veraLanOpen('wss://wss.vera20k.com', 1234, 2048);
+  sockets[0].opened();
+  sockets[0].signal({type: 'welcome', address: GUEST, peers: [THIRD], iceServers: []});
+  runTimers();
+  await settle();
+  for (let i = 0; i < 40; i++) sockets[0].signal({type: 'signal', from: THIRD, data: {candidate: {candidate: `c${i}`}}});
+  sockets[0].signal({type: 'signal', from: THIRD, data: {description: {type: 'answer', sdp: 'answer'}}});
+  for (let i = 0; i < 6; i++) await settle();
+  assert.equal(peers[0].candidates.length, 32);
+});

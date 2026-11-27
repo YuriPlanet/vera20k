@@ -2,7 +2,7 @@
 //! close once a second, so the rows hold still long enough to read;
 //! `PerformanceOverlay` lays the rows out and draws them.
 
-use crate::app::diagnostics::core_load::CoreLoadSampler;
+use crate::app::diagnostics::core_load::{self, CoreLoadSampler};
 use crate::app::diagnostics::state::RenderTimingMeter;
 use crate::app::diagnostics::thread_load::{ThreadLoadSampler, ThreadLoads};
 use crate::app::match_runtime::frame_pacer::LoopCounts;
@@ -63,6 +63,9 @@ const SIM_AREAS: [&str; PHASE_COUNT] = [
 
 /// The labels of the render's phases, in `RenderPhases::spans` order.
 const RENDER_AREAS: [&str; RenderPhases::COUNT] = [
+    "VERA:CpuDrawSnapshot",
+    "VERA:CpuDrawTerrain",
+    "VERA:CpuDrawObjects",
     "VERA:CpuDrawWorld",
     "VERA:CpuDrawDebug",
     "VERA:CpuDrawShroud",
@@ -107,7 +110,7 @@ pub(super) struct Shown {
     pub(super) areas: Vec<(&'static str, f32)>,
     pub(super) core_loads: Option<Vec<f32>>,
     /// The cores the process may use and the system's
-    /// (`process_affinity::allowed_cores`).
+    /// (`core_load::allowed_cores`).
     pub(super) allowed_cores: Option<(u32, u32)>,
     pub(super) threads: Option<ThreadLoads>,
     pub(super) loop_rates: Option<LoopRates>,
@@ -167,7 +170,7 @@ impl PanelStats {
             units: sample.map(|sample| sample.units),
             areas: wall.map_or_else(Vec::new, |wall| most_cpu(wall, sim_spans.as_ref(), &render)),
             core_loads: self.cores.sample(),
-            allowed_cores: crate::app::process_affinity::allowed_cores(),
+            allowed_cores: core_load::allowed_cores(),
             threads: self.threads.sample(now),
             loop_rates: wall
                 .zip(loop_counts)
@@ -539,14 +542,49 @@ mod tests {
     }
 
     #[test]
+    fn world_drawing_parts_show_under_their_own_labels() {
+        let mut meter = RenderTimingMeter::default();
+        meter.record(RenderPhases {
+            snapshot: Duration::from_millis(50),
+            terrain: Duration::from_millis(100),
+            objects: Duration::from_millis(300),
+            world: Duration::from_millis(200),
+            other: Duration::from_millis(20),
+            ..RenderPhases::default()
+        });
+        let areas = most_cpu(Duration::from_secs(1), None, &meter.totals());
+        assert_eq!(
+            areas,
+            [
+                ("VERA:CpuDrawObjects", 30.0),
+                ("VERA:CpuDrawWorld", 20.0),
+                ("VERA:CpuDrawTerrain", 10.0),
+                ("VERA:CpuDrawSnapshot", 5.0),
+                ("VERA:CpuDrawOther", 2.0)
+            ]
+        );
+        let labels: Vec<_> = areas.iter().map(area).collect();
+        assert_eq!(
+            labels,
+            [
+                "Draw objects 30%",
+                "Draw world 20%",
+                "Draw terrain 10%",
+                "Frame snapshot 5%",
+                "Draw other 2%"
+            ]
+        );
+    }
+
+    #[test]
     fn most_cpu_ranks_sim_and_render_areas_and_skips_a_restarted_profile() {
         let mut sim = [0u128; PHASE_COUNT];
         sim[crate::sim::frame_profile::phase::MOVEMENT] = 300_000_000;
         sim[crate::sim::frame_profile::phase::VISION] = 5_000_000;
         let mut render = [Duration::ZERO; RenderPhases::COUNT];
-        render[0] = Duration::from_millis(200);
-        render[9] = Duration::from_millis(400);
-        render[10] = Duration::from_millis(5);
+        render[3] = Duration::from_millis(200);
+        render[12] = Duration::from_millis(400);
+        render[13] = Duration::from_millis(5);
         assert_eq!(
             most_cpu(Duration::from_secs(1), Some(&sim), &render),
             [

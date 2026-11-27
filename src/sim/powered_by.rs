@@ -70,7 +70,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(entity) = self.substrate.entities.get(id) else {
             return false;
@@ -97,7 +97,7 @@ impl Simulation {
         killer: Option<u64>,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(health) = self
             .substrate
@@ -139,7 +139,7 @@ impl Simulation {
         id: u64,
         source: Option<u64>,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         use crate::sim::spawn_manager::SpawnSlotState;
         let Some(entity) = self.substrate.entities.get(id) else {
@@ -169,7 +169,13 @@ impl Simulation {
             Vec::new()
         };
         for rocket in rockets {
-            self.ares_techno_destroy(rocket, source, rules, effects.overlay_registry(), effects);
+            self.ares_techno_destroy(
+                rocket,
+                source,
+                rules,
+                Some(rules.overlay_registry()),
+                effects,
+            );
         }
         let frame = self.session.binary_frame() as i32;
         if let Some(manager) = self
@@ -187,13 +193,17 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let frame = self.session.binary_frame() as i32;
         let Some(entity) = self.substrate.entities.get_mut(id) else {
             return true;
         };
-        let state = entity.ares.powered_by.get_or_insert(PoweredBySource::new());
+        let state = entity
+            .seldom
+            .ares
+            .powered_by
+            .get_or_insert(PoweredBySource::new());
         if frame.wrapping_sub(state.last_scan) < SCAN_INTERVAL {
             return true;
         }
@@ -203,6 +213,7 @@ impl Simulation {
             return true;
         }
         entity
+            .seldom
             .ares
             .powered_by
             .as_mut()
@@ -219,6 +230,7 @@ impl Simulation {
         let has_power = busy || self.powered_by_source_online(id, rules);
         let entity = self.substrate.entities.get_mut(id).expect("same object");
         entity
+            .seldom
             .ares
             .powered_by
             .as_mut()
@@ -317,7 +329,11 @@ impl Simulation {
             .object_type(entity.type_ref(), rules)
             .is_some_and(|object| object.powered_unit)
         {
-            return entity.ares.powered_by.is_none_or(PoweredBySource::powered);
+            return entity
+                .seldom
+                .ares
+                .powered_by
+                .is_none_or(PoweredBySource::powered);
         }
         // No second building registry: the existing House+6C order.
         self.houses.get(&entity.owner()).is_some_and(|house| {
@@ -347,7 +363,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(entity) = self.substrate.entities.get(id) else {
             return false;
@@ -405,36 +421,13 @@ impl Simulation {
             .get(id)
             .is_some_and(|entity| entity.lift.target().is_some())
         {
-            self.release_locomotor(id, true, rules, None, effects);
+            self.release_locomotor(id, true, rules, Some(rules.overlay_registry()), effects);
         }
         // A Foot in a team leaves it (LiberateMember(this, -1, false)).
         if category.is_foot() {
             self.leave_team(id, false, rules, effects);
         }
-        let selected = self
-            .substrate
-            .entities
-            .get(id)
-            .is_some_and(|entity| entity.selection.is_selected());
-        // A Building's Focus survives the shared Deactivate's Guard reset.
-        let focus = (category == EntityCategory::Structure).then(|| {
-            self.substrate
-                .entities
-                .get(id)
-                .expect("same object")
-                .archive_target()
-        });
-        self.techno_deactivate(id, rules, effects);
-        // Deactivate deselects; a selected victim is selected again with
-        // the move feedback off (no voice).
-        if selected && let Some(entity) = self.substrate.entities.get_mut(id) {
-            entity.selection.select();
-        }
-        if let Some(focus) = focus
-            && let Some(entity) = self.substrate.entities.get_mut(id)
-        {
-            entity.set_archive_target(focus);
-        }
+        self.ares_deactivate_with_reselection(id, rules, effects);
         if category.is_foot() {
             let _ = self.mission_queue_exact(
                 id,
@@ -450,7 +443,7 @@ impl Simulation {
             .get(id)
             .is_some_and(|entity| entity.capture_manager.is_some())
         {
-            self.free_all_captures(id, rules, None, effects);
+            self.free_all_captures(id, rules, Some(rules.overlay_registry()), effects);
         }
         self.ares_update_spawn_manager(id, None, rules, effects);
         if let Some(manager) = self
@@ -466,7 +459,12 @@ impl Simulation {
 
     /// Installed EMPulse::DisableEMPEffect2 10062650 for a returned power
     /// source.
-    fn ares_disable_emp_effect2(&mut self, id: u64, rules: &RuleSet, effects: FrameEffects<'_>) {
+    fn ares_disable_emp_effect2(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        effects: &mut FrameEffects<'_>,
+    ) {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
         };

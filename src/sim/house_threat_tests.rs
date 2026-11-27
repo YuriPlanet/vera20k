@@ -131,7 +131,7 @@ fn invalid_grid_dependencies_fail_before_mutation() {
             .is_err()
     );
     assert_eq!(sim.state_hash(), before);
-    sim.resolved_terrain = map;
+    *sim.resolved_terrain = map;
 }
 
 #[test]
@@ -146,7 +146,7 @@ fn retained_grid_and_initialized_zero_both_affect_simulation_hash() {
             0,
             0,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     let initial = sim.state_hash();
@@ -187,7 +187,7 @@ fn foot_coefficient_is_copied_only_after_admitted_unlimbo() {
             0,
             0,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     assert_eq!(
@@ -220,7 +220,7 @@ fn foot_coefficient_is_copied_only_after_admitted_unlimbo() {
                 0,
                 placement,
                 &rules,
-                crate::sim::world::FrameEffects::default()
+                &mut crate::sim::world::FrameEffects::default()
             ),
             None
         );
@@ -243,7 +243,7 @@ fn foot_coefficient_is_copied_only_after_admitted_unlimbo() {
             0,
             PlacementEvidence::EvaluateMark,
             &rules,
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         ),
         Some(id)
     );
@@ -280,7 +280,8 @@ fn real_garrison_append_and_complete_ejection_refresh_the_existing_building_cach
             .cached_spatial_threat(),
         Some(7)
     );
-    assert!(sim.apply_command_with_overlays(
+    assert!((sim.apply_command_with_overlays(
+        crate::sim::command::CommandSender::Player(None),
         "Americans",
         &crate::sim::command::Command::CaptureBuilding {
             engineer_id: passenger,
@@ -288,8 +289,8 @@ fn real_garrison_append_and_complete_ejection_refresh_the_existing_building_cach
         },
         &rules,
         Some(&registry),
-        crate::sim::world::FrameEffects::default(),
-    ));
+        &mut crate::sim::world::FrameEffects::default(),
+    )).is_ok());
     let grid = sim.path_grid_snapshot().unwrap();
     for _ in 0..64 {
         sim.advance_tick(&[], Some(&rules), Some(&grid), Some(&registry), 67);
@@ -298,7 +299,7 @@ fn real_garrison_append_and_complete_ejection_refresh_the_existing_building_cach
             .entities
             .get(passenger)
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .is_inside_transport()
         {
             break;
@@ -309,7 +310,7 @@ fn real_garrison_append_and_complete_ejection_refresh_the_existing_building_cach
             .entities
             .get(building)
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .occupants()
             .count(),
         1
@@ -345,7 +346,7 @@ fn real_garrison_append_and_complete_ejection_refresh_the_existing_building_cach
         Some(&registry),
         building,
         crate::sim::passenger::garrison_eject::GarrisonEjectMode::Release,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(
         sim.substrate
@@ -371,7 +372,7 @@ fn real_garrison_append_and_complete_ejection_refresh_the_existing_building_cach
             .entities
             .get(building)
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .occupants()
             .count(),
         0
@@ -487,6 +488,29 @@ fn threat_receivers_ask_their_own_ally_masks() {
     }
 }
 
+/// The presentation copy keeps every House body under its key, in the
+/// registration order a draw reads (`Houses::order`), even though the bodies
+/// clone on the worker pool.
+#[test]
+fn the_presentation_copy_carries_every_house_in_registration_order() {
+    let mut sim = Simulation::new();
+    let allied = sim.interner.intern("Americans");
+    let soviet = sim.interner.intern("Russians");
+    // Register in the opposite order to the interned keys.
+    sim.houses
+        .register(HouseState::new(soviet, 1, None, false, 0, 20));
+    sim.houses
+        .register(HouseState::new(allied, 0, None, true, 0, 10));
+
+    let copy = sim.presentation_copy(None, None);
+
+    assert_eq!(copy.houses.order(), &[soviet, allied]);
+    assert_eq!(copy.houses.get(&allied).unwrap().side_index(), 0);
+    assert!(copy.houses.get(&allied).unwrap().is_human());
+    assert_eq!(copy.houses.get(&soviet).unwrap().side_index(), 1);
+    assert!(!copy.houses.get(&soviet).unwrap().is_human());
+}
+
 /// The presentation copy of the world holds no House threat grid, and the
 /// live world keeps its own as it was.
 #[test]
@@ -511,4 +535,21 @@ fn the_presentation_copy_leaves_the_threat_grids_with_the_live_world() {
         sim.houses.get(&owner).unwrap().spatial_threat_values(),
         grid
     );
+}
+
+/// The copy holds no base reservations either (CellClass `+0xDC`, read only
+/// by the AI's base planning): a city map's buildings reserve tens of
+/// thousands of cells, which cloned took most of the copy. The live world
+/// keeps its own.
+#[test]
+fn the_presentation_copy_leaves_the_base_reservations_with_the_live_world() {
+    let mut sim = Simulation::new();
+    sim.base_reservations_mut_for_test().reserve(None, 3, 4, 2);
+    let reserved = sim.base_reservations().raw_mask(None, 3, 4);
+    assert_ne!(reserved, 0);
+
+    let copy = sim.presentation_copy(None, None);
+
+    assert_eq!(copy.base_reservations().entries().len(), 0);
+    assert_eq!(sim.base_reservations().raw_mask(None, 3, 4), reserved);
 }

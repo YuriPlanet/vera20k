@@ -219,9 +219,21 @@ fn compare(row: &Value, joined: bool) {
     let native_id = sim.native_identity_cursor();
     let rng = sim.scenario_rng().logical_state();
     if joined {
-        sim.change_owner_with_rules(BUILDING, new_owner, &rules, None, FrameEffects::default());
+        sim.change_owner_with_rules(
+            BUILDING,
+            new_owner,
+            &rules,
+            None,
+            &mut FrameEffects::default(),
+        );
     } else {
-        sell_after_owner_change(&mut sim, &rules, BUILDING, None, FrameEffects::default());
+        sell_after_owner_change(
+            &mut sim,
+            &rules,
+            BUILDING,
+            None,
+            &mut FrameEffects::default(),
+        );
     }
     assert_eq!(
         state(&sim, &rules, new_owner),
@@ -263,6 +275,45 @@ fn captured_building_sale_matches_original_joined_owner_transitions() {
 }
 
 #[test]
+fn ai_capture_sale_uses_admitted_rules_on_the_owner_transition() {
+    let row = corpus()["joined_cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["input"]["name"] == "ai_capture")
+        .unwrap();
+    let campaign = ScenarioGameMode::from_game_mode(0);
+    let skirmish = ScenarioGameMode::from_game_mode(5);
+    let campaign_rules = campaign.stock_rule_policy(None);
+    let campaign_with_sale = campaign_rules.with_uses_ai_economy(true);
+    for (mode, policy, player_control, expect_sale) in [
+        (campaign, campaign_rules, false, false),
+        (skirmish, skirmish.stock_rule_policy(None), true, true),
+        (campaign, campaign_with_sale, false, true),
+        (campaign, campaign_with_sale, true, false),
+    ] {
+        let (mut sim, rules, new_owner) = scene(row);
+        sim.install_session_admission(mode, None, policy);
+        sim.houses
+            .get_mut(&new_owner)
+            .unwrap()
+            .set_player_control_for_test(player_control);
+        sim.change_owner_with_rules(
+            BUILDING,
+            new_owner,
+            &rules,
+            None,
+            &mut FrameEffects::default(),
+        );
+        let building = sim.entities().get(BUILDING).unwrap();
+        assert_eq!(
+            building.mission.current().known() == Some(MissionType::Selling),
+            expect_sale,
+        );
+    }
+}
+
+#[test]
 fn captured_building_sale_matches_original_tail_gates_and_upgrade_refunds() {
     let rows = corpus()["tail_cases"].as_array().unwrap();
     assert!(!rows.is_empty());
@@ -280,9 +331,9 @@ fn turret_upgrade_selling_matches_original_refund_constructor_and_rng_visits() {
         let next_id = sim.next_stable_object_id();
         let native_id = sim.native_identity_cursor().unwrap();
         let initial = &row["rng_before"];
-        sim.scenario_rng = SimRng::from_native_state_hex_for_test(name(&initial["scenario"]));
-        sim.main_rng = SimRng::from_native_state_hex_for_test(name(&initial["main"])).into();
-        sim.mapgen_rng = SimRng::from_native_state_hex_for_test(name(&initial["mapgen"]));
+        *sim.scenario_rng = SimRng::from_native_state_hex_for_test(name(&initial["scenario"]));
+        *sim.main_rng = SimRng::from_native_state_hex_for_test(name(&initial["main"]));
+        *sim.mapgen_rng = SimRng::from_native_state_hex_for_test(name(&initial["mapgen"]));
         let mut constructors = 0;
         for phase in row["phases"].as_array().unwrap() {
             let draws = phase["draws"].as_array().unwrap();
@@ -298,7 +349,7 @@ fn turret_upgrade_selling_matches_original_refund_constructor_and_rng_visits() {
             constructors += draws.len() as u64;
             sim.session
                 .set_binary_frame_for_test(phase["frame"].as_u64().unwrap() as u32);
-            sim.visit_building_down(BUILDING, &rules, None, FrameEffects::default());
+            sim.visit_building_down(BUILDING, &rules, None, &mut FrameEffects::default());
             assert_eq!(state(&sim, &rules, owner), phase["state"]);
             for (actual, stream) in [
                 (sim.scenario_rng().logical_state(), "scenario"),

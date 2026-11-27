@@ -9,6 +9,13 @@
 //! A third kind, a row or a column, holds buttons and texts and places them
 //! one after another, so they need no places of their own. A fourth, a cameo
 //! grid, shows one tab's build pictures in the sidebar beside its own grid.
+//!
+//! The parts a client module drives (RFC 0001 section 10, appendix 7.10):
+//! a button with only a `Label=` or an `Art=` and no `Command=` (a click
+//! gives the module its `Click` alone), a text with a `Label=` in place of
+//! a `Value=`, a picture (`Image`), a bar (`Bar`, filled by a module) and a
+//! list of lines (`List`, filled by a module). A map's own `[VeraUI]`
+//! parts are read into the same list ([`crate::ui::match_layout::map_parts`]).
 
 use crate::ui::field_layout::PartBox;
 
@@ -75,21 +82,40 @@ impl TextValue {
     }
 }
 
+/// What a text part shows.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TextShows {
+    /// `Value=`: a value of the match, kept up to date.
+    Value(TextValue),
+    /// `Label=`: a string-table entry's name or literal text (appendix
+    /// 7.10 `Label`), which a client module may change.
+    Label(String),
+}
+
 /// What an added part is.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AddedKind {
     /// A button that gives `command`: a hotkey's name from the keyboard file
-    /// or a command-bar button's from `uimd.ini`. It shows the picture `art`
-    /// names (frame 0, and frame 1 while held down), or without one a box
-    /// with `label` in it.
+    /// or a command-bar button's from `uimd.ini`; with none, a click only
+    /// tells the client modules (`Click`, appendix 4.6). It shows the
+    /// picture `art` names (frame 0, and frame 1 while held down), or
+    /// without one a box with `label` in it.
     Button {
-        command: String,
+        command: Option<String>,
         label: String,
         art: Option<String>,
     },
     Text {
-        value: TextValue,
+        shows: TextShows,
     },
+    /// A picture `art` names, at its own size.
+    Image {
+        art: String,
+    },
+    /// A bar a client module fills (`Fill`, 0..100); empty until it does.
+    Bar,
+    /// Lines a client module writes (`Items`); empty until it does.
+    List,
     /// A row (or a column) of buttons and texts, `gap` pixels apart. A row
     /// with a width starts a new line when the next part would pass it; a
     /// column with a height starts a new column.
@@ -178,7 +204,7 @@ mod tests {
             section: "Mine.Stop".to_owned(),
             holder: Holder::Field,
             kind: AddedKind::Text {
-                value: TextValue::Credits,
+                shows: TextShows::Value(TextValue::Credits),
             },
             place,
         };

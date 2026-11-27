@@ -3,104 +3,73 @@
 //! (`0x0078B829..0x0078BA39`). The lobby stays alive and hidden under them:
 //! its service sinks keep writing to it, its timers are gated off.
 //!
-//! The pages' modal loop dispatches without `IsDialogMessage`, so Enter,
-//! Escape and Tab do nothing, and its idle (`0x0077F900`) never closes the
-//! dialog; Escape only closes VERA's open translation list.
+//! The classic modal loop dispatches without `IsDialogMessage`, so Enter,
+//! Escape and Tab do nothing. The modern page applies options live and
+//! Escape closes its open translation list.
 
 use super::{WolPage, apply_wol_preferences};
-use crate::app::frontend::{shell_layout, shell_transition::ShellExitThen};
+use crate::app::audio_runtime::AppAudioRuntime;
+use crate::app::frontend::shell_layout;
+use crate::app::frontend::state::FrontendState;
+use crate::app::persistence::{options_profile::RetailOptionsProfile, profile_file};
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
+use crate::app::shell_main_menu::ClientStep;
+use crate::app::shell_wol::WolVisit;
 use crate::app::{App, AppState};
+use crate::render::gpu::GpuContext;
 use crate::ui::chat_translation::ChatTranslation;
-use crate::ui::main_menu_dialogs::options::LauncherCue;
-use crate::ui::shell::combobox::ComboPress;
-use crate::ui::shell::sound::{
-    SHELL_SOUND_PAGE, ShellSoundLayout, SoundButton, SoundControl, SoundState,
-};
+use crate::ui::shell::page::{self, PageCue, PageEvent};
+use crate::ui::shell::sound::{self, SHELL_SOUND_PAGE, ShellSoundLayout};
 use crate::ui::wol_options::{
-    DIALOG, TRANSLATE, WolOptionsAction, WolOptionsLayout, WolOptionsState, WolPreferences,
+    self, DIALOG, TRANSLATE, TRANSLATE_OFF_KEY, WolOptionsAction, WolOptionsLayout, WolPreferences,
 };
-use crate::util::time::Instant;
+use crate::util::config::GameConfig;
+use crate::util::ini_writer::set_ini_values;
+use vera20k_gui::shell::combobox::ComboPopup;
+use vera20k_gui::{Gui, NodeId};
 
-/// The open `0x2BC`, and `0xD6` while it runs over the hidden `0x2BC`.
+/// The open `0x2BC`, and `0xD6` while it runs over the hidden `0x2BC`. Their
+/// widgets hold what they show; these are what each builds from.
 #[derive(Debug, Clone)]
 pub(crate) struct WolOptionsPage {
-    pub(crate) ui: WolOptionsState,
-    pub(crate) sound: Option<SoundState>,
+    /// What `0x2BC` shows when built: the live values (init `0x497`), or
+    /// what it showed when it hid for Sound Options.
+    pub(crate) shown: (WolPreferences, ChatTranslation),
+    /// `0xD6`'s slider positions and whether they take a press.
+    pub(crate) sound: Option<([u8; 3], bool)>,
 }
 
-pub(crate) fn layout(state: &AppState) -> WolOptionsLayout {
-    let (width, height) = shell_layout::shell_screen_size(state);
-    let layout = if shell_layout::fills_window(state) {
-        WolOptionsLayout::responsive(width as i32, height as i32)
+pub(crate) fn layout(wol: Option<&WolVisit>, gpu: &GpuContext) -> WolOptionsLayout {
+    if modern(wol) {
+        shell_layout::on(gpu, |width, height, _| {
+            WolOptionsLayout::modern(width, height)
+        })
     } else {
-        WolOptionsLayout::new(width as i32, height as i32)
-    };
-    if state
-        .frontend
-        .wol
-        .as_ref()
-        .is_some_and(|visit| visit.modern_ui())
-    {
-        layout.modern()
+        shell_layout::on(gpu, WolOptionsLayout::new)
+    }
+}
+
+fn modern(wol: Option<&WolVisit>) -> bool {
+    wol.is_some_and(|visit| visit.modern_ui())
+}
+
+pub(crate) fn menu_spec(
+    wol: Option<&WolVisit>,
+) -> &'static crate::ui::shell::menu_page::MenuPageSpec {
+    if modern(wol) {
+        &wol_options::MODERN_PAGE
     } else {
-        layout
+        &wol_options::PAGE
     }
 }
 
-pub(crate) fn sound_layout(state: &AppState) -> ShellSoundLayout {
-    let (width, height) = shell_layout::shell_screen_size(state);
-    if shell_layout::fills_window(state) {
-        ShellSoundLayout::responsive(width as i32, height as i32)
-    } else {
-        ShellSoundLayout::new(width as i32, height as i32)
-    }
+pub(crate) fn sound_layout(gpu: &GpuContext) -> ShellSoundLayout {
+    shell_layout::on(gpu, ShellSoundLayout::new)
 }
 
-/// `0x0072BAC0`: WOLOptions.shp (800 wide only) through WOLOptions.PAL.
-pub(crate) fn open_art(state: &mut AppState) -> bool {
-    if state.frontend.wol_options_art.is_some() {
-        return true;
-    }
-    let Some(assets) = state.process_assets.manager() else {
-        return false;
-    };
-    state.frontend.wol_options_art = crate::render::main_menu_shell_chrome::build_wol_page_art(
-        &state.renderer.gpu,
-        &state.renderer.batch_renderer,
-        assets,
-        shell_layout::art_key_screen_width(state),
-        ("WOLOptions.shp", "WOLOptions.PAL"),
-        &[],
-    );
-    state.frontend.wol_options_art.is_some()
-}
-
-/// `0x0072B8E0`: WOLSoundOptions.shp (800 wide only) through its palette.
-pub(crate) fn open_sound_art(state: &mut AppState) -> bool {
-    if state.frontend.wol_sound_options_art.is_some() {
-        return true;
-    }
-    let Some(assets) = state.process_assets.manager() else {
-        return false;
-    };
-    state.frontend.wol_sound_options_art =
-        crate::render::main_menu_shell_chrome::build_wol_page_art(
-            &state.renderer.gpu,
-            &state.renderer.batch_renderer,
-            assets,
-            shell_layout::art_key_screen_width(state),
-            ("WOLSoundOptions.shp", "WOLSoundOptions.PAL"),
-            &[],
-        );
-    state.frontend.wol_sound_options_art.is_some()
-}
-
-fn is_button(id: u16) -> bool {
-    crate::ui::wol_options::PAGE.button(id).is_some()
-}
-
-fn page_mut(state: &mut AppState) -> Option<&mut WolOptionsPage> {
-    match &mut state.frontend.wol.as_mut()?.page {
+fn page_mut(wol: Option<&mut WolVisit>) -> Option<&mut WolOptionsPage> {
+    match &mut wol?.page {
         WolPage::Options(page) => Some(page),
         _ => None,
     }
@@ -108,22 +77,36 @@ fn page_mut(state: &mut AppState) -> Option<&mut WolOptionsPage> {
 
 /// `0x113` has slid out (`0x006071E0`) over the empty backdrop: the art,
 /// then `UI__BeginDialog(0x2BC)` and its init `0x497`.
-pub(crate) fn commit_open(state: &mut AppState) {
-    let ui = WolOptionsState::open(
-        &state.frontend.wol_preferences,
-        state.persistence.options_profile.chat_translation,
-    );
-    let Some(visit) = state.frontend.wol.as_mut() else {
+pub(crate) fn commit_open(
+    frontend: &mut FrontendState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    options_profile: &RetailOptionsProfile,
+    audio: &AppAudioRuntime,
+) {
+    let shown = (frontend.wol_preferences, options_profile.chat_translation);
+    let Some(visit) = frontend.wol.as_mut() else {
         return;
     };
     if let Some(lobby) = visit.lobby_mut() {
         lobby.shown = false;
-        lobby.ui.buttons = Default::default();
+        lobby.ui.release_buttons();
     }
-    visit.page = WolPage::Options(Box::new(WolOptionsPage { ui, sound: None }));
-    open_art(state);
-    state.frontend.shell_controller.reset_to(DIALOG, false);
-    state.platform.window.request_redraw();
+    visit.page = WolPage::Options(Box::new(WolOptionsPage { shown, sound: None }));
+    super::leaf::open_art(
+        frontend,
+        process_assets,
+        renderer,
+        crate::ui::wol_options::DIALOG,
+    );
+    frontend.shell_controller.reset_to(DIALOG);
+    sync_gui(
+        frontend,
+        process_assets,
+        &renderer.gpu,
+        options_profile,
+        audio,
+    );
 }
 
 /// `0x2BC`'s teardown has run (`CloseAndPop`). The caller re-shows the
@@ -132,12 +115,15 @@ pub(crate) fn commit_open(state: &mut AppState) {
 /// with ObserverMode (`0x0077DFD0`); both results then apply (`0x0077E110`).
 /// Changed translation settings are saved too.
 pub(crate) fn commit_close(
-    state: &mut AppState,
+    frontend: &mut FrontendState,
+    game_config: Option<&GameConfig>,
+    options_profile: &mut RetailOptionsProfile,
+    audio: &mut AppAudioRuntime,
     staged: Option<(WolPreferences, ChatTranslation)>,
 ) {
-    state.frontend.wol_options_art = None;
-    state.frontend.wol_sound_options_art = None;
-    let Some(visit) = state.frontend.wol.as_mut() else {
+    super::leaf::free_art(&mut frontend.wol_art, crate::ui::wol_options::DIALOG);
+    super::leaf::free_art(&mut frontend.wol_art, SHELL_SOUND_PAGE.dialog);
+    let Some(visit) = frontend.wol.as_mut() else {
         return;
     };
     visit.page = WolPage::Lobby;
@@ -145,284 +131,442 @@ pub(crate) fn commit_close(
         lobby.shown = true;
         lobby.ui.refocus_chat();
     }
-    state
-        .frontend
-        .shell_controller
-        .reset_to(super::WOL_LOBBY_DIALOG, false);
+    frontend.shell_controller.reset_to(super::WOL_LOBBY_DIALOG);
     if let Some((staged, translate)) = staged {
-        state.frontend.wol_preferences = staged;
-        let profile = &mut state.persistence.options_profile;
-        profile.wol_preferences = staged;
-        let translate_changed = profile.chat_translation != translate;
-        profile.chat_translation = translate;
-        if let Some(config) = state.platform.game_config.as_ref() {
+        frontend.wol_preferences = staged;
+        options_profile.wol_preferences = staged;
+        let translate_changed = options_profile.chat_translation != translate;
+        options_profile.chat_translation = translate;
+        if let Some(config) = game_config {
             let dir = config.paths.settings_dir();
-            if let Err(error) = profile.commit_wol_preferences(dir) {
+            if let Err(error) = options_profile.commit_wol_preferences(dir) {
                 log::warn!("Could not save the WOL options: {error}");
             }
-            if translate_changed && let Err(error) = profile.commit_chat_translation(dir) {
+            if translate_changed && let Err(error) = options_profile.commit_chat_translation(dir) {
                 log::warn!("Could not save the chat translation settings: {error}");
             }
         }
-        state
-            .frontend
-            .multiplayer_shell_runtime
-            .persist_observer_mode();
+        frontend.multiplayer_shell_runtime.persist_observer_mode();
     }
-    apply_wol_preferences(state);
-    state.platform.window.request_redraw();
+    if !modern(frontend.wol.as_ref()) {
+        apply_wol_preferences(frontend, audio);
+    }
 }
 
 /// `0x2BC` has slid out for Sound Options: the art, then `0x6B6230` runs
 /// `0xD6` because the handler cleared `g_GameActive` (`0x0078EEAD`).
-pub(crate) fn commit_open_sound(state: &mut AppState) {
-    let positions = crate::app::input::sound::volume_positions(state);
-    let sliders_enabled = state.audio.launcher_audio_available;
-    let Some(page) = page_mut(state) else {
+pub(crate) fn commit_open_sound(
+    frontend: &mut FrontendState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    options_profile: &RetailOptionsProfile,
+    audio: &AppAudioRuntime,
+) {
+    let positions = crate::app::input::sound::volume_positions(options_profile);
+    let sliders_enabled = audio.launcher_audio_available;
+    let Some(page) = page_mut(frontend.wol.as_mut()) else {
         return;
     };
-    page.ui.buttons = Default::default();
-    page.ui.hovered = None;
     // GameActive 0 skips the track list init (0x006B6485).
-    let mut sound = SoundState::new(positions, Vec::new(), -1);
-    sound.sliders_enabled = sliders_enabled;
-    page.sound = Some(sound);
-    open_sound_art(state);
-    state
-        .frontend
-        .shell_controller
-        .reset_to(SHELL_SOUND_PAGE.dialog, false);
-    state.platform.window.request_redraw();
+    page.sound = Some((positions, sliders_enabled));
+    super::leaf::open_art(frontend, process_assets, renderer, SHELL_SOUND_PAGE.dialog);
+    frontend.shell_controller.reset_to(SHELL_SOUND_PAGE.dialog);
+    sync_gui(
+        frontend,
+        process_assets,
+        &renderer.gpu,
+        options_profile,
+        audio,
+    );
 }
 
 /// `0xD6`'s teardown has run: `ShowWindow(0x2BC, 5)` (it slides in again)
 /// and `0x0072B930` frees the Sound Options art.
-pub(crate) fn commit_sound_back(state: &mut AppState) {
-    state.frontend.wol_sound_options_art = None;
-    if let Some(page) = page_mut(state) {
+pub(crate) fn commit_sound_back(
+    frontend: &mut FrontendState,
+    process_assets: &ProcessAssets,
+    gpu: &GpuContext,
+    options_profile: &RetailOptionsProfile,
+    audio: &AppAudioRuntime,
+) {
+    super::leaf::free_art(&mut frontend.wol_art, SHELL_SOUND_PAGE.dialog);
+    if let Some(page) = page_mut(frontend.wol.as_mut()) {
         page.sound = None;
     }
-    state.frontend.shell_controller.reset_to(DIALOG, false);
-    state.platform.window.request_redraw();
+    frontend.shell_controller.reset_to(DIALOG);
+    sync_gui(frontend, process_assets, gpu, options_profile, audio);
 }
 
-fn dispatch(state: &mut AppState, action: WolOptionsAction) {
+/// A control's action; a close or Sound Options' slide is the returned
+/// step.
+#[must_use]
+fn dispatch(
+    frontend: &mut FrontendState,
+    game_config: Option<&GameConfig>,
+    options_profile: &mut RetailOptionsProfile,
+    audio: &mut AppAudioRuntime,
+    action: WolOptionsAction,
+) -> Option<ClientStep> {
     match action {
-        WolOptionsAction::Ok(staged, translate) => App::leave_shell_dialog(
-            state,
-            ShellExitThen::WolOptionsClose(Some((staged, translate))),
-        ),
-        WolOptionsAction::Cancel => {
-            App::leave_shell_dialog(state, ShellExitThen::WolOptionsClose(None))
+        WolOptionsAction::Ok(staged, translate) => {
+            return Some(ClientStep::Leave(
+                crate::app::frontend::shell_transition::ShellSlideKind::WolOptions,
+                Box::new(move |state: &mut AppState| {
+                    crate::app::shell_wol::options::commit_close(
+                        &mut state.frontend,
+                        state.platform.game_config.as_ref(),
+                        &mut state.persistence.options_profile,
+                        &mut state.audio,
+                        Some((staged, translate)),
+                    )
+                }),
+            ));
+        }
+        WolOptionsAction::Cancel | WolOptionsAction::Back => {
+            return Some(ClientStep::Leave(
+                crate::app::frontend::shell_transition::ShellSlideKind::WolOptions,
+                Box::new(move |state: &mut AppState| {
+                    crate::app::shell_wol::options::commit_close(
+                        &mut state.frontend,
+                        state.platform.game_config.as_ref(),
+                        &mut state.persistence.options_profile,
+                        &mut state.audio,
+                        None,
+                    )
+                }),
+            ));
         }
         WolOptionsAction::SoundOptions => {
-            App::leave_shell_dialog(state, ShellExitThen::WolSoundOptionsOpen)
+            // 0x2BC only hides under 0xD6: it shows the same states again.
+            if let Some(shown) = shown(frontend)
+                && let Some(page) = page_mut(frontend.wol.as_mut())
+            {
+                page.shown = shown;
+            }
+            return Some(ClientStep::Leave(
+                crate::app::frontend::shell_transition::ShellSlideKind::WolOptions,
+                Box::new(|state: &mut AppState| {
+                    crate::app::shell_wol::options::commit_open_sound(
+                        &mut state.frontend,
+                        &state.process_assets,
+                        &state.renderer,
+                        &state.persistence.options_profile,
+                        &state.audio,
+                    )
+                }),
+            ));
         }
-        WolOptionsAction::MusicPreview(checked) => {
-            let now_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
-            state.audio.apply_wol_lobby_music_rule(checked, now_ms);
+        WolOptionsAction::MusicPreview(checked) => apply_lobby_music(audio, checked),
+        WolOptionsAction::LobbyMusic(checked) => {
+            let preferences = &mut frontend.wol_preferences;
+            preferences.lobby_music = i32::from(checked);
+            options_profile.wol_preferences.lobby_music = preferences.lobby_music;
+            apply_lobby_music(audio, checked);
+            if let Some(config) = game_config
+                && let Err(error) =
+                    options_profile.commit_wol_preferences(config.paths.settings_dir())
+            {
+                log::warn!("Could not save the WOL options: {error}");
+            }
+        }
+        WolOptionsAction::Translation(translate) => {
+            if options_profile.chat_translation != translate {
+                options_profile.chat_translation = translate;
+                if let Some(config) = game_config
+                    && let Err(error) =
+                        options_profile.commit_chat_translation(config.paths.settings_dir())
+                {
+                    log::warn!("Could not save the chat translation settings: {error}");
+                }
+            }
+        }
+    }
+    None
+}
+
+fn apply_lobby_music(audio: &mut AppAudioRuntime, enabled: bool) {
+    let now_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
+    audio.apply_wol_lobby_music_rule(enabled, now_ms);
+}
+
+/// The shown page's dialog root, and whether it is `0xD6`'s.
+fn shown_root(frontend: &FrontendState) -> Option<(NodeId, bool)> {
+    let WolPage::Options(page) = &frontend.wol.as_ref()?.page else {
+        return None;
+    };
+    let dialog = match page.sound {
+        Some(_) => SHELL_SOUND_PAGE.dialog,
+        None => DIALOG,
+    };
+    let controller = &frontend.shell_controller;
+    let root = controller.root_in(dialog)?;
+    Some((root, page.sound.is_some())).filter(|_| controller.top_id() == Some(dialog))
+}
+
+/// `read` of the shown page's tree, when that is `0xD6` (`sound`) or `0x2BC`.
+fn read<'a, T>(
+    frontend: &'a FrontendState,
+    sound: bool,
+    read: impl FnOnce(&'a Gui, NodeId) -> T,
+) -> Option<T> {
+    let (root, on_sound) = shown_root(frontend)?;
+    (on_sound == sound).then(|| read(frontend.shell_controller.gui(), root))
+}
+
+/// What the shown `0x2BC`'s boxes and list hold.
+pub(crate) fn shown(frontend: &FrontendState) -> Option<(WolPreferences, ChatTranslation)> {
+    read(frontend, false, wol_options::shown)
+}
+
+/// The visible volume controls' positions.
+pub(crate) fn sound_positions(frontend: &FrontendState) -> Option<[u8; 3]> {
+    read(
+        frontend,
+        !modern(frontend.wol.as_ref()),
+        sound::shell_sound_positions,
+    )
+}
+
+/// Builds the shown page's widgets (`0x2BC`'s or `0xD6`'s) under its dialog
+/// once, and puts them on the current layout.
+pub(crate) fn sync_gui(
+    frontend: &mut FrontendState,
+    process_assets: &ProcessAssets,
+    gpu: &GpuContext,
+    options_profile: &RetailOptionsProfile,
+    audio: &AppAudioRuntime,
+) {
+    let options = layout(frontend.wol.as_ref(), gpu);
+    let sound = sound_layout(gpu);
+    let off = process_assets.csf.as_ref().map_or_else(
+        || TRANSLATE_OFF_KEY.to_owned(),
+        |csf| csf.text(TRANSLATE_OFF_KEY).into_owned(),
+    );
+    let Some((root, _)) = shown_root(frontend) else {
+        return;
+    };
+    let audio = modern(frontend.wol.as_ref()).then(|| {
+        (
+            crate::app::input::sound::volume_positions(options_profile),
+            audio.launcher_audio_available,
+        )
+    });
+    let Some(WolPage::Options(page)) = frontend.wol.as_ref().map(|visit| &visit.page) else {
+        return;
+    };
+    let controller = &mut frontend.shell_controller;
+    match page.sound {
+        Some((positions, enabled)) => {
+            controller.set_scale(sound.page.scale);
+            let gui = controller.gui_mut();
+            page::ensure_built(gui, root, || sound::shell_sound_spec(positions, enabled));
+            page::sync_rects(gui, root, |id| sound.rect(id));
+        }
+        None => {
+            controller.set_scale(options.page.scale);
+            let gui = controller.gui_mut();
+            page::ensure_built(gui, root, || wol_options::spec(page.shown, &off, audio));
+            page::sync_rects(gui, root, |id| options.rect(id));
+        }
+    }
+}
+
+/// Keep the shared profile's canonical formatting, but apply only the volume
+/// keys this page owns. Lobby sliders must not commit the complete profile.
+fn transform_lobby_volumes(input: &[u8], profile: &RetailOptionsProfile) -> Vec<u8> {
+    let audio = profile.formatted_sections().audio;
+    let volumes: Vec<_> = audio
+        .iter()
+        .filter(|(key, _)| matches!(*key, "SoundVolume" | "VoiceVolume" | "ScoreVolume"))
+        .map(|(key, value)| (*key, value.as_str()))
+        .collect();
+    set_ini_values(input, "Audio", &volumes)
+}
+
+/// The widget events of the last input, in order: each control's cue, then
+/// what it does. `0x6B6300` on `0xD6`: the sliders apply live and Back
+/// re-applies all three (shared with B8). The rail press plays nothing
+/// (`0x006B6382`/`0x006B63EA`/`0x006B6444`).
+fn handle_events(state: &mut AppState) {
+    let raw = state.frontend.shell_controller.drain_events();
+    let Some((root, on_sound)) = shown_root(&state.frontend) else {
+        return;
+    };
+    let modern = modern(state.frontend.wol.as_ref());
+    for event in page::page_events(state.frontend.shell_controller.gui(), raw) {
+        let gui = state.frontend.shell_controller.gui();
+        match event {
+            PageEvent::Cue(cue) => {
+                App::play_page_cue(
+                    &state.frontend,
+                    &state.match_state,
+                    &state.process_assets,
+                    &mut state.audio.sfx_player,
+                    cue,
+                );
+                if matches!(cue, PageCue::ComboOpen | PageCue::ComboClose) {
+                    state.frontend.shell_status_line.repaint();
+                }
+            }
+            PageEvent::Activated(id) if on_sound && id == SHELL_SOUND_PAGE.back.id => {
+                let positions = sound::shell_sound_positions(gui, root);
+                crate::app::input::sound::apply_back_volumes(
+                    &state.frontend,
+                    &state.match_state,
+                    &state.process_assets,
+                    &mut state.audio,
+                    &mut state.persistence.options_profile,
+                    positions,
+                );
+                App::leave_shell_dialog(
+                    state,
+                    crate::app::frontend::shell_transition::ShellSlideKind::WolSoundOptions,
+                    |state| {
+                        crate::app::shell_wol::options::commit_sound_back(
+                            &mut state.frontend,
+                            &state.process_assets,
+                            &state.renderer.gpu,
+                            &state.persistence.options_profile,
+                            &state.audio,
+                        )
+                    },
+                );
+            }
+            _ if on_sound => {
+                if let Some((id, volume)) = sound::shell_sound_volume(&event) {
+                    crate::app::input::sound::apply_slider_volume(
+                        &state.frontend,
+                        &state.match_state,
+                        &state.process_assets,
+                        &mut state.audio,
+                        &mut state.persistence.options_profile,
+                        id,
+                        volume,
+                    );
+                }
+            }
+            _ => {
+                if matches!(
+                    event,
+                    PageEvent::Picked(TRANSLATE, _) | PageEvent::Scrolled(TRANSLATE)
+                ) {
+                    state.frontend.shell_status_line.repaint();
+                }
+                if let Some(action) =
+                    wol_options::action(state.frontend.shell_controller.gui(), root, &event, modern)
+                {
+                    let step = dispatch(
+                        &mut state.frontend,
+                        state.platform.game_config.as_ref(),
+                        &mut state.persistence.options_profile,
+                        &mut state.audio,
+                        action,
+                    );
+                    if let Some(step) = step {
+                        App::apply_step(state, step);
+                    }
+                } else if modern && let Some((id, volume)) = sound::shell_sound_volume(&event) {
+                    crate::app::input::sound::apply_slider_volume(
+                        &state.frontend,
+                        &state.match_state,
+                        &state.process_assets,
+                        &mut state.audio,
+                        &mut state.persistence.options_profile,
+                        id,
+                        volume,
+                    );
+                    if let Some(config) = state.platform.game_config.as_ref()
+                        && let Err(error) =
+                            profile_file::update(config.paths.settings_dir(), |input| {
+                                transform_lobby_volumes(input, &state.persistence.options_profile)
+                            })
+                    {
+                        log::warn!("Could not save the audio volumes: {error}");
+                    }
+                }
+            }
         }
     }
 }
 
 pub(super) fn cursor_moved(state: &mut AppState) {
     let (x, y) = state.match_state.input.cursor_px();
-    let options = layout(state);
-    let sound = sound_layout(state);
-    let mut changed = None;
-    if let Some(page) = page_mut(state) {
-        match page.sound.as_mut() {
-            Some(dialog) => {
-                dialog.hovered = sound.control_at(x, y);
-                dialog.buttons.hovered = match dialog.hovered {
-                    Some(SoundControl::Button(id)) => Some(id),
-                    _ => None,
-                };
-                // The trackbar works in the authored dialog's pixels.
-                let scale = sound.page.scale;
-                let (bx, _) = scale.base_point(x, y);
-                changed = dialog.dragging.and_then(|id| {
-                    dialog
-                        .set_from_pointer(id, scale.base_rect(sound.sliders[id as usize]), bx)
-                        .map(|volume| (id, volume))
-                });
-            }
-            None => {
-                let popup = page.ui.translate_popup(&options);
-                // The open list covers the controls under it.
-                let over = options
-                    .control_at(x, y)
-                    .filter(|_| !popup.is_some_and(|popup| popup.rect.contains(x, y)));
-                page.ui.hovered = over;
-                page.ui.buttons.hovered = over.filter(|id| is_button(*id));
-                if let Some(popup) = popup {
-                    page.ui.translate_list.pointer_moved(popup, x, y);
-                }
-            }
-        }
-    }
-    if let Some((id, volume)) = changed {
-        crate::app::input::sound::apply_slider_volume(state, id, volume);
-    }
+    sync_gui(
+        &mut state.frontend,
+        &state.process_assets,
+        &state.renderer.gpu,
+        &state.persistence.options_profile,
+        &state.audio,
+    );
+    state.frontend.shell_controller.on_pointer_move(x, y);
+    handle_events(state);
     state.frontend.shell_status_line.repaint();
-    state.platform.window.request_redraw();
-}
-
-enum Press {
-    Nothing,
-    Button,
-    Checkbox(Option<WolOptionsAction>),
-    List(ComboPress),
 }
 
 pub(super) fn mouse(state: &mut AppState, pressed: bool) {
     let (x, y) = state.match_state.input.cursor_px();
-    if page_mut(state).is_some_and(|page| page.sound.is_some()) {
-        sound_mouse(state, pressed, x, y);
-        return;
-    }
-    let layout = layout(state);
-    let over = layout.control_at(x, y);
-    let Some(page) = page_mut(state) else {
-        return;
-    };
-    if !pressed {
-        page.ui.translate_list.cancel_pointer();
-        let button = over.filter(|id| is_button(*id));
-        let action = page
-            .ui
-            .buttons
-            .release(button)
-            .and_then(|id| page.ui.activate(id));
-        if let Some(action) = action {
-            dispatch(state, action);
-        }
-        state.platform.window.request_redraw();
-        return;
-    }
-    let scale = layout.page.scale;
-    let press = if let Some(popup) = page.ui.translate_popup(&layout) {
-        // The open list captures the press.
-        let press = page
-            .ui
-            .translate_list
-            .press_list(popup, x, y, Instant::now());
-        if let ComboPress::Pick(row) = press {
-            page.ui.pick_translate_row(row);
-        }
-        Press::List(press)
+    sync_gui(
+        &mut state.frontend,
+        &state.process_assets,
+        &state.renderer.gpu,
+        &state.persistence.options_profile,
+        &state.audio,
+    );
+    let controller = &mut state.frontend.shell_controller;
+    if pressed {
+        controller.on_pointer_down(x, y);
     } else {
-        match over {
-            Some(id) if is_button(id) => {
-                page.ui.buttons.press(Some(id));
-                Press::Button
-            }
-            Some(TRANSLATE) if let Some(translate) = layout.translate => {
-                let selected = Some(page.ui.translate_row());
-                Press::List(page.ui.translate_list.press_face(
-                    TRANSLATE,
-                    translate.list,
-                    scale,
-                    selected,
-                    x,
-                    y,
-                ))
-            }
-            // OwnerDraw_CheckBox 0x006163A0 admits only its 18x18 icon and
-            // toggles on the press; Translate in Matches draws the same way.
-            Some(id)
-                if layout.checkbox_rect(id).is_some_and(|rect| {
-                    crate::ui::skirmish_shell::checkbox_icon_rect(rect, scale).contains(x, y)
-                }) =>
-            {
-                Press::Checkbox(page.ui.toggle(id))
-            }
-            _ => {
-                page.ui.buttons.press(None);
-                Press::Nothing
-            }
-        }
-    };
-    match press {
-        // Owner-draw buttons play GUIMainButtonSound on the press.
-        Press::Button => App::play_main_menu_button_sound(state),
-        Press::Checkbox(action) => {
-            App::play_launcher_options_cue(state, LauncherCue::Checkbox);
-            if let Some(action) = action {
-                dispatch(state, action);
-            }
-        }
-        Press::List(press) => {
-            if let Some(cue) = press.cue() {
-                App::play_launcher_options_cue(state, LauncherCue::from(cue));
-            }
-            state.frontend.shell_status_line.repaint();
-        }
-        Press::Nothing => {}
+        controller.on_pointer_up(x, y);
     }
-    state.platform.window.request_redraw();
+    handle_events(state);
 }
 
-/// `0x6B6300` on `0xD6`: the sliders apply live and Back re-applies all
-/// three (shared with B8); the rail press plays no generic click
-/// (`0x006B6382`/`0x006B63EA`/`0x006B6444`).
-fn sound_mouse(state: &mut AppState, pressed: bool, x: i32, y: i32) {
-    let layout = sound_layout(state);
-    let hit = layout.control_at(x, y);
-    let over_button = match hit {
-        Some(SoundControl::Button(id)) => Some(id),
-        _ => None,
-    };
-    let Some(dialog) = page_mut(state).and_then(|page| page.sound.as_mut()) else {
-        return;
-    };
-    if !pressed {
-        dialog.dragging = None;
-        let back = dialog.buttons.release(over_button) == Some(SoundButton::Back);
-        let positions = dialog.positions;
-        if back {
-            crate::app::input::sound::apply_back_volumes(state, positions);
-            App::leave_shell_dialog(state, ShellExitThen::WolSoundOptionsBack);
-        }
+/// Escape dismisses the translation list without changing its selection.
+pub(super) fn key_press(
+    state: &mut AppState,
+    code: Option<winit::keyboard::KeyCode>,
+    _: Option<&str>,
+) {
+    if code == Some(winit::keyboard::KeyCode::Escape) && translate_popup(&state.frontend).is_some()
+    {
+        let event = vera20k_gui::InputEvent::Key(vera20k_gui::Key::Escape);
+        state.frontend.shell_controller.on_input(event);
+        handle_events(state);
+        state.frontend.shell_status_line.repaint();
         state.platform.window.request_redraw();
-        return;
     }
-    dialog.buttons.press(over_button);
-    match hit {
-        Some(SoundControl::Button(_)) => App::play_main_menu_button_sound(state),
-        Some(SoundControl::Slider(id)) => {
-            let scale = layout.page.scale;
-            let (bx, by) = scale.base_point(x, y);
-            let rect = scale.base_rect(layout.sliders[id as usize]);
-            if let Some(volume) = dialog.press_slider(id, rect, bx, by) {
-                crate::app::input::sound::apply_slider_volume(state, id, volume);
-            }
-        }
-        _ => {}
-    }
-    state.platform.window.request_redraw();
 }
 
-/// Escape closes the open translation list.
-pub(super) fn close_list(state: &mut AppState) -> bool {
-    let Some(page) = page_mut(state) else {
-        return false;
-    };
-    let open = page.ui.translate_list.control.is_some();
-    page.ui.translate_list.close();
-    open
+/// The open translation list, where it hits.
+pub(crate) fn translate_popup(frontend: &FrontendState) -> Option<ComboPopup> {
+    read(frontend, false, |gui, root| {
+        Some(
+            gui.combo_drop_down(gui.find_id(root, TRANSLATE.into())?)?
+                .popup,
+        )
+    })?
 }
 
-/// The status help under the pointer: `0x2BC`'s `0x006040B0` rows; `0xD6`
-/// has none.
-pub(crate) fn status_key(state: &AppState) -> Option<&'static str> {
-    let WolPage::Options(page) = &state.frontend.wol.as_ref()?.page else {
-        return None;
-    };
-    if page.sound.is_some() {
-        return None;
+/// The status help under the pointer: the hovered `0x2BC` control's
+/// `0x006040B0` row; `0xD6` has none.
+pub(crate) fn status_key(frontend: &FrontendState) -> Option<&str> {
+    read(frontend, false, |gui, _| page::hovered_key(gui))?
+}
+
+#[cfg(all(test, tests_app))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn live_lobby_audio_write_preserves_every_non_volume_key() {
+        let mut profile = RetailOptionsProfile::default();
+        profile.sound_volume = 0.6;
+        profile.voice_volume = 0.9;
+        profile.score_volume = 0.2;
+        let input = b"[Audio]\r\nSoundVolume=0.1\r\nVoiceVolume=0.1\r\nScoreVolume=0.1\r\n\
+                      IsScoreRepeat=yes\r\nOpaque=\xE9\r\n[Video]\r\nScreenWidth=641\r\n[WOnline]\r\nLobMusic=0\r\n";
+        let expected = b"[Audio]\r\nSoundVolume=0.600000\r\nVoiceVolume=0.900000\r\nScoreVolume=0.200000\r\n\
+                         IsScoreRepeat=yes\r\nOpaque=\xE9\r\n[Video]\r\nScreenWidth=641\r\n[WOnline]\r\nLobMusic=0\r\n";
+        assert_eq!(transform_lobby_volumes(input, &profile), expected);
     }
-    page.ui
-        .hovered
-        .and_then(crate::ui::wol_options::tooltip_key)
 }

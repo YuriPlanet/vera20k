@@ -172,8 +172,6 @@ pub(crate) enum LoadingProgressRowPlacement {
         participants: usize,
     },
     Campaign([i32; 2]),
-    ///642C80 auto-centres in72AD20's tactical-sized surface extent.
-    AutoCentered([u32; 2]),
 }
 
 /// One `DrawPlayerProgressRow @ 0x00643720` geometry implementation shared by
@@ -194,7 +192,7 @@ pub(crate) fn layout_loading_progress_row(
     scale: ShellScale,
     row_index: usize,
 ) -> LoadingProgressRowLayout {
-    let ([mut base_x, mut base_y], row_width_override) = match placement {
+    let ([base_x, base_y], row_width_override) = match placement {
         LoadingProgressRowPlacement::StandardSkirmish { render_size, .. } => {
             let authored = loading_authored_size(render_size, scale);
             let [origin_x, origin_y] = loading_base_origin(authored);
@@ -206,7 +204,6 @@ pub(crate) fn layout_loading_progress_row(
             ([origin_x + offset_x, origin_y + offset_y], Some(width))
         }
         LoadingProgressRowPlacement::Campaign(point) => (point, None),
-        LoadingProgressRowPlacement::AutoCentered(_) => ([0, 0], None),
     };
     let bar_width = bar_size[0].max(0);
     let bar_height = bar_size[1].max(0);
@@ -256,12 +253,6 @@ pub(crate) fn layout_loading_progress_row(
         .scaled(scale);
     }
 
-    if let LoadingProgressRowPlacement::AutoCentered([width, height]) = placement {
-        //642D9B..642DBD ignores72AD20's origin, using width-168,height-32.
-        base_x = (width as i32 - 168 - row_width) / 2;
-        base_y = (height as i32 - 32 - row_height) / 2;
-    }
-
     // DrawPlayerProgressRow64377D multiplies this measured height by
     // source-player index before the per-element vertical centering.
     let base_y = base_y + row_height * row_index as i32;
@@ -288,9 +279,7 @@ pub(crate) fn layout_loading_progress_row(
     };
     match placement {
         LoadingProgressRowPlacement::StandardSkirmish { .. } => layout.scaled(scale),
-        LoadingProgressRowPlacement::Campaign(_) | LoadingProgressRowPlacement::AutoCentered(_) => {
-            layout
-        }
+        LoadingProgressRowPlacement::Campaign(_) => layout,
     }
 }
 
@@ -351,7 +340,7 @@ mod tests {
             [100, 8],
             Some([18, 20]),
             [135, 17],
-            ShellScale::RETAIL,
+            crate::ui::shell::geom::RETAIL_SCALE,
             0,
         );
         let third = layout_loading_progress_row(
@@ -362,7 +351,7 @@ mod tests {
             [100, 8],
             Some([18, 20]),
             [135, 17],
-            ShellScale::RETAIL,
+            crate::ui::shell::geom::RETAIL_SCALE,
             2,
         );
         // 64377D: 2 * (max(insignia20,bar8+6,font17)+padding4).
@@ -407,7 +396,7 @@ mod tests {
                 pair("bar_size"),
                 None,
                 pair("font_size"),
-                ShellScale::RETAIL,
+                crate::ui::shell::geom::RETAIL_SCALE,
                 0,
             );
             assert_eq!(
@@ -432,7 +421,7 @@ mod tests {
             [80, 5],
             Some([47, 23]),
             [0, 12],
-            ShellScale::RETAIL,
+            crate::ui::shell::geom::RETAIL_SCALE,
             0,
         );
 
@@ -451,7 +440,7 @@ mod tests {
             [80, 5],
             Some([47, 23]),
             [0, 12],
-            ShellScale::RETAIL,
+            crate::ui::shell::geom::RETAIL_SCALE,
             0,
         );
 
@@ -470,7 +459,7 @@ mod tests {
             [80, 5],
             None,
             [0, 12],
-            ShellScale::RETAIL,
+            crate::ui::shell::geom::RETAIL_SCALE,
             0,
         );
 
@@ -489,7 +478,7 @@ mod tests {
             [80, 5],
             Some([20, 10]),
             [0, 30],
-            ShellScale::RETAIL,
+            crate::ui::shell::geom::RETAIL_SCALE,
             0,
         );
 
@@ -509,7 +498,7 @@ mod tests {
                     [80, 5],
                     Some([47, 23]),
                     [135, 17],
-                    ShellScale::RETAIL,
+                    crate::ui::shell::geom::RETAIL_SCALE,
                     node,
                 )
             })
@@ -546,7 +535,7 @@ mod tests {
             [80, 5],
             Some([47, 23]),
             [135, 12],
-            ShellScale::RETAIL,
+            crate::ui::shell::geom::RETAIL_SCALE,
             0,
         );
         assert_eq!(native.bar_origin, [20, 267]);
@@ -554,7 +543,7 @@ mod tests {
     }
     #[test]
     fn last_extended_loading_row_uses_the_same_scaled_viewport_as_its_meter() {
-        let scale = ShellScale::from_screen(1280, 720);
+        let scale = crate::ui::shell::geom::shell_scale(1280, 720);
         let row = layout_loading_progress_row(
             LoadingProgressRowPlacement::StandardSkirmish {
                 render_size: [1280, 720],

@@ -11,6 +11,14 @@ use crate::sim::overlay_grid::OverlayGrid;
 use crate::sim::world::FrameEffects;
 use crate::util::fixed_math::SIM_ONE;
 
+impl Simulation {
+    /// A pass's searches alone, within `bounds`.
+    fn answer_searches_within(&mut self, rules: &RuleSet, bounds: RepathBounds) {
+        let nothing = (0, |_: &Simulation, _: usize| None::<()>);
+        self.answer_path_searches_within(rules, bounds, nothing);
+    }
+}
+
 const EAST: u16 = 0x4000;
 const WEST: u16 = 0xC000;
 const WEST_STEP: u8 = 6;
@@ -46,7 +54,7 @@ fn rules() -> RuleSet {
 /// The flat arena with an overlay grid, which the batch needs.
 fn arena(rules: &RuleSet) -> (Simulation, PathGrid) {
     let mut sim = crate::sim::arena_fixture::rival_arena(rules, 0x4D3920);
-    sim.overlay_grid = Some(OverlayGrid::new(32, 32));
+    *sim.overlay_grid = Some(OverlayGrid::new(32, 32));
     let grid = sim
         .path_grid_snapshot()
         .map(|grid| (*grid).clone())
@@ -64,8 +72,7 @@ fn send(sim: &mut Simulation, rules: &RuleSet, id: u64, cell: (u16, u16)) {
         id,
         Some(NavTargetRef::cell(cell.0, cell.1)),
         rules,
-        None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
     .expect("takes the destination");
 }
@@ -190,7 +197,7 @@ fn a_batched_answer_is_the_serial_search() {
                         id,
                         kind
                     ));
-                    sim.answer_batched_path_searches(&rules, None);
+                    sim.answer_batched_work(&rules, None);
                     assert!(
                         !crate::sim::world::Simulation::defer_path_search(
                             &mut sim.path_batch,
@@ -214,7 +221,7 @@ fn a_batched_answer_is_the_serial_search() {
                 .expect("a request");
                 assert_eq!(request.urgency, urgency);
                 let found = sim
-                    .foot_find_path(&request, &rules, None, FrameEffects::default())
+                    .foot_find_path(&request, &rules, None, &mut FrameEffects::default())
                     .expect("Find_Path runs");
                 if batched {
                     let batch = sim.path_batch.as_ref().unwrap();
@@ -256,7 +263,7 @@ fn an_answer_for_another_request_is_not_used() {
         tank,
         CODE2
     ));
-    sim.answer_batched_path_searches(&rules, None);
+    sim.answer_batched_work(&rules, None);
     assert!(
         !crate::sim::world::Simulation::defer_path_search(
             &mut sim.path_batch,
@@ -269,7 +276,7 @@ fn an_answer_for_another_request_is_not_used() {
         "an answered Foot no longer waits"
     );
     let request = sim.code2_ladder_request(tank, 2).unwrap();
-    sim.foot_find_path(&request, &rules, None, FrameEffects::default())
+    sim.foot_find_path(&request, &rules, None, &mut FrameEffects::default())
         .expect("Find_Path runs");
     let batch = sim.path_batch.as_ref().unwrap();
     assert_eq!(batch.used, [0, 0]);
@@ -300,7 +307,7 @@ fn a_left_out_code2_repath_keeps_its_urgency() {
             ));
         }
         sim.path_batch.as_mut().unwrap().next_repath[1] = others.start;
-        sim.answer_batched_path_searches(&rules, None);
+        sim.answer_batched_work(&rules, None);
         sim.finish_batched_path_searches();
     };
     assert!(crate::sim::world::Simulation::defer_path_search(
@@ -378,7 +385,7 @@ fn a_left_out_code2_repath_keeps_its_urgency() {
         "only the code-2 re-path is kept"
     );
     // A pass with no registration at all keeps nothing.
-    sim.answer_batched_path_searches(&rules, None);
+    sim.answer_batched_work(&rules, None);
     sim.finish_batched_path_searches();
     assert!(sim.path_batch.as_ref().unwrap().left_out_code2.is_empty());
     assert!(crate::sim::world::Simulation::defer_path_search(
@@ -489,7 +496,7 @@ fn a_redirected_request_is_left_to_find_path() {
     spawn(&mut sim, &rules, "HUT", (20, 10));
     let destination = sim.code2_ladder_request(tank, 1).unwrap().destination;
     let answer = sim
-        .find_path_target_answer(tank, destination, &rules, None)
+        .find_path_target_answer(tank, destination, &rules)
         .unwrap()
         .expect("the precheck admits the search");
     assert!(
@@ -507,10 +514,10 @@ fn a_redirected_request_is_left_to_find_path() {
         tank,
         CODE2
     ));
-    sim.answer_batched_path_searches(&rules, None);
+    sim.answer_batched_work(&rules, None);
     assert_eq!(sim.path_batch.as_ref().unwrap().ready[&tank].answer, None);
     let request = sim.code2_ladder_request(tank, 1).unwrap();
-    sim.foot_find_path(&request, &rules, None, FrameEffects::default())
+    sim.foot_find_path(&request, &rules, None, &mut FrameEffects::default())
         .expect("Find_Path runs");
     assert_eq!(sim.path_batch.as_ref().unwrap().used, [0, 0]);
 }
@@ -535,7 +542,7 @@ fn a_code7_redirect_without_a_nearby_cell_heads_for_the_zero_cell() {
     terrain.test_set_native_allocated_cells(&allocated);
     let request = sim.code2_ladder_request(tank, 1).unwrap();
     let answer = sim
-        .find_path_target_answer(tank, request.destination, &rules, None)
+        .find_path_target_answer(tank, request.destination, &rules)
         .unwrap();
     assert_eq!(answer, Some(7), "the hut on the destination answers code 7");
     let cell = |coord: DriveCoord| (coord.x / 256, coord.y / 256);
@@ -548,8 +555,7 @@ fn a_code7_redirect_without_a_nearby_cell_heads_for_the_zero_cell() {
         request.destination,
         7,
         &rules,
-        None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     let moving_to = sim
         .substrate
@@ -561,7 +567,7 @@ fn a_code7_redirect_without_a_nearby_cell_heads_for_the_zero_cell() {
         .and_then(|loco| loco.selected_drive_runtime())
         .and_then(|runtime| runtime.retained())
         .and_then(|drive| drive.destination());
-    let found = sim.foot_find_path(&request, &rules, None, FrameEffects::default());
+    let found = sim.foot_find_path(&request, &rules, None, &mut FrameEffects::default());
     let (_, unused) = fresh_oracle_seam::finish();
     assert_eq!(goal.map(cell), Ok((0, 0)));
     assert_eq!(
@@ -606,56 +612,62 @@ fn batched_answers_do_not_depend_on_the_threads() {
             request
         ));
     }
-    sim.answer_batched_path_searches(&rules, None);
+    sim.answer_batched_work(&rules, None);
     let grid = sim.path_grid_snapshot().unwrap();
     let counts = sim.movement_pass_cache.current_blocker_plane();
     let dummy = sim.resolved_terrain.as_ref().unwrap().shared_cell_dummy();
     let ready = &sim.path_batch.as_ref().unwrap().ready;
     let mut routes = 0;
     for &(id, request) in &movers {
-        let alone = dummy
-            .detached(|| sim.batched_search(id, request, &rules, None, &grid, counts, None, None));
+        let alone =
+            dummy.detached(|| sim.batched_search(id, request, &rules, &grid, counts, None, None));
         routes += usize::from(alone.as_ref().is_some_and(|answer| answer.found.is_ok()));
         assert_eq!(ready[&id].answer, alone, "mover {id}");
     }
     assert_eq!(routes, movers.len(), "every mover routes");
 }
 
-/// Whole frames do not depend on the thread count: tanks and infantrymen
-/// crossing each other's rows re-path through the batch, and every frame's
-/// state hash is the same on one worker thread as on four.
+/// Whole frames do not depend on the thread count, nor on the thread that
+/// runs them taking searches itself: tanks and infantrymen crossing each
+/// other's rows re-path through the batch, with the pass's target scans
+/// answered beside the searches, and every frame's state hash is the same on
+/// one worker thread, on four, and off the pool, where the calling thread
+/// takes items beside the workers.
 #[test]
 fn whole_frames_do_not_depend_on_the_thread_count() {
     let rules = rules();
+    let frames = || {
+        let (mut sim, grid) = arena(&rules);
+        for i in 0..12u16 {
+            let tank = spawn(&mut sim, &rules, "TANK", (2 + 2 * i, 4));
+            send(&mut sim, &rules, tank, (29 - 2 * i, 4));
+            let infantry = spawn(&mut sim, &rules, "E1", (4, 3 + 2 * i));
+            send(&mut sim, &rules, infantry, (4, 29 - 2 * i));
+        }
+        sim.batch_path_searches();
+        sim.batch_target_scans();
+        let hashes: Vec<u64> = (0..150)
+            .map(|_| {
+                sim.advance_tick(&[], Some(&rules), Some(&grid), None, 67);
+                sim.state_hash()
+            })
+            .collect();
+        (hashes, sim.path_batch.as_ref().unwrap().used)
+    };
     let run = |threads: usize| {
         let pool = rayon::ThreadPoolBuilder::new()
             .num_threads(threads)
             .build()
             .expect("a worker pool");
-        pool.install(|| {
-            let (mut sim, grid) = arena(&rules);
-            for i in 0..12u16 {
-                let tank = spawn(&mut sim, &rules, "TANK", (2 + 2 * i, 4));
-                send(&mut sim, &rules, tank, (29 - 2 * i, 4));
-                let infantry = spawn(&mut sim, &rules, "E1", (4, 3 + 2 * i));
-                send(&mut sim, &rules, infantry, (4, 29 - 2 * i));
-            }
-            sim.batch_path_searches();
-            let hashes: Vec<u64> = (0..150)
-                .map(|_| {
-                    sim.advance_tick(&[], Some(&rules), Some(&grid), None, 67);
-                    sim.state_hash()
-                })
-                .collect();
-            (hashes, sim.path_batch.as_ref().unwrap().used)
-        })
+        pool.install(&frames)
     };
     let (one, used) = run(1);
     assert!(
         used.iter().all(|&kind| kind > 0),
         "the crossing movers route and re-path through the batch: {used:?}"
     );
-    assert_eq!(run(4), (one, used));
+    assert_eq!(run(4), (one.clone(), used));
+    assert_eq!(frames(), (one, used), "off the pool");
 }
 
 /// A Foot's first no-queue request after a new destination waits one frame
@@ -782,7 +794,7 @@ fn registrations_survive_a_save_and_answers_do_not() {
         tank,
         CODE2
     ));
-    sim.answer_batched_path_searches(&rules, None);
+    sim.answer_batched_work(&rules, None);
     assert!(crate::sim::world::Simulation::defer_path_search(
         &mut sim.path_batch,
         &sim.resolved_terrain,
@@ -859,7 +871,7 @@ fn a_foots_first_request_in_a_frame_claims_its_answer() {
         tank,
         WaitingRequest::NoQueue
     ));
-    sim.answer_batched_path_searches(&rules, None);
+    sim.answer_batched_work(&rules, None);
     assert!(
         !crate::sim::world::Simulation::defer_path_search(
             &mut sim.path_batch,
@@ -905,7 +917,7 @@ fn a_foots_first_request_in_a_frame_claims_its_answer() {
         tank,
         WaitingRequest::NoQueue
     ));
-    sim.answer_batched_path_searches(&rules, None);
+    sim.answer_batched_work(&rules, None);
     let slot = &sim.path_batch.as_ref().unwrap().ready[&tank];
     assert!(slot.answer.is_some());
     assert_eq!(
@@ -941,7 +953,7 @@ fn a_refused_walk_retry_waits_for_the_next_batch() {
             .mission_leaf
             .set_infantry_doing_verified(3)
             .unwrap();
-        sim.run_foot_path_request(request, &rules, None, FrameEffects::default())
+        sim.run_foot_path_request(request, &rules, None, &mut FrameEffects::default())
             .expect("the request runs");
         let entity = sim.substrate.entities.get(infantry).unwrap();
         entity.mission_leaf.as_infantry().unwrap().doing()
@@ -958,7 +970,7 @@ fn a_refused_walk_retry_waits_for_the_next_batch() {
     );
     assert!(route(&sim, infantry).is_empty(), "the request waited");
 
-    sim.answer_batched_path_searches(&rules, None);
+    sim.answer_batched_work(&rules, None);
     run(&mut sim, &mut request);
     assert_eq!(sim.path_batch.as_ref().unwrap().used, [1, 0]);
     assert!(!route(&sim, infantry).is_empty(), "the answer routes");
@@ -978,7 +990,7 @@ fn a_refused_walk_retry_waits_for_the_next_batch() {
         "the retry cleared the path"
     );
 
-    sim.answer_batched_path_searches(&rules, None);
+    sim.answer_batched_work(&rules, None);
     let mut repeated = sim.no_queue_request(infantry).unwrap();
     run(&mut sim, &mut repeated);
     assert_eq!(sim.path_batch.as_ref().unwrap().used, [2, 0]);
@@ -1053,7 +1065,7 @@ fn a_left_out_recursion_stays_one() {
         assert!(defer(&mut sim, id, WaitingRequest::RetryRecursion));
     }
     assert!(defer(&mut sim, end - 1, reentry));
-    sim.answer_batched_path_searches(&rules, None);
+    sim.answer_batched_work(&rules, None);
     let left_out = BTreeMap::from([
         (end - 2, WaitingRequest::RetryRecursion),
         (end - 1, reentry),
@@ -1067,7 +1079,14 @@ fn a_left_out_recursion_stays_one() {
     let restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
         .expect("the save loads")
         .sim;
-    assert_eq!(restored.path_batch.unwrap().left_out_recursions, left_out);
+    assert_eq!(
+        restored
+            .path_batch
+            .into_inner()
+            .unwrap()
+            .left_out_recursions,
+        left_out
+    );
     let hash = sim.state_hash();
     let batch = sim.path_batch.as_mut().unwrap();
     batch.left_out_recursions.clear();
@@ -1114,8 +1133,7 @@ fn a_drive_retry_recursion_waits_after_the_frames_answer() {
             TrackFamily::Drive,
             args,
             &rules,
-            None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .expect("Process_Movement runs");
     };
@@ -1126,7 +1144,7 @@ fn a_drive_retry_recursion_waits_after_the_frames_answer() {
         "without an answer the recursion waits"
     );
 
-    sim.answer_batched_path_searches(&rules, None);
+    sim.answer_batched_work(&rules, None);
     process(&mut sim, ProcessMovementArgs::OUTER);
     assert_eq!(sim.path_batch.as_ref().unwrap().used, [1, 0]);
     // The retry's own preparation: no path left and the timer run out.
@@ -1166,8 +1184,7 @@ fn a_drive_retry_recursion_answer_resumes_with_the_retry_spent() {
             TrackFamily::Drive,
             args,
             &rules,
-            None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .expect("Process_Movement runs");
     };
@@ -1181,7 +1198,7 @@ fn a_drive_retry_recursion_answer_resumes_with_the_retry_spent() {
         [(tank, WaitingRequest::RetryRecursion)]
     );
 
-    sim.answer_batched_path_searches(&rules, None);
+    sim.answer_batched_work(&rules, None);
     sim.spawn_object_at_height("STUCK", "Russians", 11, 10, 0, 0, &rules)
         .expect("spawns");
     process(&mut sim, ProcessMovementArgs::OUTER);
@@ -1220,13 +1237,12 @@ fn a_drive_reentry_answer_runs_the_new_route_straight() {
             TrackFamily::Drive,
             ProcessMovementArgs::OUTER,
             &rules,
-            None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .expect("Process_Movement runs");
     };
     process(&mut sim);
-    sim.answer_batched_path_searches(&rules, None);
+    sim.answer_batched_work(&rules, None);
     process(&mut sim);
     assert_eq!(
         sim.path_batch.as_ref().unwrap().pending,
@@ -1234,7 +1250,7 @@ fn a_drive_reentry_answer_runs_the_new_route_straight() {
         "the second cell refused the turn and the re-entry waits"
     );
 
-    sim.answer_batched_path_searches(&rules, None);
+    sim.answer_batched_work(&rules, None);
     process(&mut sim);
     let foot = sim.substrate.entities.get(tank).unwrap();
     assert_eq!(
@@ -1298,7 +1314,7 @@ fn a_pass_answers_at_most_its_cap_and_the_rest_wait() {
             WaitingRequest::NoQueue
         ));
     }
-    sim.answer_batched_path_searches(&rules, None);
+    sim.answer_batched_work(&rules, None);
     let batch = sim.path_batch.as_ref().unwrap();
     assert_eq!(batch.answered, (first..first + cap).collect::<Vec<_>>());
     assert_eq!(batch.next_turn, first + cap);
@@ -1346,7 +1362,7 @@ fn a_pass_answers_at_most_its_cap_and_the_rest_wait() {
             WaitingRequest::NoQueue
         ));
     }
-    sim.answer_batched_path_searches(&rules, None);
+    sim.answer_batched_work(&rules, None);
     let batch = sim.path_batch.as_ref().unwrap();
     let mut second: Vec<u64> = (first + cap..end).chain(first..first + cap - 10).collect();
     second.sort_unstable();
@@ -1390,6 +1406,39 @@ fn register(sim: &mut Simulation, ids: &[u64]) {
     register_as(sim, ids, URGENT);
 }
 
+/// Re-path turns of `budget` expansions each, with no limit for one re-path.
+fn within(budget: u64) -> RepathBounds {
+    RepathBounds {
+        limit: u64::MAX,
+        limit_from: 1,
+        pass: [budget; 2],
+    }
+}
+
+/// `count` infantrymen at a corner of a `size`-cell square serpentine of
+/// one-cell lanes, three to a cell along the first lane, sent to the far
+/// corner, with batching on.
+fn serpentine(rules: &RuleSet, size: u16, count: usize) -> (Simulation, Vec<u64>) {
+    let mut sim = crate::sim::arena_fixture::rival_arena_with_size(rules, 0x4D3920, size);
+    // Water rows between the lanes, open at alternate ends.
+    let water = (1..size).step_by(2).flat_map(|y| {
+        let gap = if y % 4 == 1 { size - 1 } else { 0 };
+        (0..size).filter(move |&x| x != gap).map(move |x| (x, y))
+    });
+    crate::sim::arena_fixture::flood(&mut sim, rules, size, water);
+    *sim.overlay_grid = Some(OverlayGrid::new(size, size));
+    let foots = (0..count)
+        .map(|index| {
+            let cell = u16::try_from(index / 3).expect("a cell of the first lane");
+            let id = spawn(&mut sim, rules, "E1", (cell, 0));
+            send(&mut sim, rules, id, (size - 1, size - 1));
+            id
+        })
+        .collect();
+    sim.batch_path_searches();
+    (sim, foots)
+}
+
 /// A pass answers its code-2 re-paths at each urgency in their turn's order
 /// while the ones before stay under the turn's budget of expansions; the
 /// rest register again at their urgency, and the next pass starts the turn
@@ -1420,7 +1469,7 @@ fn answers_repaths_within_the_budget(repath: WaitingRequest, other: WaitingReque
             // Without a budget every re-path is answered; alone, each makes
             // the expansions it makes in the batch.
             register_as(&mut sim, &ladders, repath);
-            sim.answer_path_searches_within(&rules, None, u64::MAX);
+            sim.answer_searches_within(&rules, within(u64::MAX));
             assert_eq!(sim.path_batch.as_ref().unwrap().answered, ladders);
             let grid = sim.path_grid_snapshot().unwrap();
             let counts = sim.movement_pass_cache.current_blocker_plane();
@@ -1430,7 +1479,7 @@ fn answers_repaths_within_the_budget(repath: WaitingRequest, other: WaitingReque
                 .map(|&id| {
                     let before = search_steps();
                     let answer = dummy.detached(|| {
-                        sim.batched_search(id, repath, &rules, None, &grid, counts, None, None)
+                        sim.batched_search(id, repath, &rules, &grid, counts, None, None)
                     });
                     (answer, search_steps() - before)
                 })
@@ -1446,7 +1495,7 @@ fn answers_repaths_within_the_budget(repath: WaitingRequest, other: WaitingReque
             sim.finish_batched_path_searches();
             register_as(&mut sim, &ladders, repath);
             let budget = alone[0].1 + alone[1].1 + 1;
-            sim.answer_path_searches_within(&rules, None, budget);
+            sim.answer_searches_within(&rules, within(budget));
             let batch = sim.path_batch.as_ref().unwrap();
             assert_eq!(batch.answered, ladders[..3]);
             for (id, (answer, _)) in ladders.iter().zip(&alone).take(3) {
@@ -1473,7 +1522,7 @@ fn answers_repaths_within_the_budget(repath: WaitingRequest, other: WaitingReque
             // budget.
             sim.finish_batched_path_searches();
             register_as(&mut sim, &ladders[..1], repath);
-            sim.answer_path_searches_within(&rules, None, 1);
+            sim.answer_searches_within(&rules, within(1));
             let batch = sim.path_batch.as_ref().unwrap();
             assert_eq!(batch.answered, [ladders[3]]);
             let waiting: Vec<_> = batch
@@ -1505,7 +1554,6 @@ fn answers_repaths_within_the_budget(repath: WaitingRequest, other: WaitingReque
 /// first ask if it starts at all.
 #[test]
 fn a_repath_past_the_budget_stops_or_does_not_start() {
-    const SIZE: u16 = 65;
     let rules = rules();
     let run = |threads: usize| {
         let pool = rayon::ThreadPoolBuilder::new()
@@ -1513,42 +1561,18 @@ fn a_repath_past_the_budget_stops_or_does_not_start() {
             .build()
             .expect("a worker pool");
         pool.install(|| {
-            let mut sim = crate::sim::arena_fixture::rival_arena_with_size(&rules, 0x4D3920, SIZE);
-            // Water rows between the lanes, open at alternate ends.
-            let water = (1..SIZE).step_by(2).flat_map(|y| {
-                let gap = if y % 4 == 1 { SIZE - 1 } else { 0 };
-                (0..SIZE).filter(move |&x| x != gap).map(move |x| (x, y))
-            });
-            crate::sim::arena_fixture::flood(&mut sim, &rules, SIZE, water);
-            sim.overlay_grid = Some(OverlayGrid::new(SIZE, SIZE));
-            let foots: Vec<u64> = (0..3)
-                .map(|_| {
-                    let id = spawn(&mut sim, &rules, "E1", (0, 0));
-                    send(&mut sim, &rules, id, (SIZE - 1, SIZE - 1));
-                    id
-                })
-                .collect();
-            sim.batch_path_searches();
+            let (mut sim, foots) = serpentine(&rules, 65, 3);
             // A pass without a budget builds the blocker plane the searches
             // alone read.
             register(&mut sim, &foots);
-            sim.answer_path_searches_within(&rules, None, u64::MAX);
+            sim.answer_searches_within(&rules, within(u64::MAX));
             let grid = sim.path_grid_snapshot().unwrap();
             let counts = sim.movement_pass_cache.current_blocker_plane();
             let dummy = sim.resolved_terrain.as_ref().unwrap().shared_cell_dummy();
             let search = |id, keep_searching: Option<&dyn Fn(u32) -> bool>| {
                 let before = search_steps();
                 let answer = dummy.detached(|| {
-                    sim.batched_search(
-                        id,
-                        URGENT,
-                        &rules,
-                        None,
-                        &grid,
-                        counts,
-                        None,
-                        keep_searching,
-                    )
+                    sim.batched_search(id, URGENT, &rules, &grid, counts, None, keep_searching)
                 });
                 (answer, search_steps() - before)
             };
@@ -1563,7 +1587,7 @@ fn a_repath_past_the_budget_stops_or_does_not_start() {
 
             sim.finish_batched_path_searches();
             register(&mut sim, &foots);
-            sim.answer_path_searches_within(&rules, None, 1);
+            sim.answer_searches_within(&rules, within(1));
             let batch = sim.path_batch.as_ref().unwrap();
             assert_eq!(batch.answered, foots[..1]);
             assert_eq!(batch.ready[&foots[0]].answer, alone[0].0);
@@ -1587,6 +1611,81 @@ fn a_repath_past_the_budget_stops_or_does_not_start() {
     );
 }
 
+/// A turn of fewer than [`URGENT_LIMIT_FROM`] urgency-2 re-paths searches as
+/// native does: its first, whose route through a serpentine takes more
+/// expansions than the limit, is answered with that route. In a turn of one
+/// more, the limit stops the first ones, which fill the urgency-2 budget.
+#[test]
+fn only_a_turn_of_several_urgent_repaths_stops_at_the_limit() {
+    let fill = REPATH_STEPS_PER_PASS[0] / URGENT_SEARCH_STEPS;
+    assert_eq!(fill * URGENT_SEARCH_STEPS, REPATH_STEPS_PER_PASS[0]);
+    assert!(fill < URGENT_LIMIT_FROM as u64, "the budget cuts the turn");
+    let rules = rules();
+    let fill = u32::try_from(fill).unwrap();
+    for (count, capped) in [(URGENT_LIMIT_FROM - 1, 0), (URGENT_LIMIT_FROM, fill)] {
+        let (mut sim, foots) = serpentine(&rules, 97, count);
+        register(&mut sim, &foots);
+        sim.answer_searches_within(&rules, RepathBounds::PASS);
+        let stats = sim.path_batch_stats().unwrap();
+        assert_eq!(stats.capped, capped, "{count} re-paths");
+        let batch = sim.path_batch.as_ref().unwrap();
+        let routes = batch
+            .ready
+            .get(&foots[0])
+            .and_then(|slot| slot.answer.as_ref())
+            .is_some_and(|answer| answer.found.is_ok());
+        assert_eq!(routes, capped == 0, "{count} re-paths");
+    }
+}
+
+/// An urgency-2 re-path the limit stopped leaves its Foot with no answer, on
+/// one worker thread as on four, and starts its blockage timer again: its
+/// ladder asks urgency 1 for BlockagePathDelay frames, then urgency 2 again.
+/// The re-paths the budget left out keep their Foots' timers.
+#[test]
+fn a_stopped_urgent_repath_starts_its_blockage_timer_again() {
+    let rules = rules();
+    let delay = rules.general.blockage_path_delay_ticks;
+    let held = u32::try_from(delay).expect("a positive delay");
+    for threads in [1, 4] {
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(threads)
+            .build()
+            .expect("a worker pool");
+        pool.install(|| {
+            let (mut sim, foots) = serpentine(&rules, 97, URGENT_LIMIT_FROM);
+            // Each Foot latched its blockage and its timer has run out.
+            let frame = sim.session.binary_frame();
+            for &id in &foots {
+                let entity = sim.substrate.entities.get_mut(id).unwrap();
+                let runtime = entity.navigation.path_runtime_mut();
+                runtime.set_path_blocked_for_test(true);
+                runtime.start_blocked(frame, 0);
+            }
+            let urgencies = |sim: &Simulation, at: u32| -> Vec<u8> {
+                foots
+                    .iter()
+                    .map(|&id| {
+                        let entity = sim.substrate.entities.get(id).unwrap();
+                        entity.navigation.path_runtime().code2_urgency(at)
+                    })
+                    .collect()
+            };
+            assert_eq!(urgencies(&sim, frame), [2; URGENT_LIMIT_FROM]);
+            register(&mut sim, &foots);
+            sim.answer_searches_within(&rules, RepathBounds::PASS);
+            let batch = sim.path_batch.as_ref().unwrap();
+            assert!(batch.answered.is_empty(), "no slot: {:?}", batch.answered);
+            let fill = (REPATH_STEPS_PER_PASS[0] / URGENT_SEARCH_STEPS) as usize;
+            let mut stopped: Vec<u8> = vec![1; fill];
+            stopped.resize(URGENT_LIMIT_FROM, 2);
+            assert_eq!(urgencies(&sim, frame), stopped, "{threads} threads");
+            assert_eq!(urgencies(&sim, frame + held - 1), stopped);
+            assert_eq!(urgencies(&sim, frame + held), [2; URGENT_LIMIT_FROM]);
+        });
+    }
+}
+
 /// Code-2 re-paths take a turn of their own at each urgency: when its budget
 /// and the cap both bind, the cap's turn still moves past the registrations
 /// it took, and the cap takes none of the re-paths.
@@ -1604,7 +1703,7 @@ fn each_urgencys_repaths_leave_the_caps_turn_alone() {
         let ids: Vec<u64> = (first..end).collect();
         register_as(&mut sim, &ids, WaitingRequest::NoQueue);
         register_as(&mut sim, &ladders, repath);
-        sim.answer_path_searches_within(&rules, None, 1);
+        sim.answer_searches_within(&rules, within(1));
         let batch = sim.path_batch.as_ref().unwrap();
         assert_eq!(batch.next_turn, first + cap, "urgency {urgency}");
         let answered: Vec<u64> = std::iter::once(ladders[0])
@@ -1631,7 +1730,7 @@ fn repaths_asked_every_pass_take_the_budget_in_turn() {
     for pass in 0..4 {
         register_as(&mut sim, urgent, URGENT);
         register_as(&mut sim, side, CODE2);
-        sim.answer_path_searches_within(&rules, None, 1);
+        sim.answer_searches_within(&rules, within(1));
         let answered = &sim.path_batch.as_ref().unwrap().answered;
         assert_eq!(answered, &[urgent[pass], side[pass]], "pass {pass}");
         sim.finish_batched_path_searches();
@@ -1642,7 +1741,7 @@ fn repaths_asked_every_pass_take_the_budget_in_turn() {
 /// the search keeps the entry facts it reads.
 fn own_route(sim: &mut Simulation, rules: &RuleSet, tank: u64) -> Vec<u8> {
     let request = sim.code2_ladder_request(tank, 2).unwrap();
-    sim.foot_find_path(&request, rules, None, FrameEffects::default())
+    sim.foot_find_path(&request, rules, None, &mut FrameEffects::default())
         .expect("Find_Path runs");
     if let Some(facts) = sim.entry_facts() {
         assert!(!facts.is_empty(), "the search kept the facts it read");
@@ -1846,6 +1945,22 @@ fn a_request_for_the_foots_own_cell_does_not_wait() {
         .flat_map(|request| away.iter().map(move |&id| (id, request)))
         .collect();
     assert_eq!(sim.path_batch.as_ref().unwrap().pending, waiting);
+
+    // Both registrations survive the save in arrival order. The pass then
+    // searches only the latest request of each Foot.
+    let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "repeated_paths", 0);
+    let restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
+        .expect("the save loads")
+        .sim;
+    assert_eq!(restored.path_batch.as_ref().unwrap().pending, waiting);
+
+    sim.answer_batched_work(&rules, None);
+    assert_eq!(sim.path_batch_stats().unwrap().searched, 2);
+    let batch = sim.path_batch.as_ref().unwrap();
+    assert!(batch.pending.is_empty());
+    for id in away {
+        assert_eq!(batch.ready[&id].request, CODE2);
+    }
 }
 
 /// An own-cell request that is the Foot's first in a frame claims the pass's
@@ -1869,7 +1984,7 @@ fn an_own_cell_request_claims_the_frames_answer() {
     };
     send(&mut sim, &rules, tank, (20, 10));
     assert!(defer(&mut sim), "a request ten cells east waits");
-    sim.answer_batched_path_searches(&rules, None);
+    sim.answer_batched_work(&rules, None);
 
     send(&mut sim, &rules, tank, (10, 10));
     assert!(!defer(&mut sim), "the own-cell request runs now");
@@ -1904,7 +2019,7 @@ fn a_mover_allowed_to_leave_the_map_searches_across_zones() {
             .expect("arena cell")
             .zone_type = zone_class::IMPASSABLE;
     }
-    sim.zone_grid = None;
+    *sim.zone_grid = None;
     crate::sim::arena_fixture::supply_native_map(&mut sim);
     let tank = spawn(&mut sim, &rules, "TANK", (1, 4));
     let goal = DriveCoord::cell(7, 4, 0);
@@ -1923,7 +2038,6 @@ fn a_mover_allowed_to_leave_the_map_searches_across_zones() {
             &request,
             goal,
             &rules,
-            None,
             &grid,
             &counts,
             MoverLift::Marked,
@@ -1941,8 +2055,15 @@ fn a_mover_allowed_to_leave_the_map_searches_across_zones() {
         .entities
         .get_mut(tank)
         .unwrap()
+        .seldom
         .mission_only
         .mark();
     // The plain A* does not read the zones, and this ridge is only theirs.
-    assert_eq!(search(&sim).expect("plain A*").last(), Some(&(7, 4)));
+    let mut cell = (1, 4);
+    for direction in search(&sim).expect("plain A*") {
+        let (dx, dy) =
+            crate::util::direction::direction_delta(direction as u8).expect("compass step");
+        cell = (cell.0 + dx, cell.1 + dy);
+    }
+    assert_eq!(cell, (7, 4));
 }

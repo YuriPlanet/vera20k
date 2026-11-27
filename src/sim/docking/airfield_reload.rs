@@ -45,7 +45,6 @@
 //! Ready/Commence (`0x0041504A..0x00415058`; the takeoff shuts the Fly Process
 //! gate), and the aircraft flies on asleep.
 
-use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::radio::{self, RadioMessage, RadioPayload, RadioResponse};
@@ -225,15 +224,13 @@ pub(crate) fn mission_reload(
     sim: &mut Simulation,
     rules: &RuleSet,
     dock: u64,
-    registry: Option<&OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> i32 {
     let mut host = WorldReload {
         sim,
         rules,
         dock,
-        registry,
-        effects,
+        effects: effects.reborrow(),
         detached_timers: DockReloadTimers::default(),
     };
     if rules.ares_form() {
@@ -247,7 +244,6 @@ struct WorldReload<'a> {
     sim: &'a mut Simulation,
     rules: &'a RuleSet,
     dock: u64,
-    registry: Option<&'a OverlayTypeRegistry>,
     effects: FrameEffects<'a>,
     /// Stands in for the timers of a dock that is no longer in the store.
     detached_timers: DockReloadTimers,
@@ -272,7 +268,7 @@ impl AresReloadHost for WorldReload<'_> {
 
     fn timers(&mut self) -> &mut DockReloadTimers {
         match self.sim.substrate.entities.get_mut(self.dock) {
-            Some(building) => &mut building.ares.ares_dock_reload_timers,
+            Some(building) => &mut building.seldom.ares.ares_dock_reload_timers,
             None => &mut self.detached_timers,
         }
     }
@@ -284,7 +280,7 @@ impl ReloadHost for WorldReload<'_> {
             .substrate
             .entities
             .get(self.dock)
-            .map_or(0, |building| building.radio_contacts.capacity())
+            .map_or(0, |building| building.seldom.radio_contacts.capacity())
     }
 
     fn contact(&mut self, slot: usize) -> Option<u64> {
@@ -292,7 +288,7 @@ impl ReloadHost for WorldReload<'_> {
             .substrate
             .entities
             .get(self.dock)
-            .and_then(|building| building.radio_contacts.slot(slot))
+            .and_then(|building| building.seldom.radio_contacts.slot(slot))
     }
 
     fn roger(&mut self, contact: u64, message: RadioMessage) -> bool {
@@ -303,7 +299,7 @@ impl ReloadHost for WorldReload<'_> {
             message,
             RadioPayload::default(),
             self.rules,
-            self.effects,
+            &mut self.effects,
         ) == RadioResponse::Roger
     }
 
@@ -341,8 +337,8 @@ impl ReloadHost for WorldReload<'_> {
             self.sim,
             contact,
             self.rules,
-            self.registry,
-            self.effects,
+            Some(self.rules.overlay_registry()),
+            &mut self.effects,
         );
         let now = self.sim.session.binary_frame();
         let _ = self.sim.substrate.mission_assign_exact(

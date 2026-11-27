@@ -60,6 +60,7 @@ pub mod cloak_disguise;
 pub mod command;
 pub mod command_queue;
 pub mod components;
+pub mod control_authority;
 pub(crate) mod conversion_health;
 pub mod crates; // scenario-start crate placement (Post_Map_Init step 3)
 pub mod credit_income; // oil-derrick ProduceCash + Floating Disc money drain (object-loop money)
@@ -67,7 +68,7 @@ pub(crate) mod crew_survival; // building SpawnSurvivors and vehicle crew escape
 #[cfg(feature = "debug-tools")]
 pub mod debug_event_log;
 pub mod dirty_cells;
-pub mod driver; // per-house driver policy carried by command-driven houses
+pub mod driver; // external controller settings for a computer house
 pub mod economy; // per-house wallet/storage/statistics value-type (production+economy substrate)
 pub mod entity_store;
 pub(crate) mod estimated_health;
@@ -83,6 +84,7 @@ pub mod intern;
 pub(crate) mod kamikaze; // missiles out of their launcher's control (0x00ABC5F8)
 pub(crate) mod lifecycle_request;
 pub mod light_sources;
+pub(crate) mod limpet; // Tiberian Sun limpets (Firestorm 2.0 Fire_At 0x006301A0)
 pub(crate) mod locomotor_lift; // the Magnetron's IsLocomotor= lift (ImbueLocomotor 0x00710000)
 pub mod multiplayer_checksum;
 pub mod native_identity;
@@ -120,7 +122,7 @@ pub(crate) mod tesla_charging;
 pub mod timer; // signed frame-anchored countdown primitive
 pub(crate) mod touch_log; // which stored objects were handed out mutably, per reader
 pub use touch_log::{Touched, live_read_check_enabled};
-pub mod type_handle_table; // InternedId -> TypeHandle, one-hop entity->type resolution
+pub mod type_handle_table; // Interned bridge warheads used by combat.
 
 // --- Pure read-only deterministic engine-data services (gamemd-exact lookup tables) ---
 
@@ -134,6 +136,7 @@ pub mod world; // Simulation orchestrator, command dispatch, spawn, hash
 
 // --- Mission scheduler substrate + radio contact RPC vocabulary ---
 pub mod mission; // MissionType, MissionTimer, MissionControl (INI table)
+pub(crate) mod ra2_all02_diagnostic; // -ra2-only ALL02S owner/count trace -> logs/ra2.log
 pub mod radio; // RadioMessage / RadioResponse / RadioPayload
 
 // --- Movement: ground pathing, speed ramping, cell transitions,
@@ -218,7 +221,7 @@ pub(crate) mod terrain_fire; // Ares terrain fire (Catch_Fire 0x71C5B0, 1004F530
 pub mod terrain_object;
 pub mod terrain_spawn;
 pub mod tiberium;
-pub mod tiberium_germinate;
+mod tiberium_germinate;
 
 // --- Per-match settings, per-player state ---
 pub mod game_options;
@@ -231,6 +234,8 @@ pub mod houses;
 // --- Trigger runtime (map trigger evaluation during gameplay) ---
 pub mod team_script_vm;
 pub mod trigger_runtime;
+// Wasm extension modules: the module phase and the vera:sim host (RFC 0001).
+pub mod ext_modules;
 
 // --- AI, replay, selection, debug ---
 pub(crate) mod ai_build_need;
@@ -243,6 +248,7 @@ pub mod replay;
 mod replay_determinism_tests;
 pub mod runtime;
 pub mod selection;
+pub mod skirmish_cheats;
 
 // --- Snapshot serialization (mid-match save/load) ---
 pub mod snapshot;

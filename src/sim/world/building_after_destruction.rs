@@ -60,7 +60,7 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         type_id: InternedId,
         origin: (u16, u16),
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(registry) = registry else {
             return;
@@ -103,9 +103,10 @@ impl Simulation {
         type_id: InternedId,
         foundation: &crate::rules::foundation::Foundation,
         origin: (u16, u16),
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
-        let cells = crate::sim::crew_survival::foundation_cells(origin.0, origin.1, foundation);
+        let cells: Vec<_> =
+            crate::sim::crew_survival::foundation_cells(origin.0, origin.1, foundation).collect();
         // The building is already unmarked, so presence cannot change between
         // cells. Before the first navigation build there is nothing to publish
         // or repair ([`Simulation::publish_recalculated_cells`]).
@@ -135,7 +136,7 @@ impl Simulation {
             if navigation_installed {
                 self.publish_cell_and_assign_orphaned_zone(rules, cell, Some(&blocked));
             }
-            self.stop_all_targeting_cell(cell.0, cell.1, rules, Some(registry), effects);
+            self.stop_all_targeting_cell(cell.0, cell.1, rules, effects);
         }
         if let Some(grid) = self.overlay_grid.as_mut() {
             grid.set_rubble_building_type(origin.0, origin.1, type_id);

@@ -54,9 +54,16 @@ plays `SW.Sound`, raises the radar event and prints `Message.Launch`, each unles
 Flags skip it, and remembers the House's last Super (SWLastIndex), which a PostClick
 Super uses as its source.
 
-The other stock Types (Iron Curtain, Force Shield, the paradrops, Psychic Reveal) keep
-their stock owners in this port; parts 2 and 3 below add the Spy Plane and the
-Lightning Storm.
+The Iron Curtain and Force Shield keep their stock handlers. The paradrops,
+Spy Plane, Lightning Storm and Psychic Reveal use their Ares redirects.
+
+## Psychic Reveal
+
+An Ares `Type=PsychicReveal` uses `SW.Range` for both its targeting cursor and
+the area it explores. A single positive value gives a circle around the
+target, and a width and positive height give a rectangle. `SW.Range=-1`
+reveals the playable map directly from the cameo. An absent range or
+`SW.Range=-1,-1` uses `[CombatDamage] PsychicRevealRadius`, capped at 10.
 
 ## Chronosphere
 

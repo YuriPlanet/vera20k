@@ -878,7 +878,7 @@ mod tests {
         sim.intern_rule_type_ids(&rules);
         sim.resolve_type_handles(&rules);
         sim.install_resolved_terrain_for_new_map(template.clone());
-        sim.install_overlay_grid_for_load(crate::sim::overlay_grid::OverlayGrid::new(8, 8));
+        *sim.overlay_grid_mut_for_test() = Some(crate::sim::overlay_grid::OverlayGrid::new(8, 8));
         crate::sim::terrain_spawn::construct_terrain_objects(
             &mut sim,
             &[crate::map::overlay::TerrainObject {
@@ -904,7 +904,7 @@ mod tests {
                 warhead,
                 true,
                 (crate::sim::combat::RAD_NO_ATTACKER, None, warhead_ref),
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             );
         };
         hit(&mut sim, &rules);

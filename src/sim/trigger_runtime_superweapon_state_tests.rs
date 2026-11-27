@@ -5,6 +5,7 @@
 use super::*;
 use crate::map::map_file::MapFile;
 use crate::map::waypoints::Waypoint;
+use crate::rules::rule_policy::RulePolicy;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::house_state::HouseState;
 use crate::sim::intern::InternedId;
@@ -75,9 +76,9 @@ fn all03_inputs() -> Option<(RuleSet, MapFile)> {
 
 fn seeded_rngs(sim: &mut Simulation, data: &Value) {
     let seeds = &data["rng_seed_states"];
-    sim.main_rng = SimRng::from_native_state_hex_for_test(seeds["main"].as_str().unwrap()).into();
-    sim.scenario_rng = SimRng::from_native_state_hex_for_test(seeds["scenario"].as_str().unwrap());
-    sim.mapgen_rng = SimRng::from_native_state_hex_for_test(seeds["mapgen"].as_str().unwrap());
+    *sim.main_rng = SimRng::from_native_state_hex_for_test(seeds["main"].as_str().unwrap());
+    *sim.scenario_rng = SimRng::from_native_state_hex_for_test(seeds["scenario"].as_str().unwrap());
+    *sim.mapgen_rng = SimRng::from_native_state_hex_for_test(seeds["mapgen"].as_str().unwrap());
 }
 
 fn rng_hashes(sim: &Simulation) -> Value {
@@ -118,7 +119,7 @@ fn all03_authored_nuke_order_preserves_current_timer_and_recharges_at_override()
     let fixed_ai = crate::rules::retail_sources::select_ini(&assets, "AIMD.INI")
         .unwrap()
         .ini;
-    let teams = TeamAiIniRegistry::from_sources(&fixed_ai, &map.ini, false);
+    let teams = TeamAiIniRegistry::from_sources(&fixed_ai, &map.ini, RulePolicy::stock_campaign());
     let roster =
         crate::map::houses::parse_house_roster(&map.ini, &rules.color_schemes, Some(&rules));
     let route = data["retail_inputs"]["routes"]
@@ -199,11 +200,16 @@ fn all03_authored_nuke_order_preserves_current_timer_and_recharges_at_override()
             match stage {
                 "grant" => superweapon::grant_provided_supers(&mut sim, &rules, owner),
                 "before_elapsed_ai" | "elapsed_ai" => {
-                    superweapon::tick_house_superweapon_instances(&mut sim, &rules, owner)
+                    superweapon::tick_house_superweapon_instances(
+                        &mut sim,
+                        &rules,
+                        owner,
+                        &mut Default::default(),
+                    )
                 }
                 "npc_ai_fire" => {
                     ai_fire::AI_FIRE_LOG.set(Some(Vec::new()));
-                    ai_fire::try_fire(&mut sim, &rules, owner, None, FrameEffects::default());
+                    ai_fire::try_fire(&mut sim, &rules, owner, None, &mut FrameEffects::default());
                     let log = ai_fire::AI_FIRE_LOG.take().unwrap();
                     let calls: Vec<Value> = log.into_iter().filter_map(|event| match event {
                         ai_fire::AiFireEvent::Fire(fired, target) => Some(json!({
@@ -271,7 +277,7 @@ fn all03_authored_nuke_order_preserves_current_timer_and_recharges_at_override()
                         &mut Vec::new(),
                         &rules,
                         None,
-                        FrameEffects::default(),
+                        &mut FrameEffects::default(),
                     );
                     assert_eq!(i32::from(returned), int(&row["returned"]), "{stage}");
                 }
@@ -354,12 +360,10 @@ fn dispatch_matches_original_signed_override_waypoint_and_incoming_house_gates()
         assert_eq!(json!(entry.waypoint_index), row["read"]["waypoint"]);
         assert_eq!(json!(entry.auxiliary_value()), row["read"]["auxiliary"]);
         if let Some(index) = entry.waypoint_index {
-            if index < 702 {
-                let (rx, ry) = cell(&input["waypoint_cell"]);
-                let waypoint = Waypoint { index, rx, ry };
-                sim.session
-                    .install_waypoints(&[(index, waypoint)].into_iter().collect());
-            }
+            let (rx, ry) = cell(&input["waypoint_cell"]);
+            let waypoint = Waypoint { index, rx, ry };
+            sim.session
+                .install_waypoints(&[(index, waypoint)].into_iter().collect());
         }
         let action = RuntimeDefinitions::default().resolve_action(entry, None, None, None);
         let context = TriggerActionContext {
@@ -377,7 +381,7 @@ fn dispatch_matches_original_signed_override_waypoint_and_incoming_house_gates()
                 &mut effects,
                 &rules,
                 None,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
         });
         assert_eq!(

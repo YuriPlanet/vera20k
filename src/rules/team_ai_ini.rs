@@ -13,6 +13,7 @@ use crate::rules::ini_parser::{IniFile, IniSection, is_native_none_type_name};
 use crate::rules::ini_value::{
     crt_atoi, parse_leading_f64, scan_decimal_i32, strtrim_ascii, truncate_native_bytes,
 };
+use crate::rules::rule_policy::RulePolicy;
 use crate::util::native_x87::NativeF64Bits;
 
 const SCRIPT_ACTION_CAPACITY: usize = 50;
@@ -215,7 +216,7 @@ pub struct TeamAiIniRegistry {
     fixed_definitions: FixedTeamAiDefinitions,
     team_type_read_transactions: Vec<TeamTypeReadTransaction>,
     fixed_team_type_read_count: usize,
-    game_mode_nonzero: bool,
+    uses_house_team_rules: bool,
 }
 
 impl TeamAiIniRegistry {
@@ -228,15 +229,31 @@ impl TeamAiIniRegistry {
     pub fn load_retail(
         assets: &AssetManager,
         scenario: &IniFile,
-        game_mode_nonzero: bool,
+        rule_policy: RulePolicy,
+    ) -> Result<Self, String> {
+        Self::load_for_match(
+            assets,
+            scenario,
+            rule_policy,
+            crate::rules::retail_sources::AiFile::GameFolder,
+        )
+    }
+
+    /// [`Self::load_retail`] from the AI INI a match reads
+    /// (`retail_sources::match_ai_file`).
+    pub fn load_for_match(
+        assets: &AssetManager,
+        scenario: &IniFile,
+        rule_policy: RulePolicy,
+        file: crate::rules::retail_sources::AiFile,
     ) -> Result<Self, String> {
         let name = assets.ini_roots().ai();
-        let mut fixed = crate::rules::retail_sources::select_ini(assets, name)?.ini;
+        let mut fixed = crate::rules::retail_sources::select_ai_ini(assets, file)?;
         // Load_Game_Rules52D378 reads AIMD through ReadCCFile4741F0 with
         // checkDigest=1 before Full_Init68797F..6879DA consumes its registries.
         // Raw source inspection and metadata keep their unchecked INI view.
         fixed.remove_digest_for_checked_load();
-        let registry = Self::from_sources(&fixed, scenario, game_mode_nonzero);
+        let registry = Self::from_sources(&fixed, scenario, rule_policy);
         // Only a root that is not an AI INI at all is refused. A listed type
         // with no section, or a TaskForce entry that does not scan, is a
         // diagnostic: TeamTypeClass::LoadFromINIList (`0x006F19B0`) allocates
@@ -260,9 +277,9 @@ impl TeamAiIniRegistry {
     ///
     /// Retail provenance: `ScenarioClass::Full_Init @ 0x00686B20`, exact
     /// calls `0x0068797A..0x006879E3`.
-    pub fn from_sources(fixed_aimd: &IniFile, scenario: &IniFile, game_mode_nonzero: bool) -> Self {
+    pub fn from_sources(fixed_aimd: &IniFile, scenario: &IniFile, rule_policy: RulePolicy) -> Self {
         let mut registry = Self {
-            game_mode_nonzero,
+            uses_house_team_rules: rule_policy.uses_house_team_rules(),
             ..Self::default()
         };
 
@@ -286,7 +303,7 @@ impl TeamAiIniRegistry {
         registry.fixed_counts.ai_triggers = registry.ai_triggers.len();
         registry.fixed_definitions.ai_triggers = registry.ai_triggers.clone();
         registry.read_ai_triggers(scenario, TeamAiDefinitionSource::Scenario);
-        registry.read_ai_trigger_enables(scenario, game_mode_nonzero);
+        registry.read_ai_trigger_enables(scenario, registry.uses_house_team_rules);
 
         registry
     }
@@ -342,12 +359,12 @@ impl TeamAiIniRegistry {
                 [..self.fixed_team_type_read_count]
                 .to_vec(),
             fixed_team_type_read_count: self.fixed_team_type_read_count,
-            game_mode_nonzero: self.game_mode_nonzero,
+            uses_house_team_rules: self.uses_house_team_rules,
         }
     }
 
-    pub(crate) fn game_mode_nonzero(&self) -> bool {
-        self.game_mode_nonzero
+    pub(crate) const fn uses_house_team_rules(&self) -> bool {
+        self.uses_house_team_rules
     }
 
     /// TeamTypes are read from fixed AIMD and then from the map before either
@@ -657,7 +674,7 @@ impl TeamAiIniRegistry {
         }
     }
 
-    fn read_ai_trigger_enables(&mut self, scenario: &IniFile, game_mode_nonzero: bool) {
+    fn read_ai_trigger_enables(&mut self, scenario: &IniFile, force_enabled: bool) {
         let Some(section) = scenario.section("AITriggerTypesEnable") else {
             return;
         };
@@ -673,7 +690,7 @@ impl TeamAiIniRegistry {
             // `0x0041F451` ReadBool(false): a false authored value disables
             // only when `g_GameMode == 0`; every listed key is enabled in
             // skirmish/MP.
-            self.ai_triggers[position].enabled = section.read_bool(id, false) || game_mode_nonzero;
+            self.ai_triggers[position].enabled = section.read_bool(id, false) || force_enabled;
         }
     }
 }
@@ -816,7 +833,11 @@ mod tests {
         let row = eighteen_tokens("Team buffers", "  ABCDEFGHIJKLMNOPQRSTUsuffix")
             .replace(",<none>,1,1,1", ",  x  ,1,1,1");
         let fixed = IniFile::from_str(&format!("[AITriggerTypes]\nA={row}\n"));
-        let loaded = TeamAiIniRegistry::from_sources(&fixed, &IniFile::from_str(""), true);
+        let loaded = TeamAiIniRegistry::from_sources(
+            &fixed,
+            &IniFile::from_str(""),
+            RulePolicy::stock_multiplayer(),
+        );
         let trigger = &loaded.ai_triggers[0];
 
         assert_eq!(
@@ -838,7 +859,11 @@ mod tests {
         let row = eighteen_tokens("Team names", "<team>")
             .replace(",<none>,1,1,1", ",\u{a0}TEAM\u{a0},1,1,1");
         let fixed = IniFile::from_str(&format!("[AITriggerTypes]\nA={row}\n"));
-        let loaded = TeamAiIniRegistry::from_sources(&fixed, &IniFile::from_str(""), true);
+        let loaded = TeamAiIniRegistry::from_sources(
+            &fixed,
+            &IniFile::from_str(""),
+            RulePolicy::stock_multiplayer(),
+        );
         let trigger = &loaded.ai_triggers[0];
 
         assert_eq!(trigger.primary_team_type.as_deref(), Some("<team>"));
@@ -850,8 +875,11 @@ mod tests {
 
     #[test]
     fn complete_fixed_source_requires_all_four_nonempty_clean_registries() {
-        let loaded =
-            TeamAiIniRegistry::from_sources(&complete_fixed_aimd(), &IniFile::from_str(""), false);
+        let loaded = TeamAiIniRegistry::from_sources(
+            &complete_fixed_aimd(),
+            &IniFile::from_str(""),
+            RulePolicy::stock_campaign(),
+        );
 
         assert_eq!(
             loaded.fixed_counts,
@@ -887,7 +915,8 @@ mod tests {
             eighteen_tokens("Repaired", "MISSING_TEAM")
         ));
 
-        let loaded = TeamAiIniRegistry::from_sources(&fixed, &scenario, false);
+        let loaded =
+            TeamAiIniRegistry::from_sources(&fixed, &scenario, RulePolicy::stock_campaign());
 
         assert_eq!(loaded.team_types.len(), 2);
         assert_eq!(loaded.scripts.len(), 2);
@@ -911,7 +940,11 @@ mod tests {
     #[test]
     fn refused_scenario_definition_does_not_invalidate_clean_fixed_source() {
         let scenario = IniFile::from_str("[ScriptTypes]\n0=MISSING_MAP_SCRIPT\n");
-        let loaded = TeamAiIniRegistry::from_sources(&complete_fixed_aimd(), &scenario, false);
+        let loaded = TeamAiIniRegistry::from_sources(
+            &complete_fixed_aimd(),
+            &scenario,
+            RulePolicy::stock_campaign(),
+        );
 
         assert!(loaded.fixed_source_is_complete());
         assert_eq!(
@@ -946,7 +979,7 @@ mod tests {
             eighteen_tokens("Map append", "THIRD")
         ));
 
-        let loaded = TeamAiIniRegistry::from_sources(&fixed, &map, false);
+        let loaded = TeamAiIniRegistry::from_sources(&fixed, &map, RulePolicy::stock_campaign());
 
         assert_eq!(
             loaded
@@ -1021,11 +1054,18 @@ mod tests {
         assert_eq!(trigger.difficulty_enabled, [true, true, true]);
         assert!(loaded.diagnostics.is_empty());
 
-        let skirmish = TeamAiIniRegistry::from_sources(&fixed, &map, true);
+        let skirmish =
+            TeamAiIniRegistry::from_sources(&fixed, &map, RulePolicy::stock_multiplayer());
         assert!(
             skirmish.ai_triggers.iter().all(|trigger| trigger.enabled),
             "listed map enable keys force enabled when g_GameMode is nonzero"
         );
+
+        let policy = RulePolicy::stock_multiplayer().with_uses_house_team_rules(false);
+        let skirmish_respecting_authored_enables =
+            TeamAiIniRegistry::from_sources(&fixed, &map, policy);
+        assert!(!skirmish_respecting_authored_enables.ai_triggers[0].enabled);
+        assert!(skirmish_respecting_authored_enables.ai_triggers[1].enabled);
     }
 
     #[test]
@@ -1043,7 +1083,8 @@ mod tests {
             eighteen_tokens("ordinary listed false", "<none>")
         ));
 
-        let campaign = TeamAiIniRegistry::from_sources(&fixed, &scenario, false);
+        let campaign =
+            TeamAiIniRegistry::from_sources(&fixed, &scenario, RulePolicy::stock_campaign());
         let by_id = |id: &str| {
             campaign
                 .ai_triggers
@@ -1066,7 +1107,8 @@ mod tests {
             "mode zero honors a listed false value"
         );
 
-        let skirmish = TeamAiIniRegistry::from_sources(&fixed, &scenario, true);
+        let skirmish =
+            TeamAiIniRegistry::from_sources(&fixed, &scenario, RulePolicy::stock_multiplayer());
         assert!(
             skirmish
                 .ai_triggers
@@ -1093,7 +1135,11 @@ mod tests {
             "[ScriptTypes]\n0=S\n[S]\n0=2,0\n3=-1,9\n49=64,-7\n50=6,2\n\
              [TaskForces]\n0=T\n[T]\n0=-2,E0\n5=3,E5\n6=4,E6\nGroup=-1\n",
         );
-        let loaded = TeamAiIniRegistry::from_sources(&fixed, &IniFile::from_str(""), false);
+        let loaded = TeamAiIniRegistry::from_sources(
+            &fixed,
+            &IniFile::from_str(""),
+            RulePolicy::stock_campaign(),
+        );
 
         assert_eq!(
             loaded.scripts[0].actions,
@@ -1130,7 +1176,11 @@ mod tests {
     #[test]
     fn malformed_ai_trigger_is_refused_without_padding() {
         let fixed = IniFile::from_str("[AITriggerTypes]\nBAD=a,b,c\n");
-        let loaded = TeamAiIniRegistry::from_sources(&fixed, &IniFile::from_str(""), false);
+        let loaded = TeamAiIniRegistry::from_sources(
+            &fixed,
+            &IniFile::from_str(""),
+            RulePolicy::stock_campaign(),
+        );
 
         assert!(loaded.ai_triggers.is_empty());
         assert_eq!(
@@ -1153,7 +1203,11 @@ mod tests {
             ]
             .join(",")
         ));
-        let loaded = TeamAiIniRegistry::from_sources(&fixed, &IniFile::from_str(""), false);
+        let loaded = TeamAiIniRegistry::from_sources(
+            &fixed,
+            &IniFile::from_str(""),
+            RulePolicy::stock_campaign(),
+        );
 
         assert!(loaded.ai_triggers.is_empty());
         assert_eq!(
@@ -1170,7 +1224,11 @@ mod tests {
     #[test]
     fn sentinel_task_force_member_is_a_source_tagged_refusal() {
         let fixed = IniFile::from_str("[TaskForces]\n0=BAD_FORCE\n[BAD_FORCE]\n0=1,<none>\n");
-        let loaded = TeamAiIniRegistry::from_sources(&fixed, &IniFile::from_str(""), false);
+        let loaded = TeamAiIniRegistry::from_sources(
+            &fixed,
+            &IniFile::from_str(""),
+            RulePolicy::stock_campaign(),
+        );
 
         assert!(loaded.task_forces[0].entries.is_empty());
         assert_eq!(
@@ -1192,7 +1250,11 @@ mod tests {
             .expect("set VERA20K_RETAIL_AIMD to extracted retail aimd.ini");
         let bytes = std::fs::read(path).expect("read retail aimd.ini");
         let fixed = IniFile::from_bytes(&bytes).expect("parse retail aimd.ini");
-        let loaded = TeamAiIniRegistry::from_sources(&fixed, &IniFile::from_str(""), false);
+        let loaded = TeamAiIniRegistry::from_sources(
+            &fixed,
+            &IniFile::from_str(""),
+            RulePolicy::stock_campaign(),
+        );
 
         assert!(loaded.diagnostics.is_empty(), "{:?}", loaded.diagnostics);
         assert_eq!(loaded.task_forces.len(), 132);

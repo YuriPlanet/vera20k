@@ -15,6 +15,9 @@ pub(crate) trait PathFinishingContext {
 
     fn get_cell(&self, coord: (i16, i16)) -> Self::Cell;
     fn ground_level(&self, cell: Self::Cell) -> i32;
+    fn fixed_deck_level(&self, _cell: Self::Cell) -> Option<i32> {
+        None
+    }
     fn flags(&self, cell: Self::Cell) -> u32;
     /// Foot virtual+1AC(candidate, direction, height, NULL, 1). The entry
     /// owner supplies its class-specific result; finishing accepts only zero.
@@ -23,6 +26,24 @@ pub(crate) trait PathFinishingContext {
     fn threat_coefficient(&self) -> Result<crate::util::native_x87::NativeF64Bits, String>;
     /// Cell+116=-1 answers None, which resets the packed coordinate to zero.
     fn tube_exit(&self, cell: Self::Cell) -> Option<(i16, i16)>;
+}
+
+/// One outgoing node's retained height (`42AA90` copies it to the node's
+/// edge), read in place: from the A*'s own steps, or a corpus's plain array.
+pub(crate) trait NodeHeight: Copy {
+    fn height(self) -> i32;
+}
+
+impl NodeHeight for i32 {
+    fn height(self) -> i32 {
+        self
+    }
+}
+
+impl NodeHeight for super::LayeredPathStep {
+    fn height(self) -> i32 {
+        i32::from(self.path_height())
+    }
 }
 
 type PackedCell = (i16, i16);
@@ -56,9 +77,17 @@ fn follow_direction<C: PathFinishingContext>(
 }
 
 fn next_finishing_height<C: PathFinishingContext>(previous: i32, cell: C::Cell, ctx: &C) -> i32 {
+    use crate::util::lepton::BRIDGE_DECK_HEIGHT_LEVELS;
+
     let ground = ctx.ground_level(cell);
-    if previous.wrapping_sub(ground) == 4 && ctx.flags(cell) & 0x100 != 0 {
-        ground.wrapping_add(4)
+    // The 42B420 and 42BE20 bridge-height checks keep the incoming height
+    // only when it matches this cell's deck. Keep the native read order for
+    // synthetic cells and for the mutable map Dummy.
+    if let Some(deck) = ctx.fixed_deck_level(cell) {
+        return if previous == deck { deck } else { ground };
+    }
+    if previous.wrapping_sub(ground) == BRIDGE_DECK_HEIGHT_LEVELS && ctx.flags(cell) & 0x100 != 0 {
+        ground.wrapping_add(BRIDGE_DECK_HEIGHT_LEVELS)
     } else {
         ground
     }
@@ -71,7 +100,8 @@ fn threat_at_least(
 ) -> bool {
     use crate::util::native_x87::{X87Chop53, X87Ordering};
     let product = X87Chop53::mul(X87Chop53::load_i32(threat), coefficient);
-    let limit = X87Chop53::load_f64(threshold).expect("finite native finishing threshold");
+    let limit =
+        X87Chop53::load_f64(threshold).expect("callers pass the native 1.0 and 0.01 thresholds");
     X87Chop53::compare(product, limit) != X87Ordering::Less
 }
 
@@ -79,9 +109,9 @@ fn threat_at_least(
 /// height array, reads the retained Cell after entry, and performs one extra
 /// lookahead lookup even after a rejection. Native comparisons are in
 /// tools/spatial_oracle/astar_path_finishing.{py,json,meta.json}.
-fn smooth_native_segment<C: PathFinishingContext>(
+fn smooth_native_segment<C: PathFinishingContext, H: NodeHeight>(
     dirs: &mut [i32],
-    heights: &[i32],
+    heights: &[H],
     run_len: usize,
     zig_len: usize,
     base: &mut PackedCell,
@@ -109,7 +139,7 @@ fn smooth_native_segment<C: PathFinishingContext>(
         .map_err(|e| e.to_string())?;
     for pairs in (1..=pairs).rev() {
         let prefix = run_len - pairs;
-        let mut height = heights[prefix];
+        let mut height = heights[prefix].height();
         let mut cursor = packed_step(origin, midpoint);
         let mut cell = ctx.get_cell(cursor);
         let mut rejected = false;
@@ -146,10 +176,10 @@ fn smooth_native_segment<C: PathFinishingContext>(
 /// Original42B210, reached at42A415. Directions exclude the -1 terminator;
 /// heights are the unchanged outgoing-node array from42AA90. No layer split
 /// occurs in the original pass.
-pub(crate) fn smooth_corners<C: PathFinishingContext>(
+pub(crate) fn smooth_corners<C: PathFinishingContext, H: NodeHeight>(
     start: PackedCell,
     dirs: &mut [i32],
-    heights: &[i32],
+    heights: &[H],
     ctx: &C,
 ) -> Result<(), String> {
     debug_assert_eq!(dirs.len(), heights.len());
@@ -328,10 +358,10 @@ fn reroute_straight<C: PathFinishingContext>(
 /// Original42B7F0, reached at42A41E. Its scan visits at most20 input slots;
 /// compaction subsequently retains every surviving slot, including the suffix
 /// outside that window. Only directions/count change, never height storage.
-pub(crate) fn optimize_straight_segments<C: PathFinishingContext>(
+pub(crate) fn optimize_straight_segments<C: PathFinishingContext, H: NodeHeight>(
     start: PackedCell,
     dirs: &mut Vec<i32>,
-    heights: &[i32],
+    heights: &[H],
     ctx: &C,
 ) -> Result<(), String> {
     debug_assert_eq!(dirs.len(), heights.len());
@@ -391,7 +421,7 @@ pub(crate) fn optimize_straight_segments<C: PathFinishingContext>(
                 &mut dirs[split..=index],
                 split_coord,
                 packed_sub(pos, split_coord),
-                heights[split],
+                heights[split].height(),
                 false,
                 ctx,
             )?;
@@ -411,7 +441,7 @@ pub(crate) fn optimize_straight_segments<C: PathFinishingContext>(
             &mut dirs[split..index],
             split_coord,
             packed_sub(pos, split_coord),
-            heights[split],
+            heights[split].height(),
             true,
             ctx,
         )?;
@@ -423,10 +453,10 @@ pub(crate) fn optimize_straight_segments<C: PathFinishingContext>(
 /// The original successful-search sequence42A415/42A41E. Returned directions
 /// exclude the native terminator; the retained outgoing-node heights are input
 /// storage and deliberately remain unchanged after compaction.
-pub(crate) fn finish_path<C: PathFinishingContext>(
+pub(crate) fn finish_path<C: PathFinishingContext, H: NodeHeight>(
     start: PackedCell,
     dirs: &mut Vec<i32>,
-    heights: &[i32],
+    heights: &[H],
     ctx: &C,
 ) -> Result<(), String> {
     smooth_corners(start, dirs, heights, ctx)?;

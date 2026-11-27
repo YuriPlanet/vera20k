@@ -107,7 +107,7 @@ fn stock_passenger_pips_follow_real_boarding_departure_and_selection() {
                 .entities()
                 .get(passenger)
                 .unwrap()
-                .passenger_role
+                .passenger_role()
                 .is_inside_transport()
             {
                 break;
@@ -115,7 +115,7 @@ fn stock_passenger_pips_follow_real_boarding_departure_and_selection() {
         }
         let rider = sim.entities().get(passenger).unwrap();
         assert_eq!(
-            rider.passenger_role.inside_transport(),
+            rider.passenger_role().inside_transport(),
             Some((transport, false))
         );
         assert!(rider.lifecycle.in_limbo());
@@ -123,7 +123,7 @@ fn stock_passenger_pips_follow_real_boarding_departure_and_selection() {
             .entities()
             .get(transport)
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .cargo()
             .unwrap();
         assert_eq!(hold.passengers(), [passenger]);
@@ -143,20 +143,20 @@ fn stock_passenger_pips_follow_real_boarding_departure_and_selection() {
                 .entities()
                 .get(passenger)
                 .unwrap()
-                .passenger_role
+                .passenger_role()
                 .is_inside_transport()
             {
                 break;
             }
         }
         let rider = sim.entities().get(passenger).unwrap();
-        assert!(!rider.passenger_role.is_inside_transport());
+        assert!(!rider.passenger_role().is_inside_transport());
         assert!(!rider.lifecycle.in_limbo());
         assert_eq!(
             sim.entities()
                 .get(transport)
                 .unwrap()
-                .passenger_role
+                .passenger_role()
                 .passenger_count(),
             0
         );
@@ -230,10 +230,9 @@ fn fractional_passenger_pips_match_original_cargo_and_draw_controls() {
             "{}",
             control
         );
-        sim.entities_mut_for_test()
-            .get_mut(carrier)
+        sim.entity_mut_for_test(carrier)
             .unwrap()
-            .passenger_role = PassengerRole::transport(cargo);
+            .set_passenger_role_for_test(PassengerRole::transport(cargo));
         assert!(sim.apply_command(
             OWNER,
             &Command::Select {
@@ -304,7 +303,7 @@ fn a_slave_shows_the_load_it_carries() {
         let cargo = std::iter::repeat_n(bale(ResourceType::Ore), ore)
             .chain(std::iter::repeat_n(bale(ResourceType::Gem), gems))
             .collect();
-        sim.entities_mut_for_test().get_mut(slave).unwrap().slave =
+        sim.entity_mut_for_test(slave).unwrap().seldom.slave =
             crate::sim::slave_manager::SlaveLink::for_test(None, cargo);
         assert_eq!(
             frames(&sim, rules, slave, None),
@@ -343,7 +342,7 @@ fn shared_harvester_scale_matches_native_independent_ore_and_gem_counts() {
             continue;
         }
         crate::sim::arena_fixture::install_status_miner_cargo(
-            sim.entities_mut_for_test().get_mut(miner).unwrap(),
+            sim.entity_mut_for_test(miner).unwrap(),
             rules.object("HARV").unwrap(),
             rules,
             actor["ore_bales"].as_u64().unwrap() as usize,
@@ -394,10 +393,9 @@ fn ares_passenger_pips_clip_an_overfull_hold_and_step_once_after_the_gunner() {
         let tank = sim.spawn_object("TANK", OWNER, 16, 15, 64, &rules).unwrap();
         let mut cargo = PassengerCargo::new(3, 4.0);
         cargo.board_forced_chain(&[(tank, 4.0)]);
-        sim.entities_mut_for_test()
-            .get_mut(carrier)
+        sim.entity_mut_for_test(carrier)
             .unwrap()
-            .passenger_role = PassengerRole::transport(cargo);
+            .set_passenger_role_for_test(PassengerRole::transport(cargo));
         assert!(sim.apply_command(
             OWNER,
             &Command::Select {
@@ -410,10 +408,10 @@ fn ares_passenger_pips_clip_an_overfull_hold_and_step_once_after_the_gunner() {
             crate::app::presentation::frame::ObjectRecord::of_test_sim(&sim, &rules, carrier);
         super::ui_overlays::scale_pip_draws(&sim, &record, None, sim.interner().get(OWNER), &rules)
             .into_iter()
-            .map(|pip| (pip.frame, pip.offset_pixels[0]))
+            .map(|pip| (pip.frame, pip.slot))
             .collect::<Vec<_>>()
     };
-    assert_eq!(draws(""), [(5, 0), (3, 4), (3, 8)]);
-    assert_eq!(draws("Gunner=yes\n"), [(5, 0), (3, 8), (3, 12)]);
-    assert_eq!(draws("Passengers.BySize=no\n"), [(5, 0), (0, 4), (0, 8)]);
+    assert_eq!(draws(""), [(5, 0), (3, 1), (3, 2)]);
+    assert_eq!(draws("Gunner=yes\n"), [(5, 0), (3, 2), (3, 3)]);
+    assert_eq!(draws("Passengers.BySize=no\n"), [(5, 0), (0, 1), (0, 2)]);
 }

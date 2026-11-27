@@ -4,6 +4,17 @@
 //! ECB mode (see `mix_crypto`). The initial P-array and S-boxes are the
 //! fractional hexadecimal digits of pi, in order: `P[0]` is `0x243F6A88`.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable
+    )
+)]
+
 /// Expanded key: the P-array and S-boxes after the key schedule.
 pub(crate) struct Blowfish {
     p: [u32; 18],
@@ -20,11 +31,10 @@ impl Blowfish {
         // XOR the P-array with the key, read cyclically as big-endian words.
         let mut key_bytes = key.iter().cycle();
         for word in &mut cipher.p {
-            let mut key_word = 0;
-            for _ in 0..4 {
-                key_word = key_word << 8 | u32::from(*key_bytes.next().expect("cycled key"));
-            }
-            *word ^= key_word;
+            *word ^= key_bytes
+                .by_ref()
+                .take(4)
+                .fold(0, |key_word, &byte| key_word << 8 | u32::from(byte));
         }
         let mut block = (0, 0);
         for i in (0..18).step_by(2) {
@@ -42,9 +52,9 @@ impl Blowfish {
 
     /// Decrypt one 8-byte block in place (two big-endian words).
     pub(crate) fn decrypt_block(&self, block: &mut [u8; 8]) {
-        let (left, right) = block.split_at_mut(4);
-        let mut l = u32::from_be_bytes(left.try_into().expect("4 bytes"));
-        let mut r = u32::from_be_bytes(right.try_into().expect("4 bytes"));
+        let words = u64::from_be_bytes(*block);
+        let mut l = (words >> 32) as u32;
+        let mut r = words as u32;
         for i in (2..18).rev() {
             l ^= self.p[i];
             r ^= self.round(l);
@@ -53,8 +63,7 @@ impl Blowfish {
         std::mem::swap(&mut l, &mut r);
         r ^= self.p[1];
         l ^= self.p[0];
-        left.copy_from_slice(&l.to_be_bytes());
-        right.copy_from_slice(&r.to_be_bytes());
+        *block = (u64::from(l) << 32 | u64::from(r)).to_be_bytes();
     }
 
     fn encrypt(&self, (mut l, mut r): (u32, u32)) -> (u32, u32) {

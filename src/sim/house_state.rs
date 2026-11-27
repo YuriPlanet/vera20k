@@ -9,7 +9,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::map::playfield::local_to_packed_cell;
 use crate::rules::object_type::ObjectCategory;
+use crate::rules::rule_policy::RulePolicy;
 use crate::sim::cell_rect::PlayfieldBounds;
+use crate::sim::driver::DriverPolicy;
 use crate::sim::economy::Economy;
 use crate::sim::houses::Houses;
 use crate::sim::intern::InternedId;
@@ -572,11 +574,6 @@ pub struct HouseState {
     left_game: bool,
     #[serde(default)]
     native_construction: Option<NativeHouseConstruction>,
-    /// A driver-policy knob: a per-house scale on production build times,
-    /// read through [`Self::native_build_time_scale`]. `None` is the
-    /// native behavior. Nothing native writes this; it is not a gamemd port.
-    #[serde(default)]
-    native_build_time_scale: Option<NativeF32Bits>,
     #[serde(default)]
     scenario_parameters: HouseScenarioParameters,
     /// House+16C's retained initial Techno records. ReadScenario684C1B calls
@@ -653,21 +650,15 @@ pub struct HouseState {
     #[serde(default)]
     multiplay_passive: bool,
     /// This house's decisions are owned by an external command-layer
-    /// controller, so the native AI rungs stand down for it, and a
-    /// command-driven launch supplies its own opening credits. Not a gamemd
+    /// controller, so the native AI rungs stand down for it. Not a gamemd
     /// port: native `HouseClass` has no such byte, and it stays out of the
     /// retail-state concerns entirely.
     #[serde(default)]
     command_driven: bool,
-    /// The driver policy this house launched with, stored as a
-    /// [`DriverPolicy`](crate::sim::driver::DriverPolicy) so a command
-    /// layer can carry knob combinations beyond a bare flag; a later
-    /// driver rebuild (fresh launch and saved-game restore alike) reads
-    /// the policy back. `None` for every native house and saves written
-    /// before the policy existed. Like the flag above it stays out of
-    /// every native-state concern.
+    /// The external controller's settings. Historical driven houses use
+    /// the neutral settings when their player save is converted.
     #[serde(default)]
-    driver_policy: Option<crate::sim::driver::DriverPolicy>,
+    driver_policy: DriverPolicy,
     /// The HouseType's `Cost*Mult=`, projected from the rules at creation.
     /// Like `multiplay_passive` it is the type's, so it is left out of the
     /// state hash.
@@ -908,6 +899,13 @@ pub struct HouseState {
     /// common Launch read it.
     #[serde(default = "no_super_index")]
     ares_last_super: i32,
+    /// Ares HouseExt `+0x8/+0x9` Degrades (`Nullable<bool>`, constructed
+    /// unset): `Degrades=` in this House's own map section, read by
+    /// `HouseExt::LoadFromINI` (`10021A70`) from hook `0x0050114D` at the end
+    /// of `HouseClass::Read_Scenario_INI`. Saves before it convert with it
+    /// unset (`snapshot::migration`).
+    #[serde(default)]
+    ares_degrades: Option<bool>,
     /// House+2D8: how many of this house's `PowersUnit=` buildings are
     /// counted as operational (each building's `+0x662`). The constructor
     /// clears it; `sim::powered_unit` is its only writer.
@@ -1216,15 +1214,10 @@ impl HouseState {
     }
 
     /// Hand this house's decisions to an external command-layer controller:
-    /// the native AI rungs stand down for it (no in-tree caller sets this)
-    /// and the launch's policy treatment supplies its opening credits. The
-    /// policy rides along so a later driver rebuild recovers it; anything
-    /// convertible into a
-    /// [`DriverPolicy`](crate::sim::driver::DriverPolicy) is accepted.
-    /// Not a gamemd port.
-    pub fn make_command_driven(&mut self, treatment: impl Into<crate::sim::driver::DriverPolicy>) {
+    /// its policy follows the house through saves and simulation frames.
+    pub fn make_command_driven(&mut self, policy: impl Into<DriverPolicy>) {
         self.command_driven = true;
-        self.driver_policy = Some(treatment.into());
+        self.driver_policy = policy.into();
     }
 
     /// The external-driver-ownership flag (see the field's docs): the native
@@ -1233,13 +1226,19 @@ impl HouseState {
         self.command_driven
     }
 
-    /// The stored driver policy itself (see the field's docs); the launch's
-    /// per-tick credit support applies it. `None` for native houses and
-    /// saves written before the policy existed.
-    pub const fn driver_policy(&self) -> Option<&crate::sim::driver::DriverPolicy> {
-        match &self.driver_policy {
-            Some(policy) => Some(policy),
-            None => None,
+    /// Settings of the external controller that owns this house.
+    pub const fn driver_policy(&self) -> Option<&DriverPolicy> {
+        if self.command_driven {
+            Some(&self.driver_policy)
+        } else {
+            None
+        }
+    }
+
+    pub(super) fn apply_driver_credit_support(&mut self, frame: u32) {
+        if self.command_driven {
+            self.driver_policy
+                .apply_credit_support(&mut self.economy, frame);
         }
     }
 
@@ -1254,6 +1253,12 @@ impl HouseState {
     pub(crate) fn make_campaign_player(&mut self) {
         self.is_human = true;
         self.player_control = true;
+    }
+
+    /// An authored lockstep role makes its primary House human. The map's
+    /// PlayerControl byte remains independent of the source's order authority.
+    pub(crate) fn admit_campaign_role(&mut self) {
+        self.is_human = true;
     }
 
     /// The House's reinforcement edge ([`determine_waypoint_edge`]).
@@ -1349,7 +1354,10 @@ impl HouseState {
 
     // ---- Sub-owners: their own operations carry the rules ----------------
 
-    pub(crate) fn tracking_mut(&mut self) -> &mut crate::sim::house_tracking::HouseTracking {
+    pub(super) fn tracking_mut(
+        &mut self,
+        _: crate::sim::house_tracking::TrackingWrite,
+    ) -> &mut crate::sim::house_tracking::HouseTracking {
         &mut self.tracking
     }
 
@@ -1604,18 +1612,6 @@ impl HouseState {
         self.difficulty
     }
 
-    /// The stored build-time scale, if a driver policy set one (see the
-    /// field's docs).
-    pub const fn native_build_time_scale(&self) -> Option<NativeF32Bits> {
-        self.native_build_time_scale
-    }
-
-    /// Set the build-time scale; the launch's policy kernel is its only
-    /// writer.
-    pub fn set_native_build_time_scale(&mut self, scale: NativeF32Bits) {
-        self.native_build_time_scale = Some(scale);
-    }
-
     /// The commander personality driving this house, if `[AIPersonalities]`
     /// registered one for it. See [`crate::rules::personality`].
     pub const fn personality(&self) -> Option<u16> {
@@ -1760,6 +1756,16 @@ impl HouseState {
 
     pub const fn economy(&self) -> &Economy {
         &self.economy
+    }
+
+    /// `HouseClass::Available_Storage @ 0x004F69D0`: the storage capacity
+    /// (`+0x310`) minus the House store's total (`+0x2FC`,
+    /// `StorageClass::GetTotalAmount`), which only Ares fills
+    /// (`sim::ares_tiberium_storage`).
+    pub(crate) fn available_storage(&self) -> i32 {
+        self.tracking
+            .storage_capacity()
+            .wrapping_sub(self.economy.ares_storage().house_store().total_amount())
     }
 
     pub const fn strategy_emergency(&self) -> &HouseStrategyEmergencyState {
@@ -1916,10 +1922,11 @@ impl HouseState {
             .unwrap_or(0)
     }
 
-    /// Explicit retained Counter prior for native execution comparisons.
+    /// Explicit retained Counter prior, for the tests that need one.
     /// Normal construction/acquisition must never call this fixture adapter.
+    /// Client tests reach it through the `test-support` feature.
     #[cfg(any(test, feature = "test-support"))]
-    pub(crate) fn set_produced_count_for_test(
+    pub fn set_produced_count_for_test(
         &mut self,
         category: ObjectCategory,
         type_index: i32,
@@ -2060,7 +2067,7 @@ impl HouseState {
     pub(crate) fn initialize_scenario_parameters(
         &mut self,
         read: crate::map::houses::ScenarioHouseParameters,
-        campaign_difficulty: Option<HouseDifficulty>,
+        campaign_player_difficulty: Option<HouseDifficulty>,
         general: Option<&crate::rules::ruleset::GeneralRules>,
     ) {
         self.tech_level = read.tech_level;
@@ -2072,8 +2079,7 @@ impl HouseState {
         };
         self.economy.initialize_scenario_credits(
             read.credits,
-            campaign_difficulty,
-            self.player_control,
+            campaign_player_difficulty,
             general.map_or(0, |g| g.campaign_money_delta_easy),
             general.map_or(0, |g| g.campaign_money_delta_hard),
         );
@@ -2116,6 +2122,10 @@ impl HouseState {
         if self.economy.scenario_credits() != 0 {
             b"house-scenario-credits-v1".hash(hasher);
             self.economy.scenario_credits().hash(hasher);
+        }
+        if let Some(degrades) = self.ares_degrades {
+            b"ares-house-degrades-v1".hash(hasher);
+            degrades.hash(hasher);
         }
     }
 
@@ -2546,6 +2556,21 @@ impl HouseState {
         self.ares_last_super = index;
     }
 
+    /// `HouseExt::LoadFromINI @ 10021A70`: the House section's `Degrades=`
+    /// through Ares' `Nullable<bool>` reader (`1000E9B0`).
+    pub(crate) fn read_ares_degrades(&mut self, section: &crate::rules::ini_parser::IniSection) {
+        self.ares_degrades = section.read_ares_nullable_bool("Degrades", self.ares_degrades);
+    }
+
+    /// Whether low power degrades this House's buildings (`100247A0`): the
+    /// country's `Degrades=` when set, else not `MultiplayPassive`; the
+    /// House's own map value, when set, overrides both.
+    pub(crate) fn ares_degrades(&self, country_degrades: Option<bool>) -> bool {
+        self.ares_degrades
+            .or(country_degrades)
+            .unwrap_or(!self.multiplay_passive)
+    }
+
     /// Folded only once a launch set it, so other houses hash as earlier
     /// schemas did.
     pub(crate) fn hash_ares_last_super(&self, hasher: &mut impl std::hash::Hasher) {
@@ -2679,7 +2704,7 @@ impl HouseState {
         difficulty: HouseDifficulty,
         general: &crate::rules::ruleset::GeneralRules,
         country: crate::rules::ruleset::CountryDifficultyBiases,
-        game_mode_nonzero: bool,
+        policy: RulePolicy,
         array_index: i32,
         frame: i32,
     ) {
@@ -2693,7 +2718,7 @@ impl HouseState {
             if speed_scaled {
                 value = X::mul(value, X::load_f64(bias));
             }
-            if game_mode_nonzero {
+            if policy.uses_country_difficulty_biases() {
                 value = X::mul(value, X::load_f64(country));
             }
             X::store_f64_masked_chop(value)
@@ -2798,11 +2823,7 @@ impl HouseState {
 
     /// `Execute_DoList 0x0064C4FB..0x0064C50D` admits a registered House
     /// when either IsHuman or PlayerControl is set, in every session mode.
-    /// A command-driven house rides the same DoList with the external
-    /// driver as its only command source — native never queues player
-    /// events for a computer house, so admitting them changes no
-    /// native-reachable state, and refusing them would leave every driver
-    /// order admitted but never dispatched.
+    /// VERA also dispatches the orders an external controller supplies.
     pub const fn event_dispatch_eligible(&self) -> bool {
         self.is_human || self.player_control || self.command_driven
     }
@@ -2811,21 +2832,8 @@ impl HouseState {
     /// Unlimbo BasePlan satisfaction and the early House-update activation.
     /// `HouseClass::IsControlledByHuman @ 0x0050B730` supplies the former;
     /// `HouseClass__Update @ 0x004F8440` inlines the same branch shape.
-    pub const fn is_controlled_by_human(&self, game_mode_nonzero: bool) -> bool {
-        self.is_human || (!game_mode_nonzero && self.player_control)
-    }
-
-    /// HouseClass's power (AI_AssessPower508CBD..508CF0), radar
-    /// (UpdateTacticalRadarAvailability508ECD..508EF1) and SpySat
-    /// (Update_SpySat508FA2..508FDF) scans share this discovery admission.
-    /// Source: original gamemd instructions. Noncampaign scans admit hidden
-    /// providers, including the current player's; campaign computer Houses
-    /// do too. Only controlled campaign Houses require Techno+41B.
-    pub(crate) const fn building_services_require_discovery(
-        &self,
-        game_mode_nonzero: bool,
-    ) -> bool {
-        !game_mode_nonzero && self.is_controlled_by_human(game_mode_nonzero)
+    pub const fn is_controlled_by_human(&self, policy: RulePolicy) -> bool {
+        self.is_human || (policy.counts_player_control_as_human() && self.player_control)
     }
 
     /// The cell the house bases itself around: the alternate base centre
@@ -2905,11 +2913,9 @@ impl HouseState {
     /// accepts any nonzero AutoBaseBuilding or signed `CurrentIQ >=
     /// Rules+0x143C`, then writes AutoBaseBuilding, Production, and
     /// AutocreateAllowed in that order without touching AITriggersActive.
-    /// A command-driven house returns before the transition: its
-    /// activation latches stay down so the native AI never takes it over.
-    pub(crate) fn update_ai_activation(&mut self, game_mode_nonzero: bool, iq_production: i32) {
+    pub(crate) fn update_ai_activation(&mut self, policy: RulePolicy, iq_production: i32) {
         if self.command_driven
-            || self.is_controlled_by_human(game_mode_nonzero)
+            || self.is_controlled_by_human(policy)
             || (!self.ai_activation.auto_base_building && self.current_iq < iq_production)
         {
             return;
@@ -3007,15 +3013,18 @@ impl HouseState {
     }
 
     /// HouseClass::Update4F85BE/4F86FE admits the whole-Vox wait on
-    /// exact zero of+298. Campaign victory also requires AllowWin+27C<=0.
+    /// exact zero of+298. The victory arm at 4F85FF/4F8605 compares
+    /// the AllowWin count at +27C signed when the policy requires it.
     pub(crate) fn pending_outcome(
         &self,
         frame: i32,
-        game_mode_nonzero: bool,
+        policy: RulePolicy,
     ) -> Option<HouseOutcomeKind> {
         let kind = self.outcome()?.kind;
         (self.allow_win_timer.expired(frame)
-            && (kind == HouseOutcomeKind::Defeat || game_mode_nonzero || self.allow_win_tags <= 0))
+            && (kind == HouseOutcomeKind::Defeat
+                || !policy.victory_requires_cleared_allow_win_tags()
+                || self.allow_win_tags <= 0))
             .then_some(kind)
     }
 
@@ -3048,7 +3057,6 @@ impl HouseState {
             ui_name: HouseUiName::TypeName,
             left_game: false,
             native_construction: None,
-            native_build_time_scale: None,
             scenario_parameters: HouseScenarioParameters::default(),
             initial_techno_records: Vec::new(),
             side_index: side_index.into(),
@@ -3061,7 +3069,7 @@ impl HouseState {
             personality: None,
             multiplay_passive: false,
             command_driven: false,
-            driver_policy: None,
+            driver_policy: DriverPolicy::neutral(),
             country_cost_mults: CountryCostMults::default(),
             country_speed_mults: CountrySpeedMults::default(),
             is_defeated: false,
@@ -3102,6 +3110,7 @@ impl HouseState {
             ares_reverse_engineered: Vec::new(),
             ares_stolen_tech: 0,
             ares_last_super: no_super_index(),
+            ares_degrades: None,
             powered_unit_centers: 0,
             discovered_by_current_house: false,
             economy: Economy::new(credits),
@@ -3150,11 +3159,14 @@ impl crate::sim::world::Simulation {
 /// These count admitted callbacks, including building captures, rather than
 /// objects currently absent from the map. The counters wrap on increment.
 ///
-/// gamemd sums per-victim-house kill tables into one number for the Kills
-/// column, adds its two loss counters for the Losses column, and sums its four
-/// per-category built counters for the Built column. Totals are all the screen
-/// ever reads, so these are kept as totals. Its Score column reads
-/// [`Economy::score`](crate::sim::economy::Economy::score).
+/// gamemd sums two 20-entry per-victim kill tables (`+0x53E4`, `+0x5438`)
+/// into one number for the Kills column, adds its two loss counters for the
+/// Losses column, and sums its four per-category built counters for the Built
+/// column. Totals are all the screen ever reads, so these are kept as totals.
+/// VERA accumulates that total by category instead, so a victim House past
+/// gamemd's 20 entries still counts as a kill rather than landing in the
+/// attacker's loss counter or past the table (`0x7030AC`, `0x70164D`). Its
+/// Score column reads [`Economy::score`](crate::sim::economy::Economy::score).
 #[derive(
     Debug, Clone, Copy, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize,
 )]
@@ -3211,35 +3223,25 @@ impl MatchStatistics {
         *counter = counter.wrapping_add(1);
     }
 
-    /// RecordKill7030AC/7031DC and ChangeOwner70164D increment the kill table
-    /// entry at the victim owner's House index (`TechnoClass::
-    /// GetOwningHouseIndex @ 0x006F9DB0`, read before ChangeOwner's owner
-    /// store). The score screen (`0x005C996D..0x005C9995`) and the Diplomacy
-    /// dialog (`0x00658330`) sum the 20 entries of each table, so the totals
-    /// kept here are those sums. Each table is followed by its loss counter:
-    /// units `+0x53E4`, UnitsLost `+0x5434`, buildings `+0x5438`,
-    /// BuildingsLost `+0x5488`, then WhoLastHurtMe `+0x548C`, so a kill of
-    /// House 20 or later lands past its table. Both callers share its
-    /// mutation and numeric semantics.
-    pub(crate) fn record_kill(
-        &mut self,
-        category: crate::map::entities::EntityCategory,
-        victim_house: Option<usize>,
-    ) {
-        let structure = category == crate::map::entities::EntityCategory::Structure;
-        let base = if structure { 21 } else { 0 };
-        let counter = match victim_house.map_or(base, |house| house.saturating_add(base)) {
-            0..=19 => &mut self.units_killed,
-            20 => &mut self.units_lost,
-            21..=40 => &mut self.buildings_killed,
-            41 => &mut self.buildings_lost,
-            // WhoLastHurtMe, which only `HouseClass::ComputeCRC @ 0x0050300D`
-            // reads, the sync check VERA's state hash replaces. RESIDUAL: a
-            // 23rd House, beyond gamemd's 8 players and retail's 14
-            // countries (a map adding countries, or a VERA game with more
-            // players), would reach ComputedBaseCenter (`+0x5490`) and later
-            // AI fields; VERA leaves them.
-            _ => return,
+    /// RecordKill `0x007030AC`/`0x007031DC` and ChangeOwner `0x0070164D`
+    /// credit one kill (`TechnoClass::GetOwningHouseIndex @ 0x006F9DB0` is
+    /// read before ChangeOwner's owner store). Native indexes a 20-entry
+    /// per-victim table whose neighbour is the loss counter: units `+0x53E4`,
+    /// UnitsLost `+0x5434`, buildings `+0x5438`, BuildingsLost `+0x5488`, so
+    /// a victim of House 20 or later writes past the tables the score screen
+    /// (`0x005C996D`) and Diplomacy dialog (`0x00658330`) actually sum. VERA
+    /// seats more Houses than the native table holds, so it credits the
+    /// category total directly: within Houses 0..19 this is the same sum, and
+    /// every later victim is counted once instead of corrupting a loss count
+    /// or being dropped. Deliberate difference: gamemd on a map with more
+    /// than 20 Houses books a House-20 kill as the killer's UnitsLost, which
+    /// trigger events 15 and 16 read; VERA does not reproduce that write past
+    /// the table. Both callers share this mutation.
+    pub(crate) fn record_kill(&mut self, category: crate::map::entities::EntityCategory) {
+        let counter = if category == crate::map::entities::EntityCategory::Structure {
+            &mut self.buildings_killed
+        } else {
+            &mut self.units_killed
         };
         *counter = counter.wrapping_add(1);
     }
@@ -3266,7 +3268,7 @@ impl MatchStatistics {
         }
     }
 
-    /// Score-screen and Diplomacy Kills: the sum of both kill tables.
+    /// Score-screen and Diplomacy Kills: units + buildings destroyed.
     pub const fn kills(&self) -> u32 {
         self.units_killed.wrapping_add(self.buildings_killed)
     }
@@ -3473,7 +3475,10 @@ mod ai_activation_latch_tests {
             house.ai_activation.ai_triggers_active = true;
             house.ai_activation.auto_base_building = auto_base;
 
-            house.update_ai_activation(true, threshold);
+            house.update_ai_activation(
+                crate::rules::rule_policy::RulePolicy::stock_multiplayer(),
+                threshold,
+            );
 
             assert_eq!(house.ai_activation.production, expected);
             assert_eq!(house.ai_activation.autocreate_allowed, expected);
@@ -3489,7 +3494,8 @@ mod ai_activation_latch_tests {
     fn house_ai_activation_uses_mode_sensitive_control_predicate() {
         let mut campaign_current = HouseState::new(Default::default(), 0, None, true, 0, 10);
         campaign_current.current_iq = 5;
-        campaign_current.update_ai_activation(false, 5);
+        campaign_current
+            .update_ai_activation(crate::rules::rule_policy::RulePolicy::stock_campaign(), 5);
         assert_eq!(
             campaign_current.ai_activation,
             HouseAiActivationLatches::default()
@@ -3499,21 +3505,28 @@ mod ai_activation_latch_tests {
             HouseState::new(Default::default(), 0, None, false, 0, 10);
         campaign_player_control.player_control = true;
         campaign_player_control.current_iq = 5;
-        campaign_player_control.update_ai_activation(false, 5);
+        campaign_player_control
+            .update_ai_activation(crate::rules::rule_policy::RulePolicy::stock_campaign(), 5);
         assert_eq!(
             campaign_player_control.ai_activation,
             HouseAiActivationLatches::default()
         );
 
         let mut skirmish_player_control = campaign_player_control.clone();
-        skirmish_player_control.update_ai_activation(true, 5);
+        skirmish_player_control.update_ai_activation(
+            crate::rules::rule_policy::RulePolicy::stock_multiplayer(),
+            5,
+        );
         assert!(skirmish_player_control.ai_activation.production);
         assert!(skirmish_player_control.ai_activation.autocreate_allowed);
         assert!(skirmish_player_control.ai_activation.auto_base_building);
 
         let mut skirmish_current = HouseState::new(Default::default(), 0, None, true, 0, 10);
         skirmish_current.current_iq = 5;
-        skirmish_current.update_ai_activation(true, 5);
+        skirmish_current.update_ai_activation(
+            crate::rules::rule_policy::RulePolicy::stock_multiplayer(),
+            5,
+        );
         assert_eq!(
             skirmish_current.ai_activation,
             HouseAiActivationLatches::default()
@@ -3531,11 +3544,17 @@ mod ai_activation_latch_tests {
             auto_base_building: false,
         };
         let below_threshold = split.ai_activation;
-        split.update_ai_activation(true, 5);
+        split.update_ai_activation(
+            crate::rules::rule_policy::RulePolicy::stock_multiplayer(),
+            5,
+        );
         assert_eq!(split.ai_activation, below_threshold);
 
         split.current_iq = 5;
-        split.update_ai_activation(true, 5);
+        split.update_ai_activation(
+            crate::rules::rule_policy::RulePolicy::stock_multiplayer(),
+            5,
+        );
         assert_eq!(
             split.ai_activation,
             HouseAiActivationLatches {
@@ -3550,7 +3569,10 @@ mod ai_activation_latch_tests {
         deployed.current_iq = i32::MIN;
         deployed.enable_ai_deploy_latches();
         assert!(!deployed.ai_activation.autocreate_allowed);
-        deployed.update_ai_activation(true, 5);
+        deployed.update_ai_activation(
+            crate::rules::rule_policy::RulePolicy::stock_multiplayer(),
+            5,
+        );
         assert_eq!(
             deployed.ai_activation,
             HouseAiActivationLatches {
@@ -3572,9 +3594,15 @@ mod ai_activation_latch_tests {
             house.difficulty = difficulty;
             house.economy.add_credits(4321);
 
-            house.update_ai_activation(true, 5);
+            house.update_ai_activation(
+                crate::rules::rule_policy::RulePolicy::stock_multiplayer(),
+                5,
+            );
             let once = house.ai_activation;
-            house.update_ai_activation(true, 5);
+            house.update_ai_activation(
+                crate::rules::rule_policy::RulePolicy::stock_multiplayer(),
+                5,
+            );
 
             assert_eq!(house.ai_activation, once);
             assert_eq!(
@@ -3598,6 +3626,8 @@ mod ai_activation_latch_tests {
 #[cfg(all(test, tests_sim_h_o))]
 mod outcome_tests {
     use super::{HouseOutcomeKind, HouseState};
+    use crate::rules::rule_policy::AllowWinTagsPolicy;
+    use crate::sim::scenario_session::ScenarioGameMode;
 
     #[test]
     fn flag_to_die_producer_and_update_gate_match_original_execution() {
@@ -3673,9 +3703,10 @@ mod outcome_tests {
     #[test]
     fn gsi_01_04_savour_gates_exact_frame_and_defeat_restarts_pending_victory() {
         let mut house = HouseState::new(Default::default(), 0, None, true, 0, 10);
+        let policy = ScenarioGameMode::Skirmish.stock_rule_policy(None);
         assert!(house.accept_win_result(100, 90, false));
-        assert!(!house.pending_outcome(189, true).is_some());
-        assert!(house.pending_outcome(190, true).is_some());
+        assert!(house.pending_outcome(189, policy).is_none());
+        assert!(house.pending_outcome(190, policy).is_some());
 
         let mut replaced = HouseState::new(Default::default(), 0, None, true, 0, 10);
         assert!(replaced.accept_win_result(100, 90, false));
@@ -3701,26 +3732,32 @@ mod outcome_tests {
     #[test]
     fn announce_preserves_the_shared_timer_and_campaign_allow_win_gate() {
         let mut house = HouseState::new(Default::default(), 0, None, true, 0, 10);
+        let policy = ScenarioGameMode::Campaign.stock_rule_policy(None);
         let paused = crate::sim::timer::CdTimer::from_raw(-1, 60);
         house.supply_allow_win_tag_state(1, paused);
         assert!(house.accept_win_result(100, 90, true));
         assert_eq!(house.outcome_timer(), paused, "67 must not write a timer");
-        assert!(!house.pending_outcome(1000, false).is_some());
+        assert!(house.pending_outcome(1000, policy).is_none());
         house.resume_result_timer(1000);
         assert_eq!(house.outcome_timer().duration(), 60);
         assert!(
-            !house.pending_outcome(1060, false).is_some(),
+            house.pending_outcome(1060, policy).is_none(),
             "AllowWin count blocks Win"
         );
+        let ungated = policy.with_allow_win_tags(AllowWinTagsPolicy::Ignore);
+        assert_eq!(
+            house.pending_outcome(1060, ungated),
+            Some(HouseOutcomeKind::Victory)
+        );
         house.removed_allow_win_tag(1060);
-        assert!(!house.pending_outcome(1119, false).is_some());
-        assert!(house.pending_outcome(1120, false).is_some());
+        assert!(house.pending_outcome(1119, policy).is_none());
+        assert!(house.pending_outcome(1120, policy).is_some());
 
         let mut loss = HouseState::new(Default::default(), 0, None, true, 0, 10);
         loss.supply_allow_win_tag_state(5, crate::sim::timer::CdTimer::default());
         assert!(loss.accept_lose_result(0, 90, true));
         assert!(
-            loss.pending_outcome(0, false).is_some(),
+            loss.pending_outcome(0, policy).is_some(),
             "68 preserves expired ctor timer; no AllowWin gate"
         );
     }
@@ -3729,6 +3766,32 @@ mod outcome_tests {
 #[cfg(all(test, tests_sim_h_o))]
 mod difficulty_tests {
     use super::{HouseDifficulty, HouseState, NativeF64Bits};
+
+    #[test]
+    fn campaign_can_admit_country_difficulty_biases() {
+        use crate::rules::ruleset::{CountryDifficultyBiases, GeneralRules};
+        use crate::sim::scenario_session::ScenarioGameMode;
+
+        let mut house = HouseState::new(Default::default(), 0, None, false, 0, 10);
+        let general = GeneralRules::default();
+        let country = CountryDifficultyBiases {
+            rof: NativeF64Bits::from_bits(0.5f64.to_bits()),
+            ..CountryDifficultyBiases::default()
+        };
+        let campaign_policy = ScenarioGameMode::Campaign.stock_rule_policy(None);
+        let skirmish_policy = ScenarioGameMode::Skirmish.stock_rule_policy(None);
+        let mut rof_for = |policy| {
+            house.set_difficulty(HouseDifficulty::Normal, &general, country, policy, 0, 0);
+            house.rof_bias()
+        };
+        let campaign_rof = rof_for(campaign_policy);
+        let skirmish_rof = rof_for(skirmish_policy);
+        assert_ne!(campaign_rof, skirmish_rof);
+        assert_eq!(
+            rof_for(campaign_policy.with_uses_country_difficulty_biases(true)),
+            skirmish_rof
+        );
+    }
 
     #[test]
     fn native_difficulty_values_are_hardest_first() {
@@ -3807,7 +3870,10 @@ mod difficulty_tests {
                         build_time: scalar("build_time"),
                     }
                 },
-                input["mode"].as_i64().unwrap() != 0,
+                crate::sim::scenario_session::ScenarioGameMode::from_game_mode(
+                    input["mode"].as_i64().unwrap() as i32,
+                )
+                .stock_rule_policy(None),
                 input["array_index"].as_i64().unwrap() as i32,
                 100,
             );

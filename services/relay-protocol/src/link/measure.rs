@@ -1,8 +1,8 @@
-//! Link measurement shared by both ends of a hop (spec §4, §5): the receive
-//! window, sender-side loss judgement, the client's RTT estimator and the
+//! Link measurement shared by both ends of a hop (spec §4, §5): sender-side
+//! loss judgement, the client's RTT estimator and the
 //! direction state clock. Every time is the caller's monotonic `now_ms`.
 
-use super::{LinkState, RecvWindow};
+use super::LinkState;
 
 /// Packets past the newest feedback left for the next one (spec §4.3).
 pub(crate) const REORDER_THRESHOLD: u64 = 3;
@@ -22,35 +22,19 @@ const RTO_MIN: u64 = 48;
 const RTO_MAX: u64 = 1000;
 const PTO_MIN: u64 = 50;
 const PTO_MAX: u64 = 1000;
-/// `srtt_c` the relay assumes until a reader reports one (spec §4.6).
-const PTO_DEFAULT_SRTT: u64 = 100;
+/// `srtt` and `rttvar` in ms until a sample or a reader's report gives them
+/// (spec §4.6).
+const DEFAULT_SRTT_MS: u64 = 100;
+const DEFAULT_RTTVAR_MS: u64 = 50;
+/// The acknowledgement interval of a good and of a congested hop (spec §6.3
+/// row 3).
+const ACK_INTERVAL_GOOD_MS: u64 = 100;
+const ACK_INTERVAL_CONGESTED_MS: u64 = 200;
 const JITTER_MIN_SAMPLES: u64 = 16;
 /// The JITTERY floor in µs (spec §4.8, `max(10, turn_ms / 4)` ms).
 const JITTERY_FLOOR_US: u64 = 10_000;
 /// srtt values above this share the last percentile bucket.
 const SRTT_BUCKETS: usize = 2001;
-
-impl RecvWindow {
-    /// Counts authenticated hop sequence `sequence` (spec §4.1). Returns
-    /// whether it became the new `high`.
-    pub(crate) fn record(&mut self, sequence: u64) -> bool {
-        if sequence > self.high {
-            let advance = sequence - self.high;
-            self.bits = if advance >= 64 {
-                1
-            } else {
-                (self.bits << advance) | 1
-            };
-            self.high = sequence;
-            return true;
-        }
-        let behind = self.high - sequence;
-        if behind < 64 {
-            self.bits |= 1 << behind;
-        }
-        false
-    }
-}
 
 /// The sender's per-hop judgement cursor (spec §4.3 steps 1-3): it starts
 /// again on a new hop (§4.7).
@@ -272,6 +256,14 @@ impl RttEstimator {
         }
     }
 
+    /// `(srtt, rttvar)` in ms: the §4.6 defaults before the first sample.
+    pub(crate) fn rtt_or_default(&self) -> (u64, u64) {
+        self.srtt
+            .map_or((DEFAULT_SRTT_MS, DEFAULT_RTTVAR_MS), |srtt| {
+                (u64::from(srtt), u64::from(self.rttvar))
+            })
+    }
+
     /// `RTO_k` in ms (spec §4.5).
     pub(crate) fn rto(&self, backoff: u32) -> u64 {
         let rto = match self.srtt {
@@ -379,12 +371,22 @@ impl JitterMeter {
 }
 
 /// The reader's reported `(srtt_c, rttvar_c)` in ms, or the §4.6 defaults
-/// 100 / 50 while it reports no srtt.
+/// while it reports no srtt.
 pub(crate) fn reader_rtt(srtt_c: u16, rttvar_c: u16) -> (u64, u64) {
     if srtt_c == 0 {
-        (PTO_DEFAULT_SRTT, PTO_DEFAULT_SRTT / 2)
+        (DEFAULT_SRTT_MS, DEFAULT_RTTVAR_MS)
     } else {
         (u64::from(srtt_c), u64::from(rttvar_c))
+    }
+}
+
+/// A hop's acknowledgement interval in `state` (spec §6.3 row 3), which its
+/// sender takes as `ack_delay_max` (§4.6): one turn of `turn_ms` while lossy.
+pub(crate) fn ack_interval(state: LinkState, turn_ms: u32) -> u64 {
+    match state {
+        LinkState::Lossy => u64::from(turn_ms),
+        LinkState::Congested => ACK_INTERVAL_CONGESTED_MS,
+        _ => ACK_INTERVAL_GOOD_MS,
     }
 }
 
@@ -472,26 +474,6 @@ pub(crate) fn link_state(offline: bool, congested: bool, lossy: bool) -> LinkSta
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn the_receive_window_counts_ahead_reordered_far_jumps_and_ignores_old() {
-        let mut window = RecvWindow::default();
-        assert!(window.record(1));
-        assert!(window.record(3));
-        assert_eq!((window.high, window.bits), (3, 0b101));
-        // Reordered: the missing 2 fills its bit.
-        assert!(!window.record(2));
-        assert_eq!(window.bits, 0b111);
-        // Exactly 64 ahead restarts the bitmap.
-        window.record(67);
-        assert_eq!((window.high, window.bits), (67, 1));
-        window.record(70);
-        // 63 behind is the oldest bit; 64 behind changes nothing.
-        window.record(7);
-        assert_eq!(window.bits, 0b1001 | 1 << 63);
-        window.record(6);
-        assert_eq!(window.bits, 0b1001 | 1 << 63);
-    }
 
     #[test]
     fn loss_is_judged_three_behind_the_newest_feedback_inside_the_bitmap_only() {

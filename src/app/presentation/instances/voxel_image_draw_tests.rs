@@ -35,8 +35,7 @@ fn alternate_voxel_models_keep_the_first_drawers_raster_style() {
         let id = sim
             .spawn_object(name, "Americans", x, 10, 0, &rules)
             .unwrap();
-        sim.entities_mut_for_test()
-            .get_mut(id)
+        sim.entity_mut_for_test(id)
             .unwrap()
             .set_unit_simple_deploy_for_test(true, false, false);
         actors.push((name, id));
@@ -186,9 +185,9 @@ fn a_miners_unloading_type_owns_its_voxel_drawer_flags() {
         .unwrap();
     let unloading = sim.intern("BUFFERED");
     for id in [miner, deployer] {
-        sim.entities_mut_for_test()
-            .get_mut(id)
+        sim.entity_mut_for_test(id)
             .unwrap()
+            .seldom
             .display_type_override
             .set_for_test(Some(unloading));
     }
@@ -204,9 +203,9 @@ fn a_miners_unloading_type_owns_its_voxel_drawer_flags() {
     };
     assert_eq!(drawer(&sim, miner), ("BUFFERED".to_owned(), true));
     assert_eq!(drawer(&sim, deployer), ("PLAIN".to_owned(), false));
-    sim.entities_mut_for_test()
-        .get_mut(miner)
+    sim.entity_mut_for_test(miner)
         .unwrap()
+        .seldom
         .display_type_override
         .set_for_test(None);
     assert_eq!(drawer(&sim, miner), ("MINER".to_owned(), false));

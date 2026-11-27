@@ -6,8 +6,9 @@
 // subtracts the optional z-shape byte when the instance carries one, and maps
 // the integer Z onto the normalised depth axis: one native Z unit is one world
 // pixel row. Two pipelines share it: depth compare Less without write (every
-// object except buildings: leaves 0x00494b60 / 0x00497fd0) and Less with
-// write (building bodies: leaves 0x004958d0 / 0x004990e0).
+// object except buildings: leaves 0x00494b60 / 0x00497fd0, `fs_main`) and
+// Less with write (building bodies: leaves 0x004958d0 / 0x004990e0,
+// `fs_write`).
 
 struct Camera {
     screen_size: vec2f,
@@ -18,7 +19,7 @@ struct Camera {
     world_height: f32,
     pad1: f32,
     native_z_origin_y: f32,
-    native_z_pad: f32,
+    native_z_pan: f32,
 };
 @group(0) @binding(0) var<uniform> camera: Camera;
 
@@ -27,6 +28,9 @@ struct Camera {
 // BUILDNGZ's remapped R8 canvas, or four raw overlay files in RGBA channels.
 // Both store signed bytes biased by128. Overlay instances carry their stride.
 @group(2) @binding(0) var t_zshape: texture_2d<f32>;
+// The skip table (render::zshape_skips): per slot (row) and frame row
+// (column), the columns a left-edge body's z-shape pointer trails by.
+@group(2) @binding(1) var t_zshape_skips: texture_2d<u32>;
 
 struct Instance {
     @location(0) position: vec2f,
@@ -55,8 +59,8 @@ struct VertexOutput {
     @location(4) fx_params: vec4f,
     // World-pixel position of this fragment (unpadded quad).
     @location(6) world_pos: vec2f,
-    // Blit rect top row and height in world pixels.
-    @location(7) @interpolate(flat) rect_top_height: vec2f,
+    // Blit rect left, top, width and height in world pixels.
+    @location(7) @interpolate(flat) rect: vec4f,
     @location(8) @interpolate(flat) z_adjust: f32,
     @location(9) @interpolate(flat) z_gradient: u32,
     @location(10) @interpolate(flat) zshape_origin: vec2f,
@@ -94,7 +98,7 @@ fn shp_vertex(idx: u32, instance: Instance) -> VertexOutput {
     output.fx_flags = instance.fx_flags;
     output.fx_params = instance.fx_params;
     output.world_pos = instance.position + local * instance.size;
-    output.rect_top_height = vec2f(instance.position.y, instance.size.y);
+    output.rect = vec4f(instance.position, instance.size);
     output.z_adjust = instance.z_adjust;
     output.z_gradient = instance.z_gradient;
     output.zshape_origin = instance.zshape_origin;
@@ -118,12 +122,56 @@ fn vs_ordinal(@builtin(vertex_index) idx: u32, instance: Instance) -> VertexOutp
     return output;
 }
 
-// One signed candidate owner for ordinary and packed SHP consumers.
+// The view's world rows for a tactical view `view_height` world pixels high
+// (fx_params.w).
+fn tactical_view_rows(view_height: f32) -> vec2i {
+    return view_rows(camera.camera_pos.y + camera.native_z_origin_y, view_height,
+        camera.screen_size.y / camera.zoom);
+}
+
+// One signed candidate owner for ordinary and packed SHP consumers follows.
+// terrain_draw.rs `edit_source` reuses the shader above this line.
+
+// Source columns the RLE ZReadWrite leaf (0x004990E0) leaves its z-shape
+// pointer behind by in this fragment's row of an extended z-shape body the
+// view's left edge cuts (native_z::zshape_skip_overshoot, one byte per frame
+// row in the skip table; fx_params.w is the body's slot, 1-based, 0 none).
+// The columns left of the skip get it too; the view clips them anyway.
+fn skip_overshoot(input: VertexOutput) -> i32 {
+    let slot: i32 = i32(round(input.fx_params.w)) - 1;
+    let row: i32 = i32(floor(input.world_pos.y)) - i32(round(input.rect.y));
+    let dims: vec2i = vec2i(textureDimensions(t_zshape_skips));
+    if (slot < 0 || slot >= dims.y || row < 0 || row >= dims.x) {
+        return 0;
+    }
+    return i32(textureLoad(t_zshape_skips, vec2i(row, slot), 0).r);
+}
+
 fn native_candidate(input: VertexOutput) -> i32 {
-    let camera_row: i32 = i32(round(camera.camera_pos.y + camera.native_z_origin_y));
-    var rect_top: i32 = i32(round(input.rect_top_height.x));
-    var rect_bottom: i32 = rect_top + max(i32(round(input.rect_top_height.y)), 1);
+    let z_origin: i32 = native_z_origin_row(camera.camera_pos.y + camera.native_z_origin_y, camera.native_z_pan);
+    // A turreted SHP Unit's body and turret reach the screen through the
+    // Unit composite (`0x0073B140`) as a voxel body does, on the composite's
+    // rectangle (zshape_origin; native_z::Z_GRADIENT_VOXEL_VIEW_CLIP_FLAG).
+    // An overlay's linear shape (0x800) uses bit 0x1000 for its channel.
+    if ((input.z_gradient & 0x1800u) == 0x1000u) {
+        let candidate: vec2i = unit_composite_candidate(input.zshape_origin, input.world_pos.y,
+            input.z_gradient, input.z_adjust, tactical_view_rows(input.fx_params.w), z_origin);
+        if (candidate.y == 0) {
+            discard;
+        }
+        return candidate.x;
+    }
+    var rect_top: i32 = i32(round(input.rect.y));
+    var rect_bottom: i32 = rect_top + max(i32(round(input.rect.w)), 1);
     let extended_shape: bool = (input.z_gradient & 0x100u) != 0u;
+    // RESIDUAL: without a z-shape the RLE walker (raw frames' Bit_Blit has no
+    // shape) reads its per-pixel adjust from the 0x100-byte zero row at
+    // 0x0089C568 (0x00437CCC), from the first column it draws. Past 256 of
+    // them it reads the globals that follow: the bombs vector at 0x0089C668,
+    // whose heap pointer and counts change at run time, and beyond, each byte
+    // a signed adjust of up to 127. VERA keeps 0 there, so an RLE frame drawn
+    // with Z more than 256 columns wide sits up to 127 Z off from its 256th
+    // drawn column on.
     var shape_delta: i32 = 0;
     if ((input.z_gradient & 0x800u) != 0u) {
         let stride = i32(input.z_gradient >> 16u);
@@ -152,12 +200,22 @@ fn native_candidate(input: VertexOutput) -> i32 {
         rect_top = max(rect_top, origin.y);
         rect_bottom = min(rect_bottom, origin.y + dims.y);
         if (extended_shape) {
-            shape_delta = i32(textureLoad(t_zshape, canvas, 0).r * 255.0 + 0.5) - 128;
+            // The z-shape pointer runs on linearly, a left-edge skip's
+            // overshoot behind the pixels it pairs with.
+            let index: i32 = canvas.y * dims.x + canvas.x - skip_overshoot(input);
+            if (index >= 0) {
+                let texel: vec2i = vec2i(index % dims.x, index / dims.x);
+                shape_delta = i32(textureLoad(t_zshape, texel, 0).r * 255.0 + 0.5) - 128;
+            }
         }
     }
-    let height: i32 = max(rect_bottom - rect_top, 1);
-    let screen_top: i32 = rect_top - camera_row;
-    let row: i32 = clamp(i32(floor(input.world_pos.y)) - rect_top, 0, height - 1);
+    // Bit_Blit seeds a raw frame from its rect clipped to the view, the RLE
+    // walker a top-seeded entry from the clipped top (native_z.wgsl).
+    let seed: vec2i = shp_seed_rows(vec2i(rect_top, rect_bottom), input.z_gradient,
+        tactical_view_rows(input.fx_params.w));
+    let height: i32 = max(seed.y - seed.x, 1);
+    let screen_top: i32 = seed.x - z_origin;
+    let row: i32 = clamp(i32(floor(input.world_pos.y)) - seed.x, 0, height - 1);
     let entry: u32 = input.z_gradient & 0xFFu;
     var z: i32 = native_row_z(entry, screen_top, height, i32(round(input.z_adjust)), row);
     if (extended_shape) {
@@ -181,7 +239,8 @@ fn apply_fx(color: vec4f, _flags: u32, params: vec4f) -> vec4f {
 // RA2_DEBUG_DEPTH_VIEW (camera.pad1 > 0.5): depth as grey, wrapping every
 // 128 world rows, so depth ordering can be read off a screenshot.
 fn debug_depth_color(depth: f32) -> vec4f {
-    let rows: f32 = world_row_from_native_depth(depth, camera.camera_pos.y + camera.native_z_origin_y);
+    let rows: f32 = world_row_from_native_depth(depth,
+        native_z_origin_row(camera.camera_pos.y + camera.native_z_origin_y, camera.native_z_pan));
     let g: f32 = fract(rows / 128.0);
     return vec4f(g, g, g, 1.0);
 }
@@ -213,6 +272,13 @@ fn zsprite_store(input: VertexOutput, color: vec4f, index: u32, z: i32) -> FragO
     return output;
 }
 
+// The Z leaves compare the signed candidate before storing its low 16 bits
+// (draw iff cand < stored; RLE 0x00497FD0 and 0x004990E0, raw 0x00494B60 and
+// 0x004958D0), while the depth test compares stored words. A candidate above
+// 65535 never draws. A negative one always draws: the read-only entry points
+// test it as 0, which passes everywhere but over a stored 0; the writing ones
+// keep its low16 store, and merge_passes replays a writing body that can
+// reach one through the signed manual compare (`shp_needs_manual_depth`).
 @fragment
 fn fs_main(input: VertexOutput) -> FragOutput {
     let index: u32 = textureLoad(source_indices, source_texel(input.uv), 0).r;
@@ -220,7 +286,25 @@ fn fs_main(input: VertexOutput) -> FragOutput {
     if (color.a < 0.01) {
         discard;
     }
-    return zsprite_store(input, color, index, native_candidate(input));
+    let z = native_candidate(input);
+    if (z > 65535) {
+        discard;
+    }
+    return zsprite_store(input, color, index, max(z, 0));
+}
+
+@fragment
+fn fs_write(input: VertexOutput) -> FragOutput {
+    let index: u32 = textureLoad(source_indices, source_texel(input.uv), 0).r;
+    let color = sampled_source_color(input.uv, index, input.source_palette);
+    if (color.a < 0.01) {
+        discard;
+    }
+    let z = native_candidate(input);
+    if (z > 65535) {
+        discard;
+    }
+    return zsprite_store(input, color, index, z);
 }
 
 // An opaque body inside a depth-tested edit interval (terrain_depth.wgsl): the
@@ -239,7 +323,29 @@ fn fs_counted(input: VertexOutput) -> CountedFragOutput {
     if (color.a < 0.01) {
         discard;
     }
-    let pixel = zsprite_store(input, color, index, native_candidate(input));
+    let z = native_candidate(input);
+    if (z > 65535) {
+        discard;
+    }
+    let pixel = zsprite_store(input, color, index, max(z, 0));
+    var output: CountedFragOutput;
+    output.color = pixel.color;
+    output.depth = pixel.depth;
+    return output;
+}
+
+@fragment
+fn fs_counted_write(input: VertexOutput) -> CountedFragOutput {
+    let index: u32 = textureLoad(source_indices, source_texel(input.uv), 0).r;
+    let color = sampled_source_color(input.uv, index, input.source_palette);
+    if (color.a < 0.01) {
+        discard;
+    }
+    let z = native_candidate(input);
+    if (z > 65535) {
+        discard;
+    }
+    let pixel = zsprite_store(input, color, index, z);
     var output: CountedFragOutput;
     output.color = pixel.color;
     output.depth = pixel.depth;

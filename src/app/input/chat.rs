@@ -2,10 +2,11 @@
 //! (`0x0055DEE0`) calls first, the chat mask `0xA8D108[8]` that dialog 0x73's
 //! chat boxes write, and the chat packet `0x0C`'s send and receive.
 //!
-//! The MessageList edit itself is `ui::messages`. The transport is the
-//! controlled network service: a send queues
-//! [`NetworkLoadingRequest::Chat`](crate::app::match_runtime::session::NetworkLoadingRequest)
-//! and a received packet arrives as `NetworkMatchEvent::Chat`.
+//! The MessageList edit itself is `ui::messages`. A send queues
+//! [`NetworkSendRequest::Chat`](crate::app::match_runtime::session::NetworkSendRequest),
+//! which `lan_service`'s match-request drain sends as packet `0x0C`; a
+//! received `0x0C` comes through `lan_service`'s global demux to
+//! [`receive_packet`].
 //!
 //! With an own beacon selected, the same three keys open a hidden beacon
 //! edit instead (`0x0055E4F0..0x0055E5F8`): the typed text, with a `_`
@@ -30,17 +31,31 @@
 //! - Part of the app layer — may depend on everything.
 
 use crate::app::AppState;
+use crate::app::PlatformState;
+use crate::app::diagnostics::state::DiagnosticsState;
+use crate::app::frontend::state::FrontendState;
 use crate::app::input::keyboard::InGameKeyEdge;
 use crate::app::match_runtime::beacons::{self, BeaconTarget};
+use crate::app::match_runtime::session::SessionMode;
+use crate::app::match_runtime::sim_host::SimHost;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
+use crate::audio::sfx::SfxPlayer;
 use crate::sim::intern::InternedId;
+use crate::sim::skirmish_cheats::SkirmishCheat;
 use crate::ui::messages::{EditInput, EditKey};
-use winit::keyboard::{Key, NamedKey};
+use winit::event::MouseButton;
+use winit::keyboard::{Key, ModifiersState, NamedKey};
 
 /// `[0xABCE18]`: who the open line goes to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub(crate) enum ChatTarget {
     #[default]
     None,
+    /// Local messages and cheat commands in an offline skirmish.
+    Skirmish,
     /// 1, Enter: the Houses whose chat-mask byte is set.
     Listeners,
     /// 2, Backspace or Home: allies.
@@ -58,9 +73,8 @@ pub(crate) struct ChatState {
     /// Indexed by House array index. Dialog 0x73 writes it (`0x006582C3`);
     /// the local player's own byte is never written there.
     muted: std::collections::BTreeSet<usize>,
-    /// VERA: part of the open line already went out as an overflow chunk, so
-    /// what is left of it is chat, never a command.
-    overflowed: bool,
+    /// Locks the kind of the full line when the editor starts emitting chunks.
+    overflow: Option<LineKind>,
 }
 
 impl Default for ChatState {
@@ -68,12 +82,58 @@ impl Default for ChatState {
         Self {
             target: ChatTarget::None,
             muted: Default::default(),
-            overflowed: false,
+            overflow: None,
         }
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LineKind {
+    Message,
+    Command,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum SkirmishPost {
+    Message(String),
+    Command(String),
+    CommandTooLong,
+}
+
 impl ChatState {
+    /// The first chunk determines whether this whole input is chat or a slash
+    /// command. An overflowing command cannot execute from a partial line.
+    fn skirmish_post(&mut self, result: EditInput) -> Option<SkirmishPost> {
+        let (line, more) = match result {
+            EditInput::Sent(line) => (line, false),
+            EditInput::Overflowed(line) => (line, true),
+            EditInput::Ended => {
+                self.target = ChatTarget::None;
+                self.overflow = None;
+                return None;
+            }
+            _ => return None,
+        };
+        let previous = self.overflow;
+        let kind = previous.unwrap_or_else(|| {
+            if line.trim_start().starts_with('/') {
+                LineKind::Command
+            } else {
+                LineKind::Message
+            }
+        });
+        self.overflow = more.then_some(kind);
+        if !more {
+            self.target = ChatTarget::None;
+        }
+        match kind {
+            LineKind::Message => Some(SkirmishPost::Message(line)),
+            LineKind::Command if more => None,
+            LineKind::Command if previous.is_some() => Some(SkirmishPost::CommandTooLong),
+            LineKind::Command => Some(SkirmishPost::Command(line)),
+        }
+    }
+
     pub(crate) fn listens(&self, house_index: usize) -> bool {
         // VERA extends the native eight-byte mask to actual House indices,
         // including player Houses after Neutral/Special in a large roster.
@@ -112,6 +172,11 @@ fn start_target(logical: &Key, ctrl: bool, alt: bool) -> Option<ChatTarget> {
     }
 }
 
+/// The plain chat keys in Skirmish. Modified keys remain available to hotkey bindings.
+fn opens_skirmish_chat(key: &Key, modifiers: ModifiersState) -> bool {
+    modifiers.is_empty() && matches!(key, Key::Named(NamedKey::Enter | NamedKey::Backspace))
+}
+
 /// The keys one press feeds Input `0x005D4510`. The window procedure drops
 /// key-down repeats (`0x0054F81D`, lParam bit 30) but not WM_CHAR repeats,
 /// so held Backspace and held characters repeat while Enter, Escape, Home
@@ -137,20 +202,83 @@ fn edit_keys(edge: &InGameKeyEdge<'_>) -> Vec<EditKey> {
 pub(crate) fn key_edge(state: &mut AppState, edge: &InGameKeyEdge<'_>) -> bool {
     let list = &state.match_state.match_presentation.message_list;
     if !list.editing() {
-        if !edge.state.is_pressed() || edge.repeat || !state.match_state.session_mode().is_network()
-        {
+        if !edge.state.is_pressed() || edge.repeat {
             return false;
         }
         let modifiers = state.match_state.input.hotkey_modifiers;
+        if !state.match_state.session_mode().is_network() {
+            if edge.logical == &Key::Named(NamedKey::Escape)
+                && skirmish_input_available(&state.match_state)
+                && cancel_skirmish_spawn(
+                    &state.platform,
+                    &state.renderer,
+                    &state.diag,
+                    &state.frontend,
+                    &mut state.match_state,
+                    &state.persistence,
+                )
+            {
+                return true;
+            }
+            if opens_skirmish_chat(edge.logical, modifiers)
+                && skirmish_input_available(&state.match_state)
+            {
+                return open_edit(
+                    &state.platform,
+                    &state.renderer,
+                    &state.diag,
+                    &state.frontend,
+                    &mut state.match_state,
+                    &state.process_assets,
+                    &state.persistence,
+                    ChatTarget::Skirmish,
+                );
+            }
+            if edge.text == Some("/")
+                && !modifiers.super_key()
+                && state.persistence.options_profile.skirmish_cheats
+                && skirmish_input_available(&state.match_state)
+            {
+                let presentation = &mut state.match_state.match_presentation;
+                if presentation.message_list.add_edit("", [1.0; 3], true) {
+                    presentation.chat.target = ChatTarget::Skirmish;
+                    presentation.chat.overflow = None;
+                    cancel_skirmish_spawn(
+                        &state.platform,
+                        &state.renderer,
+                        &state.diag,
+                        &state.frontend,
+                        &mut state.match_state,
+                        &state.persistence,
+                    );
+                    apply_input(state, EditKey::Unit(u16::from(b'/')));
+                    return true;
+                }
+            }
+            return false;
+        }
         let Some(target) = start_target(edge.logical, modifiers.control_key(), modifiers.alt_key())
         else {
             return false;
         };
         // 0x0055E4E2: PlayerPtr's selected beacon picks the branch.
-        if beacons::own_selected(state) {
-            return open_beacon_edit(state);
+        if beacons::own_selected(&state.match_state) {
+            return open_beacon_edit(
+                &state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+            );
         }
-        return open_edit(state, target);
+        return open_edit(
+            &state.platform,
+            &state.renderer,
+            &state.diag,
+            &state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            &state.persistence,
+            target,
+        );
     }
     if !edge.state.is_pressed() {
         return true;
@@ -171,79 +299,175 @@ pub(crate) fn commit_text(state: &mut AppState, text: &str) {
         apply_input(state, EditKey::Unit(unit));
     }
     // VERA: the label shows the committed text now (see the module notes).
-    if beacons::own_selected(state) {
-        follow_label(state, None);
+    if state.match_state.match_presentation.chat.target != ChatTarget::Skirmish
+        && beacons::own_selected(&state.match_state)
+    {
+        follow_label(&state.platform.ime, &mut state.match_state, None);
     }
 }
 
 /// The pre-hook's composition test `[0x00B7356C]` (`0x0055E671`): while an
 /// input-method composition is open, the selected beacon's label follows
 /// the line and the composition.
-pub(crate) fn composition_changed(state: &mut AppState) {
-    if state.match_state.match_presentation.message_list.editing() && composition(state).is_some() {
-        follow_label(state, None);
+pub(crate) fn composition_changed(
+    ime: &crate::app::input::ime::ImeState,
+    match_state: &mut MatchState,
+) {
+    if match_state.match_presentation.chat.target != ChatTarget::Skirmish
+        && match_state.match_presentation.message_list.editing()
+        && composition(ime).is_some()
+    {
+        follow_label(ime, match_state, None);
     }
 }
 
 /// The open composition `0x00B73318` the label appends.
-fn composition(state: &AppState) -> Option<Vec<u16>> {
-    state
-        .platform
-        .ime
-        .composition(crate::app::input::ime::ImeTarget::InGameChat)
+fn composition(ime: &crate::app::input::ime::ImeState) -> Option<Vec<u16>> {
+    ime.composition(crate::app::input::ime::ImeTarget::InGameChat)
         .map(|(units, _)| units.to_vec())
 }
 
 /// `0x0055E6B3..0x0055E734`: GetEditBuffer, then the composition and `_`,
 /// written into the first selected beacon without sending it. `typed`
 /// stands in for the list's buffer once Input has ended the edit.
-fn follow_label(state: &mut AppState, typed: Option<Vec<u16>>) {
+fn follow_label(
+    ime: &crate::app::input::ime::ImeState,
+    match_state: &mut MatchState,
+    typed: Option<Vec<u16>>,
+) {
     let mut text = typed
         .or_else(|| {
-            let list = &state.match_state.match_presentation.message_list;
+            let list = &match_state.match_presentation.message_list;
             list.edit_typed().map(<[u16]>::to_vec)
         })
         .unwrap_or_default();
-    text.extend(composition(state).unwrap_or_default());
+    text.extend(composition(ime).unwrap_or_default());
     text.push(u16::from(b'_'));
-    beacons::edit_beacon_message(state, Some(&text), BeaconTarget::Selected, false);
+    beacons::edit_beacon_message(match_state, Some(&text), BeaconTarget::Selected, false);
 }
 
 /// A right press or release (key 2 or `0x802`) ends an open edit; the game
 /// still handles the click.
 pub(crate) fn right_button(state: &mut AppState) {
+    // Android: the long press that opened this edit also carries the mapper's
+    // right click, which would end it at once.
+    #[cfg(target_os = "android")]
+    if TOUCH_OPENED_AT.with(|at| {
+        at.borrow()
+            .is_some_and(|at| at.elapsed() < crate::util::time::Duration::from_millis(400))
+    }) {
+        return;
+    }
     if state.match_state.match_presentation.message_list.editing() {
         apply_input(state, EditKey::RightClick);
     }
 }
 
+#[cfg(target_os = "android")]
+thread_local! {
+    /// Android: when the lane's long press opened the edit, so the right click
+    /// it came with is dropped. Thread-local, like the rest of the input state.
+    static TOUCH_OPENED_AT: std::cell::RefCell<Option<crate::util::time::Instant>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Android: the message lane's long press opens the chat as Enter does: the
+/// Skirmish target in an offline skirmish (which also cancels a pending spawn
+/// order), the listeners otherwise. Returns whether the edit opened.
+#[cfg(target_os = "android")]
+pub(crate) fn open_touch_edit(state: &mut AppState) -> bool {
+    if state.match_state.match_presentation.message_list.editing() {
+        return false;
+    }
+    // Enter's own choice: plain Enter in a skirmish session is the Skirmish
+    // chat (`opens_skirmish_chat`), so a long press must not pick a target the
+    // keyboard would not, or a pending spawn order survives it.
+    let target = if skirmish_input_available(&state.match_state) {
+        ChatTarget::Skirmish
+    } else {
+        ChatTarget::Listeners
+    };
+    let opened = open_edit(
+        &state.platform,
+        &state.renderer,
+        &state.diag,
+        &state.frontend,
+        &mut state.match_state,
+        &state.process_assets,
+        &state.persistence,
+        target,
+    );
+    if opened {
+        TOUCH_OPENED_AT.with(|at| *at.borrow_mut() = Some(crate::util::time::Instant::now()));
+    }
+    opened
+}
+
+/// Android: one Backspace in the open chat edit.
+#[cfg(target_os = "android")]
+pub(crate) fn backspace(state: &mut AppState) {
+    if state.match_state.match_presentation.message_list.editing() {
+        apply_input(state, EditKey::Delete);
+    }
+}
+
+/// Android: a tap on the message lane while the edit is open sends it, as
+/// Enter does; returns whether it did.
+#[cfg(target_os = "android")]
+pub(crate) fn send_touch(state: &mut AppState) -> bool {
+    if !state.match_state.match_presentation.message_list.editing() {
+        return false;
+    }
+    apply_input(state, EditKey::Enter);
+    true
+}
+
 /// The chat branch `0x0055E519..0x0055E5B4`: the prefix is `TXT_FROM` with
 /// the player's House UI name, in the player's colour; overflow is on and
 /// no sound plays. The cursor character 0 draws no caret.
-fn open_edit(state: &mut AppState, target: ChatTarget) -> bool {
-    let Some(local) = local_house(state) else {
+fn open_edit(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    persistence: &PersistenceState,
+    target: ChatTarget,
+) -> bool {
+    let Some(local) = local_house(&match_state.sim_runtime) else {
         return false;
     };
     // VERA shared control: a shared House's player writes under its own name.
-    let session = &state.match_state.session;
+    let session = &match_state.session;
     let Some(name) = crate::app::match_runtime::network_match::local_source(session)
         .and_then(|source| {
             crate::app::match_runtime::network_match::shared_house_player_name(session, source)
         })
-        .or_else(|| crate::app::presentation::house_ui::house_ui_name(state, local))
+        .or_else(|| {
+            crate::app::presentation::house_ui::house_ui_name(
+                frontend,
+                match_state,
+                process_assets,
+                local,
+            )
+        })
     else {
         return false;
     };
-    let template = crate::app::frontend::shell_pass::resolve_csf(state, "TXT_FROM").into_owned();
+    let template = process_assets.csf_text("TXT_FROM");
     let prefix = crate::assets::csf_file::format_csf(
         &template,
         &[crate::assets::csf_file::CsfArg::Str(&name)],
     );
-    let rgb = crate::app::input::messages::player_line_rgb(state, local);
-    let presentation = &mut state.match_state.match_presentation;
+    let rgb = crate::app::input::messages::player_line_rgb(frontend, match_state, local);
+    let presentation = &mut match_state.match_presentation;
     if presentation.message_list.add_edit(&prefix, rgb, true) {
         presentation.chat.target = target;
-        presentation.chat.overflowed = false;
+        presentation.chat.overflow = None;
+        if target == ChatTarget::Skirmish {
+            cancel_skirmish_spawn(platform, renderer, diag, frontend, match_state, persistence);
+        }
     }
     true
 }
@@ -252,19 +476,22 @@ fn open_edit(state: &mut AppState, target: ChatTarget) -> bool {
 /// in the player's colour, hidden (`0x0055E5C1`), without overflow
 /// (`0x0055E5CA`) and with the chat target untouched; the selected beacon's
 /// label becomes the bare cursor.
-fn open_beacon_edit(state: &mut AppState) -> bool {
-    let Some(local) = local_house(state) else {
+fn open_beacon_edit(
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+) -> bool {
+    let Some(local) = local_house(&match_state.sim_runtime) else {
         return false;
     };
-    let prefix =
-        crate::app::frontend::shell_pass::resolve_csf(state, "TXT_BEACON_MESSAGE").into_owned();
-    let rgb = crate::app::input::messages::player_line_rgb(state, local);
-    let list = &mut state.match_state.match_presentation.message_list;
+    let prefix = process_assets.csf_text("TXT_BEACON_MESSAGE");
+    let rgb = crate::app::input::messages::player_line_rgb(frontend, match_state, local);
+    let list = &mut match_state.match_presentation.message_list;
     if list.add_edit(&prefix, rgb, false) {
         list.hide_edit();
     }
     let cursor = [u16::from(b'_')];
-    beacons::edit_beacon_message(state, Some(&cursor), BeaconTarget::Selected, false);
+    beacons::edit_beacon_message(match_state, Some(&cursor), BeaconTarget::Selected, false);
     true
 }
 
@@ -283,6 +510,64 @@ fn apply_input(state: &mut AppState, key: EditKey) {
     let result = presentation
         .message_list
         .input(key, &|text| font.text_width(text) as i32);
+    if presentation.chat.target == ChatTarget::Skirmish {
+        match presentation.chat.skirmish_post(result) {
+            Some(SkirmishPost::Message(text)) => {
+                if let Some(local) = local_house(&state.match_state.sim_runtime)
+                    && let Some(name) = crate::app::presentation::house_ui::house_ui_name(
+                        &state.frontend,
+                        &state.match_state,
+                        &state.process_assets,
+                        local,
+                    )
+                {
+                    let rgb = crate::app::input::messages::player_line_rgb(
+                        &state.frontend,
+                        &state.match_state,
+                        local,
+                    );
+                    crate::app::input::messages::post_chat_line(
+                        &state.platform,
+                        &state.renderer,
+                        &state.diag,
+                        &state.frontend,
+                        &mut state.match_state,
+                        &state.process_assets,
+                        &mut state.audio.sfx_player,
+                        &state.persistence,
+                        &name,
+                        &text,
+                        rgb,
+                    );
+                }
+            }
+            Some(SkirmishPost::Command(line)) => {
+                let reply = skirmish_command(state, &line).unwrap_or_else(crate::i18n::tr);
+                crate::app::input::messages::post_selection_navigation_text(
+                    &state.platform,
+                    &state.renderer,
+                    &state.diag,
+                    &state.frontend,
+                    &mut state.match_state,
+                    &state.persistence,
+                    &reply,
+                );
+            }
+            Some(SkirmishPost::CommandTooLong) => {
+                crate::app::input::messages::post_selection_navigation_text(
+                    &state.platform,
+                    &state.renderer,
+                    &state.diag,
+                    &state.frontend,
+                    &mut state.match_state,
+                    &state.persistence,
+                    &crate::i18n::tr("VERA:CheatTooLong"),
+                );
+            }
+            None => {}
+        }
+        return;
+    }
     let typed = match &result {
         EditInput::Sent(text) => text.encode_utf16().collect(),
         _ => presentation
@@ -293,24 +578,38 @@ fn apply_input(state: &mut AppState, key: EditKey) {
     // 0x0055E642..0x0055E734: result 1 with an own beacon selected, results
     // 2 and 4 and an open composition update the first selected beacon;
     // Escape clears and sends its label instead.
-    let own = beacons::own_selected(state);
+    let own = beacons::own_selected(&state.match_state);
     if (own && result == EditInput::Typed)
         || matches!(
             result,
             EditInput::Deleted | EditInput::Ended | EditInput::Overflowed(_)
         )
-        || composition(state).is_some()
+        || composition(&state.platform.ime).is_some()
     {
         if key == EditKey::Escape {
-            beacons::edit_beacon_message(state, None, BeaconTarget::Selected, true);
+            beacons::edit_beacon_message(
+                &mut state.match_state,
+                None,
+                BeaconTarget::Selected,
+                true,
+            );
         } else {
-            follow_label(state, Some(typed.clone()));
+            follow_label(
+                &state.platform.ime,
+                &mut state.match_state,
+                Some(typed.clone()),
+            );
         }
     }
     // 0x0055E77B..0x0055E7AE: results 3 and 4 with an own beacon selected
     // send the buffer as its label, and no line.
     if matches!(result, EditInput::Sent(_) | EditInput::Overflowed(_)) && own {
-        beacons::edit_beacon_message(state, Some(&typed), BeaconTarget::Selected, true);
+        beacons::edit_beacon_message(
+            &mut state.match_state,
+            Some(&typed),
+            BeaconTarget::Selected,
+            true,
+        );
         if matches!(result, EditInput::Sent(_)) {
             state.match_state.match_presentation.chat.target = ChatTarget::None;
         }
@@ -321,23 +620,328 @@ fn apply_input(state: &mut AppState, key: EditKey) {
         EditInput::Ended if key == EditKey::Escape => presentation.chat.target = ChatTarget::None,
         EditInput::Sent(text) => {
             let target = state.match_state.match_presentation.chat.target;
-            let whole_line = !state.match_state.match_presentation.chat.overflowed;
+            let whole_line = state.match_state.match_presentation.chat.overflow.is_none();
             // The line goes to its recipients like any other, so a `/pause`
             // or `/resume` line tells them who asked before it asks.
-            send(state, target, &text);
+            send(
+                &state.platform,
+                &state.renderer,
+                &state.diag,
+                &state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                &mut state.audio.sfx_player,
+                &state.persistence,
+                target,
+                &text,
+            );
             if let Some(want) = pause_command(&text).filter(|_| whole_line) {
-                crate::app::input::pause_menu::chat_command(state, want);
+                crate::app::input::pause_menu::chat_command(
+                    &state.platform,
+                    &state.renderer,
+                    &state.diag,
+                    &state.frontend,
+                    &mut state.match_state,
+                    &state.process_assets,
+                    &mut state.audio.sfx_player,
+                    &state.persistence,
+                    want,
+                );
             }
             // 0x0055F1BD: result 3 clears the target.
             state.match_state.match_presentation.chat.target = ChatTarget::None;
         }
         EditInput::Overflowed(chunk) => {
-            state.match_state.match_presentation.chat.overflowed = true;
+            state.match_state.match_presentation.chat.overflow = Some(LineKind::Message);
             let target = state.match_state.match_presentation.chat.target;
-            send(state, target, &chunk);
+            send(
+                &state.platform,
+                &state.renderer,
+                &state.diag,
+                &state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                &mut state.audio.sfx_player,
+                &state.persistence,
+                target,
+                &chunk,
+            );
         }
         _ => {}
     }
+}
+
+/// Skirmish chat follows the active local match, including its ordinary input locks.
+fn skirmish_input_available(match_state: &MatchState) -> bool {
+    match_state.session_mode() == SessionMode::Skirmish
+        && !match_state.match_diagnostics.is_replay_playback()
+        && !match_state.frame_stopped
+        && !match_state.paused()
+        && !crate::app::input::campaign_input::is_locked(match_state)
+        && !crate::app::App::house_outcome_wait_pending(&match_state.sim_runtime)
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct SpawnOrder {
+    type_id: String,
+    count: u16,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum SkirmishCommand {
+    Help,
+    Apply(SkirmishCheat),
+    Place(SpawnOrder),
+}
+
+fn parse_skirmish_command(line: &str) -> Result<SkirmishCommand, &'static str> {
+    const USAGE: &str = "VERA:CheatUsage";
+    let mut words = line.split_ascii_whitespace();
+    let name = words
+        .next()
+        .and_then(|word| word.strip_prefix('/'))
+        .ok_or(USAGE)?;
+    let command = if name.eq_ignore_ascii_case("help") {
+        SkirmishCommand::Help
+    } else if name.eq_ignore_ascii_case("spysat") {
+        SkirmishCommand::Apply(SkirmishCheat::SpySat)
+    } else if name.eq_ignore_ascii_case("money") {
+        SkirmishCommand::Apply(SkirmishCheat::Money(
+            words.next().and_then(|n| n.parse().ok()).ok_or(USAGE)?,
+        ))
+    } else if name.eq_ignore_ascii_case("spawn") || name.eq_ignore_ascii_case("rhino") {
+        let type_id = if name.eq_ignore_ascii_case("rhino") {
+            "HTNK"
+        } else {
+            words.next().ok_or(USAGE)?
+        };
+        let count = words.next().and_then(|n| n.parse().ok()).ok_or(USAGE)?;
+        SkirmishCommand::Place(SpawnOrder {
+            type_id: type_id.to_owned(),
+            count,
+        })
+    } else {
+        return Err(USAGE);
+    };
+    if words.next().is_some() {
+        return Err(USAGE);
+    }
+    Ok(command)
+}
+
+fn ready_skirmish_cheats(state: &mut AppState) -> Result<(), &'static str> {
+    if !skirmish_input_available(&state.match_state) {
+        return Err("VERA:CheatUnavailable");
+    }
+    if !state.persistence.options_profile.skirmish_cheats {
+        return Err("VERA:CheatDisabled");
+    }
+    crate::app::match_runtime::sim_tick::finish_threaded_frame(state);
+    skirmish_input_available(&state.match_state)
+        .then_some(())
+        .ok_or("VERA:CheatUnavailable")
+}
+
+fn skirmish_command(state: &mut AppState, line: &str) -> Result<String, &'static str> {
+    ready_skirmish_cheats(state)?;
+    match parse_skirmish_command(line)? {
+        SkirmishCommand::Help => Ok(crate::i18n::tr("VERA:CheatHelp")),
+        SkirmishCommand::Apply(command) => {
+            apply_skirmish_cheat(&mut state.match_state, &state.process_assets, command)
+        }
+        SkirmishCommand::Place(order) => {
+            let rt = state
+                .match_state
+                .sim_runtime
+                .home_runtime()
+                .ok_or("VERA:CheatUnavailable")?;
+            let unit = crate::sim::skirmish_cheats::skirmish_spawn_type(
+                &rt.resources.rules,
+                &order.type_id,
+                order.count,
+            )?;
+            let prompt = crate::i18n::tr_fill(
+                "VERA:CheatChooseSpawnCell",
+                &[("count", &order.count), ("unit", &unit.id)],
+            );
+            // A button held while typing cannot confirm the new order.
+            state.match_state.input.cancel_tactical_drag();
+            crate::app::input::chrome_input::cancel(&mut state.match_state.match_presentation);
+            state.match_state.input.skirmish_spawn = Some(order);
+            Ok(prompt)
+        }
+    }
+}
+
+fn cancel_skirmish_spawn(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    persistence: &PersistenceState,
+) -> bool {
+    if match_state.input.skirmish_spawn.take().is_none() {
+        return false;
+    }
+    match_state.input.tactical_mouse.release();
+    super::messages::post_selection_navigation_text(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        persistence,
+        &crate::i18n::tr("VERA:CheatSpawnCancelled"),
+    );
+    true
+}
+
+/// Consume the whole placement gesture before gadgets, selection and unit orders.
+/// A right drag still pans the view, and a right click cancels.
+pub(crate) fn skirmish_spawn_mouse(
+    state: &mut AppState,
+    button: MouseButton,
+    pressed: bool,
+) -> bool {
+    if state.match_state.input.skirmish_spawn.is_none() {
+        return false;
+    }
+    let mouse = &mut state.match_state.input.tactical_mouse;
+    match (button, pressed) {
+        (MouseButton::Left, _) if mouse.right_held() => {}
+        (MouseButton::Left, true) => {
+            if super::camera::spawn_pointer_world_point(
+                &state.platform,
+                &state.renderer,
+                &state.frontend.screen,
+                &state.match_state,
+                &state.persistence,
+            )
+            .is_some()
+            {
+                state.match_state.input.tactical_mouse.begin_left_press();
+            } else {
+                super::messages::post_selection_navigation_text(
+                    &state.platform,
+                    &state.renderer,
+                    &state.diag,
+                    &state.frontend,
+                    &mut state.match_state,
+                    &state.persistence,
+                    &crate::i18n::tr("VERA:CheatPointAtMap"),
+                );
+            }
+        }
+        (MouseButton::Left, false) if mouse.end_left_press() => {
+            let result = place_skirmish_spawn(state);
+            if !matches!(result, Err("VERA:CheatPointAtMap")) {
+                state.match_state.input.skirmish_spawn = None;
+            }
+            super::messages::post_selection_navigation_text(
+                &state.platform,
+                &state.renderer,
+                &state.diag,
+                &state.frontend,
+                &mut state.match_state,
+                &state.persistence,
+                &result.unwrap_or_else(crate::i18n::tr),
+            );
+        }
+        (MouseButton::Right, true) => {
+            let cursor = state.match_state.input.cursor_position();
+            state
+                .match_state
+                .input
+                .tactical_mouse
+                .begin_right_drag(cursor);
+        }
+        (MouseButton::Right, false) if mouse.end_right_press() == Some(true) => {
+            cancel_skirmish_spawn(
+                &state.platform,
+                &state.renderer,
+                &state.diag,
+                &state.frontend,
+                &mut state.match_state,
+                &state.persistence,
+            );
+        }
+        (MouseButton::Left | MouseButton::Right, false) => {}
+        _ => return false,
+    }
+    true
+}
+
+fn place_skirmish_spawn(state: &mut AppState) -> Result<String, &'static str> {
+    use crate::app::match_runtime::sim_tick;
+    // Preserve the point in the displayed camera before joining an outstanding tick.
+    let (x, y) = super::camera::spawn_pointer_world_point(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state,
+        &state.persistence,
+    )
+    .ok_or("VERA:CheatPointAtMap")?;
+    ready_skirmish_cheats(state)?;
+    let sim = &state
+        .match_state
+        .sim_runtime
+        .home_runtime()
+        .ok_or("VERA:CheatUnavailable")?
+        .simulation;
+    let terrain = sim_tick::tactical_cells(sim).ok_or("VERA:CheatPointAtMap")?;
+    let cell = sim_tick::world_point_to_cell(x, y, Some(terrain));
+    let order = state
+        .match_state
+        .input
+        .skirmish_spawn
+        .as_ref()
+        .ok_or("VERA:CheatUnavailable")?;
+    // The replay owns the confirmed order. Keep the cursor armed if the map
+    // rejects the cell, so the player can click again without retyping.
+    let command = SkirmishCheat::SpawnAt {
+        type_id: order.type_id.clone(),
+        count: order.count,
+        cell,
+    };
+    apply_skirmish_cheat(&mut state.match_state, &state.process_assets, command)
+}
+
+fn apply_skirmish_cheat(
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    command: SkirmishCheat,
+) -> Result<String, &'static str> {
+    use crate::app::match_runtime::{sim_host::SimWrite, sim_tick};
+    use crate::i18n::{tr, tr_fill};
+    use crate::sim::skirmish_cheats::CheatEffect;
+    sim_tick::prepare_replay_recording(match_state, process_assets);
+    let Some(rt) = match_state.sim_runtime.write_sim(SimWrite::Command) else {
+        return Err("VERA:CheatUnavailable");
+    };
+    let result = match match_state.match_diagnostics.replay_log.as_mut() {
+        Some(log) => log.apply_skirmish_cheat(&mut rt.simulation, &rt.resources.rules, command),
+        None => rt
+            .simulation
+            .apply_skirmish_cheat(&command, &rt.resources.rules),
+    };
+    Ok(match result? {
+        CheatEffect::Money(amount) => tr_fill("VERA:CheatMoney", &[("amount", &amount)]),
+        CheatEffect::SpySat => tr("VERA:CheatSpySat"),
+        CheatEffect::Spawned {
+            placed,
+            requested,
+            type_id,
+        } => tr_fill(
+            "VERA:CheatSpawn",
+            &[
+                ("placed", &placed),
+                ("count", &requested),
+                ("unit", &type_id),
+            ],
+        ),
+    })
 }
 
 /// VERA: a typed line that is only `/pause` or `/resume`, ASCII
@@ -356,37 +960,89 @@ fn pause_command(line: &str) -> Option<bool> {
 
 /// VERA: a line this game sends to everyone by itself, sent and echoed like
 /// a typed one: the caught-up line (`network_match::post_caught_up`).
-pub(crate) fn send_to_all(state: &mut AppState, text: &str) {
-    send(state, ChatTarget::All, text);
+pub(crate) fn send_to_all(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
+    text: &str,
+) {
+    send(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        sfx_player,
+        persistence,
+        ChatTarget::All,
+        text,
+    );
 }
 
 /// The send block `0x0055EDBF..0x0055F110` for results 3 and 4.
-fn send(state: &mut AppState, target: ChatTarget, text: &str) {
-    if !state.match_state.session_mode().is_network() {
+fn send(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
+    target: ChatTarget,
+    text: &str,
+) {
+    if !match_state.session_mode().is_network() {
         return;
     }
-    let Some(local) = local_house(state) else {
+    let Some(local) = local_house(&match_state.sim_runtime) else {
         return;
     };
-    let Some((recipients, refused)) = route(state, local, target) else {
+    let Some((recipients, refused)) = route(match_state, local, target) else {
         return;
     };
     if refused {
-        crate::app::input::messages::post_observer_refusal(state);
-        state.match_state.match_presentation.chat.target = ChatTarget::None;
+        crate::app::input::messages::post_observer_refusal(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            sfx_player,
+            persistence,
+        );
+        match_state.match_presentation.chat.target = ChatTarget::None;
     } else if !recipients.is_empty() {
-        state
-            .match_state
+        match_state
             .session
             .request_chat(recipients, text.to_owned());
     }
     // 0x0055F0A8..0x0055F104: the local echo under the node name, sent or not.
-    let session = &state.match_state.session;
+    let session = &match_state.session;
     let name = crate::app::match_runtime::network_match::local_source(session)
         .map(|source| crate::app::match_runtime::network_match::participant_name(session, source))
         .unwrap_or_default();
-    let rgb = crate::app::input::messages::player_line_rgb(state, local);
-    crate::app::input::messages::post_chat_line(state, &name, text, rgb);
+    let rgb = crate::app::input::messages::player_line_rgb(frontend, match_state, local);
+    crate::app::input::messages::post_chat_line(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        sfx_player,
+        persistence,
+        &name,
+        text,
+        rgb,
+    );
 }
 
 /// The observer gate `0x0055EE60..0x0055EF32` and the recipients
@@ -397,11 +1053,15 @@ fn send(state: &mut AppState, target: ChatTarget, text: &str) {
 /// packet on the connection whose name equals its UI name; VERA's
 /// participant-to-House map stands in for that match. AI Houses and the
 /// local House have no connection.
-fn route(state: &AppState, local: InternedId, target: ChatTarget) -> Option<(Vec<usize>, bool)> {
-    let runtime = state.match_state.sim_runtime.runtime()?;
+fn route(
+    match_state: &MatchState,
+    local: InternedId,
+    target: ChatTarget,
+) -> Option<(Vec<usize>, bool)> {
+    let runtime = match_state.sim_runtime.runtime()?;
     let sim = &runtime.simulation;
     let rules = &runtime.resources.rules;
-    let session = &state.match_state.session;
+    let session = &match_state.session;
     let connected = session.network_connected_source_indices();
     let local_source = crate::app::match_runtime::network_match::local_source(session);
     let houses: Vec<ChatHouse> = sim
@@ -434,7 +1094,7 @@ fn route(state: &AppState, local: InternedId, target: ChatTarget) -> Option<(Vec
     Some(route_houses(
         target,
         sim.local_player_defeated(),
-        &state.match_state.match_presentation.chat,
+        &match_state.match_presentation.chat,
         &houses,
     ))
 }
@@ -443,8 +1103,9 @@ fn route(state: &AppState, local: InternedId, target: ChatTarget) -> Option<(Vec
 /// the Multiplay Houses whose chat-mask byte is set. The taunt command has
 /// already refused a local player who is out, so the observer gate never
 /// refuses here.
-pub(crate) fn listener_peers(state: &AppState, local: InternedId) -> Vec<usize> {
-    route(state, local, ChatTarget::Listeners).map_or_else(Vec::new, |(recipients, _)| recipients)
+pub(crate) fn listener_peers(match_state: &MatchState, local: InternedId) -> Vec<usize> {
+    route(match_state, local, ChatTarget::Listeners)
+        .map_or_else(Vec::new, |(recipients, _)| recipients)
 }
 
 /// One Multiplay House as the send block sees it.
@@ -467,7 +1128,7 @@ fn route_houses(
     houses: &[ChatHouse],
 ) -> (Vec<usize>, bool) {
     let inside = |house: &ChatHouse| match target {
-        ChatTarget::None => false,
+        ChatTarget::None | ChatTarget::Skirmish => false,
         ChatTarget::Listeners => chat.listens(house.index),
         ChatTarget::Allies => house.allied,
         ChatTarget::All => true,
@@ -486,39 +1147,53 @@ fn route_houses(
     (recipients, false)
 }
 
-/// Receive `0x0048D8DD..0x0048D9B8`: the line under the sender's node
-/// name in its colour, then one more IncomingMessage (`0x0048D995`) on top
-/// of Add_Message's own. No mask, alliance or defeat filter applies.
-/// Controlled service input resolves the participant's name/colour. Physical
-/// global messages use receive_packet with their original carrier fields.
-pub(crate) fn receive(state: &mut AppState, source_index: usize, text: &str) {
-    let session = &state.match_state.session;
-    let name = crate::app::match_runtime::network_match::participant_name(session, source_index);
-    let owner = session
-        .network_source_owner(source_index)
-        .and_then(|owner| {
-            state
-                .match_state
-                .sim_runtime
-                .runtime()
-                .and_then(|runtime| runtime.simulation.interner().get(&owner))
-        });
-    // Native shows the line whoever sent it; without a House, system white.
-    let rgb = owner.map_or([1.0; 3], |owner| {
-        crate::app::input::messages::player_line_rgb(state, owner)
-    });
-    receive_resolved(state, &name, text, rgb);
-}
-
-/// Global packet48D8DD supplies its own name and colour. Endpoint admission
-/// and the optional -MESSAGES hash gate belong to the network service.
-pub(crate) fn receive_packet(state: &mut AppState, name: &str, color: i32, text: &str) {
-    let rgb = crate::app::input::messages::packet_player_line_rgb(state, color);
-    receive_resolved(state, name, text, rgb);
+/// Receive `0x0048D8DD..0x0048D9B8`: the line under the sender's name in its
+/// colour, then one more IncomingMessage (`0x0048D995`) on top of
+/// Add_Message's own. No mask, alliance or defeat filter applies. Native
+/// takes both from the packet; VERA's caller takes an admitted sender's from
+/// the roster ([`chat_sender`](crate::app::match_runtime::network_match::chat_sender)).
+/// RESIDUAL: the `-MESSAGES` game-name hash filter (`[0xA8D60D]`, off by
+/// default) is not ported; the switch is accepted and ignored.
+pub(crate) fn receive_packet(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
+    name: &str,
+    color: i32,
+    text: &str,
+) {
+    let rgb = crate::app::input::messages::packet_player_line_rgb(frontend, match_state, color);
+    crate::app::input::messages::post_chat_line(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        sfx_player,
+        persistence,
+        name,
+        text,
+        rgb,
+    );
+    crate::app::App::play_shell_rules_sound(
+        frontend,
+        match_state,
+        process_assets,
+        sfx_player,
+        |rules| rules.general.incoming_message_sound(),
+    );
     let units: Vec<u16> = text.encode_utf16().collect();
     crate::app::shell_wol::translation::received(
-        state,
+        frontend.wol.as_mut(),
+        &persistence.options_profile,
         &units,
+        false,
         crate::app::shell_wol::translation::TranslatedLine::Match {
             name: name.to_owned(),
             color,
@@ -526,22 +1201,8 @@ pub(crate) fn receive_packet(state: &mut AppState, name: &str, color: i32, text:
     );
 }
 
-fn receive_resolved(state: &mut AppState, name: &str, text: &str, rgb: [f32; 3]) {
-    crate::app::input::messages::post_chat_line(state, name, text, rgb);
-    let sound = state
-        .rules()
-        .and_then(|rules| rules.general.incoming_message_sound().map(str::to_owned));
-    crate::app::App::play_shell_ui_sound_by_id(state, sound.as_deref());
-}
-
-fn local_house(state: &AppState) -> Option<InternedId> {
-    state
-        .match_state
-        .sim_runtime
-        .runtime()?
-        .simulation
-        .session()
-        .current_house()
+fn local_house(sim_runtime: &SimHost) -> Option<InternedId> {
+    sim_runtime.runtime()?.simulation.session().current_house()
 }
 
 #[cfg(all(test, tests_app_input_a_c))]
@@ -586,6 +1247,85 @@ mod tests {
             Some(ChatTarget::All),
             "AltGr"
         );
+    }
+
+    #[test]
+    fn skirmish_chat_opens_on_plain_enter_and_backspace_and_accepts_chat_or_commands() {
+        for key in [NamedKey::Enter, NamedKey::Backspace] {
+            assert!(opens_skirmish_chat(
+                &Key::Named(key),
+                ModifiersState::empty()
+            ));
+            assert!(!opens_skirmish_chat(
+                &Key::Named(key),
+                ModifiersState::CONTROL
+            ));
+        }
+        let mut chat = ChatState::default();
+        let mut list = crate::ui::messages::MessageList::scenario();
+        list.set_width(640);
+        for (text, expected) in [
+            ("hello", SkirmishPost::Message("hello ".into())),
+            ("/help", SkirmishPost::Command("/help ".into())),
+        ] {
+            chat.target = ChatTarget::Skirmish;
+            assert!(list.add_edit("Player: ", [1.0; 3], true));
+            for unit in text.encode_utf16() {
+                assert_eq!(
+                    chat.skirmish_post(list.input(EditKey::Unit(unit), &|s| s.len() as i32)),
+                    None
+                );
+            }
+            assert_eq!(
+                chat.skirmish_post(list.input(EditKey::Enter, &|s| s.len() as i32)),
+                Some(expected)
+            );
+            assert_eq!(chat.target, ChatTarget::None);
+        }
+    }
+
+    #[test]
+    fn wrapped_skirmish_chat_cannot_turn_into_a_cheat() {
+        let mut chat = ChatState::default();
+        let message = "Here is the command ";
+        assert_eq!(
+            chat.skirmish_post(EditInput::Overflowed(message.into())),
+            Some(SkirmishPost::Message(message.into()))
+        );
+        assert_eq!(
+            chat.skirmish_post(EditInput::Sent("/money 10000".into())),
+            Some(SkirmishPost::Message("/money 10000".into()))
+        );
+        assert_eq!(
+            chat.skirmish_post(EditInput::Overflowed("/spawn ".into())),
+            None
+        );
+        assert_eq!(
+            chat.skirmish_post(EditInput::Sent("/money 10000".into())),
+            Some(SkirmishPost::CommandTooLong)
+        );
+    }
+
+    #[test]
+    fn spawn_command_accepts_an_order_before_picking_a_cell() {
+        assert_eq!(
+            parse_skirmish_command("/spawn ZEP 100"),
+            Ok(SkirmishCommand::Place(SpawnOrder {
+                type_id: "ZEP".into(),
+                count: 100
+            }))
+        );
+    }
+
+    #[test]
+    fn the_rhino_shortcut_and_rules_id_reach_the_same_command() {
+        assert_eq!(
+            parse_skirmish_command("/RhInO 200 "),
+            parse_skirmish_command("/spawn HTNK 200")
+        );
+        assert!(parse_skirmish_command("/money 10000 extra").is_err());
+        assert!(parse_skirmish_command("/rhino -1").is_err());
+        assert_eq!(parse_skirmish_command("/help"), Ok(SkirmishCommand::Help));
     }
 
     #[test]

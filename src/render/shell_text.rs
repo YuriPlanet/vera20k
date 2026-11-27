@@ -12,38 +12,7 @@
 use crate::render::batch::SpriteInstance;
 use crate::render::bit_font::{BitFont, Fit, LineSpan, TextRaster};
 use crate::render::shell_text_reveal::PathAReveal;
-use crate::ui::shell::geom::RIGHT_PANEL_FACE_W;
-
-/// Alignment flag set for `draw_in_rect`.
-/// 0x01 = h-center, 0x02 = h-right, 0x04 = v-center, 0x08 = panel face.
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
-pub struct ShellAlign(pub u8);
-
-impl ShellAlign {
-    pub const NONE: ShellAlign = ShellAlign(0);
-    pub const H_CENTER: ShellAlign = ShellAlign(0x01);
-    pub const H_RIGHT: ShellAlign = ShellAlign(0x02);
-    pub const V_CENTER: ShellAlign = ShellAlign(0x04);
-    /// VERA's own: the rect is wider than the right-panel art it labels, an
-    /// SDBTNANM button's red face or the title window atop the column, so the
-    /// text must also fit [`RIGHT_PANEL_FACE_W`] on one line to stay on it.
-    pub const PANEL_FACE: ShellAlign = ShellAlign(0x08);
-    /// An SDBTNANM button's caption, centred on its face.
-    pub const BUTTON_CAPTION: ShellAlign = ShellAlign(0x01 | 0x04 | 0x08);
-    /// The right panel's title, centred in its window.
-    pub const PANEL_TITLE: ShellAlign = ShellAlign(0x01 | 0x08);
-
-    pub fn contains(self, flag: ShellAlign) -> bool {
-        (self.0 & flag.0) != 0
-    }
-}
-
-impl std::ops::BitOr for ShellAlign {
-    type Output = Self;
-    fn bitor(self, rhs: Self) -> Self {
-        ShellAlign(self.0 | rhs.0)
-    }
-}
+use crate::ui::shell::geom::{RIGHT_PANEL_FACE_W, RectPx, ShellAlign};
 
 /// Pixel-coordinate scissor rect. Apply via `wgpu::RenderPass::set_scissor_rect`.
 #[derive(Copy, Clone, Debug, Default)]
@@ -71,20 +40,32 @@ impl ScissorRect {
     }
 }
 
-/// Output of `draw_in_rect`: sprite instances plus the scissor the caller
+/// Output of `draw_in_rect_scaled`: sprite instances plus the scissor the caller
 /// must set on its render pass before drawing them.
 pub struct ShellTextDraw {
     pub instances: Vec<SpriteInstance>,
     pub scissor: ScissorRect,
 }
 
-/// Pixel rect input to `draw_in_rect` -- width/height in screen pixels.
+/// Pixel rect input to `draw_in_rect_scaled` -- width/height in screen pixels.
 #[derive(Copy, Clone, Debug)]
 pub struct TextRect {
     pub x: i32,
     pub y: i32,
     pub w: u32,
     pub h: u32,
+}
+
+impl TextRect {
+    /// `rect`, a negative extent read as empty.
+    pub fn of(rect: RectPx) -> Self {
+        Self {
+            x: rect.x,
+            y: rect.y,
+            w: rect.w.max(0) as u32,
+            h: rect.h.max(0) as u32,
+        }
+    }
 }
 
 /// A stretched label's rect back in the glyph atlas's native units, so Path A's
@@ -101,7 +82,9 @@ fn to_native_rect(rect: TextRect, scale: f32) -> TextRect {
 
 /// How far `text` squeezes to fit `native` (VERA's own; see the module doc).
 fn squeeze(font: &BitFont, text: &str, native: TextRect, flags: ShellAlign) -> Fit {
-    if flags.contains(ShellAlign::PANEL_FACE) {
+    if flags.contains(ShellAlign::SINGLE_LINE) {
+        font.fit_line(text, native.w)
+    } else if flags.contains(ShellAlign::PANEL_FACE) {
         let face = font.fit_line(text, native.w.min(RIGHT_PANEL_FACE_W));
         font.fitted(face, |font| font.fit_box(text, native.w, native.h))
     } else {
@@ -143,33 +126,17 @@ fn line_offset(flags: ShellAlign, span: &LineSpan, rect_w: u32, block_w: u32) ->
     }
 }
 
-pub fn draw_in_rect(
+/// Path A's layout of `text` in `rect`: squeeze, wrap, centre and admit
+/// lines as gamemd does, handing each admitted line's text and origin (in
+/// window pixels) to `emit`. The whole text decides the squeeze, so a
+/// reveal does not re-wrap.
+fn layout_in_rect(
     font: &BitFont,
     text: &str,
     rect: TextRect,
-    color: [f32; 3],
     flags: ShellAlign,
-    cam_offset: [f32; 2],
-    depth: f32,
-) -> ShellTextDraw {
-    draw_in_rect_scaled(font, text, rect, color, flags, cam_offset, depth, 1.0)
-}
-
-/// [`draw_in_rect`] with a glyph scale. `scale == 1.0` is gamemd's 1:1 Path A
-/// draw; above it the label is laid out in the rect's native units (the rect
-/// divided back by `scale`) and every glyph and advance is emitted at
-/// `scale`x, so a stretched shell's caption still centres in its stretched
-/// cell. The scissor stays in window pixels.
-#[allow(clippy::too_many_arguments)]
-pub fn draw_in_rect_scaled(
-    font: &BitFont,
-    text: &str,
-    rect: TextRect,
-    color: [f32; 3],
-    flags: ShellAlign,
-    cam_offset: [f32; 2],
-    depth: f32,
     scale: f32,
+    mut emit: impl FnMut(&BitFont, &str, f32, f32) -> Vec<SpriteInstance>,
 ) -> ShellTextDraw {
     let scissor = ScissorRect::of(rect, font.raster());
     if text.is_empty() {
@@ -178,10 +145,23 @@ pub fn draw_in_rect_scaled(
             scissor,
         };
     }
+    let single_line = flags.contains(ShellAlign::SINGLE_LINE);
+    let text = if single_line {
+        text.split('\n').next().unwrap_or_default()
+    } else {
+        text
+    };
     let native = to_native_rect(rect, scale);
     let fit = squeeze(font, text, native, flags);
     let instances = font.fitted(fit, |font| {
-        let layout = font.wrap_layout(text, native.w);
+        // Bound the draw with the scissor, but do not wrap a caption which
+        // still has to be cut off after the tightest horizontal fit.
+        let wrap_w = if single_line {
+            native.w.max(font.text_width(text))
+        } else {
+            native.w
+        };
+        let layout = font.wrap_layout(text, wrap_w);
         let base_x = native.x as f32;
         let mut line_y = native.y as f32;
         if flags.contains(ShellAlign::V_CENTER) {
@@ -204,14 +184,11 @@ pub fn draw_in_rect_scaled(
             }
             let line_x_offset = line_offset(flags, span, native.w, layout.width);
             let segment = &text[span.start_byte..span.end_byte];
-            instances.append(&mut font.build_text(
+            instances.append(&mut emit(
+                font,
                 segment,
                 (base_x + line_x_offset) * scale,
                 line_y * scale,
-                scale,
-                depth,
-                color,
-                cam_offset,
             ));
             line_y += line_advance;
         }
@@ -220,22 +197,28 @@ pub fn draw_in_rect_scaled(
     ShellTextDraw { instances, scissor }
 }
 
-/// Path-A counterpart to [`draw_in_rect`]: the kind-1 statics' UTF-16 unit
-/// reveal and tint.
-pub fn draw_in_rect_path_a(
+/// Path A's draw of `text` in `rect` with a glyph scale. `scale == 1.0` is
+/// gamemd's 1:1 Path A draw; above it the label is laid out in the rect's
+/// native units (the rect divided back by `scale`) and every glyph and
+/// advance is emitted at `scale`x, so a stretched shell's caption still
+/// centres in its stretched cell. The scissor stays in window pixels.
+pub fn draw_in_rect_scaled(
     font: &BitFont,
     text: &str,
     rect: TextRect,
+    color: [f32; 3],
     flags: ShellAlign,
     cam_offset: [f32; 2],
     depth: f32,
-    reveal: PathAReveal,
+    scale: f32,
 ) -> ShellTextDraw {
-    draw_in_rect_path_a_scaled(font, text, rect, flags, cam_offset, depth, reveal, 1.0)
+    layout_in_rect(font, text, rect, flags, scale, |font, segment, x, y| {
+        font.build_text(segment, x, y, scale, depth, color, cam_offset)
+    })
 }
 
-/// [`draw_in_rect_path_a`] with a glyph scale; see [`draw_in_rect_scaled`].
-#[allow(clippy::too_many_arguments)]
+/// [`draw_in_rect_scaled`] for the kind-1 statics: their UTF-16 unit reveal
+/// and tint.
 pub fn draw_in_rect_path_a_scaled(
     font: &BitFont,
     text: &str,
@@ -246,60 +229,43 @@ pub fn draw_in_rect_path_a_scaled(
     reveal: PathAReveal,
     scale: f32,
 ) -> ShellTextDraw {
-    let scissor = ScissorRect::of(rect, font.raster());
-    if text.is_empty() {
-        return ShellTextDraw {
-            instances: Vec::new(),
-            scissor,
-        };
-    }
-    let native = to_native_rect(rect, scale);
-    // The whole text decides the squeeze, so a reveal does not re-wrap.
-    let fit = squeeze(font, text, native, flags);
-    let instances = font.fitted(fit, |font| {
-        let layout = font.wrap_layout(text, native.w);
-        let base_x = native.x as f32;
-        let mut line_y = native.y as f32;
-        if flags.contains(ShellAlign::V_CENTER) {
-            line_y += vcenter_offset(native.h, layout.height);
-        }
-        let line_advance = font.cell_height();
-        let mut instances = Vec::with_capacity(text.len());
-        let mut consumed = 0u32;
-
-        for (line_index, span) in layout.lines.iter().enumerate() {
-            // Same original 434CD0 line admission as the non-reveal entry above.
-            if line_index > 0
-                && native.h != 0
-                && line_index as f32 * line_advance >= native.h as f32
-            {
-                break;
-            }
-            let line_x_offset = line_offset(flags, span, native.w, layout.width);
-            let segment = &text[span.start_byte..span.end_byte];
-            let (mut line_instances, new_consumed) = font.build_text_path_a(
-                segment,
-                (base_x + line_x_offset) * scale,
-                line_y * scale,
-                scale,
-                depth,
-                cam_offset,
-                consumed,
-                reveal,
-            );
-            consumed = new_consumed;
-            instances.append(&mut line_instances);
-            line_y += line_advance;
-        }
+    let mut consumed = 0u32;
+    layout_in_rect(font, text, rect, flags, scale, |font, segment, x, y| {
+        let (instances, new_consumed) =
+            font.build_text_path_a(segment, x, y, scale, depth, cam_offset, consumed, reveal);
+        consumed = new_consumed;
         instances
-    });
-    ShellTextDraw { instances, scissor }
+    })
 }
 
 #[cfg(all(test, tests_render_s_z))]
 mod tests {
     use super::*;
     use crate::render::bit_font::tests::make_test_font;
+
+    fn draw_in_rect(
+        font: &BitFont,
+        text: &str,
+        rect: TextRect,
+        color: [f32; 3],
+        flags: ShellAlign,
+        cam_offset: [f32; 2],
+        depth: f32,
+    ) -> ShellTextDraw {
+        draw_in_rect_scaled(font, text, rect, color, flags, cam_offset, depth, 1.0)
+    }
+
+    fn draw_in_rect_path_a(
+        font: &BitFont,
+        text: &str,
+        rect: TextRect,
+        flags: ShellAlign,
+        cam_offset: [f32; 2],
+        depth: f32,
+        reveal: PathAReveal,
+    ) -> ShellTextDraw {
+        draw_in_rect_path_a_scaled(font, text, rect, flags, cam_offset, depth, reveal, 1.0)
+    }
 
     fn test_font() -> BitFont {
         make_test_font(&[(b'x' as u16, 6), (b'a' as u16, 6), (b'b' as u16, 6)], 4)
@@ -485,7 +451,7 @@ mod tests {
     #[test]
     fn a_button_caption_too_long_for_the_face_is_squeezed_onto_it() {
         let font = crate::render::bit_font::tests::make_vector_test_font();
-        let text = "[Ṁöṽîéš & Çŕéðîţš ~~~~~]";
+        let text = "[Ṁöṽîéš & Çŕéðîţš ~~~]";
         let natural = font.text_width(text);
         assert!(natural > RIGHT_PANEL_FACE_W && natural < 154, "{natural}");
         let rect = TextRect {
@@ -525,6 +491,68 @@ mod tests {
             squeeze(&font, "[Öþţîöñš ~~~~]", rect, ShellAlign::BUTTON_CAPTION),
             Fit::NONE
         );
+    }
+
+    #[test]
+    fn art_caption_uses_its_own_width_without_wrapping() {
+        let font = crate::render::bit_font::tests::make_vector_test_font();
+        let rect = TextRect {
+            x: 659,
+            y: 60,
+            w: 114,
+            h: 41,
+        };
+        // Find a natural caption whose exact width exceeds the old legacy cap.
+        let text = (1..30)
+            .flat_map(|wide| {
+                (0..20).map(move |narrow| format!("{}{}", "Ṁ".repeat(wide), "î".repeat(narrow)))
+            })
+            .find(|text| (111..=114).contains(&font.text_width(text)))
+            .expect("the fixture needs a width in the newly available range");
+        assert_eq!(squeeze(&font, &text, rect, ShellAlign::ART_CAPTION), Fit::NONE);
+        assert_ne!(squeeze(&font, &text, rect, ShellAlign::PANEL_TITLE), Fit::NONE);
+
+        let long = "动画及制作人员读取已保存游戏".repeat(3);
+        let draw = |text| {
+            draw_in_rect(
+                &font,
+                text,
+                rect,
+                [1.0; 3],
+                ShellAlign::ART_CAPTION,
+                [0.0; 2],
+                0.5,
+            )
+        };
+        let one = draw(&long);
+        assert!(!one.instances.is_empty());
+        assert_same_quads(
+            &one.instances,
+            &draw(&format!("{long}\n第二行")).instances,
+            "no second line",
+        );
+    }
+
+    #[test]
+    fn translated_column_captions_fit_the_shared_width() {
+        let font = crate::render::bit_font::tests::make_vector_test_font();
+        let rect = TextRect {
+            x: 664,
+            y: 330,
+            w: crate::ui::shell::geom::FAMILY_CAPTION_W as u32,
+            h: 41,
+        };
+        let align = ShellAlign::ART_CAPTION | ShellAlign::V_CENTER;
+        for text in ["动画及制作人员", "读取已保存游戏"] {
+            let fitted = squeeze(&font, text, rect, align);
+            assert!(font.fitted(fitted, |font| font.text_width(text)) <= rect.w);
+            let actual = draw_in_rect(&font, text, rect, [1.0; 3], align, [0.0; 2], 0.5);
+            assert_eq!(actual.instances.len(), text.chars().count());
+            assert!(actual.instances.iter().all(|glyph| {
+                glyph.position[0] >= rect.x as f32
+                    && glyph.position[0] + glyph.size[0] <= (rect.x + rect.w as i32) as f32
+            }), "{text}");
+        }
     }
 
     /// A word too long for its line is squeezed before it splits; Chinese

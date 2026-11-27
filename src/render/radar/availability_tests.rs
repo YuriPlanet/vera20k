@@ -5,36 +5,32 @@ use super::*;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::house_state::HouseState;
 use crate::sim::world::{FrameEffects, Simulation, TacticalRadarBoundary, TickLane};
-use std::cell::RefCell;
 
 struct RadarBoundary {
-    radar: RefCell<RadarPresentation>,
-    cues: RefCell<Vec<RadarAvailabilityCue>>,
+    radar: RadarPresentation,
+    cues: Vec<RadarAvailabilityCue>,
 }
 
 impl TacticalRadarBoundary for RadarBoundary {
-    fn set_available(&self, _: &Simulation, _: &RuleSet, available: bool) {
-        if let Some(cue) = self.radar.borrow_mut().set_has_radar(available) {
-            self.cues.borrow_mut().push(cue);
+    fn set_available(&mut self, _: &Simulation, _: &RuleSet, available: bool) {
+        if let Some(cue) = self.radar.set_has_radar(available) {
+            self.cues.push(cue);
         }
     }
 }
 
-/// The old app poll remains the fallback for view changes. Once the reached
-/// calls update this same owner, polling its final value cannot replay a cue.
-fn frame(sim: &mut Simulation, rules: &RuleSet, boundary: &RadarBoundary) {
+/// One House frame: its reached calls are the radar's only availability
+/// updates (the app keeps no poll of the final value).
+fn frame(sim: &mut Simulation, rules: &RuleSet, boundary: &mut RadarBoundary) {
     let commands = sim.take_due_commands();
     sim.advance_app_frame(
         &commands,
         rules,
-        None,
         67,
         TickLane::Ordinary,
-        FrameEffects::empty().with_tactical_radar(boundary),
+        &mut FrameEffects::empty().with_tactical_radar(boundary),
     )
     .expect("ordinary stock House frame");
-    let available = crate::sim::radar::has_radar_for_owner(sim, rules, "Americans");
-    boundary.set_available(sim, rules, available);
 }
 
 #[test]
@@ -77,12 +73,12 @@ fn retail_local_defeat_delivers_radar_off_then_on_in_one_house_frame() {
                     .collect()
             })
             .collect();
-        let boundary = RadarBoundary {
-            radar: RefCell::new(RadarPresentation::new(&vec![vec![0; 4]; 33], 1, 1).unwrap()),
-            cues: RefCell::new(Vec::new()),
+        let mut boundary = RadarBoundary {
+            radar: RadarPresentation::new(&vec![vec![0; 4]; 33], 1, 1).unwrap(),
+            cues: Vec::new(),
         };
-        frame(&mut sim, &rules, &boundary);
-        frame(&mut sim, &rules, &boundary);
+        frame(&mut sim, &rules, &mut boundary);
+        frame(&mut sim, &rules, &mut boundary);
         assert!(crate::sim::radar::has_radar_for_owner(
             &sim,
             &rules,
@@ -90,10 +86,10 @@ fn retail_local_defeat_delivers_radar_off_then_on_in_one_house_frame() {
         ));
         // Settle the real housing through its normal draw/timer owner.
         for draw in 0..=32 {
-            boundary.radar.borrow_mut().advance_draw(draw * 64);
+            boundary.radar.advance_draw(draw * 64);
         }
-        assert_eq!(boundary.radar.borrow().phase(), RadarAnimPhase::Online);
-        boundary.cues.borrow_mut().clear();
+        assert_eq!(boundary.radar.phase(), RadarAnimPhase::Online);
+        boundary.cues.clear();
         // House Tags run after this House's defeat gate. Condition 9 (no
         // units) registers only with the House, so its action destroys the
         // base at frame 8, then ordinary tail cleanup retires its counts.
@@ -116,7 +112,7 @@ fn retail_local_defeat_delivers_radar_off_then_on_in_one_house_frame() {
         sim.initialize_trigger_definitions(&map, &Default::default(), None, None, None);
         sim.classify_map_triggers(&rules);
         while sim.session().binary_frame() <= 8 {
-            frame(&mut sim, &rules, &boundary);
+            frame(&mut sim, &rules, &mut boundary);
         }
         assert!(!sim.houses()[&owners[losing_house]].is_defeated());
         assert!(
@@ -129,8 +125,8 @@ fn retail_local_defeat_delivers_radar_off_then_on_in_one_house_frame() {
             &rules,
             "Americans"
         ));
-        boundary.cues.borrow_mut().clear();
-        frame(&mut sim, &rules, &boundary);
+        boundary.cues.clear();
+        frame(&mut sim, &rules, &mut boundary);
         assert!(sim.houses()[&owners[losing_house]].is_defeated());
         let expected = if losing_house == 0 {
             vec![RadarAvailabilityCue::Off, RadarAvailabilityCue::On]
@@ -138,9 +134,8 @@ fn retail_local_defeat_delivers_radar_off_then_on_in_one_house_frame() {
             Vec::new()
         };
         assert_eq!(
-            *boundary.cues.borrow(),
-            expected,
-            "both local transitions must precede final-state reconciliation"
+            boundary.cues, expected,
+            "a local defeat delivers both transitions in its House frame"
         );
     }
 }

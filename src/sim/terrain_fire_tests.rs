@@ -76,7 +76,7 @@ fn ares_a_sparky_hit_sets_a_flammable_tree_alight_until_its_fire_anim_ends() {
             &rules,
             None,
             &[hit(700, (5, 5)), hit(701, (8, 8))],
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(sim.terrain_objects.get(700).unwrap().health(), 90);
         assert!(

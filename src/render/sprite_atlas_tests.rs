@@ -63,7 +63,10 @@ fn loading_job_publishes_the_same_index_pages_after_gpu_retirement() {
         };
         PreparedSpriteAtlas::Raster(work, empty_upload(true))
     };
-    let expected = prepare().finish(&gpu.device, &gpu.queue, &batch).unwrap();
+    let expected = prepare()
+        .finish(&gpu.device, &gpu.queue, &batch)
+        .unwrap()
+        .unwrap();
     let mut pending = prepare()
         .start_loading(&gpu.device, &gpu.queue, &batch)
         .unwrap();
@@ -97,6 +100,7 @@ fn empty_upload(initial: bool) -> ShpAtlasUpload {
         active_anim_frame_counts: HashMap::new(),
         object_shp_frame_counts: HashMap::new(),
         building_type_bounds: HashMap::new(),
+        hd_images: HashSet::new(),
         shp_files: HashMap::new(),
         projectile_files: HashMap::new(),
         new_objects: HashSet::new(),
@@ -357,10 +361,64 @@ fn make_shp_key(type_id: &str, facing: u8) -> ShpSpriteKey {
     }
 }
 
+/// A map-load raster whose required cell-drawer frame has no source is the
+/// load's error, which names the animation.
 #[test]
-#[should_panic(expected = "required initial sprite failed")]
-fn required_initial_build_failure_remains_fail_fast() {
-    abandon_sprite_atlas_refresh(true, "required initial sprite failed");
+fn a_map_load_raster_missing_a_required_frame_is_an_error() {
+    let work = ShpRasterWork {
+        keys: vec![ShpRasterKey {
+            key: make_shp_key("MISSING", 0),
+            source: 0,
+            palette: 0,
+            infantry: false,
+            required: true,
+        }],
+        sources: vec![None],
+        render_palettes: vec![Palette::from_rgb(|i| [i, i, i])],
+        rows: ShpPalettes::default(),
+        harvest_overlay: None,
+        max_rows: 8192,
+    };
+    let failure = empty_upload(true)
+        .drawn(work.render())
+        .err()
+        .expect("a missing required frame abandons the build");
+    assert!(failure.contains("[MISSING]"), "{failure}");
+}
+
+/// A map-load build whose map binds a terrain animation with no SHP is
+/// abandoned with a message, before any GPU work.
+#[test]
+fn a_map_load_build_missing_a_cell_drawer_shp_is_abandoned() {
+    let ini = crate::rules::ini_parser::IniFile::from_str("[General]\nDamageFireTypes=\n");
+    let mut rules = RuleSet::from_ini(&ini).expect("rules");
+    let directory = StoredFrameTestDirectory::new();
+    let assets = AssetManager::from_loose_root_for_test(&directory.0);
+    let mut art = ArtRegistry::from_ini(&ini);
+    art.bind_scheduler_anim_assets(&["NO_SHP_FALLS".into()], &assets, "TEM", "TEMPERATE");
+    rules.replace_art_registry_for_test(art);
+    let prepared = prepare_sprite_atlas(
+        8192,
+        &crate::sim::entity_store::EntityStore::new(),
+        &assets,
+        &Palette::from_rgb(|i| [i, i, i]),
+        "tem",
+        "TEMPERATE",
+        Some(&rules),
+        Some(rules.art()),
+        &HouseColorMap::new(),
+        &[],
+        &HashSet::new(),
+        &HashSet::from(["NO_SHP_FALLS".to_string()]),
+        &HashSet::new(),
+        None,
+        None,
+        None,
+    );
+    let PreparedSpriteAtlas::Abandoned(failure) = prepared else {
+        panic!("a map load with a missing cell-drawer SHP is abandoned");
+    };
+    assert!(failure.contains("[NO_SHP_FALLS]"), "{failure}");
 }
 
 /// One placed object of `type_id` owned by "Americans", and the interner
@@ -974,7 +1032,15 @@ fn a_counting_shp_unit_draws_death_frames_the_atlas_holds() {
     rules.install_art_data(ArtRegistry::from_ini(&art_ini));
     let set = rules.animation_sequence("DTH").expect("SHP unit layout");
     let frame = |death, moving| {
-        crate::sim::animation::resolve_shp_vehicle_body_frame(set, 0, 4, -1, death, moving, false)
+        crate::sim::animation::resolve_shp_vehicle_body_frame(
+            set,
+            crate::sim::animation::shp_vehicle_facing_slot(8, 0, false, false),
+            4,
+            -1,
+            death,
+            moving,
+            true,
+        )
     };
     assert_eq!(frame(3, false), Some(41));
     assert_eq!(frame(9, false), Some(42), "held on the last death frame");
@@ -2083,7 +2149,14 @@ fn palette_context_preserves_simultaneous_global_cell_and_attached_sprite_keys()
         key.palette_context = context;
         keys.insert(key.clone());
         assert_eq!(
-            sprite_palette_for_key(&key, Some(&art), &effects, &cells, None),
+            sprite_palette_for_key(
+                &key,
+                Some(&art),
+                &effects,
+                &cells,
+                None,
+                &AresCustomPalettes::default()
+            ),
             palette
         );
     }
@@ -2093,12 +2166,26 @@ fn palette_context_preserves_simultaneous_global_cell_and_attached_sprite_keys()
     key.type_id = "ALT".into();
     key.palette_context = ShpPaletteContext::AnimPalette;
     assert_eq!(
-        sprite_palette_for_key(&key, Some(&art), &effects, &cells, None),
+        sprite_palette_for_key(
+            &key,
+            Some(&art),
+            &effects,
+            &cells,
+            None,
+            &AresCustomPalettes::default()
+        ),
         SpritePaletteChoice::Anim
     );
     key.palette_context = ShpPaletteContext::GlobalAnim;
     assert_eq!(
-        sprite_palette_for_key(&key, Some(&art), &effects, &cells, None),
+        sprite_palette_for_key(
+            &key,
+            Some(&art),
+            &effects,
+            &cells,
+            None,
+            &AresCustomPalettes::default()
+        ),
         SpritePaletteChoice::Unit
     );
     let probe = native_palette_probe_page();
@@ -2117,7 +2204,14 @@ fn a_custom_palette_type_bakes_against_the_extra_building_palette() {
     let choose = |type_id: &str, context, cells: &HashSet<String>, extra| {
         let mut key = make_shp_key(type_id, 0);
         key.palette_context = context;
-        sprite_palette_for_key(&key, Some(&art), &none, cells, extra)
+        sprite_palette_for_key(
+            &key,
+            Some(&art),
+            &none,
+            cells,
+            extra,
+            &AresCustomPalettes::default(),
+        )
     };
     let legacy = ShpPaletteContext::Legacy;
     assert_eq!(
@@ -2204,6 +2298,7 @@ fn retail_statue_bakes_against_the_theater_lib_palette() {
         &HashSet::new(),
         &HashSet::new(),
         Some(&HashSet::from(["CANEWY04".to_string()])),
+        &AresCustomPalettes::default(),
     );
     assert_eq!(choice, SpritePaletteChoice::ExtraBuilding);
     let source = load_shp_source(
@@ -3490,7 +3585,8 @@ fn custom_harvest_uses_bound_theater_shape_all_frames_and_own_placement() {
             Some(rules.art()),
             &HashSet::new(),
             &HashSet::new(),
-            None
+            None,
+            &AresCustomPalettes::default()
         ),
         SpritePaletteChoice::Anim,
         "AltPalette belongs to AnimClass drawing, not the gather hook",
@@ -3672,7 +3768,7 @@ fn building_type_bounds_publish_with_color_growth_type_growth_and_abort() {
         panic!("a palette overflow is found while drawing");
     };
     assert!(
-        upload.drawn(work.render()).is_none(),
+        upload.drawn(work.render()).is_err(),
         "palette overflow abandons the refresh"
     );
     let old = colored;
@@ -3728,7 +3824,7 @@ fn retail_spy_atlas_loads_its_default_disguise_without_a_real_infantryman() {
         .spawn_object_at_height("SPY", "Americans", 10, 10, 0, 0, &rules)
         .unwrap();
     let entity = sim.entities().get(spy).unwrap();
-    let disguise = entity.disguise.as_ref().unwrap();
+    let disguise = entity.seldom.disguise.as_ref().unwrap();
     let worn = sim.interner().resolve(disguise.type_id().unwrap());
     assert_eq!(worn, "E1");
     assert_eq!(sim.entities().len(), 1);
@@ -3788,8 +3884,9 @@ fn spy_atlas_growth_tracks_each_active_disguise_and_its_house_color() {
     let e1 = crate::sim::intern::test_intern("E1");
     let e2 = crate::sim::intern::test_intern("E2");
     world
-        .get_mut(1)
+        .get_mut_for_test(1)
         .unwrap()
+        .seldom
         .disguise
         .as_mut()
         .unwrap()
@@ -3804,6 +3901,7 @@ fn spy_atlas_growth_tracks_each_active_disguise_and_its_house_color() {
     );
     second.set_is_voxel_for_test(false);
     second
+        .seldom
         .disguise
         .as_mut()
         .unwrap()
@@ -3843,8 +3941,9 @@ fn spy_atlas_growth_tracks_each_active_disguise_and_its_house_color() {
         .insert(HouseColorIndex(5));
     assert!(covered(&atlas, &world));
     world
-        .get_mut(2)
+        .get_mut_for_test(2)
         .unwrap()
+        .seldom
         .disguise
         .as_mut()
         .unwrap()

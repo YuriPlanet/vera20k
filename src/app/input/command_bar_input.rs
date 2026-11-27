@@ -1,69 +1,76 @@
-//! Command-bar gadgets reuse the ordinary retained mouse driver and actions.
+//! The command bar's buttons on the chrome layer: their places, tips and
+//! actions.
 
 use super::*;
+use crate::app::PlatformState;
+use crate::app::audio_runtime::AppAudioRuntime;
+use crate::app::diagnostics::state::DiagnosticsState;
+use crate::app::frontend::state::FrontendState;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
+use crate::app::presentation::state::MatchPresentationState;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
 
-pub(super) fn sync(state: &mut AppState) {
-    let layout = crate::app::presentation::sidebar_build::command_bar::layout_and_slots(state);
-    let closed = state
-        .match_state
-        .match_presentation
-        .sidebar_gadget_state
-        .command_bar_closed;
-    let frame = state.sidebar_frame();
-    let gadgets = &mut state.match_state.match_presentation.in_game_gadgets;
-    sync_prepared(gadgets, layout.as_ref(), closed, frame);
-    sync_planning_button(gadgets, state.match_state.input.planning.active());
-}
-
-/// TabClass::ReceiveNotice @ 0x006D1770 (the planning notice sink) turns the
-/// PlanningMode button on for Planning__StartMode's 0x11C7 and off for
-/// EndMode's 0x11C8; mirroring the PlanMgr owner each frame gives the same
-/// toggle without a second state.
-fn sync_planning_button(gadgets: &mut InGameGadgets, active: bool) {
-    if let Some(handles) = gadgets.command_bar
-        && let Some(gadget) = gadgets.list.get_mut(handles[9])
-        && let GadgetBehavior::Button(mut button) = gadget.behavior
-    {
-        button.is_on = active;
-        gadget.behavior = GadgetBehavior::Button(button);
-    }
-}
-
+/// Where the command bar's twelve buttons take the pointer, in frame pixels
+/// (none: no button), and the thumb's id.
+///
 /// TabClass::Init @ 0x006D03A0 -> InitCommandBarButtons @ 0x006D0FD0 gives
 /// command `i` ID 0xD6 + i, flags 5 (Team01..03 0x55, PlanningMode a toggle)
 /// and places it at its ButtonList slot only when it ends before the right
 /// cap, the same slots the bar draws. The hide (0xF0) and show (0xF1)
 /// buttons share LENDCAP at the open and closed cap points. Closing removes
-/// the command buttons (RemoveCommandBarButtons @ 0x006D04D0); here they are
-/// disabled instead. TabClass::ToggleSidebar @ 0x006D04F0 re-adds them (or
+/// the command buttons (RemoveCommandBarButtons @ 0x006D04D0); here they take
+/// no pointer instead. TabClass::ToggleSidebar @ 0x006D04F0 re-adds them (or
 /// the show button) when the sidebar is shown; only SidebarClass::Init_Clear
 /// (0x006A507C) and Init's hide-then-show (0x006A5560) pass 0, so in a
 /// scenario the sidebar stays shown and its hidden branch has no effect.
-fn sync_prepared(
-    gadgets: &mut InGameGadgets,
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct CommandBarPlaces {
+    pub(crate) rects: [Option<Rect>; 12],
+    pub(crate) thumb_id: u16,
+}
+
+pub(crate) fn places(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    persistence: &PersistenceState,
+) -> CommandBarPlaces {
+    let layout = crate::app::presentation::sidebar_build::command_bar::layout_and_slots(
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        persistence,
+    );
+    let closed = match_state
+        .match_presentation
+        .sidebar_gadget_state
+        .command_bar_closed;
+    places_for(
+        layout.as_ref(),
+        closed,
+        crate::app::state::sidebar_frame(
+            platform,
+            persistence,
+            renderer,
+            &frontend.screen,
+            &match_state.match_presentation.sidebar_layout_spec,
+        ),
+    )
+}
+
+fn places_for(
     layout: Option<&(
         crate::ui::sidebar::command_bar::CommandBarLayout,
         Vec<Option<usize>>,
     )>,
     closed: bool,
     frame: sidebar::SidebarFrame,
-) {
-    let handles =
-        *gadgets.command_bar.get_or_insert_with(|| {
-            std::array::from_fn(|i| {
-                let id = if i == 11 { 0xF0 } else { 0xD6 + i as u16 };
-                let kind = if i == 9 {
-                    ToggleKind::Flip
-                } else {
-                    ToggleKind::Plain
-                };
-                gadgets.list.add_tail(
-                    GadgetSpec::button(GadgetRect::new(0, 0, 0, 0), id, kind)
-                        .with_flags(if i < 3 { 0x55 } else { 5 }),
-                )
-            })
-        });
-    for (command, handle) in handles.into_iter().enumerate() {
+) -> CommandBarPlaces {
+    let rects = std::array::from_fn(|command| {
         let rect = layout.and_then(|(layout, slots)| {
             if command == 11 {
                 Some(layout.left_cap)
@@ -73,17 +80,33 @@ fn sync_prepared(
                     .position(|id| *id == Some(command))
                     .and_then(|slot| layout.slot(slot))
             }
-        });
-        if let Some(gadget) = gadgets.list.get_mut(handle) {
-            gadget.is_disabled = rect.is_none();
-            gadget.rect = rect
-                .map(|rect| frame_rect_px(frame.bar_rect_to_frame(rect)))
-                .unwrap_or(GadgetRect::new(0, 0, 0, 0));
-            if command == 11 {
-                gadget.id = if closed { 0xF1 } else { 0xF0 };
-            }
-        }
+        })?;
+        let [x, y, w, h] = frame.bar_rect_to_frame_px(rect);
+        Some(Rect::new(x, y, w, h))
+    });
+    CommandBarPlaces {
+        rects,
+        thumb_id: if closed { 0xF1 } else { 0xF0 },
     }
+}
+
+/// The command bar's buttons under `bar`, each also the picture it draws:
+/// command `i` is `0xD6 + i`, Team01..03 take both buttons (0x55), the rest
+/// the left (5); the thumb is last.
+pub(super) fn build(gui: &mut Gui, bar: NodeId) -> Result<[NodeId; 12], Refused> {
+    let mut nodes = [bar; 12];
+    for (command, node) in nodes.iter_mut().enumerate() {
+        let id = if command == 11 { 0xF0 } else { 0xD6 + command as u16 };
+        *node = drawn_button(gui, bar, id, if command < 3 { BOTH } else { LEFT })?;
+    }
+    Ok(nodes)
+}
+
+pub(super) fn sync(gui: &mut Gui, nodes: &[NodeId; 12], places: &CommandBarPlaces) {
+    for (node, rect) in nodes.iter().zip(places.rects) {
+        place(gui, *node, rect, true);
+    }
+    let _ = gui.set(nodes[11], Prop::Id, Value::Int(i32::from(places.thumb_id)));
 }
 
 /// TabClass::AddCommandBarButtons @ 0x006D1200 gives each placed command
@@ -105,32 +128,22 @@ const COMMAND_TIPS: [(usize, &str); 11] = [
     (3, "Tip:TypeSelect"),
 ];
 
-/// The command bar's registered tooltips `(id, gadget rect, CSF label)`, in
+/// The command bar's registered tooltips `(id, button rect, CSF label)`, in
 /// registration order. The open bar carries the command buttons and the hide
 /// button (AddCommandBarButtons 0x006D1200, from ToggleSidebar 0x006D04F0,
 /// Action 0x006D094D and OpenCommandBar 0x006D1610). Closing removes them
 /// all and adds the show button 0xF1 `Tip:ThumbClosed` (Action 0x80F0
 /// branch, CloseCommandBar 0x006D1660, ToggleSidebar's closed branch
 /// 0x006D0530). The tip bounds are the button's own rectangle.
-pub(crate) fn tooltips(gadgets: &InGameGadgets) -> Vec<(u16, GadgetRect, &'static str)> {
-    let Some(handles) = gadgets.command_bar else {
-        return Vec::new();
-    };
-    let placed = |handle| {
-        gadgets
-            .list
-            .get(handle)
-            .filter(|gadget| !gadget.is_disabled)
-            .map(|gadget| (gadget.id, gadget.rect))
-    };
-    let thumb = placed(handles[11]);
+pub(crate) fn tooltips(places: &CommandBarPlaces) -> Vec<(u16, Rect, &'static str)> {
     let mut tips: Vec<_> = COMMAND_TIPS
         .iter()
         .filter_map(|&(command, label)| {
-            placed(handles[command]).map(|(id, rect)| (id, rect, label))
+            places.rects[command].map(|rect| (0xD6 + command as u16, rect, label))
         })
         .collect();
-    if let Some((id, rect)) = thumb {
+    if let Some(rect) = places.rects[11] {
+        let id = places.thumb_id;
         tips.push((
             id,
             rect,
@@ -144,17 +157,27 @@ pub(crate) fn tooltips(gadgets: &InGameGadgets) -> Vec<(u16, GadgetRect, &'stati
     tips
 }
 
-pub(super) fn apply(state: &mut AppState, result: u16) -> bool {
-    let id = result & !(RESULT_BUTTON | RESULT_RIGHT);
+/// A command-bar button fired: `id` its result id; false when it is none.
+pub(super) fn apply(
+    platform: &mut PlatformState,
+    renderer: &mut RendererState,
+    diag: &DiagnosticsState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &mut ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    persistence: &mut PersistenceState,
+    id: u16,
+    right: bool,
+) -> bool {
     if id == 0xF0 || id == 0xF1 {
         let opening = id == 0xF1;
         // Original gamemd.exe:
         // SidebarInput6D08F5 refuses F1 on Session+300 before its cue,
-        // state or gadget changes. F0 has no defeat guard. The retained
-        // driver has already consumed/released the physical button.
+        // state or gadget changes. F0 has no defeat guard. The chrome has
+        // already consumed/released the physical button.
         if opening
-            && state
-                .match_state
+            && match_state
                 .sim_runtime
                 .runtime()
                 .is_some_and(|runtime| runtime.simulation.local_player_defeated())
@@ -164,17 +187,20 @@ pub(super) fn apply(state: &mut AppState, result: u16) -> bool {
         // 6D0860/6D091A call750920 with Rules+198/+194, even when the
         // existing bar state already matches. Programmatic6D1610/6D1660
         // remain separate soundless paths. Reuse the fixed catalog/player.
-        let sound = state.rules().and_then(|rules| {
-            if opening {
-                rules.general.gui_open_sound()
-            } else {
-                rules.general.gui_close_sound()
-            }
-            .map(str::to_owned)
-        });
-        crate::app::App::play_shell_ui_sound_by_id(state, sound.as_deref());
-        state
-            .match_state
+        crate::app::App::play_shell_rules_sound(
+            frontend,
+            match_state,
+            process_assets,
+            &mut audio.sfx_player,
+            |rules| {
+                if opening {
+                    rules.general.gui_open_sound()
+                } else {
+                    rules.general.gui_close_sound()
+                }
+            },
+        );
+        match_state
             .match_presentation
             .sidebar_gadget_state
             .command_bar_closed = !opening;
@@ -186,25 +212,27 @@ pub(super) fn apply(state: &mut AppState, result: u16) -> bool {
     // Original6D0660 routes these IDs by command identity. Existing action
     // owners retain gameplay authority.
     crate::app::input::dispatch::dispatch_command_bar(
-        state,
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        audio,
+        persistence,
         (id - 0xD6) as usize,
-        result & RESULT_RIGHT != 0,
+        right,
     );
     true
 }
 
-pub(super) fn publish(state: &mut AppState) {
-    let gadgets = &state.match_state.match_presentation.in_game_gadgets;
-    let Some(handles) = gadgets.command_bar else {
-        return;
-    };
-    let pressed = std::array::from_fn::<_, 12, _>(|i| {
-        gadgets.list.get(handles[i]).is_some_and(|g| {
-        matches!(g.behavior,GadgetBehavior::Button(b) if if i == 9 { b.is_on } else { b.is_pressed })
-    })
-    });
-    let out = &mut state.match_state.match_presentation.sidebar_gadget_state;
-    out.command_pressed.copy_from_slice(&pressed[..11]);
+/// The bar's pushed looks. The PlanningMode button's look (slot 9) is the
+/// PlanMgr owner's mode, written every frame by
+/// `sidebar_gadgets::update_sidebar_gadget_state`.
+pub(super) fn publish(presentation: &mut MatchPresentationState, pressed: [bool; 12]) {
+    let out = &mut presentation.sidebar_gadget_state;
+    out.command_pressed[..9].copy_from_slice(&pressed[..9]);
+    out.command_pressed[10] = pressed[10];
     out.command_thumb_pressed = pressed[11];
 }
 
@@ -213,86 +241,17 @@ mod tests {
     use super::*;
     use crate::ui::sidebar::command_bar::CommandBarLayout;
 
-    #[test]
-    fn planning_flip_uses_real_release_and_authoritative_projection() {
-        let layout =
-            CommandBarLayout::new([800, 600], 168, [28, 32], [52, 32], [28, 32], true).unwrap();
-        let mut gadgets = InGameGadgets::new();
-        sync_prepared(
-            &mut gadgets,
-            Some(&(layout.clone(), vec![Some(9)])),
-            false,
-            sidebar::SidebarFrame::native(800, 600),
-        );
-        let handle = gadgets.command_bar.unwrap()[9];
-        let rect = gadgets.list.get(handle).unwrap().rect;
-        let input = |key, held| GadgetInput {
-            queued_key: key,
-            event_x: rect.x + 1,
-            event_y: rect.y + 1,
-            mouse_x: rect.x + 1,
-            mouse_y: rect.y + 1,
-            left_held: held,
-            ..Default::default()
-        };
-        tick(
-            &mut gadgets.list,
-            &mut gadgets.focus,
-            &GadgetInput::default(),
-            &mut gadgets.out,
-        );
-        assert_eq!(
-            tick(
-                &mut gadgets.list,
-                &mut gadgets.focus,
-                &input(KEY_LMB_DOWN, true),
-                &mut gadgets.out
-            ),
-            0
-        );
-        assert!(
-            matches!(gadgets.list.get(handle).unwrap().behavior, GadgetBehavior::Button(button) if !button.is_on)
-        );
-        assert_eq!(
-            tick(
-                &mut gadgets.list,
-                &mut gadgets.focus,
-                &input(KEY_LMB_UP, false),
-                &mut gadgets.out
-            ),
-            0x80DF
-        );
-        assert!(
-            matches!(gadgets.list.get(handle).unwrap().behavior, GadgetBehavior::Button(button) if button.is_on)
-        );
-        // Keyboard release can clear the mode independently of this gadget.
-        sync_planning_button(&mut gadgets, false);
-        assert!(
-            matches!(gadgets.list.get(handle).unwrap().behavior, GadgetBehavior::Button(button) if !button.is_on)
-        );
-        sync_planning_button(&mut gadgets, true);
-        assert!(
-            matches!(gadgets.list.get(handle).unwrap().behavior, GadgetBehavior::Button(button) if button.is_on)
-        );
+    fn layout(open: bool) -> CommandBarLayout {
+        CommandBarLayout::new([800, 600], 168, [28, 32], [52, 32], [28, 32], open).unwrap()
     }
 
     #[test]
     fn command_bar_tips_follow_add_command_bar_buttons_order_and_bar_state() {
-        let layout = |open| {
-            CommandBarLayout::new([800, 600], 168, [28, 32], [52, 32], [28, 32], open).unwrap()
-        };
         // Retail UIMD.INI [AdvancedCommandBar] ButtonList:
         // Team01,Team02,TypeSelect,Deploy,Guard,PlanningMode.
         let slots = vec![Some(0), Some(1), Some(3), Some(4), Some(6), Some(9)];
         let native = sidebar::SidebarFrame::native(800, 600);
-        let mut gadgets = InGameGadgets::new();
-        sync_prepared(
-            &mut gadgets,
-            Some(&(layout(true), slots.clone())),
-            false,
-            native,
-        );
-        let tips = tooltips(&gadgets);
+        let tips = tooltips(&places_for(Some(&(layout(true), slots.clone())), false, native));
         let labels: Vec<_> = tips.iter().map(|tip| (tip.0, tip.2)).collect();
         assert_eq!(
             labels,
@@ -306,127 +265,65 @@ mod tests {
                 (0xF0, "Tip:ThumbOpen"),
             ]
         );
-        assert_eq!(tips[3].1, GadgetRect::new(32, 568, 52, 32));
-        assert_eq!(tips[6].1, GadgetRect::new(4, 568, 28, 32));
-        sync_prepared(&mut gadgets, Some(&(layout(false), slots)), true, native);
+        assert_eq!(tips[3].1, Rect::new(32, 568, 52, 32));
+        assert_eq!(tips[6].1, Rect::new(4, 568, 28, 32));
         assert_eq!(
-            tooltips(&gadgets),
-            [(0xF1, GadgetRect::new(576, 568, 28, 32), "Tip:ThumbClosed")]
+            tooltips(&places_for(Some(&(layout(false), slots)), true, native)),
+            [(0xF1, Rect::new(576, 568, 28, 32), "Tip:ThumbClosed")]
         );
     }
 
     #[test]
-    fn command_bar_open_closed_and_pressed_use_the_real_gadget_driver() {
-        let layout = |open| {
-            CommandBarLayout::new([800, 600], 168, [28, 32], [52, 32], [28, 32], open).unwrap()
-        };
+    fn command_bar_open_closed_and_pressed_use_the_chrome_layer() {
         // Retail UIMD.INI [AdvancedCommandBar] ButtonList:
         // Team01,Team02,TypeSelect,Deploy,Guard,PlanningMode.
         let slots = vec![Some(0), Some(1), Some(3), Some(4), Some(6), Some(9)];
         let native = sidebar::SidebarFrame::native(800, 600);
-        let mut gadgets = InGameGadgets::new();
-        sync_prepared(
-            &mut gadgets,
-            Some(&(layout(true), slots.clone())),
-            false,
-            native,
-        );
-        let handles = gadgets.command_bar.unwrap();
+        let (mut gui, nodes) = test_layer();
+        let bar = nodes.command_bar;
+        sync(&mut gui, &bar, &places_for(Some(&(layout(true), slots.clone())), false, native));
+        assert_eq!(rect_of(&gui, bar[0]), Some(Rect::new(32, 568, 52, 32)));
+        assert!(!enabled(&gui, bar[2]), "TypeSelect has no slot of its own here");
+        // The press is silent and shows pressed; the release fires.
+        assert!(edge(&mut gui, 40, 570, GuiButton::Left, true).1.is_empty());
+        assert_eq!(gui.pressed_in(nodes.layer), Some(bar[0]));
+        assert!(gui.shows_pressed_in(nodes.layer, bar[0]));
+        assert_eq!(edge(&mut gui, 40, 570, GuiButton::Left, false).1, [(0xD6, false)]);
+        assert!(!gui.shows_pressed_in(nodes.layer, bar[0]));
+        edge(&mut gui, 8, 570, GuiButton::Left, true);
+        assert_eq!(edge(&mut gui, 8, 570, GuiButton::Left, false).1, [(0xF0, false)]);
+        sync(&mut gui, &bar, &places_for(Some(&(layout(false), slots)), true, native));
+        assert!(bar[..11].iter().all(|node| !enabled(&gui, *node)));
+        assert_eq!(rect_of(&gui, bar[11]), Some(Rect::new(576, 568, 28, 32)));
+        assert!(edge(&mut gui, 580, 570, GuiButton::Left, true).1.is_empty());
+        assert_eq!(gui.pressed_in(nodes.layer), Some(bar[11]));
+        assert_eq!(edge(&mut gui, 580, 570, GuiButton::Left, false).1, [(0xF1, false)]);
+        assert_eq!(gui.pressed_in(nodes.layer), None);
+    }
+
+    #[test]
+    fn team_buttons_take_the_right_button_and_planning_the_left_only() {
+        let slots = vec![Some(0), Some(9)];
+        let native = sidebar::SidebarFrame::native(800, 600);
+        let (mut gui, nodes) = test_layer();
+        let bar = nodes.command_bar;
+        sync(&mut gui, &bar, &places_for(Some(&(layout(true), slots)), false, native));
+        let team = rect_of(&gui, bar[0]).unwrap();
+        let planning = rect_of(&gui, bar[9]).unwrap();
+        // Team01's 0x55 fires on a right release with the right marker.
+        edge(&mut gui, team.x + 1, team.y + 1, GuiButton::Right, true);
         assert_eq!(
-            gadgets.list.get(handles[0]).unwrap().rect,
-            GadgetRect::new(32, 568, 52, 32)
+            edge(&mut gui, team.x + 1, team.y + 1, GuiButton::Right, false).1,
+            [(0xD6, true)]
         );
-        assert!(gadgets.list.get(handles[2]).unwrap().is_disabled);
-        let input = |key, x, left| GadgetInput {
-            queued_key: key,
-            event_x: x,
-            event_y: 570,
-            mouse_x: x,
-            mouse_y: 570,
-            left_held: left,
-            ..Default::default()
-        };
-        tick(
-            &mut gadgets.list,
-            &mut gadgets.focus,
-            &GadgetInput::default(),
-            &mut gadgets.out,
-        );
-        tick(
-            &mut gadgets.list,
-            &mut gadgets.focus,
-            &input(KEY_LMB_DOWN, 40, true),
-            &mut gadgets.out,
-        );
-        assert!(
-            matches!(gadgets.list.get(handles[0]).unwrap().behavior,GadgetBehavior::Button(b) if b.is_pressed)
-        );
+        // PlanningMode's mask 5 takes no right button at all.
+        edge(&mut gui, planning.x + 1, planning.y + 1, GuiButton::Right, true);
+        assert_eq!(gui.pressed_in(nodes.layer), None);
+        edge(&mut gui, planning.x + 1, planning.y + 1, GuiButton::Left, true);
+        assert_eq!(gui.pressed_in(nodes.layer), Some(bar[9]));
         assert_eq!(
-            tick(
-                &mut gadgets.list,
-                &mut gadgets.focus,
-                &input(KEY_LMB_UP, 40, false),
-                &mut gadgets.out
-            ),
-            0x80D6
+            edge(&mut gui, planning.x + 1, planning.y + 1, GuiButton::Left, false).1,
+            [(0xDF, false)]
         );
-        assert!(
-            matches!(gadgets.list.get(handles[0]).unwrap().behavior,GadgetBehavior::Button(b) if !b.is_pressed)
-        );
-        tick(
-            &mut gadgets.list,
-            &mut gadgets.focus,
-            &input(KEY_LMB_DOWN, 8, true),
-            &mut gadgets.out,
-        );
-        assert_eq!(
-            tick(
-                &mut gadgets.list,
-                &mut gadgets.focus,
-                &input(KEY_LMB_UP, 8, false),
-                &mut gadgets.out
-            ),
-            0x80F0
-        );
-        sync_prepared(&mut gadgets, Some(&(layout(false), slots)), true, native);
-        assert!(
-            handles[..11]
-                .iter()
-                .all(|h| gadgets.list.get(*h).unwrap().is_disabled)
-        );
-        assert_eq!(
-            gadgets.list.get(handles[11]).unwrap().rect,
-            GadgetRect::new(576, 568, 28, 32)
-        );
-        tick(
-            &mut gadgets.list,
-            &mut gadgets.focus,
-            &input(KEY_LMB_DOWN, 580, true),
-            &mut gadgets.out,
-        );
-        let press = gadgets
-            .out
-            .dispatches
-            .iter()
-            .find(|record| record.handle == handles[11])
-            .unwrap();
-        assert_eq!((press.key_after, press.action_result), (0, 1));
-        assert_eq!(
-            tick(
-                &mut gadgets.list,
-                &mut gadgets.focus,
-                &input(KEY_LMB_UP, 580, false),
-                &mut gadgets.out
-            ),
-            0x80F1
-        );
-        let release = gadgets
-            .out
-            .dispatches
-            .iter()
-            .find(|record| record.handle == handles[11])
-            .unwrap();
-        assert_eq!((release.key_after, release.action_result), (0x80F1, 1));
-        assert!(gadgets.focus.sticky.is_none());
     }
 }

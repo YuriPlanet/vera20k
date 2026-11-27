@@ -653,7 +653,10 @@ fn admit_without_radar_geometry_still_gates_by_cell_distance() {
 /// prior and all its phase/scalar/lifetime results, not stock radar pixels.
 #[test]
 fn native_unit_ready_marker_matches_every_original_tick_and_cleanup() {
-    use crate::util::read_helpers::{read_i32_le, read_u16_le, read_u32_le};
+    use crate::util::read_helpers;
+    let read_u16_le = |raw: &[u8], offset| read_helpers::read_u16_le(raw, offset).unwrap();
+    let read_u32_le = |raw: &[u8], offset| read_helpers::read_u32_le(raw, offset).unwrap();
+    let read_i32_le = |raw: &[u8], offset| read_helpers::read_i32_le(raw, offset).unwrap();
 
     let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
     else {
@@ -802,4 +805,31 @@ fn draw_into(
         let at = ((y * width + x) * 4) as usize;
         rgba[at..at + 4].copy_from_slice(&color);
     });
+}
+
+#[test]
+fn infinite_general_radar_scalars_tick_as_the_masked_fpu_does() {
+    // A rules file or map may write doubles gamemd's ReadDouble turns into
+    // infinities; the tick carries on with the masked x87 results.
+    let config = RadarEventConfig::from_ini(&crate::rules::ini_parser::IniFile::from_str(
+        "[General]\nRadarEventMinRadius=8\nRadarEventSpeed=1e999\n\
+         RadarEventRotationSpeed=1e999\nRadarEventColorSpeed=-1e999\n",
+    ));
+    let mut queue = queue_ready();
+    assert!(queue.create(
+        RadarEventType::BaseUnderAttack,
+        source((20, 20), (40, 40)),
+        0,
+        (140, 108),
+        &config
+    ));
+    for frame in 0..4 {
+        queue.advance_to_frame(frame, &config);
+    }
+    let event = &queue.events[0];
+    // radius - inf is -inf, not Greater than the minimum: the minimum stays.
+    assert_eq!(event.radius, 8.0);
+    // An infinite fade step overshoots every tick, and each bounce clamps
+    // the fade back to 0 or 1.
+    assert!(event.fade == 0.0 || event.fade == 1.0, "{}", event.fade);
 }

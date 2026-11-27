@@ -575,9 +575,9 @@ pub trait BounceTerrain {
     fn selected_is_bridge(&self, cell: &Self::Cell) -> bool;
     /// `CellClass::GetGroundHeight` at the given world coordinate, in leptons.
     fn ground_height_leptons(&self, coord: IVec3) -> i32;
-    /// `CellClass+0x140 & 0x100` — the cell carries a bridge deck.
-    fn is_bridge_cell(&self, coord: IVec3) -> bool {
-        self.selected_is_bridge(&self.select_cell(coord))
+    /// Absolute Z of a live high-bridge deck, if retained by the map.
+    fn selected_fixed_deck_z(&self, _cell: &Self::Cell) -> Option<i32> {
+        None
     }
     /// `CellClass+0x11B`, the cell's height level. Only the difference between
     /// the pre- and post-move cells is read.
@@ -716,14 +716,23 @@ impl BounceState {
         let ground = terrain.ground_height_leptons(coord);
         // `FILD ground` then `FSUBR float [pos.Z]` — the reverse subtract makes
         // this `pos.Z - ground`, not `ground - pos.Z`.
-        let mut height_above = X87Chop53::ftol_i64(X87Chop53::sub(
-            X87Chop53::load_f32(self.position[2])?,
-            X87Chop53::load_i32(ground),
-        ))? as i32;
-        if terrain.is_bridge_cell(coord)
-            && height_above >= crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS
-        {
-            height_above -= crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS;
+        let z = X87Chop53::load_f32(self.position[2])?;
+        let height_above_surface = |surface| {
+            X87Chop53::ftol_i64(X87Chop53::sub(z, X87Chop53::load_i32(surface)))
+                .map(|height| height as i32)
+        };
+        let mut height_above = height_above_surface(ground)?;
+        let cell = terrain.select_cell(coord);
+        if terrain.selected_is_bridge(&cell) {
+            if let Some(deck) = terrain.selected_fixed_deck_z(&cell) {
+                if X87Chop53::compare(z, X87Chop53::load_i32(deck))
+                    != crate::util::native_x87::X87Ordering::Less
+                {
+                    height_above = height_above_surface(deck)?;
+                }
+            } else if height_above >= crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS {
+                height_above -= crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS;
+            }
         }
         let vx = X87Chop53::ftol_i64(X87Chop53::load_f32(self.velocity[0])?)? as i32;
         let vy = X87Chop53::ftol_i64(X87Chop53::load_f32(self.velocity[1])?)? as i32;
@@ -757,10 +766,10 @@ impl BounceState {
     ///    `0.0 < AVM` gate false everywhere in the image.
     /// 3. `Position += Velocity` (`FUN_0043A100`), between the pre- and
     ///    post-move `ftol` coordinate captures.
-    /// 4. Ground height at the POST-move coordinate, then the deck plane
-    ///    `ground + DAT_0089C76C`.
-    /// 5. Deck crossing, gated on either cell carrying the bridge flag: `fell`
-    ///    = new below the deck and old at or above it; `rose` = the reverse.
+    /// 4. Ground height at the POST-move coordinate. The native deck fallback
+    ///    is `ground + DAT_0089C76C`.
+    /// 5. Deck crossing uses the new bridge cell, or the old one on exit.
+    ///    `fell` = new below the deck and old at or above it; `rose` is the reverse.
     /// 6. Building/wall lookup, gated by the `150.0` proximity window ALONE —
     ///    that gate does not apply to ordinary ground contact.
     /// 7. Snap ladder. Below the ground surface the body always reflects; at or
@@ -795,12 +804,25 @@ impl BounceState {
         let new_coord = ftol_coord(self.position)?;
 
         let ground = terrain.ground_height_leptons(new_coord);
-        let deck = ground.wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS);
         let new_cell = terrain.select_cell(new_coord);
+        // Bounce439B00: check the post-move Cell+0x140 flag first. If it
+        // fails, retain the old cell's fixed plane while leaving its edge.
+        let old_cell;
+        let bridge_cell = if terrain.selected_is_bridge(&new_cell) {
+            Some(&new_cell)
+        } else {
+            old_cell = terrain.select_cell(old_coord);
+            terrain.selected_is_bridge(&old_cell).then_some(&old_cell)
+        };
+        let deck = bridge_cell
+            .and_then(|cell| terrain.selected_fixed_deck_z(cell))
+            .unwrap_or_else(|| {
+                ground.wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS)
+            });
 
         let mut fell_through_deck = false;
         let mut rose_through_deck = false;
-        if terrain.selected_is_bridge(&new_cell) || terrain.is_bridge_cell(old_coord) {
+        if bridge_cell.is_some() {
             if new_coord.z < deck {
                 fell_through_deck = deck <= old_coord.z;
             } else {

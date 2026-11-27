@@ -62,9 +62,7 @@ use crate::sim::movement::ground_pose::{
 use crate::sim::terrain_object::TerrainObjectState;
 use crate::sim::world::Simulation;
 use crate::util::fixed_math::SimFixed;
-use crate::util::lepton::{
-    BRIDGE_DECK_HEIGHT_LEPTONS, LEPTONS_PER_LEVEL, WEAPON_RANGE_ALWAYS_IN_RANGE_LEPTONS,
-};
+use crate::util::lepton::{LEPTONS_PER_LEVEL, WEAPON_RANGE_ALWAYS_IN_RANGE_LEPTONS};
 use crate::util::native_ballistics::{
     BallisticGravity, ballistic_can_reach, ballistic_launch_speed,
 };
@@ -235,7 +233,7 @@ fn occupied_range_leptons(
 /// MinimumRange test and the arcing split, so both arms and a cell target
 /// read it.
 fn open_topped_range_bonus_leptons(attacker: &GameEntity, rules: &RuleSet) -> i64 {
-    if attacker.passenger_role.in_open_transport() {
+    if attacker.passenger_role().in_open_transport() {
         i64::from(rules.garrison_rules.open_topped_range_bonus) << 8
     } else {
         0
@@ -305,7 +303,13 @@ fn elevation_bonus_leptons(
     };
     let height = |[x, y]: [i32; 2]| {
         let cell = cells.lookup(((x / 256) as i16, (y / 256) as i16));
-        crate::sim::map::bridge_topology::CellBridgeView::from_query(cells, cell).effective_height()
+        let view = crate::sim::map::bridge_topology::CellBridgeView::from_query(cells, cell);
+        if view.is_anchor()
+            && let Some(deck) = cells.terrain().corrected_high_bridge_deck_at(cell)
+        {
+            return i32::from(deck);
+        }
+        view.effective_height()
     };
     let firer_height = height(object_center_xy(attacker));
     let drop = firer_height.wrapping_sub(height(target_xy)).max(0);
@@ -727,14 +731,11 @@ pub(crate) fn native_ground_target_z(x: i32, y: i32, cells: &NativeCellQuery<'_>
     )
     .ok()?;
     let cell = cells.lookup_world(x, y);
-    Some(
-        i64::from(ground)
-            + if cells.flags(cell) & 0x100 != 0 {
-                i64::from(BRIDGE_DECK_HEIGHT_LEPTONS)
-            } else {
-                0
-            },
-    )
+    Some(i64::from(if cells.flags(cell) & 0x100 != 0 {
+        crate::sim::movement::ground_pose::deck_surface_z(cells, cell, ground)
+    } else {
+        ground
+    }))
 }
 
 /// InRange6F7601 first reads source flags; only a structural span reaches
@@ -758,7 +759,9 @@ fn native_source_under_bridge(
     ) else {
         return false;
     };
-    let top = i64::from(ground) + i64::from(BRIDGE_DECK_HEIGHT_LEPTONS);
+    let top = i64::from(crate::sim::movement::ground_pose::deck_surface_z(
+        cells, cell, ground,
+    ));
     src.2 < top && target_z >= top
 }
 
@@ -858,16 +861,19 @@ pub(crate) fn fire_source_for_target(
         // 6F7821..6F7845 truncates signed world XY toward zero before the
         // packed CellCoord lookup5657A0. Source substitution is independent
         // of whether the target is an Abstract or retained Cell receiver.
-        let (cell_x, cell_y, cell_z) =
-            native_cell_own_coords(cells.lookup(((x / 256) as i16, (y / 256) as i16)), cells)?;
+        let cell = cells.lookup(((x / 256) as i16, (y / 256) as i16));
+        let (cell_x, cell_y, cell_z) = native_cell_own_coords(cell, cells)?;
         x = cell_x;
         y = cell_y;
-        z = cell_z
-            + if attacker.on_bridge() {
-                i64::from(BRIDGE_DECK_HEIGHT_LEPTONS)
-            } else {
-                0
-            };
+        z = if attacker.on_bridge() {
+            i64::from(crate::sim::movement::ground_pose::deck_surface_z(
+                cells,
+                cell,
+                cell_z as i32,
+            ))
+        } else {
+            cell_z
+        };
     }
 
     if is_high_flying_in_query(attacker, cells, Some(rules_context)) {
@@ -953,7 +959,7 @@ impl crate::sim::world::Simulation {
             .substrate
             .entities
             .get(id)
-            .filter(|entity| entity.fire_particle_system.system().is_some())
+            .filter(|entity| entity.seldom.fire_particle_system.system().is_some())
             .and_then(|entity| entity.attack_target.target())
         else {
             return;
@@ -1140,6 +1146,7 @@ mod tests {
     use crate::sim::movement::locomotor::LocomotorState;
     use crate::sim::world::Simulation;
     use crate::util::fixed_math::{SIM_ZERO, SimFixed};
+    use crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS;
     use crate::util::lepton::{HIGH_FLIGHT_THRESHOLD_LEPTONS, LEPTONS_PER_LEVEL};
 
     fn ground_entity_at_level(level: u8) -> GameEntity {
@@ -1398,14 +1405,17 @@ mod tests {
             let mut actor =
                 GameEntity::test_default(1, "ATKR", "Test", (x / 256) as u16, (y / 256) as u16);
             let category = if let Some(building) = input.get("building") {
-                actor.type_facts.set_foundation_for_test(
+                actor.seldom.type_facts.set_foundation_for_test(
                     rules.object("ATKR").unwrap().foundation.clone().into(),
                 );
-                actor.passenger_role.occupants_mut().set_ids_for_test(
-                    (2..2 + building["occupants"].as_u64().unwrap_or(1))
-                        .rev()
-                        .collect(),
-                );
+                actor
+                    .passenger_role_mut_for_test()
+                    .occupants_mut()
+                    .set_ids_for_test(
+                        (2..2 + building["occupants"].as_u64().unwrap_or(1))
+                            .rev()
+                            .collect(),
+                    );
                 EntityCategory::Structure
             } else if input["unit"] == true {
                 EntityCategory::Unit
@@ -1438,8 +1448,9 @@ mod tests {
                 );
             }
             if input["open_topped"] == true {
-                actor.passenger_role =
-                    crate::sim::passenger::PassengerRole::inside_for_test(2, true);
+                actor.set_passenger_role_for_test(
+                    crate::sim::passenger::PassengerRole::inside_for_test(2, true),
+                );
             }
             let mut weapon = rules.weapon("GUN").unwrap().clone();
             weapon.range_leptons = input["range"].as_i64().unwrap_or(768) as i32;
@@ -1726,6 +1737,37 @@ mod tests {
                 "InRange6F724E sentinel precedes live or missing Object reads: {target:?}"
             );
         }
+    }
+
+    #[test]
+    fn a_long_range_mod_weapon_reaches_across_a_large_map() {
+        let rules = rules_with_weapon("Damage=1\nROF=20\nRange=300\nWarhead=WH", "", "");
+        let weapon = rules.weapon("GUN").unwrap();
+        // Two playable cells on a 350 by 350 map using extended coordinates.
+        let terrain = ResolvedTerrainGrid::from_cells(
+            700,
+            700,
+            [(150, 250), (440, 250)]
+                .map(|(x, y)| crate::map::resolved_terrain::test_filled_smudge_cell(x, y))
+                .into(),
+        );
+        let attacker = ground_attacker(150, 250, 0, "ATKR");
+        let mut entities = Simulation::new();
+        entities
+            .substrate
+            .entities
+            .insert(ground_target(440, 250, 0, "TGT"));
+        assert!(compute_in_range(
+            &attacker,
+            src_at_cell(150, 250, 0),
+            &TargetKind::Entity(200),
+            weapon,
+            &rules,
+            &test_interner(),
+            &entities,
+            &terrain,
+            &LineOfFireInputs::terrain_only(),
+        ));
     }
 
     // Test 2: Boundary inclusive max
@@ -2385,6 +2427,38 @@ mod tests {
             ),
             "attacker standing on the deck is above the strict source test"
         );
+    }
+
+    #[test]
+    fn fixed_deck_below_native_rise_drives_aim_and_the_inrange_source_gate() {
+        use crate::map::bridge_facts::{BRIDGE_FLAG_ANCHOR_SELF, BRIDGE_FLAG_STRUCTURAL};
+
+        let mut terrain = terrain_with_bridge_cells(&[(5, 5)]);
+        terrain.cell_mut_for_test(5, 5).unwrap().level = 6;
+        let anchor = terrain.native_cell_identity((5, 5));
+        terrain.write_native_cell_flags(anchor, BRIDGE_FLAG_ANCHOR_SELF | BRIDGE_FLAG_STRUCTURAL);
+        terrain.set_authored_high_bridge_deck(anchor, 8);
+        let aim = crate::sim::projectile::cell_target_coord(Some(&terrain), 5, 5);
+        assert_eq!(aim.z, 832);
+
+        let attacker = ground_attacker(5, 5, 6, "ATKR");
+        let target = TargetKind::Cell(5, 5);
+        let entities = Simulation::new();
+        let src = |z| (i64::from(aim.x), i64::from(aim.y), z);
+        assert!(!in_range_at(
+            &attacker,
+            src(831),
+            &target,
+            &terrain,
+            &entities
+        ));
+        assert!(in_range_at(
+            &attacker,
+            src(832),
+            &target,
+            &terrain,
+            &entities
+        ));
     }
 
     /// gamemd tests only the SOURCE cell's flag word. A bridge cell under the

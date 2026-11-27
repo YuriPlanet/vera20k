@@ -323,7 +323,7 @@ fn tube_hierarchy_constant_walk_endpoints_match_original_executable() {
             |v: &serde_json::Value| (v[0].as_i64().unwrap() as u16, v[1].as_i64().unwrap() as u16);
         let token = case["token"].as_i64().unwrap() as i32;
         assert_eq!(
-            hierarchy_walk_tube_path(&terrain, coord(&case["start"]), &[token]),
+            terrain.walk_native_path(coord(&case["start"]), &[token]),
             Ok(coord(&case["end"])),
             "raw token {token}"
         );

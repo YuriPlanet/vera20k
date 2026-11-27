@@ -18,7 +18,7 @@ pub(super) fn mission_repair(
     rules: &RuleSet,
     hospital: u64,
     registry: Option<&OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> i32 {
     let now = sim.session.binary_frame();
     //44BA44 reads the live BuildingType+684 Ammo, not an instance cache.
@@ -85,11 +85,11 @@ pub(super) fn mission_repair(
                         building.position.ry(),
                     ),
                 });
-                if let Some(sound_id) = rules.crate_rules.heal_crate_sound.clone() {
+                if let Some(sound_id) = rules.crate_rules.heal_crate_sound.as_deref() {
                     let coordinate =
                         crate::sim::movement::ground_pose::position_world_coord(&building.position);
                     sim.sound_events.emit(SimSoundEvent::voc_at_world_coord(
-                        sound_id,
+                        rules.sound_name(sound_id),
                         crate::sim::anim_class::AnimWorldCoord {
                             x: coordinate.x,
                             y: coordinate.y,
@@ -106,10 +106,9 @@ pub(super) fn mission_repair(
             let _ = depart_cargo_head(
                 sim,
                 rules,
-                registry,
                 hospital,
                 DepartureRoute::Hospital,
-                |sim, patient| {
+                |sim, patient, effects| {
                     let _ = crate::sim::production::exit_produced_object(
                         sim,
                         rules,

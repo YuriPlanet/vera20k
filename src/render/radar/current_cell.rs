@@ -7,7 +7,6 @@
 use std::collections::HashMap;
 
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
-use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::overlay_grid::OverlayGrid;
 use crate::sim::runtime::SimRuntime;
@@ -27,7 +26,6 @@ use super::helpers::{
 pub(crate) struct CurrentRadarCellAuthority<'a> {
     resolved_terrain: Option<&'a ResolvedTerrainGrid>,
     overlay_grid: Option<&'a OverlayGrid>,
-    overlay_registry: Option<&'a OverlayTypeRegistry>,
     rules: Option<&'a RuleSet>,
 }
 
@@ -35,13 +33,11 @@ impl<'a> CurrentRadarCellAuthority<'a> {
     pub(crate) fn new(
         resolved_terrain: Option<&'a ResolvedTerrainGrid>,
         overlay_grid: Option<&'a OverlayGrid>,
-        overlay_registry: Option<&'a OverlayTypeRegistry>,
         rules: Option<&'a RuleSet>,
     ) -> Self {
         Self {
             resolved_terrain,
             overlay_grid,
-            overlay_registry,
             rules,
         }
     }
@@ -55,7 +51,6 @@ impl<'a> CurrentRadarCellAuthority<'a> {
         Self::new(
             runtime.simulation.resolved_terrain(),
             runtime.simulation.overlay_grid(),
-            Some(&runtime.resources.overlay_registry),
             Some(&runtime.resources.rules),
         )
     }
@@ -128,7 +123,14 @@ impl<'a> CurrentRadarCellAuthority<'a> {
             let cell = grid.cell(rx, ry);
             let data = if high_walker { 0 } else { cell.overlay_data };
             cell.overlay_id.map(|overlay_id| {
-                minimap_overlay_datum(rx, ry, overlay_id, data, self.overlay_registry, self.rules)
+                minimap_overlay_datum(
+                    rx,
+                    ry,
+                    overlay_id,
+                    data,
+                    self.rules.map(RuleSet::overlay_registry),
+                    self.rules,
+                )
             })
         });
         current_cell_radar_source(

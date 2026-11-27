@@ -11,6 +11,7 @@ use crate::sim::command_queue::{
     CommandDispatchClock, CommandDispatchHouse, CommandDispatchMode, DoListEvent, DoListHost,
     DoListInsertion, DoListRetimeWindow,
 };
+use crate::sim::control_authority::CommandCapability;
 use crate::sim::world::FrameEffects;
 
 use crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL;
@@ -19,7 +20,13 @@ use crate::map::entities::EntityCategory;
 use crate::map::resolved_terrain::{NativeCellQuery, ResolvedTerrainGrid};
 use crate::rules::locomotor_type::MovementZone;
 use crate::rules::ruleset::RuleSet;
-use crate::sim::command::{Command, CommandEnvelope};
+use crate::sim::command::{
+    ABSTRACT_OBJECT_TARGET_KIND, CELL_TARGET_KIND, Command, CommandEnvelope, CommandSender,
+    MEGAMISSION_ACTION_OFFSET, MEGAMISSION_DESTINATION_KIND_OFFSET,
+    MEGAMISSION_DESTINATION_VALUE_OFFSET, MEGAMISSION_OPCODE, MEGAMISSION_SECONDARY_KIND_OFFSET,
+    MEGAMISSION_SECONDARY_VALUE_OFFSET, MEGAMISSION_SOURCE_KIND_OFFSET,
+    MEGAMISSION_SOURCE_VALUE_OFFSET, MegaMissionRecord,
+};
 use crate::sim::intern::InternedId;
 use crate::sim::movement::group_destination;
 use crate::sim::movement::infantry_entry::InfantryEntryArgs;
@@ -41,7 +48,7 @@ impl Simulation {
     /// Queue_Options647040 checks the current House's result/death flags and
     /// appends OPTIONS. Full admission returns false without opening a menu.
     pub fn queue_options_request(&mut self) -> bool {
-        let Some(owner) = self.session.current_house() else {
+        let Some(owner) = self.control_projection().local_command_house() else {
             return false;
         };
         let Some(house) = self.houses.get(&owner) else {
@@ -70,10 +77,10 @@ impl Simulation {
         &mut self,
         commands: impl IntoIterator<Item = CommandEnvelope>,
     ) -> bool {
-        if self.replaying_recorded_commands {
+        if *self.replaying_recorded_commands {
             return false;
         }
-        let network = self.session.game_mode().is_network();
+        let network = self.session.execution_topology().is_lockstep();
         let mut prepared = Vec::new();
         let mut valid = true;
         for command in commands {
@@ -135,8 +142,18 @@ impl Simulation {
         command: CommandEnvelope,
         prepared: &mut Vec<(QueuedCommand, bool)>,
     ) -> bool {
-        if Self::command_uses_frame_ingress(&command.payload, self.session.game_mode().is_network())
+        if self.session.has_custom_control_grants()
+            && let Command::PlanningRecord { record } | Command::SynchronizedRecord { record } =
+                &command.payload
+            && (self.local_grant_source().map(|(source, _)| source) != Some(record.house_id())
+                || super::planning::planning_dispatch_record(record))
         {
+            return false;
+        }
+        if Self::command_uses_frame_ingress(
+            &command.payload,
+            self.session.execution_topology().is_lockstep(),
+        ) {
             prepared.push((QueuedCommand::from_envelope(command), true));
             return true;
         }
@@ -205,7 +222,7 @@ impl Simulation {
     }
 
     fn local_command_slots(&self, include_control_reserve: bool) -> usize {
-        if !self.session.game_mode().is_network() {
+        if !self.session.execution_topology().is_lockstep() {
             return crate::sim::command_queue::SINGLE_PLAYER_COMMAND_CAPACITY
                 .saturating_sub(self.local_commands.native_len())
                 .saturating_sub(self.pending_commands.native_len())
@@ -233,11 +250,32 @@ impl Simulation {
     /// This process's command sender: its current House's index, or its own
     /// network source while players share Houses.
     pub(super) fn local_command_source(&self) -> Option<i8> {
-        if let Some(source) = self.session.local_shared_house_source() {
+        if self.session.has_custom_control_grants() {
+            return self.local_grant_source().map(|(source, _)| source);
+        }
+        self.local_view_command_source().or_else(|| {
+            self.local_commands
+                .iter()
+                .find_map(|entry| entry.record().map(|record| record.house_id()))
+        })
+    }
+
+    pub(super) fn local_admitted_command_source(&self) -> Option<i8> {
+        if self.session.watcher() {
+            return None;
+        }
+        if self.session.shares_houses() {
+            return self.session.local_shared_house_source();
+        }
+        self.local_view_command_source()
+    }
+
+    fn local_view_command_source(&self) -> Option<i8> {
+        let view = self.session.local_view_identity();
+        if let Some(source) = view.shared_house_source {
             return Some(source);
         }
-        self.session
-            .current_house()
+        view.current_house
             .and_then(|owner| {
                 self.houses
                     .order()
@@ -245,11 +283,6 @@ impl Simulation {
                     .position(|candidate| *candidate == owner)
             })
             .and_then(|index| i8::try_from(index).ok())
-            .or_else(|| {
-                self.local_commands
-                    .iter()
-                    .find_map(|entry| entry.record().map(|record| record.house_id()))
-            })
     }
 
     fn queued_command_entries(&self) -> impl Iterator<Item = &QueuedCommand> + '_ {
@@ -276,15 +309,15 @@ impl Simulation {
         let receipt = record.then(|| command.replay_envelope());
         let accepted = self.pending_commands.admit_bounded(
             command,
-            self.dispatch_reserved_slots,
-            if self.session.game_mode().is_network() {
+            *self.dispatch_reserved_slots,
+            if self.session.execution_topology().is_lockstep() {
                 crate::sim::command_queue::NETWORK_COMMAND_CAPACITY
             } else {
                 // Room stays for the queued input, so its transfer is never refused.
                 crate::sim::command_queue::SINGLE_PLAYER_DOLIST_CAPACITY
                     .saturating_sub(self.local_commands.native_len())
             },
-            if self.session.game_mode().is_network() {
+            if self.session.execution_topology().is_lockstep() {
                 crate::sim::command_queue::NETWORK_SOURCE_DOLIST_CAPACITY
             } else {
                 usize::MAX
@@ -319,7 +352,7 @@ impl Simulation {
         let count = self.local_commands.len();
         let entries: Vec<_> = self.local_commands.take_prefix(count).collect();
         for command in entries {
-            if self.replaying_recorded_commands {
+            if *self.replaying_recorded_commands {
                 // The recorded accepted stream owns due input. A snapshot
                 // may also retain future input not present in this batch.
                 let future = command.record().map_or_else(
@@ -346,12 +379,12 @@ impl Simulation {
     /// tick, and insertion position exactly. It does not sort, retime, normalize,
     /// intern, deduplicate, or apply the negotiated input delay.
     pub fn queue_command(&mut self, command: CommandEnvelope) {
-        if self.replaying_recorded_commands {
+        if *self.replaying_recorded_commands {
             return;
         }
         let record = !Self::command_uses_frame_ingress(
             &command.payload,
-            self.session.game_mode().is_network(),
+            self.session.execution_topology().is_lockstep(),
         );
         self.admit_queued_command(
             QueuedCommand::from_envelope(command),
@@ -443,14 +476,17 @@ impl Simulation {
                 _ => None,
             })
             .collect();
+        let control = (!assignments.is_empty()).then(|| self.control_projection());
         let mut slots = std::array::from_fn(|_| Vec::new());
         for entity in entities {
-            let group =
+            let current = entity.control_group();
+            let group = control.as_ref().map_or(current, |control| {
                 assignments
                     .iter()
-                    .fold(entity.control_group(), |current, (group, selected)| {
-                        self.assigned_control_group(entity, current, *group, selected)
-                    });
+                    .fold(current, |current, (group, selected)| {
+                        Self::assigned_control_group(control, entity, current, *group, selected)
+                    })
+            });
             if (0..10).contains(&group) {
                 slots[((group + 1) % 10) as usize].push(entity.stable_id());
             }
@@ -569,14 +605,14 @@ impl Simulation {
 
     /// Drain the remote EXIT senders the executor recorded.
     pub fn take_departed_senders(&mut self) -> Vec<i8> {
-        std::mem::take(&mut self.departed_senders)
+        std::mem::take(&mut *self.departed_senders)
     }
 
     /// Only local frame-ingress actions leave the FIFO before Logic. Native
     /// and semantic tail events stay in place until the canonical DoList scan.
     pub fn take_due_commands(&mut self) -> Vec<CommandEnvelope> {
         let execute_tick = self.session.tick().saturating_add(1);
-        let is_network = self.session.game_mode().is_network();
+        let is_network = self.session.execution_topology().is_lockstep();
         self.pending_commands
             .take_where(|entry| {
                 entry.semantic().is_some_and(|command| {
@@ -621,13 +657,13 @@ impl Simulation {
         &mut self,
         commands: &[CommandEnvelope],
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Vec<CommandEnvelope> {
         crate::sim::production::publish_production_changes(self, rules, effects);
         for command in commands {
             if Self::command_uses_frame_ingress(
                 &command.payload,
-                self.session.game_mode().is_network(),
+                self.session.execution_topology().is_lockstep(),
             ) {
                 self.frame_command_admissions.push(command.clone());
             } else {
@@ -661,7 +697,7 @@ impl Simulation {
     ) -> Vec<CommandEnvelope> {
         #[cfg(feature = "debug-tools")]
         self.set_debug_session_context(crate::sim::cheats::DebugSessionContext::Replay);
-        self.replaying_recorded_commands = true;
+        *self.replaying_recorded_commands = true;
         self.frame_command_admissions.clear();
         let commands: Vec<_> = commands.into_iter().collect();
         for recorded in &commands {
@@ -680,12 +716,17 @@ impl Simulation {
 
     /// VERA-only: one command and its spawn-refresh report: a Deploy whose MCV left
     /// the store or carries the `TerminalLifetime` dying mark counts as a spawn.
+    ///
+    /// A Wasm module listening hears the outcome afterwards: `Commanded` on
+    /// each actor of an applied command, `OrderRefused` for a refused one
+    /// (`sim::ext_modules::orders`).
     fn apply_one_due_command(
         &mut self,
+        sender: CommandSender,
         cmd: &CommandEnvelope,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> (bool, bool) {
         // Scatter's found-cell arm immediately runs the locomotor. Its
         // authoritative bridge flag can change before the ordinary movement
@@ -702,14 +743,15 @@ impl Simulation {
         // release it during settlement. Capture only this derived refresh
         // fact now; the production owner remains the placement authority.
         let placed_building_owner = self.successful_non_wall_placement_owner(cmd, true, rules);
-        let cmd_owner_str = self.interner.resolve(cmd.owner).to_string();
-        let applied = self.apply_command_with_overlays(
-            &cmd_owner_str,
+        let outcome = self.apply_command_with_overlays(
+            sender,
+            cmd.owner,
             &cmd.payload,
             rules,
             overlay_registry,
             frame_effects,
         );
+        let applied = outcome.is_ok();
         let placed_building_owner = placed_building_owner.filter(|_| applied);
         let synchronous_deploy = applied
             && matches!(cmd.payload, Command::DeployMcv { entity_id }
@@ -719,7 +761,8 @@ impl Simulation {
             || applied && matches!(cmd.payload, Command::PlaceProducedMobile { .. })
             || applied
                 && matches!(&cmd.payload, Command::SynchronizedRecord { record }
-                if crate::sim::command::PlaceRecord::decode(record).is_some())
+                if self.house_command_record(record).is_some_and(|(_, record)|
+                    crate::sim::command::PlaceRecord::decode(&record).is_some()))
             || applied
                 && matches!(
                     cmd.payload,
@@ -733,6 +776,7 @@ impl Simulation {
                     .get(id)
                     .is_some_and(|entity| entity.on_bridge() != before)
             });
+        self.raise_module_command_outcome(rules, frame_effects, cmd, outcome);
         (applied, spawned_entity)
     }
 
@@ -743,8 +787,8 @@ impl Simulation {
         rules: &RuleSet,
     ) -> Option<InternedId> {
         if let Command::SynchronizedRecord { record } = &command.payload {
-            let event = crate::sim::command::PlaceRecord::decode(record)?;
-            let owner = self.command_sender_owner(event.house_id)?;
+            let (owner, record) = self.house_command_record(record)?;
+            let event = crate::sim::command::PlaceRecord::decode(&record)?;
             let category = crate::sim::production::ProductionSelection {
                 rtti: event.rtti,
                 type_index: event.type_index,
@@ -812,13 +856,19 @@ impl Simulation {
     fn native_formation_key(
         record: &crate::sim::command::CommandRecord,
     ) -> Option<((u8, i32, u8, i32), u16, u16)> {
-        if record.opcode() != 4 || record.payload()[16] != 11 {
+        let p = record.payload();
+        if record.opcode() != MEGAMISSION_OPCODE
+            || p[MEGAMISSION_DESTINATION_KIND_OFFSET] != CELL_TARGET_KIND
+        {
             return None;
         }
-        let p = record.payload();
-        let destination = i32::from_le_bytes(p[12..16].try_into().ok()?);
+        let destination = i32::from_le_bytes(
+            p[MEGAMISSION_DESTINATION_VALUE_OFFSET..MEGAMISSION_DESTINATION_KIND_OFFSET]
+                .try_into()
+                .ok()?,
+        );
         let crate::sim::command::MegaMissionTarget::Cell { x, y } =
-            crate::sim::command::MegaMissionTarget::from_token(destination, 11)?
+            crate::sim::command::MegaMissionTarget::from_token(destination, CELL_TARGET_KIND)?
         else {
             return None;
         };
@@ -826,9 +876,13 @@ impl Simulation {
             //64CB42..64CB5C compares raw destination kind/DWORD. Different
             // tokens can project to the same WORD coordinates at6E6E20.
             (
-                p[5],
-                i32::from_le_bytes(p[7..11].try_into().ok()?),
-                p[11],
+                p[MEGAMISSION_ACTION_OFFSET],
+                i32::from_le_bytes(
+                    p[MEGAMISSION_SECONDARY_VALUE_OFFSET..MEGAMISSION_SECONDARY_KIND_OFFSET]
+                        .try_into()
+                        .ok()?,
+                ),
+                p[MEGAMISSION_SECONDARY_KIND_OFFSET],
                 destination,
             ),
             x as u16,
@@ -845,10 +899,17 @@ impl Simulation {
             });
         if let Some(record) = raw {
             let p = record.payload();
-            if record.opcode() != 4 || p[4] != 0x34 {
+            if record.opcode() != MEGAMISSION_OPCODE
+                || p[MEGAMISSION_SOURCE_KIND_OFFSET] != ABSTRACT_OBJECT_TARGET_KIND
+            {
                 return None;
             }
-            return u64::try_from(i32::from_le_bytes(p[0..4].try_into().ok()?)).ok();
+            return u64::try_from(i32::from_le_bytes(
+                p[MEGAMISSION_SOURCE_VALUE_OFFSET..MEGAMISSION_SOURCE_KIND_OFFSET]
+                    .try_into()
+                    .ok()?,
+            ))
+            .ok();
         }
         match command.formation_semantic()? {
             Command::Move { entity_id, .. } | Command::AttackMove { entity_id, .. } => {
@@ -909,7 +970,6 @@ impl Simulation {
     fn group_destination_candidate_facts(
         &self,
         rules: &RuleSet,
-        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         terrain: &ResolvedTerrainGrid,
         zones: &ZoneGrid,
         target: &GroupMemberTarget,
@@ -919,7 +979,7 @@ impl Simulation {
         let cell = cells.lookup(candidate);
         if !crate::sim::cell_rect::cell_is_in_playfield_height_aware(
             (i32::from(candidate.0), i32::from(candidate.1)),
-            self.playfield_bounds,
+            *self.playfield_bounds,
             Some(terrain),
         ) {
             return group_destination::CandidateFacts::outside_playfield();
@@ -944,7 +1004,6 @@ impl Simulation {
                 args,
                 crate::sim::movement::infantry_entry::EntryQueryMode::CheckLocomotor,
                 rules,
-                registry,
             )
             .unwrap_or_else(|error| {
                 log::warn!("group destination entry for {id}: {error}");
@@ -963,8 +1022,7 @@ impl Simulation {
     /// The group spread `0x0064CDA0` per run (`0x0064CB0A..0x0064CB60`): each Foot
     /// member's coordinates (Location) and source cell.
     ///
-    /// VERA-only: in a LAN or WOL game a member whose order the network
-    /// ownership rule will refuse (`Simulation::network_actor_foreign`) is
+    /// VERA-only: in a LAN or WOL game a member outside the sender's scope is
     /// left out, and a run left with fewer than two orders keeps its clicked
     /// cells, as if `sender` had not ordered that member. Retail's member loop
     /// (`0x0064CE59..0x0064CEDF`) tests only Foot and tube (`+0x684`), never
@@ -974,15 +1032,22 @@ impl Simulation {
         &self,
         commands: &mut [impl FormationCommand],
         rules: &RuleSet,
-        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        sender: Option<InternedId>,
+        sender: Option<CommandDispatchHouse>,
     ) {
         let (Some(terrain), Some(zones)) =
             (self.resolved_terrain.as_ref(), self.zone_grid.as_ref())
         else {
             return;
         };
-        let sender = sender.map(|owner| self.interner.resolve(owner));
+        let sender = sender
+            .filter(|_| self.session.execution_topology().is_lockstep())
+            .map(|house| {
+                (
+                    house.owner,
+                    house.house_id,
+                    self.resolve_command_grant_source(house.owner.into(), house.house_id),
+                )
+            });
         let mut run_start = 0;
         while run_start < commands.len() {
             let Some(key) = Self::formation_key(&commands[run_start]) else {
@@ -1012,14 +1077,39 @@ impl Simulation {
                     let Some(entity) = self.substrate.entities.get(entity_id) else {
                         continue;
                     };
-                    if sender.is_some_and(|owner| self.network_actor_foreign(owner, entity_id)) {
+                    // The receiver refuses an attached slave in every game mode.
+                    if entity.seldom.slave.owner().is_some() {
+                        orders -= 1;
+                        continue;
+                    }
+                    if sender.is_some_and(|(owner, source, granted_source)| {
+                        // A semantic PlanningRecord can have native payload
+                        // bytes without coming from the native queue.
+                        let granted_source = granted_source.filter(|_| {
+                            command.admitted_formation_record().is_some_and(|record| {
+                                record.house_id() == source
+                                    && MegaMissionRecord::decode_planned(record).is_some()
+                            })
+                        });
+                        let capability = if granted_source.is_some() {
+                            CommandCapability::Tactical
+                        } else {
+                            CommandCapability::PrimaryHouse
+                        };
+                        self.command_actor_outside_scope(
+                            owner.into(),
+                            granted_source,
+                            entity_id,
+                            capability,
+                        )
+                    }) {
                         orders -= 1;
                         continue;
                     }
                     if !matches!(
                         entity.category(),
                         EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
-                    ) || entity.low_bridge_tube_state.is_some()
+                    ) || entity.active_tube().is_some()
                     {
                         continue;
                     }
@@ -1066,11 +1156,11 @@ impl Simulation {
                         }
                         let target = member_target.as_ref().expect("read for this member");
                         self.group_destination_candidate_facts(
-                            rules, registry, terrain, zones, target, candidate,
+                            rules, terrain, zones, target, candidate,
                         )
                     },
                 );
-                self.keep_jumpjets_off_promised_cells(&members, &mut assignments, rules, registry);
+                self.keep_jumpjets_off_promised_cells(&members, &mut assignments, rules);
                 for assignment in assignments {
                     let Some(command) = commands.get_mut(run_start + assignment.command_index)
                     else {
@@ -1094,7 +1184,6 @@ impl Simulation {
         members: &[group_destination::GroupDestinationMember],
         assignments: &mut [group_destination::GroupDestinationAssignment],
         rules: &RuleSet,
-        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     ) {
         let range = rules.general.jumpjet_land_nearby;
         if range <= 0 {
@@ -1146,7 +1235,6 @@ impl Simulation {
                             InfantryEntryArgs::REPAIR,
                             crate::sim::movement::infantry_entry::EntryQueryMode::CheckLocomotor,
                             rules,
-                            registry,
                         )
                         .is_ok_and(|code| code == 0);
                     (clear && !promised((x, y), &given)).then_some((x, y))
@@ -1171,7 +1259,7 @@ impl Simulation {
         for command in commands.into_iter().filter(|command| {
             Self::command_uses_frame_ingress(
                 &command.payload,
-                self.session.game_mode().is_network(),
+                self.session.execution_topology().is_lockstep(),
             ) && command.execute_tick <= execute_tick
         }) {
             if !house_order.contains(&command.owner) {
@@ -1194,10 +1282,10 @@ impl Simulation {
         commands: &[CommandEnvelope],
         rules: &RuleSet,
         execute_tick: u64,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> usize {
         let mut executed_commands = 0usize;
-        let is_network = self.session.game_mode().is_network();
+        let is_network = self.session.execution_topology().is_lockstep();
         for owner in self.due_command_house_order(commands.iter(), execute_tick) {
             for command in commands.iter().filter(|command| {
                 command.execute_tick <= execute_tick
@@ -1213,7 +1301,13 @@ impl Simulation {
                     Command::Select { .. }
                     | Command::AssignControlGroup { .. }
                     | Command::MoveFlash { .. } => {
-                        let _ = self.apply_one_due_command(command, rules, None, frame_effects);
+                        let _ = self.apply_one_due_command(
+                            CommandSender::Player(None),
+                            command,
+                            rules,
+                            Some(rules.overlay_registry()),
+                            frame_effects,
+                        );
                     }
                     _ => unreachable!("frame-ingress predicate admitted a tail command"),
                 }
@@ -1237,17 +1331,53 @@ impl Simulation {
         commands: &[CommandEnvelope],
         rules: &RuleSet,
         execute_tick: u64,
-        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> (usize, bool) {
-        self.dispatch_owned_commands(
-            commands,
-            rules,
-            execute_tick,
-            overlay_registry,
-            frame_effects,
-        )
-        .expect("component command dispatch must succeed")
+        self.dispatch_owned_commands(commands, rules, execute_tick, frame_effects)
+            .expect("component command dispatch must succeed")
+    }
+
+    /// Wasm modules' house orders (RFC 0001 section 6g), after the frame's
+    /// player commands: each order is the player commands its house's player
+    /// would send, spread as a player's group order is and executed by the
+    /// same receiver. Returns whether one spawned an object.
+    pub(super) fn run_ext_module_orders(
+        &mut self,
+        rules: &RuleSet,
+        frame_effects: &mut FrameEffects<'_>,
+    ) -> bool {
+        if self.ext_modules.is_empty() {
+            return false;
+        }
+        let mut spawned = false;
+        for mut order in crate::sim::ext_modules::take_due_orders(self, rules) {
+            self.adjust_staged_megamission_destinations(&mut order, rules, None);
+            // One order is one `Commanded` serial.
+            self.ext_modules.begin_command_group();
+            for command in &order {
+                spawned |= self
+                    .apply_one_due_command(
+                        CommandSender::HouseOrder,
+                        command,
+                        rules,
+                        Some(rules.overlay_registry()),
+                        frame_effects,
+                    )
+                    .1;
+            }
+        }
+        spawned
+    }
+
+    /// How Execute_DoList scans this session's DoList.
+    pub(super) fn command_dispatch_mode(&self) -> CommandDispatchMode {
+        if self.session.execution_topology().command_queue_route()
+            == super::CommandQueueRoute::Multiplayer
+        {
+            CommandDispatchMode::Network
+        } else {
+            CommandDispatchMode::SinglePlayer
+        }
     }
 
     pub(super) fn dispatch_owned_commands(
@@ -1255,10 +1385,9 @@ impl Simulation {
         commands: &[CommandEnvelope],
         rules: &RuleSet,
         execute_tick: u64,
-        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<(usize, bool), (super::NetworkCommandError, usize, bool)> {
-        let is_network = self.session.game_mode().is_network();
+        let is_network = self.session.execution_topology().is_lockstep();
         for command in commands
             .iter()
             .filter(|command| !Self::command_uses_frame_ingress(&command.payload, is_network))
@@ -1269,8 +1398,8 @@ impl Simulation {
                 DoListInsertion::Back,
             );
         }
-        let mut list = std::mem::take(&mut self.pending_commands);
-        self.dispatch_reserved_slots = list.native_occupancy();
+        let mut list = std::mem::take(&mut *self.pending_commands);
+        *self.dispatch_reserved_slots = list.native_occupancy();
         // One scan per command sender, in sender order. A sender is its
         // House's index, as in gamemd's House scan, unless players share
         // Houses (VERA): each of them then gets its own scan of that House.
@@ -1306,18 +1435,11 @@ impl Simulation {
             native_frame: self.session.binary_frame() as i32,
             execute_tick,
         };
-        let mode = if self.session.game_mode().command_queue_route()
-            == super::CommandQueueRoute::Multiplayer
-        {
-            CommandDispatchMode::Network
-        } else {
-            CommandDispatchMode::SinglePlayer
-        };
+        let mode = self.command_dispatch_mode();
         let mut host = WorldCommandHost {
             sim: self,
             rules,
-            overlay_registry,
-            frame_effects,
+            frame_effects: frame_effects.reborrow(),
             execute_tick,
             spawned: false,
             executed: 0,
@@ -1325,10 +1447,10 @@ impl Simulation {
         let result = list.dispatch(clock, &houses, mode, &mut host);
         let spawned = host.spawned;
         let executed = host.executed;
-        self.dispatch_reserved_slots = Default::default();
-        let mut newly_admitted = std::mem::take(&mut self.pending_commands);
+        *self.dispatch_reserved_slots = Default::default();
+        let mut newly_admitted = std::mem::take(&mut *self.pending_commands);
         list.append_retained(&mut newly_admitted);
-        self.pending_commands = list;
+        *self.pending_commands = list;
         result
             .map(|summary| (summary.executed, spawned))
             .map_err(|cause| (cause, executed, spawned))
@@ -1339,6 +1461,9 @@ impl Simulation {
 /// semantic component fixtures. It never resolves an actor to obtain a key.
 pub(super) trait FormationCommand {
     fn formation_record(&self) -> Option<&crate::sim::command::CommandRecord>;
+    fn admitted_formation_record(&self) -> Option<&crate::sim::command::CommandRecord> {
+        None
+    }
     fn formation_semantic(&self) -> Option<&Command>;
     fn set_formation_destination(&mut self, destination: (i16, i16));
 }
@@ -1359,7 +1484,8 @@ fn write_formation_destination(
     .token() else {
         return;
     };
-    record.payload_mut()[12..16].copy_from_slice(&token.to_le_bytes());
+    record.payload_mut()[MEGAMISSION_DESTINATION_VALUE_OFFSET..MEGAMISSION_DESTINATION_KIND_OFFSET]
+        .copy_from_slice(&token.to_le_bytes());
 }
 
 impl FormationCommand for Command {
@@ -1409,6 +1535,9 @@ impl FormationCommand for QueuedCommand {
         self.record()
             .or_else(|| self.semantic()?.formation_record())
     }
+    fn admitted_formation_record(&self) -> Option<&crate::sim::command::CommandRecord> {
+        self.record()
+    }
     fn formation_semantic(&self) -> Option<&Command> {
         self.semantic().map(|entry| &entry.payload)
     }
@@ -1427,7 +1556,6 @@ impl FormationCommand for QueuedCommand {
 struct WorldCommandHost<'a, 'r, 'e> {
     sim: &'a mut Simulation,
     rules: &'r RuleSet,
-    overlay_registry: Option<&'r crate::rules::overlay_types::OverlayTypeRegistry>,
     frame_effects: FrameEffects<'e>,
     execute_tick: u64,
     spawned: bool,
@@ -1461,12 +1589,8 @@ impl DoListHost<QueuedCommand> for WorldCommandHost<'_, '_, '_> {
     }
 
     fn adjust_megamissions(&mut self, house: CommandDispatchHouse, entries: &mut [QueuedCommand]) {
-        self.sim.adjust_staged_megamission_destinations(
-            entries,
-            self.rules,
-            self.overlay_registry,
-            Some(house.owner),
-        );
+        self.sim
+            .adjust_staged_megamission_destinations(entries, self.rules, Some(house));
     }
 
     fn execute(
@@ -1501,14 +1625,13 @@ impl DoListHost<QueuedCommand> for WorldCommandHost<'_, '_, '_> {
             QueuedCommand::Semantic { envelope, .. } => Some(envelope.clone()),
         };
         if let Some(command) = command {
-            self.sim.executing_record_sender = entry.record().map(|record| record.house_id());
             let (applied, spawned) = self.sim.apply_one_due_command(
+                CommandSender::Player(entry.record().map(|record| record.house_id())),
                 &command,
                 self.rules,
-                self.overlay_registry,
-                self.frame_effects,
+                Some(self.rules.overlay_registry()),
+                &mut self.frame_effects,
             );
-            self.sim.executing_record_sender = None;
             if let Some(record) = entry.record() {
                 self.frame_effects
                     .command_applied(self.sim, record, applied);
@@ -1527,14 +1650,17 @@ struct GroupMemberTarget {
 }
 
 /// The spread's height of a Cell: its signed level (`+0x11B`), plus
-/// `BRIDGE_DECK_HEIGHT_LEVELS` on the bridge flag (`+0x140 & 0x100`). The
-/// target's is EBX (`0x0064D2AA..0x0064D2DF`), which Can_Enter_Cell receives;
+/// `BRIDGE_DECK_HEIGHT_LEVELS` on the bridge flag (`+0x140 & 0x100`) in the
+/// absence of a fixed deck. The target's is EBX (`0x0064D2AA..0x0064D2DF`),
+/// which Can_Enter_Cell receives;
 /// a candidate's is measured against it (`0x0064D55F..0x0064D592`).
 /// Native executions: tools/spatial_oracle/group_spread_gates.{py,json,meta.json}.
 fn spread_height(terrain: &ResolvedTerrainGrid, cell: NativeCellIdentity) -> i32 {
     let level = i32::from(terrain.native_cell_ground_fields(cell).0 as i8);
     if terrain.native_cell_flags(cell) & BRIDGE_FLAG_STRUCTURAL != 0 {
-        level + BRIDGE_DECK_HEIGHT_LEVELS
+        terrain
+            .corrected_high_bridge_deck_at(cell)
+            .map_or(level + BRIDGE_DECK_HEIGHT_LEVELS, i32::from)
     } else {
         level
     }

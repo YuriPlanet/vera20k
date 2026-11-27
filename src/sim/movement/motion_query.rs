@@ -41,12 +41,12 @@ pub(crate) fn destination(entity: &GameEntity) -> Option<crate::sim::components:
             //7180CC returns the linked object's Location when stopped.
             super::foot_coordinate::current_coordinate(entity)
         }
-        LocomotorKind::Walk | LocomotorKind::Fly | LocomotorKind::Jumpjet
+        LocomotorKind::Walk | LocomotorKind::Mech | LocomotorKind::Fly | LocomotorKind::Jumpjet
             if !is_moving(entity)? =>
         {
             null
         }
-        LocomotorKind::Walk => loco.walk_destination().unwrap_or(null),
+        LocomotorKind::Walk | LocomotorKind::Mech => loco.walk_destination().unwrap_or(null),
         LocomotorKind::Fly => loco.fly_runtime()?.destination(),
         LocomotorKind::Jumpjet => loco.jumpjet_runtime()?.destination(),
         LocomotorKind::Teleport => loco.teleport_runtime()?.armed_destination().unwrap_or(null),
@@ -69,7 +69,7 @@ pub fn is_moving(entity: &GameEntity) -> Option<bool> {
     match locomotor.active_kind() {
         LocomotorKind::Drive => Some(super::track_head::motion_state(entity, TrackFamily::Drive).0),
         LocomotorKind::Ship => Some(super::track_head::motion_state(entity, TrackFamily::Ship).0),
-        LocomotorKind::Walk => locomotor.walk_is_moving(),
+        LocomotorKind::Walk | LocomotorKind::Mech => locomotor.walk_is_moving(),
         LocomotorKind::Fly => locomotor
             .fly_runtime()
             .map(|state| state.moving() || entity.flight_attitude.blocks_landing()),

@@ -85,6 +85,7 @@ fn resolve_hut_orders(
         crate::app::input::context_order::OrderModifier::Normal,
         false,
         false,
+        &mut Default::default(),
     );
     // The executed caller proves identical action for self/allied/hostile.
     // Check every relation golden, avoiding an invented expected-action formula.

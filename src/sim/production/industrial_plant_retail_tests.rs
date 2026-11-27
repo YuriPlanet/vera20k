@@ -185,7 +185,7 @@ fn stock_plant_gain_and_sale_preserve_tank_debt_and_settle_current_price() {
                     "NAINDP",
                     33,
                     92,
-                    Some(&scene.runtime.resources.overlay_registry),
+                    Some(scene.runtime.resources.rules.overlay_registry()),
                 )
                 .unwrap();
                 assert!(preview.valid);
@@ -249,7 +249,7 @@ fn stock_plant_gain_and_sale_preserve_tank_debt_and_settle_current_price() {
                     &commands,
                     22,
                     TickLane::Ordinary,
-                    FrameEffects::default().with_production_strip(&visits, &|_| {}),
+                    &mut FrameEffects::default().with_production_strip(&visits),
                 )
                 .expect("ordinary bound-resource frame");
             let sim = scene.sim();

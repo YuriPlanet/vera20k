@@ -1,6 +1,7 @@
 //! Wakeup queues Guard through the existing Mission authority. Native
 //! Execute6DDB67 ->6E01C0 uses the live Trigger's Tag membership, not a House.
 use super::*;
+use crate::rules::rule_policy::RulePolicy;
 use crate::sim::mission::MissionId;
 use crate::util::save_codec;
 
@@ -149,7 +150,7 @@ fn wakeup_selection_and_deferred_mission_state_match_original_controls() {
             &mut Vec::new(),
             crate::rules::ruleset::RuleSet::empty_for_test(),
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
         assert_eq!(result, int(&control["ret"]) != 0, "{name}");
         for (index, mut expected) in originals {
@@ -226,7 +227,7 @@ fn retail_all02_prisoner_damage_enable_elapsed_wakeup_survives_restore() {
     let ai = crate::rules::retail_sources::select_ini(&assets, "AIMD.INI")
         .unwrap()
         .ini;
-    let teams = TeamAiIniRegistry::from_sources(&ai, &map.ini, false);
+    let teams = TeamAiIniRegistry::from_sources(&ai, &map.ini, RulePolicy::stock_campaign());
     for row in native["mission_from_name"].as_array().unwrap() {
         assert_eq!(
             MissionType::from_map_name(row["name"].as_str().unwrap()).unwrap() as i32,
@@ -384,7 +385,7 @@ fn retail_all02_prisoner_damage_enable_elapsed_wakeup_survives_restore() {
     assert_eq!(guards.len(), 8);
     assert_eq!(sim.trigger_runtime.tag(wake_tag).unwrap().refs, 7);
     let poll = |sim: &mut Simulation| {
-        sim.advance_triggers(&rules, Some(&overlays), FrameEffects::default());
+        sim.advance_triggers(&rules, Some(&overlays), &mut FrameEffects::default());
     };
     poll(&mut sim);
     assert!(sim.trigger_runtime.action_trace.is_empty());
@@ -410,7 +411,7 @@ fn retail_all02_prisoner_damage_enable_elapsed_wakeup_survives_restore() {
         guards[0],
         attacker,
         1,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert!(sim.trigger_runtime.trigger(wake_live).unwrap().enabled);
     assert_eq!(
@@ -426,16 +427,24 @@ fn retail_all02_prisoner_damage_enable_elapsed_wakeup_survives_restore() {
     // Use the existing native in-scenario load seed0 boundary. This checkpoint
     // deliberately retains pending source Tag/Trigger finalization and all7
     // shared prisoner references, before the enabled elapsed0 poll.
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     let bytes = GameSnapshot::save(&sim, 0, 0, "ALL02UMD.MAP", 0);
     let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
     restored.restore_after_snapshot_load().unwrap();
     crate::sim::arena_fixture::flat_ground(&mut restored, &rules);
-    assert_eq!(sim.trigger_runtime, restored.trigger_runtime);
+    assert_eq!(*sim.trigger_runtime, *restored.trigger_runtime);
     for candidate in [&mut sim, &mut restored] {
         let before: Vec<_> = prisoners
             .iter()
-            .map(|&id| candidate.substrate.entities.get(id).unwrap().mission.clone())
+            .map(|&id| {
+                candidate
+                    .substrate
+                    .entities
+                    .get(id)
+                    .unwrap()
+                    .mission
+                    .clone()
+            })
             .collect();
         let rng = candidate.rng_state();
         poll(candidate);
@@ -462,13 +471,7 @@ fn retail_all02_prisoner_damage_enable_elapsed_wakeup_survives_restore() {
             );
         }
         assert_eq!(candidate.rng_state(), rng);
-        candidate.process_pending_delete_with(
-            &rules,
-            Some(&overlays),
-            FrameEffects::default(),
-            1,
-            false,
-        );
+        candidate.process_pending_delete_with(&rules, &mut FrameEffects::default(), 1, false);
         assert!(!candidate.trigger_runtime.has_live_tag(source_tag));
         assert!(!candidate.trigger_runtime.has_live_tag(wake_tag));
         assert!(candidate.trigger_runtime.trigger(source_live).is_none());
@@ -476,7 +479,13 @@ fn retail_all02_prisoner_damage_enable_elapsed_wakeup_survives_restore() {
         candidate.session.set_binary_frame_for_test(1);
         for &id in &prisoners {
             candidate.mission_host_promote(id, 1, &rules);
-            let mission = candidate.substrate.entities.get(id).unwrap().mission.clone();
+            let mission = candidate
+                .substrate
+                .entities
+                .get(id)
+                .unwrap()
+                .mission
+                .clone();
             assert_eq!(mission.current().known(), Some(MissionType::Guard));
             assert_eq!(mission.queued(), crate::sim::mission::MissionId::NONE);
         }
@@ -491,7 +500,7 @@ fn retail_all02_prisoner_damage_enable_elapsed_wakeup_survives_restore() {
             1
         );
     }
-    assert_eq!(sim.trigger_runtime, restored.trigger_runtime);
+    assert_eq!(*sim.trigger_runtime, *restored.trigger_runtime);
     for &id in &prisoners {
         assert_eq!(
             sim.substrate.entities.get(id).unwrap().mission,

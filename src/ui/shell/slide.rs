@@ -8,7 +8,7 @@
 //! panel's warning display. Nothing moves. This module owns the two
 //! render-agnostic halves of that behaviour:
 //!   * **eligibility data** — each rendered dialog's slide column
-//!     (`slide_spec_for`; `is_slide_eligible`), and
+//!     (`slide_spec_for`), and
 //!   * **the frame schedule** — [`ShellFrameWave`] over a [`SlideColumn`]: the
 //!     SDBTNANM frame of every right-panel tile row, the map button and the top
 //!     panel per tick, with the native cadence and loop bound, pinned to an
@@ -16,13 +16,13 @@
 //!
 //! Render-agnostic: depends only on `ui::shell` + `std` (no sim/render/assets),
 //! honouring the `ui/` layering rule. The app layer (`app::frontend::shell_transition`) maps
-//! the showing screen to a `DialogId`, drives the wave each frame, and plays the
+//! the showing screen to a `DialogResourceId`, drives the wave each frame, and plays the
 //! start cue (`GUIMoveInSound`, stock `MenuSlideIn`) and the end cue
 //! (`ShellButtonSlideSound`, empty in stock rules).
 
 use crate::util::time::{Duration, Instant};
 
-use super::descriptor::DialogId;
+use super::descriptor::DialogResourceId;
 use super::geom::RightPanelRects;
 
 /// One animation tick per 30 ms, advancing exactly one frame (never skipped).
@@ -33,41 +33,17 @@ pub(crate) const WAVE_TAIL_TICKS: u32 = 6;
 /// Linear ramp length (delta 0..=5 inclusive => 6 steps).
 pub(crate) const WAVE_RAMP_STEPS: i32 = 6;
 
-/// SDBTNANM frame constants per button group. Each tuple is
-/// `(held_before, ramp_base, held_after)`. With `dir() = -1` on slide-IN, the IN
-/// ramp counts DOWN from `base`; the held terminals are distinct constants, not
-/// `base`. Slide-OUT uses `dir() = +1` (ramp counts UP).
-/// Group A = a button row (SDBTNANM 10→5, settle 1).
-/// Group B = an empty tile row (SDBTNANM 16→11, settle 0, the plate).
+/// SDBTNANM frames of one button group and direction: held before the row's
+/// entry, the ramp `base + delta * dir` (-1 on slide-in, +1 on slide-out) and
+/// held after; the terminals are distinct constants, not `base`.
+/// Group A = a button row (SHOW: 10 → 10..5 → 1; CLOSE: 1 → 5..10 → 10).
+/// Group B = an empty tile row (SHOW: 10 → 16..11 → 0, the plate; CLOSE: 0 →
+/// 11..16 → 10).
 struct WaveFrames {
     before: i32,
     base: i32,
     after: i32,
 }
-/// SHOW: hold 10 → ramp 10,9,8,7,6,5 → settle 1.
-const GROUP_A_IN: WaveFrames = WaveFrames {
-    before: 10,
-    base: 10,
-    after: 1,
-};
-/// CLOSE: hold 1 → ramp 5,6,7,8,9,10 → settle 10.
-const GROUP_A_OUT: WaveFrames = WaveFrames {
-    before: 1,
-    base: 5,
-    after: 10,
-};
-/// SHOW: hold 10 → ramp 16,15,14,13,12,11 → settle 0.
-const GROUP_B_IN: WaveFrames = WaveFrames {
-    before: 10,
-    base: 16,
-    after: 0,
-};
-/// CLOSE: hold 0 → ramp 11,12,13,14,15,16 → settle 10.
-const GROUP_B_OUT: WaveFrames = WaveFrames {
-    before: 0,
-    base: 11,
-    after: 10,
-};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum WaveDirection {
@@ -75,26 +51,6 @@ pub(crate) enum WaveDirection {
     /// Slide-OUT (close) ramp run by the teardown slide (`0x00608070` ->
     /// `0x006071E0` with `DL = 0`): the same schedule with the OUT frames.
     SlideOut,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ButtonGroup {
-    /// A row holding a button.
-    A,
-    /// An empty tile row: its shutter opens onto the plate or closes over it.
-    B,
-}
-
-impl WaveDirection {
-    /// Frame multiplier: -1 on slide-in (frames count DOWN, e.g. 10→5), +1 on
-    /// slide-out (frames count UP). Matches the original ramp direction (-1 on
-    /// show / +1 on close).
-    fn dir(self) -> i32 {
-        match self {
-            WaveDirection::SlideIn => -1,
-            WaveDirection::SlideOut => 1,
-        }
-    }
 }
 
 // --- Data-driven slide eligibility + per-dialog slide column -----------------
@@ -118,12 +74,46 @@ pub(crate) struct SlideDialogSpec {
 }
 
 impl SlideDialogSpec {
+    /// A dialog with `top_buttons` and its bottom button, no record flags.
+    const fn new(dialog_id: u16, top_buttons: u32) -> Self {
+        Self {
+            dialog_id,
+            top_buttons,
+            bottom_button: true,
+            map_button: false,
+            top_panel: false,
+            campaign_score: false,
+        }
+    }
+
+    const fn map_button(self) -> Self {
+        Self {
+            map_button: true,
+            ..self
+        }
+    }
+
+    const fn top_panel(self) -> Self {
+        Self {
+            top_panel: true,
+            ..self
+        }
+    }
+
+    const fn campaign_score(self) -> Self {
+        Self {
+            campaign_score: true,
+            ..self
+        }
+    }
+
     /// The column at a resolution with `rows` right-panel tile rows.
     pub(crate) fn column(self, rows: u32) -> SlideColumn {
         SlideColumn {
             rows,
             top_buttons: self.top_buttons,
             bottom_button: self.bottom_button,
+            button_above_back: false,
             map_button: self.map_button,
             top_panel: self.top_panel,
             campaign_score: self.campaign_score,
@@ -131,315 +121,76 @@ impl SlideDialogSpec {
     }
 }
 
-/// Front-end shell dialogs rendered here. `0xE2`: Single Player, Internet,
-/// Network, Movies & Credits and Options on top, Exit (`0x3EE`) at the bottom.
-/// `0x100` and `0x101`: three page buttons, Main Menu (`0x686`) at the bottom.
-/// `0x129`: Play Movie, then Back (`0x686`). `0x102`: Start Game and Choose Map,
-/// then Back (`0x5C0`), with the map button and the top panel. `0x94`: only
-/// Back (`0x686`); its one top-list button, Load `0x40E`, stays hidden
-/// (`0x0052F05C`), and `0x0060A180` counts visible buttons only. `0xB7` from
-/// Single Player: Load (`0x40F`, counted even while disabled), then Back
-/// (`0x686`). `0xD5` (launcher Options): Keyboard (`0x5CE`) and Network
-/// (`0x5CD`), then Main Menu (`0x686`). `0x10E` (Westwood Online welcome):
-/// six top buttons, then Main Menu (`0x686`). `0xA3` (Options' Keyboard):
-/// Back (`0x686`) only; Assign and Reset All sit on the left side. `0x6B`
-/// (Choose Map): Use Map and Create Random Map (`0x6C5`, `0x583`, counted
-/// even while disabled), Cancel (`0x5C0`), the top panel (`+0xD5`,
-/// `0x00622915`) and no map button. `0x108` (Score): only Continue
-/// (`0x6D1`, the bottom list's `0x00609A71`); no top-list button. `0x103`
-/// (campaign StandaloneScore): only Continue (`0x423`), and its compositor
-/// draws SCRT then SCRBK (`+0xD7`, `0x006229CE`).
+/// Front-end shell dialogs rendered here, each with its top-list buttons and
+/// one bottom button. `0xE2`: Single Player, Internet, Network, Movies &
+/// Credits and Options, then Exit (`0x3EE`). `0x100`/`0x101`: three page
+/// buttons, then Main Menu (`0x686`). `0x129`: Play Movie, then Back. `0x102`:
+/// Start Game and Choose Map, then Back (`0x5C0`). `0x94`: only Back; its Load
+/// `0x40E` stays hidden (`0x0052F05C`) and `0x0060A180` counts visible buttons
+/// only. `0xB7`: Load (`0x40F`, counted even while disabled). `0xD5`: Keyboard
+/// (`0x5CE`) and Network (`0x5CD`). `0x10E`: six. `0xA3`: Back only; Assign and
+/// Reset All sit on the left. `0x6B`: Use Map and Create Random Map (`0x6C5`,
+/// `0x583`, counted even while disabled), the top panel (`0x00622915`). `0x108`:
+/// only Continue (`0x6D1`, `0x00609A71`). `0x103`: only Continue (`0x423`), its
+/// compositor drawing SCRT then SCRBK (`+0xD7`, `0x006229CE`). LAN (`0x0060A180`/
+/// `0x0060A250`, flags `0x006228E4..0x0062298A`): `0xBB`'s Observe `0x6CE` is
+/// hidden; `0xBC`/`0xBD` and WOL setup `0xC2` (Start, Choose Map, Page) and
+/// `0xC9` (Accept, Page) have the top panel and map button. WOL login `0x10F`:
+/// Login, Forget Account (disabled, counted) and Manage Account. Custom lobby
+/// `0x113`: eight (`0x00608CD0`) and the top panel; its runtime visibility is
+/// not yet observed. WOL Options `0x2BC`: OK and Sound Options; its Sound
+/// Options `0xD6`: Back only. `0x112`: Yes; `0xFE`: OK (created disabled,
+/// counted); `0x117`: Cancel only; `0x122`: Yes; `0x116`: Create, Join, Add,
+/// Page and Remove; `0x114`: Play Buddy, Clan, Tournament, Forget
+/// (template-disabled, counted) and Manage (executed slide records). `0xBC7`
+/// (LAN Cooperative campaign end): `0x103`'s record, Continue `0x6D1`. `0x105`
+/// (random map): Use Map, Load, Save and Delete Map, and the top panel
+/// (`0x0062290E`). VERA's Mods page: Use This Mod and Open Mods Folder.
 pub(crate) const RENDERED_SHELL_SLIDES: &[SlideDialogSpec] = &[
-    // LAN: visible ownerdraw children classified by60A180/60A250. BB's
-    // Observe6CE is hidden. Record flags6228E4..62298A give BC/BD both
-    // D5(top panel) and D6(map button), and BB neither.
-    SlideDialogSpec {
-        dialog_id: 0x00BB,
-        top_buttons: 2,
-        bottom_button: true,
-        map_button: false,
-        top_panel: false,
-        campaign_score: false,
-    },
-    SlideDialogSpec {
-        dialog_id: 0x00BC,
-        top_buttons: 2,
-        bottom_button: true,
-        map_button: true,
-        top_panel: true,
-        campaign_score: false,
-    },
-    SlideDialogSpec {
-        dialog_id: 0x00BD,
-        top_buttons: 1,
-        bottom_button: true,
-        map_button: true,
-        top_panel: true,
-        campaign_score: false,
-    },
-    // WOL setup C2 (Start, Choose Map, Page) and C9 (Accept, Page) keep
-    // BC/BD's top panel and map button.
-    SlideDialogSpec {
-        dialog_id: 0x00C2,
-        top_buttons: 3,
-        bottom_button: true,
-        map_button: true,
-        top_panel: true,
-        campaign_score: false,
-    },
-    SlideDialogSpec {
-        dialog_id: 0x00C9,
-        top_buttons: 2,
-        bottom_button: true,
-        map_button: true,
-        top_panel: true,
-        campaign_score: false,
-    },
-    SlideDialogSpec {
-        dialog_id: 0x00E2,
-        top_buttons: 5,
-        bottom_button: true,
-        map_button: false,
-        top_panel: false,
-        campaign_score: false,
-    },
-    SlideDialogSpec {
-        dialog_id: 0x0100,
-        top_buttons: 3,
-        bottom_button: true,
-        map_button: false,
-        top_panel: false,
-        campaign_score: false,
-    },
-    SlideDialogSpec {
-        dialog_id: 0x0101,
-        top_buttons: 3,
-        bottom_button: true,
-        map_button: false,
-        top_panel: false,
-        campaign_score: false,
-    },
-    SlideDialogSpec {
-        dialog_id: 0x0129,
-        top_buttons: 1,
-        bottom_button: true,
-        map_button: false,
-        top_panel: false,
-        campaign_score: false,
-    },
-    SlideDialogSpec {
-        dialog_id: 0x0102,
-        top_buttons: 2,
-        bottom_button: true,
-        map_button: true,
-        top_panel: true,
-        campaign_score: false,
-    },
-    SlideDialogSpec {
-        dialog_id: 0x0094,
-        top_buttons: 0,
-        bottom_button: true,
-        map_button: false,
-        top_panel: false,
-        campaign_score: false,
-    },
-    SlideDialogSpec {
-        dialog_id: 0x00B7,
-        top_buttons: 1,
-        bottom_button: true,
-        map_button: false,
-        top_panel: false,
-        campaign_score: false,
-    },
-    SlideDialogSpec {
-        dialog_id: 0x00D5,
-        top_buttons: 2,
-        bottom_button: true,
-        map_button: false,
-        top_panel: false,
-        campaign_score: false,
-    },
-    SlideDialogSpec {
-        dialog_id: 0x010E,
-        top_buttons: 6,
-        bottom_button: true,
-        map_button: false,
-        top_panel: false,
-        campaign_score: false,
-    },
-    // WOL login 0x10F: Login, Forget Account (disabled, still counted by
-    // 0x0060A180) and Manage Account, then Back. The custom lobby 0x113:
-    // eight top-list buttons (0x00608CD0), Back, and the top panel (+0xD5,
-    // 0x00622820); its runtime button visibility is not yet observed.
-    SlideDialogSpec {
-        dialog_id: 0x010F,
-        top_buttons: 3,
-        bottom_button: true,
-        map_button: false,
-        top_panel: false,
-        campaign_score: false,
-    },
-    SlideDialogSpec {
-        dialog_id: 0x0113,
-        top_buttons: 8,
-        bottom_button: true,
-        map_button: false,
-        top_panel: true,
-        campaign_score: false,
-    },
-    // VERA's Mods page: Use This Mod and Open Mods Folder, then Back.
-    SlideDialogSpec {
-        dialog_id: crate::ui::mods_shell::DIALOG.0,
-        top_buttons: 2,
-        bottom_button: true,
-        map_button: false,
-        top_panel: false,
-        campaign_score: false,
-    },
-    // WOL Options 0x2BC: OK and Sound Options, then Cancel. Its nested
-    // Sound Options 0xD6: Back only (executed slide records).
-    SlideDialogSpec {
-        dialog_id: 0x02BC,
-        top_buttons: 2,
-        bottom_button: true,
-        map_button: false,
-        top_panel: false,
-        campaign_score: false,
-    },
-    // The WOL persona questions 0x112 (Yes, then No) and 0xFE (OK, created
-    // disabled and still counted, then Cancel): executed slide records.
-    SlideDialogSpec {
-        dialog_id: 0x0112,
-        top_buttons: 1,
-        bottom_button: true,
-        map_button: false,
-        top_panel: false,
-        campaign_score: false,
-    },
-    // 0x117: Cancel only; 0x122: Yes, then No (executed slide records).
-    SlideDialogSpec {
-        dialog_id: 0x0117,
-        top_buttons: 0,
-        bottom_button: true,
-        map_button: false,
-        top_panel: false,
-        campaign_score: false,
-    },
-    SlideDialogSpec {
-        dialog_id: 0x0122,
-        top_buttons: 1,
-        bottom_button: true,
-        map_button: false,
-        top_panel: false,
-        campaign_score: false,
-    },
-    // 0x116: Create, Join, Add, Page and Remove, then Back: the executed
-    // slide record.
-    SlideDialogSpec {
-        dialog_id: 0x0116,
-        top_buttons: 5,
-        bottom_button: true,
-        map_button: false,
-        top_panel: false,
-        campaign_score: false,
-    },
-    // 0x114: Play Buddy, Clan, Tournament, Forget (template-disabled,
-    // counted) and Manage, then Back: the executed slide record.
-    SlideDialogSpec {
-        dialog_id: 0x0114,
-        top_buttons: 5,
-        bottom_button: true,
-        map_button: false,
-        top_panel: false,
-        campaign_score: false,
-    },
-    SlideDialogSpec {
-        dialog_id: 0x00FE,
-        top_buttons: 1,
-        bottom_button: true,
-        map_button: false,
-        top_panel: false,
-        campaign_score: false,
-    },
-    SlideDialogSpec {
-        dialog_id: 0x00D6,
-        top_buttons: 0,
-        bottom_button: true,
-        map_button: false,
-        top_panel: false,
-        campaign_score: false,
-    },
-    SlideDialogSpec {
-        dialog_id: 0x00A3,
-        top_buttons: 0,
-        bottom_button: true,
-        map_button: false,
-        top_panel: false,
-        campaign_score: false,
-    },
-    SlideDialogSpec {
-        dialog_id: 0x006B,
-        top_buttons: 2,
-        bottom_button: true,
-        map_button: false,
-        top_panel: true,
-        campaign_score: false,
-    },
-    SlideDialogSpec {
-        dialog_id: 0x0108,
-        top_buttons: 0,
-        bottom_button: true,
-        map_button: false,
-        top_panel: false,
-        campaign_score: false,
-    },
-    // Campaign victory StandaloneScore `0x103`: only Continue (`0x423`) in
-    // the bottom list, no top-list buttons and record flags +0xD5..+0xD7 =
-    // 0/0/1 (`0x0062290E..0x006229CE`).
-    SlideDialogSpec {
-        dialog_id: 0x0103,
-        top_buttons: 0,
-        bottom_button: true,
-        map_button: false,
-        top_panel: false,
-        campaign_score: true,
-    },
-    // The LAN Cooperative campaign end `0xBC7`: the same record, Continue
-    // (`0x6D1`) alone in the bottom list.
-    SlideDialogSpec {
-        dialog_id: 0x0BC7,
-        top_buttons: 0,
-        bottom_button: true,
-        map_button: false,
-        top_panel: false,
-        campaign_score: true,
-    },
-    // The random-map dialog: Use Map, Load, Save and Delete Map, Cancel, and
-    // the top panel (`0x0062290E`).
-    SlideDialogSpec {
-        dialog_id: 0x0105,
-        top_buttons: 4,
-        bottom_button: true,
-        map_button: false,
-        top_panel: true,
-        campaign_score: false,
-    },
+    SlideDialogSpec::new(0x00BB, 2),
+    SlideDialogSpec::new(0x00BC, 2).map_button().top_panel(),
+    SlideDialogSpec::new(0x00BD, 1).map_button().top_panel(),
+    SlideDialogSpec::new(0x00C2, 3).map_button().top_panel(),
+    SlideDialogSpec::new(0x00C9, 2).map_button().top_panel(),
+    SlideDialogSpec::new(0x00E2, 5),
+    SlideDialogSpec::new(0x0100, 3),
+    SlideDialogSpec::new(0x0101, 3),
+    SlideDialogSpec::new(0x0129, 1),
+    SlideDialogSpec::new(0x0102, 2).map_button().top_panel(),
+    SlideDialogSpec::new(0x0094, 0),
+    SlideDialogSpec::new(0x00B7, 1),
+    SlideDialogSpec::new(0x00D5, 2),
+    SlideDialogSpec::new(0x010E, 6),
+    SlideDialogSpec::new(0x010F, 3),
+    SlideDialogSpec::new(0x0113, 8).top_panel(),
+    SlideDialogSpec::new(
+        crate::ui::mods_shell::DIALOG.0,
+        crate::ui::mods_shell::PAGE.stacked.len() as u32,
+    ),
+    SlideDialogSpec::new(0x02BC, 2),
+    SlideDialogSpec::new(0x0112, 1),
+    SlideDialogSpec::new(0x0117, 0),
+    SlideDialogSpec::new(0x0122, 1),
+    SlideDialogSpec::new(0x0116, 5),
+    SlideDialogSpec::new(0x0114, 5),
+    SlideDialogSpec::new(0x00FE, 1),
+    SlideDialogSpec::new(0x00D6, 0),
+    SlideDialogSpec::new(0x00A3, 0),
+    SlideDialogSpec::new(0x006B, 2).top_panel(),
+    SlideDialogSpec::new(0x0108, 0),
+    SlideDialogSpec::new(0x0103, 0).campaign_score(),
+    SlideDialogSpec::new(0x0BC7, 0).campaign_score(),
+    SlideDialogSpec::new(0x0105, 4).top_panel(),
 ];
 
-/// Whether a dialog plays the first-paint controls-reveal slide: every
-/// front-end shell with a `RENDERED_SHELL_SLIDES` column. The original's full
-/// list (`0x0060C540`, 55 ids) also marks the
-/// in-game menu dialogs (`0xB5`, `0xB6`, `0xB8`, `0xBBA`, `0xBBB`)
-/// and the remaining WOL setup dialogs. `0xB7` slides
-/// only outside a suspended game (`0x00612690`), which is the only place it is
-/// rendered as a family page. Message boxes (`0x120` confirm, `0xCE` body-ok)
-/// are not in it.
-pub(crate) fn is_slide_eligible(id: DialogId) -> bool {
-    slide_spec_for(id).is_some()
-}
-
-/// The slide column spec of a rendered shell dialog.
-pub(crate) fn slide_spec_for(id: DialogId) -> Option<SlideDialogSpec> {
+/// The slide column spec of a dialog that plays the first-paint
+/// controls-reveal slide: every front-end shell in `RENDERED_SHELL_SLIDES`.
+/// The original's full list (`0x0060C540`, 55 ids) also marks the in-game menu
+/// dialogs (`0xB5`, `0xB6`, `0xB8`, `0xBBA`, `0xBBB`) and the remaining WOL
+/// setup dialogs. `0xB7` slides only outside a suspended game (`0x00612690`),
+/// which is the only place it is rendered as a family page. Message boxes
+/// (`0x120` confirm, `0xCE` body-ok) are not in it.
+pub(crate) fn slide_spec_for(id: DialogResourceId) -> Option<SlideDialogSpec> {
     RENDERED_SHELL_SLIDES
         .iter()
         .find(|spec| spec.dialog_id == id.0)
@@ -458,6 +209,8 @@ pub(crate) fn slide_spec_for(id: DialogId) -> Option<SlideDialogSpec> {
 /// tile row with its own entry at `rows`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct SlideColumn {
+    /// An action in the physical slot immediately above Back.
+    pub button_above_back: bool,
     /// Right-panel tile rows (`[0x00B0FA20]`, from `0x0072EE88`).
     pub rows: u32,
     pub top_buttons: u32,
@@ -547,22 +300,21 @@ impl SlideColumn {
             .saturating_sub(u32::from(self.bottom_button))
             .max(self.top_buttons);
         let mut draws: Vec<ColumnDraw> = (0..regular)
-            .map(|c| {
-                let group = if c < self.top_buttons {
-                    ButtonGroup::A
-                } else {
-                    ButtonGroup::B
-                };
-                ColumnDraw {
-                    row: first + c,
-                    frame: frame_for_tick(tick, self.entry_tick(c), group, direction),
-                }
+            .map(|c| ColumnDraw {
+                row: first + c,
+                frame: frame_for_tick(
+                    tick,
+                    self.entry_tick(c),
+                    c < self.top_buttons
+                        || (self.button_above_back && first + c == self.rows.saturating_sub(2)),
+                    direction,
+                ),
             })
             .collect();
         if self.bottom_button {
             draws.push(ColumnDraw {
                 row: self.rows - 1,
-                frame: frame_for_tick(tick, self.rows as i32, ButtonGroup::A, direction),
+                frame: frame_for_tick(tick, self.rows as i32, true, direction),
             });
         }
         draws
@@ -622,366 +374,98 @@ impl SlideColumn {
     }
 }
 
-#[derive(Debug, Clone)]
-enum WaveClock {
-    Compatibility {
-        last_step_at: Instant,
-        tick: u32,
-    },
-    PresentedMainMenu {
-        generation: u64,
-        tick: u8,
-        phase: PresentedPhase,
-    },
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PresentedPhase {
-    Armed,
-    Ready,
-    WaitingUntil(Instant),
-    Completing,
-    Poisoned,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum PresentedPoll {
-    Acquire,
-    WaitUntil(Instant),
-    Complete,
-    Poisoned,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct MainMenuEntryPaintFrame {
-    generation: u64,
-    tick: u8,
-    column: SlideColumn,
-}
-
-impl MainMenuEntryPaintFrame {
-    pub(crate) fn generation(self) -> u64 {
-        self.generation
-    }
-
-    pub(crate) fn tick(self) -> u8 {
-        self.tick
-    }
-
-    /// The column's SDBTNANM draws on this entry tick.
-    pub(crate) fn button_draws(self) -> Vec<ColumnDraw> {
-        self.column
-            .button_draws(u32::from(self.tick), WaveDirection::SlideIn)
-    }
-}
-
-/// Single-use proof that one exact generation/tick was encoded through the
-/// final main-menu presenter. Deliberately neither `Clone` nor `Copy`.
-#[derive(Debug)]
-pub(crate) struct MainMenuEntryPresentToken {
-    generation: u64,
-    tick: u8,
-}
-
-impl MainMenuEntryPresentToken {
-    pub(crate) fn generation(&self) -> u64 {
-        self.generation
-    }
-
-    pub(crate) fn tick(&self) -> u8 {
-        self.tick
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum PresentedCommitError {
-    CompatibilityMode,
-    NotReady,
-    GenerationMismatch,
-    TickMismatch,
-}
-
-impl std::fmt::Display for PresentedCommitError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let message = match self {
-            Self::CompatibilityMode => "present token used with compatibility wave",
-            Self::NotReady => "present token committed outside the ready phase",
-            Self::GenerationMismatch => "present token generation mismatch",
-            Self::TickMismatch => "present token tick mismatch",
-        };
-        f.write_str(message)
-    }
-}
-
-impl std::error::Error for PresentedCommitError {}
-
-/// Per-dialog first-paint slide state. `None` (Idle) → `Some(running)` →
-/// `Some(complete)` mirrors the original's `1→2→3` slide state machine: the wave
-/// is created on the dialog's entry edge, advances one frame per 30 ms tick, and
-/// signals completion via [`ShellFrameWave::is_complete`].
+/// One slide of a shell dialog: the entry slide-in on its first paint or the
+/// teardown slide-out (`0x006071E0`). Ticks `0..total_ticks` show one 30 ms
+/// step each, never skipped; the slide ends when the tick reaches the loop
+/// bound, so the bound itself is never drawn.
 #[derive(Debug, Clone)]
 pub(crate) struct ShellFrameWave {
-    clock: WaveClock,
+    last_step_at: Instant,
+    tick: u32,
     column: SlideColumn,
     direction: WaveDirection,
 }
 
 impl ShellFrameWave {
-    pub(crate) fn new_first_paint_slide(column: SlideColumn, now: Instant) -> Self {
+    pub(crate) fn new(column: SlideColumn, direction: WaveDirection, now: Instant) -> Self {
         Self {
-            clock: WaveClock::Compatibility {
-                last_step_at: now,
-                tick: 0,
-            },
+            last_step_at: now,
+            tick: 0,
             column,
-            direction: WaveDirection::SlideIn,
+            direction,
         }
     }
 
-    /// The teardown slide of a shown dialog (`0x00608070`): the same schedule
-    /// and loop bound as the entry slide, frames counting up to the empty slot.
-    pub(crate) fn new_slide_out(column: SlideColumn, now: Instant) -> Self {
-        Self {
-            direction: WaveDirection::SlideOut,
-            ..Self::new_first_paint_slide(column, now)
-        }
-    }
-
-    pub(crate) fn new_presented_main_menu(generation: u64, column: SlideColumn) -> Self {
-        assert_ne!(generation, 0, "main-menu wave generation must be nonzero");
-        Self {
-            clock: WaveClock::PresentedMainMenu {
-                generation,
-                tick: 0,
-                phase: PresentedPhase::Armed,
-            },
-            column,
-            direction: WaveDirection::SlideIn,
-        }
-    }
-
-    fn total_ticks(&self) -> u32 {
-        self.column.total_ticks()
-    }
-
-    /// Last tick a presented `0xE2` entry shows.
-    fn presented_terminal_tick(&self) -> u8 {
-        u8::try_from(self.total_ticks() - 1).expect("slide fits a u8 tick")
-    }
-
+    /// Every tick has been shown.
     pub(crate) fn is_complete(&self) -> bool {
-        match self.clock {
-            WaveClock::Compatibility { tick, .. } => tick >= self.total_ticks(),
-            WaveClock::PresentedMainMenu { .. } => false,
-        }
+        self.tick >= self.column.total_ticks()
     }
 
-    /// Current tick of a compatibility-clock wave.
-    pub(crate) fn compatibility_tick(&self) -> Option<u32> {
-        match self.clock {
-            WaveClock::Compatibility { tick, .. } => Some(tick),
-            WaveClock::PresentedMainMenu { .. } => None,
-        }
+    pub(crate) fn tick(&self) -> u32 {
+        self.tick
     }
 
-    /// Shell capture only: keep a compatibility-clock wave at its current
-    /// tick (the next step never becomes due).
+    /// Shell capture only: keep the wave at its current tick (the next step
+    /// never becomes due).
     pub(crate) fn hold_for_capture(&mut self) {
-        if let WaveClock::Compatibility { last_step_at, .. } = &mut self.clock {
-            *last_step_at = Instant::now() + Duration::from_secs(3600);
-        }
+        self.last_step_at = Instant::now() + Duration::from_secs(3600);
     }
 
     /// Advance at most ONE tick per call, only once >= 30 ms has elapsed.
     /// Never collapses multiple indices (faithful to one-frame-per-Sleep).
     pub(crate) fn advance(&mut self, now: Instant) {
         let step = Duration::from_millis(u64::from(WAVE_TICK_MS));
-        let total = self.total_ticks();
-        let WaveClock::Compatibility { last_step_at, tick } = &mut self.clock else {
-            return;
-        };
-        if *tick < total && now.duration_since(*last_step_at) >= step {
-            *tick += 1;
-            *last_step_at += step;
+        if !self.is_complete() && now.duration_since(self.last_step_at) >= step {
+            self.tick += 1;
+            self.last_step_at += step;
         }
     }
 
-    /// The column's SDBTNANM draws on the current tick of a compatibility-clock
-    /// wave, in draw order. 4-case per row: held-before / linear ramp (base +
-    /// delta*dir) / held-after; the terminals are distinct constants.
+    /// The column's SDBTNANM draws on the current tick, in draw order.
     pub(crate) fn button_draws(&self) -> Vec<ColumnDraw> {
-        let WaveClock::Compatibility { tick, .. } = self.clock else {
-            panic!("column draws of a presented main-menu wave come from its paint frame");
-        };
-        self.column.button_draws(tick, self.direction)
+        self.column.button_draws(self.tick, self.direction)
     }
 
-    /// The top-panel draws on the current tick of a compatibility-clock wave.
+    /// The top-panel draws on the current tick.
     pub(crate) fn panel_art(&self) -> Vec<PanelArt> {
-        let WaveClock::Compatibility { tick, .. } = self.clock else {
-            return Vec::new();
-        };
-        self.column.panel_art(tick, self.direction)
-    }
-
-    pub(crate) fn activate_after_acquire(&mut self) -> bool {
-        let WaveClock::PresentedMainMenu { phase, .. } = &mut self.clock else {
-            return false;
-        };
-        if *phase != PresentedPhase::Armed {
-            return false;
-        }
-        *phase = PresentedPhase::Ready;
-        true
-    }
-
-    pub(crate) fn poll_presented(&mut self, now: Instant) -> Option<PresentedPoll> {
-        let terminal = self.presented_terminal_tick();
-        let WaveClock::PresentedMainMenu { tick, phase, .. } = &mut self.clock else {
-            return None;
-        };
-        Some(match *phase {
-            PresentedPhase::Armed | PresentedPhase::Ready => PresentedPoll::Acquire,
-            PresentedPhase::WaitingUntil(deadline) if now < deadline => {
-                PresentedPoll::WaitUntil(deadline)
-            }
-            PresentedPhase::WaitingUntil(_) if *tick < terminal => {
-                *tick += 1;
-                *phase = PresentedPhase::Ready;
-                PresentedPoll::Acquire
-            }
-            PresentedPhase::WaitingUntil(_) => {
-                *phase = PresentedPhase::Completing;
-                PresentedPoll::Complete
-            }
-            PresentedPhase::Completing => PresentedPoll::Complete,
-            PresentedPhase::Poisoned => PresentedPoll::Poisoned,
-        })
-    }
-
-    pub(crate) fn current_main_menu_frame(&self) -> Option<MainMenuEntryPaintFrame> {
-        let WaveClock::PresentedMainMenu {
-            generation,
-            tick,
-            phase: PresentedPhase::Ready,
-        } = self.clock
-        else {
-            return None;
-        };
-        Some(MainMenuEntryPaintFrame {
-            generation,
-            tick,
-            column: self.column,
-        })
-    }
-
-    pub(crate) fn mint_present_token(
-        &self,
-        frame: MainMenuEntryPaintFrame,
-    ) -> Option<MainMenuEntryPresentToken> {
-        (self.current_main_menu_frame() == Some(frame)).then_some(MainMenuEntryPresentToken {
-            generation: frame.generation,
-            tick: frame.tick,
-        })
-    }
-
-    pub(crate) fn record_presented(
-        &mut self,
-        token: MainMenuEntryPresentToken,
-        now: Instant,
-    ) -> Result<(), PresentedCommitError> {
-        let WaveClock::PresentedMainMenu {
-            generation,
-            tick,
-            phase,
-        } = &mut self.clock
-        else {
-            return Err(PresentedCommitError::CompatibilityMode);
-        };
-        if *phase != PresentedPhase::Ready {
-            return Err(PresentedCommitError::NotReady);
-        }
-        if token.generation != *generation {
-            return Err(PresentedCommitError::GenerationMismatch);
-        }
-        if token.tick != *tick {
-            return Err(PresentedCommitError::TickMismatch);
-        }
-        *phase = PresentedPhase::WaitingUntil(now + Duration::from_millis(u64::from(WAVE_TICK_MS)));
-        Ok(())
-    }
-
-    pub(crate) fn poison_presented(&mut self) {
-        if let WaveClock::PresentedMainMenu { phase, .. } = &mut self.clock {
-            *phase = PresentedPhase::Poisoned;
-        }
-    }
-
-    pub(crate) fn presented_wake_deadline(&self) -> Option<Instant> {
-        let WaveClock::PresentedMainMenu {
-            phase: PresentedPhase::WaitingUntil(deadline),
-            ..
-        } = self.clock
-        else {
-            return None;
-        };
-        Some(deadline)
-    }
-
-    pub(crate) fn presented_generation(&self) -> Option<u64> {
-        let WaveClock::PresentedMainMenu { generation, .. } = self.clock else {
-            return None;
-        };
-        Some(generation)
-    }
-
-    pub(crate) fn is_presented_completing(&self, generation: u64) -> bool {
-        matches!(
-            self.clock,
-            WaveClock::PresentedMainMenu {
-                generation: actual,
-                phase: PresentedPhase::Completing,
-                ..
-            } if actual == generation
-        )
-    }
-
-    pub(crate) fn is_presented_poisoned(&self) -> bool {
-        matches!(
-            self.clock,
-            WaveClock::PresentedMainMenu {
-                phase: PresentedPhase::Poisoned,
-                ..
-            }
-        )
-    }
-
-    #[cfg(test)]
-    fn compatibility_tick_for_test(&self) -> u32 {
-        let WaveClock::Compatibility { tick, .. } = self.clock else {
-            panic!("expected compatibility wave");
-        };
-        tick
+        self.column.panel_art(self.tick, self.direction)
     }
 }
 
-fn frame_for_tick(
-    tick: i32,
-    entry_tick: i32,
-    group: ButtonGroup,
-    direction: WaveDirection,
-) -> usize {
-    let f = match (group, direction) {
-        (ButtonGroup::A, WaveDirection::SlideIn) => GROUP_A_IN,
-        (ButtonGroup::A, WaveDirection::SlideOut) => GROUP_A_OUT,
-        (ButtonGroup::B, WaveDirection::SlideIn) => GROUP_B_IN,
-        (ButtonGroup::B, WaveDirection::SlideOut) => GROUP_B_OUT,
+/// One row's SDBTNANM frame on `tick`: held before its entry, the six-step
+/// ramp, then held after.
+fn frame_for_tick(tick: i32, entry_tick: i32, button: bool, direction: WaveDirection) -> usize {
+    let f = match (button, direction) {
+        (true, WaveDirection::SlideIn) => WaveFrames {
+            before: 10,
+            base: 10,
+            after: 1,
+        },
+        (true, WaveDirection::SlideOut) => WaveFrames {
+            before: 1,
+            base: 5,
+            after: 10,
+        },
+        (false, WaveDirection::SlideIn) => WaveFrames {
+            before: 10,
+            base: 16,
+            after: 0,
+        },
+        (false, WaveDirection::SlideOut) => WaveFrames {
+            before: 0,
+            base: 11,
+            after: 10,
+        },
+    };
+    let dir = match direction {
+        WaveDirection::SlideIn => -1,
+        WaveDirection::SlideOut => 1,
     };
     let delta = tick - entry_tick;
     let frame = if delta < 0 {
         f.before
     } else if delta < WAVE_RAMP_STEPS {
-        f.base + delta * direction.dir()
+        f.base + delta * dir
     } else {
         f.after
     };
@@ -1000,11 +484,7 @@ mod tests {
     const SDMPBTN_SIZE: (i32, i32) = (156, 84);
 
     fn spec(dialog_id: u16) -> SlideDialogSpec {
-        slide_spec_for(DialogId(dialog_id)).expect("rendered dialog")
-    }
-
-    fn main_menu_column() -> SlideColumn {
-        spec(0x00E2).column(9)
+        slide_spec_for(DialogResourceId(dialog_id)).expect("rendered dialog")
     }
 
     /// Screen draw of one column row at a resolution through the painters'
@@ -1132,10 +612,10 @@ mod tests {
     }
 
     #[test]
-    fn a_compatibility_wave_draws_the_column_of_its_current_tick() {
+    fn a_wave_draws_the_column_of_its_current_tick() {
         let t0 = Instant::now();
         let column = spec(0x0129).column(9);
-        let mut wave = ShellFrameWave::new_slide_out(column, t0);
+        let mut wave = ShellFrameWave::new(column, WaveDirection::SlideOut, t0);
         assert_eq!(
             wave.button_draws(),
             column.button_draws(0, WaveDirection::SlideOut)
@@ -1143,7 +623,7 @@ mod tests {
         for tick in 1..=4u64 {
             wave.advance(t0 + Duration::from_millis(30 * tick));
         }
-        assert_eq!(wave.compatibility_tick(), Some(4));
+        assert_eq!(wave.tick(), 4);
         assert_eq!(
             wave.button_draws(),
             column.button_draws(4, WaveDirection::SlideOut)
@@ -1161,154 +641,14 @@ mod tests {
     #[test]
     fn advance_steps_one_frame_per_30ms_and_never_collapses() {
         let t0 = Instant::now();
-        let mut w = ShellFrameWave::new_first_paint_slide(spec(0x0100).column(9), t0);
+        let mut w = ShellFrameWave::new(spec(0x0100).column(9), WaveDirection::SlideIn, t0);
         w.advance(t0 + Duration::from_millis(29));
-        assert_eq!(w.compatibility_tick_for_test(), 0);
+        assert_eq!(w.tick(), 0);
         w.advance(t0 + Duration::from_millis(30));
-        assert_eq!(w.compatibility_tick_for_test(), 1);
+        assert_eq!(w.tick(), 1);
         // A 1-second gap must still advance only ONE index (no catch-up).
         w.advance(t0 + Duration::from_millis(1030));
-        assert_eq!(w.compatibility_tick_for_test(), 2);
-    }
-
-    #[test]
-    fn presented_wave_advances_only_after_matching_present_and_deadline() {
-        let start = Instant::now();
-        let mut wave = ShellFrameWave::new_presented_main_menu(7, main_menu_column());
-        assert_eq!(wave.poll_presented(start), Some(PresentedPoll::Acquire));
-        assert_eq!(wave.current_main_menu_frame(), None);
-        assert!(wave.activate_after_acquire());
-        let frame0 = wave.current_main_menu_frame().expect("tick 0");
-        assert_eq!((frame0.generation(), frame0.tick()), (7, 0));
-        assert_eq!(
-            frame0.button_draws(),
-            main_menu_column().button_draws(0, WaveDirection::SlideIn)
-        );
-        let token0 = wave.mint_present_token(frame0).expect("token 0");
-        wave.record_presented(token0, start).expect("accept tick 0");
-        assert_eq!(
-            wave.poll_presented(start + Duration::from_millis(29)),
-            Some(PresentedPoll::WaitUntil(start + Duration::from_millis(30)))
-        );
-        assert_eq!(
-            wave.poll_presented(start + Duration::from_millis(30)),
-            Some(PresentedPoll::Acquire)
-        );
-        assert_eq!(wave.current_main_menu_frame().map(|f| f.tick()), Some(1));
-
-        let frame1 = wave.current_main_menu_frame().expect("tick 1");
-        wave.record_presented(
-            wave.mint_present_token(frame1).expect("token 1"),
-            start + Duration::from_millis(30),
-        )
-        .expect("accept tick 1");
-        assert_eq!(
-            wave.poll_presented(start + Duration::from_secs(1)),
-            Some(PresentedPoll::Acquire)
-        );
-        assert_eq!(wave.current_main_menu_frame().map(|f| f.tick()), Some(2));
-        assert_eq!(
-            wave.poll_presented(start + Duration::from_secs(1)),
-            Some(PresentedPoll::Acquire),
-            "a stall must not release a second unpresented tick"
-        );
-        assert_eq!(wave.current_main_menu_frame().map(|f| f.tick()), Some(2));
-    }
-
-    #[test]
-    fn presented_wave_rejects_stale_wrong_and_double_tokens() {
-        let start = Instant::now();
-        let mut wave = ShellFrameWave::new_presented_main_menu(9, main_menu_column());
-        assert!(wave.activate_after_acquire());
-        assert_eq!(
-            wave.record_presented(
-                MainMenuEntryPresentToken {
-                    generation: 8,
-                    tick: 0,
-                },
-                start,
-            ),
-            Err(PresentedCommitError::GenerationMismatch)
-        );
-        assert_eq!(
-            wave.record_presented(
-                MainMenuEntryPresentToken {
-                    generation: 9,
-                    tick: 1,
-                },
-                start,
-            ),
-            Err(PresentedCommitError::TickMismatch)
-        );
-        wave.record_presented(
-            MainMenuEntryPresentToken {
-                generation: 9,
-                tick: 0,
-            },
-            start,
-        )
-        .expect("matching token");
-        assert_eq!(
-            wave.record_presented(
-                MainMenuEntryPresentToken {
-                    generation: 9,
-                    tick: 0,
-                },
-                start,
-            ),
-            Err(PresentedCommitError::NotReady)
-        );
-    }
-
-    #[test]
-    fn terminal_tick_holds_then_completes_after_the_loop_bound() {
-        // 0xE2 at 800x600: 9 tile rows, ticks 0..=17.
-        let start = Instant::now();
-        let mut wave = ShellFrameWave::new_presented_main_menu(11, main_menu_column());
-        assert!(wave.activate_after_acquire());
-        let terminal = main_menu_column().total_ticks() as u8 - 1;
-        assert_eq!(terminal, 17);
-        let mut accepted_at = start;
-        for expected_tick in 0..=terminal {
-            let frame = wave.current_main_menu_frame().expect("ready frame");
-            assert_eq!(frame.tick(), expected_tick);
-            let token = wave.mint_present_token(frame).expect("matching token");
-            wave.record_presented(token, accepted_at)
-                .expect("accepted present");
-            if expected_tick < terminal {
-                accepted_at += Duration::from_millis(30);
-                assert_eq!(
-                    wave.poll_presented(accepted_at),
-                    Some(PresentedPoll::Acquire)
-                );
-            }
-        }
-        assert_eq!(
-            wave.poll_presented(accepted_at + Duration::from_millis(29)),
-            Some(PresentedPoll::WaitUntil(
-                accepted_at + Duration::from_millis(30)
-            ))
-        );
-        assert_eq!(
-            wave.poll_presented(accepted_at + Duration::from_millis(30)),
-            Some(PresentedPoll::Complete)
-        );
-        assert!(wave.is_presented_completing(11));
-        assert_eq!(wave.current_main_menu_frame(), None);
-    }
-
-    #[test]
-    fn poisoned_presented_wave_exposes_no_frame_or_wake() {
-        let mut wave = ShellFrameWave::new_presented_main_menu(13, main_menu_column());
-        assert!(wave.activate_after_acquire());
-        wave.poison_presented();
-        assert!(wave.is_presented_poisoned());
-        assert_eq!(
-            wave.poll_presented(Instant::now()),
-            Some(PresentedPoll::Poisoned)
-        );
-        assert_eq!(wave.current_main_menu_frame(), None);
-        assert_eq!(wave.presented_wake_deadline(), None);
+        assert_eq!(w.tick(), 2);
     }
 
     #[test]
@@ -1316,8 +656,11 @@ mod tests {
         // Message boxes are not in 0x0060C540's list; the in-game Options
         // dialog 0xBBB is, but has no slide here yet.
         for id in [0x0120u16, 0x00CE, 0x0BBB] {
-            assert!(!is_slide_eligible(DialogId(id)), "{id:#06x} must not slide");
-            assert_eq!(slide_spec_for(DialogId(id)), None);
+            assert_eq!(
+                slide_spec_for(DialogResourceId(id)),
+                None,
+                "{id:#06x} must not slide"
+            );
         }
     }
 }

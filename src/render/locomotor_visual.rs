@@ -26,10 +26,11 @@
 //! `0x3FC25E5374344960`; the shared native-x87 substrate owns that value and
 //! the 53-bit, truncate-toward-zero operation order.
 //!
-//! Buildings on VERA's extended terrain keep that native conversion for
-//! relative height, but align their ground baseline to the terrain's 15px
-//! levels. [`building_terrain_correction`] is shared by their live, attached
-//! animation, placement and fogged drawing paths.
+//! Buildings take that native conversion on every terrain level, as gamemd
+//! draws them. The `[graphics] high_terrain_building_lift` option aligns them
+//! to the terrain's 15px levels from level 15 up instead; one switch,
+//! [`building_terrain_correction`], serves their live, attached animation,
+//! placement, bracket and fogged drawing paths.
 //!
 //! ### What this replaced
 //!
@@ -62,6 +63,7 @@
 
 use crate::map::entities::EntityCategory;
 use crate::sim::components::Position;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 /// What placing an object on the screen reads of it: a live object, or its
 /// record in the presentation frame (`app::presentation::frame`).
@@ -80,12 +82,39 @@ impl Placed for crate::sim::game_entity::GameEntity {
     }
 }
 
-/// Presentation-only extension of Tactical::AdjustForZ @ 0x006D20E0 for
-/// buildings on high terrain. Its native scale agrees with 15px terrain
-/// levels through level 14, but gives 538px instead of 540px at level 36.
-/// Shift the ground baseline, keeping exact-Z offsets and simulation intact;
-/// otherwise the TMP depth surface hides flat parts of the building.
+/// `[graphics] high_terrain_building_lift`, set once at startup from the
+/// loaded config ([`set_high_terrain_building_lift`]). Presentation only:
+/// the simulation never reads it. A copy of the config option in a global
+/// because its readers, [`building_terrain_correction`]'s callers (the
+/// building, overlay, fogged, placement-preview and selection-bracket draws
+/// and this module's own placed-object offsets), are handed entities and
+/// cells, not the config; an atomic because a `static` must be `Sync`.
+static HIGH_TERRAIN_BUILDING_LIFT: AtomicBool = AtomicBool::new(false);
+
+/// Installs the player's `high_terrain_building_lift` choice.
+pub(crate) fn set_high_terrain_building_lift(on: bool) {
+    HIGH_TERRAIN_BUILDING_LIFT.store(on, Ordering::Relaxed);
+}
+
+/// Extra upward shift of a building on terrain `level`, in pixels: 0 as
+/// gamemd draws it, or [`vera_building_terrain_lift`] when the player turns
+/// on `high_terrain_building_lift`.
 pub(crate) fn building_terrain_correction(level: i32) -> i32 {
+    if HIGH_TERRAIN_BUILDING_LIFT.load(Ordering::Relaxed) {
+        vera_building_terrain_lift(level)
+    } else {
+        0
+    }
+}
+
+/// VERA-only: how far a building on terrain `level` sits below its tile row.
+/// gamemd lifts a building by Tactical::AdjustForZ @ 0x006D20E0 alone
+/// (BuildingClass draw `0x0043D83E`, `0x0043E900`; FoggedObject `0x004D1E5B`).
+/// Its scale agrees with 15px terrain levels through level 14 but gives 538px
+/// instead of 540px at level 36, so from level 15 up the body sits 1-2 px
+/// lower and the tiles' depth hides that sliver. Exact-Z offsets and the
+/// simulation are unchanged either way.
+fn vera_building_terrain_lift(level: i32) -> i32 {
     if !(15..=i32::from(i8::MAX)).contains(&level) {
         return 0;
     }
@@ -108,8 +137,8 @@ fn entity_terrain_correction(entity: &(impl Placed + ?Sized)) -> i32 {
 /// Positive lifts the entity toward the top of the screen (screen Y decreases).
 ///
 /// The exact Z is total world Z, the terrain level included. An object
-/// without one already projects its stored level; only the high-terrain
-/// building correction is added here.
+/// without one already projects its stored level; only the optional
+/// high-terrain building correction is added here.
 ///
 /// The native height term reproduces gamemd's `AdjustForZ` exactly, quantisation
 /// included: the startup scale, the 728-lepton correction, and the `+ 0.5`
@@ -290,8 +319,11 @@ mod tests {
     use crate::map::entities::EntityCategory;
     use crate::sim::game_entity::GameEntity;
 
+    /// gamemd lifts a building by AdjustForZ alone on every terrain level
+    /// (`0x0043D83E`), which from level 15 up leaves its art below its tile
+    /// row; `high_terrain_building_lift` closes that gap.
     #[test]
-    fn high_terrain_building_anchor_matches_its_tile_and_depth_lift() {
+    fn high_terrain_building_takes_the_native_lift_unless_lifted() {
         let mut building = GameEntity::test_default_of_category(
             1,
             "GASPYSAT",
@@ -305,29 +337,20 @@ mod tests {
             building.position.set_exact_z_leptons_for_test(exact_z);
             let (x, y) = screen_position(&building);
             let lift = screen_lift_px(&building);
-            let (tile_x, tile_y) = crate::map::terrain::iso_to_screen(189, 258, level);
-            assert_eq!(building_art_anchor(x, y), (tile_x + 30.0, tile_y));
+            assert_eq!(
+                lift,
+                crate::util::native_x87::adjust_for_z_standard(
+                    i32::from(level) * crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS
+                )
+            );
             assert_eq!(
                 y + lift as f32,
                 z_free_screen_position(&building.position).1
             );
+            let lifted = y - vera_building_terrain_lift(i32::from(level)) as f32;
+            let (tile_x, tile_y) = crate::map::terrain::iso_to_screen(189, 258, level);
+            assert_eq!(building_art_anchor(x, lifted), (tile_x + 30.0, tile_y));
         }
-        building.position.set_exact_z_leptons_for_test(Some(3796));
-        assert_eq!(
-            screen_lift_px(&building) - 540,
-            crate::util::native_x87::adjust_for_z_standard(3796)
-                - crate::util::native_x87::adjust_for_z_standard(3744),
-            "retain the native relative lift above the high plateau"
-        );
-        let mut aircraft =
-            GameEntity::test_default_of_category(2, "ZEP", "A", 189, 258, EntityCategory::Aircraft);
-        aircraft.position.set_z_for_test(36);
-        aircraft.position.set_exact_z_leptons_for_test(Some(3744));
-        assert_eq!(
-            screen_lift_px(&aircraft),
-            crate::util::native_x87::adjust_for_z_standard(3744),
-            "aircraft retain their native lift"
-        );
     }
 
     #[test]

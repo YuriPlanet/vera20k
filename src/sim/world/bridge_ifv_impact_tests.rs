@@ -157,7 +157,7 @@ fn native_ifv_bridge_impact_orders_live_selection_debris_ids_and_rng() {
         let name = row["name"].as_str().unwrap();
         let mut world = stock_world(&rules, &stock);
         world.resolve_rule_animation_lists(&rules);
-        world.bridge_state = Some(BridgeRuntimeState::from_resolved_terrain_with_map_size(
+        *world.bridge_state = Some(BridgeRuntimeState::from_resolved_terrain_with_map_size(
             world.resolved_terrain.as_ref().unwrap(),
             true,
             rules.bridge_rules.strength,
@@ -169,10 +169,9 @@ fn native_ifv_bridge_impact_orders_live_selection_debris_ids_and_rng() {
             let result = super::super::super::run_state_machine(
                 &mut world,
                 &rules,
-                Some(&overlays),
                 (10, 20),
                 Family::High,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
             let body: Value = serde_json::from_str(crate::test_fixture::text(
                 "tools/spatial_oracle/bridge_rim_body.json",
@@ -188,8 +187,8 @@ fn native_ifv_bridge_impact_orders_live_selection_debris_ids_and_rng() {
         }
         assert_cells(&world, &row["initial"]["bridge_before"], name);
         let seed = row["supplied"]["scenario_rng_seed"].as_u64().unwrap();
-        world.scenario_rng = SimRng::new(seed);
-        world.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(
+        *world.scenario_rng = SimRng::new(seed);
+        *world.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(
             row["launch"]["unique_id"].as_u64().unwrap() as u32,
         ));
         world.session.set_binary_frame_for_test(

@@ -23,7 +23,6 @@ use crate::sim::world::{
     FrameEffects, SimFrameOutput, SimSoundEvent, Simulation, SoundBoundary, TickLane,
 };
 use crate::skirmish_launch::{AiDifficulty, LaunchCountry, LaunchStartPosition};
-use std::cell::RefCell;
 
 #[derive(Clone, Copy)]
 struct Case {
@@ -51,14 +50,13 @@ const CASES: [Case; 2] = [
 /// Copies only newly delivered real facts, then delegates the production owner.
 /// No synthetic event, admission answer, receiver or replacement RNG is supplied.
 struct ObservingBoundary<'a, 'b> {
-    client: &'a FrameClientBoundary<'b>,
-    copied: RefCell<Vec<SimSoundEvent>>,
+    client: &'a mut FrameClientBoundary<'b>,
+    copied: Vec<SimSoundEvent>,
 }
 
 impl SoundBoundary for ObservingBoundary<'_, '_> {
-    fn consume(&self, sim: &Simulation, rules: &RuleSet, events: &[SimSoundEvent]) {
+    fn consume(&mut self, sim: &Simulation, rules: &RuleSet, events: &[SimSoundEvent]) {
         self.copied
-            .borrow_mut()
             .extend_from_slice(&events[self.client.delivered()..]);
         self.client.consume(sim, rules, events);
     }
@@ -67,7 +65,7 @@ impl SoundBoundary for ObservingBoundary<'_, '_> {
         self.client.delivered()
     }
 
-    fn update_looping_sound(&self, sim: &Simulation, owner: u64, world: AnimWorldCoord) {
+    fn update_looping_sound(&mut self, sim: &Simulation, owner: u64, world: AnimWorldCoord) {
         self.client.update_looping_sound(sim, owner, world);
     }
 }
@@ -93,10 +91,10 @@ fn frame(
             },
         )
     });
-    let client = FrameClientBoundary::new(playback, Some(local), &mut queue, &mut radar);
-    let observed = ObservingBoundary {
-        client: &client,
-        copied: RefCell::new(Vec::new()),
+    let mut client = FrameClientBoundary::new(playback, Some(local), &mut queue, &mut radar);
+    let mut observed = ObservingBoundary {
+        client: &mut client,
+        copied: Vec::new(),
     };
     let output = scene
         .runtime
@@ -104,7 +102,7 @@ fn frame(
             &commands,
             crate::app::types::SIM_TICK_MS,
             TickLane::Ordinary,
-            FrameEffects::for_sound(&observed),
+            &mut FrameEffects::for_sound(&mut observed),
         )
         .expect("ordinary bound-resource frame");
     assert!(output.tick.frame_committed && !output.network_waiting && !output.outcome_waiting);
@@ -117,7 +115,7 @@ fn frame(
         &output.sound_events,
     );
     assert_eq!(observed.delivered(), output.sound_events.len());
-    let copied = observed.copied.into_inner();
+    let copied = observed.copied;
     assert_eq!(
         copied.len(),
         output.sound_events.len(),
@@ -155,13 +153,13 @@ fn audio_runtime(with_device: bool) -> AppAudioRuntime {
     }
 }
 
-fn cue_id(event: &SimSoundEvent) -> Option<&str> {
+fn cue_id<'a>(rules: &'a RuleSet, event: &'a SimSoundEvent) -> Option<&'a str> {
     match event {
         // Untouched714 emits EntityDied; candidate uses native-shaped VocAt.
-        SimSoundEvent::EntityDied { die_sound_id, .. } => Some(die_sound_id),
+        SimSoundEvent::EntityDied { die_sound_id, .. } => Some(die_sound_id.name_in(rules)),
         SimSoundEvent::VocAt { sound_id, .. }
         | SimSoundEvent::VocAtCoord { sound_id, .. }
-        | SimSoundEvent::AnimationStarted { sound_id, .. } => Some(sound_id),
+        | SimSoundEvent::AnimationStarted { sound_id, .. } => Some(sound_id.name_in(rules)),
         _ => None,
     }
 }
@@ -215,6 +213,8 @@ struct History {
     coordinate_requests: Vec<serde_json::Value>,
     prepared: Option<serde_json::Value>,
     audio_main_advances: usize,
+    /// The scenario that played it, whose rules read its sound names.
+    scene: HeadlessScenario,
 }
 
 fn history(
@@ -260,6 +260,13 @@ fn history(
     launch.options.fog_of_war = false;
     let mut scene = load_session(root, name, 0x1234_5678, launch)
         .expect("physical Hills/Rules/ART/TMP and authored full-health stock actors");
+    // The app's process Main cell, which audio service draws, takes the
+    // loaded cursor as a rendered install does.
+    let process_main = crate::sim::rng::MainRng::new(0);
+    scene
+        .runtime
+        .simulation
+        .install_fresh_process_main(&process_main);
     let sim = scene.sim();
     let owner = sim.session().current_house().unwrap();
     let local = sim.resolve(owner).to_owned();
@@ -292,10 +299,10 @@ fn history(
         target.lifecycle.object_alive() && target.lifecycle.cell_marked() && !target.in_limbo()
     );
     assert!(sim.logic_order().contains(&victim) && sim.logic_order().contains(&attacker));
-    assert!(target.passenger_role.occupants().is_empty());
+    assert!(target.passenger_role().occupants().is_empty());
     assert!(
         target
-            .passenger_role
+            .passenger_role()
             .cargo()
             .is_none_or(|cargo| cargo.is_empty())
     );
@@ -490,7 +497,7 @@ fn history(
                 false,
                 Some(assets),
                 Some(catalog),
-                &mut scene.sim().presentation_main_draws(),
+                &mut process_main.draws(),
             );
             continue;
         }
@@ -518,7 +525,10 @@ fn history(
                     anim_id,
                     sound_id,
                     world,
-                } if sound_id.eq_ignore_ascii_case("Explosion14") => {
+                } if sound_id
+                    .name_in(&scene.runtime.resources.rules)
+                    .eq_ignore_ascii_case("Explosion14") =>
+                {
                     let (rx, ry, _, _, _) = world.to_cell_sub_z();
                     if !(31..=33).contains(&rx) || !(85..=86).contains(&ry) {
                         return None; // Other actors elsewhere on the loaded Hills map.
@@ -552,7 +562,7 @@ fn history(
                         false,
                         Some(assets),
                         Some(catalog),
-                        &mut scene.sim().presentation_main_draws(),
+                        &mut process_main.draws(),
                     )
                 });
                 audio_main_advances += draws.len();
@@ -562,12 +572,10 @@ fn history(
         // published twice. No lifecycle method or disposal setter is called.
         let (next, _) = frame(&mut scene, &mut audio, assets, catalog, listener, &local);
         assert!(scene.sim().entities().get(victim).is_none());
-        assert!(
-            !next
-                .sound_events
-                .iter()
-                .any(|event| cue_id(event).is_some_and(|id| id.eq_ignore_ascii_case(case.cue)))
-        );
+        assert!(!next.sound_events.iter().any(|event| {
+            cue_id(&scene.runtime.resources.rules, event)
+                .is_some_and(|id| id.eq_ignore_ascii_case(case.cue))
+        }));
         let prepared = audio.sfx_player.as_mut().map(|player| {
             player
                 .finish_pcm_observation()
@@ -583,9 +591,12 @@ fn history(
             output
                 .sound_events
                 .iter()
-                .filter_map(cue_id)
+                .filter_map(|event| cue_id(&scene.runtime.resources.rules, event))
                 .collect::<Vec<_>>(),
-            copied.iter().filter_map(cue_id).collect::<Vec<_>>()
+            copied
+                .iter()
+                .filter_map(|event| cue_id(&scene.runtime.resources.rules, event))
+                .collect::<Vec<_>>()
         );
         return History {
             case,
@@ -598,6 +609,7 @@ fn history(
             coordinate_requests,
             prepared,
             audio_main_advances,
+            scene,
         };
     }
     panic!("{} did not die through the actual MTNK attack", case.kind);
@@ -646,7 +658,8 @@ fn stock_building_death_cues_precede_the_fatal_ap_impact() {
                 .iter()
                 .enumerate()
                 .filter(|(_, event)| {
-                    cue_id(event).is_some_and(|id| id.eq_ignore_ascii_case(history.case.cue))
+                    cue_id(&history.scene.runtime.resources.rules, event)
+                        .is_some_and(|id| id.eq_ignore_ascii_case(history.case.cue))
                 })
                 .collect();
             assert_eq!(
@@ -688,7 +701,10 @@ fn stock_building_death_cues_precede_the_fatal_ap_impact() {
         let cue = history
             .produced
             .iter()
-            .find(|event| cue_id(event).is_some_and(|id| id.eq_ignore_ascii_case(history.case.cue)))
+            .find(|event| {
+                cue_id(&history.scene.runtime.resources.rules, event)
+                    .is_some_and(|id| id.eq_ignore_ascii_case(history.case.cue))
+            })
             .unwrap();
         if history.case.kind == "GAPILE" {
             assert!(matches!(cue, SimSoundEvent::VocAtCoord { flags: 0, .. }));
@@ -826,4 +842,127 @@ fn fatal_stock_cues_reach_actual_sample_preparation_without_actor_owned_handles(
             history.audio_main_advances
         );
     }
+}
+
+/// A staged match hands its sounds to the client by its own rules' names: a
+/// stock MTNK's first 105mm shot emits the weapon's `Report` as a listed id,
+/// and the production dispatcher plus the playback read
+/// (`GameSoundEvent::sound_id` against the match rules, as
+/// `SoundPlaybackInputs::consume` reads it) give back the field's text.
+#[test]
+fn a_staged_match_report_reads_back_as_its_rules_field() {
+    use super::dispatch_sim_sound_events;
+    use crate::audio::events::GameSoundEvent;
+    use crate::rules::ruleset::SoundName;
+
+    let Some((root, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+        return;
+    };
+    let mut map = String::from_utf8(
+        assets
+            .resolve_ref("XMP03T4.MAP")
+            .expect("physical Hills")
+            .bytes
+            .to_vec(),
+    )
+    .expect("physical Hills INI text");
+    insert_records(
+        &mut map,
+        "Units",
+        "HandoffAttacker=<human player>,MTNK,256,30,85,64,Guard,None,0,-1,0,-1,1,1\n",
+    );
+    insert_records(
+        &mut map,
+        "Structures",
+        "HandoffTarget=Neutral,GAPOWR,256,31,85,0,None,0,0,1,0,0,0,None,None,None,0\n",
+    );
+    let directory = crate::map::source::test_support::TestDirectory::new("sound-name-handoff");
+    let path = directory.path().join("HANDOFF.map");
+    std::fs::write(&path, map).unwrap();
+    let name = path.to_str().unwrap();
+    let mut launch = battle_session(name, &[(LaunchCountry::Russia, AiDifficulty::Easy)]);
+    launch.local_slot_mut().start_position = LaunchStartPosition::Position(0);
+    launch.opponents[0].start_position = LaunchStartPosition::Position(1);
+    launch.options.bases = true;
+    launch.options.unit_count = 0;
+    launch.options.crates = false;
+    launch.options.shroud = false;
+    launch.options.fog_of_war = false;
+    let mut scene = load_session(&root, name, 0x1234_5678, launch)
+        .expect("physical Hills/Rules/ART staged as a match");
+    let sim = &scene.runtime.simulation;
+    let owner = sim.session().current_house().unwrap();
+    let local = sim.resolve(owner).to_owned();
+    let find = |kind: &str, cell| {
+        sim.entities()
+            .values()
+            .find(|e| {
+                sim.resolve(e.type_ref()) == kind && (e.position.rx(), e.position.ry()) == cell
+            })
+            .unwrap()
+            .stable_id()
+    };
+    let command = CommandEnvelope::new(
+        owner,
+        sim.session().tick() + 1,
+        Command::Attack {
+            attacker_id: find("MTNK", (30, 85)),
+            target_id: find("GAPOWR", (31, 85)),
+        },
+    );
+    scene.runtime.simulation.queue_command(command);
+    let mut heard = Vec::new();
+    for _ in 0..300 {
+        let commands = scene.runtime.simulation.take_due_commands();
+        let output = scene
+            .runtime
+            .advance_frame(
+                &commands,
+                crate::app::types::SIM_TICK_MS,
+                TickLane::Ordinary,
+                &mut FrameEffects::default(),
+            )
+            .expect("ordinary staged frame");
+        let rules = &scene.runtime.resources.rules;
+        let mut queue = SoundEventQueue::new();
+        dispatch_sim_sound_events(
+            output.sound_events.iter().cloned(),
+            &scene.runtime.simulation,
+            rules,
+            Some(&local),
+            &mut |_| false,
+            &mut queue,
+            None,
+        );
+        heard.extend(
+            queue
+                .drain()
+                .iter()
+                .filter(|event| {
+                    matches!(
+                        event,
+                        GameSoundEvent::VocAt {
+                            sound_id: SoundName::Listed(_),
+                            ..
+                        }
+                    )
+                })
+                .map(|event| event.sound_id(Some(rules.sound_names())).to_owned()),
+        );
+        if !heard.is_empty() {
+            break;
+        }
+    }
+    let report = &scene
+        .runtime
+        .resources
+        .rules
+        .weapon("105mm")
+        .unwrap()
+        .report;
+    assert!(!report.is_empty(), "retail 105mm Report");
+    assert!(
+        heard.first().is_some_and(|name| report.contains(name)),
+        "first listed positional sound {heard:?}, 105mm Report {report:?}"
+    );
 }

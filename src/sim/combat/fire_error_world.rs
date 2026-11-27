@@ -19,7 +19,6 @@ use crate::map::cell_index::NativeCellIdentity;
 use crate::map::entities::EntityCategory;
 use crate::map::resolved_terrain::{NativeCellQuery, ResolvedTerrainGrid};
 use crate::rules::object_type::ObjectType;
-use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::rules::weapon_type::WeaponType;
 use crate::sim::game_entity::GameEntity;
@@ -35,7 +34,6 @@ use crate::sim::world::Simulation;
 pub(crate) struct FireSubject<'a> {
     pub world: &'a Simulation,
     pub rules: &'a RuleSet,
-    pub overlay_registry: Option<&'a OverlayTypeRegistry>,
     pub fog: Option<FireFog<'a>>,
     pub firer: &'a GameEntity,
     pub obj: &'a ObjectType,
@@ -49,6 +47,7 @@ pub(crate) struct FireSubject<'a> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct FirerPart {
     ares: bool,
+    kratos: bool,
     class: FirerClass,
     frame: i32,
     /// Every link to the target unset: [`Self::facts`] sets them.
@@ -89,6 +88,7 @@ impl FirerPart {
         firer.temporal = self.temporal_target.map(link);
         FireFacts {
             ares: self.ares,
+            kratos: self.kratos,
             class: self.class,
             frame: self.frame,
             weapon_index,
@@ -211,6 +211,8 @@ impl<'a> FireSubject<'a> {
             fire_in_transport: weapon.fire_in_transport,
             area_fire: weapon.area_fire,
             is_mag_beam: weapon.is_mag_beam,
+            no_money_no_talk: weapon.no_money_no_talk,
+            dont_need_money: weapon.dont_need_money,
             warhead: warhead.map(|warhead| WarheadFacts {
                 mind_control: warhead.mind_control,
                 ivan_bomb: warhead.ivan_bomb,
@@ -238,11 +240,13 @@ impl<'a> FireSubject<'a> {
                     aa: false,
                     ag: true,
                     rot: 0,
+                    aa_only: false,
                 },
                 |projectile| ProjectileFacts {
                     aa: projectile.aa,
                     ag: projectile.ag,
                     rot: projectile.rot,
+                    aa_only: projectile.aa_only,
                 },
             ),
         }
@@ -265,26 +269,34 @@ impl<'a> FireSubject<'a> {
         // (`0x006FC57D`, `0x006FC5C7`). A garrison occupant or cargo rider
         // stores no Transporter (vera20k#3838).
         let transport = firer
-            .passenger_role
+            .passenger_role()
             .transporter()
             .and_then(|id| self.world.substrate.entities.get(id));
         // U5 reads the `+0x418` tether latch (`radio::tether`) and
         // `RadioLinks[0]`.
         let radio_link = firer
+            .seldom
             .radio_contacts
             .slot(0)
             .and_then(|id| self.world.substrate.entities.get(id));
         let firer_facts = FirerFacts {
-            enslaved: firer.slave.owner().is_some(),
+            enslaved: firer.seldom.slave.owner().is_some(),
             warped_out: firer.is_warped_out(),
             warping_in: firer.is_warping_in(),
             robot_offline: firer.deactivated.is_offline(),
             weapons_disabled: self.rules.ares()
-                && firer.ares.ares_disable_weapons.start_frame()
+                && firer.seldom.ares.ares_disable_weapons.start_frame()
                     != crate::sim::timer::PAUSED_START_FRAME
-                && firer.ares.ares_disable_weapons.remaining(frame as i32) > 0,
+                && firer
+                    .seldom
+                    .ares
+                    .ares_disable_weapons
+                    .remaining(frame as i32)
+                    > 0,
+            module_weapons_disabled: firer.module_weapons_disabled(),
             emp_remaining: firer.emp_remaining(),
             death_frame_counter: firer.unit_death_counter.get(),
+            webbed: firer.is_webbed(frame as i32),
             on_bridge: firer.on_bridge(),
             z: self.terrain().map_or(0, |terrain| {
                 crate::sim::movement::ground_pose::object_world_z_leptons(firer, Some(terrain))
@@ -292,12 +304,12 @@ impl<'a> FireSubject<'a> {
             berserk: firer.berserk.is_active(),
             falling: firer.is_falling_down(),
             sinking: firer.sinking.is_active(),
-            in_open_transport: firer.passenger_role.in_open_transport(),
+            in_open_transport: firer.passenger_role().in_open_transport(),
             // The transport being the target (T9) is [`FirerPart::facts`]'s.
             transporter: match transport {
                 None => Transporter::None,
                 Some(transport) if transport.is_warped_out() => Transporter::WarpedOut,
-                Some(transport) if transport.passenger_role.transporter().is_some() => {
+                Some(transport) if transport.passenger_role().transporter().is_some() => {
                     Transporter::Nested
                 }
                 Some(_) => Transporter::Plain,
@@ -317,13 +329,14 @@ impl<'a> FireSubject<'a> {
                 }),
             wave_live: self.world.active_wave_id(firer.stable_id()).is_some(),
             // FireError reads the actual Techno+304 Fire pointer.
-            fire_particles_live: firer.fire_particle_system.system().is_some(),
+            fire_particles_live: firer.seldom.fire_particle_system.system().is_some(),
             // FireError6FC6D5/6FC9C7 reads the actual Techno+308 pointer.
-            spark_particles_live: firer.spark_particle_system.system().is_some(),
+            spark_particles_live: firer.seldom.spark_particle_system.system().is_some(),
             // FireError reads the actual Techno+314 Railgun pointer too.
-            railgun_particles_live: firer.railgun_particle_system.system().is_some(),
+            railgun_particles_live: firer.seldom.railgun_particle_system.system().is_some(),
             // T45: the object's own rearm countdown (`+0x2EC`).
             rearming: firer
+                .seldom
                 .rearm_timer
                 .remaining(self.world.session.binary_frame() as i32)
                 != 0,
@@ -382,7 +395,7 @@ impl<'a> FireSubject<'a> {
             navcom: firer.navigation.nav_com().is_some(),
             moving_faster_than_tenth: firer.foot_speed.above_tenth(),
             deploying: firer.unit_deploying(),
-            tethered: firer.tether.partner().is_some(),
+            tethered: firer.seldom.tether.partner().is_some(),
             radio_link: match radio_link {
                 None => RadioLink::None,
                 Some(contact) if contact.category() == EntityCategory::Structure => {
@@ -424,13 +437,17 @@ impl<'a> FireSubject<'a> {
             organic: obj.organic,
             jumpjet_turn: obj.jumpjet_turn,
             can_be_occupied: obj.can_be_occupied,
-            can_occupy_fire: obj.can_occupy_fire,
+            // `+0x157C`, or RA2 Mode's answer: original RA2 has no
+            // CanOccupyFire, and a manned CanBeOccupied building fires its
+            // own gun, where B1 would otherwise answer ILLEGAL forever.
+            can_occupy_fire: obj.occupants_fire(),
             emp_pulse_cannon: obj.emp_pulse_cannon,
             turret_anim_is_voxel: obj.turret_anim_is_voxel,
             ..FirerTypeFacts::default()
         };
         FirerPart {
             ares: self.rules.ares(),
+            kratos: self.rules.kratos(),
             class,
             frame: frame as i32,
             firer: firer_facts,
@@ -501,7 +518,7 @@ impl<'a> FireSubject<'a> {
                         chrono_warp_latch: entity.chrono_warp_latch(),
                         bunkered: entity.bunker.link().installed_in().is_some(),
                         // T18 reads the target's `+0x418` tether latch.
-                        tethered: entity.tether.partner().is_some(),
+                        tethered: entity.seldom.tether.partner().is_some(),
                         health: entity.health,
                         parasite_lock_until: entity.parasite.launch_lock() as i32,
                         deploying: entity.unit_deploying(),
@@ -515,16 +532,22 @@ impl<'a> FireSubject<'a> {
                         // Ares TechnoClass_CanFire_PsionicsImmune (10049EF0,
                         // hook 0x6FC417): the rank's PSIONICSIMMUNE joins the
                         // type flag and `ImmuneToBerserk` overrides both.
-                        immune_to_psionics: if self.rules.ares() {
-                            target_obj.techno_combat().combat().immune_to_berserk(
+                        // A module's `ImmunityFlags` bit 6 (berserk) replaces it.
+                        immune_to_psionics: entity.module_immune(
+                            crate::sim::ext_modules::modifiers::Immunity::Berserk,
+                            if self.rules.ares() {
+                                target_obj.techno_combat().combat().immune_to_berserk(
+                                    target_obj.immune_to_psionics
+                                        || target_obj.promotion_abilities().is_some_and(
+                                            |abilities| {
+                                                abilities.psionics_immune(entity.veterancy.raw())
+                                            },
+                                        ),
+                                )
+                            } else {
                                 target_obj.immune_to_psionics
-                                    || target_obj.promotion_abilities().is_some_and(|abilities| {
-                                        abilities.psionics_immune(entity.veterancy.raw())
-                                    }),
-                            )
-                        } else {
-                            target_obj.immune_to_psionics
-                        },
+                            },
+                        ),
                         spawned: target_obj.spawned,
                         balloon_hover: target_obj.balloon_hover,
                         jumpjet: target_obj.jumpjet,
@@ -718,7 +741,7 @@ impl FireQuery for WorldQuery<'_, '_> {
                     terrain,
                     &line_of_fire::LineOfFireInputs {
                         overlay_grid: subject.world.overlay_grid.as_ref(),
-                        overlay_registry: subject.overlay_registry,
+                        overlay_registry: Some(subject.rules.overlay_registry()),
                         alliances: subject.fog.map(|fog| fog.alliances),
                         buildings: Some(line_of_fire::CellBuildings::of(subject.world)),
                     },
@@ -746,7 +769,7 @@ impl FireQuery for WorldQuery<'_, '_> {
                     terrain,
                     &line_of_fire::LineOfFireInputs {
                         overlay_grid: subject.world.overlay_grid.as_ref(),
-                        overlay_registry: subject.overlay_registry,
+                        overlay_registry: Some(subject.rules.overlay_registry()),
                         alliances: subject.fog.map(|fog| fog.alliances),
                         buildings: Some(line_of_fire::CellBuildings::of(subject.world)),
                     },
@@ -788,6 +811,7 @@ impl FireQuery for WorldQuery<'_, '_> {
                     obj,
                     subject.terrain(),
                     self.house_allied(subject.firer.owner(), entity.owner()),
+                    subject.world.session.binary_frame() as i32,
                     subject.rules,
                     &subject.world.interner,
                 )
@@ -953,6 +977,13 @@ impl FireQuery for WorldQuery<'_, '_> {
             .is_some_and(|terrain| in_range::is_on_bridge_for_firing(self.subject.firer, terrain))
     }
 
+    fn available_money(&mut self) -> i32 {
+        crate::sim::credit_income::available_money(
+            &self.subject.world.houses,
+            self.subject.firer.owner(),
+        )
+    }
+
     fn can_infect(&mut self) -> bool {
         let subject = self.subject;
         // CanInfect(NULL) refuses a target that is not a Foot.
@@ -1048,7 +1079,7 @@ impl FireQuery for WorldQuery<'_, '_> {
     /// Building vt+0x408 (`0x004581F0`), the occupant count that
     /// `BuildingClass::GetFireError` (`0x00447F10`) reads.
     fn occupants(&mut self) -> i32 {
-        self.subject.firer.passenger_role.occupants().count()
+        self.subject.firer.passenger_role().occupants().count()
     }
 
     fn operational(&mut self) -> bool {
@@ -1159,7 +1190,6 @@ mod terrain_target_tests {
         let subject = FireSubject {
             world: &world,
             rules,
-            overlay_registry: None,
             fog: None,
             firer,
             obj,

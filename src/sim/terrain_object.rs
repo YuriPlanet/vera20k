@@ -367,7 +367,7 @@ impl TerrainObjectState {
     pub(crate) fn joins_logic_on_unlimbo(
         &self,
         terrain_type: &TerrainObjectType,
-        game_mode: crate::sim::scenario_session::ScenarioGameMode,
+        policy: crate::rules::rule_policy::RulePolicy,
         ares: bool,
     ) -> bool {
         // Ares 3.0 ObjectClass_Put_IsFlammable (1004F470, hook 0x5F4FF9):
@@ -379,7 +379,7 @@ impl TerrainObjectState {
         };
         terrain_type.is_logic()
             && needs_update
-            && (game_mode.is_single_player() || self.native_unique_id != Some(-2))
+            && (policy.allows_ownerless_terrain_logic() || self.native_unique_id != Some(-2))
     }
 
     /// `TerrainClass::Class_Of @ 0x0071D150` (vtable slot +0x88) returns
@@ -1453,7 +1453,7 @@ mod tests {
                 near_center_ic_isolation_eligible: false,
             },
             true,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let terrain = &sim.terrain_objects.objects()[&stable_id];
         assert_eq!(terrain.health, 0);
@@ -1489,7 +1489,7 @@ mod tests {
                     near_center_ic_isolation_eligible: false,
                 },
                 true,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
             assert_eq!(sim.terrain_objects.objects()[&stable_id].health, health);
             assert!(sim.terrain_objects.objects()[&stable_id].is_live());
@@ -1524,7 +1524,7 @@ mod tests {
                 near_center_ic_isolation_eligible: false,
             },
             true,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(sim.terrain_objects.objects()[&stable_id].health, 0);
         assert!(
@@ -1557,6 +1557,32 @@ mod tests {
             rules,
             false,
         );
+    }
+
+    #[test]
+    fn ownerless_terrain_logic_honors_an_independent_policy_override() {
+        use crate::sim::scenario_session::ScenarioGameMode;
+
+        let rules = terrain_rules("TREE01", true, "SpawnsTiberium=yes\nIsAnimated=yes\n");
+        let terrain_type = rules
+            .terrain_object_type_case_insensitive("TREE01")
+            .unwrap();
+        let mut sim = Simulation::new();
+        seed_one_at(&mut sim, &rules, "TREE01", (1, 1));
+        let id = sim.terrain_objects.cell_index()[&(1, 1)];
+        let terrain = sim.terrain_objects.objects()[&id]
+            .clone()
+            .with_native_unique_id(Some(-2));
+        let campaign = ScenarioGameMode::Campaign.stock_rule_policy(None);
+        let skirmish = ScenarioGameMode::Skirmish.stock_rule_policy(None);
+
+        assert!(terrain.joins_logic_on_unlimbo(terrain_type, campaign, false));
+        assert!(terrain.joins_logic_on_unlimbo(terrain_type, skirmish, false));
+        assert!(!terrain.joins_logic_on_unlimbo(
+            terrain_type,
+            skirmish.with_allows_ownerless_terrain_logic(false),
+            false,
+        ));
     }
 
     fn resolved_clear_grid() -> ResolvedTerrainGrid {

@@ -29,7 +29,7 @@ pub(crate) fn mission_enter(
     rules: &RuleSet,
     registry: Option<&OverlayTypeRegistry>,
     id: u64,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> i32 {
     let now = sim.session.binary_frame();
     let Some(entity) = sim.substrate.entities.get(id) else {
@@ -37,6 +37,7 @@ pub(crate) fn mission_enter(
     };
     // 0x004D9294..0x004D92AC: Contacts[0], else the Techno behind ArchiveTarget.
     let target = entity
+        .seldom
         .radio_contacts
         .slot(0)
         .or(match entity.archive_target() {
@@ -85,13 +86,13 @@ pub(crate) fn mission_enter(
                 .substrate
                 .entities
                 .get(id)
-                .is_some_and(|entity| entity.tether.partner().is_some());
+                .is_some_and(|entity| entity.seldom.tether.partner().is_some());
             if reply != RadioResponse::Roger && !tethered {
                 // 0x004D92CE..0x004D92E8.
                 radio::transmit_to_contact(sim, id, RadioMessage::Break, rules, effects);
                 crate::sim::world::enter_idle_mode(sim, id, rules, registry, effects);
-            } else if !pop_nav_queue(sim, rules, registry, id, effects) {
-                teleporter_reassign(sim, rules, registry, id, effects);
+            } else if !pop_nav_queue(sim, rules, id, effects) {
+                teleporter_reassign(sim, rules, id, effects);
             }
         }
     }
@@ -114,9 +115,8 @@ pub(crate) fn mission_enter(
 fn pop_nav_queue(
     sim: &mut Simulation,
     rules: &RuleSet,
-    registry: Option<&OverlayTypeRegistry>,
     id: u64,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> bool {
     let Some(entity) = sim.substrate.entities.get(id) else {
         return false;
@@ -130,7 +130,7 @@ fn pop_nav_queue(
     };
     let first = entity.navigation.nav_queue()[0];
     // 0x004D939A: vt+0x480(NavQueue[0], 0).
-    let _ = sim.assign_destination_keeping_queue(id, Some(first), rules, registry, effects);
+    let _ = sim.assign_destination_keeping_queue(id, Some(first), rules, effects);
     // The shift deletes the first entry of the queue the setter left; the
     // UnitRepair arm's modified NULL (`0x007423CA`) may have emptied it.
     if let Some(entity) = sim.substrate.entities.get_mut(id)
@@ -149,9 +149,8 @@ fn pop_nav_queue(
 fn teleporter_reassign(
     sim: &mut Simulation,
     rules: &RuleSet,
-    registry: Option<&OverlayTypeRegistry>,
     id: u64,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     let Some(entity) = sim.substrate.entities.get(id) else {
         return;
@@ -166,5 +165,5 @@ fn teleporter_reassign(
     if let Some(entity) = sim.substrate.entities.get_mut(id) {
         entity.navigation.stop_moving();
     }
-    let _ = sim.assign_destination_represented(id, nav, rules, registry, effects);
+    let _ = sim.assign_destination_represented(id, nav, rules, effects);
 }

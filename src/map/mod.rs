@@ -20,6 +20,7 @@ pub mod basic;
 pub mod bridge_facts;
 pub mod bridge_pavement;
 pub mod bridge_rim_tiles;
+pub mod campaign_manifest;
 pub mod cell_index;
 pub(crate) mod construction_trace;
 pub mod corner_heights;
@@ -29,7 +30,10 @@ pub mod skirmish_scenarios;
 pub mod source;
 pub mod entities;
 pub mod events;
+// Wasm extension modules embedded in a map (RFC 0001).
+pub mod ext_module_pack;
 pub mod houses;
+pub mod installed;
 pub(crate) mod iso_tile_flood;
 pub mod lat;
 pub mod lighting;

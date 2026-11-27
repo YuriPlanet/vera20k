@@ -21,7 +21,7 @@ fn frame(runtime: &mut SimRuntime, owner: InternedId, commands: &[Command]) {
     );
     let due = sim.take_due_commands();
     runtime
-        .advance_frame(&due, 67, TickLane::Ordinary, FrameEffects::default())
+        .advance_frame(&due, 67, TickLane::Ordinary, &mut FrameEffects::default())
         .unwrap();
 }
 
@@ -74,10 +74,7 @@ fn fixture(rules: &RuleSet, producer: &str, backup: bool) -> (SimRuntime, Intern
     (
         SimRuntime {
             simulation: sim,
-            resources: std::sync::Arc::new(SimResources {
-                rules: rules.clone(),
-                ..SimResources::empty()
-            }),
+            resources: std::sync::Arc::new(SimResources::new(rules.clone())),
         },
         owner,
         factory,
@@ -196,7 +193,7 @@ fn retail_mobile_promotion_uses_offline_held_start_and_online_backup() {
                 Some(factory),
                 &rules,
                 None,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             );
             assert!(
                 !runtime
@@ -227,7 +224,7 @@ fn retail_mobile_promotion_uses_offline_held_start_and_online_backup() {
                     "Americans",
                     crate::sim::production::ProductionCancellation::Category(category),
                     false,
-                    FrameEffects::default(),
+                    &mut FrameEffects::default(),
                 ));
                 frame(&mut runtime, owner, &[]);
             } else {
@@ -395,7 +392,7 @@ fn retail_mobile_promotion_uses_offline_held_start_and_online_backup() {
                 &rules,
                 owner,
                 category,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             );
             assert!(
                 runtime

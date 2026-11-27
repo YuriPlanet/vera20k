@@ -88,7 +88,8 @@
 //!   `GoOffline 0x004523DE` (`EVA_BuildingOnLine/OffLine`, human house only):
 //!   `sim::building_power::go_building_online` / `go_building_offline`, called
 //!   for map-placed buildings (`sim::world::world_spawn`), `EventClass::Execute`
-//!   (`Command::SetBuildingOnLine`; YR has no UI that queues the event) and
+//!   (`Command::SetBuildingOnLine`, queued by Ares' power mode,
+//!   `app::input::power_mode`; YR has no UI that queues it) and
 //!   `TriggerAction::Execute` (`sim::trigger_runtime`).
 //!
 //! Multiplayer only (GameMode 5 refuses them), produced:
@@ -204,7 +205,11 @@ pub(crate) fn super_weapon_ready_event(kind: SuperWeaponKind) -> Option<&'static
         | SuperWeaponKind::SonarPulse
         | SuperWeaponKind::EMPulse
         | SuperWeaponKind::Firestorm
-        | SuperWeaponKind::DropPod => return None,
+        | SuperWeaponKind::DropPod
+        // VERA's tag is past the `JA`. RESIDUAL: Firestorm speaks a Super's
+        // `RechargeVoice=` (read at 0x60D19B..0x60D1A3), a Tiberian Sun speech file;
+        // VERA reads none of those voice keys.
+        | SuperWeaponKind::IonCannon => return None,
         SuperWeaponKind::ParaDrop | SuperWeaponKind::AmerParaDrop => "EVA_ReinforcementsReady",
         SuperWeaponKind::PsychicDominator => "EVA_PsychicDominatorReady",
         SuperWeaponKind::SpyPlane => "EVA_SpyPlaneReady",
@@ -721,15 +726,12 @@ mod tests {
         u64,
         u64,
     )> {
-        use crate::rules::overlay_types::OverlayTypeRegistry;
         use crate::sim::house_state::HouseState;
         use crate::sim::overlay_grid::OverlayGrid;
         use crate::sim::runtime::{SimResources, SimRuntime};
         use crate::sim::world::Simulation;
 
         let retail = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")?;
-        let overlays =
-            OverlayTypeRegistry::from_ini(&retail.processed_rules, Some(&retail.fixed_art));
         let rules = retail.rules;
         let mut sim = Simulation::with_seed(0x4F93_E000);
         sim.intern_rule_type_ids(&rules);
@@ -758,7 +760,10 @@ mod tests {
         // no ore (SlaveManager6B0062). Supply map-like ore east of the
         // target's 2x2 foundation, through the shared overlay/recalc owner,
         // so ordinary slaves work while the real attacker closes in.
-        let ore_id = overlays.id_for_name("TIB01").expect("stock ore overlay");
+        let ore_id = rules
+            .overlay_registry()
+            .id_for_name("TIB01")
+            .expect("stock ore overlay");
         let mut ore = OverlayGrid::new(32, 32);
         for ry in 19..=21 {
             for rx in 23..=25 {
@@ -767,7 +772,7 @@ mod tests {
                     sim.resolved_terrain_mut_for_test()
                         .as_mut()
                         .expect("arena terrain"),
-                    &overlays,
+                    rules.overlay_registry(),
                     (rx, ry),
                 );
             }
@@ -787,9 +792,7 @@ mod tests {
         let attacker = sim
             .spawn_object_at_height("CLEG", "Americans", 6, 20, 0, 0, &rules)
             .expect("stock hostile Chrono Legionnaire");
-        let mut resources = SimResources::empty();
-        resources.rules = rules;
-        resources.overlay_registry = overlays;
+        let resources = SimResources::new(rules);
         Some((
             SimRuntime {
                 simulation: sim,
@@ -846,7 +849,7 @@ mod tests {
             for _ in 0..8 {
                 let due = runtime.simulation.take_due_commands();
                 let frame = runtime
-                    .advance_frame(&due, 67, TickLane::Ordinary, FrameEffects::default())
+                    .advance_frame(&due, 67, TickLane::Ordinary, &mut FrameEffects::default())
                     .expect("settled retail base frame");
                 assert!(
                     frame
@@ -877,7 +880,7 @@ mod tests {
             for _ in 0..1024 {
                 let due = runtime.simulation.take_due_commands();
                 let mut frame = runtime
-                    .advance_frame(&due, 67, TickLane::Ordinary, FrameEffects::default())
+                    .advance_frame(&due, 67, TickLane::Ordinary, &mut FrameEffects::default())
                     .expect("ordinary retail Temporal attack frame");
                 attack_dispatched |= frame
                     .take_admitted_commands()
@@ -965,7 +968,7 @@ mod tests {
             for _ in 0..4 {
                 let due = runtime.simulation.take_due_commands();
                 let frame = runtime
-                    .advance_frame(&due, 67, TickLane::Ordinary, FrameEffects::default())
+                    .advance_frame(&due, 67, TickLane::Ordinary, &mut FrameEffects::default())
                     .expect("held first-head frame");
                 assert!(
                     frame
@@ -993,7 +996,7 @@ mod tests {
             for _ in 0..128 {
                 let due = runtime.simulation.take_due_commands();
                 let frame = runtime
-                    .advance_frame(&due, 67, TickLane::Ordinary, FrameEffects::default())
+                    .advance_frame(&due, 67, TickLane::Ordinary, &mut FrameEffects::default())
                     .expect("ordinary Stop/release frame");
                 assert!(
                     frame

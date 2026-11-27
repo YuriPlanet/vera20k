@@ -4,6 +4,7 @@
 //! does not replay the Engineer acquisition/base-building campaign opening.
 
 use super::*;
+use crate::rules::rule_policy::RulePolicy;
 
 #[test]
 fn retail_all02_mind_control_attack_starts_the_authored_stallone_script() {
@@ -42,7 +43,7 @@ fn retail_all02_mind_control_attack_starts_the_authored_stallone_script() {
     let ai = crate::rules::retail_sources::select_ini(&assets, "AIMD.INI")
         .expect("retail AIMD parses")
         .ini;
-    let registry = TeamAiIniRegistry::from_sources(&ai, &map.ini, false);
+    let registry = TeamAiIniRegistry::from_sources(&ai, &map.ini, RulePolicy::stock_campaign());
     let discovered_actions = map.actions["065C3EDC"].entries();
     assert_eq!(
         discovered_actions
@@ -86,6 +87,7 @@ fn retail_all02_mind_control_attack_starts_the_authored_stallone_script() {
         .into_fresh_staged_simulation(
             &descriptor,
             FreshScenarioPrefix::Campaign {
+                network: None,
                 native_rules_receipt: receipt,
                 rules: &rules,
                 map_data: &map,
@@ -208,7 +210,7 @@ fn retail_all02_mind_control_attack_starts_the_authored_stallone_script() {
             67,
             TickLane::Ordinary,
             true,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .expect("ordinary campaign fixture frame");
         heard_stallone |= sim.sound_events().iter().any(
@@ -234,7 +236,7 @@ fn retail_all02_mind_control_attack_starts_the_authored_stallone_script() {
         starting_hp,
         "MindControl does not damage the tank"
     );
-    assert_eq!(tank.mind_control.controller(), Some(controller));
+    assert_eq!(tank.seldom.mind_control.controller(), Some(controller));
     assert_eq!(tank.owner(), americans);
     assert!(
         sim.trigger_runtime

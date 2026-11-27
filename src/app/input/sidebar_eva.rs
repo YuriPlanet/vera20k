@@ -133,10 +133,9 @@ pub(crate) fn cameo_click(
     )
 }
 
-/// [`cameo_click`] with Phobos `[General] BuildingProductionQueue=`. When
+/// [`cameo_click`] with VERA's `Building Production Queue` player option. When
 /// enabled, a busy structure strip accepts a left press instead of refusing it
 /// with `EVA_UnableToComply`; the sim owner appends the queued building.
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn cameo_click_with_queue(
     queue: &[QueueItemView],
     category: ProductionCategory,

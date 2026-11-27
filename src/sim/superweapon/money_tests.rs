@@ -94,7 +94,8 @@ fn fire(
     cell: (u16, u16),
 ) -> bool {
     let owner = sim.interner.resolve(owner).to_owned();
-    sim.apply_command_with_overlays(
+    (sim.apply_command_with_overlays(
+        crate::sim::command::CommandSender::Player(None),
         &owner,
         &Command::LaunchSuperWeapon {
             sw_type_id: id,
@@ -103,8 +104,8 @@ fn fire(
         },
         rules,
         None,
-        FrameEffects::default(),
-    )
+        &mut FrameEffects::default(),
+    )).is_ok()
 }
 
 #[test]
@@ -345,7 +346,7 @@ fn superweapon_money_ai_refuses_before_target_search_or_rng() {
         ready(&mut sim, &rules, owner, "Reveal", false);
         let before = sim.state_hash();
         AI_FIRE_LOG.with(|log| *log.borrow_mut() = Some(Vec::new()));
-        superweapon::ai_fire::try_fire(&mut sim, &rules, owner, None, FrameEffects::default());
+        superweapon::ai_fire::try_fire(&mut sim, &rules, owner, None, &mut FrameEffects::default());
         let events = AI_FIRE_LOG.with(|log| log.borrow_mut().take().unwrap());
         assert_eq!(events, vec![AiFireEvent::TryFire]);
         assert_eq!(sim.state_hash(), before);
@@ -412,11 +413,11 @@ fn superweapon_money_funded_ai_uses_the_same_single_settlement() {
         .get_mut(&owner)
         .unwrap()
         .set_preferred_super_weapon_target((10, 10));
-    superweapon::ai_fire::try_fire(&mut sim, &rules, owner, None, FrameEffects::default());
+    superweapon::ai_fire::try_fire(&mut sim, &rules, owner, None, &mut FrameEffects::default());
     assert_eq!(sim.houses[&owner].economy().credits(), 500);
     assert_eq!(sim.houses[&owner].economy().spent_credits(), 500);
     assert!(!sim.super_weapons[&owner][&id].is_ready);
-    superweapon::ai_fire::try_fire(&mut sim, &rules, owner, None, FrameEffects::default());
+    superweapon::ai_fire::try_fire(&mut sim, &rules, owner, None, &mut FrameEffects::default());
     assert_eq!(sim.houses[&owner].economy().credits(), 500);
 }
 
@@ -486,9 +487,14 @@ fn superweapon_money_two_stage_source_never_changes_wallet_across_ticks() {
         for _ in 0..3 {
             sim.sound_events.clear_for_test();
             admitted.push(fire(&mut sim, &rules, owner, source, (10, 10)));
-            sim.session
-                .set_binary_frame_for_test(sim.session.binary_frame() + 1);
-            superweapon::tick_house_superweapon_instances(&mut sim, &rules, owner);
+            let session = &mut *sim.session;
+            session.set_binary_frame_for_test(session.binary_frame() + 1);
+            superweapon::tick_house_superweapon_instances(
+                &mut sim,
+                &rules,
+                owner,
+                &mut Default::default(),
+            );
         }
         assert_eq!(
             sim.houses[&owner].economy().credits(),
@@ -527,15 +533,16 @@ fn superweapon_money_two_stage_kinds_cannot_bypass_exclusion_by_clearing_flags()
 fn superweapon_money_postclick_rejects_paid_predecessor_with_single_stage_flags() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);
     for amount in [-500, 500] {
-        // A PreDependent pair the Ares handlers do not take: the warp is
-        // an unredirected PostClick type.
+        // Leave Type unset on both Supers so no Ares handler replaces the
+        // authored PreClick/PostClick flags under test.
         let rules = rules(&format!(
-            "[Sphere]\nType=PsychicReveal\nPreClick=no\nMoney.Amount={amount}\n\
-             [Warp]\nType=PsychicReveal\nAction=PsychicReveal\n"
+            "[SuperWeaponTypes]\n5=Single\n6=Finish\n\
+             [Single]\nPreClick=no\nIsPowered=no\nMoney.Amount={amount}\n\
+             [Finish]\nAction=PsychicReveal\nPostClick=yes\nPreDependent=ParaDrop\nIsPowered=no\n"
         ));
         let (mut sim, owner) = world(&rules, 1000, true);
-        let source = ready(&mut sim, &rules, owner, "Sphere", false);
-        let destination = ready(&mut sim, &rules, owner, "Warp", false);
+        let source = ready(&mut sim, &rules, owner, "Single", false);
+        let destination = ready(&mut sim, &rules, owner, "Finish", false);
         let before = sim.state_hash();
         assert!(!fire(&mut sim, &rules, owner, destination, (15, 15)));
         assert_eq!(sim.state_hash(), before);

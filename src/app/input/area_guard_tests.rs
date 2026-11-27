@@ -178,7 +178,7 @@ pub(super) fn fixture(corpus: &Value, row: &Value, retail: RetailBattleRules) ->
             coord,
             &rules,
             Some(&registry),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         ids.insert(name.clone(), id);
         native_ids.insert(actor["id"].as_u64().unwrap(), id);
@@ -187,7 +187,7 @@ pub(super) fn fixture(corpus: &Value, row: &Value, retail: RetailBattleRules) ->
     // original process streams from the observed input boundary, without
     // reproducing their seed/draw arithmetic in this test.
     *sim.main_rng_mut_for_test() =
-        SimRng::from_native_state_hex_for_test(rng_hex(row, before, "main")).into();
+        SimRng::from_native_state_hex_for_test(rng_hex(row, before, "main"));
     *sim.scenario_rng_mut_for_test() =
         SimRng::from_native_state_hex_for_test(rng_hex(row, before, "scenario"));
     *sim.mapgen_rng_mut_for_test() =
@@ -301,12 +301,12 @@ fn area_guard_ingress_matches_native_order_current_cells_voices_and_rng() {
                         speaker_id,
                         sound_id,
                     } => {
-                        voices.queue(*speaker_id, sound_id);
+                        voices.queue(*speaker_id, sound_id.name_in(&f.rules));
                         let name = f.ids.iter().find(|(_, id)| **id == *speaker_id).unwrap().0;
-                        json!({"kind":"QueueVoice", "actor":name, "sound":sound_id})
+                        json!({"kind":"QueueVoice", "actor":name, "sound":sound_id.name_in(&f.rules)})
                     }
                     GameSoundEvent::UiSound { sound_id } => {
-                        json!({"kind":"GuardSound", "actor":null, "sound":sound_id})
+                        json!({"kind":"GuardSound", "actor":null, "sound":sound_id.name_in(&f.rules)})
                     }
                     other => panic!("unexpected Guard event {other:?}"),
                 })
@@ -395,7 +395,7 @@ fn area_guard_uses_pending_selection_array_before_simulation_membership_commits(
         f.sim
             .entities()
             .values()
-            .all(|actor| !actor.selection.is_selected())
+            .all(|actor| !actor.seldom.selection.is_selected())
     );
     let selected = selected_stable_ids_in_order(Some(&f.sim), Some(&f.rules), &pending_order, true);
     assert_eq!(selected, pending_order);
@@ -430,7 +430,7 @@ fn area_guard_uses_pending_selection_array_before_simulation_membership_commits(
         f.sim
             .entities()
             .values()
-            .all(|actor| !actor.selection.is_selected()),
+            .all(|actor| !actor.seldom.selection.is_selected()),
         "issuing Guard never commits selection"
     );
 }

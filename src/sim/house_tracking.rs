@@ -140,6 +140,7 @@ use crate::map::entities::EntityCategory;
 use crate::rules::object_type::{FactoryType, ObjectType};
 use crate::rules::ruleset::{HouseCostFactors, RuleSet};
 use crate::sim::game_entity::GameEntity;
+use crate::sim::house_state::HouseState;
 use crate::sim::houses::Houses;
 use crate::sim::intern::InternedId;
 use crate::sim::world::ObjectSubstrate;
@@ -149,6 +150,10 @@ use crate::sim::world::Simulation;
 mod phobos;
 #[cfg(feature = "phobos")]
 pub(crate) use phobos::{PhobosLimboControl, PhobosPlacement};
+
+/// House counts and the infantry latches that gate them are written together.
+pub(super) struct TrackingWrite(());
+const WRITE: TrackingWrite = TrackingWrite(());
 
 /// The type facts the counters test, fixed when the Techno is constructed
 /// ([`TrackingFacts::of`]).
@@ -584,21 +589,119 @@ pub struct HouseTracking {
     keep_alive_buildings: i32,
 }
 
+impl HouseState {
+    pub(super) fn add_airport_docks(&mut self, docks: i32) {
+        self.tracking_mut(WRITE).add_airport_docks(docks);
+    }
+
+    pub(super) fn limbo_airport_docks(&mut self, docks: i32) {
+        self.tracking_mut(WRITE).limbo_airport_docks(docks);
+    }
+
+    pub(super) fn add_to_game_tracking(&mut self, entity: &GameEntity) {
+        let factors = self.cost_factors();
+        self.tracking_mut(WRITE).added_to_game(entity, &factors);
+    }
+
+    pub(super) fn remove_from_game_tracking_prefix(&mut self, entity: &GameEntity) {
+        self.tracking_mut(WRITE).removed_from_game_prefix(entity);
+    }
+
+    pub(super) fn remove_from_game_tracking(&mut self, entity: &GameEntity) {
+        let factors = self.cost_factors();
+        self.tracking_mut(WRITE).removed_from_game(entity, &factors);
+    }
+}
+
 impl HouseTracking {
+    /// Resolve the stored object and its current house. Borrowing the live
+    /// object for a lifecycle write also touches and wakes its simulation slot,
+    /// even when its house is missing or the factory counters only read it.
+    fn with_current_owner(
+        substrate: &mut ObjectSubstrate,
+        houses: &mut Houses,
+        id: u64,
+        update: impl FnOnce(&mut Self, &mut GameEntity),
+    ) {
+        if let Some(entity) = substrate.entities.get_mut(id)
+            && let Some(house) = houses.get_mut(&entity.owner())
+        {
+            update(house.tracking_mut(WRITE), entity);
+        }
+    }
+
+    /// Constructor completion or registration after an in-place type change.
+    pub(super) fn register_object(substrate: &mut ObjectSubstrate, houses: &mut Houses, id: u64) {
+        Self::with_current_owner(substrate, houses, id, Self::add_tracking);
+    }
+
+    /// Final destruction or removal of the old type before conversion.
+    pub(super) fn unregister_object(substrate: &mut ObjectSubstrate, houses: &mut Houses, id: u64) {
+        Self::with_current_owner(substrate, houses, id, Self::remove_tracking);
+    }
+
+    /// ChangeOwner 0x7015DE/0x7015E6 removes from the current house and
+    /// registers with the new one before the object's owner field changes.
+    pub(super) fn transfer_registration(
+        substrate: &mut ObjectSubstrate,
+        houses: &mut Houses,
+        id: u64,
+        new_owner: InternedId,
+    ) {
+        Self::unregister_object(substrate, houses, id);
+        if let Some(entity) = substrate.entities.get_mut(id)
+            && let Some(house) = houses.get_mut(&new_owner)
+        {
+            house.tracking_mut(WRITE).add_tracking(entity);
+        }
+    }
+
+    pub(super) fn register_factory(substrate: &mut ObjectSubstrate, houses: &mut Houses, id: u64) {
+        Self::with_current_owner(substrate, houses, id, |tracking, entity| {
+            tracking.increment_factory_count(entity);
+        });
+    }
+
+    pub(super) fn unregister_factory(
+        substrate: &mut ObjectSubstrate,
+        houses: &mut Houses,
+        id: u64,
+    ) {
+        Self::with_current_owner(substrate, houses, id, |tracking, entity| {
+            tracking.recount(entity);
+        });
+    }
+
+    /// Building ChangeOwner's Recount (0x0044870E) and IncrementFactoryCount
+    /// (0x00448CDD) use the two house receivers and only read the building.
+    pub(super) fn transfer_factory(
+        houses: &mut Houses,
+        entity: &GameEntity,
+        old_owner: InternedId,
+        new_owner: InternedId,
+    ) {
+        if let Some(house) = houses.get_mut(&old_owner) {
+            house.tracking_mut(WRITE).recount(entity);
+        }
+        if let Some(house) = houses.get_mut(&new_owner) {
+            house.tracking_mut(WRITE).increment_factory_count(entity);
+        }
+    }
+
     /// `HouseClass::Add_Tracking @ 0x004FF700`.
-    pub(crate) fn add_tracking(&mut self, entity: &mut GameEntity) {
+    fn add_tracking(&mut self, entity: &mut GameEntity) {
         self.track(entity, 1);
     }
 
     /// `HouseClass::Remove_Tracking @ 0x004FF550`.
-    pub(crate) fn remove_tracking(&mut self, entity: &mut GameEntity) {
+    fn remove_tracking(&mut self, entity: &mut GameEntity) {
         self.track(entity, -1);
     }
 
     /// Shared body of `Add_Tracking @ 0x004FF700` (+1) and `Remove_Tracking @ 0x004FF550` (-1);
     /// Infantry latches `+0x438`/`+0x439`: `0x004FF81A..0x004FF83B`, `0x004FF636..0x004FF64D`.
     fn track(&mut self, entity: &mut GameEntity, delta: i32) {
-        let facts = entity.tracking_facts;
+        let facts = entity.tracking_facts();
         // Ares4FF71B/4FF563 ->10021F70 runs before the original early return.
         // Explicit KeepAlive=yes also counts insignificant/DontScore objects.
         // Runs in every game: only facts built from Rules read the Ares way
@@ -609,7 +712,7 @@ impl HouseTracking {
                 self.keep_alive_buildings = self.keep_alive_buildings.wrapping_add(delta);
             }
         }
-        if facts.insignificant || entity.tracking_facts.dont_score() {
+        if facts.insignificant || facts.dont_score() {
             return;
         }
         match entity.category() {
@@ -627,9 +730,9 @@ impl HouseTracking {
             }
             EntityCategory::Infantry => {
                 let count_total = if delta > 0 {
-                    entity.house_tracking_latches_mut().add_total()
+                    entity.house_tracking_latches_mut(WRITE).add_total()
                 } else {
-                    entity.house_tracking_latches_mut().remove_total()
+                    entity.house_tracking_latches_mut(WRITE).remove_total()
                 };
                 if count_total {
                     self.infantry = self.infantry.wrapping_add(delta);
@@ -651,7 +754,7 @@ impl HouseTracking {
     /// (`0x0051A327..0x0051A348`): a set `+0x438` lowers the total and clears.
     fn absorber_entry(&mut self, entity: &mut GameEntity) {
         if entity.category() == EntityCategory::Infantry
-            && entity.house_tracking_latches_mut().remove_total()
+            && entity.house_tracking_latches_mut(WRITE).remove_total()
         {
             self.infantry = self.infantry.wrapping_sub(1);
         }
@@ -661,7 +764,7 @@ impl HouseTracking {
     /// `0x00442F6D..0x00442FA1`, Mission_Selling `0x0044A510..0x0044A548`).
     fn restore_absorbed_infantry(&mut self, entity: &mut GameEntity) {
         if entity.category() == EntityCategory::Infantry
-            && entity.house_tracking_latches_mut().restore_absorbed()
+            && entity.house_tracking_latches_mut(WRITE).restore_absorbed()
         {
             self.infantry = self.infantry.wrapping_add(1);
         }
@@ -693,25 +796,25 @@ impl HouseTracking {
 
     /// Add `docks` to [`Self::airport_docks`]; negative for the old house at
     /// a capture.
-    pub(crate) const fn add_airport_docks(&mut self, docks: i32) {
+    const fn add_airport_docks(&mut self, docks: i32) {
         self.airport_docks = self.airport_docks.wrapping_add(docks);
     }
 
     /// BuildingClass::Limbo's share of [`Self::airport_docks`]: subtract
     /// `docks`, then raise a negative count to zero.
-    pub(crate) fn limbo_airport_docks(&mut self, docks: i32) {
+    fn limbo_airport_docks(&mut self, docks: i32) {
         self.airport_docks = self.airport_docks.wrapping_sub(docks).max(0);
     }
 
     /// `HouseClass::IncrementFactoryCount @ 0x004FFA50`: a building with
     /// `Factory=` joins its counter.
-    pub(crate) fn increment_factory_count(&mut self, entity: &GameEntity) {
+    fn increment_factory_count(&mut self, entity: &GameEntity) {
         self.count_factory(entity, 1);
     }
 
     /// `HouseClass::Recount @ 0x004FF980`: a building with `Factory=` leaves
     /// its counter.
-    pub(crate) fn recount(&mut self, entity: &GameEntity) {
+    fn recount(&mut self, entity: &GameEntity) {
         self.count_factory(entity, -1);
     }
 
@@ -721,7 +824,7 @@ impl HouseTracking {
         if entity.category() != EntityCategory::Structure {
             return;
         }
-        if let Some(slot) = entity.tracking_facts.factory {
+        if let Some(slot) = entity.tracking_facts().factory {
             let count = &mut self.factories[slot as usize];
             *count = count.wrapping_add(delta);
         }
@@ -901,30 +1004,29 @@ impl HouseTracking {
 
     /// `HouseClass::Added_To_Game @ 0x00502A80`, pricing with this house's
     /// `factors`.
-    pub(crate) fn added_to_game(&mut self, entity: &GameEntity, factors: &HouseCostFactors) {
-        if entity.tracking_facts.resource_gatherer {
+    fn added_to_game(&mut self, entity: &GameEntity, factors: &HouseCostFactors) {
+        let facts = entity.tracking_facts();
+        if facts.resource_gatherer {
             self.resource_gatherers = self.resource_gatherers.wrapping_add(1);
         }
-        if entity.tracking_facts.resource_destination {
+        if facts.resource_destination {
             self.resource_destinations = self.resource_destinations.wrapping_add(1);
         }
-        if entity.tracking_facts.war_factory {
+        if facts.war_factory {
             self.war_factories = self.war_factories.wrapping_add(1);
         }
         // Added502B57..502B78: independent of DontScore/Insignificant.
         // Current Added's live power/COM prelude remains deferred to the
         // existing power owner; no callback occurs inside this counter phase.
         if entity.category() == EntityCategory::Structure {
-            self.storage_capacity = self
-                .storage_capacity
-                .wrapping_add(entity.tracking_facts.storage_capacity);
+            self.storage_capacity = self.storage_capacity.wrapping_add(facts.storage_capacity);
         }
-        if let Some(value) = entity.tracking_facts.force_value {
+        if let Some(value) = facts.force_value {
             let total = self.force_values.total(value.kind);
-            *total =
-                total.wrapping_add(value.priced(factors, entity.ares.factory_plant_multiplier));
+            *total = total
+                .wrapping_add(value.priced(factors, entity.seldom.ares.factory_plant_multiplier));
         }
-        let dont_score = entity.tracking_facts.dont_score();
+        let dont_score = facts.dont_score();
         let counts = match entity.category() {
             // The Unit case (increment at `0x00502CF9`) has no DontScore test.
             EntityCategory::Unit => &mut self.active_unit_types,
@@ -943,11 +1045,12 @@ impl HouseTracking {
 
     /// Removed502606..50262A precedes the powered-center callback. Its
     /// receiving House is retained by the Simulation entry point.
-    pub(crate) fn removed_from_game_prefix(&mut self, entity: &GameEntity) {
-        if entity.tracking_facts.resource_gatherer {
+    fn removed_from_game_prefix(&mut self, entity: &GameEntity) {
+        let facts = entity.tracking_facts();
+        if facts.resource_gatherer {
             self.resource_gatherers = self.resource_gatherers.wrapping_sub(1);
         }
-        if entity.tracking_facts.resource_destination {
+        if facts.resource_destination {
             self.resource_destinations = self.resource_destinations.wrapping_sub(1);
         }
     }
@@ -956,23 +1059,22 @@ impl HouseTracking {
     /// powered-center prelude. Type facts are read at this phase, not retained
     /// across its callbacks. Actual Limbo/ChangeOwner callers pass flag0;
     /// nonempty stores and the distinct flag1 withdrawal remain unported.
-    pub(crate) fn removed_from_game(&mut self, entity: &GameEntity, factors: &HouseCostFactors) {
-        if entity.tracking_facts.war_factory {
+    fn removed_from_game(&mut self, entity: &GameEntity, factors: &HouseCostFactors) {
+        let facts = entity.tracking_facts();
+        if facts.war_factory {
             self.war_factories = self.war_factories.wrapping_sub(1);
         }
         //502801..502815 SUB32 of the live BuildingType.Storage. No clamp
         // or per-object contribution latch; DontScore does not skip it.
         if entity.category() == EntityCategory::Structure {
-            self.storage_capacity = self
-                .storage_capacity
-                .wrapping_sub(entity.tracking_facts.storage_capacity);
+            self.storage_capacity = self.storage_capacity.wrapping_sub(facts.storage_capacity);
         }
-        if let Some(value) = entity.tracking_facts.force_value {
+        if let Some(value) = facts.force_value {
             let total = self.force_values.total(value.kind);
-            *total =
-                total.wrapping_sub(value.priced(factors, entity.ares.factory_plant_multiplier));
+            *total = total
+                .wrapping_sub(value.priced(factors, entity.seldom.ares.factory_plant_multiplier));
         }
-        if entity.tracking_facts.dont_score() {
+        if facts.dont_score() {
             return;
         }
         let counts = match entity.category() {
@@ -1101,7 +1203,7 @@ impl Simulation {
         ) else {
             return;
         };
-        house.tracking_mut().absorber_entry(entity);
+        house.tracking_mut(WRITE).absorber_entry(entity);
     }
 
     /// Successful reveals from a Bio Reactor, SpawnSurvivors or Selling restore
@@ -1128,7 +1230,7 @@ impl Simulation {
         ) else {
             return;
         };
-        house.tracking_mut().restore_absorbed_infantry(entity);
+        house.tracking_mut(WRITE).restore_absorbed_infantry(entity);
     }
 }
 
@@ -1142,7 +1244,9 @@ impl crate::sim::world::ObjectSubstrate {
             .get_mut(stable_id)
             .filter(|entity| entity.category() == EntityCategory::Infantry)
         {
-            entity.house_tracking_latches_mut().set_absorbed(absorbed);
+            entity
+                .house_tracking_latches_mut(WRITE)
+                .set_absorbed(absorbed);
         }
     }
 }

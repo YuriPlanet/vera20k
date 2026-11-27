@@ -75,6 +75,16 @@ There are at most 256 bindings per command and 1024 per profile; each binding co
 one observation sample. The wrapper checks every substitution and preserves all
 other arguments. `VALID` continues to mean a valid capture, not a successful order.
 
+A scheduled `DeployMcv` command uses the self-click MegaMission Unload
+producer (`0x004C6860`). To exercise the distinct deploy hotkey route, select
+the unit and issue a `D` key gesture (`Selection::IssueDeployCommand`,
+`0x00730AF0`). This routes through Event9 without changing other profiles.
+The two producers admit differently, and the difference is in the original:
+the self-click order reaches `CanDeploySlashUnload` (`0x00700D50`), which
+refuses a tube neighborhood, EMP or a nonnegative tube index, while Event9
+consults the current cell's `WeaponsFactory=` building
+(`0x004C778A..0x004C77DE`) and refuses the deploy there.
+
 The [computer Dreadnought bombard profile](map_observation.ai-dred-bombard.example.json)
 deploys the observer's starting MCV through an actor selector and queues and places
 its NAPOWR, NAREFN and NAYARD by rule name.
@@ -89,9 +99,10 @@ those retained outcomes, marked tank occupancy and 6,000 credits spent. The pad
 is the radio producer's building origin plus `(3,1)`, distinct from the ART
 queueing offset `(4,1)`. Actor selectors bind after normal production. Exact steps
 are this Rust integration witness, not native timing goldens or direct query-PC
-observations; native Unit-query/caller controls remain separate evidence. The dock
-contact is checked as present and the unload within a window, because stable IDs
-and the unload's steps shift with unrelated changes.
+observations; native Unit-query/caller controls remain separate evidence. The tank
+must stay clear from step 6600 to the end. In that window the miner must switch
+to Teleport, reach the pad and unload. At the final step it must have released
+the contact and resumed harvesting, with the house 500 credits richer.
 
 Inspect a completed capture without restarting the game:
 
@@ -150,12 +161,12 @@ in the capture profile: an offline report cannot recover unrecorded state.
 
 `{"gesture":0}` selects the actual `observations.gesture_input.receipts` row whose
 `ordinal` is 0. Fields address that receipt, for example
-`command_bar.thumb.release.dispatch.key_after` or `command_bar.thumb.after.closed`.
+`command_bar.thumb.release.dispatch.fired` or `command_bar.thumb.after.closed`.
 It is observed only at its `issue_after_step`, with that completed-step frame
 retained. Missing or duplicate ordinals, an unsampled issue step, other steps and
 missing fields yield `UNOBSERVED`; a gesture's state is never carried into later
 samples or replaced by another gesture. An explicitly recorded `dispatch:null`
-can be compared to `null`, while its unrecorded `key_after` remains `UNOBSERVED`.
+can be compared to `null`, while its unrecorded `fired` remains `UNOBSERVED`.
 This is an assertion subject, independent of timeline actor/House filters.
 
 Exit status is 0 for `INSPECTED` or assertion `PASS`, 1 for assertion `FAIL` (including
@@ -203,12 +214,24 @@ war factory, service depot and AMCV, then request deployment inside the factory'
 ground footprint and again after moving away. Its
 [expectations](map_observation.cell-building-query.expectations.json) check the
 retained Move/NavCom at step7381, queued Unload at8401, the converted yard at40,96,
-and9100 credits spent. Actor1737 and yard2176 belong to this exact launch/command
-sequence; changing it requires discovery again. The initial MCV and production
-types use v3 bindings. The interior request is deliberately after factory contact
-release while the physical cell is still29,92. This is a production integration
-control, not native timing or whole-function parity; marked dying and special
-foundation inputs are separate component regressions.
+and 9,100 credits spent. The profile resolves each MCV and production type by
+name. Assertions identify the new Construction Yard by owner and cell. The
+interior request is deliberately after factory contact
+release while the physical cell is still29,92. The deploy is the D key's Event9
+order, so the interior request meets Event9's weapons-factory cell query
+(`0x004C778A..0x004C77DE`) and keeps the MCV's destination. This is a production
+integration control, not native timing or whole-function parity; marked dying and
+special-foundation inputs are separate component regressions.
+
+The [Save and load profile](map_observation.save-load.example.json) deploys the
+observer's starting MCV, takes a literal `Ctrl+Shift+M` snapshot, starts paying
+for a power plant afterwards and restores the snapshot with a literal
+`Ctrl+Shift+N`. `allow_load_segments` admits the quick load; the capture refuses
+a restore that does not rewind the simulation clock, and its
+[expectations](map_observation.save-load.expectations.json) check that the
+restored economy is the saved one and that the observer still owns its yard.
+Each load starts a new observation epoch, so an actor identity from before the
+restore is not read after it.
 
 Requested terrain cells also report `local_visibility`: the current viewer's
 owner name and retained `revealed`, `visible` and `gap_covered` queries. It is
@@ -805,7 +828,9 @@ exactly `state` and `dispatch`. Each state records boolean `closed`, `pressed`,
 `gadget_id`, four i32 `rect` components, nullable string `current_house`, nullable
 u8 `side_index`, and nullable boolean `has_lost`/`exit_ready`. These are passive
 observations of the existing owners, not flags inferred from remaining actors.
-Each nonnull dispatch records u16 `masked_flags`, u8 `modifier`, u16 `key_after`
+Each nonnull GUI dispatch records two booleans. `fired` identifies an activation
+of the targeted thumb, and `right` identifies a right-button activation.
+Older captures record u16 `masked_flags`, u8 `modifier`, u16 `key_after`
 and u32 `action_result`. `key_after` is the actual mutable gadget key after
 dispatch; `action_result` records consumption and is not a fired gadget ID.
 Validation preserves the observed bar result, including a pre-fix reopening.
@@ -900,6 +925,11 @@ env -u RA2_DIR python -m tools.map_observation \
   --cwd /absolute/checkout \
   --output /absolute/evidence/new-map-observation
 ```
+
+A capture reads no mod from config.toml and no VERA.INI. To observe a mod, or a
+chosen [Ares setting](../docs/ares.md#the-ares-setting), run the binary itself with
+`--mod FOLDER` before `--tactical-capture` and `--ares Auto|On|Off` among its options
+(as a `-SPAWN` launch's `[Settings] Ares=`); the wrapper passes neither.
 
 Captures use the `fast` profile: it runs the same simulation as `--release` and
 rebuilds faster after an edit. Keep timing on `--release`. The default executable is

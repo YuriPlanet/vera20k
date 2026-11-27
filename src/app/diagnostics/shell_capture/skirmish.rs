@@ -2,6 +2,7 @@
 
 use super::*;
 use crate::app::App;
+use crate::app::shell_route::ShellRoute;
 use serde_json::{Value, json};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -63,6 +64,8 @@ enum Phase {
     Scoring,
     /// Tab opened Diplomacy `0x73` over the running game.
     Diplomacy,
+    /// Escape opened the in-game menu; the route reaches its dialog there.
+    InGameMenu,
     /// Continue was pressed on the settled score page.
     Continuing,
 }
@@ -85,7 +88,46 @@ pub(super) enum LoadingTarget {
     /// The game runs [`QUIT_AFTER_FRAMES`] frames, then Tab opens the
     /// Diplomacy dialog `0x73` through the production key path; it settled.
     Diplomacy,
+    /// The game runs [`QUIT_AFTER_FRAMES`] frames, then Escape opens the
+    /// offline in-game menu B5 and the route opens one of its dialogs; it
+    /// settled with the pointer at rest.
+    InGameMenu(InGameMenuTarget),
 }
+
+/// Which of the offline in-game menu's dialogs a skirmish checkpoint captures.
+/// Each opens through the ordinary key and pointer path, never by setting the
+/// menu state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InGameMenuTarget {
+    /// Escape: B5 on the page it opens on, Game Controls.
+    Menu,
+    /// B5's Options button: the Options column with its first category's
+    /// page.
+    Options,
+    /// The Game Controls page's Sound button: B8.
+    Sound,
+    /// B5's Keyboard button (the Game Controls page's on a sidebar with no row
+    /// for it): A3.
+    Keyboard,
+    /// B5's Abort: the abort confirmation B6.
+    AbortConfirm,
+}
+
+impl InGameMenuTarget {
+    /// The menu state the captured dialog shows.
+    fn state(self) -> crate::ui::pause_menu::InGameMenuState {
+        use crate::ui::pause_menu::InGameMenuState;
+        match self {
+            Self::Menu | Self::Options => InGameMenuState::Menu,
+            Self::Sound => InGameMenuState::Sound,
+            Self::Keyboard => InGameMenuState::Keyboard,
+            Self::AbortConfirm => InGameMenuState::AbortConfirm,
+        }
+    }
+}
+
+/// Presented frames an in-game menu dialog shows before its capture.
+const IN_GAME_MENU_SETTLE_FRAMES: u32 = 2;
 
 /// In-game frames before the quit route presses Leave.
 const QUIT_AFTER_FRAMES: u32 = 30;
@@ -177,6 +219,8 @@ pub(super) struct SkirmishCapture {
     /// Once `0x102` settles, open VERA's Game Options through its button.
     game_options: bool,
     game_options_opened: bool,
+    /// With `game_options`: press VERA's Setups instead.
+    setups: bool,
     /// The random-map routes rest the pointer on Create Random Map until the
     /// chooser's help has typed in before pressing it: the retail helper's
     /// click rests 100 ms before its press and 90 ms more before its release,
@@ -198,6 +242,12 @@ pub(super) struct SkirmishCapture {
     in_game_frames: u32,
     /// Frames Diplomacy has presented.
     diplomacy_frames: u32,
+    /// The in-game menu routes' Escape (and B6's Abort) input owner.
+    menu_input: Option<super::movies::abort_return::AbortReturnInput>,
+    /// The menu presented and the route opened its dialog.
+    menu_opened: bool,
+    /// Frames that dialog has presented since.
+    menu_frames: u32,
     deploy_sent: bool,
     sell_sent: bool,
 }
@@ -236,36 +286,55 @@ impl CaptureGuard {
 }
 
 fn guard(
-    state: &AppState,
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    persistence: &PersistenceState,
     chooser: Option<ChooserTarget>,
     loading: bool,
     expected_cursor: (f32, f32),
+    keyboard_open: bool,
 ) -> Result<()> {
-    let shell = &state.frontend.skirmish_shell_state;
+    let shell = &frontend.skirmish_shell_state;
+    // `main_menu_dialog_open` also counts the shared Keyboard dialog A3,
+    // which the in-game Keyboard route opens on purpose; its other two
+    // dialogs still count there.
+    let main_menu_dialog = if keyboard_open {
+        frontend.shell_message_box.is_some() || frontend.options_dialog.is_some()
+    } else {
+        frontend.main_menu_dialog_open()
+    };
     CaptureGuard {
-        main_menu_screen: state.frontend.screen == GameScreen::MainMenu
+        main_menu_screen: frontend.screen == GameScreen::MainMenu
             || (loading
                 && matches!(
-                    state.frontend.screen,
+                    frontend.screen,
                     GameScreen::Loading | GameScreen::InGame | GameScreen::MissionResult { .. }
                 )),
-        surface: (state.render_width(), state.render_height()),
-        failed: state.frontend.main_menu_shell_error.is_some(),
+        surface: (
+            renderer.render_width(&frontend.screen),
+            renderer.render_height(&frontend.screen),
+        ),
+        failed: frontend.main_menu_shell_error.is_some(),
         developer_shortcut: false,
-        software_cursor: state.use_software_cursor(),
+        software_cursor: crate::app::state::use_software_cursor(
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            persistence,
+        ),
         // The game moves the pointer; the quit route puts it back at rest
         // when the shell returns (and its readiness requires that).
-        cursor: if loading && state.frontend.screen != GameScreen::Loading {
+        cursor: if loading && frontend.screen != GameScreen::Loading {
             (EXPECTED_CURSOR_X as f32, EXPECTED_CURSOR_Y as f32)
         } else {
-            (
-                state.match_state.input.cursor_x,
-                state.match_state.input.cursor_y,
-            )
+            (match_state.input.cursor_x, match_state.input.cursor_y)
         },
         expected_cursor,
-        interaction_active: state.main_menu_dialog_open()
-            || state.frontend.quit_cascade.is_some()
+        interaction_active: main_menu_dialog
+            || frontend.quit_cascade.is_some()
             || (shell.choose_map_modal.is_some() && chooser.is_none())
             || (shell.random_map_setup_modal.is_some()
                 && !matches!(chooser, Some(ChooserTarget::RandomMap(_))))
@@ -284,7 +353,7 @@ fn guard(
             || shell.validation_modal.is_some()
             || (shell.saved_seed_browser.is_some()
                 && chooser != Some(ChooserTarget::RandomMap(RandomMapTarget::SeedBrowserReturn)))
-            || (state.frontend.random_map_generation.is_some()
+            || (frontend.random_map_generation.is_some()
                 && !matches!(
                     chooser,
                     Some(ChooserTarget::RandomMap(
@@ -294,26 +363,64 @@ fn guard(
                             | RandomMapTarget::EjectBox
                     ))
                 ))
-            || shell.open_combo_dropdown.is_some()
-            || shell.trackbar_hold.is_some()
-            || shell.dropdown_scroll_drag.is_some()
-            || shell.dropdown_scroll_press.is_some()
-            || shell.pressed_owner_draw_button.is_some()
-            || shell.player_name_edit.focused,
+            || (frontend.shell_controller.top_id()
+                == Some(crate::ui::skirmish_shell::page::DIALOG)
+                && (frontend.shell_controller.gui().popup().is_some()
+                    || frontend.shell_controller.gui().pressed().is_some()))
+            || frontend
+                .shell_controller
+                .focused_control(crate::ui::skirmish_shell::page::DIALOG)
+                == Some(0x6A0),
     }
     .validate()
 }
 
-fn selected_scene(state: &AppState) -> Result<Value> {
-    let shell = &state.frontend.skirmish_shell_state;
-    let map = state
-        .frontend
+/// The match a Start Game route launches: the player America in colour 0
+/// at start 0, one Easy AI as Russia in colour 1 at start 1, no teams and
+/// no other computer row. A profile's Random country, colour or start would
+/// otherwise draw anew each run and change the loading screen and every
+/// in-game dialog that lists the players. The map, name and game options
+/// stay the profile's; the manifest's selection records them.
+fn pin_match_setup(skirmish_shell_state: &mut SkirmishShellState) {
+    use crate::skirmish_launch::{AiDifficulty, LaunchCountry, LaunchStartPosition};
+    use crate::ui::skirmish_shell::SkirmishAiRowType;
+    let shell = skirmish_shell_state;
+    shell.player_country = LaunchCountry::America;
+    shell.player_country_random = false;
+    shell.player_color_index = 0;
+    shell.player_color_claimed = true;
+    shell.player_start_position = LaunchStartPosition::Position(0);
+    shell.player_team = -2;
+    for (index, row) in shell.opponents.iter_mut().enumerate() {
+        if index == 0 {
+            row.enabled = true;
+            row.row_type = SkirmishAiRowType::Easy;
+            row.difficulty = AiDifficulty::Easy;
+            row.country = LaunchCountry::Russia;
+            row.country_random = false;
+            row.color_index = 1;
+            row.color_claimed = true;
+            row.start_position = LaunchStartPosition::Position(1);
+            row.team = -2;
+        } else {
+            // An inactive row, as a fresh profile's rows 2.. are.
+            row.enabled = false;
+            row.row_type = SkirmishAiRowType::None;
+            row.country_random = true;
+            row.color_claimed = false;
+            row.start_position = LaunchStartPosition::Auto;
+        }
+    }
+}
+
+fn selected_scene(frontend: &FrontendState) -> Result<Value> {
+    let shell = &frontend.skirmish_shell_state;
+    let map = frontend
         .scenario_catalog
         .shell_maps()
         .get(shell.selected_map_idx)
         .context("skirmish capture has no selected map")?;
-    let preview = state
-        .frontend
+    let preview = frontend
         .skirmish_preview_texture
         .as_ref()
         .context("selected map preview is unavailable for this capture checkpoint")?;
@@ -324,18 +431,18 @@ fn selected_scene(state: &AppState) -> Result<Value> {
     );
     Ok(json!({
         "map_file": map.file_name, "map_label": map.display_name,
-        "map_capacity": map.player_capacity, "mode_id": shell.selected_mode_id,
+        "map_capacity": map.player_capacity, "mode_id": shell.selected_mode.id,
         "preview": { "width": preview.width, "height": preview.height },
         "parsed_map_sha256": crate::util::sha256::sha256_hex(format!("{map:?}").as_bytes()),
         "parsed_map_hash_encoding": "Rust Debug representation; diagnostic identity only",
         "player": {
-            "name": shell.player_name_edit.text, "country": format!("{:?}", shell.player_country),
+            "name": shell.player_name, "country": format!("{:?}", shell.player_country),
             "country_random": shell.player_country_random, "color": shell.player_color_index,
             "color_claimed": shell.player_color_claimed,
             "start": format!("{:?}", shell.player_start_position), "team": shell.player_team
         },
         "opponents": shell.opponents.iter().enumerate().map(|(index, row)| json!({
-            "visible": crate::ui::skirmish_shell::player_row_visible(shell, state.frontend.scenario_catalog.shell_maps(), index + 1),
+            "visible": crate::ui::skirmish_shell::player_row_visible(shell, frontend.scenario_catalog.shell_maps(), index + 1),
             "enabled": row.enabled, "type": format!("{:?}", row.row_type),
             "country": format!("{:?}", row.country), "country_random": row.country_random,
             "color": row.color_index, "color_claimed": row.color_claimed,
@@ -351,15 +458,14 @@ fn selected_scene(state: &AppState) -> Result<Value> {
 }
 
 /// The tick of `kind`'s entry slide, while it runs.
-fn entry_wave_tick(state: &AppState, kind: ShellSlideKind) -> Option<u32> {
-    if state.frontend.shell_slide_active_shell != Some(kind) {
+fn entry_wave_tick(frontend: &FrontendState, kind: ShellSlideKind) -> Option<u32> {
+    if frontend.shell_slide_active_shell != Some(kind) {
         return None;
     }
-    state
-        .frontend
+    frontend
         .shell_first_paint_slide
         .as_ref()
-        .and_then(|wave| wave.compatibility_tick())
+        .map(|wave| wave.tick())
 }
 
 impl SkirmishCapture {
@@ -405,6 +511,14 @@ impl SkirmishCapture {
         }
     }
 
+    pub(super) fn setups() -> Self {
+        Self {
+            game_options: true,
+            setups: true,
+            ..Self::default()
+        }
+    }
+
     pub(super) fn random_map(target: RandomMapTarget) -> Self {
         Self::chooser(ChooserTarget::RandomMap(target))
     }
@@ -424,15 +538,26 @@ impl SkirmishCapture {
             .unwrap_or((EXPECTED_CURSOR_X as i32, EXPECTED_CURSOR_Y as i32))
     }
 
-    fn set_pointer(state: &mut AppState, point: (i32, i32)) {
-        state.match_state.input.cursor_x = point.0 as f32;
-        state.match_state.input.cursor_y = point.1 as f32;
+    fn set_pointer(input: &mut MatchInputState, point: (i32, i32)) {
+        input.cursor_x = point.0 as f32;
+        input.cursor_y = point.1 as f32;
     }
 
-    fn guard(&self, state: &AppState) -> Result<()> {
+    fn guard(
+        &self,
+        platform: &PlatformState,
+        renderer: &RendererState,
+        frontend: &FrontendState,
+        match_state: &MatchState,
+        persistence: &PersistenceState,
+    ) -> Result<()> {
         let rest = self.rest_point();
         guard(
-            state,
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            persistence,
             self.chooser,
             matches!(
                 self.phase,
@@ -442,18 +567,20 @@ impl SkirmishCapture {
                     | Phase::Scoring
                     | Phase::Continuing
                     | Phase::Diplomacy
+                    | Phase::InGameMenu
             ),
             (rest.0 as f32, rest.1 as f32),
+            self.keyboard_open(&match_state.match_presentation),
         )
     }
 
-    /// A press and release at `point` through the chooser's production
-    /// handlers.
-    fn click_chooser(state: &mut AppState, point: (i32, i32)) {
-        state.match_state.input.cursor_x = point.0 as f32;
-        state.match_state.input.cursor_y = point.1 as f32;
-        App::handle_choose_map_modal_mouse_down(state);
-        App::handle_choose_map_modal_mouse_up(state);
+    /// The Keyboard route's A3 is up over the running game: the one shell
+    /// dialog the guard admits, only on that route and only while the
+    /// in-game menu state is A3's.
+    fn keyboard_open(&self, match_presentation: &MatchPresentationState) -> bool {
+        self.loading == Some(LoadingTarget::InGameMenu(InGameMenuTarget::Keyboard))
+            && self.phase == Phase::InGameMenu
+            && match_presentation.in_game_menu == crate::ui::pause_menu::InGameMenuState::Keyboard
     }
 
     /// Track press above the map list's thumb (scrolls to the top), a press
@@ -475,11 +602,11 @@ impl SkirmishCapture {
         let bar = map_list(state)?
             .scrollbar
             .context("the map list needs a scrollbar")?;
-        Self::click_chooser(state, (bar.x + 10, bar.y + 24));
+        click_chooser(state, (bar.x + 10, bar.y + 24));
         let row = map_list(state)?.row(0);
-        Self::click_chooser(state, (row.x + 4, row.y + 4));
-        let button = layout.use_map_button;
-        Self::click_chooser(state, (button.x + button.w / 2, button.y + button.h / 2));
+        click_chooser(state, (row.x + 4, row.y + 4));
+        let button = layout.rect(0x6C5);
+        click_chooser(state, (button.x + button.w / 2, button.y + button.h / 2));
         state.match_state.input.cursor_x = EXPECTED_CURSOR_X as f32;
         state.match_state.input.cursor_y = EXPECTED_CURSOR_Y as f32;
         ensure!(
@@ -506,12 +633,13 @@ impl SkirmishCapture {
     /// The local player's first entity (stable order) whose rules type
     /// matches.
     fn local_entity(
-        state: &AppState,
+        frontend: &FrontendState,
+        match_state: &MatchState,
         wanted: impl Fn(&crate::rules::object_type::ObjectType) -> bool,
     ) -> Option<u64> {
-        let owner = crate::app::input::commands::preferred_local_owner_name(state)?;
-        let sim = &state.match_state.sim_runtime.runtime()?.simulation;
-        let rules = state.rules()?;
+        let owner = crate::app::input::commands::preferred_local_owner_name(match_state)?;
+        let sim = &match_state.sim_runtime.runtime()?.simulation;
+        let rules = crate::app::state::active_rules(frontend, match_state)?;
         sim.entities()
             .values_sorted()
             .filter(|entity| sim.interner().resolve(entity.owner()) == owner)
@@ -526,17 +654,24 @@ impl SkirmishCapture {
     /// Deploy the MCV, then sell the Construction Yard it becomes: with Short
     /// Game on the house has no base left and loses. The score page follows
     /// through the production exit cascade.
-    fn lose_the_game(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
-        if matches!(state.frontend.screen, GameScreen::MissionResult { .. }) {
+    fn lose_the_game(
+        &mut self,
+        platform: &PlatformState,
+        renderer: &RendererState,
+        diag: &DiagnosticsState,
+        frontend: &FrontendState,
+        match_state: &mut MatchState,
+        process_assets: &ProcessAssets,
+        sfx_player: &mut Option<SfxPlayer>,
+        persistence: &PersistenceState,
+        frame: u32,
+    ) -> Result<()> {
+        if matches!(frontend.screen, GameScreen::MissionResult { .. }) {
             ensure!(
-                App::score_shell_active(state),
+                App::score_shell_active(frontend),
                 "the defeat reached a result screen without the score page"
             );
-            let page = state
-                .frontend
-                .score_page
-                .as_ref()
-                .context("score page missing")?;
+            let page = frontend.score_page.as_ref().context("score page missing")?;
             let rows: Vec<Value> = page
                 .model
                 .rows
@@ -554,13 +689,22 @@ impl SkirmishCapture {
             self.phase = Phase::Scoring;
             return Ok(());
         }
-        let owner = crate::app::input::commands::preferred_local_owner_name(state)
+        let owner = crate::app::input::commands::preferred_local_owner_name(match_state)
             .context("no local owner in the game")?;
         if !self.deploy_sent {
-            let mcv = Self::local_entity(state, |object| object.deploys_into.is_some())
-                .context("the local player has no MCV")?;
+            let mcv = Self::local_entity(frontend, match_state, |object| {
+                object.deploys_into.is_some()
+            })
+            .context("the local player has no MCV")?;
             crate::app::input::commands::schedule_command(
-                state,
+                platform,
+                renderer,
+                diag,
+                frontend,
+                match_state,
+                process_assets,
+                sfx_player,
+                persistence,
                 &owner,
                 crate::sim::command::Command::DeployMcv { entity_id: mcv },
             );
@@ -568,10 +712,18 @@ impl SkirmishCapture {
                 "action": "deploy MCV", "entity": mcv}));
             self.deploy_sent = true;
         } else if !self.sell_sent
-            && let Some(yard) = Self::local_entity(state, |object| object.construction_yard)
+            && let Some(yard) =
+                Self::local_entity(frontend, match_state, |object| object.construction_yard)
         {
             crate::app::input::commands::schedule_command(
-                state,
+                platform,
+                renderer,
+                diag,
+                frontend,
+                match_state,
+                process_assets,
+                sfx_player,
+                persistence,
                 &owner,
                 crate::sim::command::Command::SellBuilding { entity_id: yard },
             );
@@ -583,16 +735,15 @@ impl SkirmishCapture {
     }
 
     /// The score page shows with no slide and every reveal finished.
-    fn score_settled(state: &AppState) -> bool {
-        state.frontend.shell_first_paint_slide.is_none()
-            && state.frontend.shell_exit.is_none()
-            && state.frontend.shell_page_title.is_terminal()
-            && state.frontend.shell_status_line.is_terminal()
-            && state
-                .frontend
+    fn score_settled(frontend: &FrontendState) -> bool {
+        frontend.shell_first_paint_slide.is_none()
+            && frontend.shell_exit.is_none()
+            && frontend.shell_page_title.is_terminal()
+            && frontend.shell_status_line.is_terminal()
+            && frontend
                 .score_page
                 .as_ref()
-                .is_some_and(|page| page.reveals_terminal())
+                .is_some_and(|page| page.statics.is_terminal())
     }
 
     /// The route's time budget: the quit and defeat routes load and play a
@@ -605,6 +756,7 @@ impl SkirmishCapture {
                     | LoadingTarget::DefeatScore
                     | LoadingTarget::DefeatContinue
                     | LoadingTarget::Diplomacy
+                    | LoadingTarget::InGameMenu(_)
             )
         ) {
             std::time::Duration::from_secs(180)
@@ -614,17 +766,12 @@ impl SkirmishCapture {
     }
 
     /// `0x6B` shows with no slide and its heading and status line revealed.
-    fn chooser_settled(state: &AppState) -> bool {
-        state
-            .frontend
-            .skirmish_shell_state
-            .choose_map_modal
-            .is_some()
-            && state.frontend.shell_first_paint_slide.is_none()
-            && state.frontend.shell_exit.is_none()
-            && state.frontend.shell_slide_active_shell == Some(ShellSlideKind::ChooseMap)
-            && state
-                .frontend
+    fn chooser_settled(frontend: &FrontendState) -> bool {
+        frontend.skirmish_shell_state.choose_map_modal.is_some()
+            && frontend.shell_first_paint_slide.is_none()
+            && frontend.shell_exit.is_none()
+            && frontend.shell_slide_active_shell == Some(ShellSlideKind::ChooseMap)
+            && frontend
                 .skirmish_shell_state
                 .choose_map_modal
                 .as_ref()
@@ -632,12 +779,11 @@ impl SkirmishCapture {
     }
 
     /// `0x105` shows with no slide and its heading and status line revealed.
-    fn random_map_settled(state: &AppState) -> bool {
-        state.frontend.shell_first_paint_slide.is_none()
-            && state.frontend.shell_exit.is_none()
-            && state.frontend.shell_slide_active_shell == Some(ShellSlideKind::RandomMap)
-            && state
-                .frontend
+    fn random_map_settled(frontend: &FrontendState) -> bool {
+        frontend.shell_first_paint_slide.is_none()
+            && frontend.shell_exit.is_none()
+            && frontend.shell_slide_active_shell == Some(ShellSlideKind::RandomMap)
+            && frontend
                 .skirmish_shell_state
                 .random_map_setup_modal
                 .as_ref()
@@ -663,20 +809,36 @@ impl SkirmishCapture {
         if browsing {
             let back = crate::ui::skirmish_shell::compute_saved_seed_layout(
                 crate::ui::skirmish_shell::SavedSeedMode::Save,
-                state.render_width(),
-                state.render_height(),
+                state.renderer.render_width(&state.frontend.screen),
+                state.renderer.render_height(&state.frontend.screen),
             )
             .back;
-            Self::set_pointer(state, centre(back));
-            App::handle_saved_seed_browser_mouse_down(state);
-            App::handle_saved_seed_browser_mouse_up(state);
-            Self::set_pointer(state, self.rest_point());
+            Self::set_pointer(&mut state.match_state.input, centre(back));
+            App::saved_seed_browser_pointer(
+                state.platform.game_config.as_ref(),
+                &state.renderer,
+                &mut state.frontend,
+                &mut state.match_state,
+                &mut state.process_assets,
+                &mut state.audio.sfx_player,
+                Some(true),
+            );
+            App::saved_seed_browser_pointer(
+                state.platform.game_config.as_ref(),
+                &state.renderer,
+                &mut state.frontend,
+                &mut state.match_state,
+                &mut state.process_assets,
+                &mut state.audio.sfx_player,
+                Some(false),
+            );
+            Self::set_pointer(&mut state.match_state.input, self.rest_point());
             self.pointer_rested = true;
             self.route
                 .push(json!({"dialog": 0x2b4, "frame": frame, "action": "Back"}));
             return Ok(());
         }
-        if !Self::random_map_settled(state) {
+        if !Self::random_map_settled(&state.frontend) {
             return Ok(());
         }
         let generated = shell
@@ -689,20 +851,37 @@ impl SkirmishCapture {
         } else if generated && !self.save_pressed {
             self.save_pressed = true;
             let save = crate::ui::skirmish_shell::compute_random_map_setup_layout(
-                state.render_width(),
-                state.render_height(),
+                state.renderer.render_width(&state.frontend.screen),
+                state.renderer.render_height(&state.frontend.screen),
             )
-            .save;
+            .rect(0x6C3);
             Some((centre(save), "SaveMap"))
         } else {
             None
         };
         if let Some((point, action)) = press {
-            Self::set_pointer(state, point);
+            Self::set_pointer(&mut state.match_state.input, point);
             App::handle_skirmish_shell_mouse_move(state);
-            App::handle_random_map_setup_mouse_down(state);
-            App::handle_random_map_setup_mouse_up(state);
-            Self::set_pointer(state, self.rest_point());
+            App::handle_random_map_setup_mouse_down(
+                &state.platform.window,
+                &state.renderer,
+                &mut state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                &mut state.audio.sfx_player,
+            );
+            let steps = App::handle_random_map_setup_mouse_up(
+                &state.platform,
+                &state.renderer,
+                &mut state.frontend,
+                &mut state.match_state,
+                &mut state.process_assets,
+                &mut state.audio.sfx_player,
+            );
+            for step in steps {
+                App::apply_step(state, step);
+            }
+            Self::set_pointer(&mut state.match_state.input, self.rest_point());
             self.route
                 .push(json!({"dialog": 0x105, "frame": frame, "action": action}));
             if action == "SaveMap" {
@@ -734,8 +913,8 @@ impl SkirmishCapture {
         let press = if min_players && !self.players_set {
             self.players_set = true;
             let track = crate::ui::skirmish_shell::compute_random_map_setup_layout(
-                state.render_width(),
-                state.render_height(),
+                state.renderer.render_width(&state.frontend.screen),
+                state.renderer.render_height(&state.frontend.screen),
             )
             .control_rects[5];
             Some(((track.x + 3, track.y + track.h / 2), "Players 2"))
@@ -749,11 +928,28 @@ impl SkirmishCapture {
             None
         };
         if let Some((point, action)) = press {
-            Self::set_pointer(state, point);
+            Self::set_pointer(&mut state.match_state.input, point);
             App::handle_skirmish_shell_mouse_move(state);
-            App::handle_random_map_setup_mouse_down(state);
-            App::handle_random_map_setup_mouse_up(state);
-            Self::set_pointer(state, self.rest_point());
+            App::handle_random_map_setup_mouse_down(
+                &state.platform.window,
+                &state.renderer,
+                &mut state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                &mut state.audio.sfx_player,
+            );
+            let steps = App::handle_random_map_setup_mouse_up(
+                &state.platform,
+                &state.renderer,
+                &mut state.frontend,
+                &mut state.match_state,
+                &mut state.process_assets,
+                &mut state.audio.sfx_player,
+            );
+            for step in steps {
+                App::apply_step(state, step);
+            }
+            Self::set_pointer(&mut state.match_state.input, self.rest_point());
             self.route
                 .push(json!({"dialog": 0x105, "frame": frame, "action": action}));
         }
@@ -765,7 +961,8 @@ impl SkirmishCapture {
     fn add_second_ai(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
         use crate::ui::skirmish_shell::{SkirmishAiRowType, SkirmishComboId, SkirmishComboItem};
         let id = SkirmishComboId::AiType(1);
-        let layout = crate::app::frontend::shell_layout::skirmish_layout(state);
+        let layout =
+            crate::app::frontend::shell_layout::skirmish_layout(&state.renderer, &state.frontend);
         let face = crate::ui::skirmish_shell::combo_rect(
             &layout,
             &state.frontend.skirmish_shell_state,
@@ -773,17 +970,21 @@ impl SkirmishCapture {
         )
         .context("AI row 2 has no type combo")?;
         Self::set_pointer(
-            state,
+            &mut state.match_state.input,
             (
                 face.x + face.w - crate::ui::skirmish_shell::COMBO_ARROW_RESERVE_W / 2,
                 face.y + crate::ui::skirmish_shell::COMBO_FACE_H / 2,
             ),
         );
         App::handle_skirmish_shell_mouse_down(state);
+        App::handle_skirmish_shell_mouse_up(state);
         let shell = &state.frontend.skirmish_shell_state;
         let maps = state.frontend.scenario_catalog.shell_maps();
-        let list = crate::ui::skirmish_shell::combo_dropdown_content_rect(shell, &layout, maps, id)
-            .filter(|_| shell.open_combo_dropdown.is_some())
+        let gui = state.frontend.shell_controller.gui();
+        let list = gui
+            .popup()
+            .and_then(|node| gui.combo_drop_down(node))
+            .map(|list| list.popup.content())
             .context("AI row 2's type list did not open")?;
         let row = crate::ui::skirmish_shell::combo_items(shell, maps, id)
             .iter()
@@ -791,12 +992,12 @@ impl SkirmishCapture {
             .context("the AI type list has no Easy row")? as i32;
         let row_h = crate::ui::skirmish_shell::COMBO_DROPDOWN_ROW_H;
         Self::set_pointer(
-            state,
+            &mut state.match_state.input,
             (list.x + list.w / 2, list.y + row * row_h + row_h / 2),
         );
         App::handle_skirmish_shell_mouse_down(state);
-        crate::ui::skirmish_shell::handle_option_mouse_up(&mut state.frontend.skirmish_shell_state);
-        Self::set_pointer(state, self.rest_point());
+        App::handle_skirmish_shell_mouse_up(state);
+        Self::set_pointer(&mut state.match_state.input, self.rest_point());
         ensure!(
             state
                 .frontend
@@ -807,7 +1008,7 @@ impl SkirmishCapture {
             "AI row 2 did not take Easy"
         );
         self.second_ai_added = true;
-        self.selected_scene = Some(selected_scene(state)?);
+        self.selected_scene = Some(selected_scene(&state.frontend)?);
         self.route
             .push(json!({"dialog": 0x102, "frame": frame, "action": "AI row 2 Easy"}));
         Ok(())
@@ -821,40 +1022,51 @@ impl SkirmishCapture {
     /// VERA's Game Options through the production press and release; the
     /// pointer then rests again.
     fn open_game_options(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
-        let button = crate::app::frontend::shell_layout::skirmish_layout(state).game_options_button;
-        Self::set_pointer(state, (button.x + button.w / 2, button.y + button.h / 2));
+        let (id, action) = match self.setups {
+            true => (0x7102, "Setups"),
+            false => (0x7101, "Game Options"),
+        };
+        let button =
+            crate::app::frontend::shell_layout::skirmish_layout(&state.renderer, &state.frontend)
+                .statics
+                .get(id)
+                .with_context(|| format!("0x102 has no {action}"))?;
+        Self::set_pointer(
+            &mut state.match_state.input,
+            (button.x + button.w / 2, button.y + button.h / 2),
+        );
         App::handle_skirmish_shell_mouse_down(state);
         App::handle_skirmish_shell_mouse_up(state);
-        Self::set_pointer(state, self.rest_point());
-        ensure!(
-            state.frontend.skirmish_shell_state.game_options.is_some(),
-            "Game Options did not open its box"
-        );
+        Self::set_pointer(&mut state.match_state.input, self.rest_point());
+        let shell = &state.frontend.skirmish_shell_state;
+        let opened = match self.setups {
+            true => shell.setups_browser.is_some(),
+            false => shell.game_options.is_some(),
+        };
+        ensure!(opened, "{action} did not open its page");
         self.game_options_opened = true;
         self.route
-            .push(json!({"dialog": 0x102, "frame": frame, "action": "Game Options"}));
+            .push(json!({"dialog": 0x102, "frame": frame, "action": action}));
         Ok(())
     }
 
     fn check_short_game(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
-        use crate::ui::skirmish_shell::SkirmishCheckboxId;
-        let layout = crate::app::frontend::shell_layout::skirmish_layout(state);
-        let rect = layout
-            .checkboxes
-            .iter()
-            .find(|checkbox| checkbox.id == SkirmishCheckboxId::ShortGame0x54e)
-            .context("0x102 has no Short Game box")?
-            .rect;
+        let layout =
+            crate::app::frontend::shell_layout::skirmish_layout(&state.renderer, &state.frontend);
+        let rect = (layout.statics.get(0x54E)).context("0x102 has no Short Game box")?;
         let icon = crate::ui::skirmish_shell::checkbox_icon_rect(rect, layout.scale);
-        Self::set_pointer(state, (icon.x + icon.w / 2, icon.y + icon.h / 2));
+        Self::set_pointer(
+            &mut state.match_state.input,
+            (icon.x + icon.w / 2, icon.y + icon.h / 2),
+        );
         App::handle_skirmish_shell_mouse_down(state);
         App::handle_skirmish_shell_mouse_up(state);
-        Self::set_pointer(state, self.rest_point());
+        Self::set_pointer(&mut state.match_state.input, self.rest_point());
         ensure!(
             state.frontend.skirmish_shell_state.short_game,
             "the Short Game box did not take the click"
         );
-        self.selected_scene = Some(selected_scene(state)?);
+        self.selected_scene = Some(selected_scene(&state.frontend)?);
         self.route
             .push(json!({"dialog": 0x102, "frame": frame, "action": "check Short Game"}));
         Ok(())
@@ -872,7 +1084,7 @@ impl SkirmishCapture {
         let shell = &state.frontend.skirmish_shell_state;
         // Until Use Map is pressed (`pointer_rested`) and `0x105` has gone.
         if !self.pointer_rested || shell.random_map_setup_modal.is_some() {
-            if Self::random_map_settled(state) {
+            if Self::random_map_settled(&state.frontend) {
                 self.use_map_step(state, frame, true);
                 if let Some(setup) = state
                     .frontend
@@ -907,18 +1119,22 @@ impl SkirmishCapture {
         let Some(answer) = answer else {
             return Ok(());
         };
-        let layout = crate::ui::shell::modal::quit_confirm_layout(
-            state.render_width() as i32,
-            state.render_height() as i32,
+        let layout = crate::ui::shell::modal::menu_message_box(
+            2,
+            state.renderer.render_width(&state.frontend.screen) as i32,
+            state.renderer.render_height(&state.frontend.screen) as i32,
         );
         let button = match answer {
-            crate::ui::skirmish_shell::ChooseMapPromptButton::Ok => layout.ok,
-            crate::ui::skirmish_shell::ChooseMapPromptButton::Cancel => layout.cancel,
+            crate::ui::skirmish_shell::ChooseMapPromptButton::Ok => layout.button(0),
+            crate::ui::skirmish_shell::ChooseMapPromptButton::Cancel => layout.button(1),
         };
-        Self::set_pointer(state, (button.x + button.w / 2, button.y + button.h / 2));
+        Self::set_pointer(
+            &mut state.match_state.input,
+            (button.x + button.w / 2, button.y + button.h / 2),
+        );
         App::handle_choose_map_prompt_mouse_down(state);
         App::handle_choose_map_prompt_mouse_up(state);
-        Self::set_pointer(state, self.rest_point());
+        Self::set_pointer(&mut state.match_state.input, self.rest_point());
         let shell = &state.frontend.skirmish_shell_state;
         match answer {
             crate::ui::skirmish_shell::ChooseMapPromptButton::Ok => ensure!(
@@ -939,13 +1155,13 @@ impl SkirmishCapture {
 
     fn hold_entry(
         &mut self,
-        state: &mut AppState,
+        frontend: &mut FrontendState,
         kind: ShellSlideKind,
         target: u32,
         dialog: u16,
         frame: u32,
     ) -> Result<()> {
-        match entry_wave_tick(state, kind) {
+        match entry_wave_tick(frontend, kind) {
             Some(tick) => {
                 self.entry_seen = true;
                 ensure!(
@@ -953,7 +1169,7 @@ impl SkirmishCapture {
                     "{dialog:#x} entry slide passed tick {target}"
                 );
                 if tick == target && !self.entry_held {
-                    if let Some(wave) = state.frontend.shell_first_paint_slide.as_mut() {
+                    if let Some(wave) = frontend.shell_first_paint_slide.as_mut() {
                         wave.hold_for_capture();
                     }
                     self.entry_held = true;
@@ -962,7 +1178,7 @@ impl SkirmishCapture {
                 }
             }
             None => ensure!(
-                !self.entry_seen || state.frontend.shell_slide_active_shell != Some(kind),
+                !self.entry_seen || frontend.shell_slide_active_shell != Some(kind),
                 "{dialog:#x} entry slide ended before capture"
             ),
         }
@@ -984,11 +1200,23 @@ impl SkirmishCapture {
             state.match_state.input.cursor_x = EXPECTED_CURSOR_X as f32;
             state.match_state.input.cursor_y = EXPECTED_CURSOR_Y as f32;
         }
-        self.guard(state)?;
+        self.guard(
+            &state.platform,
+            &state.renderer,
+            &state.frontend,
+            &state.match_state,
+            &state.persistence,
+        )?;
         self.last_presented = Some(rendered);
         match (self.phase, rendered) {
             (Phase::MainMenu, PresentedShell::MainMenu) => {
-                if steady_main_menu_capture_ready(MainMenuCaptureSnapshot::from_state(state))? {
+                if steady_main_menu_capture_ready(MainMenuCaptureSnapshot::from_state(
+                    &state.platform,
+                    &state.renderer,
+                    &state.frontend,
+                    &state.match_state,
+                    &state.persistence,
+                ))? {
                     self.route
                         .push(json!({"dialog": 0xe2, "frame": frame, "action": "SinglePlayer"}));
                     App::handle_main_menu_shell_action(
@@ -1000,7 +1228,7 @@ impl SkirmishCapture {
             }
             (Phase::SinglePlayer, PresentedShell::SinglePlayer) => {
                 ensure!(
-                    state.frontend.shell_route.single_player(),
+                    state.frontend.shell_route == ShellRoute::SinglePlayer,
                     "Single Player route changed"
                 );
                 ensure!(
@@ -1030,7 +1258,7 @@ impl SkirmishCapture {
                 if self.entry_tick.is_some() =>
             {
                 let target = self.entry_tick.context("entry phase without a tick")?;
-                match entry_wave_tick(state, ShellSlideKind::Skirmish) {
+                match entry_wave_tick(&state.frontend, ShellSlideKind::Skirmish) {
                     Some(tick) => {
                         self.entry_seen = true;
                         ensure!(tick <= target, "entry slide passed tick {target}");
@@ -1050,8 +1278,15 @@ impl SkirmishCapture {
                 }
             }
             (Phase::Skirmish, PresentedShell::Skirmish) => {
-                if self.settled(state)? && self.selected_scene.is_none() {
-                    self.selected_scene = Some(selected_scene(state)?);
+                if self.settled(
+                    &state.platform,
+                    &state.renderer,
+                    &state.frontend,
+                    &state.match_state,
+                    &state.persistence,
+                )? && self.selected_scene.is_none()
+                {
+                    self.selected_scene = Some(selected_scene(&state.frontend)?);
                 } else if let Some(point) = self
                     .hover
                     .filter(|_| self.selected_scene.is_some() && !self.hovered)
@@ -1068,7 +1303,8 @@ impl SkirmishCapture {
                 {
                     self.open_game_options(state, frame)?;
                 } else if self.selected_scene.is_some() && self.slide_out_tick.is_some() {
-                    App::handle_skirmish_back(state);
+                    let step = App::handle_skirmish_back(&mut state.frontend);
+                    App::apply_step(state, step);
                     ensure!(
                         state.frontend.shell_exit.is_some(),
                         "Skirmish Back did not start its teardown slide"
@@ -1082,6 +1318,10 @@ impl SkirmishCapture {
                 {
                     self.check_short_game(state, frame)?;
                 } else if self.selected_scene.is_some() && self.loading.is_some() {
+                    pin_match_setup(&mut state.frontend.skirmish_shell_state);
+                    self.selected_scene = Some(selected_scene(&state.frontend)?);
+                    self.route.push(json!({"dialog": 0x102, "frame": frame,
+                        "action": "pin match setup", "selection": self.selected_scene}));
                     // The pointer moves onto Start Game (`0x617`), whose help
                     // reaches the status line as it would before a click,
                     // then the production action runs and the pointer rests
@@ -1089,7 +1329,15 @@ impl SkirmishCapture {
                     state.match_state.input.cursor_x = START_GAME_POINT.0 as f32;
                     state.match_state.input.cursor_y = START_GAME_POINT.1 as f32;
                     App::handle_skirmish_shell_mouse_move(state);
-                    App::start_game_from_shell(state);
+                    let step = App::start_game_from_shell(
+                        &state.platform.window,
+                        &mut state.frontend,
+                        &state.process_assets,
+                        &state.persistence.options_profile,
+                    );
+                    if let Some(step) = step {
+                        App::apply_step(state, step);
+                    }
                     state.match_state.input.cursor_x = EXPECTED_CURSOR_X as f32;
                     state.match_state.input.cursor_y = EXPECTED_CURSOR_Y as f32;
                     ensure!(
@@ -1112,7 +1360,16 @@ impl SkirmishCapture {
                 } else if self.selected_scene.is_some() && self.chooser.is_some() {
                     App::leave_shell_dialog(
                         state,
-                        crate::app::frontend::shell_transition::ShellExitThen::SkirmishChooseMap,
+                        crate::app::frontend::shell_transition::ShellSlideKind::Skirmish,
+                        |state| {
+                            App::open_choose_map_from_skirmish(
+                                &state.platform,
+                                &state.renderer,
+                                &mut state.frontend,
+                                &state.match_state,
+                                &mut state.process_assets,
+                            )
+                        },
                     );
                     ensure!(
                         state.frontend.shell_exit.is_some(),
@@ -1126,7 +1383,7 @@ impl SkirmishCapture {
             (Phase::Chooser, PresentedShell::Other | PresentedShell::Skirmish) => {
                 match self.chooser {
                     Some(ChooserTarget::Entry(target)) => {
-                        match entry_wave_tick(state, ShellSlideKind::ChooseMap) {
+                        match entry_wave_tick(&state.frontend, ShellSlideKind::ChooseMap) {
                             Some(tick) => {
                                 self.entry_seen = true;
                                 ensure!(tick <= target, "0x6B entry slide passed tick {target}");
@@ -1163,23 +1420,24 @@ impl SkirmishCapture {
                                 state.match_state.input.cursor_y]}));
                     }
                     Some(ChooserTarget::Eject)
-                        if Self::chooser_settled(state) && !self.pointer_rested =>
+                        if Self::chooser_settled(&state.frontend) && !self.pointer_rested =>
                     {
                         self.press_use_map_on_first_map(state, frame)?;
                         self.pointer_rested = true;
                     }
                     Some(ChooserTarget::RandomMap(_))
-                        if Self::chooser_settled(state) && !self.create_random_map_hovered =>
+                        if Self::chooser_settled(&state.frontend)
+                            && !self.create_random_map_hovered =>
                     {
-                        Self::set_pointer(state, CREATE_RANDOM_MAP_POINT);
+                        Self::set_pointer(&mut state.match_state.input, CREATE_RANDOM_MAP_POINT);
                         App::handle_skirmish_shell_mouse_move(state);
-                        Self::set_pointer(state, self.rest_point());
+                        Self::set_pointer(&mut state.match_state.input, self.rest_point());
                         self.create_random_map_hovered = true;
                     }
-                    Some(ChooserTarget::RandomMap(_)) if Self::chooser_settled(state) => {
+                    Some(ChooserTarget::RandomMap(_)) if Self::chooser_settled(&state.frontend) => {
                         // Through the chooser's production press and release.
-                        Self::click_chooser(state, CREATE_RANDOM_MAP_POINT);
-                        Self::set_pointer(state, self.rest_point());
+                        click_chooser(state, CREATE_RANDOM_MAP_POINT);
+                        Self::set_pointer(&mut state.match_state.input, self.rest_point());
                         ensure!(
                             state.frontend.shell_exit.is_some(),
                             "Create Random Map did not start 0x6B's teardown slide"
@@ -1189,10 +1447,11 @@ impl SkirmishCapture {
                                 CREATE_RANDOM_MAP_POINT.0, CREATE_RANDOM_MAP_POINT.1]}));
                         self.phase = Phase::RandomMap;
                     }
-                    Some(ChooserTarget::Return) if Self::chooser_settled(state) => {
+                    Some(ChooserTarget::Return) if Self::chooser_settled(&state.frontend) => {
                         App::leave_shell_dialog(
                             state,
-                            crate::app::frontend::shell_transition::ShellExitThen::ChooseMapCancel,
+                            crate::app::frontend::shell_transition::ShellSlideKind::ChooseMap,
+                            |state| App::close_choose_map_modal(&mut state.frontend),
                         );
                         ensure!(
                             state.frontend.shell_exit.is_some(),
@@ -1211,36 +1470,72 @@ impl SkirmishCapture {
                 };
                 match target {
                     RandomMapTarget::Entry(target) => {
-                        self.hold_entry(state, ShellSlideKind::RandomMap, target, 0x105, frame)?;
+                        self.hold_entry(
+                            &mut state.frontend,
+                            ShellSlideKind::RandomMap,
+                            target,
+                            0x105,
+                            frame,
+                        )?;
                     }
                     RandomMapTarget::Hover(point)
-                        if Self::random_map_settled(state) && !self.hovered =>
+                        if Self::random_map_settled(&state.frontend) && !self.hovered =>
                     {
-                        Self::set_pointer(state, point);
+                        Self::set_pointer(&mut state.match_state.input, point);
                         App::handle_skirmish_shell_mouse_move(state);
                         self.hovered = true;
                         self.route.push(json!({"dialog": 0x105, "frame": frame,
                             "action": "pointer rests", "point": [point.0, point.1]}));
                     }
                     RandomMapTarget::ListOpen
-                        if Self::random_map_settled(state) && !self.hovered =>
+                        if Self::random_map_settled(&state.frontend) && !self.hovered =>
                     {
                         // Open the list through the dialog's production
                         // handlers, then rest the pointer below it.
-                        Self::set_pointer(state, RANDOM_MAP_TERRAIN_ARROW_POINT);
+                        Self::set_pointer(
+                            &mut state.match_state.input,
+                            RANDOM_MAP_TERRAIN_ARROW_POINT,
+                        );
                         App::handle_skirmish_shell_mouse_move(state);
-                        App::handle_random_map_setup_mouse_down(state);
-                        App::handle_random_map_setup_mouse_up(state);
+                        App::handle_random_map_setup_mouse_down(
+                            &state.platform.window,
+                            &state.renderer,
+                            &mut state.frontend,
+                            &state.match_state,
+                            &state.process_assets,
+                            &mut state.audio.sfx_player,
+                        );
+                        let steps = App::handle_random_map_setup_mouse_up(
+                            &state.platform,
+                            &state.renderer,
+                            &mut state.frontend,
+                            &mut state.match_state,
+                            &mut state.process_assets,
+                            &mut state.audio.sfx_player,
+                        );
+                        for step in steps {
+                            App::apply_step(state, step);
+                        }
                         ensure!(
                             state
                                 .frontend
                                 .skirmish_shell_state
                                 .random_map_setup_modal
                                 .as_ref()
-                                .is_some_and(|setup| setup.open_combo.is_some()),
+                                .is_some_and(|setup| {
+                                    crate::ui::skirmish_shell::random_map_page::view(
+                                        &state.frontend.shell_controller,
+                                        setup,
+                                    )
+                                    .0
+                                    .is_some()
+                                }),
                             "Terrain Type's list did not open"
                         );
-                        Self::set_pointer(state, RANDOM_MAP_MAP_SIZE_FACE_POINT);
+                        Self::set_pointer(
+                            &mut state.match_state.input,
+                            RANDOM_MAP_MAP_SIZE_FACE_POINT,
+                        );
                         App::handle_skirmish_shell_mouse_move(state);
                         self.hovered = true;
                         self.route.push(json!({"dialog": 0x105, "frame": frame,
@@ -1249,14 +1544,31 @@ impl SkirmishCapture {
                                 RANDOM_MAP_MAP_SIZE_FACE_POINT.1]}));
                     }
                     RandomMapTarget::CancelEntry(_) | RandomMapTarget::CancelSteady
-                        if Self::random_map_settled(state) =>
+                        if Self::random_map_settled(&state.frontend) =>
                     {
                         // Cancel through the dialog's production handlers.
-                        Self::set_pointer(state, RANDOM_MAP_CANCEL_POINT);
+                        Self::set_pointer(&mut state.match_state.input, RANDOM_MAP_CANCEL_POINT);
                         App::handle_skirmish_shell_mouse_move(state);
-                        App::handle_random_map_setup_mouse_down(state);
-                        App::handle_random_map_setup_mouse_up(state);
-                        Self::set_pointer(state, self.rest_point());
+                        App::handle_random_map_setup_mouse_down(
+                            &state.platform.window,
+                            &state.renderer,
+                            &mut state.frontend,
+                            &state.match_state,
+                            &state.process_assets,
+                            &mut state.audio.sfx_player,
+                        );
+                        let steps = App::handle_random_map_setup_mouse_up(
+                            &state.platform,
+                            &state.renderer,
+                            &mut state.frontend,
+                            &mut state.match_state,
+                            &mut state.process_assets,
+                            &mut state.audio.sfx_player,
+                        );
+                        for step in steps {
+                            App::apply_step(state, step);
+                        }
+                        Self::set_pointer(&mut state.match_state.input, self.rest_point());
                         ensure!(
                             state.frontend.shell_exit.is_some(),
                             "Cancel did not start 0x105's teardown slide"
@@ -1265,7 +1577,7 @@ impl SkirmishCapture {
                             .push(json!({"dialog": 0x105, "frame": frame, "action": "Cancel"}));
                         self.phase = Phase::RandomMapCancel;
                     }
-                    RandomMapTarget::UseMap if Self::random_map_settled(state) => {
+                    RandomMapTarget::UseMap if Self::random_map_settled(&state.frontend) => {
                         self.use_map_step(state, frame, false);
                     }
                     RandomMapTarget::SeedBrowserReturn => self.seed_browser_step(state, frame)?,
@@ -1281,7 +1593,13 @@ impl SkirmishCapture {
                     Some(ChooserTarget::RandomMap(RandomMapTarget::CancelEntry(target)))
                         if state.frontend.shell_exit.is_none() =>
                     {
-                        self.hold_entry(state, ShellSlideKind::ChooseMap, target, 0x6b, frame)?;
+                        self.hold_entry(
+                            &mut state.frontend,
+                            ShellSlideKind::ChooseMap,
+                            target,
+                            0x6b,
+                            frame,
+                        )?;
                     }
                     // The retail helper's pointer goes back to rest after its
                     // click; the queued move reaches the chooser once its
@@ -1310,7 +1628,7 @@ impl SkirmishCapture {
                 };
                 ensure!(
                     crate::app::frontend::shell_transition::shell_exit_wave(
-                        state,
+                        &state.frontend.shell_exit,
                         ShellSlideKind::ChooseMap
                     )
                     .is_none(),
@@ -1326,7 +1644,7 @@ impl SkirmishCapture {
                         ShellSlideKind::Skirmish
                     }
                 };
-                if entry_wave_tick(state, kind).is_some() {
+                if entry_wave_tick(&state.frontend, kind).is_some() {
                     self.entry_seen = true;
                 }
                 // The retail helper's pointer goes back to rest after its
@@ -1359,7 +1677,14 @@ impl SkirmishCapture {
                     // The abort box's Leave through the production action
                     // (queues the EXIT event, `0x004F192C`).
                     crate::app::input::abort::activate(
-                        state,
+                        &mut state.platform,
+                        &state.renderer,
+                        &state.diag,
+                        &mut state.frontend,
+                        &mut state.match_state,
+                        &state.process_assets,
+                        &mut state.audio,
+                        &mut state.persistence,
                         crate::ui::shell::abort::AbortButton::Leave,
                     );
                     self.route.push(json!({"screen": "in game", "frame": frame,
@@ -1380,7 +1705,11 @@ impl SkirmishCapture {
                     // line shows that static's help.
                     let shell =
                         crate::app::frontend::skirmish_shell_render::current_in_game_shell_layout(
-                            state,
+                            &state.platform,
+                            &state.renderer,
+                            &state.frontend,
+                            &state.match_state,
+                            &state.persistence,
                         )
                         .context("Diplomacy has no loaded geometry")?;
                     let name = crate::ui::shell::diplomacy::diplomacy_layout(
@@ -1391,11 +1720,12 @@ impl SkirmishCapture {
                     )
                     .names[1];
                     let point = (name.x + name.w - 8, name.y + name.h / 2);
-                    Self::set_pointer(state, point);
+                    Self::set_pointer(&mut state.match_state.input, point);
                     crate::app::input::dispatch::handle_cursor_moved_in_game(state);
                     ensure!(
-                        state.match_state.match_presentation.diplomacy.hovered
-                            == Some(crate::ui::shell::diplomacy::DiplomacyControl::Name(1)),
+                        crate::app::input::dialog_page::hovered(
+                            &state.match_state.match_presentation.dialog_ui
+                        ) == Some(crate::ui::shell::diplomacy::DiplomacyControl::Name(1).id()),
                         "the pointer missed row 1's name"
                     );
                     self.route
@@ -1409,12 +1739,45 @@ impl SkirmishCapture {
                     state.match_state.match_presentation.in_game_menu
                         == crate::ui::pause_menu::InGameMenuState::Diplomacy
                         && crate::app::frontend::skirmish_shell_render::native_in_game_shell_active(
-                            state
+                            &state.platform,
+                            &state.renderer,
+                            &state.frontend,
+                            &state.match_state,
+                            &state.persistence
                         ),
                     "Diplomacy did not present with its required loaded artwork"
                 );
                 self.diplomacy_frames += 1;
             }
+            (Phase::Starting, _)
+                if matches!(self.loading, Some(LoadingTarget::InGameMenu(_)))
+                    && state.frontend.screen == GameScreen::InGame =>
+            {
+                self.in_game_frames += 1;
+                if self.in_game_frames == QUIT_AFTER_FRAMES {
+                    let Some(LoadingTarget::InGameMenu(target)) = self.loading else {
+                        bail!("the in-game menu route runs only for menu targets");
+                    };
+                    // Ordinary Escape queues Options and the frame loop's
+                    // next tick opens B5 (the shell-started match has no
+                    // exact-step owner); for B6 the same owner then presses
+                    // and releases Abort and stops once B6 presents.
+                    use super::movies::abort_return::{AbortGoal, AbortReturnInput};
+                    self.menu_input = Some(AbortReturnInput::begin(
+                        state,
+                        &mut self.route,
+                        frame,
+                        if target == InGameMenuTarget::AbortConfirm {
+                            AbortGoal::Choose(None)
+                        } else {
+                            AbortGoal::Menu
+                        },
+                        false,
+                    )?);
+                    self.phase = Phase::InGameMenu;
+                }
+            }
+            (Phase::InGameMenu, _) => self.in_game_menu_step(state, frame)?,
             (Phase::Starting, _)
                 if self.defeat_route() && state.frontend.screen == GameScreen::InGame =>
             {
@@ -1423,15 +1786,25 @@ impl SkirmishCapture {
                     self.phase = Phase::Defeating;
                 }
             }
-            (Phase::Defeating, _) => self.lose_the_game(state, frame)?,
-            (Phase::Scoring, PresentedShell::Score) if Self::score_settled(state) => {
+            (Phase::Defeating, _) => self.lose_the_game(
+                &state.platform,
+                &state.renderer,
+                &state.diag,
+                &state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                &mut state.audio.sfx_player,
+                &state.persistence,
+                frame,
+            )?,
+            (Phase::Scoring, PresentedShell::Score) if Self::score_settled(&state.frontend) => {
                 if self.loading == Some(LoadingTarget::DefeatContinue) {
                     // Continue through the page's production handlers.
                     state.match_state.input.cursor_x = 720.0;
                     state.match_state.input.cursor_y = 556.0;
-                    App::handle_score_shell_mouse_move(state);
-                    App::handle_score_shell_mouse_down(state);
-                    App::handle_score_shell_mouse_up(state);
+                    App::handle_score_shell_mouse(state, None);
+                    App::handle_score_shell_mouse(state, Some(true));
+                    App::handle_score_shell_mouse(state, Some(false));
                     state.match_state.input.cursor_x = EXPECTED_CURSOR_X as f32;
                     state.match_state.input.cursor_y = EXPECTED_CURSOR_Y as f32;
                     ensure!(
@@ -1448,15 +1821,16 @@ impl SkirmishCapture {
                     .slide_out_tick
                     .context("slide-out phase without a tick")?;
                 let tick = crate::app::frontend::shell_transition::shell_exit_wave(
-                    state,
+                    &state.frontend.shell_exit,
                     ShellSlideKind::Skirmish,
                 )
                 .context("Skirmish teardown ended before capture")?
-                .compatibility_tick()
-                .context("teardown slide without a tick clock")?;
+                .tick();
                 ensure!(tick <= target, "teardown slide passed tick {target}");
                 if tick == target {
-                    crate::app::frontend::shell_transition::hold_shell_exit_for_capture(state);
+                    crate::app::frontend::shell_transition::hold_shell_exit_for_capture(
+                        &mut state.frontend.shell_exit,
+                    );
                     self.route.push(json!({"dialog": 0x102, "frame": frame,
                         "action": "hold teardown slide", "tick": tick}));
                 }
@@ -1466,43 +1840,177 @@ impl SkirmishCapture {
         Ok(())
     }
 
-    fn settled(&self, state: &AppState) -> Result<bool> {
-        self.guard(state)?;
+    /// Once B5 (or B6) has presented, open the target's dialog through its
+    /// button, then rest the pointer at the neutral point through an ordinary
+    /// move so no control keeps the hover; later frames count the settled
+    /// dialog.
+    fn in_game_menu_step(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
+        use crate::ui::main_menu_dialogs::options::{Category, LauncherButton};
+        use crate::ui::shell::pause_menu::PauseMenuButton;
+        let Some(LoadingTarget::InGameMenu(target)) = self.loading else {
+            bail!("the in-game menu phase runs only for menu targets");
+        };
+        if self.menu_opened {
+            ensure!(
+                state.match_state.match_presentation.in_game_menu == target.state()
+                    && crate::app::frontend::skirmish_shell_render::native_in_game_shell_active(
+                        &state.platform,
+                        &state.renderer,
+                        &state.frontend,
+                        &state.match_state,
+                        &state.persistence
+                    ),
+                "{target:?} did not present with its required loaded artwork"
+            );
+            self.menu_frames += 1;
+            return Ok(());
+        }
+        if !self
+            .menu_input
+            .as_mut()
+            .context("in-game menu input owner")?
+            .after_present(state, &mut self.route, frame)?
+        {
+            return Ok(());
+        }
+        match target {
+            InGameMenuTarget::Menu | InGameMenuTarget::AbortConfirm => {}
+            InGameMenuTarget::Options => {
+                let rect = *crate::app::input::pause_menu::current_layout(
+                    &state.platform,
+                    &state.renderer,
+                    &state.frontend,
+                    &state.match_state,
+                    &state.persistence,
+                )
+                .context("B5 has no loaded hit geometry")?
+                .page_column()
+                .first()
+                .context("B5 shows no Options button")?;
+                let point = super::movies::click_in_game(state, rect);
+                self.route.push(
+                    json!({"frame": frame, "action": "Options", "dialog": 0xb5, "point": point}),
+                );
+                ensure!(
+                    state
+                        .match_state
+                        .match_presentation
+                        .options_page
+                        .as_ref()
+                        .is_some_and(|page| page.dialog.category() != Category::GameControls),
+                    "B5's Options did not show the Options column"
+                );
+            }
+            InGameMenuTarget::Sound => {
+                let rect = crate::app::input::pause_menu::options_page_layout(
+                    &state.platform,
+                    &state.renderer,
+                    &state.frontend,
+                    &state.match_state,
+                    &state.persistence,
+                )
+                .context("Game Controls has no loaded page geometry")?
+                .button_rect(LauncherButton::InGameSound)
+                .context("Game Controls shows no Sound button")?;
+                let point = super::movies::click_in_game(state, rect);
+                self.route.push(
+                    json!({"frame": frame, "action": "Sound", "dialog": 0xb5, "point": point}),
+                );
+            }
+            InGameMenuTarget::Keyboard => {
+                // The sidebar row under Options, or the page's own button
+                // where the sidebar has no row for it.
+                let rect = match crate::app::input::pause_menu::current_layout(
+                    &state.platform,
+                    &state.renderer,
+                    &state.frontend,
+                    &state.match_state,
+                    &state.persistence,
+                )
+                .and_then(|layout| layout.button(PauseMenuButton::Keyboard))
+                {
+                    Some(rect) => rect,
+                    None => crate::app::input::pause_menu::options_page_layout(
+                        &state.platform,
+                        &state.renderer,
+                        &state.frontend,
+                        &state.match_state,
+                        &state.persistence,
+                    )
+                    .and_then(|layout| layout.button_rect(LauncherButton::InGameKeyboard))
+                    .context("B5 shows no Keyboard button")?,
+                };
+                let point = super::movies::click_in_game(state, rect);
+                self.route.push(
+                    json!({"frame": frame, "action": "Keyboard", "dialog": 0xb5, "point": point}),
+                );
+            }
+        }
         ensure!(
-            state.frontend.shell_route.skirmish(),
+            state.match_state.match_presentation.in_game_menu == target.state(),
+            "{target:?} did not open through its button (Sound needs launcher audio)"
+        );
+        super::movies::MoviesCapture::restore_neutral_pointer(
+            &state.renderer.gpu,
+            &mut state.match_state.input,
+        );
+        crate::app::input::dispatch::handle_cursor_moved_in_game(state);
+        self.route
+            .push(json!({"frame": frame, "action": "pointer rests",
+            "point": [state.match_state.input.cursor_x, state.match_state.input.cursor_y]}));
+        self.menu_opened = true;
+        Ok(())
+    }
+
+    fn settled(
+        &self,
+        platform: &PlatformState,
+        renderer: &RendererState,
+        frontend: &FrontendState,
+        match_state: &MatchState,
+        persistence: &PersistenceState,
+    ) -> Result<bool> {
+        self.guard(platform, renderer, frontend, match_state, persistence)?;
+        ensure!(
+            frontend.shell_route == ShellRoute::Skirmish,
             "skirmish capture did not reach the Skirmish shell"
         );
         ensure!(
-            state.frontend.skirmish_shell_chrome.is_some(),
+            frontend.skirmish_shell_chrome.is_some(),
             "skirmish chrome unavailable"
         );
         ensure!(
-            state.frontend.main_menu_movie.is_none(),
+            frontend.main_menu_movie.is_none(),
             "prior shell movie survived skirmish entry"
         );
-        Ok(state.frontend.shell_first_paint_slide.is_none()
-            && state.frontend.shell_slide_active_shell == Some(ShellSlideKind::Skirmish)
-            && state.frontend.skirmish_shell_state.statics.is_terminal())
+        Ok(frontend.shell_first_paint_slide.is_none()
+            && frontend.shell_slide_active_shell == Some(ShellSlideKind::Skirmish)
+            && frontend.skirmish_shell_state.statics.is_terminal())
     }
 
-    pub(super) fn ready(&self, state: &AppState) -> Result<bool> {
-        self.guard(state)?;
+    pub(super) fn ready(
+        &self,
+        platform: &PlatformState,
+        renderer: &RendererState,
+        frontend: &FrontendState,
+        match_state: &MatchState,
+        persistence: &PersistenceState,
+    ) -> Result<bool> {
+        self.guard(platform, renderer, frontend, match_state, persistence)?;
         if let Some(target) = self.entry_tick {
-            return Ok(
-                self.entry_held && entry_wave_tick(state, ShellSlideKind::Skirmish) == Some(target)
-            );
+            return Ok(self.entry_held
+                && entry_wave_tick(frontend, ShellSlideKind::Skirmish) == Some(target));
         }
         match self.chooser {
             Some(ChooserTarget::Steady) => {
                 return Ok(self.phase == Phase::Chooser
                     && self.pointer_rested
-                    && Self::chooser_settled(state));
+                    && Self::chooser_settled(frontend));
             }
             Some(ChooserTarget::Eject) => {
                 return Ok(self.phase == Phase::Chooser
                     && self.pointer_rested
-                    && state
-                        .frontend
+                    && frontend
                         .skirmish_shell_state
                         .choose_map_modal
                         .as_ref()
@@ -1511,65 +2019,62 @@ impl SkirmishCapture {
             Some(ChooserTarget::Entry(target)) => {
                 return Ok(self.phase == Phase::Chooser
                     && self.entry_held
-                    && entry_wave_tick(state, ShellSlideKind::ChooseMap) == Some(target));
+                    && entry_wave_tick(frontend, ShellSlideKind::ChooseMap) == Some(target));
             }
             Some(ChooserTarget::RandomMap(target)) => {
                 return Ok(match target {
                     RandomMapTarget::Steady => {
-                        self.phase == Phase::RandomMap && Self::random_map_settled(state)
+                        self.phase == Phase::RandomMap && Self::random_map_settled(frontend)
                     }
                     RandomMapTarget::Entry(tick) => {
                         self.phase == Phase::RandomMap
                             && self.entry_held
-                            && entry_wave_tick(state, ShellSlideKind::RandomMap) == Some(tick)
+                            && entry_wave_tick(frontend, ShellSlideKind::RandomMap) == Some(tick)
                     }
                     RandomMapTarget::Hover(_) | RandomMapTarget::ListOpen => {
                         self.phase == Phase::RandomMap
                             && self.hovered
-                            && Self::random_map_settled(state)
+                            && Self::random_map_settled(frontend)
                     }
                     RandomMapTarget::CancelEntry(tick) => {
                         self.phase == Phase::RandomMapCancel
                             && self.entry_held
-                            && entry_wave_tick(state, ShellSlideKind::ChooseMap) == Some(tick)
+                            && entry_wave_tick(frontend, ShellSlideKind::ChooseMap) == Some(tick)
                     }
                     RandomMapTarget::UseMap => {
                         self.pointer_rested
-                            && state.frontend.random_map_generation.is_none()
-                            && state
-                                .frontend
-                                .skirmish_shell_state
-                                .choose_map_modal
-                                .is_none()
+                            && frontend.random_map_generation.is_none()
+                            && frontend.skirmish_shell_state.choose_map_modal.is_none()
                             && self.last_presented == Some(PresentedShell::Skirmish)
-                            && self.settled(state)?
+                            && self.settled(
+                                platform,
+                                renderer,
+                                frontend,
+                                match_state,
+                                persistence,
+                            )?
                     }
                     RandomMapTarget::SeedBrowserReturn => {
                         self.phase == Phase::RandomMap
                             && self.pointer_rested
-                            && state
-                                .frontend
-                                .skirmish_shell_state
-                                .saved_seed_browser
-                                .is_none()
-                            && Self::random_map_settled(state)
+                            && frontend.skirmish_shell_state.saved_seed_browser.is_none()
+                            && Self::random_map_settled(frontend)
                     }
                     RandomMapTarget::CancelSteady => {
                         self.phase == Phase::RandomMapCancel
                             && self.pointer_rested
-                            && state
-                                .frontend
+                            && frontend
                                 .skirmish_shell_state
                                 .random_map_setup_modal
                                 .is_none()
-                            && Self::chooser_settled(state)
+                            && Self::chooser_settled(frontend)
                     }
                     RandomMapTarget::Eject(
                         crate::ui::skirmish_shell::ChooseMapPromptButton::Cancel,
                     ) => {
                         self.phase == Phase::RandomMapEject
                             && self.answer_rested
-                            && Self::chooser_settled(state)
+                            && Self::chooser_settled(frontend)
                     }
                     RandomMapTarget::EjectBox => self.phase == Phase::RandomMap && self.eject_seen,
                     RandomMapTarget::Eject(
@@ -1577,52 +2082,60 @@ impl SkirmishCapture {
                     ) => {
                         self.phase == Phase::RandomMapEject
                             && self.answer_rested
-                            && state
-                                .frontend
-                                .skirmish_shell_state
-                                .choose_map_modal
-                                .is_none()
+                            && frontend.skirmish_shell_state.choose_map_modal.is_none()
                             && self.last_presented == Some(PresentedShell::Skirmish)
-                            && self.settled(state)?
+                            && self.settled(
+                                platform,
+                                renderer,
+                                frontend,
+                                match_state,
+                                persistence,
+                            )?
                     }
                 });
             }
             Some(ChooserTarget::Return) => {
                 return Ok(self.phase == Phase::ChooserReturn
-                    && state
-                        .frontend
-                        .skirmish_shell_state
-                        .choose_map_modal
-                        .is_none()
+                    && frontend.skirmish_shell_state.choose_map_modal.is_none()
                     && self.last_presented == Some(PresentedShell::Skirmish)
-                    && self.settled(state)?);
+                    && self.settled(platform, renderer, frontend, match_state, persistence)?);
             }
             None => {}
         }
         if self.loading == Some(LoadingTarget::DefeatScore) {
             return Ok(self.phase == Phase::Scoring
                 && self.last_presented == Some(PresentedShell::Score)
-                && App::score_shell_active(state)
-                && Self::score_settled(state));
+                && App::score_shell_active(frontend)
+                && Self::score_settled(frontend));
         }
         if self.loading == Some(LoadingTarget::DefeatContinue) {
             return Ok(self.phase == Phase::Continuing
-                && state.frontend.screen == GameScreen::MainMenu
+                && frontend.screen == GameScreen::MainMenu
                 && self.last_presented == Some(PresentedShell::Skirmish)
-                && self.settled(state)?);
+                && self.settled(platform, renderer, frontend, match_state, persistence)?);
         }
         if self.loading == Some(LoadingTarget::Diplomacy) {
             return Ok(self.phase == Phase::Diplomacy && self.diplomacy_frames >= 2);
         }
+        if let Some(LoadingTarget::InGameMenu(target)) = self.loading {
+            // A3's heading types in once it is up.
+            let revealed = target != InGameMenuTarget::Keyboard
+                || frontend
+                    .keyboard_dialog
+                    .as_ref()
+                    .is_some_and(|dialog| dialog.title.is_terminal());
+            return Ok(self.phase == Phase::InGameMenu
+                && self.menu_opened
+                && self.menu_frames >= IN_GAME_MENU_SETTLE_FRAMES
+                && revealed);
+        }
         if self.loading == Some(LoadingTarget::AfterQuit) {
             return Ok(self.phase == Phase::Quitting
-                && state.frontend.screen == GameScreen::MainMenu
-                && (
-                    state.match_state.input.cursor_x,
-                    state.match_state.input.cursor_y,
-                ) == (EXPECTED_CURSOR_X as f32, EXPECTED_CURSOR_Y as f32)
+                && frontend.screen == GameScreen::MainMenu
+                && (match_state.input.cursor_x, match_state.input.cursor_y)
+                    == (EXPECTED_CURSOR_X as f32, EXPECTED_CURSOR_Y as f32)
                 && self.last_presented == Some(PresentedShell::Skirmish)
-                && self.settled(state)?);
+                && self.settled(platform, renderer, frontend, match_state, persistence)?);
         }
         if let Some(target) = self.loading {
             let next = match target {
@@ -1631,20 +2144,23 @@ impl SkirmishCapture {
                 | LoadingTarget::AfterQuit
                 | LoadingTarget::DefeatScore
                 | LoadingTarget::DefeatContinue
-                | LoadingTarget::Diplomacy => crate::app::loading::pump::NextLoadingFrame::First,
+                | LoadingTarget::Diplomacy
+                | LoadingTarget::InGameMenu(_) => {
+                    crate::app::loading::pump::NextLoadingFrame::First
+                }
             };
             return Ok(self.phase == Phase::Starting
-                && state.frontend.screen == GameScreen::Loading
-                && crate::app::loading::pump::next_native_loading_frame(state) == Some(next));
+                && frontend.screen == GameScreen::Loading
+                && crate::app::loading::pump::next_native_loading_frame(frontend) == Some(next));
         }
         if let Some(target) = self.slide_out_tick {
             return Ok(self.phase == Phase::SlideOut
                 && self.last_presented == Some(PresentedShell::Skirmish)
                 && crate::app::frontend::shell_transition::shell_exit_wave(
-                    state,
+                    &frontend.shell_exit,
                     ShellSlideKind::Skirmish,
                 )
-                .and_then(|wave| wave.compatibility_tick())
+                .map(|wave| wave.tick())
                     == Some(target));
         }
         if self.phase != Phase::Skirmish
@@ -1655,11 +2171,11 @@ impl SkirmishCapture {
         {
             return Ok(false);
         }
-        if !self.settled(state)? {
+        if !self.settled(platform, renderer, frontend, match_state, persistence)? {
             return Ok(false);
         }
         ensure!(
-            self.selected_scene.as_ref() == Some(&selected_scene(state)?),
+            self.selected_scene.as_ref() == Some(&selected_scene(frontend)?),
             "selected skirmish state changed during capture"
         );
         Ok(true)
@@ -1776,6 +2292,36 @@ mod tests {
         ] {
             assert!(invalid.validate().is_err());
         }
+    }
+}
+
+/// A press and release at `point` through the chooser's production
+/// handlers; each step they return is applied at the call, as the routing
+/// applies it.
+pub(super) fn click_chooser(state: &mut AppState, point: (i32, i32)) {
+    state.match_state.input.cursor_x = point.0 as f32;
+    state.match_state.input.cursor_y = point.1 as f32;
+    let (_, step) = App::handle_choose_map_modal_mouse_down(
+        &state.platform,
+        &state.renderer,
+        &mut state.frontend,
+        &state.match_state,
+        &state.process_assets,
+        &mut state.audio.sfx_player,
+    );
+    if let Some(step) = step {
+        App::apply_step(state, step);
+    }
+    let step = App::handle_choose_map_modal_mouse_up(
+        &state.platform,
+        &state.renderer,
+        &mut state.frontend,
+        &state.match_state,
+        &state.process_assets,
+        &mut state.audio.sfx_player,
+    );
+    if let Some(step) = step {
+        App::apply_step(state, step);
     }
 }
 

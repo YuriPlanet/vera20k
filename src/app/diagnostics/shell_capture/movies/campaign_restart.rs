@@ -141,14 +141,12 @@ struct WinMovieCheck {
 }
 
 impl Mission {
-    fn observe(state: &AppState) -> Result<Self> {
-        let startup = state
-            .match_state
+    fn observe(match_state: &MatchState) -> Result<Self> {
+        let startup = match_state
             .startup
             .installed_campaign()
             .context("no installed campaign mission")?;
-        let sim = &state
-            .match_state
+        let sim = &match_state
             .sim_runtime
             .runtime()
             .context("no live campaign runtime")?
@@ -222,15 +220,19 @@ impl RestartCapture {
         frame: u32,
         save_directory: &Path,
     ) -> Result<Self> {
-        let before = Mission::observe(state)?;
+        let before = Mission::observe(&state.match_state)?;
         let saved_basic = state.match_state.map_basic.clone();
         // Controlled reachable counter lag; the wallet is unchanged. Preserve
         // this display through warm and cold ordinary saved-game admission.
         let saved_counter = if target == RestartTarget::SavedVictory {
-            let owner = crate::app::input::commands::preferred_local_owner_name(state)
+            let owner = crate::app::input::commands::preferred_local_owner_name(&state.match_state)
                 .context("campaign credits owner")?;
             let actual = before.money.context("campaign wallet")?[0].max(0);
-            let projection = &mut state.match_state.match_presentation.sidebar_projection;
+            let projection = &mut state
+                .match_state
+                .match_presentation
+                .sidebar_projection
+                .model;
             projection.displayed_credits_or_seed(&owner, actual);
             let target = if actual == 0 { 1000 } else { 0 };
             projection.advance_credits(&owner, target);
@@ -306,14 +308,25 @@ impl RestartCapture {
                     | RestartTarget::InheritedTimerVictory
             ) {
             state.persistence.isolate_capture_saves(save_directory)?;
-            let path =
-                crate::app::persistence::commands::save_game(state, "Campaign continuation", None)
-                    .context("save the campaign through the ordinary command")?;
+            let path = crate::app::persistence::commands::save_game(
+                &state.platform,
+                &state.renderer,
+                &state.frontend.screen,
+                &mut state.match_state,
+                &state.persistence,
+                &state.audio,
+                &state.diag,
+                &state.process_assets,
+                "Campaign continuation",
+                None,
+            )
+            .context("save the campaign through the ordinary command")?;
             if let Some((owner, _, target, _)) = saved_counter.as_ref() {
                 state
                     .match_state
                     .match_presentation
                     .sidebar_projection
+                    .model
                     .advance_credits(owner, *target);
             }
             let from_menu = target == RestartTarget::MenuDefeatReplayed;
@@ -331,13 +344,14 @@ impl RestartCapture {
                     .match_state
                     .match_presentation
                     .sidebar_projection
+                    .model
                     .displayed_credits_or_seed(owner, *actual);
                 ensure!(
                     warm == *displayed,
                     "warm load lost saved credits display: {warm} != {displayed}"
                 );
                 ensure!(
-                    Mission::observe(state)?.money == before.money,
+                    Mission::observe(&state.match_state)?.money == before.money,
                     "warm load changed the wallet"
                 );
                 App::return_to_main_menu(state);
@@ -348,6 +362,7 @@ impl RestartCapture {
                     .match_state
                     .match_presentation
                     .sidebar_projection
+                    .model
                     .displayed_credits_or_seed(owner, *actual);
                 ensure!(
                     cold == *displayed,
@@ -359,7 +374,7 @@ impl RestartCapture {
             } else {
                 None
             };
-            let loaded = Mission::observe(state)?;
+            let loaded = Mission::observe(&state.match_state)?;
             ensure!(
                 state.match_state.startup.restored(),
                 "save load did not commit"
@@ -424,8 +439,12 @@ impl RestartCapture {
             | RestartTarget::SavedAbortRestarted => {
                 let choice =
                     (target != RestartTarget::AbortShown).then_some(AbortButton::Secondary);
-                capture.abort = Some(abort_return::AbortReturnInput::begin_choosing(
-                    state, route, frame, choice,
+                capture.abort = Some(abort_return::AbortReturnInput::begin(
+                    state,
+                    route,
+                    frame,
+                    abort_return::AbortGoal::Choose(choice),
+                    true,
                 )?);
             }
             RestartTarget::DefeatPrompt
@@ -445,7 +464,7 @@ impl RestartCapture {
             | RestartTarget::MapSelectFailureReplayed
             | RestartTarget::MapSelectFailureEscape => {
                 Self::complete_current_house(
-                    state,
+                    &mut state.match_state.sim_runtime,
                     route,
                     frame,
                     crate::sim::house_state::HouseOutcomeKind::Victory,
@@ -468,23 +487,26 @@ impl RestartCapture {
     }
 
     /// A physical left press and release on the sidebar's 0xF2 tab, through
-    /// the in-game gadget list.
+    /// the match's chrome.
     fn click_briefing_tab(state: &mut AppState, route: &mut Vec<Value>, frame: u32) -> Result<()> {
-        use crate::app::input::gadget_input;
-        let view = crate::app::presentation::sidebar_render::current_sidebar_view(state)
-            .context("no sidebar view")?;
-        let rect = state
-            .sidebar_frame()
-            .rect_to_frame(view.top_buttons[0].rect);
+        use crate::app::input::chrome_input;
+        let view = crate::app::presentation::sidebar_render::current_sidebar_view(
+            &state.match_state.match_presentation,
+        )
+        .context("no sidebar view")?;
+        let rect = crate::app::state::sidebar_frame(
+            &state.platform,
+            &state.persistence,
+            &state.renderer,
+            &state.frontend.screen,
+            &state.match_state.match_presentation.sidebar_layout_spec,
+        )
+        .rect_to_frame(view.top_buttons[0].rect);
         let point = [rect.x + rect.w / 2.0, rect.y + rect.h / 2.0];
         state.match_state.input.cursor_x = point[0];
         state.match_state.input.cursor_y = point[1];
         for pressed in [true, false] {
-            gadget_input::handle_mouse_button_event(
-                state,
-                winit::event::MouseButton::Left,
-                pressed,
-            );
+            chrome_input::mouse_button(state, winit::event::MouseButton::Left, pressed);
         }
         let presentation = &state.match_state.match_presentation;
         ensure!(
@@ -492,7 +514,7 @@ impl RestartCapture {
             "the 0xF2 tab did not open the restate briefing"
         );
         // ALL01UMD.MAP's MISSIONMD Briefing key.
-        let expected = crate::app::frontend::shell_pass::resolve_csf(state, "Brief:ALL01md");
+        let expected = state.process_assets.csf_text("Brief:ALL01md");
         ensure!(
             presentation.restate_text == expected,
             "the restate briefing did not resolve Brief:ALL01md"
@@ -509,14 +531,12 @@ impl RestartCapture {
     /// then run unaided.
     #[cfg(feature = "dev-overlays")]
     fn complete_current_house(
-        state: &mut AppState,
+        sim_runtime: &mut SimHost,
         route: &mut Vec<Value>,
         frame: u32,
         kind: crate::sim::house_state::HouseOutcomeKind,
     ) -> Result<()> {
-        let runtime = state
-            .match_state
-            .sim_runtime
+        let runtime = sim_runtime
             .write_sim(SimWrite::Debug)
             .context("no live campaign runtime")?;
         ensure!(
@@ -534,7 +554,7 @@ impl RestartCapture {
 
     #[cfg(not(feature = "dev-overlays"))]
     fn complete_current_house(
-        _: &mut AppState,
+        _: &mut SimHost,
         _: &mut Vec<Value>,
         _: u32,
         _: crate::sim::house_state::HouseOutcomeKind,
@@ -543,9 +563,8 @@ impl RestartCapture {
     }
 
     /// The restarted mission's first live frame holds tick zero for readback.
-    pub(super) fn owns_simulation_steps(&self, state: &AppState) -> bool {
-        matches!(self.step, Step::AwaitRestartedLive | Step::Done)
-            && state.frontend.screen == GameScreen::InGame
+    pub(super) fn owns_simulation_steps(&self, screen: &GameScreen) -> bool {
+        matches!(self.step, Step::AwaitRestartedLive | Step::Done) && *screen == GameScreen::InGame
     }
 
     pub(super) fn after_present(
@@ -586,8 +605,18 @@ impl RestartCapture {
                     return Ok(()); // Exercise ordinary EOF, not an injected completion.
                 }
             }
-            App::fullscreen_movie_key(state, winit::keyboard::KeyCode::Escape, true);
-            App::fullscreen_movie_key(state, winit::keyboard::KeyCode::Escape, false);
+            App::fullscreen_movie_key(
+                state.platform.live_modifiers,
+                &mut state.frontend.fullscreen_movie,
+                winit::keyboard::KeyCode::Escape,
+                true,
+            );
+            App::fullscreen_movie_key(
+                state.platform.live_modifiers,
+                &mut state.frontend.fullscreen_movie,
+                winit::keyboard::KeyCode::Escape,
+                false,
+            );
             route.push(json!({"frame": frame, "action": "movie Escape release",
                 "movie_frame": displayed_frame}));
             if self.step == Step::AwaitVictoryScore
@@ -623,7 +652,9 @@ impl RestartCapture {
             }
             Step::Settling(_) | Step::Done => {}
             Step::AwaitObjective => {
-                let expected = App::csf_label(state, "MISSION:Sov2Obj2", "MISSION:Sov2Obj2");
+                let expected = state
+                    .process_assets
+                    .csf_label("MISSION:Sov2Obj2", "MISSION:Sov2Obj2");
                 let row = state
                     .match_state
                     .match_presentation
@@ -638,12 +669,16 @@ impl RestartCapture {
                         deadline_ms,
                         paused_tick: 0,
                     });
-                    self.observe_objective(state, "objective visible");
-                    self.abort = Some(abort_return::AbortReturnInput::begin_menu(
-                        state, route, frame,
+                    self.observe_objective(&state.diag, &state.match_state, "objective visible");
+                    self.abort = Some(abort_return::AbortReturnInput::begin(
+                        state,
+                        route,
+                        frame,
+                        abort_return::AbortGoal::Menu,
+                        true,
                     )?);
                     self.objective_pause.as_mut().unwrap().paused_tick =
-                        Self::simulation_tick(state)?;
+                        Self::simulation_tick(&state.match_state.sim_runtime)?;
                     self.step = Step::AwaitObjectiveMenu;
                 }
             }
@@ -654,7 +689,7 @@ impl RestartCapture {
                     .context("objective menu input owner")?
                     .after_present(state, route, frame)?
                 {
-                    self.observe_objective(state, "menu presented");
+                    self.observe_objective(&state.diag, &state.match_state, "menu presented");
                     self.step = Step::HoldObjectiveMenu;
                 }
             }
@@ -664,10 +699,10 @@ impl RestartCapture {
                     .as_ref()
                     .context("objective pause observation")?;
                 ensure!(
-                    Self::simulation_tick(state)? == pause.paused_tick,
+                    Self::simulation_tick(&state.match_state.sim_runtime)? == pause.paused_tick,
                     "B5 advanced the campaign simulation"
                 );
-                let now = crate::app::input::tooltips::now_ms(state);
+                let now = crate::app::input::tooltips::now_ms(&state.diag, &state.match_state);
                 if now > pause.deadline_ms + 64 {
                     ensure!(
                         state
@@ -679,24 +714,23 @@ impl RestartCapture {
                             .any(|row| row.text == pause.text),
                         "Main_Tick expiry ran inside offline B5"
                     );
-                    self.observe_objective(state, "menu held past deadline");
-                    let layout = crate::app::input::pause_menu::current_layout(state)
-                        .context("B5 layout")?;
+                    self.observe_objective(
+                        &state.diag,
+                        &state.match_state,
+                        "menu held past deadline",
+                    );
+                    let layout = crate::app::input::pause_menu::current_layout(
+                        &state.platform,
+                        &state.renderer,
+                        &state.frontend,
+                        &state.match_state,
+                        &state.persistence,
+                    )
+                    .context("B5 layout")?;
                     let rect = layout
                         .button(crate::ui::shell::pause_menu::PauseMenuButton::Resume)
                         .context("B5 Resume")?;
-                    let point = set_window_pointer_to_rect_center(state, rect);
-                    crate::app::input::dispatch::handle_cursor_moved_in_game(state);
-                    for edge in [
-                        winit::event::ElementState::Pressed,
-                        winit::event::ElementState::Released,
-                    ] {
-                        crate::app::input::dispatch::handle_mouse_input(
-                            state,
-                            winit::event::MouseButton::Left,
-                            edge,
-                        );
-                    }
+                    let point = click_in_game(state, rect);
                     ensure!(
                         !state.match_state.match_presentation.in_game_menu.is_open(),
                         "Resume did not close B5"
@@ -720,8 +754,8 @@ impl RestartCapture {
                         .any(|row| row.text == pause.text),
                     "objective survived the first resumed Main_Tick past its deadline"
                 );
-                self.observe_objective(state, "first resumed frame");
-                Self::restore_pointer(state);
+                self.observe_objective(&state.diag, &state.match_state, "first resumed frame");
+                Self::restore_pointer(&state.renderer.gpu, &mut state.match_state.input);
                 self.step = Step::Done;
             }
             Step::AwaitBattleTheme => {
@@ -738,9 +772,9 @@ impl RestartCapture {
                         .is_some_and(|entry| entry.normal)
                 {
                     self.battle_theme = Some(theme);
-                    self.observe_theme(state, "before defeat");
+                    self.observe_theme(&state.audio, "before defeat");
                     Self::complete_current_house(
-                        state,
+                        &mut state.match_state.sim_runtime,
                         route,
                         frame,
                         crate::sim::house_state::HouseOutcomeKind::Defeat,
@@ -750,7 +784,7 @@ impl RestartCapture {
             }
             Step::AwaitVictoryScore => {
                 if rendered == PresentedShell::Score
-                    && App::campaign_score_shell_active(state)
+                    && App::campaign_score_shell_active(&state.frontend)
                     && state
                         .frontend
                         .campaign_score_page
@@ -795,20 +829,18 @@ impl RestartCapture {
                         crate::app::frontend::state::ShellMessageBoxPurpose::CampaignVictory(_)
                     )
                 {
-                    let expected =
-                        crate::app::frontend::shell_pass::resolve_csf(state, "MSG:UnableMapSelect");
+                    let expected = state.process_assets.csf_text("MSG:UnableMapSelect");
                     ensure!(
-                        message.labels.title == expected,
+                        message.shell_box.body == expected,
                         "MapSelect notice has wrong text"
                     );
                     ensure!(
-                        message.labels.kind() == crate::ui::shell::modal::ModalKind::BodyOk
-                            && message.labels.cancel.is_empty(),
+                        message.shell_box.buttons.len() == 1,
                         "MapSelect notice is not one button"
                     );
                     ensure!(
                         state.frontend.shell_controller.top_id()
-                            == Some(crate::ui::shell::descriptor::DialogId(0xCE)),
+                            == Some(crate::ui::shell::descriptor::DialogResourceId(0xCE)),
                         "MapSelect notice has wrong controller template"
                     );
                     ensure!(
@@ -824,8 +856,8 @@ impl RestartCapture {
                             == Some(i64::from(state.audio.theme.current_song())),
                         "MapSelect notice queued the shell INTRO"
                     );
-                    receipt["body"] = json!(message.labels.title);
-                    receipt["confirm"] = json!(message.labels.confirm);
+                    receipt["body"] = json!(message.shell_box.body);
+                    receipt["confirm"] = json!(message.shell_box.buttons[0].caption);
                     receipt["dialog"] = json!(0xCE);
                     receipt["initial_save_pending_before"] = json!(false);
                     route.push(json!({"frame":frame,"action":"MapSelect failure notice shown","dialog":0xCE}));
@@ -848,18 +880,24 @@ impl RestartCapture {
                             "Escape did not acknowledge the notice"
                         );
                     } else {
-                        let layout = crate::ui::shell::modal::body_ok_layout(
-                            state.render_width() as i32,
-                            state.render_height() as i32,
+                        let layout = crate::ui::shell::modal::menu_message_box(
+                            1,
+                            state.renderer.render_width(&state.frontend.screen) as i32,
+                            state.renderer.render_height(&state.frontend.screen) as i32,
                         );
-                        set_window_pointer_to_rect_center(state, layout.ok);
-                        App::handle_shell_message_box_mouse_down(state);
+                        set_window_pointer_to_rect_center(
+                            &state.renderer,
+                            &state.frontend.screen,
+                            &mut state.match_state.input,
+                            layout.button(0),
+                        );
+                        App::handle_shell_message_box_mouse(state, true);
                         ensure!(
-                            state.frontend.shell_controller.pressed()
+                            box_pressed(&state.frontend.shell_controller)
                                 == Some(crate::ui::shell::modal::control::OK),
                             "MapSelect OK press missed"
                         );
-                        App::handle_shell_message_box_mouse_up(state);
+                        App::handle_shell_message_box_mouse(state, false);
                     }
                     ensure!(
                         state.frontend.shell_message_box.is_none(),
@@ -872,7 +910,7 @@ impl RestartCapture {
                     self.map_select_failure.as_mut().unwrap()["initial_save_pending_after"] =
                         json!(false);
                     route.push(json!({"frame":frame,"action":"MapSelect failure notice acknowledged","input":if self.target == RestartTarget::MapSelectFailureEscape {"Escape"}else{"OK click"}}));
-                    Self::restore_pointer(state);
+                    Self::restore_pointer(&state.renderer.gpu, &mut state.match_state.input);
                     self.step = Step::AwaitRestartedLive;
                 }
             }
@@ -893,26 +931,27 @@ impl RestartCapture {
                     route.push(
                         json!({"frame": frame, "action": "TXT_TO_REPLAY shown", "dialog": 0x120}),
                     );
-                    self.check_retained_battle_theme(state)?;
-                    self.observe_theme(state, "replay prompt entered");
+                    self.check_retained_battle_theme(&state.audio)?;
+                    self.observe_theme(&state.audio, "replay prompt entered");
                     self.step = Step::HoldDefeatPrompt(SETTLE_FRAMES);
                 }
             }
             Step::HoldDefeatPrompt(remaining) => {
-                self.check_retained_battle_theme(state)?;
+                self.check_retained_battle_theme(&state.audio)?;
                 if remaining > 0 {
                     self.step = Step::HoldDefeatPrompt(remaining - 1);
                 } else {
-                    self.observe_theme(state, "replay prompt serviced");
+                    self.observe_theme(&state.audio, "replay prompt serviced");
                     if self.target == RestartTarget::DefeatPrompt {
-                        Self::restore_pointer(state);
+                        Self::restore_pointer(&state.renderer.gpu, &mut state.match_state.input);
                         self.step = Step::Settling(0);
                     } else if let Some((key, repeat)) = self.target.return_key() {
                         // Exercise the exact owner called by WindowEvent's
                         // physical-key branch, including ignored key edges.
                         ensure!(
-                            !crate::app::frontend::shell_transition::blocks_shell_input(state)
-                                && state.frontend.keyboard_dialog.is_none()
+                            !crate::app::frontend::shell_transition::blocks_shell_input(
+                                &state.frontend
+                            ) && state.frontend.keyboard_dialog.is_none()
                                 && state.frontend.fullscreen_movie.is_none()
                                 && state.frontend.credits_roll.is_none(),
                             "an earlier WindowEvent owner would block the replay key"
@@ -954,21 +993,24 @@ impl RestartCapture {
                         );
                         route.push(json!({"frame": frame, "action": "replay keyboard answer",
                             "physical_key": format!("{key:?}"), "repeat": repeat, "dialog": 0x120}));
-                        Self::restore_pointer(state);
+                        Self::restore_pointer(&state.renderer.gpu, &mut state.match_state.input);
                         self.step = Step::AwaitShellReturn;
                     } else {
                         let answer_no = self.target == RestartTarget::DefeatReturned;
-                        let layout = crate::ui::shell::modal::quit_confirm_layout(
+                        let layout = crate::ui::shell::modal::menu_message_box(
+                            2,
                             state.renderer.gpu.config.width as i32,
                             state.renderer.gpu.config.height as i32,
                         );
                         let point = set_window_pointer_to_rect_center(
-                            state,
-                            if answer_no { layout.cancel } else { layout.ok },
+                            &state.renderer,
+                            &state.frontend.screen,
+                            &mut state.match_state.input,
+                            layout.button(usize::from(answer_no)),
                         );
-                        App::handle_shell_message_box_mouse_down(state);
+                        App::handle_shell_message_box_mouse(state, true);
                         ensure!(
-                            state.frontend.shell_controller.pressed()
+                            box_pressed(&state.frontend.shell_controller)
                                 == Some(if answer_no {
                                     crate::ui::shell::modal::control::CANCEL
                                 } else {
@@ -985,15 +1027,15 @@ impl RestartCapture {
                 }
             }
             Step::ReplayPressed => {
-                self.check_retained_battle_theme(state)?;
-                App::handle_shell_message_box_mouse_up(state);
+                self.check_retained_battle_theme(&state.audio)?;
+                App::handle_shell_message_box_mouse(state, false);
                 ensure!(
                     state.frontend.shell_message_box.is_none(),
                     "physical replay answer release did not answer the box"
                 );
                 let answer_no = self.target == RestartTarget::DefeatReturned;
                 route.push(json!({"frame": frame, "action": if answer_no { "No release" } else { "Yes release" }, "dialog": 0x120}));
-                Self::restore_pointer(state);
+                Self::restore_pointer(&state.renderer.gpu, &mut state.match_state.input);
                 self.step = if answer_no {
                     Step::AwaitShellReturn
                 } else {
@@ -1004,7 +1046,13 @@ impl RestartCapture {
                 if state.frontend.screen == GameScreen::MainMenu
                     && state.frontend.shell_message_box.is_none()
                     && state.audio.theme.current_song() == state.audio.theme.from_name("INTRO")
-                    && steady_main_menu_capture_ready(MainMenuCaptureSnapshot::from_state(state))?
+                    && steady_main_menu_capture_ready(MainMenuCaptureSnapshot::from_state(
+                        &state.platform,
+                        &state.renderer,
+                        &state.frontend,
+                        &state.match_state,
+                        &state.persistence,
+                    ))?
                 {
                     ensure!(
                         state
@@ -1014,13 +1062,14 @@ impl RestartCapture {
                             .is_some_and(|player| player.state().playing()),
                         "the returned shell's INTRO is not physically playing"
                     );
-                    self.observe_theme(state, "shell after No");
+                    self.observe_theme(&state.audio, "shell after No");
                     route.push(json!({"frame": frame, "action": "shell resumed after No"}));
                     self.step = Step::Done;
                 }
             }
             Step::AwaitRestartedLive => {
-                if let Some(startup) = crate::app::loading::pump::loading_campaign_startup(state)
+                if let Some(startup) =
+                    crate::app::loading::pump::loading_campaign_startup(&state.frontend)
                     && self.observed_restart_loading.is_none()
                 {
                     if let Some(win) = self.win_movie.as_mut() {
@@ -1052,14 +1101,21 @@ impl RestartCapture {
                         self.observed_restart_loading.is_some(),
                         "the restarted mission was not observed loading"
                     );
-                    let after = Mission::observe(state)?;
+                    let after = Mission::observe(&state.match_state)?;
                     if self.target == RestartTarget::SavedVictory {
                         ensure!(
                             after.map_stage == 1,
                             "ALL02 did not retain its MAPSELMD stage"
                         );
                         let path = crate::app::persistence::commands::save_game(
-                            state,
+                            &state.platform,
+                            &state.renderer,
+                            &state.frontend.screen,
+                            &mut state.match_state,
+                            &state.persistence,
+                            &state.audio,
+                            &state.diag,
+                            &state.process_assets,
                             "Campaign next-stage",
                             None,
                         )?;
@@ -1072,7 +1128,7 @@ impl RestartCapture {
                             .set_campaign_map_stage(0);
                         crate::app::persistence::commands::try_load_save_file(state, &path)?;
                         ensure!(
-                            Mission::observe(state)?.map_stage == after.map_stage,
+                            Mission::observe(&state.match_state)?.map_stage == after.map_stage,
                             "save/load lost the nonzero receiving stage"
                         );
                         route.push(json!({"frame":frame,"action":"next mission stage restored",
@@ -1105,7 +1161,7 @@ impl RestartCapture {
                             );
                         }
                         self.opening_view = Some(
-                            json!({"incoming_global0":true,"bookmarks":views.saved_cells(),"tactical_view":crate::app::input::camera::saved_tactical_view(state)}),
+                            json!({"incoming_global0":true,"bookmarks":views.saved_cells(),"tactical_view":crate::app::input::camera::saved_tactical_view(&state.platform, &state.renderer, &state.frontend.screen, &state.match_state, &state.persistence)}),
                         );
                     }
                     if self.target == RestartTarget::InheritedTimerVictory {
@@ -1137,7 +1193,7 @@ impl RestartCapture {
                         "mission": after.receipt()}),
                     );
                     self.after = Some(after);
-                    self.observe_theme(state, "restarted first live frame");
+                    self.observe_theme(&state.audio, "restarted first live frame");
                     self.step = Step::Done;
                 }
             }
@@ -1145,14 +1201,12 @@ impl RestartCapture {
         Ok(())
     }
 
-    fn restore_pointer(state: &mut AppState) {
-        MoviesCapture::restore_neutral_pointer(state);
+    fn restore_pointer(gpu: &GpuContext, input: &mut MatchInputState) {
+        MoviesCapture::restore_neutral_pointer(gpu, input);
     }
 
-    fn simulation_tick(state: &AppState) -> Result<u64> {
-        Ok(state
-            .match_state
-            .sim_runtime
+    fn simulation_tick(sim_runtime: &SimHost) -> Result<u64> {
+        Ok(sim_runtime
             .runtime()
             .context("live campaign runtime")?
             .simulation
@@ -1160,21 +1214,25 @@ impl RestartCapture {
             .tick())
     }
 
-    fn observe_objective(&mut self, state: &AppState, phase: &str) {
+    fn observe_objective(
+        &mut self,
+        diag: &DiagnosticsState,
+        match_state: &MatchState,
+        phase: &str,
+    ) {
         self.objective_observations.push(json!({"phase": phase,
-            "wall_ms": crate::app::input::tooltips::now_ms(state), "tick": Self::simulation_tick(state).ok(),
-            "rows": state.match_state.match_presentation.message_list.messages().iter()
+            "wall_ms": crate::app::input::tooltips::now_ms(diag, match_state), "tick": Self::simulation_tick(&match_state.sim_runtime).ok(),
+            "rows": match_state.match_presentation.message_list.messages().iter()
                 .map(|row| json!({"text": row.text, "deadline_ms": row.deadline_ms})).collect::<Vec<_>>() }));
     }
 
-    fn check_retained_battle_theme(&self, state: &AppState) -> Result<()> {
+    fn check_retained_battle_theme(&self, audio: &AppAudioRuntime) -> Result<()> {
         ensure!(
-            Some(state.audio.theme.current_song()) == self.battle_theme,
+            Some(audio.theme.current_song()) == self.battle_theme,
             "the replay prompt replaced the retained battlefield Theme"
         );
         ensure!(
-            state
-                .audio
+            audio
                 .music_player
                 .as_ref()
                 .is_some_and(|player| player.state().playing()),
@@ -1183,39 +1241,52 @@ impl RestartCapture {
         Ok(())
     }
 
-    fn observe_theme(&mut self, state: &AppState, phase: &str) {
-        let current = state.audio.theme.current_song();
+    fn observe_theme(&mut self, audio: &AppAudioRuntime, phase: &str) {
+        let current = audio.theme.current_song();
         let entry = usize::try_from(current)
             .ok()
-            .and_then(|index| state.audio.theme.entries().get(index));
+            .and_then(|index| audio.theme.entries().get(index));
         self.theme_observations.push(json!({"phase": phase, "current": current,
             "key": entry.map(|entry| &entry.key), "sound": entry.map(|entry| &entry.sound),
-            "saved_slots": state.audio.theme.saved_slots(),
-            "physical": state.audio.music_player.as_ref().map(|player| format!("{:?}", player.state()))}));
+            "saved_slots": audio.theme.saved_slots(),
+            "physical": audio.music_player.as_ref().map(|player| format!("{:?}", player.state()))}));
     }
 
-    pub(super) fn ready(&self, state: &AppState) -> Result<bool> {
+    pub(super) fn ready(
+        &self,
+        platform: &PlatformState,
+        renderer: &RendererState,
+        frontend: &FrontendState,
+        match_state: &MatchState,
+        persistence: &PersistenceState,
+    ) -> Result<bool> {
         Ok(match self.target {
             RestartTarget::AbortShown => {
                 self.step == Step::Settling(0)
-                    && state.match_state.match_presentation.in_game_menu
+                    && match_state.match_presentation.in_game_menu
                         == crate::ui::pause_menu::InGameMenuState::AbortConfirm
-                    && crate::app::input::abort::current_abort_layout(state)
-                        .is_some_and(|layout| layout.secondary.is_some())
+                    && crate::app::input::abort::current_abort_layout(
+                        platform,
+                        renderer,
+                        frontend,
+                        match_state,
+                        persistence,
+                    )
+                    .is_some_and(|layout| layout.secondary.is_some())
             }
             RestartTarget::DefeatPrompt => {
-                self.step == Step::Settling(0) && state.frontend.shell_message_box.is_some()
+                self.step == Step::Settling(0) && frontend.shell_message_box.is_some()
             }
             RestartTarget::DefeatReturned
             | RestartTarget::DefeatReturnedEnter
             | RestartTarget::DefeatReturnedNumpadEnter
             | RestartTarget::DefeatReturnedEscape
             | RestartTarget::DefeatReturnedRepeatedEnter => {
-                self.step == Step::Done && state.frontend.screen == GameScreen::MainMenu
+                self.step == Step::Done && frontend.screen == GameScreen::MainMenu
             }
             RestartTarget::Restate => {
                 self.step == Step::Settling(0)
-                    && state.match_state.match_presentation.in_game_menu
+                    && match_state.match_presentation.in_game_menu
                         == crate::ui::pause_menu::InGameMenuState::MissionBriefing
             }
             RestartTarget::AbortRestarted
@@ -1224,20 +1295,19 @@ impl RestartCapture {
             | RestartTarget::MenuDefeatReplayed
             | RestartTarget::SavedVictory
             | RestartTarget::InheritedTimerVictory => {
-                self.step == Step::Done && state.frontend.screen == GameScreen::InGame
+                self.step == Step::Done && frontend.screen == GameScreen::InGame
             }
             RestartTarget::MapSelectFailurePrompt => {
-                self.step == Step::HoldMapSelectFailure(0)
-                    && state.frontend.shell_message_box.is_some()
+                self.step == Step::HoldMapSelectFailure(0) && frontend.shell_message_box.is_some()
             }
             RestartTarget::MapSelectFailureReplayed | RestartTarget::MapSelectFailureEscape => {
-                self.step == Step::Done && state.frontend.screen == GameScreen::InGame
+                self.step == Step::Done && frontend.screen == GameScreen::InGame
             }
             RestartTarget::AlternateHomeVictory => {
-                self.step == Step::Done && state.frontend.screen == GameScreen::InGame
+                self.step == Step::Done && frontend.screen == GameScreen::InGame
             }
             RestartTarget::ObjectiveExpiry => {
-                self.step == Step::Done && state.frontend.screen == GameScreen::InGame
+                self.step == Step::Done && frontend.screen == GameScreen::InGame
             }
         })
     }
@@ -1249,4 +1319,10 @@ impl RestartCapture {
             "objective_observations": self.objective_observations, "opening_view":self.opening_view,
             "map_select_failure":self.map_select_failure,"win_movie":self.win_movie})
     }
+}
+
+/// The message box control the shared controller holds captured.
+fn box_pressed(shell_controller: &DialogController) -> Option<u16> {
+    let controller = shell_controller;
+    crate::ui::shell::menu_page::pressed_id(controller, controller.top_id()?)
 }

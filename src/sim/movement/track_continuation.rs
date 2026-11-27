@@ -37,7 +37,7 @@ impl Simulation {
         id: u64,
         family: TrackFamily,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<bool, String> {
         let Some(entity) = self.substrate.entities.get(id) else {
             return Ok(false);
@@ -59,7 +59,7 @@ impl Simulation {
         // (a mission restore's `Assign_Destination(saved, 1)` from a
         // callback) ran natively before these gates, so +34 and the path
         // head already follow NavCom when they read them.
-        self.complete_pending_order(id, rules, None, frame_effects);
+        self.complete_pending_order(id, rules, frame_effects);
         let Some(entity) = self.substrate.entities.get(id) else {
             return Ok(false);
         };

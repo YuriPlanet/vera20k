@@ -1122,9 +1122,8 @@ mod tests {
     }
 
     /// `InfDeathAnim` is the only field naming this animation, so nothing else
-    /// puts it in the AnimClass construction-root closure. Mental Omega's GBION
-    /// warheads rely on exactly that shape (`InfDeathAnim=FREEZE` etc. with no
-    /// `InfDeath=`), and an unrooted type makes the constructor refuse with
+    /// puts it in the AnimClass construction-root closure. A warhead may set
+    /// only `InfDeathAnim=`, with no `InfDeath=`, and an unrooted type makes the constructor refuse with
     /// `animation type [X] has no bound SHP frame count`, so the kill plays no
     /// death animation at all.
     ///
@@ -1135,8 +1134,8 @@ mod tests {
         let _ares = crate::rules::ares_switch::read_ares_way(true);
         let root = IniFile::from_str(
             "[Warheads]\n0=DEATH_WH\n\
-             [Animations]\n0=MELTDIEE\n\
-             [DEATH_WH]\nCellSpread=1\nInfDeathAnim=MELTDIEE\n",
+             [Animations]\n0=DEATHANIM\n\
+             [DEATH_WH]\nCellSpread=1\nInfDeathAnim=DEATHANIM\n",
         );
         let rules =
             RuleSet::from_processed_rules(&RulesLayerStack::new(root).process().unwrap()).unwrap();
@@ -1145,11 +1144,11 @@ mod tests {
                 .warhead("DEATH_WH")
                 .and_then(|warhead| warhead.ares_combat())
                 .and_then(|combat| combat.inf_death_anim()),
-            Some("MELTDIEE")
+            Some("DEATHANIM")
         );
         assert!(
             crate::rules::effect_asset_catalog::anim_class_roots(&rules)
-                .contains(&"MELTDIEE".to_string()),
+                .contains(&"DEATHANIM".to_string()),
             "InfDeathAnim must bind its SHP frames or the death anim never builds"
         );
     }

@@ -96,8 +96,7 @@ struct ArmorDefinition {
 }
 
 /// Sole ordered armor catalog, retained by NativeRulesRegistryState's
-/// ordered armor state. This wire type exists in both builds so a foreign
-/// save is decoded and rejected by the existing capability check.
+/// ordered armor state.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) struct ArmorCatalog {
     armors: Vec<ArmorDefinition>,

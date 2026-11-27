@@ -12,10 +12,9 @@ fn frame(sim: &mut Simulation, rules: &RuleSet) -> SimFrameOutput {
     sim.advance_app_frame(
         &due,
         rules,
-        None,
         67,
         TickLane::Ordinary,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
     .expect("ordinary authoritative frame")
 }

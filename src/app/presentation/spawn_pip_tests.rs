@@ -144,10 +144,9 @@ fn stock_carrier_pips_follow_construction_sortie_recall_reload_and_selection() {
             .advance_app_frame(
                 &[],
                 rules,
-                None,
                 33,
                 crate::sim::world::TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .expect("ordinary stock Carrier frame");
         fired |= result
@@ -328,7 +327,7 @@ fn stock_carrier_spawner_fire_reveals_to_its_human_victim() {
                 &commands,
                 crate::app::types::SIM_TICK_MS,
                 TickLane::Ordinary,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap();
         let manager = scene

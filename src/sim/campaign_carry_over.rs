@@ -23,8 +23,10 @@
 //! Money uses the existing Available_Money owner's represented storage domain;
 //! this does not add its separate, pre-existing nonempty-silo mechanism.
 
+use crate::map::campaign_manifest::StageCarrySettings;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::house_state::HouseDifficulty;
+use crate::sim::intern::InternedId;
 use crate::sim::trigger_runtime::SCENARIO_GLOBAL_COUNT;
 use crate::sim::world::Simulation;
 use crate::util::native_x87::{MaskedX87Chop53 as X87, MaskedX87Ordering};
@@ -117,6 +119,74 @@ impl CampaignCarryOver {
     }
 }
 
+/// Shared carry-over for an authored campaign stage. House names use the same
+/// ASCII case folding as the interner and sort in ascending order. Capturing
+/// by House identity keeps the record independent of player seats and of the
+/// receiving map's registration order.
+#[derive(Clone, Debug, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StageCarryOver {
+    globals: Option<StageGlobals>,
+    countdown_frames: Option<i32>,
+    map_stage: Option<u16>,
+    houses: Vec<StageHouseCarryOver>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
+struct StageGlobals(#[serde(with = "saved_globals")] [bool; SCENARIO_GLOBAL_COUNT]);
+
+#[derive(Clone, Debug, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct StageHouseCarryOver {
+    house: String,
+    credits: Option<i32>,
+    difficulty: Option<HouseDifficulty>,
+}
+
+#[derive(Debug, Eq, PartialEq, thiserror::Error)]
+pub enum StageCarryOverError {
+    #[error("stage carry-over House {0:?} is absent from this map")]
+    MissingHouse(String),
+    #[error("stage carry-over House {0:?} has an empty or noncanonical entry")]
+    InvalidHouse(String),
+    #[error("stage carry-over House {0:?} is duplicated or out of order")]
+    NoncanonicalOrder(String),
+}
+
+impl StageCarryOver {
+    pub fn is_empty(&self) -> bool {
+        self.globals.is_none()
+            && self.countdown_frames.is_none()
+            && self.map_stage.is_none()
+            && self.houses.is_empty()
+    }
+
+    pub fn globals(&self) -> Option<&[bool; SCENARIO_GLOBAL_COUNT]> {
+        self.globals.as_ref().map(|globals| &globals.0)
+    }
+
+    /// Check an incoming record before resolving or mutating any House.
+    pub fn validate(&self) -> Result<(), StageCarryOverError> {
+        let mut previous = None;
+        for entry in &self.houses {
+            let name = entry.house.as_str();
+            if name.is_empty()
+                || name != name.trim()
+                || name.bytes().any(|byte| byte.is_ascii_lowercase())
+                || (entry.credits.is_none() && entry.difficulty.is_none())
+            {
+                return Err(StageCarryOverError::InvalidHouse(entry.house.clone()));
+            }
+            if previous.is_some_and(|previous| previous >= name) {
+                return Err(StageCarryOverError::NoncanonicalOrder(entry.house.clone()));
+            }
+            previous = Some(name);
+        }
+        Ok(())
+    }
+}
+
 impl Simulation {
     /// `0x004C6180`: the record a won mission saves for the next one. A
     /// session without a player House keeps the cleared row.
@@ -142,7 +212,90 @@ impl Simulation {
     /// map. SetDifficulty runs on the player House only; computer Houses keep
     /// the rows the scenario read gave them.
     pub fn restore_campaign_carry_over(&mut self, record: &CampaignCarryOver, rules: &RuleSet) {
-        for (index, &set) in record.globals.iter().enumerate() {
+        self.restore_carry_over_globals(&record.globals);
+        self.restore_player_carry_over(record, rules);
+        self.session
+            .inherit_campaign_countdown(record.countdown_frames);
+        self.session.set_campaign_map_stage(record.map_stage);
+    }
+
+    /// Capture a departing stage's selected state from the authoritative
+    /// world. Each selected House contributes once even when roles share it.
+    pub fn save_stage_carry_over(
+        &self,
+        settings: &StageCarrySettings,
+    ) -> Result<StageCarryOver, StageCarryOverError> {
+        let mut houses = Vec::with_capacity(settings.houses.len());
+        for entry in &settings.houses {
+            let source = self
+                .interner
+                .get(&entry.house)
+                .and_then(|id| self.houses.get(&id))
+                .ok_or_else(|| StageCarryOverError::MissingHouse(entry.house.clone()))?;
+            houses.push(StageHouseCarryOver {
+                house: entry.house.to_ascii_uppercase(),
+                credits: entry.credits.then(|| source.economy().available_money()),
+                difficulty: entry.difficulty.then(|| source.difficulty()),
+            });
+        }
+        houses.sort_unstable_by(|left, right| left.house.cmp(&right.house));
+        let record = StageCarryOver {
+            globals: settings
+                .globals
+                .then(|| StageGlobals(self.global_variables())),
+            countdown_frames: settings
+                .countdown
+                .then(|| self.session.campaign_countdown_frames()),
+            map_stage: settings
+                .map_stage
+                .then(|| self.session.campaign_map_stage()),
+            houses,
+        };
+        record.validate()?;
+        Ok(record)
+    }
+
+    /// Apply once after loading the destination map, before frame zero. Its
+    /// own CarryOverMoney, CarryOverCap and TimerInherit govern the amounts.
+    pub fn restore_stage_carry_over(
+        &mut self,
+        record: &StageCarryOver,
+        rules: &RuleSet,
+    ) -> Result<(), StageCarryOverError> {
+        record.validate()?;
+        // Resolve every name before making any write. A branch can land on
+        // a map with different House ids or a missing House.
+        let mut targets = Vec::with_capacity(record.houses.len());
+        for entry in &record.houses {
+            let target = self
+                .interner
+                .get(&entry.house)
+                .and_then(|id| self.houses.index_of(id).map(|index| (id, index)))
+                .ok_or_else(|| StageCarryOverError::MissingHouse(entry.house.clone()))?;
+            targets.push(target);
+        }
+        if let Some(globals) = record.globals() {
+            self.restore_carry_over_globals(globals);
+        }
+        for (entry, (house, index)) in record.houses.iter().zip(targets) {
+            if let Some(credits) = entry.credits {
+                self.restore_carry_over_money(house, credits);
+            }
+            if let Some(difficulty) = entry.difficulty {
+                self.restore_carry_over_difficulty(house, index, difficulty, rules);
+            }
+        }
+        if let Some(frames) = record.countdown_frames {
+            self.session.inherit_campaign_countdown(frames);
+        }
+        if let Some(stage) = record.map_stage {
+            self.session.set_campaign_map_stage(stage);
+        }
+        Ok(())
+    }
+
+    fn restore_carry_over_globals(&mut self, globals: &[bool; SCENARIO_GLOBAL_COUNT]) {
+        for (index, &set) in globals.iter().enumerate() {
             Self::set_trigger_variable(
                 &self.session,
                 &mut self.scenario_rng,
@@ -152,20 +305,16 @@ impl Simulation {
                 set,
             );
         }
-        self.restore_player_carry_over(record, rules);
-        self.session
-            .inherit_campaign_countdown(record.countdown_frames);
-        self.session.set_campaign_map_stage(record.map_stage);
     }
 
     /// `0x004C622F..0x004C6295`: the money and difficulty row go to PlayerPtr.
     /// VERA network adaptation, as HasOccurred53's: each LAN Cooperative peer
     /// saved its own House's record and would restore it onto that House
     /// alone, so a network game restores neither.
-    /// RESIDUAL: online, a map's nonzero `CarryOverMoney=` carries no money.
+    /// RESIDUAL: stock online Cooperative still skips nonzero `CarryOverMoney=`.
     /// No retail map reaches it: the 50 that set the key set it to 0.
     fn restore_player_carry_over(&mut self, record: &CampaignCarryOver, rules: &RuleSet) {
-        if self.session.game_mode().is_network() {
+        if self.session.execution_topology().is_lockstep() {
             return;
         }
         let Some(player) = self.session.current_house() else {
@@ -174,12 +323,17 @@ impl Simulation {
         let Some(array_index) = self.houses.index_of(player) else {
             return;
         };
+        self.restore_carry_over_money(player, record.money);
+        self.restore_carry_over_difficulty(player, array_index, record.player_difficulty, rules);
+    }
+
+    fn restore_carry_over_money(&mut self, owner: InternedId, credits: i32) {
         // EvadeClass::Do4C622F..4C6285: FILD saved Available_Money, multiply
         // the receiving Scenario's double, cap unless-1, ftol low32, then
         // wallet/baseline adds. Reuse the economy's deterministic masked
         // arithmetic owner (including signed truncation and overflow).
         let (multiplier, cap) = self.session.campaign_money_policy();
-        let mut amount = X87::mul(X87::load_i32(record.money), X87::load_f64(multiplier));
+        let mut amount = X87::mul(X87::load_i32(credits), X87::load_f64(multiplier));
         if cap != -1
             && matches!(
                 X87::compare(amount, X87::load_i32(cap)),
@@ -188,26 +342,35 @@ impl Simulation {
         {
             amount = X87::load_i32(cap);
         }
-        if let Some(house) = self.houses.get_mut(&player) {
+        if let Some(house) = self.houses.get_mut(&owner) {
             house
                 .economy_mut()
                 .add_campaign_carry_over(X87::ftol_i32_low_masked(amount));
         }
+    }
+
+    fn restore_carry_over_difficulty(
+        &mut self,
+        owner: InternedId,
+        array_index: usize,
+        difficulty: HouseDifficulty,
+        rules: &RuleSet,
+    ) {
         let frame = self.session.binary_frame() as i32;
         let country = self
             .houses
-            .get(&player)
+            .get(&owner)
             .and_then(|house| house.country())
-            .map(|country| self.interner.resolve(country).to_owned());
+            .and_then(|country| self.interner.try_resolve(country));
         let biases = country.map_or_else(Default::default, |name| {
-            rules.country_difficulty_biases(&name)
+            rules.country_difficulty_biases(name)
         });
-        if let Some(house) = self.houses.get_mut(&player) {
+        if let Some(house) = self.houses.get_mut(&owner) {
             house.set_difficulty(
-                record.player_difficulty,
+                difficulty,
                 &rules.general,
                 biases,
-                self.session.game_mode_nonzero(),
+                self.session.rule_policy(),
                 array_index as i32,
                 frame,
             );
@@ -218,8 +381,136 @@ impl Simulation {
 #[cfg(all(test, tests_sim_c_g))]
 mod tests {
     use super::*;
+    use crate::map::campaign_manifest::CarryHouse;
     use crate::sim::scenario_session::{ScenarioDescriptor, ScenarioTimerAction};
     use crate::util::native_x87::NativeF64Bits;
+
+    fn stage_world(houses: &[&str]) -> Simulation {
+        let basic =
+            crate::map::basic::parse_basic_section(&crate::rules::ini_parser::IniFile::from_str(
+                "[Basic]\nCarryOverMoney=50%\nCarryOverCap=100\nTimerInherit=yes\n",
+            ));
+        let mut sim = Simulation::from_descriptor(&ScenarioDescriptor {
+            timer_inherit: true,
+            carry_over_money: basic.carry_over_money,
+            carry_over_cap: basic.carry_over_cap,
+            ..Default::default()
+        });
+        sim.session
+            .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Lan);
+        for house in houses {
+            let name = sim.interner.intern(house);
+            sim.houses
+                .register(crate::sim::house_state::HouseState::new(
+                    name, 0, None, false, 0, 10,
+                ));
+        }
+        sim
+    }
+
+    fn carry_house(house: &str, difficulty: bool) -> CarryHouse {
+        CarryHouse {
+            house: house.into(),
+            credits: true,
+            difficulty,
+        }
+    }
+
+    #[test]
+    fn shared_carry_over_round_trips_house_state_by_name_in_lockstep() {
+        let rules = RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str("")).unwrap();
+        let mut source = stage_world(&["Alpha", "Bravo"]);
+        for (name, amount) in [("Alpha", 300), ("Bravo", 120)] {
+            let id = source.interner.get(name).unwrap();
+            let house = source.houses.get_mut(&id).unwrap();
+            house.economy_mut().add_credits(amount);
+            house.set_difficulty_for_test(HouseDifficulty::Hard);
+        }
+        source
+            .session
+            .change_scenario_timer(ScenarioTimerAction::Set(30));
+        source.set_campaign_map_stage(7);
+        Simulation::set_trigger_variable(
+            &source.session,
+            &mut source.scenario_rng,
+            &mut source.trigger_runtime,
+            true,
+            0,
+            true,
+        );
+        let settings = StageCarrySettings {
+            globals: true,
+            countdown: true,
+            map_stage: true,
+            houses: vec![carry_house("bravo", false), carry_house("ALPHA", true)],
+        };
+        let saved = source.save_stage_carry_over(&settings).unwrap();
+        let json = serde_json::to_vec(&saved).unwrap();
+        let reordered = source
+            .save_stage_carry_over(&StageCarrySettings {
+                houses: vec![carry_house("alpha", true), carry_house("BRAVO", false)],
+                ..settings
+            })
+            .unwrap();
+        assert_eq!(serde_json::to_vec(&reordered).unwrap(), json);
+        let incoming: StageCarryOver = serde_json::from_slice(&json).unwrap();
+
+        // The receiving map has different native indices and follows Bravo.
+        let mut target = stage_world(&["BRAVO", "Alpha"]);
+        let bravo = target.interner.get("bravo").unwrap();
+        let alpha = target.interner.get("alpha").unwrap();
+        target.session.set_current_house_for_test(Some(bravo));
+        let bravo_difficulty = target.houses[&bravo].difficulty();
+        target.restore_stage_carry_over(&incoming, &rules).unwrap();
+        assert_eq!(target.houses[&alpha].economy().credits(), 100);
+        assert_eq!(target.houses[&bravo].economy().credits(), 60);
+        assert_eq!(target.houses[&alpha].difficulty(), HouseDifficulty::Hard);
+        assert_eq!(target.houses[&bravo].difficulty(), bravo_difficulty);
+        assert!(target.global_variables()[0]);
+        assert_eq!(target.session.campaign_map_stage(), 7);
+        assert_eq!(target.session.scenario_timer_view(), Some((450, "")));
+    }
+
+    #[test]
+    fn missing_or_duplicate_carry_over_house_leaves_destination_untouched() {
+        let rules = RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str("")).unwrap();
+        let mut source = stage_world(&["Alpha", "Bravo"]);
+        let id = source.interner.get("Alpha").unwrap();
+        source
+            .houses
+            .get_mut(&id)
+            .unwrap()
+            .economy_mut()
+            .add_credits(100);
+        let record = source
+            .save_stage_carry_over(&StageCarrySettings {
+                houses: vec![carry_house("Alpha", false), carry_house("Bravo", false)],
+                ..StageCarrySettings::default()
+            })
+            .unwrap();
+        let mut target = stage_world(&["Alpha"]);
+        let before = target.state_hash();
+        assert_eq!(
+            target.restore_stage_carry_over(&record, &rules),
+            Err(StageCarryOverError::MissingHouse("BRAVO".into()))
+        );
+        assert_eq!(target.state_hash(), before);
+
+        let duplicate = source.save_stage_carry_over(&StageCarrySettings {
+            houses: vec![carry_house("ALPHA", true), carry_house("alpha", false)],
+            ..StageCarrySettings::default()
+        });
+        assert_eq!(
+            duplicate,
+            Err(StageCarryOverError::NoncanonicalOrder("ALPHA".into()))
+        );
+        let empty = source
+            .save_stage_carry_over(&StageCarrySettings::default())
+            .unwrap();
+        assert!(empty.is_empty());
+        target.restore_stage_carry_over(&empty, &rules).unwrap();
+        assert_eq!(target.state_hash(), before);
+    }
 
     #[test]
     fn saved_stage_and_incoming_restart_stage_remain_distinct() {
@@ -282,7 +573,7 @@ mod tests {
             .get_mut(&player)
             .unwrap()
             .economy_mut()
-            .initialize_scenario_credits(70, None, false, 0, 0);
+            .initialize_scenario_credits(70, None, 0, 0);
         next.session.initialize_campaign_for_test(3, 5, incoming);
         let bytes = crate::sim::snapshot::GameSnapshot::save(&next, 0, 0, "", 0);
         let mut restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
@@ -454,7 +745,14 @@ mod tests {
             let house = sim.houses.get_or_register_for_test(name, || {
                 crate::sim::house_state::HouseState::new(name, 0, None, false, 0, 10)
             });
-            house.set_difficulty(row, &rules.general, Default::default(), false, 0, 0);
+            house.set_difficulty(
+                row,
+                &rules.general,
+                Default::default(),
+                crate::rules::rule_policy::RulePolicy::stock_campaign(),
+                0,
+                0,
+            );
         }
         sim.session.set_current_house_for_test(Some(player));
         let mut globals = [false; SCENARIO_GLOBAL_COUNT];

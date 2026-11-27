@@ -5,6 +5,7 @@
 
 use super::*;
 use crate::rules::ini_parser::IniFile;
+use crate::rules::rule_policy::RulePolicy;
 use crate::rules::team_ai_ini::TeamAiIniRegistry;
 use crate::sim::house_state::HouseState;
 use crate::sim::passenger::PassengerRole;
@@ -40,7 +41,8 @@ fn sov02_discovered_battle_fortresses_focus_then_load_after_reload() {
         )
         .unwrap()
         .into_parts();
-    let registry = TeamAiIniRegistry::load_retail(&assets, &map.ini, false).unwrap();
+    let registry =
+        TeamAiIniRegistry::load_retail(&assets, &map.ini, RulePolicy::stock_campaign()).unwrap();
     let roster =
         crate::map::houses::parse_house_roster(&map.ini, &rules.color_schemes, Some(&rules));
     let mut sim = Simulation::with_seed(0x6E9ACF);
@@ -48,7 +50,7 @@ fn sov02_discovered_battle_fortresses_focus_then_load_after_reload() {
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
     sim.session
-        .initialize_campaign_startup(1, 2, None, 0, CampaignCarryOver::CLEARED)
+        .initialize_campaign_startup(1, 2, None, 0, CampaignCarryOver::CLEARED, None)
         .unwrap();
     crate::sim::scenario_bootstrap::initialize_map_roster_houses(
         &mut sim,
@@ -88,7 +90,7 @@ fn sov02_discovered_battle_fortresses_focus_then_load_after_reload() {
     assert!(sim.discover_techno(
         members[0],
         sim.session.current_house().unwrap(),
-        UninitContext::with_rules(&rules),
+        UninitContext::new(&rules),
     ));
     let types = ["098F40EC", "0990A93C"].map(|name| sim.interner.get(name).unwrap());
     let mut cameras = Vec::new();
@@ -97,10 +99,9 @@ fn sov02_discovered_battle_fortresses_focus_then_load_after_reload() {
             .advance_app_frame(
                 &[],
                 &rules,
-                None,
                 67,
                 TickLane::Ordinary,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap();
         cameras.extend(output.trigger_effects.into_iter().filter(|effect| {
@@ -148,10 +149,9 @@ fn sov02_discovered_battle_fortresses_focus_then_load_after_reload() {
             .advance_app_frame(
                 &[],
                 &rules,
-                None,
                 67,
                 TickLane::Ordinary,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap();
         assert!(
@@ -183,14 +183,14 @@ fn sov02_discovered_battle_fortresses_focus_then_load_after_reload() {
             sim.entities()
                 .get(transport)
                 .unwrap()
-                .passenger_role
+                .passenger_role()
                 .cargo()
                 .unwrap()
                 .passengers()
                 .len(),
             1
         );
-        sim.destroy_team(team, &rules, FrameEffects::default());
+        sim.destroy_team(team, &rules, &mut FrameEffects::default());
         assert!(sim.team_script_vm.team(team).is_none());
         assert!(
             sim.entities()
@@ -267,7 +267,11 @@ impl Fixture {
              [TaskForces]\n0=CARRY_TF\n[CARRY_TF]\n0=1,APC\n1=2,E1\n",
             if returns { "yes" } else { "no" },
         ));
-        let registry = TeamAiIniRegistry::from_sources(&aimd, &IniFile::from_str(""), true);
+        let registry = TeamAiIniRegistry::from_sources(
+            &aimd,
+            &IniFile::from_str(""),
+            RulePolicy::stock_multiplayer(),
+        );
         sim.intern_rule_type_ids(&rules);
         sim.resolve_type_handles(&rules);
         sim.install_team_ai_registry(&registry, &rules);
@@ -309,13 +313,12 @@ impl Fixture {
             .map(|index| {
                 let passenger = self.spawn("E1", 2 + index as u16, 2);
                 assert_eq!(
-                    self.sim
-                        .techno_limbo_with_rules(passenger, &self.rules, None),
+                    self.sim.techno_limbo_with_rules(passenger, &self.rules),
                     ConcealOutcome::Concealed
                 );
                 let entity = self.sim.substrate.entities.get_mut(transport).unwrap();
                 entity
-                    .passenger_role
+                    .passenger_role_mut_for_test()
                     .cargo_mut()
                     .expect("transport cargo")
                     .board_forced_chain(&[(passenger, 1.0)]);
@@ -324,7 +327,7 @@ impl Fixture {
                     .entities
                     .get_mut(passenger)
                     .unwrap()
-                    .passenger_role = PassengerRole::inside_for_test(transport, false);
+                    .set_passenger_role_for_test(PassengerRole::inside_for_test(transport, false));
                 passenger
             })
             .collect()
@@ -364,7 +367,13 @@ impl Fixture {
     /// `id`'s first radio contact, which an infantryman's Enter destination
     /// setter HELLOs (`0x0051ACD4`).
     fn contact(&self, id: u64) -> Option<u64> {
-        self.sim.substrate.entities.get(id)?.radio_contacts.slot(0)
+        self.sim
+            .substrate
+            .entities
+            .get(id)?
+            .seldom
+            .radio_contacts
+            .slot(0)
     }
 
     fn cargo(&self, transport: u64) -> Vec<u64> {
@@ -372,7 +381,7 @@ impl Fixture {
             .substrate
             .entities
             .get(transport)
-            .and_then(|entity| entity.passenger_role.cargo())
+            .and_then(|entity| entity.passenger_role().cargo())
             .map(|cargo| cargo.passengers().to_vec())
             .unwrap_or_default()
     }
@@ -469,7 +478,11 @@ fn retail_team_ai() -> Option<(RuleSet, Simulation)> {
     use crate::rules::retail_ini_fixture::retail_ini;
     let rules = crate::rules::retail_ini_fixture::retail_unlayered_rules()?;
     let aimd = retail_ini("aimd.ini").expect("retail AIMD");
-    let registry = TeamAiIniRegistry::from_sources(&aimd, &IniFile::from_str(""), true);
+    let registry = TeamAiIniRegistry::from_sources(
+        &aimd,
+        &IniFile::from_str(""),
+        RulePolicy::stock_multiplayer(),
+    );
     let mut sim = Simulation::new();
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
@@ -760,7 +773,11 @@ impl OracleTeam {
              [TaskForces]\n0=ROW_TF\n[ROW_TF]\n{entries}",
             if returns { "yes" } else { "no" },
         ));
-        let registry = TeamAiIniRegistry::from_sources(&aimd, &IniFile::from_str(""), true);
+        let registry = TeamAiIniRegistry::from_sources(
+            &aimd,
+            &IniFile::from_str(""),
+            RulePolicy::stock_multiplayer(),
+        );
         sim.intern_rule_type_ids(&rules);
         sim.resolve_type_handles(&rules);
         sim.install_team_ai_registry(&registry, &rules);
@@ -838,7 +855,7 @@ impl OracleTeam {
                 );
                 cargo.set_passengers_for_test(vec![u64::MAX; count]);
                 cargo.set_passenger_sizes_for_test(vec![1.0; count]);
-                entity.passenger_role = PassengerRole::transport(cargo);
+                entity.set_passenger_role_for_test(PassengerRole::transport(cargo));
             }
             entity
                 .navigation
@@ -847,7 +864,7 @@ impl OracleTeam {
                 .mission
                 .set_current_for_test(MissionId::from_raw(int(&member["mission"])), 0);
             if flag(&member["radio"]) {
-                entity.radio_contacts.insert(zone);
+                entity.seldom.radio_contacts.insert(zone);
             }
             entity.set_archive_target(flag(&member["archive"]).then_some(ORACLE_ARCHIVE));
             entity
@@ -964,13 +981,14 @@ impl OracleTeam {
                 && sent_to_member;
             assert!(
                 entity
+                    .seldom
                     .radio_contacts
                     .iter_live()
                     .all(|contact| contact == self.zone),
                 "{at}: the zone's infantryman is the only contact"
             );
             assert_eq!(
-                entity.radio_contacts.contains(self.zone),
+                entity.seldom.radio_contacts.contains(self.zone),
                 had_contact && !breaks,
                 "{at}: contact with the zone"
             );
@@ -979,7 +997,7 @@ impl OracleTeam {
             // left; movement and boarding integration is covered by
             // transport_unload.
             let pending_entry = if member["class"] == "unit"
-                && entity.radio_contacts.is_empty()
+                && entity.seldom.radio_contacts.is_empty()
                 && mission[index] == Some(MissionType::Enter as i32)
             {
                 destination[index]
@@ -1065,8 +1083,7 @@ fn load_onto_transport_matches_the_original() {
         team.sim.team_action_load_onto_transport(
             team.team,
             &team.rules,
-            None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
         team.check(row, case, true);
     }
@@ -1099,8 +1116,7 @@ fn unload_matches_the_original() {
             team.team,
             int(&row["argument"]),
             &team.rules,
-            None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
         team.check(row, case, false);
     }
@@ -1118,7 +1134,7 @@ fn deploy_matches_the_original() {
     for (case, row) in oracle_rows("deploy").iter().enumerate() {
         let mut team = OracleTeam::new(row, 9);
         team.sim
-            .team_action_deploy(team.team, &team.rules, None, FrameEffects::default());
+            .team_action_deploy(team.team, &team.rules, None, &mut FrameEffects::default());
         team.check(row, case, false);
         let owner = team.sim.interner.get("Russians");
         for event in row["events"].as_array().unwrap() {

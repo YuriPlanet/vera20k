@@ -23,7 +23,7 @@ pub(crate) const COPIED: [&str; 6] = [
 /// The files New Mod writes for the player to fill in, every key commented
 /// out so that each changes nothing until the player takes a `;` away.
 const STARTERS: [(&str, &str); 2] = [
-    // Every line `app::mods::ModInfo` reads, so the folder's name stays the
+    // Every metadata line `util::mod_definition::ModDefinition` reads, so the folder's name stays the
     // mod's name until the player gives it one.
     (
         "mod.ini",
@@ -143,7 +143,7 @@ pub(crate) fn make(
 
 /// `name` when it can be one folder's name on every system, else
 /// [`FALLBACK_NAME`].
-fn plain_name(name: &str) -> &str {
+pub(crate) fn plain_name(name: &str) -> &str {
     let name = name.trim();
     let plain = !name.is_empty()
         && !name.starts_with('.')
@@ -234,7 +234,7 @@ mod tests {
         use crate::ui::match_layout::MatchLayoutFile;
         let (_, text) = STARTERS[1];
         let as_written = MatchLayoutFile::from_bytes(text.as_bytes());
-        assert!(as_written.for_side(Some("GDI")).is_none());
+        assert!(as_written.for_side(Some("GDI"), true).is_none());
         assert!(as_written.problems().is_empty());
         let uncommented: String = text
             .lines()
@@ -245,7 +245,7 @@ mod tests {
             .flat_map(|line| [line, "\n"])
             .collect();
         let example = MatchLayoutFile::from_bytes(uncommented.as_bytes());
-        assert!(example.for_side(Some("GDI")).is_some());
+        assert!(example.for_side(Some("GDI"), true).is_some());
         assert!(example.problems().is_empty(), "{:?}", example.problems());
     }
 

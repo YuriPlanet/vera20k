@@ -122,7 +122,7 @@ fn fixture(input: &Value) -> (Simulation, RuleSet, u64, Vec<InternedId>) {
     building.mission_leaf =
         crate::sim::mission::leaf::MissionLeafState::for_entity_category(EntityCategory::Structure);
     building
-        .passenger_role
+        .passenger_role_mut_for_test()
         .occupants_mut()
         .set_fire_index_for_test(integer(&input["fire_index"]));
     for owner in input["occupant_owners"].as_array().unwrap() {
@@ -137,14 +137,17 @@ fn fixture(input: &Value) -> (Simulation, RuleSet, u64, Vec<InternedId>) {
         );
         passenger.set_type_ref_for_test(sim.interner.intern("E1"));
         passenger.set_owner_for_test(houses[owner.as_u64().unwrap() as usize]);
-        passenger.passenger_role = PassengerRole::inside_for_test(id, false);
+        passenger.set_passenger_role_for_test(PassengerRole::inside_for_test(id, false));
         passenger.lifecycle.set_in_limbo_for_test(true);
         passenger.locomotor = Some(
             crate::sim::movement::locomotor::LocomotorState::for_test_kind(
                 crate::rules::locomotor_type::LocomotorKind::Walk,
             ),
         );
-        building.passenger_role.occupants_mut().add(passenger_id);
+        building
+            .passenger_role_mut_for_test()
+            .occupants_mut()
+            .add_for_test(passenger_id);
         sim.substrate.entities.insert(passenger);
     }
     sim.substrate.entities.insert(building);
@@ -198,13 +201,13 @@ fn allegiance_matches_native_decisions_for_valid_rosters() {
             &rules,
             None,
             id,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let building = sim.substrate.entities.get(id).unwrap();
         let expected_owner = houses[expected["owner_after_callback"].as_u64().unwrap() as usize];
         assert_eq!(building.owner(), expected_owner, "{name}");
         assert_eq!(changed, old_owner != expected_owner, "{name}");
-        let occupants = building.passenger_role.occupants();
+        let occupants = building.passenger_role().occupants();
         assert_eq!(
             occupants.fire_index(),
             integer(&expected["fire_index_after_callback"]),
@@ -253,7 +256,7 @@ fn allegiance_matches_native_decisions_for_valid_rosters() {
         }
         assert_eq!(
             sim.sound_events.iter().any(|event| matches!(event,
-                SimSoundEvent::VocCentered { sound_id } if sound_id == "Abandon"
+                SimSoundEvent::VocCentered { sound_id } if sound_id.name_in(&rules) == "Abandon"
             )),
             called("abandoned_sound"),
             "{name}"
@@ -280,7 +283,7 @@ fn missing_civilian_roster_does_not_fabricate_a_house() {
             &rules,
             None,
             id,
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         ));
         assert_eq!(sim.substrate.entities.get(id).unwrap().owner(), old_owner);
         assert_eq!(sim.houses.order(), houses);
@@ -310,7 +313,7 @@ fn building_ai_caller_admission_matches_native_unwarped_gates() {
             .set_object_alive_for_test(input["alive"].as_bool().unwrap());
         rules.general.condition_red = -1.0; // no ejection or death dependency
         let old_owner = sim.substrate.entities.get(id).unwrap().owner();
-        sim.object_ai_visit_one(id, Some(&rules), ObjectAiCtx::default());
+        sim.object_ai_visit_one(id, Some(&rules), &mut ObjectAiCtx::default());
         assert_eq!(
             sim.substrate
                 .entities
@@ -393,7 +396,7 @@ fn zero_capacity_map_garrison_abandons_without_allocated_cargo() {
             .entities
             .get(id)
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .cargo()
             .is_none()
     );
@@ -401,13 +404,13 @@ fn zero_capacity_map_garrison_abandons_without_allocated_cargo() {
         .set_building_anim_slot(id, 3, false, false, 0, &rules)
         .unwrap();
     sim.sound_events.clear_for_test();
-    sim.object_ai_visit_one(id, Some(&rules), ObjectAiCtx::default());
+    sim.object_ai_visit_one(id, Some(&rules), &mut ObjectAiCtx::default());
 
     let building = sim.substrate.entities.get(id).unwrap();
     assert_eq!(sim.interner.resolve(building.owner()), "Town");
     assert_ne!(building.building_art.anim_slots()[3], Some(old_anim));
     assert!(sim.sound_events.iter().any(|event| matches!(event,
-        SimSoundEvent::VocCentered { sound_id } if sound_id == "Abandon"
+        SimSoundEvent::VocCentered { sound_id } if sound_id.name_in(&rules) == "Abandon"
     )));
     assert!(sim.sound_events.iter().any(|event| matches!(event,
         SimSoundEvent::StructureAbandoned { owner, .. }

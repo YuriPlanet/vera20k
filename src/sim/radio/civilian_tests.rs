@@ -101,7 +101,7 @@ fn civilian_scatter_into_gate_requests_aircraft_retreat_without_boarding() {
         let head = head_at_gate(&sim).expect("ordinary Enter commits a Walk head in the open gate");
         let actor = sim.substrate.entities.get(man).unwrap();
         assert_eq!(actor.mission.current().known(), Some(MissionType::Enter));
-        assert_eq!(actor.radio_contacts.slot(0), Some(plane));
+        assert_eq!(actor.seldom.radio_contacts.slot(0), Some(plane));
         assert_eq!(
             actor.navigation.nav_com(),
             Some(NavTargetRef::object(plane))
@@ -118,7 +118,7 @@ fn civilian_scatter_into_gate_requests_aircraft_retreat_without_boarding() {
         assert_eq!(sim.scenario_rng.state(), expected_rng.state());
         let actor = sim.substrate.entities.get(man).unwrap();
         assert_eq!(actor.mission.current().known(), Some(MissionType::Enter));
-        assert_eq!(actor.radio_contacts.slot(0), Some(plane));
+        assert_eq!(actor.seldom.radio_contacts.slot(0), Some(plane));
         assert_eq!(actor.locomotor.as_ref().unwrap().step_head(), Some(head));
         assert_eq!(actor.navigation.nav_com(), Some(NavTargetRef::cell(15, 15)));
         take_transmit_log();
@@ -143,9 +143,9 @@ fn civilian_scatter_into_gate_requests_aircraft_retreat_without_boarding() {
         let actor = sim.substrate.entities.get(man).unwrap();
         assert_eq!((actor.position.rx(), actor.position.ry()), (15, 15));
         assert!(!actor.in_limbo());
-        assert!(actor.passenger_role.inside_transport().is_none());
+        assert!(actor.passenger_role().inside_transport().is_none());
         let aircraft = sim.substrate.entities.get(plane).unwrap();
-        assert_eq!(aircraft.passenger_role.cargo().unwrap().count(), 0);
+        assert_eq!(aircraft.passenger_role().cargo().unwrap().count(), 0);
         if survivor {
             assert_ne!(
                 aircraft.mission.queued(),
@@ -176,14 +176,14 @@ fn civilian_scatter_into_gate_requests_aircraft_retreat_without_boarding() {
         .unwrap();
     assert_eq!(rules.object("CARGOPLANE").unwrap().passengers, 0);
     let now = sim.session.binary_frame();
-    let effects = FrameEffects::default();
+    let mut effects = FrameEffects::default();
     let target = TargetKind::Cell(22, 20);
     let destination = NavTargetRef::cell(23, 20);
-    sim.assign_target_represented(plane, Some(target), rules, Some(&registry), effects)
+    sim.assign_target_represented(plane, Some(target), rules, &mut effects)
         .unwrap();
-    sim.assign_aircraft_destination(plane, Some(destination), rules, effects);
+    sim.assign_aircraft_destination(plane, Some(destination), rules, &mut effects);
     let queued = sim.substrate.entities.get(plane).unwrap().mission.queued();
-    let dock = |sim: &mut Simulation, sender| {
+    let mut dock = |sim: &mut Simulation, sender| {
         super::receive::receive_radio(
             sim,
             plane,
@@ -191,7 +191,7 @@ fn civilian_scatter_into_gate_requests_aircraft_retreat_without_boarding() {
             RadioMessage::DockNow,
             super::RadioPayload::default(),
             rules,
-            effects,
+            &mut effects,
         )
     };
     let door_ticks = rules.object("CARGOPLANE").unwrap().deploy_time_ticks as i32;

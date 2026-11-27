@@ -41,7 +41,14 @@ fn compiled_capability_controls_real_readers_and_roundtrip() {
             assert_eq!(strike.generic_warhead.as_ref().unwrap().damage, 75);
             assert!(rules.warhead("PAYLOAD").is_some());
             let delivery = rules.super_weapon("DELIVERY").unwrap();
-            assert_eq!(delivery.unit_delivery.as_ref().unwrap().deferment, 7);
+            assert_eq!(
+                rules
+                    .super_weapon_metadata("DELIVERY")
+                    .unwrap()
+                    .launch()
+                    .deferment(),
+                Some(7)
+            );
             assert_eq!(delivery.unit_delivery.as_ref().unwrap().types.len(), 1);
         } else {
             assert_eq!(reveal.money_amount, 0);
@@ -152,10 +159,14 @@ fn all_capability_combinations_round_trip_and_describe_themselves() {
         !RulesCompatibility::default().has_ares(),
         "no build records Ares any more"
     );
+    assert!(
+        !RulesCompatibility::default().has_npatch(),
+        "NPatch is a per-game switch, not a build capability"
+    );
     let other = RulesCompatibility::from_capabilities(
         true,
         !PHOBOS_ENABLED,
-        !crate::rules::NPATCH_ENABLED,
+        true,
         !VERAX_ENABLED,
         !crate::rules::NPBUG_ENABLED,
     );

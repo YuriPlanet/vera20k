@@ -66,24 +66,25 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
-    ) -> TrackProcessEntry {
+        effects: &mut FrameEffects<'_>,
+        bridge_state_changed: &mut bool,
+    ) -> Result<TrackProcessEntry, crate::sim::world::FrameAdvanceError> {
         let frame = self.session.binary_frame();
         let Some(entity) = self.substrate.entities.get(id) else {
-            return TrackProcessEntry::Return;
+            return Ok(TrackProcessEntry::Return);
         };
         if entity.death.is_dying() || !entity.lifecycle.object_alive() {
-            return TrackProcessEntry::Return;
+            return Ok(TrackProcessEntry::Return);
         }
         if super::track_head::active_track_family(entity).is_some() {
-            return TrackProcessEntry::Movement;
+            return Ok(TrackProcessEntry::Movement);
         }
         if !entity
             .locomotor
             .as_ref()
             .is_some_and(|l| matches!(l.active_kind(), LocomotorKind::Drive | LocomotorKind::Ship))
         {
-            return TrackProcessEntry::Movement;
+            return Ok(TrackProcessEntry::Movement);
         }
         // Drive4B066C..4B06D2 / Ship69FD13..69FD79: a Cell NavCom naming the
         // current cell stops (or takes the next waypoint) and Process returns
@@ -94,7 +95,7 @@ impl Simulation {
                 if (rx, ry) == (entity.position.rx(), entity.position.ry()))
         {
             self.track_navcom_stop(id, rules, effects);
-            return TrackProcessEntry::Return;
+            return Ok(TrackProcessEntry::Return);
         }
         let loco = entity.locomotor.as_ref().unwrap();
         let family = TrackFamily::from_kind(loco.active_kind()).unwrap();
@@ -124,7 +125,7 @@ impl Simulation {
             && destination.is_some_and(|dest| dest == current)
         {
             self.track_navcom_stop(id, rules, effects);
-            return TrackProcessEntry::Return;
+            return Ok(TrackProcessEntry::Return);
         }
         let rotating = entity.body_facing.is_rotating(frame);
         let was_latched = latched;
@@ -142,28 +143,28 @@ impl Simulation {
         // Drive4B0788 ->4B078C..893 / Ship69FE35: live rotation
         // returns through the Process tail, never fresh ProcessMovement.
         if rotating {
-            return TrackProcessEntry::Tail;
+            return Ok(TrackProcessEntry::Tail);
         }
         if completed {
-            self.unit_per_cell_process(
+            *bridge_state_changed |= self.per_cell_process(
                 id,
                 super::per_cell::PerCellReason::TurnComplete,
                 rules,
                 registry,
                 effects,
-            );
+            )?;
             // Native reloads these three bytes after the synchronous callback.
             if !self.substrate.entities.get(id).is_some_and(|e| {
                 e.lifecycle.object_alive() && !e.lifecycle.in_limbo() && !e.is_falling_down()
             }) {
-                return TrackProcessEntry::Return;
+                return Ok(TrackProcessEntry::Return);
             }
         }
-        if self.track_movement_gates(id, rules, effects) {
+        Ok(if self.track_movement_gates(id, rules, effects) {
             TrackProcessEntry::Movement
         } else {
             TrackProcessEntry::Tail
-        }
+        })
     }
 
     /// Drive4B0828..4B0880 / Ship69FEF0..69FF47, reached only through the
@@ -176,8 +177,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         if !self.substrate.entities.get(id).is_some_and(|entity| {
             entity.lifecycle.object_alive()
@@ -191,7 +191,7 @@ impl Simulation {
         // A PerCell/idle callback's restored destination ran synchronously in
         // native code. Publish the existing owed setter before reading the
         // class coordinates, as the active-track continuation already does.
-        self.complete_pending_order(id, rules, registry, effects);
+        self.complete_pending_order(id, rules, effects);
         if let Some(entity) = self.substrate.entities.get_mut_if(id, |entity| {
             entity.locomotor.as_ref().is_some_and(|loco| {
                 // The speed first: a unit at rest is let go without its
@@ -223,7 +223,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(entity) = self.substrate.entities.get(id) else {
             return false;
@@ -268,16 +268,12 @@ impl Simulation {
             }
             return false;
         }
-        // 4B09AB..4B0A68: an in-playfield (+3D5), non-Enter mover whose
-        // destination fails the zone precheck clears its head, then stops or
-        // takes the next waypoint. The NULL setter and a false idle entry go
-        // on to the tail; a true one returns false without it (4B0A57).
-        // RESIDUAL: VERA runs the tail after a true idle entry too. Its rest
-        // write needs empty class coordinates, which the taken waypoint
-        // fills, and FootClass::AI ignores Process's result (4DA877). The
-        // tail's Wake (4B078C..4B0823; Ship's 69FE97..69FEEB) is
-        // `spawn_wakes_for_frame` here, which does not depend on this return:
-        // at most one invisible wake differs.
+        // Drive 0x004B0A51 / Ship 0x006A011A: on zone refusal a true
+        // queued-waypoint idle return skips the native rest/wake tail. Here
+        // the accepted waypoint supplies +4C so the rest test cannot write.
+        // No turn was active above; dropping the track clears +40, and the
+        // waypoint's Move_To sets only +4C. The immediate Is_Moving_Now
+        // wake test therefore fails. Wakes are sampled in the frame batch.
         if entity.in_playfield() && mission != Some(MissionType::Enter) && moving {
             let destination = super::track_path::track_destination_or_null(entity);
             // Unrepresented precheck inputs (no zone topology or bounds in a

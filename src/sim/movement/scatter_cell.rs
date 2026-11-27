@@ -12,7 +12,6 @@
 
 use super::infantry_entry::InfantryEntryArgs;
 use crate::map::resolved_terrain::{NativeCellQuery, ResolvedTerrainGrid};
-use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::world::Simulation;
 
@@ -103,9 +102,10 @@ pub(super) fn select_neighbor<E>(
 pub(super) fn preferred_surface(terrain: &ResolvedTerrainGrid, candidate: (i16, i16)) -> bool {
     let cells = NativeCellQuery::canonical(terrain);
     let coord = (i32::from(candidate.0), i32::from(candidate.1));
-    if crate::sim::find_nearby_cell::project_world_coordinate_with_lookup(
+    if crate::sim::find_nearby_cell::project_world_coordinate_with_terrain(
         coord.0 * 256 + 128,
         coord.1 * 256 + 128,
+        Some(terrain),
         |x, y| cells.projection_view(x, y),
     ) != coord
     {
@@ -131,7 +131,6 @@ impl Simulation {
         id: u64,
         start: i32,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
     ) -> Result<Option<(u16, u16)>, String> {
         let Some(foot) = self.substrate.entities.get(id) else {
             return Ok(None);
@@ -165,7 +164,7 @@ impl Simulation {
                 height,
                 previous_cell: None,
             };
-            if self.foot_can_enter(id, cell, args, rules, registry)? != 0 {
+            if self.foot_can_enter(id, cell, args, rules)? != 0 {
                 return Ok(None);
             }
             Ok::<_, String>(Some(preferred_surface(terrain, candidate)))

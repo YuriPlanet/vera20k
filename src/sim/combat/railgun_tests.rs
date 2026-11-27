@@ -44,7 +44,7 @@ fn a_railgun_shot_strikes_the_line_and_holds_its_particle_system() {
     );
 
     let mut sim = crate::sim::arena_fixture::rival_arena(rules, 0x7A11_6A00);
-    sim.fog = FogState::new(32, 32);
+    *sim.fog = FogState::new(32, 32);
     let owner = sim.interner.intern("Americans");
     sim.session.set_current_house_for_test(Some(owner));
     sim.intern_rule_type_ids(rules);
@@ -94,6 +94,7 @@ fn a_railgun_shot_strikes_the_line_and_holds_its_particle_system() {
         .entities
         .get(source)
         .unwrap()
+        .seldom
         .railgun_particle_system
         .system()
         .expect("FireAt links the Railgun system");
@@ -123,6 +124,7 @@ fn a_railgun_shot_strikes_the_line_and_holds_its_particle_system() {
             .entities
             .get(source)
             .unwrap()
+            .seldom
             .railgun_particle_system
             .system()
             .is_none()
@@ -209,7 +211,7 @@ fn railgun_line_damage_matches_native_hits_and_ground_stop() {
             &mut sim,
             rules,
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
             &mut deaths,
             firer,
             ProjectileCoord::new(source[0], source[1], source[2]),
@@ -278,7 +280,7 @@ fn a_detached_railgun_never_holds_its_particle_system() {
     };
     let rules = &patched.rules;
     let mut sim = crate::sim::arena_fixture::rival_arena(rules, 0x7A11_6A01);
-    sim.fog = FogState::new(32, 32);
+    *sim.fog = FogState::new(32, 32);
     let owner = sim.interner.intern("Americans");
     sim.session.set_current_house_for_test(Some(owner));
     sim.intern_rule_type_ids(rules);
@@ -310,7 +312,7 @@ fn a_detached_railgun_never_holds_its_particle_system() {
         {
             shots += 1;
             let firer = sim.substrate.entities.get(source).unwrap();
-            assert!(firer.railgun_particle_system.system().is_none());
+            assert!(firer.seldom.railgun_particle_system.system().is_none());
             assert!(!sim.particle_systems().is_empty());
         }
     }

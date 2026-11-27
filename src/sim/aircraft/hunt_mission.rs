@@ -116,13 +116,13 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        ctx: ObjectAiCtx<'_>,
+        ctx: &mut ObjectAiCtx<'_>,
     ) -> i32 {
         let entity = self.substrate.entities.get(id).expect("aircraft dispatch");
         debug_assert_eq!(entity.category(), EntityCategory::Aircraft);
         let facts = HuntFacts {
             ammo: entity.ammo().map_or(-1, |ammo| ammo.current()),
-            team: self.team_script_vm.team_for_member(id).is_some(),
+            team: self.team_script_vm.team_of(id).is_some(),
             game_mode: self.session.game_mode_nonzero(),
         };
         hunt_visit(
@@ -131,7 +131,7 @@ impl Simulation {
                 sim: self,
                 id,
                 rules,
-                ctx,
+                ctx: ctx.reborrow(),
             },
         )
     }
@@ -176,8 +176,7 @@ impl HuntHost for WorldHunt<'_> {
                 self.id,
                 threat,
                 self.rules,
-                None,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .expect("hunting aircraft");
     }
@@ -187,18 +186,12 @@ impl HuntHost for WorldHunt<'_> {
     }
 
     fn enter_idle_mode(&mut self) {
-        super::enter_idle_mode_for(
-            self.sim,
-            self.id,
-            self.rules,
-            self.ctx.overlay_registry,
-            self.ctx.effects,
-        );
+        super::enter_idle_mode_for(self.sim, self.id, self.rules, &mut self.ctx.effects);
     }
 
     fn leave_team(&mut self) {
         self.sim
-            .leave_team(self.id, false, self.rules, self.ctx.effects);
+            .leave_team(self.id, false, self.rules, &mut self.ctx.effects);
     }
 
     fn epilogue(&mut self) -> i32 {

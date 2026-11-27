@@ -56,6 +56,22 @@ impl SensorArrayCounter {
     }
 }
 
+#[cfg(test)]
+thread_local! {
+    /// The residents called back so far, in dispatch order, which tests
+    /// read through [`resident_callbacks`].
+    static RESIDENT_CALLBACKS: std::cell::RefCell<Vec<u64>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// The residents `run` calls back, in dispatch order.
+#[cfg(test)]
+fn resident_callbacks(run: impl FnOnce()) -> Vec<u64> {
+    RESIDENT_CALLBACKS.take();
+    run();
+    RESIDENT_CALLBACKS.take()
+}
+
 fn unit_sensor_radius(entity_category: EntityCategory, object: &ObjectType) -> Option<u16> {
     if object.sensors_sight == 0
         || !matches!(
@@ -127,48 +143,44 @@ impl Simulation {
     ) {
         self.remove_unit_sensors_at(id, None, rules, registry);
     }
-    fn sensor_residents_in_native_order(&self, cell: (u16, u16)) -> Vec<u64> {
-        self.substrate
-            .occupancy
-            .get(cell.0, cell.1)
-            .map(|occupancy| {
-                occupancy
-                    .iter_layer(MovementLayer::Ground)
-                    .filter_map(|occupant| {
-                        self.substrate
-                            .entities
-                            .get(occupant.entity_id)
-                            .is_some_and(|entity| {
-                                matches!(
-                                    entity.category(),
-                                    EntityCategory::Unit
-                                        | EntityCategory::Infantry
-                                        | EntityCategory::Aircraft
-                                )
-                            })
-                            .then_some(occupant.entity_id)
-                    })
-                    .collect()
-            })
-            .unwrap_or_default()
-    }
-
+    /// Calls back the cell's residents: Add/RemoveSensorsAt @
+    /// 0x004DE7B0/0x004DE940 and the BuildingClass variants walk
+    /// CellClass::FirstObject head-to-tail after mutating this exact cell.
+    /// OccupancyGrid's ground list is that authoritative order. A callback
+    /// changes the world, so the list is copied into `residents` first; the
+    /// caller passes one buffer for every cell of its circle.
     fn sensor_reevaluate_residents(
         &mut self,
         cell: (u16, u16),
+        residents: &mut Vec<u64>,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-    ) -> Vec<u64> {
-        // Add/RemoveSensorsAt @ 0x004DE7B0/0x004DE940 and the BuildingClass
-        // variants walk CellClass::FirstObject head-to-tail after mutating this
-        // exact cell. OccupancyGrid's ground list is that authoritative order.
-        let residents = self.sensor_residents_in_native_order(cell);
-        for &stable_id in &residents {
+    ) {
+        residents.clear();
+        if let Some(occupancy) = self.substrate.occupancy.get(cell.0, cell.1) {
+            residents.extend(
+                occupancy
+                    .iter_layer(MovementLayer::Ground)
+                    .map(|occupant| occupant.entity_id)
+                    .filter(|&id| {
+                        self.substrate.entities.get(id).is_some_and(|entity| {
+                            matches!(
+                                entity.category(),
+                                EntityCategory::Unit
+                                    | EntityCategory::Infantry
+                                    | EntityCategory::Aircraft
+                            )
+                        })
+                    }),
+            );
+        }
+        for &stable_id in residents.iter() {
+            #[cfg(test)]
+            RESIDENT_CALLBACKS.with_borrow_mut(|called| called.push(stable_id));
             crate::sim::world::techno_ai_cloak::sensor_reevaluate_stock_cloak(
                 self, stable_id, rules, registry,
             );
         }
-        residents
     }
 
     fn apply_sensor_add(
@@ -178,13 +190,12 @@ impl Simulation {
         radius: u16,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-    ) -> Vec<u64> {
-        let mut callbacks = Vec::new();
+    ) {
+        let mut residents = Vec::new();
         for cell in self.fog.sensor_circle_cells(center, radius) {
             self.fog.increment_sensor_at(owner, cell.0, cell.1);
-            callbacks.extend(self.sensor_reevaluate_residents(cell, rules, registry));
+            self.sensor_reevaluate_residents(cell, &mut residents, rules, registry);
         }
-        callbacks
     }
 
     fn apply_unit_sensor_remove(
@@ -194,8 +205,8 @@ impl Simulation {
         radius: u16,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-    ) -> Vec<u64> {
-        let mut callbacks = Vec::new();
+    ) {
+        let mut residents = Vec::new();
         for cell in self.fog.sensor_circle_cells(center, radius) {
             // RemoveSensorsAt @ 0x004DE940 skips both mutation and callbacks
             // when the signed pre-count is not positive.
@@ -203,10 +214,9 @@ impl Simulation {
                 .fog
                 .decrement_sensor_at_if_positive(owner, cell.0, cell.1)
             {
-                callbacks.extend(self.sensor_reevaluate_residents(cell, rules, registry));
+                self.sensor_reevaluate_residents(cell, &mut residents, rules, registry);
             }
         }
-        callbacks
     }
 
     fn apply_building_sensor_remove(
@@ -216,14 +226,13 @@ impl Simulation {
         radius: u16,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-    ) -> Vec<u64> {
-        let mut callbacks = Vec::new();
+    ) {
+        let mut residents = Vec::new();
         for cell in self.fog.sensor_circle_cells(center, radius) {
             self.fog
                 .decrement_sensor_at_unconditional(owner, cell.0, cell.1);
-            callbacks.extend(self.sensor_reevaluate_residents(cell, rules, registry));
+            self.sensor_reevaluate_residents(cell, &mut residents, rules, registry);
         }
-        callbacks
     }
 
     /// `BuildingClass::Place @ 0x00445F80`'s sensor arm, inside its first-opening
@@ -387,7 +396,7 @@ impl Simulation {
         if entity.deactivated.is_offline() {
             return;
         }
-        if !entity.ares.sensor_array_counter.activate() {
+        if !entity.seldom.ares.sensor_array_counter.activate() {
             return;
         }
         let Some((owner, center, sight)) =
@@ -418,7 +427,7 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get_mut(stable_id) else {
             return;
         };
-        if !entity.ares.sensor_array_counter.deactivate() {
+        if !entity.seldom.ares.sensor_array_counter.deactivate() {
             return;
         }
         let Some((owner, center, sight)) =
@@ -459,7 +468,7 @@ impl Simulation {
         {
             return;
         }
-        let was_active = entity.ares.sensor_array_counter.is_active();
+        let was_active = entity.seldom.ares.sensor_array_counter.is_active();
         let active = !entity.deactivated.is_offline()
             && self.building_operational_state(stable_id, rules) == Some(true);
         if active == was_active {
@@ -573,13 +582,13 @@ mod tests {
         assert!(sim.fog.has_sensor_for_house(americans, 33, 30));
         assert!(!sim.fog.has_sensor_for_house(americans, 48, 30));
 
-        sim.techno_limbo_with_rules(first, &rules, None);
+        sim.techno_limbo_with_rules(first, &rules);
         assert!(
             sim.fog.has_sensor_for_house(americans, 33, 30),
             "the overlapping second deposit remains positive"
         );
         let counters = sim.fog.sensors_by_house().clone();
-        sim.techno_limbo_with_rules(first, &rules, None);
+        sim.techno_limbo_with_rules(first, &rules);
         assert_eq!(
             sim.fog.sensors_by_house(),
             &counters,
@@ -601,13 +610,13 @@ mod tests {
             soviet,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert!(!sim.fog.has_sensor_for_house(americans, 57, 30));
         assert!(sim.fog.has_sensor_for_house(soviet, 57, 30));
 
         // FootLimbo4DB376 removes the live owner's current-coordinate circle.
-        sim.techno_limbo_with_rules(second, &rules, None);
+        sim.techno_limbo_with_rules(second, &rules);
         assert!(!sim.fog.has_sensor_for_house(soviet, 57, 30));
     }
 
@@ -625,7 +634,7 @@ mod tests {
         let owner = sim.substrate.entities.get(id).unwrap().owner();
         let index = 30 * usize::from(sim.fog.width()) + 40;
         assert_eq!(sim.fog.sensors_by_house()[&owner][index], 1);
-        sim.techno_limbo_with_rules(id, &rules, None);
+        sim.techno_limbo_with_rules(id, &rules);
         assert_eq!(sim.fog.sensors_by_house()[&owner][index], 0);
 
         let position = sim.substrate.entities.get(id).unwrap().position;
@@ -636,7 +645,7 @@ mod tests {
                 placement: crate::sim::world::PlacementEvidence::EvaluateMark,
                 logic_eligible: true,
             },
-            crate::sim::world::UninitContext::with_rules(&rules),
+            crate::sim::world::UninitContext::new(&rules),
         );
         assert!(matches!(
             outcome,
@@ -728,7 +737,7 @@ mod tests {
                 0,
                 crate::sim::world::PlacementEvidence::EvaluateMark,
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .is_some()
         );
@@ -744,7 +753,7 @@ mod tests {
         assert!(!sim.fog.has_sensor_for_house(owner, 41, 41));
         assert!(!sim.fog.detects_disguise_for_house(owner, 41, 41));
 
-        sim.techno_limbo_with_rules(id, &rules, None);
+        sim.techno_limbo_with_rules(id, &rules);
         let row = 41 * usize::from(sim.fog.width());
         // `CloakRadiusInCells=` defaults to 20; `DetectDisguiseRange=15`.
         assert_eq!(sim.fog.sensors_by_house()[&owner][row + 60], -1);
@@ -780,13 +789,18 @@ mod tests {
                 .entities
                 .get(id)
                 .unwrap()
+                .seldom
                 .ares
                 .sensor_array_counter
                 .count()
         };
         assert_eq!((counter(&sim), sensor(&sim, 27)), (1, 1));
         let visit = |sim: &mut Simulation| {
-            sim.object_ai_visit_one(id, Some(&rules), crate::sim::world::ObjectAiCtx::default());
+            sim.object_ai_visit_one(
+                id,
+                Some(&rules),
+                &mut crate::sim::world::ObjectAiCtx::default(),
+            );
         };
         sim.substrate
             .entities
@@ -809,7 +823,7 @@ mod tests {
             .unwrap()
             .set_building_online_for_test(false);
         visit(&mut sim);
-        sim.techno_limbo_with_rules(id, &rules, None);
+        sim.techno_limbo_with_rules(id, &rules);
         assert_eq!((sensor(&sim, 27), sensor(&sim, 60)), (0, 0));
     }
 
@@ -864,7 +878,7 @@ mod tests {
             americans,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert!(
             sim.fog.has_sensor_for_house(soviet, 55, 41)
@@ -876,7 +890,7 @@ mod tests {
                 && !sim.fog.detects_disguise_for_house(americans, 55, 41),
             "nor grants the captor one"
         );
-        sim.techno_limbo_with_rules(id, &rules, None);
+        sim.techno_limbo_with_rules(id, &rules);
 
         let row = 41 * usize::from(sim.fog.width());
         let inside = row + 55; // inside both the 15-cell add and the 20-cell remove
@@ -935,7 +949,7 @@ mod tests {
         // writers sit in `BuildingClass::UpdateGapGenerator_Tick` behind
         // `CloakGenerator=`, so the vt+0x420 cloak arm is dormant in stock YR.
         // The FirstObject dispatch ORDER is what this test owns, and it is
-        // observable from the returned resident list alone.
+        // observable from the resident callbacks alone.
         sim.fog.mark_visible_for_owner(soviet, 40, 30);
         for id in [older, newer] {
             let cloak = sim
@@ -949,7 +963,8 @@ mod tests {
             cloak.set_state_for_test(0);
         }
 
-        let added = sim.apply_sensor_add(detector, (40, 30), 1, &rules, None);
+        let added =
+            resident_callbacks(|| sim.apply_sensor_add(detector, (40, 30), 1, &rules, None));
         assert_eq!(
             added,
             vec![newer, older],
@@ -983,18 +998,23 @@ mod tests {
                 .unwrap();
             cloak.set_state_for_test(0);
         }
-        let removed = sim.apply_unit_sensor_remove(detector, (40, 30), 1, &rules, None);
+        let removed = resident_callbacks(|| {
+            sim.apply_unit_sensor_remove(detector, (40, 30), 1, &rules, None)
+        });
         assert_eq!(removed, vec![newer, older]);
         assert!(sim.sound_events.is_empty());
         assert!(
-            sim.apply_unit_sensor_remove(detector, (40, 30), 1, &rules, None)
-                .is_empty(),
+            resident_callbacks(|| {
+                sim.apply_unit_sensor_remove(detector, (40, 30), 1, &rules, None)
+            })
+            .is_empty(),
             "unit RemoveSensorsAt skips decrement and callbacks at nonpositive pre-count"
         );
         assert!(sim.sound_events.is_empty());
 
-        let building_removed =
-            sim.apply_building_sensor_remove(detector, (40, 30), 1, &rules, None);
+        let building_removed = resident_callbacks(|| {
+            sim.apply_building_sensor_remove(detector, (40, 30), 1, &rules, None)
+        });
         assert_eq!(building_removed, vec![newer, older]);
         let index = 30 * usize::from(sim.fog.width()) + 40;
         assert_eq!(

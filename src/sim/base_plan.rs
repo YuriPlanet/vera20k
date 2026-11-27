@@ -8,6 +8,8 @@ use std::hash::Hash;
 #[cfg(any(test, feature = "test-support"))]
 use std::hash::Hasher;
 
+use crate::rules::rule_policy::AiBasePolicy;
+
 /// One native 16-byte BasePlan node represented without pointer aliases.
 #[derive(
     Debug, Clone, Copy, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize,
@@ -213,12 +215,13 @@ impl BasePlanState {
     ///
     /// Native authority is `FUN_0050A490 @ 0x0050A490`, called by
     /// `BuildingClass__Limbo @ 0x00445880` before `TechnoClass__Limbo`.
+    /// The nonzero mode arm converts the matched defense at `0x0050A582`.
     pub(crate) fn invalidate_limbo_building(
         &mut self,
         building_type_index: i32,
         packed_cell: u32,
         is_base_defense: bool,
-        game_mode_nonzero: bool,
+        policy: AiBasePolicy,
     ) -> Option<usize> {
         let matched = self.nodes.iter().position(|node| {
             node.type_or_control == building_type_index && node.packed_cell == packed_cell
@@ -230,7 +233,7 @@ impl BasePlanState {
             }
         }
 
-        if is_base_defense && game_mode_nonzero {
+        if is_base_defense && policy == AiBasePolicy::ReplaceUnavailableNodes {
             self.nodes[matched].type_or_control = -1;
             self.nodes[matched].packed_cell = 0;
         }
@@ -249,20 +252,20 @@ impl BasePlanState {
     }
 
     /// Count a try-later exit against node `index` (`0x0042F380` returns the
-    /// incremented signed count); a skirmish drops the node once the count
+    /// incremented signed count); a nonzero mode drops the node once the count
     /// exceeds `maximum_failures` (`0x00445249..0x004452C3`, the ordered
     /// shift-left removal). Returns whether the node was dropped.
     pub(crate) fn count_placement_failure(
         &mut self,
         index: usize,
-        game_mode_nonzero: bool,
+        policy: AiBasePolicy,
         maximum_failures: i32,
     ) -> bool {
         let Some(node) = self.nodes.get_mut(index) else {
             return false;
         };
         node.retry_count = node.retry_count.wrapping_add(1);
-        if game_mode_nonzero && node.retry_count > maximum_failures {
+        if policy == AiBasePolicy::ReplaceUnavailableNodes && node.retry_count > maximum_failures {
             self.nodes.remove(index);
             return true;
         }
@@ -384,10 +387,14 @@ mod tests {
             ],
         };
 
-        for (is_defense, nonzero_mode) in [(false, true), (true, false)] {
+        let replacement = AiBasePolicy::ReplaceUnavailableNodes;
+        for (is_defense, policy) in [
+            (false, replacement),
+            (true, AiBasePolicy::RetainAuthoredNodes),
+        ] {
             let mut plan = original.clone();
             assert_eq!(
-                plan.invalidate_limbo_building(7, cell, is_defense, nonzero_mode),
+                plan.invalidate_limbo_building(7, cell, is_defense, policy),
                 Some(0)
             );
             assert_eq!(plan.nodes[0], original.nodes[0]);
@@ -399,7 +406,7 @@ mod tests {
         }
 
         let mut skirmish_defense = original;
-        skirmish_defense.invalidate_limbo_building(7, cell, true, true);
+        skirmish_defense.invalidate_limbo_building(7, cell, true, replacement);
         assert_eq!(skirmish_defense.nodes[0].type_or_control, -1);
         assert_eq!(skirmish_defense.nodes[0].packed_cell, 0);
         assert!(skirmish_defense.nodes[0].filled);
@@ -434,10 +441,11 @@ mod tests {
             ],
         };
 
+        let replacement = AiBasePolicy::ReplaceUnavailableNodes;
         let mut retail = source.clone();
-        assert!(!retail.count_placement_failure(1, true, 3));
+        assert!(!retail.count_placement_failure(1, replacement, 3));
         assert_eq!(retail.nodes[1].retry_count, 3);
-        assert!(retail.count_placement_failure(1, true, 3));
+        assert!(retail.count_placement_failure(1, replacement, 3));
         assert_eq!(
             retail
                 .nodes
@@ -449,16 +457,16 @@ mod tests {
 
         let mut equality = source.clone();
         equality.nodes[1].retry_count = 2;
-        assert!(!equality.count_placement_failure(1, true, 3));
+        assert!(!equality.count_placement_failure(1, replacement, 3));
         assert_eq!(equality.nodes[1].retry_count, 3);
 
         let mut campaign = source.clone();
-        assert!(!campaign.count_placement_failure(1, false, -100));
+        assert!(!campaign.count_placement_failure(1, AiBasePolicy::RetainAuthoredNodes, -100));
         assert_eq!(campaign.nodes[1].retry_count, 3);
 
         let mut negative = source.clone();
         negative.nodes[0].retry_count = 0;
-        assert!(negative.count_placement_failure(0, true, -1));
+        assert!(negative.count_placement_failure(0, replacement, -1));
         assert_eq!(
             negative
                 .nodes
@@ -470,8 +478,8 @@ mod tests {
 
         let mut wrapping = source;
         wrapping.nodes[0].retry_count = i32::MAX;
-        assert!(!wrapping.count_placement_failure(0, true, 3));
+        assert!(!wrapping.count_placement_failure(0, replacement, 3));
         assert_eq!(wrapping.nodes[0].retry_count, i32::MIN);
-        assert!(!wrapping.count_placement_failure(99, true, 3));
+        assert!(!wrapping.count_placement_failure(99, replacement, 3));
     }
 }

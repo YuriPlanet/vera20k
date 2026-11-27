@@ -1,12 +1,18 @@
-//! The live protocol-2 Queue_AI visit, from ProcessNetwork6475F0 through
-//! SendOutList649CA0 and Wait_For_Players648710. Simulation owns commands;
-//! this process-session owner retains only transport, packet exchange and the
-//! current post-Logic visit while the client continues servicing its UI.
+//! One match's live command session, in one of two modes chosen once at
+//! install ([`relay_clock`], handed to `LiveCommandSession::new`):
 //!
-//! Direct UDP LAN is an explicit transport adaptation; retail LAN selected
-//! IPX sockets while this shared protocol-2 command behavior is retained.
-//! Native wait-dialog/cancel, timeout recovery and diagnostic drawing remain
-//! client-session work; this owner never invents a wait timeout or peer exit.
+//! - LAN, and an online match with one human that the relay does not order,
+//!   run the protocol-2 Queue_AI visit from ProcessNetwork6475F0 through
+//!   SendOutList649CA0 and Wait_For_Players648710. Direct UDP replaces retail
+//!   LAN's IPX sockets. The wait dialog, cancel and timeout recovery belong to
+//!   `app::match_runtime::network_match`.
+//! - Every other online match runs `sequenced`: it assembles the relay's
+//!   sealed timeline, turns relay departures and unreadable batches into EXIT
+//!   or EVENT_REMOVEPLAYER records, and ends the match on relay absence,
+//!   watcher silence or a relay record this build cannot read.
+//!
+//! Simulation owns the commands; this session keeps the transport, packet
+//! exchange and the current post-Logic visit while the client services its UI.
 
 use std::io;
 use std::net::SocketAddrV4;
@@ -17,9 +23,12 @@ mod startup;
 mod timing;
 pub use sequenced::{
     CommandDeliveryTrace, DeliveryCounters, MatchConnectionChange, MatchPauseChange,
-    MatchSpeedChange, MultiplayerPauseStatus, SequencedError, SequencedTiming,
+    MatchSpeedChange, MultiplayerPauseStatus, NarrativeHold, SequencedError, SequencedTiming,
 };
 pub use startup::{StartupAgreement, StartupError};
+/// The share of each second the relay lets a player's simulation take,
+/// which online render pacing leaves it.
+pub use vera20k_relay_protocol::SUSTAIN_PERCENT;
 /// The relay's turn length, which online playout follows.
 pub use vera20k_relay_protocol::turn_frames;
 /// The relay link measurements a match's network report reads.
@@ -33,7 +42,7 @@ use super::command_exchange::{
 };
 use super::lockstep::NetworkSendPolicy;
 use super::reliable::{Delivery, LanConnections, RetryTiming};
-use super::udp::{LanUdpTransport, UdpServiceReport};
+use super::udp::{LanUdpTransport, OrderingCertificate, UdpServiceReport};
 
 // Ordinary648060 passes180 for either transport mode.
 // Both are6C8C40 wall-clock buckets (timeGetTime>>4), not simulation frames.
@@ -43,7 +52,8 @@ const WAIT_RECEIVE_BUDGET: usize = 64;
 
 /// ProcessNetwork647919..647954 indexes the current GameMode's row at
 /// 837340. The relay changes physical routing, not this timing selection.
-/// Source: original gamemd.exe instructions and the row bytes.
+/// Source: original gamemd.exe instructions and the row bytes. VERA: only a
+/// WOL match can run on the relay's clock ([`relay_clock`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LiveCommandMode {
     Lan,
@@ -58,13 +68,65 @@ pub enum NetworkRecoveryStatus {
     CatchingUp { frames: u32 },
 }
 
+/// One GameMode's row of Wait_For_Players' timing table at 837340 (16 bytes
+/// a GameMode: LAN is row 3, WOL row 4), in 6C8C40 wall-clock buckets. The
+/// initial wait (647919..647954) passes +0, +4 and +C; the ordinary one
+/// (64800E..648067) passes 180, max(3 * response time, +8) and +C.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WaitTiming {
+    /// +0: the initial wait's probe interval.
+    pub initial_probe: i32,
+    /// +4: the initial wait's dialog delay.
+    pub initial_dialog: i32,
+    /// +8: the ordinary wait's dialog-delay floor.
+    pub dialog_floor: i32,
+    /// +C: the timeout.
+    pub timeout: i32,
+}
+
 impl LiveCommandMode {
-    fn initial_probe_interval(self) -> i32 {
+    pub const fn wait_timing(self) -> WaitTiming {
         match self {
-            Self::Lan => 60,
-            Self::Wol => 120,
+            Self::Lan => WaitTiming {
+                initial_probe: 60,
+                initial_dialog: 900,
+                dialog_floor: 420,
+                timeout: 2400,
+            },
+            Self::Wol => WaitTiming {
+                initial_probe: 120,
+                initial_dialog: 1800,
+                dialog_floor: 720,
+                timeout: 7200,
+            },
         }
     }
+}
+
+/// VERA: the lobby's certificate when the relay orders this match, which then
+/// runs on the relay's clock (send rate 1, `SequencedSession`). Install calls
+/// this once, before the start agreement hashes the timing, and hands the
+/// answer to [`LiveCommandSession::new`]. Only a WOL match runs there, and
+/// only when its certificate orders it (`OrderingCertificate::relay_orders`).
+/// `houses` counts the original admission; a certificate naming another number
+/// of sources never starts. `SequencedSession::new` checks which sources.
+pub fn relay_clock(
+    mode: LiveCommandMode,
+    transport: &LanUdpTransport,
+    houses: usize,
+) -> Result<Option<OrderingCertificate>, StartupError> {
+    let Some(bytes) = transport
+        .ordering_certificate()
+        .filter(|_| mode == LiveCommandMode::Wol)
+    else {
+        return Ok(None);
+    };
+    let certificate =
+        OrderingCertificate::parse(&bytes).map_err(|_| StartupError::InvalidAdmission)?;
+    if certificate.sources_mask.count_ones() as usize != houses {
+        return Err(StartupError::ClockRoster);
+    }
+    Ok(Some(certificate).filter(OrderingCertificate::relay_orders))
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -121,8 +183,8 @@ pub enum LiveWaitKind {
     Ordinary,
 }
 
-/// Diagnostic projection of the existing retained visit. This does not
-/// distinguish backpressure causes; queue and mirror facts remain authoritative.
+/// Diagnostic projection of the retained visit. It does not distinguish
+/// backpressure causes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LiveCommandPhase {
     InitialBarrier,
@@ -151,9 +213,9 @@ struct CurrentFrame {
     phase: FramePhase,
 }
 
-/// One established match's live command channel. CRC history remains with
-/// the existing caller's checksum owner. A retained frame never re-runs
-/// Logic, recreates an encoded packet, or owns a second gameplay queue.
+/// One established match's live command channel; `FrameChecksumState`
+/// (`sim::command_queue`) keeps the checksum history. A retained frame never
+/// re-runs Logic or recreates an encoded packet.
 #[derive(Debug)]
 pub struct LiveCommandSession {
     transport: LanUdpTransport,
@@ -167,10 +229,11 @@ pub struct LiveCommandSession {
     current: Option<CurrentFrame>,
     last_service: Option<UdpServiceReport>,
     sequenced: Option<sequenced::SequencedSession>,
-    sequenced_failed: bool,
 }
 
 impl LiveCommandSession {
+    /// `clock` is [`relay_clock`]'s answer for this match, the one the
+    /// installed timing already follows.
     pub fn new(
         agreement: StartupAgreement,
         transport: LanUdpTransport,
@@ -178,6 +241,7 @@ impl LiveCommandSession {
         initial_seed: u32,
         frame_send_rate: NonZeroU32,
         mode: LiveCommandMode,
+        clock: Option<OrderingCertificate>,
     ) -> Result<Self, LiveCommandError> {
         if local_house < 0 {
             return Err(LiveCommandError::InvalidLocalHouse(local_house));
@@ -201,25 +265,22 @@ impl LiveCommandSession {
             houses.push(house);
         }
         // Intentional modern online policy: solo AI needs no command lead
-        // time. The original admission is immutable; losing remote players
-        // later must never switch an existing multiplayer game to local input.
-        let policy = if mode == LiveCommandMode::Wol && agreement.is_original_singleton() {
+        // time, unless the lobby has the relay order the match, so that others
+        // can watch the one person in it watch AI play (`relay_clock`). The
+        // original admission is immutable; losing remote players later must
+        // never switch an existing multiplayer game to local input.
+        let solo =
+            mode == LiveCommandMode::Wol && agreement.original_houses() == 1 && clock.is_none();
+        let policy = if solo {
             NetworkSendPolicy::Local
         } else {
             NetworkSendPolicy::FrameSendRate2 { frame_send_rate }
         };
-        let sequenced = if mode == LiveCommandMode::Wol
-            && !agreement.is_original_singleton()
-            && transport.ordering_certificate().is_some()
-        {
-            Some(sequenced::SequencedSession::new(
-                &agreement,
-                &transport,
-                local_house,
-            )?)
-        } else {
-            None
-        };
+        let sequenced = clock
+            .map(|clock| {
+                sequenced::SequencedSession::new(&agreement, &transport, local_house, &clock)
+            })
+            .transpose()?;
         let startup = startup::StartupHandshake::new(
             agreement,
             local_house,
@@ -239,7 +300,6 @@ impl LiveCommandSession {
             current: None,
             last_service: None,
             sequenced,
-            sequenced_failed: false,
         })
     }
 
@@ -331,11 +391,9 @@ impl LiveCommandSession {
     }
 
     pub fn has_terminal_network_error(&self) -> bool {
-        self.sequenced_failed
-            || self
-                .sequenced
-                .as_ref()
-                .is_some_and(|session| session.failed())
+        self.sequenced
+            .as_ref()
+            .is_some_and(|session| session.failed())
     }
 
     /// Highest complete immutable frame buffered by this client. The relay's
@@ -395,21 +453,28 @@ impl LiveCommandSession {
     }
 
     /// Shared pause is a relay timeline control, independent of local menus.
-    /// Unsupported or mixed-version matches leave it unavailable.
+    /// A direct LAN match has none, and one spread over several relays
+    /// leaves it unavailable.
     pub fn multiplayer_pause(&self) -> Option<MultiplayerPauseStatus> {
-        let mut status = self.sequenced.as_ref()?.pause_status();
-        status.available &= !self.sequenced_failed;
-        Some(status)
+        self.sequenced
+            .as_ref()
+            .map(|session| session.pause_status())
     }
 
     /// Request an explicit state. Network service retries the same request;
     /// canonical receipt, never this button press, determines the boundary.
     pub fn request_multiplayer_pause(&mut self, paused: bool) -> bool {
-        !self.sequenced_failed
-            && self
-                .sequenced
-                .as_mut()
-                .is_some_and(|session| session.request_pause(paused))
+        self.sequenced
+            .as_mut()
+            .is_some_and(|session| session.request_pause(paused))
+    }
+
+    /// Authored presentation is a deliberate local hold on every player.
+    /// Only the host controls the shared relay clock for this boundary.
+    pub fn set_narrative_hold(&mut self, hold: Option<NarrativeHold>) {
+        if let Some(session) = &mut self.sequenced {
+            session.set_narrative_hold(hold);
+        }
     }
 
     /// Called only after a confirmed UI exit has queued its native EXIT.
@@ -529,9 +594,7 @@ impl LiveCommandSession {
         now_wall_bucket: u32,
     ) {
         self.service_transport(now_wall_bucket);
-        if !self.sequenced_failed
-            && let Some(session) = &mut self.sequenced
-        {
+        if let Some(session) = &mut self.sequenced {
             session.service_pending_commands(
                 &mut self.transport,
                 queues,
@@ -556,6 +619,14 @@ impl LiveCommandSession {
             },
             0,
         )
+    }
+
+    pub fn send_terminal_global(
+        &mut self,
+        payload: &[u8],
+        recipients: &[SocketAddrV4],
+    ) -> io::Result<()> {
+        self.transport.send_terminal_global(payload, recipients)
     }
 
     pub fn peers(&self) -> &[CommandPeerProgress] {
@@ -602,32 +673,6 @@ impl LiveCommandSession {
         self.transport.response_time()
     }
 
-    /// MainTick55D5A4..55D7C2 adds10ms at each quarter-window lag
-    /// threshold in WOL. Peer lag comes from Receive64A3F4/652110, not a
-    /// new clock or independently maintained progress table.
-    pub fn pacing_delay_millis(&self, max_ahead: i32) -> u32 {
-        if self.uses_sequenced_lockstep() {
-            return 0;
-        }
-        if self.mode != LiveCommandMode::Wol || max_ahead <= 30 {
-            return 0;
-        }
-        let lag = self
-            .exchange
-            .peers()
-            .iter()
-            .map(|peer| peer.lag_frames())
-            .fold(0, i32::max);
-        if lag == 0 {
-            return 0;
-        }
-        [max_ahead / 4, max_ahead / 2, max_ahead.wrapping_mul(3) / 4]
-            .into_iter()
-            .filter(|threshold| lag >= *threshold)
-            .count() as u32
-            * 10
-    }
-
     pub fn configure_precalculated_timing(&mut self, max_ahead: i32, frames_per_second: i32) {
         self.timing
             .configure_precalculated(max_ahead, frames_per_second);
@@ -646,6 +691,9 @@ impl LiveCommandSession {
     }
 
     /// Keep the private connection and its progress row in the same lifetime.
+    /// `new` builds the progress rows from the transport's connections, and
+    /// this session owns that transport and removes a connection only here,
+    /// so a row this removed always had its connection.
     pub fn remove_peer(&mut self, house: i8) -> bool {
         if !self.exchange.remove_peer(house) {
             return false;
@@ -653,27 +701,25 @@ impl LiveCommandSession {
         if !self.uses_sequenced_lockstep() {
             self.startup.abort();
         }
+        let connected = self
+            .transport
+            .connections_mut()
+            .remove_peer(i32::from(house));
         assert!(
-            self.transport
-                .connections_mut()
-                .remove_peer(i32::from(house)),
+            connected,
             "the admitted connection and command progress share one roster"
         );
         true
     }
 
-    /// Read-only reference to the immutable install-time certificate. Transport
-    /// controls remain private to the existing startup/reliability owners.
-    pub fn startup_agreement(&self) -> &StartupAgreement {
-        self.startup.agreement()
-    }
-
     /// A kick/cancel before release cannot elect a smaller initial set. The
     /// snapshot remains immutable even while ordinary cleanup removes sockets.
-    /// A failed startup remains uncertified throughout that cleanup.
+    /// A failed startup remains uncertified throughout that cleanup. A relay
+    /// match that ran once stays released, even while a relay that lost its
+    /// configuration (NotConfigured) has its clock stopped.
     pub fn startup_pending(&self) -> bool {
         if let Some(session) = &self.sequenced {
-            return !session.started();
+            return !session.ever_started();
         }
         !self.startup.released()
     }
@@ -744,7 +790,7 @@ impl LiveCommandSession {
     }
 
     ///64B410 selects the first minimum signed frame from the same progress
-    ///rows that gate dispatch. No separate stalled-peer frame table is kept.
+    ///rows that gate dispatch.
     pub fn lowest_frame_peer(&self) -> Option<&CommandPeerProgress> {
         self.exchange.peers().iter().reduce(|first, next| {
             if next.frame() < first.frame() {
@@ -786,12 +832,8 @@ impl LiveCommandSession {
         now_wall_bucket: u32,
         now_millis: u32,
         latency_fudge: i32,
-        logic_frame_rate: u32,
     ) -> Result<NetworkQueuePass, LiveCommandError> {
         self.last_service = None;
-        if self.sequenced_failed {
-            return Err(LiveCommandError::Failed);
-        }
         if let Some(session) = &mut self.sequenced {
             retain_service_report(
                 &mut self.last_service,
@@ -800,17 +842,13 @@ impl LiveCommandSession {
             // Transport-only service receives the same wall bucket. Do not
             // alternate raw milliseconds with its rounded value: a later
             // rounded sample can otherwise underflow sequenced retry timers.
-            let result = session.poll(
+            // The session keeps any failure it reports.
+            return session.poll(
                 &mut self.transport,
                 queues,
                 context,
                 now_wall_bucket.wrapping_shl(4),
             );
-            if let Err(error) = &result {
-                session.record_failure(error);
-            }
-            self.sequenced_failed = result.is_err();
-            return result;
         }
         let result = self.poll_inner(
             queues,
@@ -819,7 +857,6 @@ impl LiveCommandSession {
             now_wall_bucket,
             now_millis,
             latency_fudge,
-            logic_frame_rate,
         );
         if result.is_err()
             && let Some(current) = &mut self.current
@@ -837,7 +874,6 @@ impl LiveCommandSession {
         now: u32,
         now_millis: u32,
         latency_fudge: i32,
-        logic_frame_rate: u32,
     ) -> Result<NetworkQueuePass, LiveCommandError> {
         if self.startup.failed() {
             return Err(StartupError::Aborted.into());
@@ -904,15 +940,18 @@ impl LiveCommandSession {
                     response_time_at_entry,
                     last_probe,
                 } => {
-                    if probe_due(last_probe, now, self.mode.initial_probe_interval()) {
-                        self.current.as_mut().unwrap().phase = FramePhase::InitialBarrier {
-                            entered_at,
-                            response_time_at_entry,
-                            last_probe: now,
-                        };
+                    if probe_due(last_probe, now, self.mode.wait_timing().initial_probe) {
+                        self.current = Some(CurrentFrame {
+                            phase: FramePhase::InitialBarrier {
+                                entered_at,
+                                response_time_at_entry,
+                                last_probe: now,
+                            },
+                            ..current
+                        });
                         self.send_probe(context.frame, max_ahead)?;
                     }
-                    self.service_and_receive(now, queues, logic_frame_rate)?;
+                    self.service_and_receive(now, queues)?;
                     self.flush_startup();
                     if !self.startup.complete() || !self.exchange.initial_ready() {
                         return Ok(NetworkQueuePass::Waiting);
@@ -922,11 +961,14 @@ impl LiveCommandSession {
                     //647B2E/647B32: only a successful initial wait clears
                     //manager response histories, after the peer-frame clear.
                     self.transport.reset_response_time(true);
-                    self.current.as_mut().unwrap().phase = FramePhase::Sending {
-                        entered_at: now,
-                        response_time_at_entry: self.transport.response_time(),
-                        last_probe: now,
-                    };
+                    self.current = Some(CurrentFrame {
+                        phase: FramePhase::Sending {
+                            entered_at: now,
+                            response_time_at_entry: self.transport.response_time(),
+                            last_probe: now,
+                        },
+                        ..current
+                    });
                 }
                 FramePhase::Sending {
                     entered_at,
@@ -969,14 +1011,17 @@ impl LiveCommandSession {
                     match sent {
                         SendPoll::Backpressure => {
                             if probe_due(last_probe, now, ORDINARY_PROBE_INTERVAL) {
-                                self.current.as_mut().unwrap().phase = FramePhase::Sending {
-                                    entered_at,
-                                    response_time_at_entry,
-                                    last_probe: now,
-                                };
+                                self.current = Some(CurrentFrame {
+                                    phase: FramePhase::Sending {
+                                        entered_at,
+                                        response_time_at_entry,
+                                        last_probe: now,
+                                    },
+                                    ..current
+                                });
                                 self.send_probe(context.frame, max_ahead)?;
                             }
-                            self.service_and_receive(now, queues, logic_frame_rate)?;
+                            self.service_and_receive(now, queues)?;
                             return Ok(NetworkQueuePass::Waiting);
                         }
                         SendPoll::OffCadence => {
@@ -992,11 +1037,14 @@ impl LiveCommandSession {
                             return Ok(self.finish(NetworkQueuePass::SkipDispatch));
                         }
                         SendPoll::Complete { .. } => {
-                            self.current.as_mut().unwrap().phase = FramePhase::Waiting {
-                                entered_at,
-                                response_time_at_entry,
-                                last_probe,
-                            };
+                            self.current = Some(CurrentFrame {
+                                phase: FramePhase::Waiting {
+                                    entered_at,
+                                    response_time_at_entry,
+                                    last_probe,
+                                },
+                                ..current
+                            });
                         }
                     }
                 }
@@ -1006,14 +1054,17 @@ impl LiveCommandSession {
                     last_probe,
                 } => {
                     if probe_due(last_probe, now, ORDINARY_PROBE_INTERVAL) {
-                        self.current.as_mut().unwrap().phase = FramePhase::Waiting {
-                            entered_at,
-                            response_time_at_entry,
-                            last_probe: now,
-                        };
+                        self.current = Some(CurrentFrame {
+                            phase: FramePhase::Waiting {
+                                entered_at,
+                                response_time_at_entry,
+                                last_probe: now,
+                            },
+                            ..current
+                        });
                         self.send_probe(context.frame, max_ahead)?;
                     }
-                    self.service_and_receive(now, queues, logic_frame_rate)?;
+                    self.service_and_receive(now, queues)?;
                     return if self
                         .exchange
                         .frame_wait(context.frame as i32, max_ahead)
@@ -1060,7 +1111,7 @@ impl LiveCommandSession {
         // Local scheduling remains fixed by the original solo admission.
         if self.policy != NetworkSendPolicy::Local {
             self.policy = NetworkSendPolicy::FrameSendRate2 {
-                frame_send_rate: NonZeroU32::new(u32::from(rate.get())).unwrap(),
+                frame_send_rate: NonZeroU32::from(rate),
             };
         }
         if frame != 0 && frame & 127 == 0 {
@@ -1149,7 +1200,6 @@ impl LiveCommandSession {
         &mut self,
         now: u32,
         queues: &mut NetworkCommandQueues<'_>,
-        logic_frame_rate: u32,
     ) -> Result<(), LiveCommandError> {
         //648B94 and649518 ignore the manager's failure return and continue
         //receiving/checking progress. Neither retry exhaustion nor a socket
@@ -1167,27 +1217,14 @@ impl LiveCommandSession {
             let control = self
                 .startup
                 .receive(source_house, &message.payload, message.delivery)?;
-            let advanced = if control {
-                false
-            } else {
+            if !control {
                 self.exchange.receive(
                     source_house,
                     &message.payload,
                     self.initial_seed,
                     queues,
                     elapsed,
-                )?
-            };
-            if advanced && self.mode == LiveCommandMode::Wol {
-                self.exchange.record_peer_lag(
-                    source_house,
-                    self.current.expect("active frame").context.frame,
-                    logic_frame_rate,
-                    self.transport
-                        .connections()
-                        .mean_response_time(i32::from(source_house))
-                        .unwrap_or(0),
-                );
+                )?;
             }
             //649514..649518 services again after each private message. The
             //64-message budget still bounds this wait visit.

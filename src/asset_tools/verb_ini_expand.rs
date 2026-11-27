@@ -15,7 +15,7 @@ pub fn run(
     source_only: bool,
 ) -> Result<Value, ErrorReport> {
     let fail = |error: String| {
-        ErrorReport { error, hint: Some("This checks INI expansion, not MO gameplay. --all-mixes widens only this tool's archive search.".into()) }
+        ErrorReport { error, hint: Some("This checks INI expansion, not gameplay compatibility. --all-mixes widens only this tool's archive search.".into()) }
     };
     let raw = assets
         .resolve_ref(name)
@@ -77,7 +77,13 @@ mod tests {
         )]);
         dir.write("custom.mix", &mix);
         assert!(
-            crate::asset_tools::root::open_manager(dir.path(), false, Default::default()).is_err()
+            crate::asset_tools::root::open_manager(
+                dir.path(),
+                false,
+                Default::default(),
+                &crate::util::archive_names::ArchiveNames::default(),
+            )
+            .is_err()
         );
         let normal = crate::asset_tools::root::open_ini_probe_manager(dir.path(), false).unwrap();
         assert!(run(&normal, "root.ini", true, 64, false, true).is_err());

@@ -7,7 +7,7 @@
 //! and colour indices spawn.ini fields address, and the campaigns a
 //! single-player launch may start. Every value comes from the
 //! owner the match itself uses: [`agreement::version`], the process
-//! [`ProcessAssets`] rules digest for the Battle mode, and
+//! [`ProcessAssets`] rules digest for the loaded default Skirmish mode, and
 //! [`crate::map::source::load_network_map_ini`] for the map, so two
 //! installations whose probes agree pass each other's agreement.
 //!
@@ -18,10 +18,9 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use serde::Serialize;
 
-use crate::app::frontend::cncnet_spawn::{
-    max_spawn_color_index, max_spawn_country_index, spawn_battle_mode, spawn_modes,
-};
+use crate::app::frontend::cncnet_spawn::{max_spawn_color_index, max_spawn_country_index};
 use crate::app::process_assets::ProcessAssets;
+use crate::app::rules_parts::RulesParts;
 use crate::app::shell_network_setup::agreement;
 use crate::assets::asset_manager::{AssetManager, MediaArchiveMode};
 use crate::assets::csf_file::CsfFile;
@@ -30,17 +29,23 @@ use crate::assets::csf_file::CsfFile;
 pub(crate) struct ProbeGameMode {
     pub id: i32,
     pub rules_digest: String,
+    /// `rules_digest` in parts (docs/spawn.md, "Rules parts").
+    pub rules_parts: RulesParts,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub(crate) struct ProbeReport {
-    /// The multiplayer agreement's version: package version, network build
-    /// hash and the Ares/Phobos/NPatch feature bits. `ExpectedVersion`.
+    /// The multiplayer agreement's version: package version and network
+    /// build hash. `ExpectedVersion`.
     pub version: String,
     pub build_identity: BuildIdentity,
-    /// The multiplayer rules agreement for spawn Battle launches
-    /// (`MPBattleMD.ini`). `ExpectedRulesDigest`.
+    /// The multiplayer rules agreement for the loaded default Skirmish mode:
+    /// eligible id 1, else the first eligible row. `ExpectedRulesDigest`.
     pub rules_digest: String,
+    /// `rules_digest` in parts, which say what differs when two games'
+    /// digests do (docs/spawn.md, "Rules parts"). An older build's report
+    /// lacks the field.
+    pub rules_parts: RulesParts,
     /// `GameMode=` values and each one's agreement: the digest covers the mode's
     /// INI, so `ExpectedRulesDigest` must come from the row the launch selects.
     pub game_modes: Vec<ProbeGameMode>,
@@ -53,8 +58,22 @@ pub(crate) struct ProbeReport {
     /// Start waypoints the map authors (`[SpawnLocations]` 0..N-1); null
     /// without `map`.
     pub max_start_waypoints: Option<i32>,
-    /// The campaign catalog (`BATTLEMD.INI [Battles]`), in list order.
+    /// The campaign catalog (`[Battles]` of the BATTLEMD file the INI roots
+    /// name), in list order.
     pub campaigns: Vec<ProbeCampaign>,
+    /// This build makes random-map files: `--generate-map` on the desktop,
+    /// `generate_map()` in the browser (docs/spawn.md, "Random maps"). An
+    /// older build's report lacks the field, and that build would start the
+    /// game for `--generate-map` instead.
+    pub generate_map: bool,
+    /// The most houses a launch with one human and no `[Relay]` seats
+    /// (`SKIRMISH_MAX_SLOT_COUNT`); every other launch seats at most thirty.
+    /// An older build's report lacks the field, and that build seats thirty.
+    pub max_offline_houses: u8,
+    /// This build reads players who share an explicit `[SpawnLocations]`
+    /// start as one House (docs/spawn.md, "Shared starts"). An older build's
+    /// report lacks the field, and that build refuses a shared start.
+    pub shared_starts: bool,
 }
 
 /// One `[Battles]` campaign of the game data, as the campaign startup reads it.
@@ -63,8 +82,8 @@ pub(crate) struct ProbeCampaign {
     pub id: String,
     /// The first mission's file name: spawn.ini `Scenario` with `IsSinglePlayer`.
     pub scenario: String,
-    /// That mission's `MISSIONMD.INI UIName` through the game's string
-    /// table; empty when the mission has no name.
+    /// That mission's `UIName` in the MISSIONMD file the INI roots name,
+    /// through the game's string table; empty when the mission has no name.
     pub name: String,
     /// `Description=` through the string table, or as written when it names
     /// no label; empty when absent.
@@ -72,8 +91,9 @@ pub(crate) struct ProbeCampaign {
     /// `DebugOnly=yes`: the retail campaign menu does not offer it.
     pub debug_only: bool,
     /// The missions a won campaign passes through, as victory continues it:
-    /// `scenario`, then the `MAPSELMD.INI` choice after each mission, until a
-    /// mission is `OneTimeOnly`/`EndOfGame` or names no next stage.
+    /// `scenario`, then the choice in the MAPSELMD file the INI roots name
+    /// after each mission, until a mission is `OneTimeOnly`/`EndOfGame` or
+    /// names no next stage.
     pub missions: Vec<ProbeMission>,
 }
 
@@ -94,12 +114,32 @@ pub(crate) struct BuildIdentity {
     pub package_version: String,
     /// Hash of the multiplayer sources and enabled Cargo features.
     pub network_build: String,
+    /// Informational: the extension features this build has, which
+    /// `network_build` covers.
     pub phobos: bool,
     pub npatch: bool,
-    /// Informational; not part of `version`.
     pub verax: bool,
     /// Informational: the build's platform.
     pub target: &'static str,
+    /// Informational: the commit this build was made from, as its builder
+    /// named it (`VERA20K_COMMIT`); null when none was named.
+    pub commit: Option<String>,
+}
+
+/// `vera20k --version` and the browser's `version()` (docs/spawn.md,
+/// "Version"): the probe's `version` and `build_identity`, which need no game
+/// folder.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub(crate) struct VersionReport {
+    pub version: String,
+    pub build_identity: BuildIdentity,
+}
+
+pub(crate) fn version_report() -> VersionReport {
+    VersionReport {
+        version: agreement::version(),
+        build_identity: build_identity(),
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -180,61 +220,127 @@ pub(crate) fn build_identity() -> BuildIdentity {
         package_version: env!("CARGO_PKG_VERSION").to_owned(),
         network_build: env!("VERA20K_NETWORK_BUILD").to_owned(),
         phobos: crate::rules::PHOBOS_ENABLED,
-        npatch: crate::rules::NPATCH_ENABLED,
+        // Every build carries NPatch; the game's data decides whether it plays.
+        npatch: true,
         verax: crate::rules::VERAX_ENABLED,
         target: if cfg!(all(target_arch = "wasm32", target_os = "unknown")) {
             "wasm32"
         } else {
             std::env::consts::OS
         },
+        commit: Some(env!("VERA20K_BUILD_COMMIT"))
+            .filter(|commit| !commit.is_empty())
+            .map(str::to_owned),
     }
 }
 
-/// Load the process sources as startup does (config INI roots, personal
-/// rules, neutral archives) and report them; `map` is a path to the
-/// launcher's map file, and `mod_dir` the folder of the mod the launch would
-/// read (`mods::launch_dir`).
+/// The process sources startup loads (config INI roots, personal rules,
+/// neutral archives) from the game folder and the selected `active_mod`, with the
+/// startup Rules and shell projection their first load returns
+/// (`ProcessAssets::initialize_sources_if_needed`). `load_audio_index` reads
+/// the audio bag's index too, as startup does; it costs a hash of the bag.
+pub(crate) fn load_process_sources(
+    config: &crate::util::config::GameConfig,
+    personal_rules: crate::rules::personal_rules::PersonalRules,
+    media_archive_mode: MediaArchiveMode,
+    active_mod: Option<crate::app::mods::ActiveMod>,
+    ares_setting: crate::util::ares_launch::AresSetting,
+    kratos_setting: crate::util::kratos_launch::KratosSetting,
+    load_audio_index: bool,
+) -> Result<(
+    ProcessAssets,
+    Option<crate::rules::ruleset::RuleSet>,
+    Option<crate::rules::ini_parser::IniFile>,
+)> {
+    let (resources, ares_setting, kratos_setting) = crate::app::mods::resources_for(
+        active_mod.as_ref(),
+        &config.ini,
+        ares_setting,
+        kratos_setting,
+    )
+    .map_err(anyhow::Error::msg)?;
+    let mut assets = AssetManager::with_mod_and_ares(
+        &config.paths.ra2_dir,
+        resources.mod_folder.as_deref(),
+        media_archive_mode,
+        ares_setting,
+        &resources.archives,
+    )
+    .and_then(|assets| assets.with_resource_config(&resources))
+    .context("could not load the game archives")?;
+    assets.set_kratos_setting(kratos_setting);
+    let mut process = ProcessAssets::new(media_archive_mode, load_audio_index)
+        .with_resources(resources)
+        .with_mod_name(active_mod.map(|active| active.folder))
+        .with_personal_rules(personal_rules)
+        .with_ares_setting(ares_setting)
+        .with_kratos_setting(kratos_setting);
+    // Startup reads this game's INIs as its launch does
+    // (`rules::ares_switch::ares_way`); a caller that plays the game says so
+    // after (`AssetManager::open_for_play`).
+    let (startup_rules, projection) = {
+        let _ares_way = crate::rules::ares_switch::read_ares_way(assets.ships_ares());
+        process.initialize_sources_if_needed(&assets)
+    }
+    .map_err(anyhow::Error::msg)
+    .context("could not load the retail rules")?;
+    // Startup registers these before any match computes its agreement.
+    let _ = assets.register_neutral_archives();
+    process.return_from_loading(assets);
+    Ok((process, startup_rules, projection))
+}
+
+/// Load the process sources as startup does ([`load_process_sources`]) and
+/// report them; `map` is a path to the launcher's map file, and `active_mod`
+/// the mod the launch would read (`mods::launch_mod`).
 pub(crate) fn probe(
     config: &crate::util::config::GameConfig,
     personal_rules: crate::rules::personal_rules::PersonalRules,
     media_archive_mode: MediaArchiveMode,
     map: Option<&str>,
-    mod_dir: Option<std::path::PathBuf>,
+    active_mod: Option<crate::app::mods::ActiveMod>,
     ares_setting: crate::util::ares_launch::AresSetting,
+    kratos_setting: crate::util::kratos_launch::KratosSetting,
 ) -> Result<ProbeReport> {
     let root = &config.paths.ra2_dir;
-    let mut assets =
-        AssetManager::with_mod_and_ares(root, mod_dir.as_deref(), media_archive_mode, ares_setting)
-            .and_then(|assets| assets.with_ini_roots(&config.ini))
-            .context("could not load the game archives")?;
-    let mut process =
-        ProcessAssets::new_with_ini_config(media_archive_mode, true, config.ini.clone())
-            .with_personal_rules(personal_rules)
-            .with_mod_dir(mod_dir)
-            .with_ares_setting(ares_setting);
-    let (mut startup_rules, projection) = process
-        .initialize_sources_if_needed(&assets)
-        .map_err(anyhow::Error::msg)
-        .context("could not load the retail rules")?;
-    // Startup registers these before any match computes its agreement.
-    let _ = assets.register_neutral_archives();
-    process.return_from_loading(assets);
-    let rules_digest = process
-        .multiplayer_rules_digest(&spawn_battle_mode().override_file)
-        .map_err(anyhow::Error::msg)
-        .context("could not digest the multiplayer rules")?;
-    let game_modes = spawn_modes()
-        .map(|mode| {
-            process
-                .multiplayer_rules_digest(&mode.override_file)
-                .map(|rules_digest| ProbeGameMode {
-                    id: mode.id,
-                    rules_digest,
-                })
-        })
+    let (mut process, mut startup_rules, projection) = load_process_sources(
+        config,
+        personal_rules,
+        media_archive_mode,
+        active_mod,
+        ares_setting,
+        kratos_setting,
+        true,
+    )?;
+    let assets = process.manager().context("retail sources missing")?;
+    assets.open_for_play();
+    let modes = crate::skirmish_modes::skirmish_modes_from_assets(assets)?;
+    let default_mode = crate::skirmish_modes::default_skirmish_mode(&modes)
+        .context("the selected mode catalog has no Skirmish game mode")?;
+    // The default mode first, then each mode; the parts read each source
+    // once for all of them.
+    let files: Vec<&str> = std::iter::once(default_mode)
+        .chain(&modes)
+        .map(|mode| mode.override_file.as_str())
+        .collect();
+    let digests = files
+        .iter()
+        .map(|file| process.multiplayer_rules_digest(file))
         .collect::<Result<Vec<_>, _>>()
+        .and_then(|digests| Ok((digests, process.multiplayer_rules_parts(&files)?)))
         .map_err(anyhow::Error::msg)
         .context("could not digest the multiplayer rules")?;
+    let mut digests = digests.0.into_iter().zip(digests.1);
+    let (rules_digest, rules_parts) = digests.next().context("no default mode")?;
+    let game_modes = modes
+        .iter()
+        .zip(digests)
+        .map(|(mode, (rules_digest, rules_parts))| ProbeGameMode {
+            id: mode.id,
+            rules_digest,
+            rules_parts,
+        })
+        .collect();
     // The Session Country array and PrepareSession's Country bodies, as the
     // shell reads them before a multiplayer start; the digested sources do
     // not change.
@@ -285,12 +391,16 @@ pub(crate) fn probe(
         version: agreement::version(),
         build_identity: build_identity(),
         rules_digest,
+        rules_parts,
         game_modes,
         max_start_waypoints: map.as_ref().map(|map| map.start_waypoints),
         map: map.map(|map| map.map),
         countries,
         colors,
         campaigns,
+        generate_map: true,
+        max_offline_houses: crate::skirmish_launch::SKIRMISH_MAX_SLOT_COUNT as u8,
+        shared_starts: true,
     })
 }
 
@@ -338,8 +448,8 @@ fn country_catalog<'a>(
 }
 
 /// The process campaign registry with each entry's presentation fields: the
-/// same `BATTLEMD.INI` selection, `MISSIONMD.INI` and `ra2md.csf` the
-/// campaign startup and loading screen use.
+/// same selection of the BATTLEMD/MISSIONMD/MAPSELMD file the INI roots name,
+/// and `ra2md.csf`, that the campaign startup and loading screen use.
 fn campaign_catalog(
     root: &Path,
     process: &ProcessAssets,
@@ -351,9 +461,10 @@ fn campaign_catalog(
     };
     let assets = process.manager().context("retail sources missing")?;
     let select = |name| crate::rules::retail_sources::select_ini(assets, name).ok();
-    let battles = select("BATTLEMD.INI");
-    let missions = select("MISSIONMD.INI");
-    let mapsel = select("MAPSELMD.INI");
+    let roots = assets.ini_roots();
+    let battles = select(roots.battle());
+    let missions = select(roots.mission());
+    let mapsel = select(roots.mapsel());
     Ok(registry
         .iter()
         .map(|campaign| {
@@ -417,7 +528,12 @@ fn mission_chain(
         .unwrap_or(0);
     let mut chain = Vec::new();
     let mut current = first.to_ascii_uppercase();
-    while chain.len() < MAX_CAMPAIGN_MISSIONS && !chain.contains(&current) {
+    // A name campaign startup refuses (`match_bootstrap::prepare_campaign_scenario`)
+    // is no mission, and is never handed to the file system here either.
+    while chain.len() < MAX_CAMPAIGN_MISSIONS
+        && !chain.contains(&current)
+        && crate::map::source::is_logical_name(&current)
+    {
         chain.push(current.clone());
         let Ok(map) =
             crate::map::source::load_map_ini_by_name_or_path_with_assets(root, &current, assets)
@@ -502,7 +618,7 @@ pub(crate) fn run_desktop(
     ares: Option<crate::util::ares_launch::AresSetting>,
 ) -> Result<ProbeReport> {
     let config = crate::util::config::GameConfig::load()?;
-    let config = match ra2_dir {
+    let mut config = match ra2_dir {
         Some(directory) => config.with_retail_directory(
             directory
                 .canonicalize()
@@ -510,8 +626,11 @@ pub(crate) fn run_desktop(
         )?,
         None => config,
     };
-    let personal_rules = existing_personal_rules(config.paths.settings_dir())?;
-    let ares = ares.unwrap_or_else(|| existing_ares_setting(config.paths.settings_dir()));
+    // RA2 mode as startup takes it: `-ra2` or VERA.INI's choice.
+    let profile = existing_profile(config.paths.settings_dir());
+    config.use_ra2_mode(profile.ra2_mode);
+    let personal_rules = existing_personal_rules(&profile);
+    let ares = ares.unwrap_or(profile.ares);
     let map = map
         .map(|path| {
             ensure_file(path)?;
@@ -526,8 +645,9 @@ pub(crate) fn run_desktop(
         personal_rules,
         crate::app::frontend::startup_options::RetailStartupOptions::default().media_archive_mode,
         map.as_deref(),
-        crate::app::mods::launch_dir(&config.paths, mod_switch),
+        crate::app::mods::launch_mod(&config.paths, mod_switch).map_err(anyhow::Error::msg)?,
         ares,
+        profile.kratos,
     )
 }
 
@@ -541,29 +661,28 @@ fn ensure_file(path: &Path) -> Result<()> {
     Ok(())
 }
 
-/// The player's Ares setting as startup reads it from VERA.INI.
-pub(crate) fn existing_ares_setting(settings_dir: &Path) -> crate::util::ares_launch::AresSetting {
+/// The options the normal startup and the launcher's probes play.
+pub(crate) fn existing_profile(
+    settings_dir: &Path,
+) -> crate::app::persistence::options_profile::RetailOptionsProfile {
     crate::app::persistence::options_profile::RetailOptionsLoad::from_settings(
         settings_dir,
         &Default::default(),
     )
     .retained_profile
-    .ares
 }
 
-/// The player's Options switches as startup reads them from VERA.INI.
+/// Options shared by a launcher's network match.
 pub(crate) fn existing_personal_rules(
-    settings_dir: &Path,
-) -> Result<crate::rules::personal_rules::PersonalRules> {
+    profile: &crate::app::persistence::options_profile::RetailOptionsProfile,
+) -> crate::rules::personal_rules::PersonalRules {
     let mut rules = crate::rules::personal_rules::PersonalRules::default();
-    let profile = crate::app::persistence::options_profile::RetailOptionsLoad::from_settings(
-        settings_dir,
-        &Default::default(),
-    )
-    .retained_profile;
     rules.set_terrain_deformation(profile.terrain_deformation);
     rules.set_superweapon_limit(i32::from(profile.superweapon_limit));
-    Ok(rules)
+    // Building Production Queue stays off: the probe reports the digest a
+    // launcher's network match agrees on, which plays without it
+    // (`App::start_spawn_session`).
+    rules
 }
 
 #[cfg(all(test, tests_app))]
@@ -579,6 +698,16 @@ mod tests {
                 hsv: [0; 3],
             })
             .collect()
+    }
+
+    #[test]
+    fn a_campaign_name_that_is_no_map_name_is_no_mission() {
+        let root = crate::map::source::test_support::TestDirectory::new("probe-mission-name");
+        let assets = AssetManager::from_loose_root_for_test(root.path());
+        for name in [r"\\host\share\A.MAP", "../A.MAP"] {
+            let chain = mission_chain(root.path(), &assets, None, &[], name);
+            assert!(chain.is_empty(), "{name}");
+        }
     }
 
     #[test]
@@ -639,6 +768,8 @@ mod tests {
             return;
         };
         let report = run_desktop(Some(&root), None, None, None).unwrap();
+        // The launcher reads this before it runs `--generate-map`.
+        assert!(report.generate_map);
         let stock = &report.countries[..10];
         assert!(
             stock
@@ -693,9 +824,11 @@ mod tests {
             version: "v".into(),
             build_identity: build_identity(),
             rules_digest: "r".into(),
+            rules_parts: RulesParts::for_test(),
             game_modes: vec![ProbeGameMode {
                 id: 1,
                 rules_digest: "r".into(),
+                rules_parts: RulesParts::for_test(),
             }],
             map: Some(ProbeMap {
                 file: "spawnmap.ini".into(),
@@ -723,6 +856,9 @@ mod tests {
                     name: "Allied 01".into(),
                 }],
             }],
+            generate_map: true,
+            max_offline_houses: 120,
+            shared_starts: true,
         };
         let value = serde_json::to_value(&report).unwrap();
         let mut keys: Vec<_> = value.as_object().unwrap().keys().cloned().collect();
@@ -735,12 +871,18 @@ mod tests {
                 "colors",
                 "countries",
                 "game_modes",
+                "generate_map",
                 "map",
+                "max_offline_houses",
                 "max_start_waypoints",
                 "rules_digest",
+                "rules_parts",
+                "shared_starts",
                 "version"
             ]
         );
+        assert_eq!(value["rules_parts"]["v"], 1);
+        assert_eq!(value["game_modes"][0]["rules_parts"], value["rules_parts"]);
         let map: Vec<_> = value["map"].as_object().unwrap().keys().cloned().collect();
         assert_eq!(
             map,
@@ -762,6 +904,8 @@ mod tests {
             env!("CARGO_PKG_VERSION")
         );
         assert!(value["version"].is_string());
+        assert_eq!(value["generate_map"], true);
+        assert_eq!(value["shared_starts"], true);
         let none = ProbeReport {
             map: None,
             max_start_waypoints: None,
@@ -769,6 +913,48 @@ mod tests {
         };
         let value = serde_json::to_value(&none).unwrap();
         assert!(value["map"].is_null() && value["max_start_waypoints"].is_null());
+    }
+
+    /// `version` is `build_identity`'s package version and network build alone.
+    #[test]
+    fn version_report_is_the_probe_version_and_build_identity() {
+        let value = serde_json::to_value(version_report()).unwrap();
+        let mut keys: Vec<_> = value.as_object().unwrap().keys().cloned().collect();
+        keys.sort();
+        assert_eq!(keys, ["build_identity", "version"]);
+        assert_eq!(value["version"], agreement::version());
+        assert_eq!(
+            value["build_identity"],
+            serde_json::to_value(build_identity()).unwrap()
+        );
+        let mut identity: Vec<_> = value["build_identity"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .cloned()
+            .collect();
+        identity.sort();
+        assert_eq!(
+            identity,
+            [
+                "commit",
+                "network_build",
+                "npatch",
+                "package_version",
+                "phobos",
+                "target",
+                "verax"
+            ]
+        );
+    }
+
+    #[test]
+    fn version_is_the_package_version_and_network_build() {
+        let identity = build_identity();
+        assert_eq!(
+            agreement::version(),
+            format!("{}:{}", identity.package_version, identity.network_build)
+        );
     }
 
     #[test]
@@ -788,5 +974,80 @@ mod tests {
         );
         assert_eq!(identity.map.effective_digest.len(), 64);
         assert_eq!(identity.start_waypoints, 3);
+    }
+
+    #[test]
+    fn selected_catalog_probe_reports_custom_mode_and_its_actual_rules() {
+        let Some((retail, _)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        let root = crate::map::source::test_support::TestDirectory::new("probe-selected-mode");
+        let mod_dir = root.path().join("Mods").join("Catalog");
+        std::fs::create_dir_all(&mod_dir).unwrap();
+        std::fs::write(mod_dir.join("mod.ini"), "[Files]\nModes=custom-modes.ini\n").unwrap();
+        std::fs::write(
+            mod_dir.join("custom-modes.ini"),
+            "[Battle]\n12=GUI:Custom,STT:Custom,selected-mode.ini,standard,true\n",
+        )
+        .unwrap();
+        std::fs::write(mod_dir.join("selected-mode.ini"), "[General]\nGravity=17\n").unwrap();
+        root.write(
+            "config.toml",
+            format!(
+                "[paths]\nra2_dir='{}'\nsettings_dir='{}'\nmod='Catalog'\n",
+                retail.display(),
+                root.path().display()
+            )
+            .as_bytes(),
+        );
+        let config =
+            crate::util::config::GameConfig::load_from(root.path(), &root.path().join("vera20k"))
+                .unwrap();
+        let selected = || crate::app::mods::launch_mod(&config.paths, None).unwrap();
+        let report = probe(
+            &config,
+            Default::default(),
+            MediaArchiveMode::STOCK_DIGITAL,
+            None,
+            selected(),
+            crate::util::ares_launch::AresSetting::Auto,
+            crate::util::kratos_launch::KratosSetting::Auto,
+        )
+        .unwrap();
+        let (process, _, _) = load_process_sources(
+            &config,
+            Default::default(),
+            MediaArchiveMode::STOCK_DIGITAL,
+            selected(),
+            crate::util::ares_launch::AresSetting::Auto,
+            crate::util::kratos_launch::KratosSetting::Auto,
+            false,
+        )
+        .unwrap();
+        let expected = process
+            .multiplayer_rules_digest("selected-mode.ini")
+            .unwrap();
+        assert_eq!(
+            report
+                .game_modes
+                .iter()
+                .map(|mode| mode.id)
+                .collect::<Vec<_>>(),
+            [12]
+        );
+        assert_eq!(report.game_modes[0].rules_digest, expected);
+        assert_eq!(report.rules_digest, expected);
+        // The parts name the mode catalog the digest compares, and the mod
+        // by its folder in `Mods`.
+        let parts = serde_json::to_value(&report.rules_parts).unwrap();
+        assert_eq!(
+            parts["settings"]["resources"]["roots"][3],
+            "custom-modes.ini"
+        );
+        assert_eq!(parts["settings"]["mod"]["title"], "Catalog");
+        assert_ne!(
+            report.rules_digest,
+            process.multiplayer_rules_digest("MPBattleMD.ini").unwrap()
+        );
     }
 }

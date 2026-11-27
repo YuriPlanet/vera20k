@@ -11,6 +11,7 @@ use crate::rules::object_type::ObjectType;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::game_entity::GameEntity;
+use crate::sim::intern::InternedId;
 use crate::sim::mission::authority::LiveReadyInputProvider;
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::movement;
@@ -109,16 +110,19 @@ pub(crate) fn deploys_into<'r>(
 /// `DeploysInto` is one of `[AI] BuildConst=` (Rules `+0x8AC`, compared by
 /// pointer): a Construction Yard maker.
 fn deploys_into_build_const(sim: &Simulation, entity: &GameEntity, rules: &RuleSet) -> bool {
-    deploys_into(sim, entity, rules).is_some_and(|yard| yard.build_const_eligible)
+    deploys_into(sim, entity, rules).is_some_and(|yard| yard.build_const_eligible())
 }
 
 /// The owner's AutoBaseBuilding latch (House+0x1F3) and that no human
 /// controls it (`IsControlledByHuman 0x0050B730`).
+///
+/// VERA: false while a Wasm module claims the house's `Production` (RFC 0001
+/// 6i, `sim::ext_modules::claims`): the module deploys the MCV by order.
 fn owner_builds_its_own_base(sim: &Simulation, entity: &GameEntity) -> bool {
     sim.houses.get(&entity.owner()).is_some_and(|house| {
         house.ai_activation().auto_base_building
-            && !house.is_controlled_by_human(sim.session.game_mode_nonzero())
-    })
+            && !house.is_controlled_by_human(sim.session.rule_policy())
+    }) && !sim.module_claims(entity.owner(), vera20k_wasm_ext::DOMAIN_PRODUCTION)
 }
 
 /// `UnitClass::AI @ 0x007363DE..0x0073645B`, just before the Ready/Commence
@@ -131,7 +135,7 @@ pub(crate) fn ai_queue_hunt(sim: &mut Simulation, id: u64, rules: &RuleSet) {
     };
     let hunts = deploys_into_build_const(sim, entity, rules)
         && owner_builds_its_own_base(sim, entity)
-        && sim.session.game_mode_nonzero()
+        && sim.session.rule_policy().uses_managed_ai_base()
         && sim
             .houses
             .get(&entity.owner())
@@ -154,7 +158,7 @@ pub(crate) fn hunt_deploys(sim: &Simulation, id: u64, rules: &RuleSet) -> bool {
         return false;
     };
     deploys_into(sim, entity, rules).is_some_and(|yard| {
-        yard.build_const_eligible
+        yard.build_const_eligible()
             || entity.attack_target.target().is_some()
             || sim.owner_is_human(entity.owner())
     })
@@ -170,7 +174,7 @@ pub(crate) fn mission_hunt_deploy(
     id: u64,
     rules: &RuleSet,
     registry: Option<&OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> i32 {
     match sim
         .substrate
@@ -188,7 +192,7 @@ pub(crate) fn mission_hunt_deploy(
         }
         Some(1) => {
             if let Some(entity) = sim.substrate.entities.get_mut(id)
-                && !entity.mcv_deploy_pending.is_pending()
+                && !entity.seldom.mcv_deploy_pending.is_pending()
             {
                 entity.mission.set_handler_state(0);
             }
@@ -220,7 +224,7 @@ pub(crate) fn try_to_deploy(
     id: u64,
     rules: &RuleSet,
     registry: Option<&OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> bool {
     let Some((yard, cell, owner)) = sim.substrate.entities.get(id).and_then(|entity| {
         Some((
@@ -327,6 +331,31 @@ pub(crate) fn is_mcv(sim: &Simulation, entity: &GameEntity, rules: &RuleSet) -> 
             })
 }
 
+/// VERA (RFC 0001 6i): when a Wasm module claims house `owner`'s
+/// `Production`, each of its Construction Yard makers the house AI sent to
+/// Hunt ([`ai_queue_hunt`], current or queued) queues Guard instead, so the
+/// Hunt's deploy arm ([`mission_hunt_deploy`]) does not deploy it: the
+/// module deploys it by order.
+pub(crate) fn yield_base_hunts(sim: &mut Simulation, owner: InternedId, rules: &RuleSet) {
+    let hunt = MissionId::from_known(MissionType::Hunt);
+    let hunting: Vec<u64> = sim
+        .substrate
+        .entities
+        .owned_ids(owner, EntityCategory::Unit)
+        .iter()
+        .copied()
+        .filter(|&id| {
+            sim.substrate.entities.get(id).is_some_and(|entity| {
+                (entity.mission.current() == hunt || entity.mission.queued() == hunt)
+                    && deploys_into_build_const(sim, entity, rules)
+            })
+        })
+        .collect();
+    for id in hunting {
+        queue_guard(sim, id, rules);
+    }
+}
+
 pub(crate) fn queue_guard(sim: &mut Simulation, id: u64, rules: &RuleSet) {
     queue(sim, id, MissionType::Guard, rules);
 }
@@ -348,7 +377,7 @@ pub(crate) fn mission_unload(
     id: u64,
     rules: &RuleSet,
     registry: Option<&OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> i32 {
     let state = sim
         .substrate
@@ -400,7 +429,7 @@ pub(crate) fn mission_unload(
                 .substrate
                 .entities
                 .get(id)
-                .is_some_and(|e| e.mcv_deploy_pending.is_pending());
+                .is_some_and(|e| e.seldom.mcv_deploy_pending.is_pending());
             if pending {
                 let accepted = sim.deploy_mcv(id, rules, registry, effects);
                 finish_retry(&mut sim.substrate, id, accepted);
@@ -434,7 +463,7 @@ pub(crate) fn finish_initial_attempt(sim: &mut Simulation, id: u64, rules: &Rule
         .get(id)
         .filter(|e| !e.death.is_dying())
     {
-        if e.mcv_deploy_pending.is_pending() {
+        if e.seldom.mcv_deploy_pending.is_pending() {
             sim.substrate
                 .entities
                 .get_mut(id)
@@ -442,9 +471,14 @@ pub(crate) fn finish_initial_attempt(sim: &mut Simulation, id: u64, rules: &Rule
                 .mission
                 .set_handler_state(2);
         } else {
-            let hunt = sim.houses.get(&e.owner()).is_some_and(|house| {
-                !house.is_controlled_by_human(sim.session.game_mode_nonzero())
-            }) && sim.session.game_mode_nonzero();
+            // VERA: not for a house whose `Production` a Wasm module claimed
+            // (RFC 0001 6i): its MCV guards and deploys again by order.
+            let hunt = sim
+                .houses
+                .get(&e.owner())
+                .is_some_and(|house| !house.is_controlled_by_human(sim.session.rule_policy()))
+                && sim.session.rule_policy().uses_managed_ai_base()
+                && !sim.module_claims(e.owner(), vera20k_wasm_ext::DOMAIN_PRODUCTION);
             queue(
                 sim,
                 id,
@@ -466,7 +500,7 @@ pub(crate) fn finish_retry(substrate: &mut ObjectSubstrate, id: u64, accepted: b
         && let Some(e) = substrate.entities.get_mut(id)
         && e.navigation.nav_com().is_some()
     {
-        e.mcv_deploy_pending.clear();
+        e.seldom.mcv_deploy_pending.clear();
     }
 }
 
@@ -475,7 +509,7 @@ pub(crate) fn per_cell_process(
     id: u64,
     rules: &RuleSet,
     registry: Option<&OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     // 0x739EEC..0x739EF8 has no current-mission guard. Stop and Move do not
     // erase pending intent; native Deploy decides whether NavCom allows it.
@@ -483,7 +517,7 @@ pub(crate) fn per_cell_process(
         .substrate
         .entities
         .get(id)
-        .is_some_and(|e| !e.death.is_dying() && e.mcv_deploy_pending.is_pending())
+        .is_some_and(|e| !e.death.is_dying() && e.seldom.mcv_deploy_pending.is_pending())
     {
         sim.deploy_mcv(id, rules, registry, effects);
     }

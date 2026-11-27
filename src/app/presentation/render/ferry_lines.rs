@@ -6,7 +6,7 @@ use super::planning_lines::{
     emit_marker, emit_marker_outer, emit_segment, emit_solid_segment, project, stroke_phase,
     stroke_rgb,
 };
-use crate::app::AppState;
+use crate::app::match_runtime::state::MatchState;
 use crate::app::presentation::target_lines::TacticalViewport;
 use crate::render::surface_line::SurfaceStroke;
 use crate::sim::components::DriveCoord;
@@ -20,9 +20,9 @@ const REFUSED_RGB: [u8; 3] = [255, 64, 51];
 /// The pick-up and drop circles, each a closed one-pixel solid stroke. They
 /// are for the ground pass (`draw_passes`, "ground_strokes"): drawn on the
 /// finished ground and before the buildings and objects, which cover them.
-pub(super) fn build_rings(state: &AppState, view: TacticalViewport) -> Vec<SurfaceStroke> {
+pub(super) fn build_rings(match_state: &MatchState, view: TacticalViewport) -> Vec<SurfaceStroke> {
     let mut out = Vec::new();
-    for ring in crate::app::input::ferry::marks(state) {
+    for ring in crate::app::input::ferry::marks(match_state) {
         let rgb = if ring.refused {
             REFUSED_RGB
         } else if ring.drop {
@@ -85,16 +85,16 @@ impl PathStrokes {
 /// committed. Unlike Planning Mode's own lines these show without the mode:
 /// the ferry keeps its own waypoints.
 pub(super) fn build_paths(
-    state: &AppState,
+    match_state: &MatchState,
     view: TacticalViewport,
     wall_ms: u32,
 ) -> Vec<SurfaceStroke> {
     let mut out = Vec::new();
-    let paths = crate::app::input::ferry::waypoint_paths(state);
+    let paths = crate::app::input::ferry::waypoint_paths(match_state);
     if paths.is_empty() {
         return out;
     }
-    let Some(rt) = state.match_state.sim_runtime.presentation() else {
+    let Some(rt) = match_state.sim_runtime.presentation() else {
         return out;
     };
     let sim = &rt.simulation;
@@ -118,7 +118,15 @@ pub(super) fn build_paths(
         strokes.add(&points, path.pending);
     }
     let phase = stroke_phase(wall_ms);
-    let color = |pending| stroke_rgb(state, sim, &rt.resources.rules, viewer, pending);
+    let color = |pending| {
+        stroke_rgb(
+            &match_state.match_presentation,
+            sim,
+            &rt.resources.rules,
+            viewer,
+            pending,
+        )
+    };
     let white = [255; 3];
     for &(from, to, _) in &strokes.lines {
         emit_solid_segment(&mut out, from, to, white, 4, view);

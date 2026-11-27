@@ -191,8 +191,7 @@ pub(crate) fn check_build_need(sim: &Simulation, rules: &RuleSet, owner: Interne
     let Some(house) = sim.houses.get(&owner) else {
         return false;
     };
-    if house.is_controlled_by_human(sim.session.game_mode_nonzero())
-        || can_make_money(sim, rules, owner)
+    if house.is_controlled_by_human(sim.session.rule_policy()) || can_make_money(sim, rules, owner)
     {
         return false;
     }
@@ -263,7 +262,6 @@ fn balance_owed(
     sim.production
         .factories()
         .holders_insertion_ordered()
-        .into_iter()
         .map(|(_, factory)| factory)
         .filter(|factory| factory.owner() == owner)
         .find(|factory| {
@@ -301,7 +299,7 @@ pub(crate) fn manage_build_queue(
     rules: &RuleSet,
     owner: InternedId,
     registry: Option<&OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     #[cfg(any(test, feature = "test-support"))]
     MANAGE_CALLS.with(|calls| calls.set(calls.get().map(|count| count + 1)));
@@ -391,7 +389,7 @@ fn sell_node(
     index: usize,
     sale: &mut Sale,
     registry: Option<&OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     let node = sim.houses[&owner].base_plan().nodes()[index];
     let building =
@@ -418,9 +416,8 @@ fn sell_node(
     }
     if let Some(overlays) = registry {
         let (x, y) = unpack_base_plan_cell(node.packed_cell);
-        let house = sim.interner.resolve(owner).to_string();
         // Original 0x4FDFC7 passes 0, as the Event SELL caller does.
-        sim.sell_wall_at_cell(&house, x, y, false, rules, overlays, effects);
+        sim.sell_wall_at_cell(owner.into(), None, x, y, false, rules, overlays, effects);
     }
     remove_node(&mut sim.houses, owner, index, sale);
 }
@@ -453,7 +450,7 @@ fn restart_production(
     rebuild: Rebuild<'_>,
     slot_zero: Option<BasePlanNode>,
     registry: Option<&OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> bool {
     crate::sim::production::abandon_house_factories(sim, rules, owner, effects);
     let Some(house) = sim.houses.get_mut(&owner) else {

@@ -4,6 +4,12 @@
 //! path-step buffer. Automatic low-bridge shell tubes are constructed later in
 //! resolved terrain from final land type and theater tile identity.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)
+)]
+
 use crate::map::tube_facts::TubeFact;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::ini_value::{crt_atoi, strtok};
@@ -107,16 +113,12 @@ impl NativeMapTubes {
 
     /// Terrain binding's one take of the constructed receipt.
     pub(crate) fn take_receipt(&mut self) -> Result<NativeMapTubeReceipt, NativeMapTubesTakeError> {
-        match &self.state {
-            NativeMapTubesState::Unconstructed => Err(NativeMapTubesTakeError::NotConstructed),
+        match std::mem::replace(&mut self.state, NativeMapTubesState::Bound) {
+            NativeMapTubesState::Pending(receipt) => Ok(receipt),
             NativeMapTubesState::Bound => Err(NativeMapTubesTakeError::AlreadyBound),
-            NativeMapTubesState::Pending(_) => {
-                let NativeMapTubesState::Pending(receipt) =
-                    std::mem::replace(&mut self.state, NativeMapTubesState::Bound)
-                else {
-                    unreachable!("matched Pending above")
-                };
-                Ok(receipt)
+            NativeMapTubesState::Unconstructed => {
+                self.state = NativeMapTubesState::Unconstructed;
+                Err(NativeMapTubesTakeError::NotConstructed)
             }
         }
     }

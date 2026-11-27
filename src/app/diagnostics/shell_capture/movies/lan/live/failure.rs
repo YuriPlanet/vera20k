@@ -3,10 +3,8 @@
 //! time, packets, commands and simulation advancement stay with the game.
 
 use super::*;
-use crate::app::match_runtime::sim_host::SimWrite;
-
-mod startup;
 use crate::app::match_runtime::network_match;
+use crate::app::match_runtime::sim_host::SimWrite;
 use crate::net::live_commands::{LiveWaitInfo, LiveWaitKind};
 use crate::sim::command::{Command, CommandRecord, EXIT_OPCODE, REMOVE_PLAYER_OPCODE};
 use crate::sim::rng::SimRngLogicalState;
@@ -16,7 +14,6 @@ pub(super) enum Mode {
     Timeout,
     Quit,
     Desync,
-    Startup,
 }
 
 struct HeldWait {
@@ -71,7 +68,6 @@ pub(super) struct FailureCapture {
     returned: Option<Value>,
     last_live: Option<Value>,
     checksum: Option<HeldChecksum>,
-    startup: Option<startup::StartupCapture>,
 }
 
 impl FailureCapture {
@@ -95,7 +91,6 @@ impl FailureCapture {
             returned: None,
             last_live: None,
             checksum: None,
-            startup: None,
         }
     }
 
@@ -103,30 +98,37 @@ impl FailureCapture {
         self.peer_house.is_some()
     }
 
-    pub(super) fn arm(&mut self, state: &AppState) -> Result<()> {
-        let live = state
-            .match_state
+    pub(super) fn arm(
+        &mut self,
+        frontend: &FrontendState,
+        match_state: &MatchState,
+        process_assets: &ProcessAssets,
+    ) -> Result<()> {
+        let live = match_state
             .live_network
             .as_ref()
             .context("live failure transport")?;
         ensure!(live.peers().len() == 1, "failure prefix lost its peer");
-        let sim = &state
-            .match_state
+        let sim = &match_state
             .sim_runtime
             .runtime()
             .context("failure prefix world")?
             .simulation;
         let house = i32::from(live.peers()[0].house_id());
-        let source = network_match::house_source(&state.match_state.session, sim, house)
+        let source = network_match::house_source(&match_state.session, sim, house)
             .context("failure peer source")?;
         let owner = sim.houses().order()[house as usize];
-        self.peer_name = crate::app::presentation::house_ui::house_ui_name(state, owner)
-            .context("failure peer UI name")?;
+        self.peer_name = crate::app::presentation::house_ui::house_ui_name(
+            frontend,
+            match_state,
+            process_assets,
+            owner,
+        )
+        .context("failure peer UI name")?;
         self.peer_house = Some(house);
         self.peer_source = Some(source);
         self.sent_before = live.sent_commands();
-        self.replay_cursor = state
-            .match_state
+        self.replay_cursor = match_state
             .match_diagnostics
             .replay_log
             .as_ref()
@@ -150,17 +152,23 @@ impl FailureCapture {
         render: u32,
         route: &mut Vec<Value>,
     ) -> Result<bool> {
-        if self.mode == Mode::Startup {
-            return self.observe_startup(state, render, route);
-        }
         if self.mode == Mode::Desync {
-            return self.observe_checksum(state, render, route);
+            return self.observe_checksum(
+                &state.platform,
+                &state.renderer,
+                &mut state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                &mut state.audio.sfx_player,
+                render,
+                route,
+            );
         }
         let now = (crate::app::match_runtime::frame_pacer::wall_clock_ms() as u32) >> 4;
         if self.quit.is_some() {
-            return self.observe_return(state, render, route);
+            return self.observe_return(&state.frontend, &state.match_state, render, route);
         }
-        self.observe_commands(state)?;
+        self.observe_commands(&mut state.match_state)?;
         let sim = &state
             .match_state
             .sim_runtime
@@ -184,7 +192,14 @@ impl FailureCapture {
             "global_receives":global_receives}));
 
         if live.peers().is_empty() {
-            return self.observe_recovery(state, render, now, route);
+            return self.observe_recovery(
+                &state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                render,
+                now,
+                route,
+            );
         }
         ensure!(
             state.frontend.screen == GameScreen::InGame,
@@ -258,7 +273,11 @@ impl FailureCapture {
             if self.mode == Mode::Quit {
                 let layout =
                     crate::app::frontend::skirmish_shell_render::current_in_game_shell_layout(
-                        state,
+                        &state.platform,
+                        &state.renderer,
+                        &state.frontend,
+                        &state.match_state,
+                        &state.persistence,
                     )
                     .map(|shell| {
                         crate::ui::shell::connection::connection_layout(
@@ -269,14 +288,7 @@ impl FailureCapture {
                         )
                     })
                     .context("EA Quit hit geometry")?;
-                let point = set_window_pointer_to_rect_center(state, layout.quit);
-                crate::app::input::dispatch::handle_cursor_moved_in_game(state);
-                for edge in [
-                    winit::event::ElementState::Pressed,
-                    winit::event::ElementState::Released,
-                ] {
-                    crate::app::input::dispatch::handle_mouse_input(state, MouseButton::Left, edge);
-                }
+                let point = click_in_game(state, layout.quit);
                 self.quit = Some(json!({"held_frame":frame,"observed_bucket":now,"point":point}));
                 route.push(json!({"render_frame":render,"native_frame":frame,"action":"real EA Quit Game clicked","point":point}));
             }
@@ -289,8 +301,8 @@ impl FailureCapture {
         Ok(false)
     }
 
-    fn observe_commands(&mut self, state: &mut AppState) -> Result<()> {
-        if let Some(log) = state.match_state.match_diagnostics.replay_log.as_ref() {
+    fn observe_commands(&mut self, match_state: &mut MatchState) -> Result<()> {
+        if let Some(log) = match_state.match_diagnostics.replay_log.as_ref() {
             ensure!(
                 log.ticks.len() >= self.replay_cursor,
                 "failure replay prefix moved backwards"
@@ -325,8 +337,7 @@ impl FailureCapture {
                 "failure capture lost command recording before REMOVEPLAYER"
             );
         }
-        let sim = &mut state
-            .match_state
+        let sim = &mut match_state
             .sim_runtime
             .write_sim(SimWrite::Debug)
             .context("observed world retained")?
@@ -380,7 +391,9 @@ impl FailureCapture {
 
     fn observe_recovery(
         &mut self,
-        state: &AppState,
+        frontend: &FrontendState,
+        match_state: &MatchState,
+        process_assets: &ProcessAssets,
         render: u32,
         now: u32,
         route: &mut Vec<Value>,
@@ -394,21 +407,18 @@ impl FailureCapture {
             .as_ref()
             .context("peer vanished without an observed ordinary wait")?;
         ensure!(self.dialog.is_some(), "timeout removed peer without EA");
-        let sim = &state
-            .match_state
+        let sim = &match_state
             .sim_runtime
             .runtime()
             .context("survivor world")?
             .simulation;
         let frame = sim.session().binary_frame();
-        let live = state
-            .match_state
+        let live = match_state
             .live_network
             .as_ref()
             .context("survivor transport")?;
         ensure!(
-            !state
-                .match_state
+            !match_state
                 .session
                 .network_connected_source_indices()
                 .contains(&self.peer_source.context("peer source")?),
@@ -419,11 +429,10 @@ impl FailureCapture {
             "removed peer retains private connection"
         );
         let lost_line = crate::assets::csf_file::format_csf(
-            &App::csf_label(state, "TXT_CONNECTION_LOST", "TXT_CONNECTION_LOST"),
+            &process_assets.csf_label("TXT_CONNECTION_LOST", "TXT_CONNECTION_LOST"),
             &[crate::assets::csf_file::CsfArg::Str(&self.peer_name)],
         );
-        let lost_count = state
-            .match_state
+        let lost_count = match_state
             .match_presentation
             .message_list
             .messages()
@@ -442,7 +451,7 @@ impl FailureCapture {
             self.removal_frame = Some(frame);
             self.removed = Some(
                 json!({"observed_bucket":now,"elapsed_buckets":now.wrapping_sub(wait.info.entered_at),
-                "native_frame":frame,"message":lost_line,"connected_sources":state.match_state.session.network_connected_source_indices()}),
+                "native_frame":frame,"message":lost_line,"connected_sources":match_state.session.network_connected_source_indices()}),
             );
             route.push(json!({"render_frame":render,"native_frame":frame,"action":"real timeout removed peer","message":lost_line}));
         } else {
@@ -473,11 +482,11 @@ impl FailureCapture {
             route.push(json!({"render_frame":render,"native_frame":frame,"action":"ordinary REMOVEPLAYER House cleanup completed"}));
         }
         let recovered = frame.saturating_sub(self.removal_frame.context("removal frame")?);
-        let natural_result = state.frontend.score_page.is_some()
-            && matches!(state.frontend.screen, GameScreen::MissionResult { .. });
+        let natural_result = frontend.score_page.is_some()
+            && matches!(frontend.screen, GameScreen::MissionResult { .. });
         if self.death.is_some() && (recovered >= 50 || natural_result) {
             ensure!(
-                !state.match_state.network_wait.waiting() && !sim.pending_network_wait(),
+                !match_state.network_wait.waiting() && !sim.pending_network_wait(),
                 "recovery retained a held frame"
             );
             ensure!(
@@ -496,14 +505,18 @@ impl FailureCapture {
 
     fn observe_checksum(
         &mut self,
-        state: &mut AppState,
+        platform: &PlatformState,
+        renderer: &RendererState,
+        frontend: &mut FrontendState,
+        match_state: &mut MatchState,
+        process_assets: &ProcessAssets,
+        sfx_player: &mut Option<SfxPlayer>,
         render: u32,
         route: &mut Vec<Value>,
     ) -> Result<bool> {
         use crate::app::match_runtime::network_failure;
         let (frame, tick, rng, mismatch) = {
-            let sim = &state
-                .match_state
+            let sim = &match_state
                 .sim_runtime
                 .runtime()
                 .context("desync world")?
@@ -527,11 +540,11 @@ impl FailureCapture {
                 "checksum modal is not the expected admitted peer mismatch"
             );
             ensure!(
-                state.match_state.network_failure.is_some()
-                    && state.frontend.shell_controller.top_id() == Some(network_failure::DIALOG),
+                match_state.network_failure.is_some()
+                    && frontend.shell_controller.top_id() == Some(network_failure::DIALOG),
                 "real checksum CE dialog is absent"
             );
-            let labels = network_failure::labels(state);
+            let labels = network_failure::labels(&match_state.sim_runtime);
             ensure!(
                 labels.0.0 == "TXT_OUT_OF_SYNC" && labels.1.0 == "TXT_STOP",
                 "another error dialog replaced the checksum modal"
@@ -555,23 +568,54 @@ impl FailureCapture {
             if render == held.first_render {
                 return Ok(false);
             }
-            let rect = crate::ui::shell::modal::body_ok_layout(
-                state.render_width() as i32,
-                state.render_height() as i32,
+            let rect = crate::ui::shell::modal::menu_message_box(
+                1,
+                renderer.render_width(&frontend.screen) as i32,
+                renderer.render_height(&frontend.screen) as i32,
             )
-            .ok;
-            set_window_pointer_to_rect_center(state, rect);
-            network_failure::cursor_moved(state);
+            .button(0);
+            set_window_pointer_to_rect_center(
+                renderer,
+                &frontend.screen,
+                &mut match_state.input,
+                rect,
+            );
+            network_failure::cursor_moved(
+                platform,
+                renderer,
+                frontend,
+                match_state,
+                process_assets,
+                sfx_player,
+            );
             if held.pressed_render.is_none() {
-                network_failure::mouse(state, MouseButton::Left, true);
+                network_failure::mouse(
+                    platform,
+                    renderer,
+                    frontend,
+                    match_state,
+                    process_assets,
+                    sfx_player,
+                    MouseButton::Left,
+                    true,
+                );
                 held.pressed_render = Some(render);
                 route.push(json!({"render_frame":render,"native_frame":frame,"action":"actual checksum CE Stop pressed; frame and RNG held"}));
             } else if held.released_render.is_none() {
-                network_failure::mouse(state, MouseButton::Left, false);
+                network_failure::mouse(
+                    platform,
+                    renderer,
+                    frontend,
+                    match_state,
+                    process_assets,
+                    sfx_player,
+                    MouseButton::Left,
+                    false,
+                );
                 held.released_render = Some(render);
                 route.push(json!({"render_frame":render,"native_frame":frame,"action":"actual checksum CE Stop released through normal input"}));
             }
-            MoviesCapture::restore_neutral_pointer(state);
+            MoviesCapture::restore_neutral_pointer(&renderer.gpu, &mut match_state.input);
             return Ok(false);
         }
         let Some(held) = &self.checksum else {
@@ -581,7 +625,7 @@ impl FailureCapture {
             held.released_render.is_some(),
             "checksum continuation cleared without Stop acknowledgement"
         );
-        if state.frontend.screen != GameScreen::MainMenu || !lobby_settled(state) {
+        if frontend.screen != GameScreen::MainMenu || !lobby_settled(frontend) {
             return Ok(false);
         }
         ensure!(
@@ -589,16 +633,15 @@ impl FailureCapture {
             "checksum Stop did not commit exactly one native aborted tail"
         );
         ensure!(
-            state.match_state.live_network.is_none()
-                && state.match_state.lan_service.is_some()
-                && !state.match_state.network_wait.waiting()
-                && state.match_state.network_failure.is_none()
-                && state.frontend.shell_controller.top_id() != Some(network_failure::DIALOG)
-                && state.match_state.session.network_setup().is_none()
-                && state.frontend.loading_session.is_none()
-                && state.match_state.scenario_exit.is_none()
-                && !state
-                    .match_state
+            match_state.live_network.is_none()
+                && match_state.lan_service.is_some()
+                && !match_state.network_wait.waiting()
+                && match_state.network_failure.is_none()
+                && frontend.shell_controller.top_id() != Some(network_failure::DIALOG)
+                && match_state.session.network_setup().is_none()
+                && frontend.loading_session.is_none()
+                && match_state.scenario_exit.is_none()
+                && !match_state
                     .sim_runtime
                     .runtime()
                     .context("returned desync world")?
@@ -617,43 +660,39 @@ impl FailureCapture {
 
     fn observe_return(
         &mut self,
-        state: &AppState,
+        frontend: &FrontendState,
+        match_state: &MatchState,
         render: u32,
         route: &mut Vec<Value>,
     ) -> Result<bool> {
         ensure!(
-            state.match_state.scenario_exit.is_none(),
+            match_state.scenario_exit.is_none(),
             "EA Quit started EXIT teardown"
         );
         ensure!(
-            matches!(
-                state.frontend.screen,
-                GameScreen::InGame | GameScreen::MainMenu
-            ),
+            matches!(frontend.screen, GameScreen::InGame | GameScreen::MainMenu),
             "unexpected Quit destination"
         );
         let online = self.wait.as_ref().context("Quit held frame")?.info.mode
             == crate::net::live_commands::LiveCommandMode::Wol;
         // This host's VERA room comes back right after the match
         // (`return_after_match`), alone; the original-style room returns to BB.
-        let room = !online && !state.frontend.native_shell_ui;
+        let room = !online && !frontend.native_shell_ui;
         let settled = if online {
-            super::online::online_lobby_settled(state)
+            super::online::online_lobby_settled(frontend)
         } else if room {
-            setup_settled(state, true)
-                && state
-                    .match_state
+            setup_settled(frontend, true)
+                && match_state
                     .session
                     .network_setup()
                     .is_some_and(|launch| launch.humans.len() == 1)
         } else {
-            state.frontend.lan.is_some() && lobby_settled(state)
+            frontend.lan.is_some() && lobby_settled(frontend)
         };
-        if state.frontend.screen != GameScreen::MainMenu || !settled {
+        if frontend.screen != GameScreen::MainMenu || !settled {
             return Ok(false);
         }
-        let sim = &state
-            .match_state
+        let sim = &match_state
             .sim_runtime
             .runtime()
             .context("returned world retained")?
@@ -664,46 +703,38 @@ impl FailureCapture {
             "EA Quit did not commit exactly one held tail"
         );
         ensure!(
-            !sim.pending_network_wait() && !state.match_state.network_wait.waiting(),
+            !sim.pending_network_wait() && !match_state.network_wait.waiting(),
             "EA Quit retained wait state"
         );
         ensure!(
-            state.match_state.live_network.is_none(),
+            match_state.live_network.is_none(),
             "EA Quit retained live command owner"
         );
         ensure!(
-            state.match_state.lan_service.is_some(),
+            match_state.lan_service.is_some(),
             "EA Quit dropped the portable LAN service"
         );
         ensure!(
-            (room || state.match_state.session.network_setup().is_none())
-                && state.frontend.loading_session.is_none(),
+            (room || match_state.session.network_setup().is_none())
+                && frontend.loading_session.is_none(),
             "EA Quit retained setup/loading"
         );
-        if self.mode == Mode::Startup {
-            ensure!(
-                sim.session().tick() == held.tick.wrapping_add(1)
-                    && state.match_state.network_failure.is_none()
-                    && sim.pending_network_interruption().is_none(),
-                "startup OK did not retire its modal after exactly one aborted tick"
-            );
-        }
         self.returned = Some(
             json!({"native_frame":sim.session().binary_frame(),"tick":sim.session().tick(),"held_frame":held.frame,
             "held_tail_commits":sim.session().binary_frame().wrapping_sub(held.frame),"live_owner_retired":true,"lan_service_retained":true,
             "network_wait_cleared":true,"pending_exit":false,"reopened_room":room}),
         );
         route.push(json!({"render_frame":render,"native_frame":sim.session().binary_frame(),
-            "action":if self.mode == Mode::Startup { "startup ConnectionFailed OK returned to settled lobby after one held-tail commit" } else if room { "EA Quit returned to the host's reopened room after one held-tail commit" } else { "EA Quit returned to settled lobby after one held-tail commit" },"online":online}));
+            "action":if room { "EA Quit returned to the host's reopened room after one held-tail commit" } else { "EA Quit returned to settled lobby after one held-tail commit" },"online":online}));
         Ok(true)
     }
 
     pub(super) fn receipt(&self) -> Value {
-        json!({"expected_network_failure":if self.mode == Mode::Startup {"externally killed original host before full startup certification; real EA votes and ConnectionFailed OK"} else if self.mode == Mode::Desync {"external real FRAMEINFO checksum corruption after a shared prefix"} else {"external peer disappearance after a real shared prefix"},
+        json!({"expected_network_failure":if self.mode == Mode::Desync {"external real FRAMEINFO checksum corruption after a shared prefix"} else {"external peer disappearance after a real shared prefix"},
             "mode":format!("{:?}",self.mode),"peer_house":self.peer_house,"peer_source":self.peer_source,
             "sent_commands_before":self.sent_before,"remove_player_admissions":self.remove_admissions,"dialog":self.dialog,"removed":self.removed,
             "remove_player":self.remove_player,"remove_player_seen_frame":self.remove_player_frame,"death":self.death,"quit":self.quit,"returned":self.returned,
-            "last_live":self.last_live,"startup":self.startup.as_ref().map(startup::StartupCapture::receipt),
+            "last_live":self.last_live,
             "checksum":self.checksum.as_ref().map(|held|json!({"house":held.mismatch.house_id,"event_frame":held.mismatch.event_frame,
                 "delay":held.mismatch.delay,"history_index":held.mismatch.history_index,"local_checksum":held.mismatch.local_checksum,
                 "remote_checksum":held.mismatch.remote_checksum,"held_frame":held.frame,"held_tick":held.tick,

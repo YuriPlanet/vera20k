@@ -86,8 +86,7 @@ pub fn run(ctx: &mut HillsCtx<'_>, args: &HillsArgs, morphable: Morphable<'_>) {
 /// in-diamond clear neighbour with height 0.5 and the protected flag; each
 /// cliff/obstacle cell marks such a neighbour with the flag only.
 pub fn water_seed(grid: &RmgGrid, scratch: &mut RmgScratch, ids: &TileIds) {
-    for (x, y) in grid.native_cells().collect::<Vec<_>>() {
-        let cell = *grid.get(x, y).expect("native cell");
+    for ((x, y), cell) in grid.cells_in_native_order() {
         let is_shore = ids.is_shore_piece(cell.tile);
         let is_obstacle = !is_shore && ids.cliffs.is_special_terrain_tile(cell.tile, cell.sub_tile);
         if !is_shore && !is_obstacle {

@@ -46,8 +46,7 @@ fn scene_with_repair_step(
         .spawn_object("ENGINEER", "Americans", 10, 12, 0, &rules)
         .unwrap();
     if hospital {
-        sim.entities_mut_for_test()
-            .get_mut(actor)
+        sim.entity_mut_for_test(actor)
             .unwrap()
             .health
             .set_for_test(30);
@@ -71,10 +70,9 @@ fn step(sim: &mut Simulation, rules: &RuleSet) -> crate::sim::world::SimFrameOut
     sim.advance_app_frame(
         &commands,
         rules,
-        None,
         33,
         crate::sim::world::TickLane::Ordinary,
-        Default::default(),
+        &mut Default::default(),
     )
     .unwrap()
 }
@@ -148,7 +146,7 @@ fn ordinary_and_planned_hospital_clicks_enter_heal_and_exit_after_save_load() {
                 .entities()
                 .get(actor)
                 .expect("treatment must not consume an engineer");
-            if !entered && patient.passenger_role.inside_transport_id() == Some(hover.stable_id) {
+            if !entered && patient.passenger_role().inside_transport_id() == Some(hover.stable_id) {
                 entered = true;
                 assert!(patient.in_limbo());
                 assert!(patient.has_live_contact_with(hover.stable_id));
@@ -156,8 +154,8 @@ fn ordinary_and_planned_hospital_clicks_enter_heal_and_exit_after_save_load() {
                 let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "hospital", 0);
                 sim = crate::sim::snapshot::GameSnapshot::load(&bytes)
                     .unwrap()
-                    .sim;
-                sim.restore_after_snapshot_load().unwrap();
+                    .restore_references_for_test()
+                    .unwrap();
                 sim.resolve_type_handles(&rules);
                 // Restore the same external32x32 map, not supply_native_map's
                 // default64x64 map (the snapshot's overlay plane is32x32).
@@ -166,7 +164,7 @@ fn ordinary_and_planned_hospital_clicks_enter_heal_and_exit_after_save_load() {
                 assert!(sim.rebuild_dynamic_navigation(&rules));
             } else if entered
                 && !patient.in_limbo()
-                && patient.passenger_role.inside_transport_id().is_none()
+                && patient.passenger_role().inside_transport_id().is_none()
             {
                 assert_eq!(patient.health.current(), 75);
                 left = true;
@@ -186,7 +184,7 @@ fn ordinary_and_planned_hospital_clicks_enter_heal_and_exit_after_save_load() {
             sim.entities()
                 .get(hover.stable_id)
                 .unwrap()
-                .passenger_role
+                .passenger_role()
                 .passenger_count(),
             0
         );
@@ -197,8 +195,7 @@ fn ordinary_and_planned_hospital_clicks_enter_heal_and_exit_after_save_load() {
 #[test]
 fn damaged_grinders_keep_the_repair_action_and_healthy_patients_do_not_enter() {
     let (mut sim, rules, actor, hover) = scene(false);
-    sim.entities_mut_for_test()
-        .get_mut(hover.stable_id)
+    sim.entity_mut_for_test(hover.stable_id)
         .unwrap()
         .health
         .set_for_test(500);
@@ -211,8 +208,7 @@ fn damaged_grinders_keep_the_repair_action_and_healthy_patients_do_not_enter() {
         }]
     );
     let (mut sim, rules, actor, hover) = scene(true);
-    sim.entities_mut_for_test()
-        .get_mut(actor)
+    sim.entity_mut_for_test(actor)
         .unwrap()
         .health
         .set_for_test(75);
@@ -229,8 +225,7 @@ fn hospital_can_load_preserves_native_ammo_admission() {
     //admit. This query is separate from the clicked Enter's CAN_DOCK0E.
     for ammo in [0, 1, -1] {
         let (mut sim, rules, actor, hover) = scene(true);
-        sim.entities_mut_for_test()
-            .get_mut(hover.stable_id)
+        sim.entity_mut_for_test(hover.stable_id)
             .unwrap()
             .install_ammo_for_test(Some(crate::sim::ammo::TechnoAmmo::new(ammo)));
         assert_eq!(
@@ -241,7 +236,7 @@ fn hospital_can_load_preserves_native_ammo_admission() {
                 RadioMessage::CanEnter,
                 RadioPayload::default(),
                 &rules,
-                Default::default()
+                &mut Default::default()
             ),
             if ammo == 0 {
                 RadioResponse::Negatory
@@ -304,7 +299,7 @@ fn stopping_before_entry_does_not_grind_or_hide_the_engineer() {
                 !engineer.in_limbo(),
                 "hospital={hospital}, planning={planning}"
             );
-            assert!(engineer.passenger_role.inside_transport_id().is_none());
+            assert!(engineer.passenger_role().inside_transport_id().is_none());
         }
     }
 }
@@ -318,7 +313,7 @@ fn destroying_a_hospital_cleans_up_its_hidden_patient() {
         if sim.entities().get(actor).unwrap().in_limbo() {
             sim.uninit_with_context(
                 hover.stable_id,
-                crate::sim::world::UninitContext::with_rules(&rules),
+                crate::sim::world::UninitContext::new(&rules),
             );
             //UnInit makes the objects inactive; the frame's existing
             //retirement phase removes their retained storage.
@@ -357,7 +352,7 @@ fn infantry_repair_tick_clamps_nonpositive_steps_to_one() {
                 RadioMessage::RepairTick,
                 RadioPayload::default(),
                 &rules,
-                Default::default(),
+                &mut Default::default(),
             ),
             RadioResponse::Roger
         );

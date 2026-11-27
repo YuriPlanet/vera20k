@@ -48,7 +48,7 @@ fn scene(discard: bool, veteran: bool) -> (Simulation, RuleSet, u64, u64, u64) {
         HouseDifficulty::Normal,
         &general,
         CountryDifficultyBiases::default(),
-        false,
+        crate::rules::rule_policy::RulePolicy::stock_campaign(),
         0,
         0,
     );
@@ -90,7 +90,7 @@ fn shoot(sim: &mut Simulation, rules: &RuleSet, firer: u64, target: u64, weapon_
         },
         rules,
         None,
-        FrameEffects::empty(),
+        &mut FrameEffects::empty(),
     );
     let ids: Vec<_> = sim
         .projectiles
@@ -199,7 +199,7 @@ fn attached_firepower_two_native_histories_reach_live_shot_and_estimate() {
             );
             let actor = sim.entities().get(firer).unwrap();
             assert_eq!(
-                actor.crate_multipliers.crate_firepower(),
+                actor.seldom.crate_multipliers.crate_firepower(),
                 bits(&step["base_bits_le"]),
                 "{action}"
             );
@@ -211,6 +211,7 @@ fn attached_firepower_two_native_histories_reach_live_shot_and_estimate() {
             assert_eq!(
                 serde_json::json!(
                     actor
+                        .seldom
                         .ares
                         .attach_effects
                         .entries
@@ -244,11 +245,12 @@ fn attached_firepower_parent_hit_scan_hp_and_restore_share_effective_owner() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules, firer, emitter, dummy) = scene(true, false);
     let parent = shoot(&mut sim, &rules, emitter, firer, 0);
-    sim.object_ai_visit_one(parent, Some(&rules), ObjectAiCtx::default());
+    sim.object_ai_visit_one(parent, Some(&rules), &mut ObjectAiCtx::default());
     assert_eq!(
         sim.entities()
             .get(firer)
             .unwrap()
+            .seldom
             .ares
             .attach_effects
             .entries
@@ -256,7 +258,7 @@ fn attached_firepower_parent_hit_scan_hp_and_restore_share_effective_owner() {
         1
     );
     // Remove the producer from Logic without deleting the real attachment.
-    sim.techno_limbo_with_rules(emitter, &rules, None);
+    sim.techno_limbo_with_rules(emitter, &rules);
     let estimate = crate::sim::combat::estimated_damage_on(
         &sim,
         &rules,
@@ -265,7 +267,7 @@ fn attached_firepower_parent_hit_scan_hp_and_restore_share_effective_owner() {
         rules.weapon("GUN").unwrap(),
     );
     assert_eq!(estimate, 25, "first-hit native damage/estimate golden");
-    sim.assign_target_represented(firer, None, &rules, None, FrameEffects::empty())
+    sim.assign_target_represented(firer, None, &rules, &mut FrameEffects::empty())
         .unwrap();
     let estimated_before = sim.entities().get(dummy).unwrap().estimated_health.get();
     assert!(crate::sim::world::retaliate_and_scan(
@@ -273,7 +275,7 @@ fn attached_firepower_parent_hit_scan_hp_and_restore_share_effective_owner() {
         firer,
         &rules,
         ScanMission::Guard,
-        ObjectAiCtx::default(),
+        &mut ObjectAiCtx::default(),
         None
     ));
     assert_eq!(
@@ -286,7 +288,7 @@ fn attached_firepower_parent_hit_scan_hp_and_restore_share_effective_owner() {
         sim.projectiles.get(bullet).unwrap().payload().base_damage,
         estimate
     );
-    sim.object_ai_visit_one(bullet, Some(&rules), ObjectAiCtx::default());
+    sim.object_ai_visit_one(bullet, Some(&rules), &mut ObjectAiCtx::default());
     assert_eq!(
         sim.entities().get(dummy).unwrap().health.current(),
         hp - estimate
@@ -300,8 +302,13 @@ fn attached_firepower_parent_hit_scan_hp_and_restore_share_effective_owner() {
         .validate_attached_stats_after_restore(&rules)
         .unwrap();
     assert_eq!(
-        loaded.entities().get(firer).unwrap().crate_multipliers,
-        sim.entities().get(firer).unwrap().crate_multipliers
+        loaded
+            .entities()
+            .get(firer)
+            .unwrap()
+            .seldom
+            .crate_multipliers,
+        sim.entities().get(firer).unwrap().seldom.crate_multipliers
     );
     let hash = loaded.state_hash();
     loaded
@@ -338,6 +345,7 @@ fn attached_firepower_parent_hit_scan_hp_and_restore_share_effective_owner() {
         sim.entities()
             .get(firer)
             .unwrap()
+            .seldom
             .crate_multipliers
             .crate_firepower()
     );

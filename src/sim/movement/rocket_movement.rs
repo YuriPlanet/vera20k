@@ -18,8 +18,12 @@
 //! shared tail (`0x00662D74`) unless a detonation returned first.
 //!
 //! Arithmetic runs under the process x87 control word `0x0E7F` (53-bit,
-//! toward zero) as [`X87Chop53`]; the trig and arctangent are the retail
-//! tables. Native comparisons: `tools/rocket_oracle/` (see its README).
+//! toward zero) with exceptions masked, as [`MaskedX87Chop53`]: a pitch or
+//! acceleration key is read as a double and stored to its binary32 field with
+//! chop, so it is infinite only when the double is (about `1.8e308` and up,
+//! e.g. `1e309`; `1e39` stores the largest finite float), and the pitch and
+//! speed carry it, or the NaN it makes, as the FPU does. The trig and
+//! arctangent are the retail tables. Native comparisons: `tools/rocket_oracle/` (see its README).
 //!
 //! [`LocomotorRuntimePayload::Rocket`]: super::locomotion::piggyback::LocomotorRuntimePayload
 //! [`MissileSpawnRules::rocket_block`]: crate::rules::missile_spawn::MissileSpawnRules::rocket_block
@@ -28,11 +32,11 @@ use crate::rules::missile_spawn::{MissileSpawnParams, RocketTypeExt};
 use crate::sim::components::DriveCoord;
 use crate::sim::timer::CdTimer;
 use crate::util::direction_tables::{facing16_between, native_atan_from_table};
-use crate::util::lepton::{BRIDGE_DECK_HEIGHT_LEPTONS, lepton_to_cell_packed};
+use crate::util::lepton::lepton_to_cell_packed;
 use crate::util::native_trig::facing_step_world_xy;
 use crate::util::native_x87::{
-    NativeF32Bits, NativeF64Bits, X87Chop53, X87Ordering, X87Value, sqrt_approx_f32,
-    sqrt_approx_length,
+    MaskedX87Chop53 as M, MaskedX87Ordering, MaskedX87Value, NativeF32Bits, NativeF64Bits,
+    X87Chop53, X87Ordering, sqrt_approx_f32, sqrt_approx_length,
 };
 use crate::util::retail_trig::TrigTable;
 
@@ -143,7 +147,7 @@ impl RocketRuntime {
         self.mission_timer_rate = frames;
     }
 
-    fn pitch_value(&self) -> X87Value {
+    fn pitch_value(&self) -> MaskedX87Value {
         f32_value(NativeF32Bits::from_bits(self.current_pitch))
     }
 
@@ -164,10 +168,16 @@ impl RocketRuntime {
     pub fn draw_key_bits(&self, block: &MissileSpawnParams) -> Option<u32> {
         let pitch = self.pitch_value();
         let half_pi = f64_value(HALF_PI);
-        let equal = |value| X87Chop53::compare(pitch, value) == X87Ordering::Equal;
-        if equal(X87Chop53::load_i32(0)) {
+        // `TEST AH,0x40`: an unordered (NaN) pitch counts as equal.
+        let equal = |value| {
+            matches!(
+                M::compare(pitch, value),
+                MaskedX87Ordering::Equal | MaskedX87Ordering::Unordered
+            )
+        };
+        if equal(M::load_i32(0)) {
             Some(0)
-        } else if equal(X87Chop53::mul(f32_value(block.pitch_initial), half_pi)) {
+        } else if equal(M::mul(f32_value(block.pitch_initial), half_pi)) {
             Some(0x20)
         } else if equal(f32_value(NativeF32Bits::from_bits(quarter_turns(
             block.pitch_final,
@@ -205,6 +215,9 @@ pub(crate) trait RocketHost {
     /// `[0x00A8ED84]`, the frame the timers count from.
     fn binary_frame(&self) -> u32;
     fn trig(&self) -> &TrigTable;
+    /// `[Map] Size` width plus height past the original's 512 limit: the pitch
+    /// takes the true 64-bit square on a VERA-only map.
+    fn vera_only_map(&self) -> bool;
     /// Owner `+0x2D4` SpawnOwner is set and `VeterancyStruct::IsElite @
     /// 0x00750010` holds for its `+0x150`.
     fn spawn_owner_is_elite(&self) -> bool;
@@ -249,7 +262,7 @@ pub(crate) trait RocketHost {
     /// The owner's cell (GetCell, vtable `+0x1BC` -> `0x005F6960`): its own
     /// GetCoords Z (`0x00486840`) when it carries a structural bridge
     /// (`+0x140 & 0x100`), else `None`.
-    fn structural_bridge_floor(&self) -> Option<i32>;
+    fn structural_bridge_floor_and_deck(&self) -> Option<(i32, i32)>;
     /// Detonate's explosion: `SelectAnim @ 0x0048A4F0(damage, warhead, land,
     /// &coord)` with the land of the cell holding `coord`, then
     /// `new AnimClass(type, &coord, 0, 1, 0x2600, -15, 0)`.
@@ -384,18 +397,14 @@ fn tilt(
         return;
     }
     let half_pi = f64_value(HALF_PI);
-    let initial = X87Chop53::mul(f32_value(block.pitch_initial), half_pi);
-    let last = X87Chop53::mul(f32_value(block.pitch_final), half_pi);
+    let initial = M::mul(f32_value(block.pitch_initial), half_pi);
+    let last = M::mul(f32_value(block.pitch_final), half_pi);
     let rate = rocket.mission_timer_rate;
-    let progress = X87Chop53::div(
-        X87Chop53::load_i32(rate.wrapping_sub(rocket.mission_timer.remaining(frame))),
-        X87Chop53::load_i32(rate),
-    )
-    .expect("a running tilt has a nonzero rate");
-    rocket.current_pitch = store_f32(X87Chop53::add(
-        X87Chop53::mul(X87Chop53::sub(last, initial), progress),
-        initial,
-    ));
+    let progress = M::div(
+        M::load_i32(rate.wrapping_sub(rocket.mission_timer.remaining(frame))),
+        M::load_i32(rate),
+    );
+    rocket.current_pitch = store_f32(M::add(M::mul(M::sub(last, initial), progress), initial));
 }
 
 /// State 3 (`0x006628F0..0x006629C2`): accelerate straight along the pitch
@@ -438,12 +447,16 @@ fn cruise(
         // 0x00662B51: level off by TurnRate a frame, not below zero; the dive
         // starts once the distance is no more than the height over the
         // destination. GetCoords is the Location, so the Z term is zero.
-        let zero = X87Chop53::load_i32(0);
+        let zero = M::load_i32(0);
         let pitch = rocket.pitch_value();
-        if X87Chop53::compare(pitch, zero) == X87Ordering::Greater {
-            let lowered = X87Chop53::sub(pitch, f32_value(block.turn_rate));
+        if M::compare(pitch, zero) == MaskedX87Ordering::Greater {
+            let lowered = M::sub(pitch, f32_value(block.turn_rate));
             rocket.current_pitch = store_f32(lowered);
-            if X87Chop53::compare(lowered, zero) == X87Ordering::Less {
+            // 0x00662B6A: `TEST AH,0x1`.
+            if matches!(
+                M::compare(lowered, zero),
+                MaskedX87Ordering::Less | MaskedX87Ordering::Unordered
+            ) {
                 rocket.current_pitch = NativeF32Bits::POSITIVE_ZERO.bits();
             }
         }
@@ -469,18 +482,14 @@ fn cruise(
             coords[1].wrapping_sub(destination.y),
             coords[0].wrapping_sub(destination.x),
         ]);
-        let share = X87Chop53::div(
-            X87Chop53::load_i32(left),
-            X87Chop53::load_i32(rocket.cruise_start_distance),
-        )
-        .expect("the lazy curve runs with a nonzero start distance");
-        let angle = target_angle(destination, host.location());
-        let rest = X87Chop53::sub(f64_value(NativeF64Bits::ONE), share);
-        let toward_final = X87Chop53::mul(
-            X87Chop53::mul(f32_value(block.pitch_final), share),
+        let share = M::div(M::load_i32(left), M::load_i32(rocket.cruise_start_distance));
+        let angle = target_angle(destination, host.location(), host.vera_only_map());
+        let rest = M::sub(f64_value(NativeF64Bits::ONE), share);
+        let toward_final = M::mul(
+            M::mul(f32_value(block.pitch_final), share),
             f64_value(HALF_PI),
         );
-        rocket.current_pitch = store_f32(X87Chop53::add(toward_final, X87Chop53::mul(angle, rest)));
+        rocket.current_pitch = store_f32(M::add(toward_final, M::mul(angle, rest)));
     }
     // 0x00662C3A: steer the body at the destination.
     let coords = host.location();
@@ -492,23 +501,30 @@ fn cruise(
 /// State 5 (`0x00662CBF..0x0066300A`) after the impact prediction: turn the
 /// pitch toward the target angle by at most TurnRate.
 fn dive(rocket: &mut RocketRuntime, block: &MissileSpawnParams, host: &mut impl RocketHost) {
-    let angle = target_angle(rocket.destination, host.location());
-    let zero = X87Chop53::load_i32(0);
+    let angle = target_angle(rocket.destination, host.location(), host.vera_only_map());
+    let zero = M::load_i32(0);
     let pitch = rocket.pitch_value();
     let turn = f32_value(block.turn_rate);
-    let difference = X87Chop53::sub(angle, pitch);
-    let magnitude = if X87Chop53::compare(difference, zero) == X87Ordering::Less {
-        X87Chop53::neg(difference)
+    let difference = M::sub(angle, pitch);
+    // 0x00662D39 and 0x00662D5A test `AH,0x1`, so an unordered difference
+    // counts as negative; 0x00662D4C (`TEST AH,0x41`) takes the whole
+    // difference unless the magnitude is above TurnRate.
+    let negative = matches!(
+        M::compare(difference, zero),
+        MaskedX87Ordering::Less | MaskedX87Ordering::Unordered
+    );
+    let magnitude = if negative {
+        M::neg(difference)
     } else {
         difference
     };
     rocket.current_pitch = store_f32(
-        if X87Chop53::compare(magnitude, turn) != X87Ordering::Greater {
-            X87Chop53::add(pitch, difference)
-        } else if X87Chop53::compare(difference, zero) == X87Ordering::Less {
-            X87Chop53::sub(pitch, turn)
+        if M::compare(magnitude, turn) != MaskedX87Ordering::Greater {
+            M::add(pitch, difference)
+        } else if negative {
+            M::sub(pitch, turn)
         } else {
-            X87Chop53::add(turn, pitch)
+            M::add(turn, pitch)
         },
     );
 }
@@ -565,10 +581,10 @@ fn tail(
         rocket.trailer_timer = CdTimer::started(frame, ext.trailer_separation);
     }
     let speed = f64_value(NativeF64Bits::from_bits(rocket.current_speed));
-    if X87Chop53::compare(speed, X87Chop53::load_i32(0)) != X87Ordering::Greater {
+    if M::compare(speed, M::load_i32(0)) != MaskedX87Ordering::Greater {
         return;
     }
-    let speed = X87Chop53::load_i32(X87Chop53::ftol_i32_low_masked(speed));
+    let speed = M::load_i32(M::ftol_i32_low_masked(speed));
     let next = along_nose(rocket, &*host, speed);
     if host.in_bounds(cell_of(next)) {
         host.set_location(next);
@@ -594,13 +610,20 @@ fn takeoff_puff(ext: &RocketTypeExt<'_>, host: &mut impl RocketHost) {
 /// CurrentSpeed gains Acceleration, then is clamped to the type's Speed
 /// (`0x0066291F..0x00662954`, again at `0x006629E6..0x00662A1B`).
 fn accelerate(rocket: &mut RocketRuntime, block: &MissileSpawnParams, host: &impl RocketHost) {
-    let speed = X87Chop53::add(
+    let speed = M::add(
         f32_value(block.acceleration),
         f64_value(NativeF64Bits::from_bits(rocket.current_speed)),
     );
     rocket.current_speed = store_f64(speed);
-    let limit = X87Chop53::load_i32(host.type_speed());
-    if X87Chop53::compare(limit, speed) == X87Ordering::Less {
+    let limit = M::load_i32(host.type_speed());
+    // `FCOMP` against the stored speed, `TEST AH,0x1`.
+    if matches!(
+        M::compare(
+            limit,
+            f64_value(NativeF64Bits::from_bits(rocket.current_speed))
+        ),
+        MaskedX87Ordering::Less | MaskedX87Ordering::Unordered
+    ) {
         rocket.current_speed = store_f64(limit);
     }
 }
@@ -616,18 +639,18 @@ fn predicted_impact(
     host: &mut impl RocketHost,
 ) -> bool {
     let here = host.location();
-    let nose = X87Chop53::ftol_i32_low_masked(X87Chop53::add(
-        X87Chop53::mul(
-            host.trig().sin_from_table(rocket.pitch_value()),
-            X87Chop53::load_i32(block.body_length),
+    let nose = M::ftol_i32_low_masked(M::add(
+        M::mul(
+            host.trig().sin_from_table(rocket.pitch_value()).into(),
+            M::load_i32(block.body_length),
         ),
-        X87Chop53::load_i32(here[2]),
+        M::load_i32(here[2]),
     ));
     let floor = rocket.destination.z;
     let impact = nose <= floor
-        || host.structural_bridge_floor().is_some_and(|cell_floor| {
-            cell_floor == floor && nose <= floor.wrapping_add(BRIDGE_DECK_HEIGHT_LEPTONS)
-        })
+        || host
+            .structural_bridge_floor_and_deck()
+            .is_some_and(|(cell_floor, deck)| cell_floor == floor && nose <= deck)
         || host.height() <= 0;
     if impact {
         detonate(rocket, block, ext, host);
@@ -647,7 +670,7 @@ fn detonate(
     host: &mut impl RocketHost,
 ) {
     host.tracker_remove();
-    let impact = along_nose(rocket, &*host, X87Chop53::load_i32(block.body_length));
+    let impact = along_nose(rocket, &*host, M::load_i32(block.body_length));
     let elite = rocket.spawner_is_elite;
     if let Some(weapon) = ext.weapon(elite) {
         host.weapon_detonation(weapon, impact);
@@ -666,15 +689,15 @@ fn detonate(
 /// horizontal share `ftol(cos(pitch) * length)` steps along the facing and
 /// Z gains `sin(pitch) * length` (the tail `0x00662E2A..0x00662F27`, the
 /// impact `0x006630F7..0x006631C7`).
-fn along_nose(rocket: &RocketRuntime, host: &impl RocketHost, length: X87Value) -> [i32; 3] {
+fn along_nose(rocket: &RocketRuntime, host: &impl RocketHost, length: MaskedX87Value) -> [i32; 3] {
     let here = host.location();
     let pitch = rocket.pitch_value();
     let horizontal =
-        X87Chop53::ftol_i32_low_masked(X87Chop53::mul(host.trig().cos_from_table(pitch), length));
+        M::ftol_i32_low_masked(M::mul(host.trig().cos_from_table(pitch).into(), length));
     let [x, y] = facing_step_world_xy([here[0], here[1]], host.facing(), horizontal);
-    let z = X87Chop53::ftol_i32_low_masked(X87Chop53::add(
-        X87Chop53::mul(host.trig().sin_from_table(pitch), length),
-        X87Chop53::load_i32(here[2]),
+    let z = M::ftol_i32_low_masked(M::add(
+        M::mul(host.trig().sin_from_table(pitch).into(), length),
+        M::load_i32(here[2]),
     ));
     [x, y, z]
 }
@@ -683,26 +706,35 @@ fn along_nose(rocket: &RocketRuntime, host: &impl RocketHost, length: X87Value) 
 /// 0x00662B2E`) and the dive (`0x00662CBF..0x00662D2E`): the horizontal
 /// distance squares and sums in int32, and nothing left to cover is straight
 /// down.
-fn target_angle(destination: DriveCoord, here: [i32; 3]) -> X87Value {
-    let dx = destination.x.wrapping_sub(here[0]);
-    let dy = destination.y.wrapping_sub(here[1]);
+fn target_angle(destination: DriveCoord, here: [i32; 3], vera_only_map: bool) -> MaskedX87Value {
     let dz = destination.z.wrapping_sub(here[2]);
-    let squared = dx.wrapping_mul(dx).wrapping_add(dy.wrapping_mul(dy));
-    let distance = f32_value(
-        sqrt_approx_f32(X87Chop53::load_i32(squared)).expect("a finite int32 has a finite root"),
+    let squared = crate::util::native_coord::squared_xy_leptons_for_map(
+        [destination.x, destination.y],
+        [here[0], here[1]],
+        vera_only_map,
     );
+    let squared = if vera_only_map {
+        X87Chop53::load_f64(NativeF64Bits::from_bits((squared as f64).to_bits()))
+            .expect("a VERA-only squared distance is finite")
+    } else {
+        X87Chop53::load_i32(squared as i32)
+    };
+    let distance =
+        X87Chop53::load_f32(sqrt_approx_f32(squared).expect("a finite int32 has a finite root"))
+            .expect("Sqrt_Approx returns a finite value");
     if X87Chop53::compare(distance, X87Chop53::load_i32(0)) != X87Ordering::Greater {
         return f64_value(NEG_HALF_PI);
     }
     native_atan_from_table(
         X87Chop53::div(X87Chop53::load_i32(dz), distance).expect("the distance is positive"),
     )
+    .into()
 }
 
 /// A pitch key in quarter turns as radians, stored as binary32
 /// (`FLD float; FMUL [0x007E2820]; FSTP float`).
 fn quarter_turns(value: NativeF32Bits) -> u32 {
-    store_f32(X87Chop53::mul(f32_value(value), f64_value(HALF_PI)))
+    store_f32(M::mul(f32_value(value), f64_value(HALF_PI)))
 }
 
 /// The cell a coordinate falls in, as `0x0041BEA0` and the In_Bounds
@@ -714,23 +746,20 @@ fn cell_of(coord: [i32; 3]) -> (i16, i16) {
     )
 }
 
-fn f32_value(bits: NativeF32Bits) -> X87Value {
-    X87Chop53::load_f32(bits).expect("rocket binary32 values are finite")
+fn f32_value(bits: NativeF32Bits) -> MaskedX87Value {
+    M::load_f32(bits)
 }
 
-fn f64_value(bits: NativeF64Bits) -> X87Value {
-    X87Chop53::load_f64(bits).expect("rocket binary64 values are finite")
+fn f64_value(bits: NativeF64Bits) -> MaskedX87Value {
+    M::load_f64(bits)
 }
 
-fn store_f32(value: X87Value) -> u32 {
-    X87Chop53::store_f32_masked_chop(value).bits()
+fn store_f32(value: MaskedX87Value) -> u32 {
+    M::store_f32_masked_chop(value).bits()
 }
 
-/// CurrentSpeed never exceeds binary64: each frame clamps it to an int32.
-fn store_f64(value: X87Value) -> u64 {
-    X87Chop53::store_f64(value)
-        .expect("rocket speed stays finite")
-        .bits()
+fn store_f64(value: MaskedX87Value) -> u64 {
+    M::store_f64_masked_chop(value).bits()
 }
 
 #[cfg(all(test, tests_sim_movement))]
@@ -768,6 +797,10 @@ mod tests {
         }
         fn trig(&self) -> &TrigTable {
             self.trig
+        }
+        fn vera_only_map(&self) -> bool {
+            // The oracle rows are original-executable samples.
+            false
         }
         fn spawn_owner_is_elite(&self) -> bool {
             // VeterancyStruct::IsElite: Veterancy >= [0x007E37B4] (2.0f).
@@ -844,13 +877,19 @@ mod tests {
             self.events
                 .push(json!(["aux_sound", self.input["aux_sound"], coord]));
         }
-        fn structural_bridge_floor(&self) -> Option<i32> {
+        fn structural_bridge_floor_and_deck(&self) -> Option<(i32, i32)> {
             let (x, y) = cell_of(self.location);
             self.input["bridge_cells"]
                 .as_array()
                 .expect("bridge cells")
                 .contains(&json!([x, y]))
-                .then(|| int(&self.input["bridge_floor"]) as i32)
+                .then(|| {
+                    let floor = int(&self.input["bridge_floor"]) as i32;
+                    (
+                        floor,
+                        floor.wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS),
+                    )
+                })
         }
         fn explosion(&mut self, damage: i32, warhead: &str, coord: [i32; 3]) {
             let (x, y) = cell_of(coord);
@@ -1114,5 +1153,48 @@ mod tests {
         assert_eq!(rocket.draw_key_bits(block), Some(0x40));
         rocket.current_pitch += 1;
         assert_eq!(rocket.draw_key_bits(block), None);
+    }
+
+    /// `V3RocketPitchInitial=1e999` reads as a binary32 infinity. Move_To stores
+    /// its quarter turns, infinity again, and Draw_Matrix's compare against
+    /// the PitchInitial product (`0x00663535`) finds them equal.
+    #[test]
+    fn infinite_pitch_initial_starts_and_keys_an_infinite_pitch() {
+        let rules = crate::rules::ruleset::RuleSet::from_ini(
+            &crate::rules::ini_parser::IniFile::from_str("[General]\nV3RocketPitchInitial=1e999\n"),
+        )
+        .unwrap();
+        let block = &rules.missile_spawn.v3;
+        assert_eq!(block.pitch_initial.bits(), f32::INFINITY.to_bits());
+        let mut rocket = RocketRuntime::constructed(0);
+        move_to(&mut rocket, block, DriveCoord { x: 1, y: 1, z: 0 }, 0);
+        assert_eq!(rocket.current_pitch, f32::INFINITY.to_bits());
+        assert_eq!(rocket.draw_key_bits(block), Some(0x20));
+    }
+
+    /// `0x00662AA2`/`0x00662CBF`: `(46_341, 46_341)` wraps the native
+    /// horizontal square to 9,266 (96 leptons); the true square is 65,536.
+    /// With a 1,000-lepton drop the native angle is steep and the VERA-only
+    /// one shallow.
+    #[test]
+    fn vera_only_target_angle_uses_the_true_square() {
+        let destination = DriveCoord {
+            x: 46_341,
+            y: 46_341,
+            z: 1_000,
+        };
+        let here = [0, 0, 0];
+        let native = f64::from_bits(super::store_f64(super::target_angle(
+            destination,
+            here,
+            false,
+        )));
+        let vera_only = f64::from_bits(super::store_f64(super::target_angle(
+            destination,
+            here,
+            true,
+        )));
+        assert!(native > 1.0, "native steep angle {native}");
+        assert!(vera_only < 0.1, "true shallow angle {vera_only}");
     }
 }

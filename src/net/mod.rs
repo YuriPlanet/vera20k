@@ -1,8 +1,9 @@
 //! Multiplayer via deterministic lockstep.
 //!
-//! net/ is a pure command transport - it collects player input commands and feeds
-//! them into sim/. The simulation doesn't know if it's single-player or multiplayer.
-//! net/ doesn't know game rules - it just moves command packets around.
+//! net/ carries LAN and online datagrams (the socket pair and, online, the
+//! client relay route), their reliable and global delivery, the event-packet
+//! codec and command exchange, each match's live command session and lockstep
+//! timing, and the LAN lobby and setup message codecs.
 //!
 //! Deterministic lockstep works because:
 //! 1. All players run the same simulation code
@@ -11,19 +12,15 @@
 //! 4. Each tick processes the same commands in the same order
 //!
 //! ## Dependency rules
-//! - net/ depends on: sim/ (feeds commands into simulation, nothing else)
-//! - net/ does NOT depend on: assets/, rules/, map/, render/, ui/, audio/
-
-// Future modules - uncomment as implemented:
-// pub mod protocol;
+//! - net/ depends on sim/, util/, `skirmish_launch` (the network slot count)
+//!   and the `vera20k_relay_protocol` crate.
+//! - net/ does not depend on assets/, rules/, map/, render/, ui/ or audio/.
 
 pub mod command_exchange;
 pub mod event_packet;
 pub mod global;
 pub mod live_commands;
 pub mod lockstep;
-#[cfg(all(test, tests_net))]
-mod lockstep_sim_convergence_tests;
 pub mod reliable;
 pub mod udp;
 

@@ -9,7 +9,9 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use crate::app::AppState;
+use crate::app::frontend::state::FrontendState;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::state::PlatformState;
 use crate::map::terrain::{self, TILE_HEIGHT, TILE_WIDTH};
 use crate::render::batch::SpriteInstance;
 use crate::render::bridge_atlas::is_high_bridge_body_identity;
@@ -247,7 +249,10 @@ pub(crate) struct DisplayEffectInputs<'a> {
     pub tactical: [u32; 4],
     pub zoom: f32,
     pub axis: crate::render::batch::DepthAxis,
+    /// This frame's Z-buffer row seed (`native_z::ZSeed`).
+    pub z_seed: i32,
     pub atlas: Option<&'a crate::render::sprite_atlas::SpriteAtlas>,
+    /// The owner's cell (`MatchPresentationState::detail`), stepped per draw.
     pub detail: &'a std::cell::RefCell<crate::app::presentation::detail::DetailState>,
     pub detail_level: u32,
     pub lighting: &'a crate::map::lighting::CellLightGrid,
@@ -344,7 +349,7 @@ fn plan_effect_body(
     input: &DisplayEffectInputs<'_>,
     member: &crate::app::presentation::display_members::EffectMember,
     context: &super::particles::ParticleDrawContext,
-    objects: &mut Vec<crate::app::presentation::render::draw_plan_lowering::PlannedObjectInstance>,
+    objects: &mut crate::app::presentation::render::draw_plan_lowering::PlannedObjects,
     order: &crate::app::presentation::render::draw_plan_lowering::NativeDisplayOrder,
     observations: &mut Option<Vec<super::particles::ParticleDrawObservation>>,
 ) {
@@ -399,7 +404,8 @@ fn passed_by_effect_plans_nothing(
             anim_draw_point(input.frame, anim, id, input.tactical_admission()).is_none()
         });
     }
-    let mut scratch = Vec::new();
+    let mut scratch =
+        crate::app::presentation::render::draw_plan_lowering::PlannedObjects::default();
     plan_effect_body(input, member, context, &mut scratch, order, &mut None);
     scratch.is_empty()
 }
@@ -411,15 +417,16 @@ fn passed_by_effect_plans_nothing(
 /// only at their own encounter, even when preparation produced no visible piece.
 pub(crate) fn build_display_effect_instances(
     input: &DisplayEffectInputs<'_>,
-    ground_objects: &mut Vec<
-        crate::app::presentation::render::draw_plan_lowering::PlannedObjectInstance,
-    >,
+    ground_objects: &mut crate::app::presentation::render::draw_plan_lowering::PlannedObjects,
     ground_order: &crate::app::presentation::render::draw_plan_lowering::NativeDisplayOrder,
-    mut prepared_building_anims: BTreeMap<
-        crate::sim::anim_class::AnimId,
-        crate::app::presentation::render::draw_plan_lowering::PlannedObjectInstance,
-    >,
+    prepared_building_anims: crate::app::presentation::render::draw_plan_lowering::PlannedObjects,
 ) -> Option<Vec<super::particles::ParticleDrawObservation>> {
+    // The building slot anims planned ahead, each taken at its own encounter.
+    let (prepared, prepared_sprites) = prepared_building_anims.into_parts();
+    let mut prepared_building_anims: BTreeMap<crate::sim::anim_class::AnimId, _> = prepared
+        .into_iter()
+        .map(|parent| (parent.parent.id, parent))
+        .collect();
     let mut observations = input.observe_particles.then(Vec::new);
     let sim = input.sim;
     let context = super::particles::ParticleDrawContext::new(input);
@@ -546,7 +553,10 @@ pub(crate) fn build_display_effect_instances(
             // DrawIt queries detail before hidden/image/material rejection.
             // An absent prepared piece must not suppress that query.
             if let Some(parent) = prepared_building_anims.remove(&stable_id) {
-                ground_objects.push(parent);
+                // The copy stays: the building pass plans these pieces before
+                // Display order reaches the anim, and only an encountered
+                // anim draws, so its few pieces move into this plan here.
+                ground_objects.push_from(&prepared_sprites, parent);
             }
             continue;
         }
@@ -668,31 +678,29 @@ pub(crate) fn build_display_effect_instances(
             ..Default::default()
         };
         if let Some(parent) = ground_order.object_draw(anim.stable_id(), SpriteEncoding::Plain) {
-            ground_objects.push(
-                crate::app::presentation::render::draw_plan_lowering::PlannedObjectInstance::object(
-                    parent,
-                    super::anim_draw::anim_draw_pieces(
-                        atlas,
-                        super::anim_draw::AnimDrawInput {
-                            key: &key,
-                            entry,
-                            point: [center_x, center_y],
-                            body: instance,
-                            config,
-                            flags,
-                            lift_px,
-                            axis: input.axis,
-                            viewport: [cam_x, cam_y, sw, sh],
-                            legacy_policy: parent.policy.render_z,
-                            bounce_drop_px: super::anim_draw::anim_bounce_drop_px(
-                                sim,
-                                anim,
-                                drawn_coord,
-                            ),
-                        },
-                    ),
-                ),
-            );
+            ground_objects.object_with(parent, |pieces| {
+                super::anim_draw::anim_draw_pieces(
+                    atlas,
+                    super::anim_draw::AnimDrawInput {
+                        key: &key,
+                        entry,
+                        point: [center_x, center_y],
+                        body: instance,
+                        config,
+                        flags,
+                        lift_px,
+                        axis: input.axis,
+                        viewport: [cam_x, cam_y, sw, sh],
+                        legacy_policy: parent.policy.render_z,
+                        bounce_drop_px: super::anim_draw::anim_bounce_drop_px(
+                            sim,
+                            anim,
+                            drawn_coord,
+                        ),
+                    },
+                    pieces,
+                )
+            });
         }
     }
     // Ares hook 0x6D9427: its particle records after the Air layer.
@@ -823,8 +831,9 @@ pub(super) fn presentation_anim_frame_count(
     type_name: &str,
 ) -> Option<u16> {
     frame_counts.get(type_name).copied().or_else(|| {
-        let canonical = type_name.to_ascii_uppercase();
-        frame_counts.get(&canonical).copied()
+        crate::util::native_string::with_ascii_uppercase(type_name, |canonical| {
+            frame_counts.get(canonical).copied()
+        })
     })
 }
 
@@ -1028,12 +1037,6 @@ fn build_cell_overlay_bodies(input: &CellOverlayInputs<'_>, bodies: &mut Vec<sup
             None
         };
 
-        let track_y_offset: f32 = if overlay_flags.map(|f| f.track).unwrap_or(false) {
-            TRACK_OVERLAY_Y_OFFSET
-        } else {
-            0.0
-        };
-
         let z: u8 = input
             .terrain
             .and_then(|terrain| terrain.cell(entry.rx, entry.ry))
@@ -1044,7 +1047,6 @@ fn build_cell_overlay_bodies(input: &CellOverlayInputs<'_>, bodies: &mut Vec<sup
             .and_then(|terrain| terrain.cell(entry.rx, entry.ry))
             .map_or(0, |cell| cell.bridge_facts.raw_flags);
         let screen_y: f32 = screen_y
-            + track_y_offset
             + super::bridges::cell_overlay_y_offset(live_overlay_id, live_flags, live_overlay_data);
 
         // No LocalSize gate: gamemd draws overlays on border filler cells like
@@ -1129,7 +1131,8 @@ fn build_cell_overlay_bodies(input: &CellOverlayInputs<'_>, bodies: &mut Vec<sup
             palette_light,
             alpha: 1.0,
             z_adjust: body_z.z_adjust,
-            z_gradient: pack_z_gradient(body_z.gradient, false),
+            z_gradient: pack_z_gradient(body_z.gradient, false)
+                | native_z::shp_frame_flag(spr.extended),
             ..Default::default()
         };
         if body_z.shape.is_some_and(|shape| {
@@ -1150,13 +1153,10 @@ fn build_cell_overlay_bodies(input: &CellOverlayInputs<'_>, bodies: &mut Vec<sup
     }
 }
 
-/// FA2 IsoView.cpp:5955-5956: track overlays render +CellHeight (15px) lower.
-const TRACK_OVERLAY_Y_OFFSET: f32 = 15.0;
-
 /// The cells whose overlay body [`build_cell_overlay_bodies`] can admit for
 /// `camera`/`viewport` when every sprite lies in `art`. Its `in_view` box and
-/// margin grow to a rubble sprite's size; the track offset moves the anchor
-/// down and [`super::bridges::cell_overlay_y_offset`] up by at most 31 px.
+/// margin grow to a rubble sprite's size; [`super::bridges::cell_overlay_y_offset`]
+/// moves the anchor up by at most 31 px.
 fn overlay_body_window(
     terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
     art: crate::render::cell_window::ArtExtent,
@@ -1167,7 +1167,7 @@ fn overlay_body_window(
     crate::render::cell_window::CellWindow::covering(
         crate::render::cell_window::AnchorBounds {
             left: camera[0] - 2.0 * margin,
-            top: camera[1] - 2.0 * margin - TRACK_OVERLAY_Y_OFFSET,
+            top: camera[1] - 2.0 * margin,
             right: camera[0] + viewport[0] + margin,
             bottom: camera[1] + viewport[1] + margin
                 - super::bridges::BRIDGE_BODY_Y_OFFSET_STATE_9_TO_17,
@@ -1222,25 +1222,21 @@ fn terrain_object_window(
 /// High-bridge bodies and every overlay shadow come from `instances::bridges`.
 /// Low bridges (LOBRDG*) are ordinary bodies on the regular overlay atlas.
 pub(crate) fn build_overlay_instances(
-    state: &AppState,
+    platform: &PlatformState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
     sw: f32,
     sh: f32,
     bodies: &mut Vec<super::CellBody>,
-    ground_objects: &mut Vec<
-        crate::app::presentation::render::draw_plan_lowering::PlannedObjectInstance,
-    >,
+    ground_objects: &mut crate::app::presentation::render::draw_plan_lowering::PlannedObjects,
     ground_order: &crate::app::presentation::render::draw_plan_lowering::NativeDisplayOrder,
 ) {
-    let atlas = match &state.match_state.match_presentation.overlay_atlas {
+    let atlas = match &match_state.match_presentation.overlay_atlas {
         Some(a) => a,
         None => return,
     };
-    let (cam_x, cam_y) = (
-        state.match_state.input.camera_x,
-        state.match_state.input.camera_y,
-    );
-    let (origin_y, world_height) = state
-        .match_state
+    let (cam_x, cam_y) = (match_state.input.camera_x, match_state.input.camera_y);
+    let (origin_y, world_height) = match_state
         .match_presentation
         .terrain_grid
         .as_ref()
@@ -1248,26 +1244,23 @@ pub(crate) fn build_overlay_instances(
         .unwrap_or((0.0, 1.0));
 
     let (viewer, fog, fog_of_war) =
-        state
-            .match_state
+        match_state
             .sim_runtime
             .presentation()
             .map_or((None, None, false), |runtime| {
                 let sim = &runtime.simulation;
-                let viewer = crate::app::input::commands::preferred_local_owner_name(state)
+                let viewer = crate::app::input::commands::preferred_local_owner_name(match_state)
                     .as_deref()
                     .and_then(|name| sim.interner().get(name));
                 (
                     viewer.filter(|_| {
-                        state.translucent_fog_enabled()
-                            && !state.match_state.sandbox_full_visibility
+                        platform.translucent_fog_enabled() && !match_state.sandbox_full_visibility
                     }),
                     Some(sim.fog()),
                     sim.session().game_options().fog_of_war,
                 )
             });
-    let terrain = state
-        .match_state
+    let terrain = match_state
         .sim_runtime
         .presentation()
         .and_then(|runtime| runtime.simulation.resolved_terrain());
@@ -1275,28 +1268,27 @@ pub(crate) fn build_overlay_instances(
     // the opaque leaf keeps the first pixel on equal Z (0x004991EA..0x004991EC),
     // so the bodies' order is part of the image.
     let window = overlay_body_window(terrain, atlas.art_extent(), [cam_x, cam_y], [sw, sh]);
-    let overlays = &state.match_state.match_presentation.overlays;
-    let window_entries: Vec<_> = overlays.entries_in(window).cloned().collect();
+    let overlays = &match_state.match_presentation.overlays;
+    let window_entries: Vec<_> = overlays.entries_in(window).copied().collect();
     let start = bodies.len();
     let input = CellOverlayInputs {
         entries: &window_entries,
         atlas,
-        names: &state.match_state.match_presentation.overlay_names,
-        live_grid: state
-            .match_state
+        names: &match_state.match_presentation.overlay_names,
+        live_grid: match_state
             .sim_runtime
             .presentation()
             .and_then(|runtime| runtime.simulation.overlay_grid()),
-        registry: state.overlay_registry(),
-        rules: state.rules(),
-        interner: state
-            .match_state
+        registry: crate::app::state::active_overlay_registry(frontend, match_state),
+        rules: crate::app::state::active_rules(frontend, match_state),
+        interner: match_state
             .sim_runtime
             .presentation()
             .map(|runtime| runtime.simulation.interner()),
-        tiberium_types: state.rules().map(|rules| &rules.tiberium_types),
+        tiberium_types: crate::app::state::active_rules(frontend, match_state)
+            .map(|rules| &rules.tiberium_types),
         terrain,
-        lighting: state.match_state.match_presentation.lighting.grid(),
+        lighting: match_state.match_presentation.lighting.grid(),
         camera: [cam_x, cam_y],
         viewport: [sw, sh],
         origin_y,
@@ -1332,8 +1324,7 @@ pub(crate) fn build_overlay_instances(
     }
 
     // Terrain objects from [Terrain] section.
-    let Some(sim) = state
-        .match_state
+    let Some(sim) = match_state
         .sim_runtime
         .presentation()
         .map(|rt| &rt.simulation)
@@ -1367,6 +1358,7 @@ pub(crate) fn build_overlay_instances(
         }
         // Ordinary native Ground6D97D0 -> Terrain71CC50/71C1B0 admits live
         // static art independently of anchor exploration; ABuffer clips pixels.
+        // An animated type draws in its Display slot instead (6D8DB0).
 
         // Terrain Render71CD30 reads the retained Location through GetCoords
         // 5F65A0; DrawIt71C1B0 applies AdjustForZ to that retained height.
@@ -1387,8 +1379,7 @@ pub(crate) fn build_overlay_instances(
         let type_ref = obj.type_ref();
         let name = sim.interner().resolve(type_ref);
         let (is_animated, spawns_tiberium) = *type_flags.entry(type_ref).or_insert_with(|| {
-            let terrain_type = state
-                .rules()
+            let terrain_type = crate::app::state::active_rules(frontend, match_state)
                 .and_then(|rules| rules.terrain_object_type_case_insensitive(name));
             (
                 terrain_type.is_some_and(|terrain_type| terrain_type.is_animated),
@@ -1417,15 +1408,14 @@ pub(crate) fn build_overlay_instances(
             screen_y,
             lift_px,
         );
-        let tint: [f32; 3] = state
-            .match_state
+        let tint: [f32; 3] = match_state
             .match_presentation
             .lighting
             .grid()
             .terrain_object_tint_for_type(obj.cell(), spawns_tiberium);
         // Terrain DrawIt 0071C286..0071C304: SpawnsTiberium selects the
         // global ordinary Convert/top; ordinary trees select cell Convert/common.
-        let light_grid = state.match_state.match_presentation.lighting.grid();
+        let light_grid = match_state.match_presentation.lighting.grid();
         let palette_light = if spawns_tiberium {
             crate::render::palette_light::PaletteLight::plain(
                 53,
@@ -1442,7 +1432,7 @@ pub(crate) fn build_overlay_instances(
             continue;
         };
         use crate::app::presentation::render::draw_plan_lowering::{
-            ObjectPieceInstance, ObjectTexture, PlannedObjectInstance,
+            ObjectPieceInstance, ObjectTexture,
         };
         use crate::render::tactical_draw_plan::RenderZPolicy;
         use crate::render::terrain_draw::TerrainPiece;
@@ -1476,9 +1466,8 @@ pub(crate) fn build_overlay_instances(
                         palette_light,
                     ),
                 })
-            })
-            .collect();
-        ground_objects.push(PlannedObjectInstance::object(parent, pieces));
+            });
+        ground_objects.object(parent, pieces).static_tree = !is_animated;
     }
 }
 
@@ -1521,7 +1510,7 @@ fn native_terrain_instance(
         tint,
         palette_light,
         alpha: 1.0,
-        z_gradient: gradient,
+        z_gradient: gradient | native_z::shp_frame_flag(sprite.extended),
         z_adjust: super::helpers::lifted_z_adjust(lift_px, class_z),
         ..Default::default()
     }
@@ -1529,28 +1518,23 @@ fn native_terrain_instance(
 
 /// Attach native Sonic/magnetic destination edits to retained Display parents.
 pub(crate) fn build_weapon_wave_instances(
-    state: &AppState,
-    objects: &mut Vec<crate::app::presentation::render::draw_plan_lowering::PlannedObjectInstance>,
+    match_state: &MatchState,
+    objects: &mut crate::app::presentation::render::draw_plan_lowering::PlannedObjects,
     order: &crate::app::presentation::render::draw_plan_lowering::NativeDisplayOrder,
 ) {
-    let Some(sim) = state
-        .match_state
+    let Some(sim) = match_state
         .sim_runtime
         .presentation()
         .map(|rt| &rt.simulation)
     else {
         return;
     };
-    let observer = crate::app::input::commands::preferred_local_owner(state)
+    let observer = crate::app::input::commands::preferred_local_owner(match_state)
         .as_deref()
         .and_then(|owner| sim.interner().get(owner));
-    let camera = [
-        state.match_state.input.camera_x,
-        state.match_state.input.camera_y,
-    ]
-    .map(|value| value.floor() as i32);
-    let rules = &state
-        .match_state
+    let camera =
+        [match_state.input.camera_x, match_state.input.camera_y].map(|value| value.floor() as i32);
+    let rules = &match_state
         .sim_runtime
         .presentation()
         .expect("the wave owner's runtime")
@@ -1560,14 +1544,14 @@ pub(crate) fn build_weapon_wave_instances(
     // registers a wave's weapon (`Wave::with_ares_weapon`).
     let ares = rules.ares();
     let ares_frame = if ares {
-        let Some(frame) = state.match_state.sim_runtime.frame() else {
+        let Some(frame) = match_state.sim_runtime.frame() else {
             return;
         };
         Some(frame)
     } else {
         None
     };
-    let colors = &state.match_state.match_presentation.house_color_map;
+    let colors = &match_state.match_presentation.house_color_map;
     let blend = move |wave: &crate::sim::wave::Wave| match ares_frame {
         Some(frame) => {
             crate::app::presentation::fire_effects::ares_wave_blend(sim, frame, rules, colors, wave)
@@ -1577,17 +1561,13 @@ pub(crate) fn build_weapon_wave_instances(
     for (id, draw) in crate::app::presentation::fire_effects::build_weapon_wave_draws(
         sim, observer, camera, ares, blend,
     ) {
-        use crate::app::presentation::render::draw_plan_lowering::{
-            ObjectBodyDraw, PlannedObjectInstance,
-        };
+        use crate::app::presentation::render::draw_plan_lowering::ObjectBodyDraw;
         let Some(parent) = order.object_draw(id, SpriteEncoding::Plain) else {
             continue;
         };
-        let mut planned = PlannedObjectInstance::object(parent, Vec::new());
-        planned.body_draw = Some(ObjectBodyDraw::Surface(
+        objects.object(parent, []).body_draw = Some(ObjectBodyDraw::Surface(
             crate::render::surface_line::SurfaceDraw::Wave(draw),
         ));
-        objects.push(planned);
     }
     // Live BuildingLightRuntime producers are intentionally not lowered here:
     // native DrawExtras first uses SpotlightClass type 16's zero-blend

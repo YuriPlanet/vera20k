@@ -62,13 +62,12 @@ fn scene() -> Option<(SimRuntime, u64)> {
         })
         .collect();
     let rules = retail.rules;
-    let registry = OverlayTypeRegistry::from_ini(&retail.processed_rules, Some(&retail.fixed_art));
     let terrain = ResolvedTerrainGrid::build(
         &map,
         Some(&theater),
         Some(&assets),
         Some(&rules.terrain_rules),
-        Some(&registry),
+        Some(rules.overlay_registry()),
         false,
         0,
     );
@@ -95,13 +94,13 @@ fn scene() -> Option<(SimRuntime, u64)> {
     sim.resolve_type_handles(&rules);
     // Supplied ordinary human roster; authored entities still go through the
     // same Scenario population/placement-scope owner used by app loading.
-    crate::sim::runtime::populate_staged_scenario_with_generated_inits(
+    crate::sim::runtime::populate_staged_fixture(
         &mut sim,
         &map,
         &terrain,
         "TEMPERATE",
         &rules,
-        Some(&registry),
+        Some(rules.overlay_registry()),
         None,
         crate::map::basic::BridgeDestroyabilityMode::CampaignOrEditor,
         &crate::sim::scenario_session::ScenarioDescriptor::default(),
@@ -131,7 +130,6 @@ fn scene() -> Option<(SimRuntime, u64)> {
             simulation: sim,
             resources: std::sync::Arc::new(SimResources {
                 rules,
-                overlay_registry: registry,
                 terrain_template: Some(terrain),
             }),
         },
@@ -205,7 +203,7 @@ fn ares_forces_the_repacked_mcv_onto_the_water_cell() {
     let [_, frames, rate] = runtime.resources.rules.buildup_control("GACNST");
     for _ in 0..(frames * rate * 4 + 240) {
         runtime
-            .advance_frame(&[], 33, TickLane::Ordinary, FrameEffects::default())
+            .advance_frame(&[], 33, TickLane::Ordinary, &mut FrameEffects::default())
             .unwrap();
         if runtime.simulation.entities().get(yard).is_none() {
             break;
@@ -267,7 +265,6 @@ fn authored_water_yard_refusal_refunds_keeps_constructor_and_survives_short_game
                 yard,
                 (clicked.0 as i16, clicked.1 as i16),
                 &runtime.resources.rules,
-                Some(&runtime.resources.overlay_registry),
             )
             .unwrap(),
         0,
@@ -285,7 +282,6 @@ fn authored_water_yard_refusal_refunds_keeps_constructor_and_survives_short_game
                     shift: false
                 },
                 &runtime.resources.rules,
-                Some(&runtime.resources.overlay_registry)
             )
             .unwrap(),
         MoveAction::Move
@@ -320,7 +316,7 @@ fn authored_water_yard_refusal_refunds_keeps_constructor_and_survives_short_game
     let [_, frames, rate] = runtime.resources.rules.buildup_control("GACNST");
     for _ in 0..(frames * rate * 4 + 240) {
         runtime
-            .advance_frame(&[], 33, TickLane::Ordinary, FrameEffects::default())
+            .advance_frame(&[], 33, TickLane::Ordinary, &mut FrameEffects::default())
             .unwrap();
         if runtime.simulation.entities().get(yard).is_none() {
             break;
@@ -350,7 +346,7 @@ fn authored_water_yard_refusal_refunds_keeps_constructor_and_survives_short_game
     assert_retained(&runtime.simulation, owner, held);
     runtime.simulation.take_frame_step_trace();
     runtime
-        .advance_frame(&[], 33, TickLane::Ordinary, FrameEffects::default())
+        .advance_frame(&[], 33, TickLane::Ordinary, &mut FrameEffects::default())
         .unwrap();
     assert!(
         runtime

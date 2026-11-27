@@ -3,22 +3,30 @@
 //! (48CA34/48CAB2) and the campaign restart request (native48CB2E→8B41C0)
 //! authority.
 
+use super::dialog_page::InGameDialog;
+use crate::app::App;
+use crate::app::PlatformState;
+use crate::app::audio_runtime::AppAudioRuntime;
+use crate::app::diagnostics::state::DiagnosticsState;
+use crate::app::frontend::state::FrontendState;
 use crate::app::match_runtime::session::SessionMode;
-use crate::app::{App, AppState};
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
 use crate::ui::pause_menu::{AbortConfirmAction, resolve_abort_action};
-use crate::ui::shell::abort::{AbortButton, AbortLayout, AbortSecondary, abort_layout};
-use winit::event::MouseButton;
+use crate::ui::shell::abort::{self, AbortButton, AbortLayout, AbortSecondary, abort_layout};
+use crate::ui::shell::page::PageEvent;
 
 /// B6 init `0x004F1938..0x004F1A0E` keys control712 on GameMode: 0 shows
 /// Restart, 5 hides it, LAN/WOL show Observe with two or more live humans
 /// while the local House is not defeated. Saved campaigns recover their
 /// continuation inputs at successful load and also offer Restart.
-fn select_abort_secondary(state: &AppState) -> AbortSecondary {
+fn select_abort_secondary(match_state: &MatchState) -> AbortSecondary {
     secondary_for(
-        state.match_state.session_mode(),
-        state.match_state.startup.installed_campaign().is_some(),
-        state
-            .match_state
+        match_state.session_mode(),
+        match_state.startup.installed_campaign().is_some(),
+        match_state
             .sim_runtime
             .runtime()
             .map(|runtime| &runtime.simulation),
@@ -56,36 +64,127 @@ fn secondary_for(
 
 /// B6 init runs once per dialog: its stored results and control712 stay
 /// fixed until the dialog closes, whatever the match does meanwhile.
-pub(crate) fn on_open(state: &mut AppState) {
-    state.match_state.match_presentation.abort_secondary = select_abort_secondary(state);
+pub(crate) fn on_open(match_state: &mut MatchState) {
+    match_state.match_presentation.abort_secondary = select_abort_secondary(match_state);
 }
+
+/// B6: no title, Resume 0x686 as the lower right-panel button.
+pub(crate) const DIALOG: InGameDialog = InGameDialog {
+    id: abort::DIALOG,
+    title: None,
+    lower: (0x686, ("GUI:ResumeMission", "Resume Mission")),
+    label: "Active Abort Shell B6",
+    ui: super::dialog_page::shared_ui,
+    ui_mut: super::dialog_page::shared_ui_mut,
+    own_checkbox_sound: false,
+    help_under_held: false,
+    help_fallback: |_| "",
+};
 
 /// The open B6's geometry.
-pub(crate) fn current_abort_layout(state: &AppState) -> Option<AbortLayout> {
-    let shell = crate::app::frontend::skirmish_shell_render::current_in_game_shell_layout(state)?;
-    Some(abort_layout(
-        shell.width,
-        shell.height,
-        shell.layout,
-        shell.button_size,
-        state.match_state.match_presentation.abort_secondary,
-    ))
+pub(crate) fn current_abort_layout(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    persistence: &PersistenceState,
+) -> Option<AbortLayout> {
+    let secondary = match_state.match_presentation.abort_secondary;
+    super::dialog_page::layout(
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        persistence,
+        |w, h, shell, size| abort_layout(w, h, shell, size, secondary),
+    )
 }
 
-fn hit(state: &AppState) -> Option<AbortButton> {
-    let layout = current_abort_layout(state)?;
-    let (x, y) = crate::app::frontend::skirmish_shell_render::in_game_shell_cursor(state);
-    layout.hit(x, y)
+/// Makes B6's nodes current without input (rects, the hidden 712): its
+/// renderer's call every drawn frame before it paints from them.
+pub(crate) fn sync(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    persistence: &PersistenceState,
+) -> Option<AbortLayout> {
+    let layout = current_abort_layout(platform, renderer, frontend, match_state, persistence)?;
+    let nodes = || abort::spec(layout.secondary_kind);
+    let rect_of = |id| layout.rect(id);
+    DIALOG.sync(
+        &mut match_state.match_presentation,
+        nodes,
+        rect_of,
+        super::dialog_page::no_sync,
+    );
+    Some(layout)
 }
 
-pub(crate) fn cursor_moved(state: &mut AppState) {
-    state.match_state.match_presentation.abort_buttons.hovered = hit(state);
+/// One pointer message on B6 (`down`: `None` moves).
+pub(super) fn pointer(
+    platform: &mut PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    persistence: &mut PersistenceState,
+    down: Option<bool>,
+) {
+    let Some(layout) = current_abort_layout(platform, renderer, frontend, match_state, persistence)
+    else {
+        return;
+    };
+    let nodes = || abort::spec(layout.secondary_kind);
+    let events = DIALOG.route(
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        process_assets,
+        &mut audio.sfx_player,
+        persistence,
+        down,
+        nodes,
+        |id| layout.rect(id),
+        super::dialog_page::no_sync,
+    );
+    for event in events {
+        if let PageEvent::Activated(id) = event
+            && let Some(button) = AbortButton::from_id(id)
+        {
+            activate(
+                platform,
+                renderer,
+                diag,
+                frontend,
+                match_state,
+                process_assets,
+                audio,
+                persistence,
+                button,
+            );
+        }
+    }
 }
 
 /// Callback4F18B0 writes the result B6 init stored for the pressed button:
 /// Leave6C9 `[0xA8EE7C]` (2, or 3 beside Observe), 712 `[0xA8EE80]`.
-pub(crate) fn activate(state: &mut AppState, button: AbortButton) {
-    let Some(layout) = current_abort_layout(state) else {
+pub(crate) fn activate(
+    platform: &mut PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    persistence: &mut PersistenceState,
+    button: AbortButton,
+) {
+    let Some(layout) = current_abort_layout(platform, renderer, frontend, match_state, persistence)
+    else {
         return;
     };
     let action = match (button, layout.secondary_kind) {
@@ -96,32 +195,17 @@ pub(crate) fn activate(state: &mut AppState, button: AbortButton) {
         (AbortButton::Secondary, AbortSecondary::Hidden) => return,
         (AbortButton::Resume, _) => AbortConfirmAction::Cancel,
     };
-    App::apply_in_game_modal_outcome(state, resolve_abort_action(action));
-}
-
-pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
-    if button != MouseButton::Left {
-        return;
-    }
-    let over = hit(state);
-    if pressed {
-        state
-            .match_state
-            .match_presentation
-            .abort_buttons
-            .press(over);
-        if over.is_some() {
-            // Owner-draw button-down: GUIMainButtonSound (0x0061376B).
-            App::play_main_menu_button_sound(state);
-        }
-    } else if let Some(button) = state
-        .match_state
-        .match_presentation
-        .abort_buttons
-        .release(over)
-    {
-        activate(state, button);
-    }
+    App::apply_in_game_modal_outcome(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        audio,
+        persistence,
+        resolve_abort_action(action),
+    );
 }
 
 #[cfg(all(test, tests_app_input_a_c))]

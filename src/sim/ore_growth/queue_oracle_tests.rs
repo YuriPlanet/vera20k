@@ -517,21 +517,21 @@ fn compare_case(row: &Value) {
     } = supplied_fixture(row);
     let types = &rules.tiberium_types;
     let mut constructors = Simulation::with_seed(0);
-    constructors.native_unique_ids = Some(
+    *constructors.native_unique_ids = Some(
         crate::sim::native_identity::NativeUniqueIdCursor::test_at_current_value(
             input["scenario_serial"].as_u64().unwrap_or(0) as u32,
         ),
     );
-    constructors.overlay_grid = Some(grid);
-    constructors.resolved_terrain = Some(terrain);
-    constructors.ore_growth_state = state;
-    constructors.scenario_rng = rng;
-    constructors.substrate.entities = entities;
-    constructors.substrate.occupancy = occupancy;
-    constructors.interner = interner;
+    *constructors.overlay_grid = Some(grid);
+    *constructors.resolved_terrain = Some(terrain);
+    *constructors.ore_growth_state = state;
+    *constructors.scenario_rng = rng;
+    *constructors.substrate.entities = entities;
+    *constructors.substrate.occupancy = occupancy;
+    *constructors.interner = interner;
     *constructors.terrain_objects.cell_index_mut_for_test() = trees;
     *constructors.terrain_objects.spawning_cells_mut_for_test() = sources;
-    constructors.ore_growth_config = OreGrowthConfig::for_test(
+    *constructors.ore_growth_config = OreGrowthConfig::for_test(
         input["grows"] == true,
         input["spreads"] == true,
         input["fast_growth"] == true,
@@ -638,7 +638,7 @@ fn compare_case(row: &Value) {
                         receiver,
                         &rules,
                         &registry,
-                        FrameEffects::default(),
+                        &mut FrameEffects::default(),
                     )
                     .unwrap();
             }
@@ -648,18 +648,18 @@ fn compare_case(row: &Value) {
                         receiver,
                         &rules,
                         &registry,
-                        FrameEffects::default(),
+                        &mut FrameEffects::default(),
                     )
                     .unwrap();
             }
             "spread_driver" | "growth_then_spread_driver" => {
                 if input["entry"] == "growth_then_spread_driver" {
                     constructors
-                        .tick_native_growth_driver(&rules, &registry, FrameEffects::default())
+                        .tick_native_growth_driver(&rules, &registry, &mut FrameEffects::default())
                         .unwrap();
                 }
                 constructors
-                    .tick_native_spread_driver(&rules, &registry, FrameEffects::default())
+                    .tick_native_spread_driver(&rules, &registry, &mut FrameEffects::default())
                     .unwrap();
             }
             other => panic!("unhandled native entry {other}"),
@@ -710,8 +710,7 @@ fn compare_case(row: &Value) {
             );
             constructors.process_pending_delete_with(
                 crate::rules::ruleset::RuleSet::empty_for_test(),
-                None,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
                 1,
                 false,
             );
@@ -960,25 +959,25 @@ fn compare_authored_natural_phases(
     let sim = scene.sim();
     let hash = sim.state_hash();
     let rules = &scene.runtime.resources.rules;
-    let registry = &scene.runtime.resources.overlay_registry;
+    let registry = scene.runtime.resources.rules.overlay_registry();
     let mut actual = Simulation::with_seed(0);
-    actual.ore_growth_state = sim.ore_growth_state.clone();
-    actual.overlay_grid = sim.overlay_grid.clone();
+    *actual.ore_growth_state = (*sim.ore_growth_state).clone();
+    *actual.overlay_grid = (*sim.overlay_grid).clone();
     let mut terrain = sim.resolved_terrain.as_ref().unwrap().clone();
     terrain.bind_shared_cell_dummy(terrain.shared_cell_dummy().fork_query_identity());
-    actual.resolved_terrain = Some(terrain);
-    actual.substrate.entities = sim.substrate.entities.clone();
-    actual.substrate.occupancy = sim.substrate.occupancy.clone();
-    actual.substrate.raw_cell_occupation = sim.substrate.raw_cell_occupation.clone();
-    actual.interner = sim.interner.clone();
+    *actual.resolved_terrain = Some(terrain);
+    *actual.substrate.entities = (*sim.substrate.entities).clone();
+    *actual.substrate.occupancy = (*sim.substrate.occupancy).clone();
+    *actual.substrate.raw_cell_occupation = (*sim.substrate.raw_cell_occupation).clone();
+    *actual.interner = (*sim.interner).clone();
     *actual.terrain_objects.cell_index_mut_for_test() = sim.terrain_objects.cell_index().clone();
     *actual.terrain_objects.spawning_cells_mut_for_test() =
         sim.terrain_objects.spawning_cells().clone();
     let seed = native["inputs"]["seed"].as_u64().unwrap();
-    actual.scenario_rng = SimRng::new(seed);
+    *actual.scenario_rng = SimRng::new(seed);
     let main = MainRng::new(seed);
     let mapgen = SimRng::new(seed);
-    actual.ore_growth_config = sim.ore_growth_config.clone();
+    *actual.ore_growth_config = (*sim.ore_growth_config).clone();
     let config = &sim.ore_growth_config;
     assert_eq!(
         config.grows,
@@ -1008,7 +1007,7 @@ fn compare_authored_natural_phases(
     let mut previous_cells = actual.overlay_grid.as_ref().unwrap().cells().to_vec();
     let mut construction_count = 0;
     let mut native_cursor = native["initial"]["runtime_id_cursor"].as_u64().unwrap();
-    actual.native_unique_ids = Some(
+    *actual.native_unique_ids = Some(
         crate::sim::native_identity::NativeUniqueIdCursor::test_at_current_value(
             native_cursor as u32,
         ),
@@ -1051,10 +1050,10 @@ fn compare_authored_natural_phases(
         actual.session.set_binary_frame_for_test(frame);
         let ((growth, spread), draws) = crate::sim::rng::trace_draws(|| {
             let growth = actual
-                .tick_native_growth_driver(rules, registry, FrameEffects::default())
+                .tick_native_growth_driver(rules, registry, &mut FrameEffects::default())
                 .unwrap();
             let spread = actual
-                .tick_native_spread_driver(rules, registry, FrameEffects::default())
+                .tick_native_spread_driver(rules, registry, &mut FrameEffects::default())
                 .unwrap();
             (growth, spread)
         });
@@ -1148,13 +1147,7 @@ fn compare_authored_natural_phases(
             "{name}: every changed cell"
         );
         previous_cells.clone_from_slice(&actual.overlay_grid.as_ref().unwrap().cells().to_vec());
-        actual.process_pending_delete_with(
-            rules,
-            Some(registry),
-            FrameEffects::default(),
-            1,
-            false,
-        );
+        actual.process_pending_delete_with(rules, &mut FrameEffects::default(), 1, false);
     }
     assert_eq!(json!(construction_count), native["constructed_overlays"]);
     assert_eq!(
@@ -1251,7 +1244,8 @@ fn retail_authored_first_ore_frame_publishes_cells_and_retires_transient_overlay
         let variants = scene
             .runtime
             .resources
-            .overlay_registry
+            .rules
+            .overlay_registry()
             .flat_tiberium_variant_ids(ty)
             .unwrap();
         assert_eq!(json!(variants[0]), expected["base_overlay"]);
@@ -1259,7 +1253,7 @@ fn retail_authored_first_ore_frame_publishes_cells_and_retires_transient_overlay
     }
     for expected in native["inputs"]["flat_overlay_types"].as_array().unwrap() {
         let id = expected["index"].as_u64().unwrap() as u8;
-        let registry = &scene.runtime.resources.overlay_registry;
+        let registry = scene.runtime.resources.rules.overlay_registry();
         assert_eq!(json!(registry.name(id).unwrap()), expected["name"]);
         assert_eq!(
             json!(registry.flags(id).unwrap().cell_anim.is_none()),
@@ -1348,7 +1342,7 @@ fn retail_authored_first_ore_frame_publishes_cells_and_retires_transient_overlay
         );
         let value = crate::sim::tiberium::tiberium_cell_view(
             scene.sim().overlay_grid.as_ref().unwrap(),
-            &scene.runtime.resources.overlay_registry,
+            scene.runtime.resources.rules.overlay_registry(),
             &rules.tiberium_types,
             (rx, ry),
         )
@@ -1406,7 +1400,7 @@ fn retail_authored_first_ore_frame_publishes_cells_and_retires_transient_overlay
     let (output, draws) = crate::sim::rng::trace_draws(|| {
         scene
             .runtime
-            .advance_frame(&[], 22, TickLane::Ordinary, FrameEffects::default())
+            .advance_frame(&[], 22, TickLane::Ordinary, &mut FrameEffects::default())
             .unwrap()
     });
     assert!(output.tick.frame_committed);
@@ -1415,7 +1409,7 @@ fn retail_authored_first_ore_frame_publishes_cells_and_retires_transient_overlay
     assert!(!draws.is_empty());
 
     let rules = &scene.runtime.resources.rules;
-    let registry = &scene.runtime.resources.overlay_registry;
+    let registry = scene.runtime.resources.rules.overlay_registry();
     let grid = scene.sim().overlay_grid.as_ref().unwrap();
     let terrain = scene.sim().resolved_terrain.as_ref().unwrap();
     // The native initialization packet's first source is the first growth

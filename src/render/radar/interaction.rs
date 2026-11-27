@@ -346,6 +346,45 @@ impl MinimapRenderer {
     /// copy. The active side's exact sidebar text color is supplied by app
     /// composition; each edge is one generated-surface pixel thick and clips
     /// against the complete retained sidebar surface, not the radar aperture.
+    /// VERA `MapMarker`s on the radar (`ui_modules::field`): a 2x2 dot
+    /// in each marker's tint at its cell's radar pixel (`CellToRadarPixel`),
+    /// in the same screen frame as the camera window. A cell off the
+    /// generated surface shows none.
+    pub fn build_marker_dots_in_rect(
+        &self,
+        camera_x: f32,
+        camera_y: f32,
+        rect_x: f32,
+        rect_y: f32,
+        rect_w: f32,
+        rect_h: f32,
+        markers: impl IntoIterator<Item = ((u16, u16), [f32; 3])>,
+    ) -> Vec<SpriteInstance> {
+        let Some(surface) = self.native_radar_surface else {
+            return Vec::new();
+        };
+        let screen = NativeRadarScreenGeometry::new(
+            surface,
+            [rect_x, rect_y, rect_w, rect_h],
+        );
+        markers
+            .into_iter()
+            .filter_map(|(cell, tint)| {
+                let (x, y) = screen.surface_pixel_screen_point(surface.cell_to_surface_pixel(cell))?;
+                Some(SpriteInstance {
+                    position: [camera_x + x - 1.0, camera_y + y - 1.0],
+                    size: [2.0, 2.0],
+                    uv_origin: [0.0, 0.0],
+                    uv_size: [1.0, 1.0],
+                    depth: super::helpers::MINIMAP_DEPTH,
+                    tint,
+                    alpha: 1.0,
+                    ..Default::default()
+                })
+            })
+            .collect()
+    }
+
     pub fn build_viewport_rect_in_rect(
         &mut self,
         camera_x: f32,
@@ -641,7 +680,7 @@ mod tests {
                     },
                     22,
                     TickLane::Ordinary,
-                    FrameEffects::default(),
+                    &mut FrameEffects::default(),
                 )
                 .unwrap();
             let sim = scene.sim();
@@ -674,7 +713,12 @@ mod tests {
         );
         scene
             .runtime
-            .advance_frame(&[stop], 22, TickLane::Ordinary, FrameEffects::default())
+            .advance_frame(
+                &[stop],
+                22,
+                TickLane::Ordinary,
+                &mut FrameEffects::default(),
+            )
             .unwrap();
         for _ in 0..3 {
             assert_native_radar_camera_case(
@@ -685,7 +729,7 @@ mod tests {
             );
             scene
                 .runtime
-                .advance_frame(&[], 22, TickLane::Ordinary, FrameEffects::default())
+                .advance_frame(&[], 22, TickLane::Ordinary, &mut FrameEffects::default())
                 .unwrap();
         }
         assert_native_radar_camera_case(
@@ -974,6 +1018,7 @@ mod tests {
             crate::map::entities::EntityCategory::Structure,
         );
         building
+            .seldom
             .type_facts
             .set_foundation_for_test("4x3".to_string().into());
         building
@@ -1006,7 +1051,7 @@ mod tests {
             "the exact tracker GetCoords cell is the immediate camera centre"
         );
 
-        let edge = simulation.entities_mut_for_test().get_mut(2).unwrap();
+        let edge = simulation.entity_mut_for_test(2).unwrap();
         edge.position.set_rx_for_test(u16::MAX);
         edge.position.set_ry_for_test(u16::MAX);
         assert_eq!(

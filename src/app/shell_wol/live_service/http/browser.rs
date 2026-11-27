@@ -15,6 +15,7 @@ extern "C" {
         token: Option<&str>,
         body: Option<&str>,
         limit: u32,
+        headers: Option<&str>,
     ) -> js_sys::Promise;
     #[wasm_bindgen(js_namespace = globalThis, js_name = veraLobbyCancel)]
     fn cancel(id: u32);
@@ -22,9 +23,18 @@ extern "C" {
     fn timeout(ms: u32) -> js_sys::Promise;
 }
 
-/// Lives with the original LiveService, including its retiring visit. Dropping
-/// it cancels only that visit's requests; no callback can enter a later visit.
+/// Dropping an owner cancels only its requests, including those of a retiring visit.
 pub(in crate::app::shell_wol::live_service) struct RequestOwner(u32);
+
+impl RequestOwner {
+    fn new(service_url: Option<&str>) -> anyhow::Result<Self> {
+        // Built-in online play shares the gateway's origin; an external launch
+        // names its match API origin (docs/spawn.md).
+        open(crate::net::udp::browser_proxy_url(), service_url)
+            .map(Self)
+            .map_err(|_| anyhow::anyhow!("could not initialize the browser lobby transport"))
+    }
+}
 
 impl Drop for RequestOwner {
     fn drop(&mut self) {
@@ -34,6 +44,35 @@ impl Drop for RequestOwner {
 
 pub(super) async fn delay(ms: u32) {
     let _ = JsFuture::from(timeout(ms)).await;
+}
+
+/// Fetch errors can include URLs or server text. Keep only the existing
+/// numeric failure consumed by the caller.
+async fn reply(promise: js_sys::Promise) -> Result<(u16, String), RequestFailure> {
+    let value = JsFuture::from(promise)
+        .await
+        .map_err(|_| RequestFailure::Status(0))?;
+    let encoded = value.as_string().ok_or(RequestFailure::Status(0))?;
+    serde_json::from_str(&encoded).map_err(|_| RequestFailure::Status(0))
+}
+
+/// The chooser can ask for public stats before anyone has a session.
+pub(in crate::app::shell_wol) async fn browser_stats()
+-> anyhow::Result<crate::app::shell_wol::login_info::LobbyStats> {
+    use crate::app::shell_wol::login_info::{MAX_STATS_BYTES, STATS_PATH};
+    let owner = RequestOwner::new(None)?;
+    let (status, body) = reply(fetch(
+        owner.0,
+        STATS_PATH,
+        None,
+        None,
+        MAX_STATS_BYTES,
+        None,
+    ))
+    .await
+    .map_err(|_| anyhow::anyhow!("cannot read /v1/stats"))?;
+    anyhow::ensure!(status == 200, "/v1/stats answered {status}");
+    Ok(serde_json::from_str(&body)?)
 }
 
 impl Client {
@@ -46,23 +85,20 @@ impl Client {
             return Err(RequestFailure::Status(0));
         }
         let body = body.map(Value::to_string);
-        let value = JsFuture::from(fetch(
+        let headers =
+            (path == "/v1/sessions").then(|| json!(sign_in_headers(&self.changes)).to_string());
+        let (status, body) = reply(fetch(
             self.browser,
             path,
             self.token.as_deref(),
             body.as_deref(),
             MAX_BODY_BYTES as u32,
+            headers.as_deref(),
         ))
-        .await
-        // Fetch errors can include URLs or server text. Retain only the existing
-        // numeric failure consumed by the original retry/cleanup owner.
-        .map_err(|_| RequestFailure::Status(0))?;
+        .await?;
         if self.stopping.load(Ordering::Acquire) {
             return Err(RequestFailure::Status(0));
         }
-        let encoded = value.as_string().ok_or(RequestFailure::Status(0))?;
-        let (status, body): (u16, String) =
-            serde_json::from_str(&encoded).map_err(|_| RequestFailure::Status(0))?;
         if !(200..300).contains(&status) {
             return Err(RequestFailure::answer(path, status, body.as_bytes()));
         }
@@ -76,49 +112,21 @@ pub(in crate::app::shell_wol::live_service) fn start(
     stopping: Arc<AtomicBool>,
     service_url: Option<&str>,
 ) -> anyhow::Result<RequestOwner> {
-    // The lobby shares the gateway's origin; an external launch names its
-    // own match API origin (docs/spawn.md).
-    let id = open(crate::net::udp::browser_proxy_url(), service_url)
-        .map_err(|_| anyhow::anyhow!("could not initialize the browser lobby transport"))?;
-    let client = Client {
-        browser: id,
-        stopping: Arc::clone(&stopping),
-        token: None,
-        cursor: 0,
-        active_match: None,
-        spawned: false,
-        abandoned: false,
-    };
-    let (jobs, translations) = std::sync::mpsc::channel::<(u64, String, String, &'static str)>();
-    let mut translator = Client {
-        browser: id,
-        stopping: Arc::clone(&stopping),
-        token: None,
-        cursor: 0,
-        active_match: None,
-        spawned: false,
-        abandoned: false,
-    };
+    let owner = RequestOwner::new(service_url)?;
+    let id = owner.0;
+    let client = Client::new(Arc::clone(&stopping), id);
+    let (jobs, translations) = std::sync::mpsc::channel::<TranslateJob>();
+    let mut translator = client.sibling();
     let translated = output.clone();
     wasm_bindgen_futures::spawn_local(async move {
         while !translator.stopping.load(Ordering::Acquire) {
-            let (id, token, text, target) = match translations.try_recv() {
-                Ok(job) => job,
-                Err(std::sync::mpsc::TryRecvError::Disconnected) => break,
-                Err(std::sync::mpsc::TryRecvError::Empty) => {
-                    delay(50).await;
-                    continue;
-                }
+            let job = match next_request(&translations).await {
+                Ok(Some(job)) => job,
+                Ok(None) => continue,
+                Err(()) => break,
             };
-            translator.token = Some(token);
-            let body = json!({"text":text,"target":target});
-            let outcome =
-                translation_result(translator.request("/v1/translate", Some(&body)).await);
-            if translator.stopping.load(Ordering::Acquire)
-                || translated
-                    .send(Response::Translated { id, outcome })
-                    .is_err()
-            {
+            let response = translator.translate(job).await;
+            if translator.stopping.load(Ordering::Acquire) || translated.send(response).is_err() {
                 break;
             }
         }
@@ -138,5 +146,5 @@ pub(in crate::app::shell_wol::live_service) fn start(
         stopping.store(true, Ordering::Release);
         cancel(id);
     });
-    Ok(RequestOwner(id))
+    Ok(owner)
 }

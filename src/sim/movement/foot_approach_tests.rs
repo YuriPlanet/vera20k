@@ -387,7 +387,7 @@ fn approach_retargets_a_destroyable_cliff_cell_to_its_nearest_imaged_cell() {
         .attack_target
         .set_for_test(Some(combat::TargetKind::Cell(10, 10)));
 
-    sim.approach_target(tank, &rules, None, FrameEffects::default());
+    sim.approach_target(tank, &rules, None, &mut FrameEffects::default());
 
     let tank = sim.substrate.entities.get(tank).unwrap();
     assert_eq!(tank.attack_target.target(), Some(TargetKind::Cell(8, 10)));
@@ -420,7 +420,7 @@ fn approach_takes_the_first_queued_destination_of_any_kind() {
     actor.navigation.set_nav_queue_for_test(queued.to_vec());
 
     let answer = sim
-        .approach_foot_target(tank, &rules, None, FrameEffects::default())
+        .approach_foot_target(tank, &rules, None, &mut FrameEffects::default())
         .unwrap();
 
     let actor = sim.substrate.entities.get(tank).unwrap();

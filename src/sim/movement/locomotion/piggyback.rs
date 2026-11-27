@@ -33,9 +33,9 @@ use super::super::drive_locomotion::{DriveRuntime, ShipRuntime, TrackStateMutati
 use super::super::locomotor::LocomotorState;
 use super::super::track_process::TrackFamily;
 
-/// Walk MoveTo75ACB0 / Stop75ADA0 retain destination independently of the
+/// Walk MoveTo75ACB0 / Stop75ADA0 and Mech MoveTo5B0080 / Stop5B0120 retain destination independently of the
 /// committed head. Both XYZ values belong to this complete locomotor instance.
-#[derive(Debug, Default, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Default, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct WalkRuntime {
     head: Option<crate::sim::components::DriveCoord>,
     destination: Option<crate::sim::components::DriveCoord>,
@@ -50,6 +50,20 @@ pub struct WalkRuntime {
     /// it only with no paid head; Stop_Movement_Animation (75CBC0) always.
     /// It is distinct from IsMoving(+34).
     animation_moving: bool,
+    /// Walk75AC80 raises +35 while ProcessMovement and its callbacks run.
+    /// Only Is_Ok_To_End reads it, and only for a Walk with a stash.
+    #[serde(skip)]
+    in_process: bool,
+}
+
+// The Process call's transient bit is never persisted or hashed.
+impl std::hash::Hash for WalkRuntime {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.head.hash(state);
+        self.destination.hash(state);
+        self.moving.hash(state);
+        self.animation_moving.hash(state);
+    }
 }
 
 impl WalkRuntime {
@@ -66,6 +80,7 @@ impl WalkRuntime {
             destination,
             moving,
             animation_moving,
+            in_process: false,
         }
     }
 
@@ -95,6 +110,13 @@ impl WalkRuntime {
         } else if self.head.is_none() {
             self.moving = false;
         }
+    }
+
+    /// Mech Move_To 0x005B00CB..0x005B0111 sets IsMoving even for a null
+    /// coordinate. Stop_Moving 0x005B0120 clears it only with no paid head.
+    pub(crate) fn mech_move_to(&mut self, coord: crate::sim::components::DriveCoord) {
+        self.assign_destination(Some(coord));
+        self.moving = true;
     }
 
     /// Stop (`0x0075ADA0`): a null MoveTo, and with no head also clears
@@ -187,7 +209,7 @@ impl LocomotorRuntimePayload {
     pub(crate) fn for_kind(kind: LocomotorKind, binary_frame: u32) -> Self {
         match kind {
             LocomotorKind::Drive => Self::Drive(DriveRuntime::at_binary_frame(binary_frame)),
-            LocomotorKind::Walk => Self::Walk(WalkRuntime::default()),
+            LocomotorKind::Walk | LocomotorKind::Mech => Self::Walk(WalkRuntime::default()),
             LocomotorKind::Teleport => Self::Teleport(Default::default()),
             LocomotorKind::Rocket => Self::Rocket(
                 super::super::rocket_movement::RocketRuntime::constructed(binary_frame),
@@ -237,13 +259,11 @@ impl StashedLocomotor {
 
     /// Rebind the Foot's derived type caches without resuming the suspended
     /// controller or exposing its private mutable state.
-    pub(in crate::sim::movement) fn change_type_binding(
+    pub(in crate::sim::movement) fn rebind_type_caches(
         &mut self,
-        old_type_kind: LocomotorKind,
         object: &crate::rules::object_type::ObjectType,
-        frame: u32,
     ) {
-        self.0.change_type_binding(old_type_kind, object, frame);
+        self.0.rebind_type_caches(object);
     }
 
     /// Forward typed private-storage operations without exposing the boxed
@@ -291,6 +311,34 @@ impl StashedLocomotor {
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn suspended_mut_for_test(&mut self) -> &mut LocomotorState {
         &mut self.0
+    }
+}
+
+impl LocomotorState {
+    /// WalkLocomotionClass::Is_Ok_To_End @ 0x0075C8E0 reads the movement
+    /// and Process bytes, the stash and the Foot's lift latch.
+    pub(in crate::sim::movement) fn walk_can_end(&self) -> bool {
+        self.piggyback().is_some()
+            && matches!(self.runtime_payload(), LocomotorRuntimePayload::Walk(walk)
+                if !walk.moving && !walk.in_process)
+    }
+
+    pub(crate) fn set_walk_processing(&mut self, processing: bool) {
+        // END cannot remove this Walk during its Process. A new controller
+        // may have been put over it, so clear the original Walk in its stash.
+        let mut loco = self;
+        loop {
+            if let Some(walk) = loco.walk_runtime_mut()
+                && (processing || walk.in_process)
+            {
+                walk.in_process = processing;
+                return;
+            }
+            let Some(stashed) = loco.piggyback_mut() else {
+                return;
+            };
+            loco = &mut stashed.0;
+        }
     }
 }
 

@@ -42,7 +42,7 @@ impl Simulation {
         request: WalkAdmissionRequest,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<Option<FootPathRequest>, String> {
         let id = request.entity_id;
         if self.walk_tube_head(id, rules, registry, frame_effects)? {
@@ -66,10 +66,24 @@ impl Simulation {
             .first()
             .map_or(-1, |direction| i32::from(*direction));
         let (dx, dy) = crate::util::direction::DIRECTION_DELTAS[(direction & 7) as usize];
-        let candidate = DriveCoord {
-            x: physical.x.wrapping_add(dx * 256),
-            y: physical.y.wrapping_add(dy * 256),
-            z: physical.z,
+        // Mech 5B088E..5B091D takes the neighbour cell's centre. Walk
+        // advances the physical XY by a whole cell, retaining the subcell.
+        let candidate = if actor
+            .locomotor
+            .as_ref()
+            .is_some_and(|l| l.active_kind() == LocomotorKind::Mech)
+        {
+            DriveCoord::cell(
+                (physical.x / 256 + dx) as u16,
+                (physical.y / 256 + dy) as u16,
+                0,
+            )
+        } else {
+            DriveCoord {
+                x: physical.x.wrapping_add(dx * 256),
+                y: physical.y.wrapping_add(dy * 256),
+                z: physical.z,
+            }
         };
         let packed = coord_cell(candidate);
         //75B642 tests structural100 before5F5F00's two physical-cell
@@ -88,6 +102,7 @@ impl Simulation {
                 .entities
                 .get_mut(id)
                 .ok_or("retired Walk admission owner")?
+                .seldom
                 .runtime_bridge_transition
                 .latch();
         }
@@ -105,7 +120,6 @@ impl Simulation {
                 previous_cell: None,
             },
             rules,
-            registry,
         )?;
         self.finish_walk_admission_response(
             request,
@@ -126,13 +140,33 @@ impl Simulation {
         code: u8,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<Option<FootPathRequest>, String> {
         let id = request.entity_id;
         let packed = coord_cell(candidate);
-        if code == 0 {
+        let mech = self
+            .substrate
+            .entities
+            .get(id)
+            .and_then(|a| a.locomotor.as_ref())
+            .is_some_and(|l| l.active_kind() == LocomotorKind::Mech);
+        // Mech 5B0981..5B09AF admits a type with Crusher=yes against
+        // overlay index zero even for codes 4 and 5.
+        let crushes_wall = mech
+            && matches!(code, 4 | 5)
+            && self
+                .substrate
+                .entities
+                .get(id)
+                .and_then(|a| self.interner.object_type(a.type_ref(), rules))
+                .is_some_and(|ty| ty.crusher)
+            && self.cell_overlay(self.walk_lookup_cell(packed)?).overlay_id == Some(0);
+        if code == 0 || crushes_wall {
             let selected =
                 self.walk_find_sub_cell_dest(id, Some(candidate), rules, registry, frame_effects)?;
+            if selected && mech {
+                self.mech_crush_ahead(id, rules);
+            }
             let actor = self
                 .substrate
                 .entities
@@ -250,7 +284,7 @@ impl Simulation {
             code,
             rules,
             registry,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
     }
 
@@ -301,7 +335,7 @@ impl Simulation {
         request: WalkAdmissionRequest,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<(), String> {
         let id = request.entity_id;
         let frame = self.session.binary_frame();
@@ -357,7 +391,12 @@ impl Simulation {
             if self.foot_path_zone_precheck(id, destination, rules)? {
                 self.walk_failed_path_receiver(id, rules, frame_effects)?;
             } else {
-                self.assign_null_destination(id, rules, None, frame_effects);
+                self.assign_null_destination(
+                    id,
+                    rules,
+                    Some(rules.overlay_registry()),
+                    frame_effects,
+                );
             }
         } else {
             self.walk_short_path_receiver(id, rules)?;
@@ -371,7 +410,7 @@ impl Simulation {
         cell: NativeCellIdentity,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<(), String> {
         let actor = self
             .substrate
@@ -389,7 +428,10 @@ impl Simulation {
             physical.y.wrapping_sub(destination.y),
             physical.z.wrapping_sub(destination.z),
         ) < rules.general.close_enough;
-        if close && actor.radio_contacts.is_empty() && self.track_stop_band(physical, destination) {
+        if close
+            && actor.seldom.radio_contacts.is_empty()
+            && self.track_stop_band(physical, destination)
+        {
             //75B7E1..75B828: headNULL, Stop, speed0, classNULL setter, then
             //clearFoot+5E0 even when the class setter refuses the request.
             let actor = self
@@ -407,7 +449,7 @@ impl Simulation {
                 .ok_or("Walk code6 owner retired during its callback")?
                 .foot_speed
                 .set_speed_fraction(SIM_ZERO);
-            self.assign_null_destination(id, rules, None, frame_effects);
+            self.assign_null_destination(id, rules, Some(rules.overlay_registry()), frame_effects);
             self.substrate.clear_walk_admission_path(id)?;
             return Ok(());
         }
@@ -432,7 +474,7 @@ impl Simulation {
         blocker: Option<BlockingObject>,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<(), String> {
         let target = match blocker {
             Some(BlockingObject::Entity(blocker)) => {
@@ -500,7 +542,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<(), String> {
         let actor = self
             .substrate
@@ -508,9 +550,9 @@ impl Simulation {
             .get(id)
             .ok_or("retired Walk failed-path receiver")?;
         if actor.mission.effective().raw() == 15 {
-            self.assign_target_represented(id, None, rules, None, frame_effects)
+            self.assign_target_represented(id, None, rules, frame_effects)
                 .map_err(|error| format!("{error:?}"))?;
-            self.assign_null_destination(id, rules, None, frame_effects);
+            self.assign_null_destination(id, rules, Some(rules.overlay_registry()), frame_effects);
         }
         Ok(())
     }

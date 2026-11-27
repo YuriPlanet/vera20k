@@ -1,5 +1,5 @@
 //! VERA extension: write a generated map as a multiplayer `.map` text
-//! (`.yrm` on disk), in the sections [`crate::map::map_file::MapFile`]
+//! (`.map` on disk), in the sections [`crate::map::map_file::MapFile`]
 //! parses back: `[Basic]`, `[Map]`, the map's own INI sections (lighting),
 //! `[Waypoints]`, `[Terrain]`, the object lists, the three packs and an
 //! optional `[Preview]` thumbnail.
@@ -45,6 +45,28 @@ pub fn multiplayer_map_text(
     starts: Option<&crate::map::preview::PreviewSourceBounds>,
 ) -> String {
     let mut out = String::new();
+    write_map_text(
+        &mut out,
+        map,
+        name,
+        min_players,
+        max_players,
+        preview,
+        starts,
+    )
+    .expect("fmt::Write for String never fails");
+    out
+}
+
+fn write_map_text(
+    out: &mut String,
+    map: &MapFile,
+    name: &str,
+    min_players: u32,
+    max_players: u32,
+    preview: Option<ExportPreview<'_>>,
+    starts: Option<&crate::map::preview::PreviewSourceBounds>,
+) -> std::fmt::Result {
     let name: String = name
         .chars()
         .filter(|c| !c.is_control() && *c != ';')
@@ -63,16 +85,15 @@ pub fn multiplayer_map_text(
         header.local_top,
         header.local_width,
         header.local_height,
-    )
-    .unwrap();
+    )?;
 
     for section_name in map.ini.section_names() {
         let Some(section) = map.ini.section(section_name) else {
             continue;
         };
-        writeln!(out, "[{section_name}]").unwrap();
+        writeln!(out, "[{section_name}]")?;
         for (key, value) in section.raw_entries() {
-            writeln!(out, "{key}={value}").unwrap();
+            writeln!(out, "{key}={value}")?;
         }
         out.push('\n');
     }
@@ -88,10 +109,9 @@ pub fn multiplayer_map_text(
             starts.width,
             starts.height,
             starts.start_points.len(),
-        )
-        .unwrap();
+        )?;
         for (index, point) in starts.start_points.iter().enumerate() {
-            writeln!(out, "Waypoint{}={},{}", index + 1, point.x, point.y).unwrap();
+            writeln!(out, "Waypoint{}={},{}", index + 1, point.x, point.y)?;
         }
         out.push('\n');
     }
@@ -106,18 +126,17 @@ pub fn multiplayer_map_text(
             out,
             "[Preview]\nSize=0,0,{},{}\n",
             preview.width, preview.height
-        )
-        .unwrap();
+        )?;
         let rgb: Vec<u8> = preview
             .rgba
             .chunks_exact(4)
             .flat_map(|pixel| [pixel[0], pixel[1], pixel[2]])
             .collect();
         push_pack(
-            &mut out,
+            out,
             "PreviewPack",
             &crate::util::lzo::compress_chunks(&rgb, PACK_BLOCK),
-        );
+        )?;
     }
 
     let mut waypoints: Vec<_> = map.waypoints.iter().collect();
@@ -125,14 +144,14 @@ pub fn multiplayer_map_text(
     out.push_str("[Waypoints]\n");
     for (index, waypoint) in waypoints {
         let cell = u32::from(waypoint.ry) * CELL_RADIX + u32::from(waypoint.rx);
-        writeln!(out, "{index}={cell}").unwrap();
+        writeln!(out, "{index}={cell}")?;
     }
     out.push('\n');
 
     out.push_str("[Terrain]\n");
     for object in &map.terrain_objects {
         let cell = u32::from(object.ry) * CELL_RADIX + u32::from(object.rx);
-        writeln!(out, "{cell}={}", object.name).unwrap();
+        writeln!(out, "{cell}={}", object.name)?;
     }
     out.push('\n');
 
@@ -150,9 +169,9 @@ pub fn multiplayer_map_text(
         if lines.peek().is_none() {
             continue;
         }
-        writeln!(out, "[{section}]").unwrap();
+        writeln!(out, "[{section}]")?;
         for (index, entity) in lines.enumerate() {
-            writeln!(out, "{index}={}", object_line(entity)).unwrap();
+            writeln!(out, "{index}={}", object_line(entity))?;
         }
         out.push('\n');
     }
@@ -171,15 +190,15 @@ pub fn multiplayer_map_text(
         }
     }
     push_pack(
-        &mut out,
+        out,
         "OverlayPack",
         &crate::util::lcw::compress_chunks(&ids, PACK_BLOCK),
-    );
+    )?;
     push_pack(
-        &mut out,
+        out,
         "OverlayDataPack",
         &crate::util::lcw::compress_chunks(&frames, PACK_BLOCK),
-    );
+    )?;
 
     let mut cells = Vec::with_capacity(map.cells.len() * 11);
     for cell in &map.cells {
@@ -189,11 +208,10 @@ pub fn multiplayer_map_text(
         cells.extend_from_slice(&[cell.sub_tile, cell.z, cell.legacy_ice_byte]);
     }
     push_pack(
-        &mut out,
+        out,
         "IsoMapPack5",
         &crate::util::lzo::compress_chunks(&cells, PACK_BLOCK),
-    );
-    out
+    )
 }
 
 /// One object-list line in the column order the scenario readers take.
@@ -216,7 +234,8 @@ fn object_line(entity: &MapEntity) -> String {
         // ...,Facing,Tag,AISellable,AIRebuildable,Powered,Upgrades,SpotLight,
         // Upgrade1..3,AIRepairable,Nominal
         EntityCategory::Structure => {
-            format!("{base},{facing},None,1,0,1,0,0,None,None,None,1,0")
+            let powered = i32::from(entity.structure_online);
+            format!("{base},{facing},None,1,0,{powered},0,0,None,None,None,1,0")
         }
         // ...,SubCell,Mission,Facing,Tag,Veterancy,Group,High,Recruitable A/B
         EntityCategory::Infantry => {
@@ -234,14 +253,17 @@ fn object_line(entity: &MapEntity) -> String {
 }
 
 /// A pack section: the base64 of `bytes` over numbered lines.
-fn push_pack(out: &mut String, section: &str, bytes: &[u8]) {
+fn push_pack(out: &mut String, section: &str, bytes: &[u8]) -> std::fmt::Result {
     let encoded = base64_encode(bytes);
-    writeln!(out, "[{section}]").unwrap();
+    writeln!(out, "[{section}]")?;
     for (index, line) in encoded.as_bytes().chunks(PACK_LINE).enumerate() {
-        // Base64 is ASCII, so any byte split is a character split.
-        writeln!(out, "{}={}", index + 1, std::str::from_utf8(line).unwrap()).unwrap();
+        write!(out, "{}=", index + 1)?;
+        // Base64 is ASCII, so each byte is one character.
+        out.extend(line.iter().copied().map(char::from));
+        out.push('\n');
     }
     out.push('\n');
+    Ok(())
 }
 
 #[cfg(all(test, tests_map))]
@@ -276,5 +298,32 @@ mod tests {
             .map(|o| (o.rx, o.ry, o.overlay_id, o.frame))
             .collect();
         assert_eq!(placed, [(300, 200, 5, 3)]);
+    }
+
+    /// VERA extension: a derelict's unpowered flag survives export, where the
+    /// original writer always marked every structure powered.
+    #[test]
+    fn derelict_structures_keep_their_power_state_in_the_export() {
+        let mut map = MapFile::from_bytes(
+            b"[Basic]\nNewINIFormat=4\n\
+              [Map]\nTheater=TEMPERATE\nSize=0,0,2,1\nLocalSize=0,0,2,1\n\
+              [IsoMapPack5]\n1=DwALABwBAAIA/////wAAABEAAA==\n\
+              [Structures]\n\
+              0=Neutral,GARAD,48,1,1,0,None,1,0,0,0,0,None,None,None,1,0\n\
+              1=Neutral,CAPOWR,256,1,0,0,None,1,0,1,0,0,None,None,None,1,0\n",
+        )
+        .unwrap();
+        map.ini = crate::rules::ini_parser::IniFile::from_str("");
+        let text = multiplayer_map_text(&map, "Derelicts", 2, 2, None, None);
+        let read = MapFile::from_bytes(text.as_bytes()).unwrap();
+        let powers: Vec<_> = read
+            .entities
+            .iter()
+            .map(|e| (e.type_id.clone(), e.health, e.structure_online))
+            .collect();
+        assert_eq!(
+            powers,
+            [("GARAD".into(), 48, false), ("CAPOWR".into(), 256, true),]
+        );
     }
 }

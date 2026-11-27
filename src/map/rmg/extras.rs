@@ -69,6 +69,40 @@ const FARMS: [&str; 7] = [
 const LANDMARKS: [&str; 8] = [
     "CAWSH12", "CAPARS11", "CAEURO05", "CASTL04", "CAWASH19", "CAWASH14", "CAWASH15", "CAMEX01",
 ];
+/// Derive the Advanced Derelicts candidates from the Rules the map was
+/// generated with: `[AI] BuildConst=`, `BuildBarracks=`, `BuildTech=` and
+/// `BuildWeapons=` (construction yard, barracks, battle lab, war factory).
+/// Reading the lists means a mod's own buildings stand as derelicts too. Order
+/// follows the lists; a type in several appears once.
+///
+/// The lists deliberately omit three kinds that the old hard-coded table had:
+///
+/// - Power plants. The game already offers the Tech Power Plant, so a derelict
+///   power plant is redundant.
+/// - Radar towers. Power from a derelict plant would feed a radar and the
+///   Eiffel Tower too, and a powered Eiffel Tower attacks everyone on the map.
+///   With no power plant in the list, neither problem arises.
+/// - Ore refineries. Yuri's refinery shoots at anything nearby, so standing
+///   one as a neutral derelict turns the countryside hostile.
+///
+/// The naval yard and the grinder are dropped as well: a shipyard stood on
+/// open ground looks wrong, and a grinder is not a combat building.
+pub fn derelict_types_from_lists(
+    build_const: &[String],
+    build_barracks: &[String],
+    build_tech: &[String],
+    build_weapons: &[String],
+) -> Vec<String> {
+    let mut names: Vec<String> = Vec::new();
+    for list in [build_const, build_barracks, build_tech, build_weapons] {
+        for name in list {
+            if !names.iter().any(|seen| seen.eq_ignore_ascii_case(name)) {
+                names.push(name.clone());
+            }
+        }
+    }
+    names
+}
 /// The ReadString buffer of a `[Extras]` value, as Ares gives `[Urban]`.
 const VALUE_CAPACITY: usize = 0x800;
 
@@ -84,6 +118,12 @@ pub struct ExtrasSettings {
     /// `FairTech=`: the neutral tech building (`[AI] NeutralTechBuildings=`)
     /// the Fair Tech Extra stands by every start.
     pub fair_tech: String,
+    /// `Derelicts=`: the buildings the Advanced Derelicts slider stands
+    /// neutral and unpowered, resolved from the Rules and theater art. Empty
+    /// (the default) derives them from the Rules' `[AI] BuildConst=`,
+    /// `BuildBarracks=`, `BuildTech=` and `BuildWeapons=` lists; a value set
+    /// here overrides that derivation.
+    pub derelicts: Vec<String>,
     /// `FarmFence=` and `TownFence=`: the fence overlays of the Countryside
     /// and Fences Extras.
     pub farm_fence: String,
@@ -98,6 +138,7 @@ impl Default for ExtrasSettings {
             farms: FARMS.map(String::from).to_vec(),
             landmarks: LANDMARKS.map(String::from).to_vec(),
             fair_tech: "CAOILD".into(),
+            derelicts: Vec::new(),
             farm_fence: "CAFNCW".into(),
             town_fence: "CAFNCB".into(),
             moods: MOODS.map(|(_, ambient, rgb)| (ambient, rgb)),
@@ -122,6 +163,7 @@ impl ExtrasSettings {
         };
         names("Farms", &mut self.farms);
         names("Landmarks", &mut self.landmarks);
+        names("Derelicts", &mut self.derelicts);
         for (key, name) in [
             ("FairTech", &mut self.fair_tech),
             ("FarmFence", &mut self.farm_fence),
@@ -243,5 +285,48 @@ mod tests {
         extras.cycle(Extra::TownVariant);
         assert_eq!(extras.get(Extra::TownVariant), 1);
         assert!(!extras.is_default());
+    }
+
+    fn list(names: &[&str]) -> Vec<String> {
+        names.iter().map(|name| name.to_string()).collect()
+    }
+
+    /// Derelicts follow what the active Rules bind to BuildConst/Barracks/
+    /// Tech/Weapons, so a mod's own buildings stand in them. Radar, power,
+    /// refineries, the naval yard and the grinder are never among the four
+    /// lists and so never appear.
+    #[test]
+    fn derelicts_follow_the_rules_build_lists_not_a_fixed_table() {
+        let got = derelict_types_from_lists(
+            &list(&["GACNST", "NACNST", "YACNST"]),
+            &list(&["NAHAND", "GAPILE", "YABRCK"]),
+            &list(&["NATECH", "GATECH", "YATECH"]),
+            &list(&["GAWEAP", "NAWEAP", "YAWEAP"]),
+        );
+        assert_eq!(
+            got,
+            list(&[
+                "GACNST", "NACNST", "YACNST", "NAHAND", "GAPILE", "YABRCK", "NATECH", "GATECH",
+                "YATECH", "GAWEAP", "NAWEAP", "YAWEAP",
+            ])
+        );
+        for unwanted in ["NAPSIS", "NARADR", "GAPOWR", "YAREFN", "YAYARD", "YAGRND"] {
+            assert!(
+                !got.iter().any(|name| name.eq_ignore_ascii_case(unwanted)),
+                "{unwanted} must not be a derelict"
+            );
+        }
+    }
+
+    /// A type bound in more than one [AI] list stands once.
+    #[test]
+    fn derelicts_deduplicate_types_bound_in_several_lists() {
+        let got = derelict_types_from_lists(
+            &list(&["GACNST", "gacnst"]),
+            &list(&["GACNST"]),
+            &list(&["YATECH"]),
+            &list(&[]),
+        );
+        assert_eq!(got, list(&["GACNST", "YATECH"]));
     }
 }

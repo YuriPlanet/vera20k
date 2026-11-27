@@ -157,8 +157,6 @@ pub struct OverlayTypeFlags {
     /// packed value exceeds5. Other overlay previews prefer the SHP header;
     /// in-match Cell radar has its own Tiberium/CellAnim selection.
     pub radar_color: Option<[u8; 3]>,
-    /// Railroad track overlay (TRACKS01..TRACKS16). FA2 renders these +15px lower.
-    pub track: bool,
     /// Canonical Land= value. Constructor default is Clear.
     pub land: LandType,
     /// Whether CellClass retains the overlay's land instead of restoring tile land.
@@ -210,7 +208,6 @@ impl Default for OverlayTypeFlags {
             is_a_rock: false,
             land_wheel_speed_zero: false,
             bridge_deck: false,
-            track: false,
             land: LandType::Clear,
             no_use_tile_land_type: true,
             land_speed_costs: None,
@@ -225,22 +222,27 @@ impl Default for OverlayTypeFlags {
 impl OverlayTypeFlags {
     /// Y pixel offset applied before the sprite is centred on its cell.
     ///
-    /// The active YR overlay draw path biases Tiberium, Wall and Crate overlays
-    /// by -12px and leaves everything else at 0. It is NOT the 15px half-cell
-    /// height: the half-cell shift is already carried by the cell-centre term
-    /// the caller adds, and both engines apply it identically, so this constant
-    /// is the whole remaining vertical delta. `IsVeins=` is deliberately absent
-    /// — it is not in the binary's predicate (and is TS-legacy dead data in YR).
+    /// `OverlayIndex__GetDrawOffset @ 0x005FDCC0`, the only offset
+    /// `CellClass__Get_Draw_Offset @ 0x00480110` adds for the body and the
+    /// shadow: -12px for Tiberium, Wall and Crate overlays (`0x005FDCD2..
+    /// 0x005FDCF9`), then -1px for `Land=Railroad` (`0x005FDCFE..0x005FDD07`),
+    /// which every retail TRACKS overlay sets. It is NOT the 15px half-cell
+    /// height: the caller's cell-centre term carries that, the same in both
+    /// engines, and gamemd adds no track-specific shift. `IsVeins=` is
+    /// deliberately absent — it is not in the binary's predicate.
     ///
-    /// Not modelled: the `-1` the binary adds for `Land=Railroad` overlays and
-    /// for one specific overlay slot. The railroad case is entangled with a
-    /// separate FA2-sourced track offset in the instance builder; see the
-    /// GSI-13.05 report.
+    /// Not modelled: the ordinal-0x7E test (`0x005FDCE6` -12, `0x005FDD08` -1),
+    /// which in retail names only `DUMMYOLD`, an overlay no map places.
     pub fn y_draw_offset(&self) -> f32 {
-        if self.tiberium || self.wall || self.crate_type {
+        let bias = if self.tiberium || self.wall || self.crate_type {
             OVERLAY_TYPE_Y_DRAW_BIAS_PX
         } else {
             0.0
+        };
+        if self.land == LandType::Railroad {
+            bias - 1.0
+        } else {
+            bias
         }
     }
 }
@@ -297,7 +299,7 @@ impl OverlayTypeRegistry {
     /// loads project their already processed owner with from_processed_rules.
     pub fn from_ini(ini: &IniFile, art_ini: Option<&IniFile>) -> Self {
         let empty_art = IniFile::empty();
-        let processed = crate::rules::native_processing::RulesLayerStack::new(ini.clone())
+        let processed = match crate::rules::native_processing::RulesLayerStack::new(ini.clone())
             .process_with_fixed_art_and_registry_state_recovering(
                 art_ini.unwrap_or(&empty_art),
                 crate::rules::native_processing::NativeRulesRegistryState::default(),
@@ -307,13 +309,20 @@ impl OverlayTypeRegistry {
                 },
                 &crate::rules::sound_ini::EvaRegistry::default(),
                 &crate::rules::sound_ini::SoundRegistry::default(),
-            )
-            .unwrap_or_else(|failure| {
-                panic!(
-                    "Overlay fixture must satisfy native Rules processing: {}",
+            ) {
+            Ok(processed) => processed,
+            Err(failure) => {
+                // The game's own loads project their processed rules through
+                // `from_processed_rules` and have refused this input already;
+                // this fresh read serves the shell's drive distances and the
+                // tests, and a refused rules file gets an empty registry.
+                log::error!(
+                    "Overlay types: the rules did not process: {}",
                     failure.into_parts().0
-                )
-            });
+                );
+                return Self::from_ini(&IniFile::empty(), None);
+            }
+        };
         Self::from_processed_rules(&processed)
     }
 
@@ -362,11 +371,9 @@ impl OverlayTypeRegistry {
         let mut flags: Vec<OverlayTypeFlags> = Vec::with_capacity(names.len());
         let mut alpha_images: Vec<String> = Vec::with_capacity(names.len());
         for (idx, name) in names.iter().enumerate() {
-            let upper_name = name.to_ascii_uppercase();
             // Bridge overlays are identified by hardcoded index position in
             // [OverlayTypes], matching the original engine's direct index checks.
             let bridge_deck = is_bridge_overlay_index(idx as u8);
-            let track = upper_name.starts_with("TRACKS");
             if let Some(type_section) = ini.section(name) {
                 alpha_images.push(type_section.read_object_alpha_image(""));
                 let tiberium = type_section.read_bool("Tiberium", false);
@@ -420,7 +427,6 @@ impl OverlayTypeRegistry {
                     is_a_rock: type_section.read_bool("IsARock", false),
                     land_wheel_speed_zero,
                     bridge_deck,
-                    track,
                     land,
                     no_use_tile_land_type: type_section.read_bool("NoUseTileLandType", true),
                     land_speed_costs,
@@ -433,7 +439,6 @@ impl OverlayTypeRegistry {
                 alpha_images.push(String::new());
                 flags.push(OverlayTypeFlags {
                     bridge_deck,
-                    track,
                     land_speed_costs: clear_speed_costs,
                     land_ground_blocked: clear_ground_blocked,
                     land_wheel_speed_zero: clear_speed_costs.is_some_and(|speed_costs| {
@@ -1520,8 +1525,17 @@ Image=5
             assert_eq!(flags.y_draw_offset(), -12.0);
         }
 
-        // Bridges, tracks, rocks and the rest sit flat on the cell.
+        // Bridges, rocks and the rest sit flat on the cell; Land=Railroad
+        // tracks sit one pixel higher (0x005FDCFE).
         assert_eq!(OverlayTypeFlags::default().y_draw_offset(), 0.0);
+        assert_eq!(
+            OverlayTypeFlags {
+                land: LandType::Railroad,
+                ..OverlayTypeFlags::default()
+            }
+            .y_draw_offset(),
+            -1.0
+        );
         assert_eq!(
             OverlayTypeFlags {
                 bridge_deck: true,

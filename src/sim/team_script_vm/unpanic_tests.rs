@@ -3,6 +3,7 @@
 
 use super::*;
 use crate::rules::ini_parser::IniFile;
+use crate::rules::rule_policy::RulePolicy;
 use crate::rules::team_ai_ini::{TeamAiDefinitionSource, TeamAiIniRegistry};
 use crate::sim::team_script_vm::{TeamScriptMember, member_type_identity};
 
@@ -41,7 +42,8 @@ fn scene(extra: &str) -> Option<(RuleSet, Simulation, u64, u64)> {
             .unwrap()
             .map;
     map.ini.merge(&patch);
-    let registry = TeamAiIniRegistry::load_retail(&assets, &map.ini, true).unwrap();
+    let registry =
+        TeamAiIniRegistry::load_retail(&assets, &map.ini, RulePolicy::stock_multiplayer()).unwrap();
     assert_eq!(
         registry
             .scripts
@@ -105,10 +107,10 @@ fn unpanic_uses_the_type_gate_and_preserves_stance_and_clocks() {
         let leaf = entity.mission_leaf;
         let rng = sim.rng_state();
 
-        sim.team_step_script(team, &rules, None, FrameEffects::default());
+        sim.team_step_script(team, &rules, None, &mut FrameEffects::default());
         expected.set_fear_level_for_test(panic_fear);
         assert_eq!(sim.entities().get(actor).unwrap().infantry, Some(expected));
-        sim.team_step_script(team, &rules, None, FrameEffects::default());
+        sim.team_step_script(team, &rules, None, &mut FrameEffects::default());
         expected.set_fear_level_for_test(unpanic_fear);
         let entity = sim.entities().get(actor).unwrap();
         assert_eq!(entity.infantry, Some(expected), "{patch}");

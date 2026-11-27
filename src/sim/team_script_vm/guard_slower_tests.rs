@@ -1,6 +1,7 @@
 use super::*;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::retail_ini_fixture::{retail_assets, retail_battle_rules_for_map};
+use crate::rules::rule_policy::RulePolicy;
 use crate::rules::team_ai_ini::TeamAiIniRegistry;
 use crate::sim::components::NavTargetRef;
 use crate::sim::house_state::HouseState;
@@ -58,7 +59,7 @@ fn retail_guard_slower_center_falls_back_when_infantry_cannot_enter_water() {
     let Some(Fixture {
         sim,
         rules,
-        overlays,
+        overlays: _,
         team,
         actors,
     }) = Fixture::new(true, true)
@@ -75,7 +76,6 @@ fn retail_guard_slower_center_falls_back_when_infantry_cannot_enter_water() {
             InfantryEntryArgs::REPAIR,
             EntryQueryMode::CheckLocomotor,
             &rules,
-            Some(&overlays),
         )
         .unwrap(),
         0
@@ -131,7 +131,9 @@ impl Fixture {
                 "[TaskForces]\n0=05FBBADC-G\n[05FBBADC-G]\n0=2,BRUTE\n1=1,YURI\n2=1,VIRUS\n3=1,{kind}\nGroup=-1\n"
             )));
         }
-        let registry = TeamAiIniRegistry::load_retail(&assets, &scenario, true).unwrap();
+        let registry =
+            TeamAiIniRegistry::load_retail(&assets, &scenario, RulePolicy::stock_multiplayer())
+                .unwrap();
         let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x4DBFD0);
         if water {
             crate::sim::arena_fixture::flood(&mut sim, &rules, 32, [(14, 10)]);
@@ -171,7 +173,7 @@ impl Fixture {
         let team = sim.create_team(team_type, Some(owner), &rules).unwrap();
         for frame in 100..110 {
             sim.session.set_binary_frame_for_test(frame);
-            sim.run_team_ai_pass(&rules, Some(&overlays), FrameEffects::default());
+            sim.run_team_ai_pass(&rules, Some(&overlays), &mut FrameEffects::default());
             if sim.team_script_vm.teams[&team].current_action(&sim.team_script_vm) == 5 {
                 break;
             }
@@ -184,12 +186,12 @@ impl Fixture {
                 DriveCoord { x, y: 2688, z: 0 },
                 &rules,
                 Some(&overlays),
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             );
         }
-        sim.session
-            .set_binary_frame_for_test(sim.session.binary_frame() + 1);
-        sim.run_team_ai_pass(&rules, Some(&overlays), FrameEffects::default());
+        let session = &mut *sim.session;
+        session.set_binary_frame_for_test(session.binary_frame() + 1);
+        sim.run_team_ai_pass(&rules, Some(&overlays), &mut FrameEffects::default());
         // Calc_Center6EAEE0 uses Foot4DBFD0's converted native speed, then asks
         // the actual closest member's CanEnter before retaining the mean cell.
         Some(Self {

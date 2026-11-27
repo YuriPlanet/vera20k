@@ -421,9 +421,18 @@ pub struct OverlayAtlas {
     /// Union of every entry's rectangle, fixed with `entries` at construction.
     art_extent: crate::render::cell_window::ArtExtent,
     zshapes: Option<OverlayZShapes>,
+    /// VERA's HD art ground (`render::hd_terrain`): each sprite's UV origin
+    /// bits → its RGBA hash, atlas pixel origin and size.
+    hd_sprites: HashMap<[u32; 2], (u64, [u32; 2], [u32; 2])>,
 }
 
 impl OverlayAtlas {
+    /// The HD art lookup of the sprite at `uv_origin`: its hash, atlas pixel
+    /// origin and size.
+    pub(crate) fn hd_sprite(&self, uv_origin: [f32; 2]) -> Option<(u64, [u32; 2], [u32; 2])> {
+        self.hd_sprites.get(&uv_origin.map(f32::to_bits)).copied()
+    }
+
     pub(crate) fn apply_zshape(
         &self,
         request: OverlayShapeRequest,
@@ -833,6 +842,68 @@ pub(crate) fn build_overlay_atlas_on_device(
         return None;
     }
 
+    // VERA's HD art collection: every overlay frame and terrain object of
+    // the theater, not only the map's, for the offline upscaler.
+    if std::env::var_os("VERA20K_HD_DUMP_TERRAIN").is_some() {
+        let mut every: Vec<RenderedOverlay> = Vec::new();
+        for overlay_id in 0u8..=u8::MAX {
+            let Some(flags) = overlay_registry.flags(overlay_id).cloned() else {
+                continue;
+            };
+            let Some(name) = resolve_overlay_name_for_render(overlay_registry, overlay_id) else {
+                continue;
+            };
+            let palette: &Palette = if flags.tiberium {
+                tiberium_palette
+            } else if flags.wall || flags.is_veins || flags.is_veinhole_monster {
+                unit_palette
+            } else {
+                theater_palette
+            };
+            for frame in 0..64 {
+                let key = overlay_body_key(name.clone(), frame, flags.tiberium);
+                every.extend(render_overlay_sprite(
+                    asset_manager,
+                    palette,
+                    &key,
+                    theater_ext,
+                    theater_name,
+                    overlay_registry,
+                    &flags,
+                ));
+            }
+        }
+        let mut names: Vec<&String> = rules.terrain_object_types.keys().collect();
+        names.sort();
+        for name in names {
+            let (Some(terrain_type), Some(shape)) = (
+                rules.terrain_object_type_case_insensitive(name),
+                rules.terrain_shape_filename(name),
+            ) else {
+                continue;
+            };
+            let palette = if terrain_type.spawns_tiberium {
+                unit_palette
+            } else {
+                theater_palette
+            };
+            every.extend(render_terrain_sprites(
+                asset_manager,
+                palette,
+                terrain_type,
+                shape,
+            ));
+        }
+        crate::render::hd_terrain::dump_rgba(
+            every
+                .iter()
+                .chain(&rendered)
+                .filter(|sprite| !sprite.key.name.starts_with("__terrain_shadow::"))
+                .map(|sprite| (sprite.width, sprite.height, sprite.rgba.as_slice())),
+            "srgba",
+        );
+    }
+
     let mut atlas = pack_overlay_sprites(device, queue, batch, &rendered);
     atlas.zshapes = OverlayZShapes::load(device, queue, batch, asset_manager, theater_ext);
     Some(atlas)
@@ -1030,6 +1101,8 @@ fn smudge_shp_candidates(name: &str, theater_ext: &str) -> Vec<String> {
 }
 
 fn forced_tiberium_image_name() -> Option<&'static str> {
+    // A process-wide debug switch, read once from the environment (listed with
+    // the render toggles in tools/telemetry-dashboard/README.md).
     static FORCED: OnceLock<Option<String>> = OnceLock::new();
     FORCED
         .get_or_init(|| {
@@ -1261,6 +1334,7 @@ fn pack_overlay_sprites(
         rgba,
         source_indices,
         entries,
+        hd_sprites,
         width: atlas_width,
         height: atlas_height,
     } = pack_overlay_pixels(sprites, device.limits().max_texture_dimension_2d);
@@ -1285,6 +1359,7 @@ fn pack_overlay_sprites(
         art_extent: crate::render::cell_window::ArtExtent::of(entries.values()),
         entries,
         zshapes: None,
+        hd_sprites,
     }
 }
 
@@ -1292,6 +1367,7 @@ struct PackedOverlaySprites {
     rgba: Vec<u8>,
     source_indices: Vec<u8>,
     entries: LookupMap<OverlaySpriteKey, OverlaySpriteEntry>,
+    hd_sprites: HashMap<[u32; 2], (u64, [u32; 2], [u32; 2])>,
     width: u32,
     height: u32,
 }
@@ -1319,7 +1395,12 @@ fn pack_overlay_pixels(sprites: &[RenderedOverlay], max_texture_dim: u32) -> Pac
             max_texture_dim
         );
     }
-    let atlas_height = used_height.min(max_texture_dim);
+    // A page of empty frames has no rows; the device wants at least one. A
+    // sprite placed past a clamped page would sample outside it: it is left
+    // out instead, and the log says how many.
+    let atlas_height = used_height.min(max_texture_dim).max(1);
+    let atlas_width = atlas_width.max(1);
+    let mut left_out = 0usize;
 
     let mut rgba: Vec<u8> = vec![0u8; (atlas_width * atlas_height * 4) as usize];
     let mut source_indices = vec![0u8; (atlas_width * atlas_height) as usize];
@@ -1327,12 +1408,27 @@ fn pack_overlay_pixels(sprites: &[RenderedOverlay], max_texture_dim: u32) -> Pac
         LookupMap::with_capacity_and_hasher(plan.placements.len(), Default::default());
     let aw: f32 = atlas_width as f32;
     let ah: f32 = atlas_height as f32;
+    let mut hd_sprites = HashMap::with_capacity(plan.placements.len());
 
     for placed in &plan.placements {
         let [px, py] = placed.origin;
         let spr: &RenderedOverlay = &sprites[placed.index];
         let w: u32 = spr.width;
         let h: u32 = spr.height;
+        if py.saturating_add(h) > atlas_height || px.saturating_add(w) > atlas_width {
+            left_out += 1;
+            continue;
+        }
+        if spr.rgba.len() == (w * h * 4) as usize {
+            hd_sprites.insert(
+                [px as f32 / aw, py as f32 / ah].map(f32::to_bits),
+                (
+                    crate::render::hd_terrain::tile_hash(w, h, &spr.rgba),
+                    [px, py],
+                    [w, h],
+                ),
+            );
+        }
 
         for y in 0..h {
             let src_start: usize = (y * w * 4) as usize;
@@ -1360,10 +1456,16 @@ fn pack_overlay_pixels(sprites: &[RenderedOverlay], max_texture_dim: u32) -> Pac
         );
     }
 
+    if left_out > 0 {
+        log::error!(
+            "Overlay atlas: {left_out} sprites past the {atlas_width}x{atlas_height} px page this GPU allows are left out"
+        );
+    }
     PackedOverlaySprites {
         rgba,
         source_indices,
         entries,
+        hd_sprites,
         width: atlas_width,
         height: atlas_height,
     }
@@ -1377,6 +1479,7 @@ impl OverlayAtlas {
             entries: LookupMap::default(),
             art_extent: Default::default(),
             zshapes: None,
+            hd_sprites: HashMap::new(),
         }
     }
 }

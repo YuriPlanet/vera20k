@@ -47,10 +47,10 @@ impl Simulation {
         id: u64,
         requested: Option<NavTargetRef>,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let Some(requested) = requested else {
-            self.foot_null_destination(id, rules, None, frame_effects);
+            self.foot_null_destination(id, rules, Some(rules.overlay_registry()), frame_effects);
             return;
         };
         let high = requested.object_id().is_some_and(|target| {
@@ -63,7 +63,7 @@ impl Simulation {
             })
         });
         if high {
-            self.foot_null_destination(id, rules, None, frame_effects);
+            self.foot_null_destination(id, rules, Some(rules.overlay_registry()), frame_effects);
             return;
         }
         let entering = self.substrate.entities.get(id).is_some_and(|entity| {
@@ -87,10 +87,16 @@ impl Simulation {
         };
         self.aircraft_pad_departure(id, destination, rules, frame_effects);
         let Some(destination) = destination else {
-            self.foot_null_destination(id, rules, None, frame_effects);
+            self.foot_null_destination(id, rules, Some(rules.overlay_registry()), frame_effects);
             return;
         };
-        if !self.begin_foot_destination(id, true, rules, None, frame_effects) {
+        if !self.begin_foot_destination(
+            id,
+            true,
+            rules,
+            Some(rules.overlay_registry()),
+            frame_effects,
+        ) {
             return;
         }
         let entity = self.substrate.entities.get_mut(id).unwrap();
@@ -140,7 +146,7 @@ impl Simulation {
         id: u64,
         building: u64,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> ControlFlow<(), Option<NavTargetRef>> {
         let dock = NavTargetRef::object(building);
         let Some(object) = self
@@ -162,14 +168,22 @@ impl Simulation {
         ) else {
             return ControlFlow::Continue(Some(dock));
         };
-        let in_contact = !aircraft.radio_contacts.is_empty();
-        let has_slot = target.radio_contacts.has_free_or(id);
-        let holds_aircraft = target.radio_contacts.contains(id);
         let archive = |sim: &mut Self, target: Option<NavTargetRef>| {
             if let Some(entity) = sim.substrate.entities.get_mut(id) {
                 entity.set_archive_target(target.map(TargetKind::from));
             }
         };
+        // VERA defers ordinary death cleanup. A zero-health aircraft refuses
+        // HELLO (RadioClass::Receive_Message, 0x0065A8B2), so MOVE_HERE would
+        // re-enter this setter (FootClass, 0x004D91E1) without forming a link.
+        // Keep the dock destination for the Foot setter and skip the handshake.
+        if !aircraft.is_alive() {
+            archive(self, Some(dock));
+            return ControlFlow::Continue(Some(dock));
+        }
+        let in_contact = !aircraft.seldom.radio_contacts.is_empty();
+        let has_slot = target.seldom.radio_contacts.has_free_or(id);
+        let holds_aircraft = target.seldom.radio_contacts.contains(id);
         if in_contact {
             if !has_slot {
                 archive(self, Some(dock));
@@ -271,7 +285,8 @@ impl Simulation {
         if repair {
             // `0x0041ABC4`.
             if let Some(entity) = self.substrate.entities.get_mut(id) {
-                entity.pending_entry.install(building);
+                let note = entity.note_names();
+                entity.pending_entry.install(building, note);
             }
             destination = None;
         }
@@ -287,7 +302,7 @@ impl Simulation {
         id: u64,
         destination: Option<NavTargetRef>,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let entity = self
             .substrate
@@ -321,7 +336,7 @@ impl Simulation {
         if !locomotor.is_powered() {
             locomotor.power_on();
         }
-        if entity.radio_contacts.slot(0) == Some(pad)
+        if entity.seldom.radio_contacts.slot(0) == Some(pad)
             && destination != Some(NavTargetRef::object(pad))
         {
             radio::transmit_to_contact(self, id, RadioMessage::Break, rules, frame_effects);
@@ -386,7 +401,7 @@ impl Simulation {
         edge: super::edge_cell::Edge,
     ) -> Option<(u16, u16)> {
         super::edge_cell::find_paradrop_edge_cell(
-            self.playfield_bounds,
+            *self.playfield_bounds,
             self.resolved_terrain.as_ref(),
             edge,
             &mut self.scenario_rng,
@@ -572,8 +587,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(entity) = self.substrate.entities.get(id) else {
             return false;
@@ -602,9 +616,9 @@ impl Simulation {
             let cell = ground_pose::position_world_coord(&entity.position);
             let contact = self
                 .fly_building_at(cell)
-                .is_some_and(|building| entity.radio_contacts.contains(building));
+                .is_some_and(|building| entity.seldom.radio_contacts.contains(building));
             if !contact {
-                crate::sim::aircraft::enter_idle_mode_for(self, id, rules, registry, frame_effects);
+                crate::sim::aircraft::enter_idle_mode_for(self, id, rules, frame_effects);
                 return false;
             }
         }
@@ -619,6 +633,59 @@ impl Simulation {
         true
     }
 
+    /// `FlyLocomotionClass::Power_Off @ 0x004CFD20` (ILocomotion `+0x5C`)
+    /// up to the base flag write, [`Self::locomotor_power_off`]'s Fly arm:
+    /// a moving Fly (Is_Moving, `0x004CCA90`) spins at a SpinRate of
+    /// Scenario `RandomRanged(20, 30)`, negated when a second
+    /// `RandomRanged(0, 99)` is below 50, then stops
+    /// ([`Self::fly_stop_moving`]) and clears its fall counter. Process's
+    /// spin step turns it ([`Self::fly_spin_step`]). Nothing while it is
+    /// still, or for another locomotor.
+    pub(crate) fn fly_power_off(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        frame_effects: &mut FrameEffects<'_>,
+    ) {
+        let moving = self
+            .substrate
+            .entities
+            .get(id)
+            .filter(|entity| {
+                entity
+                    .locomotor
+                    .as_ref()
+                    .is_some_and(|locomotor| locomotor.active_kind() == LocomotorKind::Fly)
+            })
+            .and_then(crate::sim::movement::motion_query::is_moving)
+            .unwrap_or(false);
+        if !moving {
+            return;
+        }
+        let rate = self.scenario_rng.next_range_i32_inclusive(20, 30);
+        let negate = self.scenario_rng.next_range_i32_inclusive(0, 99) < 50;
+        self.fly_state_mut(id)
+            .expect("moving Fly")
+            .start_spin(if negate { rate.wrapping_neg() } else { rate });
+        self.fly_stop_moving(id, rules, registry, frame_effects);
+        if let Some(state) = self.fly_state_mut(id) {
+            state.clear_fall();
+        }
+    }
+
+    fn fly_state_mut(
+        &mut self,
+        id: u64,
+    ) -> Option<&mut crate::sim::movement::fly_height::FlyRuntime> {
+        self.substrate
+            .entities
+            .get_mut(id)?
+            .locomotor
+            .as_mut()?
+            .fly_runtime_mut()
+    }
+
     /// `FlyLocomotionClass::Stop_Moving @ 0x004CCFD0` (ILocomotion `+0x48`),
     /// [`Self::locomotor_stop_moving`]'s Fly arm: [`Self::fly_stop_order`],
     /// then its effect. A self-destruct is `ReceiveDamage` of the owner's own
@@ -631,7 +698,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         let order = self.fly_stop_order(id, rules);
         #[cfg(any(test, feature = "test-support"))]
@@ -642,13 +709,7 @@ impl Simulation {
             None => {}
             Some(FlyStopOrder::SelfDestruct) => {
                 self.receive_own_health_c4(id, rules, registry, frame_effects);
-                if let Some(state) = self
-                    .substrate
-                    .entities
-                    .get_mut(id)
-                    .and_then(|entity| entity.locomotor.as_mut())
-                    .and_then(|locomotor| locomotor.fly_runtime_mut())
-                {
+                if let Some(state) = self.fly_state_mut(id) {
                     state.clear_destination();
                 }
             }
@@ -705,7 +766,7 @@ impl Simulation {
         }
         let location = ground_pose::position_world_coord(&entity.position);
         let mut cell = ((location.x / 256) as i16, (location.y / 256) as i16);
-        if let Some(bounds) = self.playfield_bounds
+        if let Some(bounds) = *self.playfield_bounds
             && !entity.is_mission_only()
             && !crate::sim::cell_rect::cell_is_in_playfield_height_aware(
                 (i32::from(cell.0), i32::from(cell.1)),

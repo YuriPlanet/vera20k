@@ -1,36 +1,57 @@
-//! The phase 2 headless client: the production `ClientSession` decides every
+//! The netsim's client. The production `ClientSession` decides every
 //! UPLINK, fallback PULL and IO heartbeat (`poll_uplink`,
-//! `poll_repair_pull`, `heartbeat_uplink`, `next_uplink_deadline`; spec §6.7).
-//! This file supplies only what spec §6.7 gives the sequencing layer and the
-//! transport: content (batches, checksums, pace), the record stream reader,
-//! the gap report, READY_REQUEST before the start (§6.0), PULL while
-//! restoring (§7.7), the hop keepalive and the renewal handshake.
+//! `poll_repair_pull`, `heartbeat_uplink`, `next_uplink_deadline`; spec
+//! §6.7). Around it this file does what the game's `SequencedSession`
+//! and the relay paths of `UdpIo` (src/net/udp.rs) do, without sockets and
+//! at the same cadences (`crate::link`): content (batches, checksums,
+//! pace), the record stream reader, the gap report, READY_REQUEST before
+//! the start (§6.0), PULL while restoring (§7.7), the hop keepalive, the
+//! renewal handshake and the terminal LEAVE.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
-use super::client::{ClientLog, HeadlessClient, Outgoing};
 use super::reader::{Record, StreamReader};
 use crate::{
-    CHECKSUM_INTERVAL, ClientLinkStats, ClientSession, ORDERING_BATCH_CAPACITY, OrderEvent,
-    OrderPace, OrderingGap, RelayError, ServerEvent,
+    CHECKSUM_INTERVAL, ClientLinkStats, ClientSession, HOP_HANDSHAKE_INTERVAL_MS,
+    HOP_PING_INTERVAL_MS, HOP_READINESS_TIMEOUT_MS, LEAVE_ATTEMPTS, LEAVE_INTERVAL_MS,
+    ORDERING_BATCH_CAPACITY, OrderEvent, OrderPace, OrderingGap, PACE_INTERVAL_MS,
+    READY_REQUEST_INTERVAL_MS, RESTORE_PULL_INTERVAL_MS, RelayError, ServerEvent,
 };
 
-/// Spec §6.0: READY_REQUEST every 125 ms until `started`.
-const CONFIGURE_INTERVAL_MS: u64 = 125;
-/// Spec §6.3 pace segment: one measurement a second.
-const PACE_INTERVAL_MS: u64 = 1_000;
-/// The PULL spacing while restoring (spec §7.7).
-const RESTORE_PULL_MS: u64 = 100;
-/// Hop keepalive and handshake retries, src/net/udp.rs line 1370-1374 (in
-/// 16 ms buckets), and its 10 s readiness timeout (line 1361-1365). Spec
-/// appendix A.4 keeps the 2 s PING.
-const PING_INTERVAL_MS: u64 = 125 * 16;
-const HELLO_INTERVAL_MS: u64 = 62 * 16;
-const FORGET_READINESS_MS: u64 = 625 * 16;
-/// LEAVE retries, src/net/udp.rs line 1339-1341.
-const LEAVE_RETRY_MS: u64 = 16;
 /// The pace report's tick cost, spec appendix A.4 packet 30.
 const TICK_MICROS: u32 = 2_100;
+
+/// What a client did, timestamped in virtual µs for the measurement window.
+#[derive(Debug, Default)]
+pub struct ClientLog {
+    /// (issue time, execution time) of each command, both in µs.
+    pub commands: Vec<(u64, u64)>,
+    /// Times frame ends advanced the executed frame.
+    pub advances: Vec<u64>,
+    pub errors: BTreeMap<String, u64>,
+    /// Datagrams `ClientSession::receive_at` refused (duplicates, replays).
+    pub refused: BTreeMap<String, u64>,
+    /// Fallback PULLs `poll_repair_pull` sent (spec §7.7).
+    pub repair_pulls: Vec<u64>,
+    /// (time µs, batch id) of each batch sealed.
+    pub seals: Vec<(u64, u64)>,
+    /// (batch id, plaintext) of each batch sealed.
+    pub plaintexts: Vec<(u64, Vec<u8>)>,
+}
+
+/// A datagram a client sends.
+#[derive(Debug)]
+pub struct Outgoing {
+    pub bytes: Vec<u8>,
+    /// Which hop of this client sent it: 0, then one more per renewal.
+    pub hop: usize,
+    /// The client's service that produced it; none for the transport's
+    /// immediate replies (a CONFIRM to a CHALLENGE, a renewed hop's first
+    /// UPLINK).
+    pub service: Option<u64>,
+    /// Sent by `heartbeat_uplink` (spec §6.6), not `poll_uplink`.
+    pub heartbeat: bool,
+}
 
 fn due(last: Option<u64>, now: u64, interval: u64) -> bool {
     last.is_none_or(|last| now.saturating_sub(last) >= interval)
@@ -47,7 +68,6 @@ pub struct AdaptiveClient {
     command_bytes: usize,
     fill: u8,
     last_probe: Option<u64>,
-    last_candidate_probe: Option<u64>,
     last_transport_response: Option<u64>,
     reader: StreamReader,
     inbox: Vec<OrderEvent>,
@@ -67,11 +87,12 @@ pub struct AdaptiveClient {
     samples_due: Vec<u32>,
     leaving: bool,
     last_leave: Option<u64>,
+    leave_attempts: u16,
     left: bool,
     out: Vec<Outgoing>,
     services: u64,
     in_service: bool,
-    pub log: ClientLog,
+    log: ClientLog,
 }
 
 impl AdaptiveClient {
@@ -94,7 +115,6 @@ impl AdaptiveClient {
             command_bytes,
             fill: 0,
             last_probe: None,
-            last_candidate_probe: None,
             last_transport_response: None,
             reader: StreamReader::default(),
             inbox: Vec::new(),
@@ -114,6 +134,7 @@ impl AdaptiveClient {
             samples_due: Vec::new(),
             leaving: false,
             last_leave: None,
+            leave_attempts: 0,
             left: false,
             out: Vec::new(),
             services: 0,
@@ -153,18 +174,15 @@ impl AdaptiveClient {
         }
     }
 
-    fn turn_ms(&self) -> u64 {
-        u64::from(crate::turn_ms(self.pace_fps))
-    }
-
     fn handle(&mut self, event: OrderEvent) {
         match event {
             OrderEvent::Status(status) => self.reader.status(&status),
             OrderEvent::Entry(entry) => self.reader.insert(&entry),
+            // The game restarts its configuration on NotConfigured; no
+            // scenario makes the relay lose the room, so it is only counted.
             OrderEvent::Error { code, .. } => {
                 *self.log.errors.entry(format!("{code:?}")).or_default() += 1;
             }
-            OrderEvent::Left => self.left = true,
             _ => {}
         }
     }
@@ -270,58 +288,66 @@ impl AdaptiveClient {
         }
     }
 
+    /// `UdpIo::service`'s relay route and the game thread's service. A
+    /// leaving client only resends its LEAVE (`UdpIo::retire_relay`).
     fn serve(&mut self, now: u64, at_us: u64) {
         if self.left {
             return;
         }
-        // The transport: keepalive, readiness timeout, renewal handshake
-        // retries (src/net/udp.rs line 1361-1405).
-        if self
-            .last_transport_response
-            .is_some_and(|last| now.saturating_sub(last) > FORGET_READINESS_MS)
-        {
-            self.session.forget_readiness();
-        }
-        let interval = if self.session.is_ready() {
-            PING_INTERVAL_MS
-        } else {
-            HELLO_INTERVAL_MS
-        };
-        if due(self.last_probe, now, interval) {
-            self.last_probe = Some(now);
-            let mut out = Vec::new();
-            let result = self.session.probe_at(now, &mut out);
-            self.sent(result, out);
-        }
-        if self.candidate.is_some() && due(self.last_candidate_probe, now, HELLO_INTERVAL_MS) {
-            self.last_candidate_probe = Some(now);
-            let mut out = Vec::new();
-            if self
-                .candidate
-                .as_mut()
-                .unwrap()
-                .probe_at(now, &mut out)
-                .is_ok()
-            {
-                self.push(out, self.hop + 1);
-            }
-        }
         if self.leaving {
-            // No UPLINK follows a Leave (spec §11 row 8).
-            if due(self.last_leave, now, LEAVE_RETRY_MS) {
+            if due(self.last_leave, now, LEAVE_INTERVAL_MS) {
+                if self.leave_attempts == LEAVE_ATTEMPTS {
+                    // The game releases the route unacknowledged.
+                    *self
+                        .log
+                        .errors
+                        .entry("LEAVE unanswered".into())
+                        .or_default() += 1;
+                    self.left = true;
+                    return;
+                }
                 self.last_leave = Some(now);
+                self.leave_attempts += 1;
                 let mut out = Vec::new();
                 let result = self.session.leave_ordering_at(now, &mut out);
                 self.sent(result, out);
             }
             return;
         }
+        if self
+            .last_transport_response
+            .is_some_and(|last| now.saturating_sub(last) > HOP_READINESS_TIMEOUT_MS)
+        {
+            self.session.forget_readiness();
+        }
+        let established = self.session.is_ready() && self.candidate.is_none();
+        let interval = if established {
+            HOP_PING_INTERVAL_MS
+        } else {
+            HOP_HANDSHAKE_INTERVAL_MS
+        };
+        if due(self.last_probe, now, interval) {
+            self.last_probe = Some(now);
+            // As `UdpIo::service`: an established hop trading traffic both
+            // ways sends no PING.
+            if !(established && self.session.busy_both_ways(now)) {
+                let mut out = Vec::new();
+                let result = self.session.probe_at(now, &mut out);
+                self.sent(result, out);
+            }
+            if let Some(candidate) = self.candidate.as_mut() {
+                let mut out = Vec::new();
+                if candidate.probe_at(now, &mut out).is_ok() {
+                    self.push(out, self.hop + 1);
+                }
+            }
+        }
         for event in std::mem::take(&mut self.inbox) {
             self.handle(event);
         }
         self.assemble(at_us);
         if !self.reader.started() {
-            if self.session.is_ready() && due(self.last_configure, now, CONFIGURE_INTERVAL_MS) {
+            if self.session.is_ready() && due(self.last_configure, now, READY_REQUEST_INTERVAL_MS) {
                 self.last_configure = Some(now);
                 let mut out = Vec::new();
                 let result =
@@ -341,19 +367,15 @@ impl AdaptiveClient {
             self.reported_next = self.reader.next();
             self.session.set_ordering_received_next(self.reported_next);
         }
-        let gap = self.reader.gap_kind();
+        let gap = self.reader.gap();
         if gap != self.reported_gap {
             self.reported_gap = gap;
             self.session.set_ordering_gap(gap, now);
         }
-        let turn_ms = self.turn_ms();
-        let rttvar = u64::from(self.session.link_stats().rttvar_ms.unwrap_or(50));
-        self.log
-            .gap_triggers
-            .observe(gap, now, turn_ms, rttvar, at_us);
-        // Spec §6.7 item 7: while restoring, PULL every 100 ms only while
-        // a gap remains.
-        if self.restoring && gap.is_some() && due(self.last_restore_pull, now, RESTORE_PULL_MS) {
+        if self.restoring
+            && gap.is_some()
+            && due(self.last_restore_pull, now, RESTORE_PULL_INTERVAL_MS)
+        {
             self.last_restore_pull = Some(now);
             let mut out = Vec::new();
             let result = self
@@ -372,15 +394,27 @@ impl AdaptiveClient {
             self.push(out, self.hop);
             self.log.repair_pulls.push(at_us);
         }
+        // The IO heartbeat (spec §6.6) waits while a renewal is pending.
         let mut out = Vec::new();
-        if self.session.heartbeat_uplink(now, &mut out) {
+        if self.candidate.is_none() && self.session.heartbeat_uplink(now, &mut out) {
             self.push(out, self.hop);
             self.out.last_mut().unwrap().heartbeat = true;
         }
     }
 
-    fn receive_datagram(&mut self, bytes: &[u8], now: u64) {
-        // A renewal candidate reads first, as src/net/udp.rs line 1578-1614.
+    /// A datagram arrived; `now` is the client's clock at the socket read
+    /// (`drain_socket`'s relay route).
+    pub fn deliver(&mut self, bytes: &[u8], now: u64) {
+        if self.leaving {
+            // No late game traffic enters a returned match.
+            match self.session.receive_at(bytes, now) {
+                Ok(ServerEvent::Ordering(OrderEvent::Left)) => self.left = true,
+                Ok(_) => {}
+                Err(error) => *self.log.refused.entry(format!("{error:?}")).or_default() += 1,
+            }
+            return;
+        }
+        // A renewal candidate reads first.
         if let Some(candidate) = self.candidate.as_mut()
             && let Ok(event) = candidate.receive_at(bytes, now)
         {
@@ -399,6 +433,11 @@ impl AdaptiveClient {
                             self.session = next;
                             self.hop += 1;
                             self.last_transport_response = Some(now);
+                            // The renewed hop subscribes at once (spec §4.7).
+                            let mut out = Vec::new();
+                            if self.session.poll_uplink(now, &mut out) {
+                                self.push(out, self.hop);
+                            }
                         }
                         Err(error) => {
                             *self
@@ -439,41 +478,45 @@ impl AdaptiveClient {
             Err(error) => *self.log.refused.entry(format!("{error:?}")).or_default() += 1,
         }
     }
-}
 
-impl HeadlessClient for AdaptiveClient {
-    fn deliver(&mut self, bytes: &[u8], now_ms: u64, _at_us: u64) {
-        self.receive_datagram(bytes, now_ms);
-    }
-    fn tick(&mut self, now_ms: u64, at_us: u64) {
+    /// One service of the game loop.
+    pub fn tick(&mut self, now_ms: u64, at_us: u64) {
         self.services += 1;
         self.in_service = true;
         self.serve(now_ms, at_us);
         self.in_service = false;
     }
-    fn take_output(&mut self) -> Vec<Outgoing> {
+
+    pub fn take_output(&mut self) -> Vec<Outgoing> {
         std::mem::take(&mut self.out)
     }
-    fn started(&self) -> bool {
+
+    pub fn started(&self) -> bool {
         self.reader.started()
     }
-    fn reader(&self) -> &StreamReader {
+
+    pub fn reader(&self) -> &StreamReader {
         &self.reader
     }
-    fn queue_command(&mut self, at_us: u64) {
+
+    /// A player command issued at `at_us`, batched at the next service.
+    pub fn queue_command(&mut self, at_us: u64) {
         self.queued.push(at_us);
     }
-    fn log(&self) -> &ClientLog {
+
+    pub fn log(&self) -> &ClientLog {
         &self.log
     }
-    fn wakeups(&self) -> Vec<u64> {
+
+    /// Client-clock milliseconds at which event-mode service should run.
+    pub fn wakeups(&self) -> Vec<u64> {
         let mut wakeups = Vec::new();
         if self.left || self.leaving {
             return wakeups;
         }
         if !self.reader.started() {
             if let Some(last) = self.last_configure {
-                wakeups.push(last + CONFIGURE_INTERVAL_MS);
+                wakeups.push(last + READY_REQUEST_INTERVAL_MS);
             }
             return wakeups;
         }
@@ -481,18 +524,26 @@ impl HeadlessClient for AdaptiveClient {
         wakeups.extend(self.last_pace.map(|last| last + PACE_INTERVAL_MS));
         wakeups
     }
-    fn leave(&mut self) {
+
+    /// Leaves the match: game traffic and any renewal stop, and the next
+    /// services send the LEAVE.
+    pub fn leave(&mut self) {
         self.leaving = true;
+        self.candidate = None;
     }
-    fn renew(&mut self, ticket: &[u8], packet_key: [u8; 32], now_ms: u64) {
-        match self.session.renewal(ticket, packet_key, self.payload_key) {
-            Ok(mut candidate) => {
-                let mut out = Vec::new();
-                if candidate.probe_at(now_ms, &mut out).is_ok() {
-                    self.push(out, self.hop + 1);
-                }
-                self.last_candidate_probe = Some(now_ms);
+
+    /// Moves to a new hop of this ticket (spec §4.7), from the newest
+    /// candidate if one is pending (`UdpIo::renew_relay`); the next service
+    /// probes both hops.
+    pub fn renew(&mut self, ticket: &[u8], packet_key: [u8; 32]) {
+        if self.leaving {
+            return;
+        }
+        let current = self.candidate.as_ref().unwrap_or(&self.session);
+        match current.renewal(ticket, packet_key, self.payload_key) {
+            Ok(candidate) => {
                 self.candidate = Some(candidate);
+                self.last_probe = None;
             }
             Err(error) => {
                 *self
@@ -503,18 +554,22 @@ impl HeadlessClient for AdaptiveClient {
             }
         }
     }
-    fn set_restoring(&mut self, restoring: bool) {
+
+    pub fn set_restoring(&mut self, restoring: bool) {
         self.restoring = restoring;
         self.session.set_ordering_restore(restoring);
     }
-    fn mac_failures(&self) -> u64 {
+
+    /// Relay datagrams whose tag failed (compaction spec §6.4 item 6).
+    pub fn mac_failures(&self) -> u64 {
         self.session.mac_failures()
             + self
                 .candidate
                 .as_ref()
                 .map_or(0, |candidate| candidate.mac_failures())
     }
-    fn link_stats(&self) -> Option<ClientLinkStats> {
-        Some(self.session.link_stats())
+
+    pub fn link_stats(&self) -> ClientLinkStats {
+        self.session.link_stats()
     }
 }

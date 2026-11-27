@@ -76,10 +76,9 @@ fn digest_checked_loose_map_uses_the_enabled_second_trigger_section() {
         .advance_app_frame(
             &[],
             &rules,
-            None,
             67,
             TickLane::Ordinary,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap();
     assert_eq!(

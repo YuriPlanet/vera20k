@@ -1,10 +1,22 @@
-//! Shared byte delivery for direct protocol-2 LAN connections.
+//! Shared byte delivery for protocol-2 connections, direct on LAN and relayed
+//! online.
 //!
 //! The active UDP interface still uses ConnectionClass (`0x0048BF40` through
 //! `0x0048C5A0`) and IPXManagerClass's private peer ordering (`0x005414C0`,
 //! `0x005415F0`, `0x00541820`). This owner handles their connection frames and
 //! queues; the socket owner supplies endpoints, time and datagram I/O. It never
 //! stores or interprets simulation commands.
+
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable
+    )
+)]
 
 use std::collections::VecDeque;
 use std::net::SocketAddrV4;
@@ -13,10 +25,14 @@ use crate::sim::multiplayer_checksum::RetailChecksumAccumulator;
 
 pub const CONNECTION_HEADER_LEN: usize = 14;
 
+/// The product word `0x004E80A0` gives the IPX manager (`0x005408F0`), which
+/// passes it to its global channel (`0x00540B40 -> 0x0053FA90`) and to every
+/// connection (`0x00540DC0 -> 0x0053F430`). Every LAN frame carries it.
+pub const LAN_PRODUCT_ID: u16 = 0xaa04;
+
 /// Constructor inputs from `0x004E80A0 -> 0x005408F0 -> 0x0053F430`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LanConnectionConfig {
-    pub product_id: u16,
     pub max_payload_bytes: usize,
     pub send_capacity: usize,
     pub receive_capacity: usize,
@@ -26,7 +42,6 @@ pub struct LanConnectionConfig {
 impl Default for LanConnectionConfig {
     fn default() -> Self {
         Self {
-            product_id: 0xaa04,
             max_payload_bytes: 558,
             send_capacity: 32,
             receive_capacity: 32,
@@ -474,10 +489,6 @@ impl LanConnections {
         self.timing
     }
 
-    pub(crate) fn product_id(&self) -> u16 {
-        self.config.product_id
-    }
-
     pub fn queued_send_count(&self, peer_id: i32) -> Option<usize> {
         self.peers
             .iter()
@@ -513,7 +524,7 @@ impl LanConnections {
             return false;
         }
         for peer in &mut self.peers {
-            let accepted = peer.enqueue(payload, delivery, self.config.product_id);
+            let accepted = peer.enqueue(payload, delivery);
             debug_assert!(accepted, "broadcast preflight reserved every send slot");
         }
         true
@@ -526,7 +537,7 @@ impl LanConnections {
         let Some(peer) = self.peers.iter_mut().find(|peer| peer.id == peer_id) else {
             return false;
         };
-        peer.enqueue(payload, delivery, self.config.product_id)
+        peer.enqueue(payload, delivery)
     }
 
     /// Route and process one checksum-validated connection frame. The caller
@@ -552,9 +563,9 @@ impl LanConnections {
             return Err(ReceiveError::ShortHeader);
         }
         let product = u16::from_le_bytes([frame[0], frame[1]]);
-        if product != self.config.product_id {
+        if product != LAN_PRODUCT_ID {
             return Err(ReceiveError::WrongProduct {
-                expected: self.config.product_id,
+                expected: LAN_PRODUCT_ID,
                 actual: product,
             });
         }
@@ -597,7 +608,7 @@ impl LanConnections {
             }
         }
         if frame[2] == 0 {
-            let ack = connection_frame(self.config.product_id, 2, incoming_sequence, &[]);
+            let ack = connection_frame(LAN_PRODUCT_ID, 2, incoming_sequence, &[]);
             send(peer.endpoint, &ack);
         }
         Ok(if duplicate {
@@ -645,13 +656,13 @@ impl LanConnections {
 }
 
 impl Peer {
-    fn enqueue(&mut self, payload: &[u8], delivery: Delivery, product_id: u16) -> bool {
+    fn enqueue(&mut self, payload: &[u8], delivery: Delivery) -> bool {
         let next = match delivery {
             Delivery::Reliable => &mut self.next_reliable,
             Delivery::Unreliable => &mut self.next_unreliable,
         };
         if !self.send.enqueue(
-            connection_frame(product_id, delivery.wire_kind(), *next, payload),
+            connection_frame(LAN_PRODUCT_ID, delivery.wire_kind(), *next, payload),
             (),
         ) {
             return false;

@@ -122,9 +122,16 @@ fn reserved_near_covers_the_native_bounds() {
                 cell: None,
                 lookups: 0,
             };
-            let game_mode_nonzero = int(&row["game_mode"]) != 0;
+            let requires_reservation_proximity = int(&row["game_mode"]) != 0;
             assert_eq!(
-                reserved_near_in(&mut world, spacing, width, height, site, game_mode_nonzero),
+                reserved_near_in(
+                    &mut world,
+                    spacing,
+                    width,
+                    height,
+                    site,
+                    requires_reservation_proximity,
+                ),
                 row["answer"].as_bool().unwrap(),
                 "{row}"
             );
@@ -259,7 +266,7 @@ fn replay_searches(searches: &[Value], key: impl Fn(&Value) -> Option<CoverageGr
             width: int(&row["width"]) as i32,
             height: int(&row["height"]) as i32,
             extra_border: row["protect"].as_bool().unwrap() || row["extra"].as_bool().unwrap(),
-            game_mode_nonzero: int(&row["game_mode"]) != 0,
+            requires_reservation_proximity: int(&row["game_mode"]) != 0,
             key: grid
                 .as_ref()
                 .map_or(SiteKey::Ordinary, |grid| SiteKey::Defense {
@@ -359,7 +366,7 @@ fn east_search<'a>(perimeter: &'a [(i16, i16)], key: SiteKey<'a>) -> SiteSearch<
         width: 1,
         height: 1,
         extra_border: false,
-        game_mode_nonzero: false,
+        requires_reservation_proximity: false,
         key,
     }
 }

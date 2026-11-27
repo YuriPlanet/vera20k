@@ -1,3 +1,8 @@
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)
+)]
 // Ported from FFmpeg's libavcodec/bink.c and libavcodec/binkdsp.c.
 // Copyright (c) 2009 Konstantin Shishkov
 // Copyright (c) 2011 Peter Ross <pross@xvid.org>
@@ -94,6 +99,8 @@ fn idct_row_munge(v: i32) -> i32 {
     (v + 0x7F) >> 8
 }
 
+// BINKW32 ExpandBink's intra block takes the low byte after the row shift
+// (0x10001C58..0x10001C5B). Clamping leaves bright blocks in later references.
 fn idct_row_to_u8(scratch: &[i32; 64], dst: &mut [u8], row: usize, stride: usize) {
     let s_idx = [
         row * 8,
@@ -110,10 +117,12 @@ fn idct_row_to_u8(scratch: &[i32; 64], dst: &mut [u8], row: usize, stride: usize
     idct8(scratch, &mut tmp, s_idx, d_idx, idct_row_munge);
     let base = row * stride;
     for k in 0..8 {
-        dst[base + k] = tmp[k].clamp(0, 255) as u8;
+        dst[base + k] = tmp[k] as u8;
     }
 }
 
+// ExpandBink's inter block adds the reconstructed sample to the reference
+// with an 8-bit ADD (BINKW32 0x10002524), then stores the byte.
 fn idct_row_add_u8(scratch: &[i32; 64], dst: &mut [u8], row: usize, stride: usize) {
     let s_idx = [
         row * 8,
@@ -130,8 +139,7 @@ fn idct_row_add_u8(scratch: &[i32; 64], dst: &mut [u8], row: usize, stride: usiz
     idct8(scratch, &mut tmp, s_idx, d_idx, idct_row_munge);
     let base = row * stride;
     for k in 0..8 {
-        let v = dst[base + k] as i32 + tmp[k];
-        dst[base + k] = v.clamp(0, 255) as u8;
+        dst[base + k] = dst[base + k].wrapping_add(tmp[k] as u8);
     }
 }
 
@@ -158,13 +166,14 @@ pub(crate) fn bink_idct_add(dst: &mut [u8], stride: usize, block: &mut [i32; 64]
     let _ = block;
 }
 
-/// Add an 8x8 i16 residue block to a dst area, clipping to u8.
-/// Port of `add_pixels8_c` in binkdsp.c.
+/// Add an 8x8 i16 residue block to a dst area modulo 256.
+/// Port of `add_pixels8_c` in binkdsp.c. ExpandBink's residue block uses
+/// the same 8-bit add and store at BINKW32 0x1002A573..0x1002A579.
 pub(crate) fn add_pixels8(dst: &mut [u8], block: &[i16; 64], stride: usize) {
     for row in 0..8 {
         for col in 0..8 {
-            let v = dst[row * stride + col] as i32 + block[row * 8 + col] as i32;
-            dst[row * stride + col] = v.clamp(0, 255) as u8;
+            let pixel = &mut dst[row * stride + col];
+            *pixel = pixel.wrapping_add(block[row * 8 + col] as u8);
         }
     }
 }
@@ -253,10 +262,17 @@ pub enum ColorRange {
 
 impl BinkFrame {
     fn alloc(width: u32, height: u32, color_range: ColorRange) -> Self {
-        let stride_y = ((width + 7) & !7) as usize;
-        let stride_uv = (((width + 15) & !15) / 2) as usize;
-        let y_size = stride_y * ((height + 7) & !7) as usize;
-        let uv_size = stride_uv * (((height + 15) & !15) / 2) as usize;
+        // A scaled block writes 16x16 at an even block position
+        // (`scale_block_8x8_to_16x16`, `fill_block` with 16), so each plane
+        // holds whole 16-pixel blocks, as FFmpeg's padded frame buffers do. A
+        // plane of 8-pixel blocks ends eight rows short of a scaled block on
+        // an odd last block row (640x400 and 320x200 have one); retail movies
+        // never place one there, a damaged or re-encoded movie can, and the
+        // write then ran off the slice.
+        let stride_y = ((width + 15) & !15) as usize;
+        let stride_uv = (((width + 31) & !31) / 2) as usize;
+        let y_size = stride_y * ((height + 15) & !15) as usize;
+        let uv_size = stride_uv * (((height + 31) & !31) / 2) as usize;
         Self {
             width,
             height,
@@ -768,9 +784,8 @@ impl BinkDecoder {
         Ok(())
     }
 
-    /// Decode one video packet into `self.cur`. The cur/prev buffers
-    /// ping-pong across calls — prev (as motion-compensation reference)
-    /// holds the previous call's output; cur is overwritten.
+    /// Decode one video packet. On error, `cur` still holds the last good
+    /// picture, which supplies the motion reference for the next packet.
     /// Port of `decode_frame` at libavcodec/bink.c:1255-1309 (BIKi/BIKk only).
     pub fn decode_frame(&mut self, packet: &[u8]) -> Result<&BinkFrame, AssetError> {
         if self.has_alpha {
@@ -778,8 +793,6 @@ impl BinkDecoder {
                 reason: "alpha Bink not supported".to_string(),
             });
         }
-
-        std::mem::swap(&mut self.cur, &mut self.prev);
 
         let bits_count = packet.len() * 8;
         let mut r = BitReader::new(packet, bits_count);
@@ -794,32 +807,30 @@ impl BinkDecoder {
         }
         r.skip(32);
 
-        self.frame_num += 1;
+        std::mem::swap(&mut self.cur, &mut self.prev);
 
-        for plane in 0..3usize {
-            let plane_idx = if plane == 0 { 0 } else { plane ^ 3 };
-            let is_chroma = plane != 0;
-            self.decode_plane(&mut r, plane_idx, is_chroma)?;
+        // FFmpeg's plane order: luma, then `plane ^ 3`, so V before U.
+        for which in [Plane::Y, Plane::V, Plane::U] {
+            if let Err(err) = self.decode_plane(&mut r, which) {
+                // FFmpeg's decode_frame commits its reference after all planes succeed.
+                std::mem::swap(&mut self.cur, &mut self.prev);
+                return Err(err);
+            }
             if r.pos() >= bits_count {
                 break;
             }
         }
 
+        self.frame_num += 1;
         self.has_prev = true;
         Ok(&self.cur)
     }
 
-    /// Decode one plane of a frame. `plane_idx` indexes into cur/prev
-    /// buffers; `is_chroma` selects chroma dimensions. Scaffolding only:
-    /// handles BIKk whole-plane fill, bundle setup, the row loop, and
-    /// SKIP_BLOCK. Remaining block-type handlers come in a follow-up commit.
+    /// Decode one plane of a frame: `which` picks the cur/prev buffers and,
+    /// for chroma, the halved dimensions.
     /// Port of `bink_decode_plane` at libavcodec/bink.c:1020-1253.
-    fn decode_plane(
-        &mut self,
-        r: &mut BitReader<'_>,
-        plane_idx: usize,
-        is_chroma: bool,
-    ) -> Result<(), AssetError> {
+    fn decode_plane(&mut self, r: &mut BitReader<'_>, which: Plane) -> Result<(), AssetError> {
+        let is_chroma = which != Plane::Y;
         let shift = if is_chroma { 1u32 } else { 0 };
         let width = (self.width >> shift) as usize;
         let height = (self.height >> shift) as usize;
@@ -833,15 +844,15 @@ impl BinkDecoder {
         } else {
             ((self.height + 7) >> 3) as usize
         };
-        let stride = if plane_idx == 0 {
-            self.cur.stride_y
-        } else {
+        let stride = if is_chroma {
             self.cur.stride_uv
+        } else {
+            self.cur.stride_y
         };
 
         if self.version == BinkVersion::BikK && r.read_bit()? {
             let fill = r.read_bits(8)? as u8;
-            let (plane, _) = plane_mut_for(&mut self.cur, plane_idx);
+            let (plane, _) = plane_mut_for(&mut self.cur, which);
             for row in 0..height {
                 plane[row * stride..row * stride + width].fill(fill);
             }
@@ -885,8 +896,8 @@ impl BinkDecoder {
 
                 match blk {
                     SKIP_BLOCK => {
-                        let src = plane_ref_for(&self.prev, plane_idx);
-                        let (dst, _) = plane_mut_for(&mut self.cur, plane_idx);
+                        let src = plane_ref_for(&self.prev, which);
+                        let (dst, _) = plane_mut_for(&mut self.cur, which);
                         copy_block8(&mut dst[dst_base..], &src[dst_base..], stride, stride);
                     }
                     SCALED_BLOCK => {
@@ -951,7 +962,7 @@ impl BinkDecoder {
                             }
                             FILL_BLOCK => {
                                 let v = self.get_value(Src::Colors as usize) as u8;
-                                let (dst, _) = plane_mut_for(&mut self.cur, plane_idx);
+                                let (dst, _) = plane_mut_for(&mut self.cur, which);
                                 fill_block(&mut dst[dst_base..], v, stride, 16);
                             }
                             PATTERN_BLOCK => {
@@ -981,7 +992,7 @@ impl BinkDecoder {
                             }
                         }
                         if sub != FILL_BLOCK {
-                            let (dst, _) = plane_mut_for(&mut self.cur, plane_idx);
+                            let (dst, _) = plane_mut_for(&mut self.cur, which);
                             scale_block_8x8_to_16x16(&ublock, &mut dst[dst_base..], stride);
                         }
                         bx += 2;
@@ -990,8 +1001,8 @@ impl BinkDecoder {
                     MOTION_BLOCK => {
                         let xoff = self.get_value(Src::XOff as usize);
                         let yoff = self.get_value(Src::YOff as usize);
-                        let src = plane_ref_for(&self.prev, plane_idx);
-                        let (dst, _) = plane_mut_for(&mut self.cur, plane_idx);
+                        let src = plane_ref_for(&self.prev, which);
+                        let (dst, _) = plane_mut_for(&mut self.cur, which);
                         motion_copy_8x8(
                             dst, src, dst_base, dst_base, xoff, yoff, stride, ref_start, ref_end,
                         )?;
@@ -1010,7 +1021,7 @@ impl BinkDecoder {
                             }
                             if r.read_bit()? {
                                 let v = self.get_value(Src::Colors as usize) as u8;
-                                let (dst, _) = plane_mut_for(&mut self.cur, plane_idx);
+                                let (dst, _) = plane_mut_for(&mut self.cur, which);
                                 for _ in 0..run {
                                     dst[dst_base + coordmap[scan[s] as usize]] = v;
                                     s += 1;
@@ -1018,7 +1029,7 @@ impl BinkDecoder {
                             } else {
                                 for _ in 0..run {
                                     let v = self.get_value(Src::Colors as usize) as u8;
-                                    let (dst, _) = plane_mut_for(&mut self.cur, plane_idx);
+                                    let (dst, _) = plane_mut_for(&mut self.cur, which);
                                     dst[dst_base + coordmap[scan[s] as usize]] = v;
                                     s += 1;
                                 }
@@ -1030,7 +1041,7 @@ impl BinkDecoder {
                         }
                         if i == 63 {
                             let v = self.get_value(Src::Colors as usize) as u8;
-                            let (dst, _) = plane_mut_for(&mut self.cur, plane_idx);
+                            let (dst, _) = plane_mut_for(&mut self.cur, which);
                             dst[dst_base + coordmap[scan[s] as usize]] = v;
                         }
                     }
@@ -1038,8 +1049,8 @@ impl BinkDecoder {
                         let xoff = self.get_value(Src::XOff as usize);
                         let yoff = self.get_value(Src::YOff as usize);
                         {
-                            let src = plane_ref_for(&self.prev, plane_idx);
-                            let (dst, _) = plane_mut_for(&mut self.cur, plane_idx);
+                            let src = plane_ref_for(&self.prev, which);
+                            let (dst, _) = plane_mut_for(&mut self.cur, which);
                             motion_copy_8x8(
                                 dst, src, dst_base, dst_base, xoff, yoff, stride, ref_start,
                                 ref_end,
@@ -1048,7 +1059,7 @@ impl BinkDecoder {
                         let mut residue = [0i16; 64];
                         let v = r.read_bits(7)? as i32;
                         self.read_residue(r, &mut residue, v)?;
-                        let (dst, _) = plane_mut_for(&mut self.cur, plane_idx);
+                        let (dst, _) = plane_mut_for(&mut self.cur, which);
                         add_pixels8(&mut dst[dst_base..], &residue, stride);
                     }
                     INTRA_BLOCK => {
@@ -1070,20 +1081,20 @@ impl BinkDecoder {
                             &coef_idx,
                             &BINK_SCAN,
                         );
-                        let (dst, _) = plane_mut_for(&mut self.cur, plane_idx);
+                        let (dst, _) = plane_mut_for(&mut self.cur, which);
                         bink_idct_put(&mut dst[dst_base..], stride, &dctblock);
                     }
                     FILL_BLOCK => {
                         let v = self.get_value(Src::Colors as usize) as u8;
-                        let (dst, _) = plane_mut_for(&mut self.cur, plane_idx);
+                        let (dst, _) = plane_mut_for(&mut self.cur, which);
                         fill_block(&mut dst[dst_base..], v, stride, 8);
                     }
                     INTER_BLOCK => {
                         let xoff = self.get_value(Src::XOff as usize);
                         let yoff = self.get_value(Src::YOff as usize);
                         {
-                            let src = plane_ref_for(&self.prev, plane_idx);
-                            let (dst, _) = plane_mut_for(&mut self.cur, plane_idx);
+                            let src = plane_ref_for(&self.prev, which);
+                            let (dst, _) = plane_mut_for(&mut self.cur, which);
                             motion_copy_8x8(
                                 dst, src, dst_base, dst_base, xoff, yoff, stride, ref_start,
                                 ref_end,
@@ -1107,7 +1118,7 @@ impl BinkDecoder {
                             &coef_idx,
                             &BINK_SCAN,
                         );
-                        let (dst, _) = plane_mut_for(&mut self.cur, plane_idx);
+                        let (dst, _) = plane_mut_for(&mut self.cur, which);
                         bink_idct_add(&mut dst[dst_base..], stride, &mut dctblock);
                     }
                     PATTERN_BLOCK => {
@@ -1116,7 +1127,7 @@ impl BinkDecoder {
                         col[1] = self.get_value(Src::Colors as usize) as u8;
                         for i in 0..8 {
                             let mut v = self.get_value(Src::Pattern as usize);
-                            let (dst, _) = plane_mut_for(&mut self.cur, plane_idx);
+                            let (dst, _) = plane_mut_for(&mut self.cur, which);
                             for j in 0..8 {
                                 dst[dst_base + i * stride + j] = col[(v & 1) as usize];
                                 v >>= 1;
@@ -1125,19 +1136,20 @@ impl BinkDecoder {
                     }
                     RAW_BLOCK => {
                         let start_off = self.bundles[Src::Colors as usize].cur_ptr;
-                        if start_off + 64 > self.bundle_data.len() {
+                        let Some(src_window) = self
+                            .bundle_data
+                            .get(start_off..)
+                            .and_then(<[u8]>::first_chunk::<64>)
+                        else {
                             return Err(AssetError::BinkError {
                                 reason: "RAW block COLORS OOB".to_string(),
                             });
-                        }
-                        let src_window: [u8; 64] = self.bundle_data[start_off..start_off + 64]
-                            .try_into()
-                            .unwrap();
+                        };
                         self.bundles[Src::Colors as usize].cur_ptr = start_off + 64;
-                        let (dst, _) = plane_mut_for(&mut self.cur, plane_idx);
-                        for i in 0..8 {
+                        let (dst, _) = plane_mut_for(&mut self.cur, which);
+                        for (i, row) in src_window.chunks_exact(8).enumerate() {
                             dst[dst_base + i * stride..dst_base + i * stride + 8]
-                                .copy_from_slice(&src_window[i * 8..i * 8 + 8]);
+                                .copy_from_slice(row);
                         }
                     }
                     _ => {
@@ -1262,7 +1274,7 @@ impl BinkDecoder {
                         mode_list[list_pos] = 0;
                         list_pos += 1;
                     }
-                    _ => unreachable!(),
+                    _ => unreachable!("this decoder writes only modes 0 to 3 to its list"),
                 }
             }
             bits -= 1;
@@ -1385,7 +1397,7 @@ impl BinkDecoder {
                             return Ok(());
                         }
                     }
-                    _ => unreachable!(),
+                    _ => unreachable!("this decoder writes only modes 0 to 3 to its list"),
                 }
             }
             mask >>= 1;
@@ -1418,21 +1430,22 @@ impl BinkDecoder {
     ///   - X_OFF / Y_OFF: i8 (motion offsets).
     ///   - INTRA_DC / INTER_DC: i16 (two bytes per value).
     ///
-    /// Port of `get_value` at libavcodec/bink.c:557-568.
+    /// Port of `get_value` at libavcodec/bink.c:557-568. The read is
+    /// checked: a hostile stream can ask a bundle for more values than it
+    /// decoded, and a read past the buffer gives 0 instead of a panic.
     fn get_value(&mut self, bundle_num: usize) -> i32 {
         let b = &mut self.bundles[bundle_num];
+        let at = b.cur_ptr;
+        let byte = |offset: usize| self.bundle_data.get(at + offset).copied().unwrap_or(0);
         if bundle_num == Src::XOff as usize || bundle_num == Src::YOff as usize {
-            let v = self.bundle_data[b.cur_ptr] as i8 as i32;
             b.cur_ptr += 1;
-            v
+            byte(0) as i8 as i32
         } else if bundle_num == Src::IntraDc as usize || bundle_num == Src::InterDc as usize {
-            let v = read_i16(&self.bundle_data, b.cur_ptr) as i32;
             b.cur_ptr += 2;
-            v
+            i16::from_ne_bytes([byte(0), byte(1)]) as i32
         } else {
-            let v = self.bundle_data[b.cur_ptr] as i32;
             b.cur_ptr += 1;
-            v
+            byte(0) as i32
         }
     }
 }
@@ -1455,21 +1468,27 @@ const INTER_BLOCK: i32 = 7;
 const PATTERN_BLOCK: i32 = 8;
 const RAW_BLOCK: i32 = 9;
 
-fn plane_mut_for(frame: &mut BinkFrame, plane_idx: usize) -> (&mut [u8], usize) {
-    match plane_idx {
-        0 => (&mut frame.y[..], frame.stride_y),
-        1 => (&mut frame.u[..], frame.stride_uv),
-        2 => (&mut frame.v[..], frame.stride_uv),
-        _ => unreachable!(),
+/// One of a frame's three planes.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Plane {
+    Y,
+    U,
+    V,
+}
+
+fn plane_mut_for(frame: &mut BinkFrame, which: Plane) -> (&mut [u8], usize) {
+    match which {
+        Plane::Y => (&mut frame.y[..], frame.stride_y),
+        Plane::U => (&mut frame.u[..], frame.stride_uv),
+        Plane::V => (&mut frame.v[..], frame.stride_uv),
     }
 }
 
-fn plane_ref_for(frame: &BinkFrame, plane_idx: usize) -> &[u8] {
-    match plane_idx {
-        0 => &frame.y[..],
-        1 => &frame.u[..],
-        2 => &frame.v[..],
-        _ => unreachable!(),
+fn plane_ref_for(frame: &BinkFrame, which: Plane) -> &[u8] {
+    match which {
+        Plane::Y => &frame.y[..],
+        Plane::U => &frame.u[..],
+        Plane::V => &frame.v[..],
     }
 }
 
@@ -1502,11 +1521,6 @@ fn motion_copy_8x8(
 #[inline]
 fn write_i16(buf: &mut [u8], byte_off: usize, v: i16) {
     buf[byte_off..byte_off + 2].copy_from_slice(&v.to_ne_bytes());
-}
-
-#[inline]
-fn read_i16(buf: &[u8], byte_off: usize) -> i16 {
-    i16::from_ne_bytes([buf[byte_off], buf[byte_off + 1]])
 }
 
 /// Interleave two adjacent halves (size + size) based on bits read. Port of
@@ -1637,27 +1651,60 @@ mod tests {
     }
 
     #[test]
-    fn idct_clips_to_u8_range() {
-        let mut block = [0i32; 64];
-        block[0] = 1_000_000;
-        let mut dst = [0u8; 64];
-        bink_idct_put(&mut dst, 8, &block);
-        for &p in &dst {
-            assert!(p == 255);
-        }
+    fn reconstructed_pixels_match_ffmpeg_byte_stores() {
+        // First row after each operation in FFmpeg n7.1.1 libavcodec/binkdsp.c:
+        // bink_idct_put_c, bink_idct_add_c, then add_pixels8_c.
+        let mut pixels = [0; 64];
+        let mut intra = [0; 64];
+        intra[0] = 65024;
+        intra[1] = 1024;
+        bink_idct_put(&mut pixels, 8, &intra);
+        assert_eq!(pixels[..8], [2, 1, 0, 255, 253, 252, 251, 250]);
+
+        let mut inter = [0; 64];
+        inter[1] = 1024;
+        bink_idct_add(&mut pixels, 8, &mut inter);
+        assert_eq!(pixels[..8], [6, 4, 2, 0, 252, 250, 248, 246]);
+
+        let mut residue = [0; 64];
+        residue[0] = -8;
+        residue[4] = 12;
+        add_pixels8(&mut pixels, &residue, 8);
+        assert_eq!(pixels[..8], [254, 4, 2, 0, 8, 250, 248, 246]);
     }
 
     #[test]
-    fn add_pixels8_accumulates_and_clips() {
-        let mut dst = [100u8; 64];
-        let mut block = [0i16; 64];
-        block[0] = 50;
-        block[63] = -200;
-        block[10] = 300;
-        add_pixels8(&mut dst, &block, 8);
-        assert_eq!(dst[0], 150);
-        assert_eq!(dst[63], 0); // clipped
-        assert_eq!(dst[10], 255); // clipped
+    fn rejected_radar_frame_preserves_the_last_picture_and_motion_reference() {
+        let Some((_, mut assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        assets.load_nested("MOVIES01.MIX").unwrap();
+        let movie = assets
+            .archive("MOVIES01.MIX")
+            .unwrap()
+            .get_by_name("A08_P01E.BIK")
+            .unwrap();
+        let file = crate::assets::bink_file::BinkFile::parse(movie.to_vec().into()).unwrap();
+        let mut decoder = BinkDecoder::new(&file.header).unwrap();
+
+        // FFmpeg 7.1.1 drops source frame 175. Its output frames 174 and 175
+        // give this Y row at (32, 0) immediately before and after the bad packet.
+        let last = [18, 16, 14, 16, 16, 16, 17, 16];
+        let next = [18, 16, 14, 16, 15, 16, 15, 19];
+        for i in 0..175 {
+            decoder.decode_frame(file.video_packet(i).unwrap()).unwrap();
+        }
+        assert_eq!(decoder.cur.y[32..40], last);
+        assert!(
+            decoder
+                .decode_frame(file.video_packet(175).unwrap())
+                .is_err()
+        );
+        assert_eq!(decoder.cur.y[32..40], last);
+        let recovered = decoder
+            .decode_frame(file.video_packet(176).unwrap())
+            .unwrap();
+        assert_eq!(recovered.y[32..40], next);
     }
 
     #[test]
@@ -1680,6 +1727,48 @@ mod tests {
         d.init_bundle_lengths(320, bw);
         assert_eq!(d.bundles[Src::BlockTypes as usize].len_bits, 10);
         assert_eq!(d.bundles[Src::SubBlockTypes as usize].len_bits, 10);
+    }
+
+    /// A scaled block on the last block row of a 320x200 movie (25 luma and
+    /// 13 chroma block rows, both odd) must fit the planes.
+    #[test]
+    fn planes_hold_a_scaled_block_on_an_odd_last_block_row() {
+        let mut frame = BinkFrame::alloc(320, 200, ColorRange::Mpeg);
+        let luma_rows = (200u32 + 7) >> 3;
+        assert_eq!(luma_rows % 2, 1);
+        let base = ((luma_rows - 1) as usize) * 8 * frame.stride_y;
+        fill_block(&mut frame.y[base..], 7, frame.stride_y, 16);
+        assert_eq!(frame.y[base + 15 * frame.stride_y + 15], 7);
+        let chroma_rows = (200u32 + 15) >> 4;
+        assert_eq!(chroma_rows % 2, 1);
+        let base = ((chroma_rows - 1) as usize) * 8 * frame.stride_uv;
+        scale_block_8x8_to_16x16(&[9u8; 64], &mut frame.u[base..], frame.stride_uv);
+        assert_eq!(frame.u[base + 15 * frame.stride_uv + 15], 9);
+    }
+
+    /// A stream that asks the last bundle for more values than its buffer
+    /// holds reads 0 past the end instead of panicking.
+    #[test]
+    fn get_value_past_the_bundle_buffer_reads_zero() {
+        let h = crate::assets::bink_file::BinkHeader {
+            version: BinkVersion::BikI,
+            file_size: 1000,
+            num_frames: 1,
+            width: 8,
+            height: 8,
+            fps_num: 30,
+            fps_den: 1,
+            video_flags: 0,
+            num_audio_tracks: 0,
+            audio_tracks: vec![],
+            frame_index_offset: 0,
+        };
+        let mut d = BinkDecoder::new(&h).unwrap();
+        let end = d.bundle_data.len();
+        d.bundle_data[end - 1] = 5;
+        d.bundles[Src::Run as usize].cur_ptr = end - 1;
+        assert_eq!(d.get_value(Src::Run as usize), 5);
+        assert_eq!(d.get_value(Src::Run as usize), 0);
     }
 
     #[test]

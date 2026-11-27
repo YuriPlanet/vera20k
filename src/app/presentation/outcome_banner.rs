@@ -11,11 +11,40 @@
 //! slots per game load (`Game_LoadUI_LoadSideData` 0x1002F4A0), each slot
 //! falling back to the literal file on its own.
 
-use crate::app::AppState;
+use crate::app::match_runtime::scenario_exit::ScenarioExitCascade;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
+use crate::app::persistence::options_profile::RetailOptionsProfile;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
+use crate::app::state::PlatformState;
 use crate::assets::{asset_manager::AssetManager, pal_file::Palette, shp_file::ShpFile};
 use crate::render::batch::{BatchRenderer, BatchTexture, SpriteInstance};
 use crate::render::gpu::GpuContext;
+use crate::render::shell_ui_style_assets::{decode_ui_shp, ui_art_candidates};
 use crate::sim::house_state::HouseOutcomeKind;
+use crate::ui::game_screen::GameScreen;
+
+/// The verdict in the last battlefield picture handed off for presentation.
+#[derive(Default)]
+pub(crate) struct OutcomeBannerPresentation {
+    last_presented: Option<HouseOutcomeKind>,
+}
+
+impl OutcomeBannerPresentation {
+    pub(crate) fn record_presented(&mut self, verdict: Option<HouseOutcomeKind>) {
+        self.last_presented = verdict;
+    }
+
+    pub(crate) fn hold_on_exit(
+        &self,
+        verdict: HouseOutcomeKind,
+        custom_banner: bool,
+        visible_skirmish: bool,
+    ) -> bool {
+        custom_banner || (visible_skirmish && self.last_presented != Some(verdict))
+    }
+}
 
 struct Frame {
     size: [u32; 2],
@@ -81,38 +110,44 @@ impl OutcomeBannerArt {
         image: &str,
         palette: Option<&str>,
     ) -> Option<Self> {
-        let shp = assets
-            .get_ref(image)
-            .and_then(|bytes| ShpFile::from_bytes(bytes).ok())?;
-        //6D4E8D sign-extends the SHP frame count; its invalid-count branch
-        //uses text. The normal retail shape has a small positive count.
-        if (shp.frames.len() as i16) <= 0 {
-            return None;
-        }
+        let texture_limit = gpu.device.limits().max_texture_dimension_2d;
+        let (shp, atlas_width, atlas_height) =
+            ui_art_candidates(assets, image).find_map(|asset| {
+                let shp = if assets.mod_selected() {
+                    decode_ui_shp(asset.bytes).ok()?
+                } else {
+                    ShpFile::from_bytes(asset.bytes).ok()?
+                };
+                // 6D4E8D sign-extends the SHP frame count. The invalid-count
+                // branch uses text.
+                if (shp.frames.len() as i16) <= 0 {
+                    return None;
+                }
+                let width = shp
+                    .frames
+                    .iter()
+                    .map(|frame| u32::from(frame.frame_width))
+                    .sum::<u32>();
+                let height = shp
+                    .frames
+                    .iter()
+                    .map(|frame| u32::from(frame.frame_height))
+                    .max()?;
+                if width == 0 || height == 0 || width.max(height) > texture_limit {
+                    return None;
+                }
+                log::debug!("Outcome banner {image} resolved from {}", asset.source);
+                Some((shp, width, height))
+            })?;
         //6D4E20 draws the frame with CC_Draw_Shape SHAPE_NORMAL through the
         //GRFXTXT ConvertClass: the shared palette conversion, index 0 skipped.
-        let palette = assets
-            .get_ref(palette.unwrap_or(STOCK_PALETTE))
-            .and_then(|bytes| Palette::from_bytes(bytes).ok())
-            .or_else(|| {
-                assets
-                    .get_ref(STOCK_PALETTE)
-                    .and_then(|bytes| Palette::from_bytes(bytes).ok())
-            })?;
-        let atlas_width: u32 = shp
-            .frames
-            .iter()
-            .map(|frame| u32::from(frame.frame_width))
-            .sum();
-        let atlas_height = shp
-            .frames
-            .iter()
-            .map(|frame| u32::from(frame.frame_height))
-            .max()?;
-        if atlas_width == 0 || atlas_height == 0 {
-            return None;
-        }
-        let mut rgba = vec![0; (atlas_width * atlas_height * 4) as usize];
+        let palette_for = |name| {
+            ui_art_candidates(assets, name).find_map(|asset| Palette::from_bytes(asset.bytes).ok())
+        };
+        let palette = palette
+            .and_then(palette_for)
+            .or_else(|| palette_for(STOCK_PALETTE))?;
+        let mut rgba = vec![0; atlas_width.checked_mul(atlas_height)?.checked_mul(4)? as usize];
         let mut x = 0;
         let mut frames = Vec::with_capacity(shp.frames.len());
         for (index, frame) in shp.frames.iter().enumerate() {
@@ -243,8 +278,8 @@ impl EndGameBanner {
 
 /// The verdict the exit router took. Only the country card reads it alone:
 /// the card goes up when the router takes the result.
-fn router_verdict(state: &AppState) -> Option<HouseOutcomeKind> {
-    state.match_state.scenario_exit.as_ref()?.verdict()
+fn router_verdict(scenario_exit: &Option<ScenarioExitCascade>) -> Option<HouseOutcomeKind> {
+    scenario_exit.as_ref()?.verdict()
 }
 
 /// The result the banner shows, from the frame the House is flagged.
@@ -260,9 +295,9 @@ fn router_verdict(state: &AppState) -> Option<HouseOutcomeKind> {
 /// Nothing is withheld while the losing commander's clip plays: the card is
 /// the verdict from the kill frame on, exactly as the native text is, and it
 /// stays on screen through the clip until the score page takes the picture.
-fn local_outcome(state: &AppState) -> Option<HouseOutcomeKind> {
-    router_verdict(state)
-        .or_else(|| sim_outcome(&state.match_state.sim_runtime.presentation()?.simulation))
+fn local_outcome(match_state: &MatchState) -> Option<HouseOutcomeKind> {
+    router_verdict(&match_state.scenario_exit)
+        .or_else(|| sim_outcome(&match_state.sim_runtime.presentation()?.simulation))
 }
 
 /// The local House's result as the simulation holds it: the one it published,
@@ -281,14 +316,16 @@ fn sim_outcome(sim: &crate::sim::world::Simulation) -> Option<HouseOutcomeKind> 
 /// quads. Splitting the decision once made the quads address the retail
 /// `GRFXTXT` atlas while they carried the card's size and offsets, which is a
 /// garbled picture rather than a missing one.
-pub(crate) fn active_art(state: &AppState) -> Option<&OutcomeBannerArt> {
-    if !state.persistence.options_profile.custom_end_game_banner {
+pub(crate) fn active_art<'a>(
+    match_state: &'a MatchState,
+    options_profile: &RetailOptionsProfile,
+) -> Option<&'a OutcomeBannerArt> {
+    if !options_profile.custom_end_game_banner {
         return None;
     }
     // A match, not a mission: the campaign's own `SCENARIO WON`/`LOST`
     // banners belong to the campaign's art.
-    if !state
-        .match_state
+    if !match_state
         .sim_runtime
         .presentation()?
         .simulation
@@ -302,9 +339,8 @@ pub(crate) fn active_art(state: &AppState) -> Option<&OutcomeBannerArt> {
     // taken the result yet — and the draw would fall back to the retail text
     // the simulation's own published flag already selects. The two must agree
     // about which half is on screen, so both ask [`local_outcome`].
-    let kind = local_outcome(state)?;
-    state
-        .match_state
+    let kind = local_outcome(match_state)?;
+    match_state
         .match_presentation
         .end_game_banner
         .as_ref()?
@@ -315,14 +351,17 @@ pub(crate) fn active_art(state: &AppState) -> Option<&OutcomeBannerArt> {
 /// The atlas the outcome pass must bind: whichever picture [`instances`] is
 /// about to describe. `None` keeps the caller's own default, the retail
 /// `GRFXTXT` slot.
-pub(crate) fn texture(state: &AppState) -> Option<&BatchTexture> {
-    active_art(state)
-        .or(state
-            .match_state
+pub(crate) fn texture<'a>(
+    outcome_banner_art: &'a Option<OutcomeBannerArt>,
+    match_state: &'a MatchState,
+    options_profile: &RetailOptionsProfile,
+) -> Option<&'a BatchTexture> {
+    active_art(match_state, options_profile)
+        .or(match_state
             .match_presentation
             .outcome_banner_side_art
             .as_ref())
-        .or(state.renderer.outcome_banner_art.as_ref())
+        .or(outcome_banner_art.as_ref())
         .map(OutcomeBannerArt::texture)
 }
 
@@ -371,65 +410,163 @@ fn result_view(kind: HouseOutcomeKind, campaign: bool) -> (usize, &'static str) 
     }
 }
 
+pub(crate) fn visible_verdict(match_state: &MatchState) -> Option<HouseOutcomeKind> {
+    local_outcome(match_state).filter(|_| {
+        crate::app::presentation::field_parts::shows(
+            &match_state.match_presentation,
+            crate::ui::field_layout::FieldPart::Banner,
+        )
+    })
+}
+
 /// Tactical6D4E20 chooses shape first; centred white text is its missing-art
 /// branch. Its geometry follows the tactical viewport and is screen-fixed.
-pub(crate) fn instances(state: &AppState) -> (Vec<SpriteInstance>, Vec<SpriteInstance>) {
-    let Some(outcome_kind) = local_outcome(state) else {
-        return Default::default();
+/// The banner as nodes: its picture, or the result's text where no
+/// picture loaded; either is the layout's part `Banner`.
+pub(crate) struct BannerHuds {
+    picture: crate::app::presentation::picture_hud::PictureHud,
+    text: crate::app::presentation::text_hud::TextHud,
+}
+
+impl Default for BannerHuds {
+    fn default() -> Self {
+        Self {
+            picture: Default::default(),
+            text: crate::app::presentation::text_hud::TextHud::named(BANNER),
+        }
+    }
+}
+
+/// The banner's `veraui.ini` key.
+const BANNER: &str = "Banner";
+
+impl BannerHuds {
+    /// No banner this frame.
+    pub(crate) fn clear(&mut self) {
+        self.picture.begin();
+        self.picture.finish();
+        self.text.begin();
+    }
+}
+
+pub(crate) fn instances(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    screen: &GameScreen,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    persistence: &PersistenceState,
+    outcome_kind: HouseOutcomeKind,
+    huds: &mut BannerHuds,
+) -> (Vec<SpriteInstance>, Vec<SpriteInstance>) {
+    let quad = banner_quad(
+        platform,
+        renderer,
+        screen,
+        match_state,
+        process_assets,
+        persistence,
+        outcome_kind,
+    );
+    huds.picture.begin();
+    huds.picture.part(BANNER);
+    huds.text.begin();
+    let font = &renderer.bit_font;
+    let result = match quad {
+        BannerQuad::Picture(quad, camera) => {
+            let [x, y] = [quad.position[0] - camera[0], quad.position[1] - camera[1]];
+            huds.picture.picture(
+                crate::app::presentation::picture_hud::covering(x, y, quad.size[0], quad.size[1]),
+                quad,
+            );
+            (huds.picture.finish().to_vec(), Vec::new())
+        }
+        BannerQuad::Text(text, origin, camera) => {
+            huds.picture.finish();
+            huds.text.text_tinted(
+                vera20k_gui::Rect::new(
+                    origin[0],
+                    origin[1],
+                    font.text_width(&text) as i32,
+                    font.cell_height() as i32,
+                ),
+                &text,
+                [origin[0] as f32 + camera[0], origin[1] as f32 + camera[1]],
+                crate::app::presentation::text_hud::rgb([255; 3]),
+                0.00022,
+                None,
+                Some([1.0; 3]),
+            );
+            huds.text.finish(font);
+            (Vec::new(), huds.text.glyphs().copied().collect())
+        }
     };
-    let campaign = !state
-        .match_state
+    result
+}
+
+/// What the banner shows: its picture's quad, or the result's text from
+/// its top left in the box's pixels; each with the lane camera.
+enum BannerQuad {
+    Picture(SpriteInstance, [f32; 2]),
+    Text(String, [i32; 2], [f32; 2]),
+}
+
+fn banner_quad(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    screen: &GameScreen,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    persistence: &PersistenceState,
+    outcome_kind: HouseOutcomeKind,
+) -> BannerQuad {
+    let campaign = !match_state
         .sim_runtime
         .presentation()
         .is_some_and(|runtime| runtime.simulation.session().game_mode_nonzero());
     let (frame, label) = result_view(outcome_kind, campaign);
     use crate::app::presentation::field_parts;
     use crate::ui::field_layout::FieldPart;
-    // A layout that leaves the banner out draws none.
-    if !field_parts::shows(state, FieldPart::Banner) {
-        return Default::default();
-    }
     // The banner is centred in its box, the battlefield in the original
     // interface, and laid out in the box's own pixels.
-    let [_, _, width, height] = field_parts::rect(state, FieldPart::Banner);
+    let [_, _, width, height] = field_parts::rect(
+        platform,
+        renderer,
+        screen,
+        &match_state.match_presentation,
+        persistence,
+        FieldPart::Banner,
+    );
     let view = [width, height];
-    let camera = field_parts::lane_camera(state, FieldPart::Banner);
-    if let Some(quad) = active_art(state).and_then(|art| art.fit_quad(view, camera)) {
-        return (vec![quad], Vec::new());
+    let camera = field_parts::lane_camera(
+        platform,
+        renderer,
+        screen,
+        match_state,
+        persistence,
+        FieldPart::Banner,
+    );
+    if let Some(quad) = active_art(match_state, &persistence.options_profile)
+        .and_then(|art| art.fit_quad(view, camera))
+    {
+        return BannerQuad::Picture(quad, camera);
     }
-    if let Some(quad) = state
-        .match_state
+    if let Some(quad) = match_state
         .match_presentation
         .outcome_banner_side_art
         .as_ref()
-        .or(state.renderer.outcome_banner_art.as_ref())
+        .or(renderer.outcome_banner_art.as_ref())
         .and_then(|art| art.quad(frame, view, camera))
     {
-        return (vec![quad], Vec::new());
+        return BannerQuad::Picture(quad, camera);
     }
-    let text = state
-        .process_assets
-        .csf
-        .as_ref()
-        .map_or_else(String::new, |csf| csf.text(label).into_owned());
-    let font = &state.renderer.bit_font;
+    let text = process_assets.csf_text(label);
+    let font = &renderer.bit_font;
     let origin = centered_origin(
         view,
         [font.text_width(&text) as i32, font.cell_height() as i32],
     );
-    (
-        Vec::new(),
-        crate::render::sidebar_text::build_text(
-            font,
-            &text,
-            origin[0] as f32,
-            origin[1] as f32,
-            1.0,
-            0.00022,
-            [1.0; 3],
-            camera,
-        ),
-    )
+    BannerQuad::Text(text, origin, camera)
 }
 
 #[cfg(all(test, tests_app_presentation))]
@@ -456,7 +593,7 @@ mod tests {
         assert_eq!(sim_outcome(&sim), Some(HouseOutcomeKind::Victory));
         let mut runtime = SimRuntime::from_simulation(sim);
         runtime
-            .advance_frame(&[], 67, TickLane::Ordinary, FrameEffects::default())
+            .advance_frame(&[], 67, TickLane::Ordinary, &mut FrameEffects::default())
             .unwrap();
         assert!(!runtime.simulation.houses()[&owner].has_won());
         assert_eq!(

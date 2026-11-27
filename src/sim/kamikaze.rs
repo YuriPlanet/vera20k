@@ -66,7 +66,6 @@ use std::hash::{Hash, Hasher};
 
 use serde::{Deserialize, Serialize};
 
-use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::TargetKind;
 use crate::sim::mission::{MissionId, MissionType};
@@ -137,6 +136,14 @@ impl KamikazeTracker {
     /// the timer restarted at the restored frame.
     pub(crate) fn restart_after_load(&mut self, frame: u32) {
         self.timer = CdTimer::started(frame as i32, CLEAR_RESTART_FRAMES);
+    }
+
+    pub(crate) fn saved_continuation_timer(&self) -> CdTimer {
+        self.timer
+    }
+
+    pub(crate) fn restore_continuation_timer(&mut self, timer: CdTimer) {
+        self.timer = timer;
     }
 
     /// Whether `child` has a node: its `+0x6CA` while it is alive.
@@ -224,7 +231,6 @@ pub(crate) fn update(host: &mut impl KamikazeHost, frame: u32) {
 struct WorldHost<'a> {
     sim: &'a mut Simulation,
     rules: &'a RuleSet,
-    registry: Option<&'a OverlayTypeRegistry>,
     effects: FrameEffects<'a>,
 }
 
@@ -244,7 +250,7 @@ impl KamikazeHost for WorldHost<'_> {
 
     fn crash(&mut self, child: u64) {
         self.sim
-            .foot_crash(child, None, self.rules, self.registry, self.effects);
+            .foot_crash(child, None, self.rules, &mut self.effects);
     }
 
     fn location_xy(&self, child: u64) -> [i32; 2] {
@@ -290,8 +296,7 @@ impl KamikazeHost for WorldHost<'_> {
             child,
             cell,
             self.rules,
-            None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
     }
 
@@ -316,8 +321,7 @@ impl Simulation {
         child: u64,
         target: Option<TargetKind>,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let target_xy = target.and_then(|target| {
             let cells = self
@@ -331,8 +335,7 @@ impl Simulation {
             &mut WorldHost {
                 sim: self,
                 rules,
-                registry,
-                effects,
+                effects: effects.reborrow(),
             },
             child,
             target_xy,
@@ -350,14 +353,13 @@ impl Simulation {
     }
 
     /// Update (`0x0054E4D0`), from LogicClass::AI after the BombList.
-    pub(crate) fn kamikaze_update(&mut self, rules: &RuleSet, effects: FrameEffects<'_>) {
+    pub(crate) fn kamikaze_update(&mut self, rules: &RuleSet, effects: &mut FrameEffects<'_>) {
         let frame = self.session.binary_frame();
         update(
             &mut WorldHost {
                 sim: self,
                 rules,
-                registry: None,
-                effects,
+                effects: effects.reborrow(),
             },
             frame,
         );

@@ -12,8 +12,8 @@ async function fixture(t, options = {}) {
   const udp = dgram.createSocket('udp4');
   udp.bind(0, '127.0.0.1');
   await once(udp, 'listening');
-  const gateway = createGateway({ lobby: 'https://lobby.example', relayHost: '127.0.0.1',
-    relayPort: udp.address().port, origin, ...options });
+  const gateway = createGateway({ lobby: 'https://lobby.example',
+    relays: [`127.0.0.1:${udp.address().port}`], origins: [origin], ...options });
   await new Promise(resolve => gateway.server.listen(0, '127.0.0.1', resolve));
   t.after(async () => { await gateway.close(); udp.close(); });
   const base = `ws://127.0.0.1:${gateway.server.address().port}/lan/signal`;

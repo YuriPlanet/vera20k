@@ -207,7 +207,7 @@ fn spawn_supplied_ground_mtnk(
             0,
             height,
             &resources.rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     let terrain = sim.resolved_terrain.as_ref().unwrap();
@@ -221,7 +221,6 @@ fn spawn_supplied_ground_mtnk(
                 previous_cell: None,
             },
             &resources.rules,
-            Some(&resources.overlay_registry),
         )
         .unwrap(),
         0
@@ -234,7 +233,7 @@ fn spawn_supplied_ground_mtnk(
         height,
         crate::sim::world::PlacementEvidence::FootEntryAdmitted,
         &resources.rules,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
     .unwrap()
 }
@@ -366,7 +365,6 @@ fn hills_native_fields_and_mtnk_admission_feed_an_ordinary_ramp_move() {
                     previous_cell: None,
                 },
                 &scenario.runtime.resources.rules,
-                Some(&scenario.runtime.resources.overlay_registry),
             )
             .expect("live Unit entry receiver");
         assert_eq!(
@@ -797,7 +795,6 @@ fn hills_same_type_marker_downgrade_reaches_live_foot_search_and_cleanup() {
                         ),
                     },
                     &resources.rules,
-                    Some(&resources.overlay_registry),
                 )
                 .unwrap();
             assert_eq!(
@@ -851,8 +848,8 @@ fn hills_same_type_marker_downgrade_reaches_live_foot_search_and_cleanup() {
         assert!(sim.foot_mark_remove(
             mover,
             &resources.rules,
-            Some(&resources.overlay_registry),
-            crate::sim::world::FrameEffects::default()
+            Some(resources.rules.overlay_registry()),
+            &mut crate::sim::world::FrameEffects::default()
         ));
         {
             let grid = sim.path_grid_snapshot().unwrap();
@@ -900,8 +897,8 @@ fn hills_same_type_marker_downgrade_reaches_live_foot_search_and_cleanup() {
         assert!(sim.foot_mark_put(
             mover,
             &resources.rules,
-            Some(&resources.overlay_registry),
-            crate::sim::world::FrameEffects::default()
+            Some(resources.rules.overlay_registry()),
+            &mut crate::sim::world::FrameEffects::default()
         ));
         let marker_flags: Vec<_> = sim
             .resolved_terrain
@@ -926,8 +923,8 @@ fn hills_same_type_marker_downgrade_reaches_live_foot_search_and_cleanup() {
             sim.foot_find_path(
                 &request,
                 &resources.rules,
-                Some(&resources.overlay_registry),
-                crate::sim::world::FrameEffects::default()
+                Some(resources.rules.overlay_registry()),
+                &mut crate::sim::world::FrameEffects::default()
             )
             .unwrap(),
             FindPathResult::Route

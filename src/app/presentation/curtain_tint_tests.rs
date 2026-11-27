@@ -51,7 +51,7 @@ fn curtained(row: &Value) -> GameEntity {
         timer(&row["tint"]),
     ));
     if !row["airstrike"].is_null() {
-        entity.airstrike.set_test_link(Some(99));
+        entity.seldom.airstrike.set_test_link(Some(99));
     }
     entity
 }
@@ -76,7 +76,7 @@ fn shielded(row: &Value) -> GameEntity {
     };
     entity.invulnerability = Some(InvulnerabilityState::new(timer(&row["curtain"]), kind));
     if !row["airstrike"].is_null() {
-        entity.airstrike.set_test_link(Some(99));
+        entity.seldom.airstrike.set_test_link(Some(99));
     }
     entity
 }
@@ -409,10 +409,9 @@ fn ordinary_stock_gas_refresh_and_expiry_reach_the_infantry_shp_material() {
                 .advance_app_frame(
                     &commands,
                     &rules,
-                    None,
                     33,
                     TickLane::Ordinary,
-                    FrameEffects::default(),
+                    &mut FrameEffects::default(),
                 )
                 .expect("ordinary gas integration frame");
             assert!(output.tick.frame_committed);
@@ -679,7 +678,7 @@ fn airstrike_tint_uses_the_strike_owner_types_laser_target_color() {
         EntityCategory::Structure,
     );
     target.set_type_ref_for_test(power_type);
-    target.airstrike.set_test_link(Some(1));
+    target.seldom.airstrike.set_test_link(Some(1));
     sim.entities_mut_for_test().insert(owner);
     sim.entities_mut_for_test().insert(target);
     let word = |sim: &Simulation| {
@@ -691,8 +690,7 @@ fn airstrike_tint_uses_the_strike_owner_types_laser_target_color() {
         )
     };
     assert_eq!(word(&sim), 0xF800);
-    sim.entities_mut_for_test()
-        .get_mut(1)
+    sim.entity_mut_for_test(1)
         .unwrap()
         .set_type_ref_for_test(plain_type);
     assert_eq!(

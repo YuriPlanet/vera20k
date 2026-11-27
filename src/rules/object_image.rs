@@ -21,7 +21,8 @@ pub(crate) enum ImageTheater {
 
 impl ImageTheater {
     /// FindTheater48DBE0 scans the six names at7E1B78 with case-insensitive
-    /// comparison; Snow is ordinal1. Unknown names return-1.
+    /// comparison; Snow is ordinal1. Unknown names return-1. The map's
+    /// theater data finds its theater through this too (`map::theater`).
     pub(crate) fn from_name(name: &str) -> Self {
         if name.eq_ignore_ascii_case("SNOW") {
             Self::Snow
@@ -55,16 +56,41 @@ impl ImageTheater {
         }
     }
 
-    /// Full_Init687633..687649 invokes ReadTheater475870 with default0
-    /// before resetting Types. This reads the raw map, not the merged Rules.
-    pub(crate) fn from_map(map: &IniFile) -> Self {
-        let name = map.section_or_empty("Map").read_string("Theater", "", 0x80);
-        if name.is_empty() {
-            Self::Temperate
-        } else {
-            Self::from_name(&name)
+    /// The theater's `TheaterData.Letter` string (`0x007E1BCE`, one per
+    /// 0x70-byte entry from `0x007E1B78`): one letter, T A U D N L. None for
+    /// an unknown theater, whose entry gamemd would read before the table.
+    pub(crate) const fn letter(self) -> Option<char> {
+        match self {
+            Self::Uninitialized => None,
+            Self::Temperate => Some('T'),
+            Self::Snow => Some('A'),
+            Self::Urban => Some('U'),
+            Self::Desert => Some('D'),
+            Self::NewUrban => Some('N'),
+            Self::Lunar => Some('L'),
         }
     }
+
+    /// Full_Init687633..687649 invokes ReadTheater475870 with default0
+    /// before resetting Types. This reads the raw map, not the merged Rules,
+    /// with the map header's read ([`read_map_theater`]).
+    pub(crate) fn from_map(map: &IniFile) -> Self {
+        Self::from_name(&read_map_theater(map))
+    }
+}
+
+/// The map's `[Map] Theater=`: `ReadTheater @ 0x00475870` with default 0
+/// (Temperate), as the map reader (0x004ACFE5) and Full_Init (0x0068763E)
+/// both call it. The name its 0x80-byte ReadString copies, uppercased, or
+/// `TEMPERATE` when the copy is empty. An unknown name stays as read; the
+/// theater lookups match names without regard to case, as FindTheater
+/// (0x0048DBE0) does. Rules reads it for the image theater, so it lives here
+/// rather than in the map reader (rules must not import map).
+pub(crate) fn read_map_theater(ini: &IniFile) -> String {
+    ini.section_or_empty("Map")
+        .read_name("Theater", 0x80)
+        .unwrap_or("TEMPERATE")
+        .to_uppercase()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -122,6 +148,9 @@ impl ObjectImageLoad {
 pub(crate) struct ObjectImageState {
     image: String,
     alternate_arctic_art: bool,
+    /// Ares TechnoTypeExt `AlternateTheaterArt` (+0x17A, Valueable<bool>,
+    /// constructor false); only a TechnoType read the Ares way sets it.
+    alternate_theater_art: bool,
     arctic_applied: bool,
     theater: bool,
     new_theater: bool,
@@ -134,6 +163,11 @@ pub(crate) struct ObjectImageState {
     anim_bounds_loads: Option<Vec<ObjectImageLoad>>,
     anim_theater_bounds_loads: Option<Vec<ObjectImageLoad>>,
     voxel_load: Option<String>,
+    /// Phobos `[General] ArtImageSwap=true`: the own ART section's `Image=`
+    /// names this TechnoType's visual files. It replaces only the file name;
+    /// the section's flags still come from the type's own ART section.
+    #[serde(default)]
+    image_swap: Option<String>,
     #[serde(default)]
     pub(crate) model_slots: super::voxel_model_plan::ModelSlots,
 }
@@ -145,6 +179,7 @@ impl ObjectImageState {
         Self {
             image: stored_id.chars().take(24).collect(),
             alternate_arctic_art: false,
+            alternate_theater_art: false,
             arctic_applied: false,
             theater: false,
             new_theater: false,
@@ -153,6 +188,7 @@ impl ObjectImageState {
             anim_bounds_loads: None,
             anim_theater_bounds_loads: None,
             voxel_load: None,
+            image_swap: None,
             model_slots: Default::default(),
         }
     }
@@ -169,14 +205,23 @@ impl ObjectImageState {
         self.read_input(input);
         let art = fixed_art.section(&self.image);
         self.read_art(art);
-        self.load_for_read(kind, theater);
+        self.load_for_read(kind, theater, Some(fixed_art));
         art
     }
 
     pub(crate) fn read_input(&mut self, input: &IniSection) {
         self.image = input.read_string("Image", &self.image, 25);
+        self.image_swap = None;
         self.alternate_arctic_art =
             input.read_bool("AlternateArcticArt", self.alternate_arctic_art);
+    }
+
+    /// Ares ObjectTypeClass_LoadFromINI (hook `0x005F9634`, body `100413B0`):
+    /// a TechnoType reads `AlternateTheaterArt` from the INI being read, in
+    /// its ID's section, before ReadINI calls LoadSHP (`0x005F964D`).
+    pub(crate) fn read_ares_alternate_theater_art(&mut self, input: &IniSection) {
+        self.alternate_theater_art =
+            input.read_ares_bool("AlternateTheaterArt", self.alternate_theater_art);
     }
 
     pub(crate) fn read_art(&mut self, art: Option<&IniSection>) {
@@ -189,9 +234,36 @@ impl ObjectImageState {
         }
     }
 
-    pub(crate) fn load_for_read(&mut self, kind: ObjectImageKind, theater: ImageTheater) {
+    /// Phobos `[General] ArtImageSwap=true`: read the own ART section's
+    /// `Image=` as the TechnoType's visual file name. Phobos reads no other
+    /// key from the named section, so the retained flags stay those this
+    /// section already read. Native art `Image=` remains building-only
+    /// (`0x0045F945`); this path runs only while the Phobos key is on.
+    pub(crate) fn apply_phobos_art_image_swap(&mut self, fixed_art: &IniFile) {
+        let Some(section) = fixed_art.section(&self.image) else {
+            return;
+        };
+        if let Some(image) = section.read_name("Image", 0x40) {
+            // The visual name still feeds ObjectTypeClass's 25-byte ImageFile;
+            // keep the same 24-character ceiling a rules `Image=` gets.
+            self.image_swap = Some(image.chars().take(24).collect());
+        }
+    }
+
+    /// The name this object's SHP or VXL files load from: the Phobos
+    /// ArtImageSwap name when on, otherwise the retained rules `Image=`.
+    pub(crate) fn visual_image(&self) -> &str {
+        self.image_swap.as_deref().unwrap_or(&self.image)
+    }
+
+    pub(crate) fn load_for_read(
+        &mut self,
+        kind: ObjectImageKind,
+        theater: ImageTheater,
+        art: Option<&IniFile>,
+    ) {
         if !self.voxel && kind != ObjectImageKind::Animation {
-            self.load_unowned_shp(kind, theater);
+            self.load_unowned_shp(kind, theater, art);
         }
     }
 
@@ -201,8 +273,31 @@ impl ObjectImageState {
     /// before every saved-family call here. This is the proven unowned
     /// read/saved boundary, not the lazy owned-shape lifecycle. A miss never
     /// undoes the name or latch.
-    pub(crate) fn load_unowned_shp(&mut self, kind: ObjectImageKind, theater: ImageTheater) {
-        if self.alternate_arctic_art && theater == ImageTheater::Snow {
+    ///
+    /// Ares ObjectTypeClass_Load2DArt (hook `0x005F9070`, body `10041040`,
+    /// resumes `0x005F92C3`) puts its own arm first: a TechnoType with
+    /// `AlternateTheaterArt` takes ImageFile plus the theater letter once,
+    /// and only when the art INI (`art`) holds a section of that name. That
+    /// arm skips the Arctic one, its latch reset included. The rest of the
+    /// hook is the stock load below. A saved-game restore passes no art: its
+    /// latch and image were settled against the same art and theater.
+    pub(crate) fn load_unowned_shp(
+        &mut self,
+        kind: ObjectImageKind,
+        theater: ImageTheater,
+        art: Option<&IniFile>,
+    ) {
+        if self.alternate_theater_art {
+            if let (false, Some(letter), Some(art)) = (self.arctic_applied, theater.letter(), art) {
+                // 10041098 formats into a 0x20-byte buffer and copies at most
+                // 24 characters back into the 25-byte ImageFile.
+                let name = format!("{}{letter}", self.image);
+                if art.section(&name).is_some() {
+                    self.image = name.chars().take(24).collect();
+                    self.arctic_applied = true;
+                }
+            }
+        } else if self.alternate_arctic_art && theater == ImageTheater::Snow {
             if !self.arctic_applied {
                 self.image = self.image.chars().chain(['A']).take(24).collect();
                 self.arctic_applied = true;
@@ -223,7 +318,7 @@ impl ObjectImageState {
     /// A miss replaces the previous shape with null.
     pub(crate) fn load_plain_shp(&mut self) {
         self.shp_loads = vec![ObjectImageLoad {
-            image: self.image.clone(),
+            image: self.visual_image().to_owned(),
             theater: false,
             new_theater: false,
             generic_retry: false,
@@ -240,7 +335,7 @@ impl ObjectImageState {
         phase: AnimImagePhase,
     ) {
         if self.theater {
-            self.load_unowned_shp(ObjectImageKind::Animation, theater);
+            self.load_unowned_shp(ObjectImageKind::Animation, theater, None);
         } else {
             let mut request = self.shp_request(true);
             if request.image.is_empty() {
@@ -294,7 +389,7 @@ impl ObjectImageState {
 
     fn shp_request(&self, generic_retry: bool) -> ObjectImageLoad {
         ObjectImageLoad {
-            image: self.image.clone(),
+            image: self.visual_image().to_owned(),
             theater: self.theater,
             new_theater: self.new_theater,
             generic_retry,
@@ -322,7 +417,7 @@ impl ObjectImageState {
 
     /// LoadVoxel5F8110 formats the entry ImageFile independently of Voxel.
     pub(crate) fn load_voxel(&mut self) {
-        self.voxel_load = Some(self.image.clone());
+        self.voxel_load = Some(self.visual_image().to_owned());
     }
 
     /// ObjectLoad5F9856..5F985C clears the saved resource pointer/ownership.
@@ -332,6 +427,7 @@ impl ObjectImageState {
 
     pub(crate) fn replace_image(&mut self, input: &IniSection, default: &str) {
         self.image = input.read_string("Image", default, 25);
+        self.image_swap = None;
     }
 
     pub(crate) fn read_anim_theater_flags(&mut self, own_art: &IniSection) {
@@ -365,6 +461,10 @@ impl ObjectImageState {
                 .voxel_load
                 .as_deref()
                 .is_some_and(|name| !valid_name(name))
+            || self
+                .image_swap
+                .as_deref()
+                .is_some_and(|name| !valid_name(name))
         {
             return Err(crate::rules::error::RulesError::InvalidSavedState(
                 "invalid retained ObjectType image name",
@@ -396,5 +496,27 @@ impl ObjectImageState {
     }
     pub(crate) fn voxel_load(&self) -> Option<&str> {
         self.voxel_load.as_deref()
+    }
+}
+
+#[cfg(all(test, tests_rules_o_z))]
+mod tests {
+    use super::*;
+
+    /// Phobos `[General] ArtImageSwap=true` names the visual from the own
+    /// ART `Image=`, while the image that names other ART reads and the
+    /// retained `Voxel=` flag stay on the own section.
+    #[test]
+    fn phobos_art_image_swap_renames_visual_only() {
+        let art = IniFile::from_str("[SAPCX]\nImage=SAPC\nVoxel=yes\nRemapable=yes\n");
+        let section = art.section("SAPCX").expect("own ART section");
+        let mut image = ObjectImageState::new("SAPCX");
+        image.read_art(Some(section));
+        image.apply_phobos_art_image_swap(&art);
+        assert_eq!(image.image(), "SAPCX");
+        assert_eq!(image.visual_image(), "SAPC");
+        assert!(image.voxel());
+        image.load_voxel();
+        assert_eq!(image.voxel_load(), Some("SAPC"));
     }
 }

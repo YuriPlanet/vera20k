@@ -91,12 +91,13 @@ pub(crate) struct SimHost {
     /// and interner are synced from it. Release builds keep it only while the
     /// runtime is lent; debug builds take one with every frame, so every
     /// draw reads the frame as a lent tick's draw does.
-    presentation: Option<Arc<SimRuntime>>,
+    presentation: Option<Box<SimRuntime>>,
     /// The last world copy's world, which the next copy brings up to date
     /// instead of copying the world whole.
     spare: Option<crate::sim::world::Simulation>,
     /// Time spent capturing frames and bringing the world copy up to date,
-    /// and how many of each, since the last report.
+    /// and how many of each, since the last report. A diagnostic counter in a
+    /// `Cell`: the draws that capture frames hold the host through `&`.
     snapshot_costs: std::cell::Cell<SnapshotCosts>,
     /// What the last lent job cost this thread: copying the frame when the
     /// job left ([`Self::lend`]), kept in `copy_cost` meanwhile, then the
@@ -110,10 +111,18 @@ pub(crate) struct SimHost {
     /// What drawing reads (`presentation::frame`): captured from the home
     /// world on its first read after a write, and at [`Self::lend`] for the
     /// world the lent tick starts from. Every write route empties it.
-    frame: std::cell::OnceCell<Arc<PresentationFrame>>,
+    frame: std::cell::OnceCell<Box<PresentationFrame>>,
     /// Every object type the local sidebar has asked of this scenario's
     /// frames ([`Self::ask_sidebar_types`]), which each frame answers.
     sidebar_types: SidebarTypes,
+    /// Whether frames capture VERA's Convenience Help status rows
+    /// ([`Self::show_status_rows`]); off, the capture skips them.
+    status_rows: bool,
+    /// The client modules' local looks of objects ([`Self::set_local_looks`]).
+    local_looks: crate::app::presentation::frame::LocalLooks,
+    /// Whether frames capture the status templates' amounts
+    /// ([`Self::capture_status_amounts`]).
+    status_amounts: bool,
     /// Global B04474 and its comparison timer (`FrameChecksumState`):
     /// process state that launch and load retain, written and compared only
     /// inside a multiplayer tick.
@@ -155,13 +164,30 @@ impl SimHost {
             target_arch = "wasm32",
             target_os = "unknown"
         ))]
-        return sim_thread_available() && self.worker.as_ref().is_some_and(|worker| worker.running);
+        return sim_thread_available()
+            && self.worker.as_ref().is_some_and(|worker| worker.running)
+            && !self.has_ext_modules();
         #[cfg(not(all(
             feature = "wasm-threads",
             target_arch = "wasm32",
             target_os = "unknown"
         )))]
         sim_thread_available()
+    }
+
+    /// Whether the match runs Wasm extension modules. In the browser each
+    /// one is a JavaScript instance of the main thread (wasm-ext
+    /// `browser.rs`), so such a match never lends a tick to the worker. A
+    /// lent runtime has none: it was lent because it had none.
+    #[cfg(all(
+        feature = "wasm-threads",
+        target_arch = "wasm32",
+        target_os = "unknown"
+    ))]
+    fn has_ext_modules(&self) -> bool {
+        self.runtime
+            .as_ref()
+            .is_some_and(|runtime| !runtime.simulation.ext_modules().is_empty())
     }
 
     /// The start of a frame-loop pass: whether it may go on. A pass goes on
@@ -327,6 +353,9 @@ impl SimHost {
     /// The simulation's pending radar-terrain marks
     /// (`SimRuntime::take_radar_terrain_dirty`), or `None` with none to take
     /// or no world; asked read-only first, as [`Self::take_departed_senders`].
+    /// The marks are hand-off state for the minimap that no frame records, so
+    /// taking them keeps the frame: a lent tick comes back first, as for any
+    /// write, but a frame captured since stands.
     pub(crate) fn take_radar_terrain_marks(&mut self) -> Option<Vec<(u16, u16)>> {
         if !self.lent
             && !self
@@ -335,8 +364,20 @@ impl SimHost {
         {
             return None;
         }
-        self.write_sim(SimWrite::Presentation)
+        self.reclaim(true);
+        self.runtime
+            .as_mut()
             .map(SimRuntime::take_radar_terrain_dirty)
+    }
+
+    /// The simulation's client outbox (`Simulation::take_client_outbox`):
+    /// the `Notify`s and `SimEvent`s its frames since the last take left
+    /// for client modules (RFC 0001 section 10). A [`SimWrite::Presentation`]
+    /// write: hand-off state that is neither saved nor hashed. `None`
+    /// without a world. Taken at a frame's tail, while the runtime is home.
+    pub(crate) fn take_client_outbox(&mut self) -> Option<crate::sim::ext_modules::ClientOutbox> {
+        self.write_sim(SimWrite::Presentation)
+            .map(|runtime| runtime.simulation.take_client_outbox())
     }
 
     /// Mutable access to the installed runtime for one write route; a lent
@@ -351,13 +392,10 @@ impl SimHost {
     /// world is kept for the next copy to bring up to date
     /// (`Simulation::presentation_copy`).
     fn forget_frame(&mut self) {
-        // Freeing 20,000 records takes milliseconds; the pool does it.
-        if let Some(frame) = std::mem::take(&mut self.frame).into_inner() {
-            crate::sim::parallel::drop_on_pool(frame);
+        if let Some(frame) = self.frame.take() {
+            frame.retire();
         }
-        if let Some(copy) = self.presentation.take()
-            && let Ok(copy) = Arc::try_unwrap(copy)
-        {
+        if let Some(copy) = self.presentation.take() {
             self.spare = Some(copy.simulation);
         }
     }
@@ -371,18 +409,22 @@ impl SimHost {
         }
     }
 
-    /// Capture the frame of the home runtime, and with `world` the copy of
-    /// the world drawing reads beside it.
+    /// Capture the frame of the home runtime, and with `world` its Display
+    /// members and the copy of the world drawing reads beside it.
     fn capture_frame(&mut self, world: bool) {
         let _ = self.frame();
         if world
             && self.presentation.is_none()
-            && let Some(runtime) = self.runtime.as_mut()
+            && let (Some(frame), Some(runtime)) = (self.frame.get(), self.runtime.as_mut())
         {
+            // The cursor's pick and every draw read the Display members. Filed
+            // now, while the pool is idle, no draw beside the lent tick files
+            // them on the pool the tick works on.
+            frame.display_members(&runtime.simulation);
             let viewer = runtime.simulation.session().current_house();
             let reuse = self.spare.take();
             let started = Instant::now();
-            self.presentation = Some(Arc::new(runtime.presentation_copy(viewer, reuse)));
+            self.presentation = Some(Box::new(runtime.presentation_copy(viewer, reuse)));
             let mut costs = self.snapshot_costs.get();
             costs.copy += started.elapsed();
             costs.copies += 1;
@@ -395,12 +437,18 @@ impl SimHost {
     /// last write.
     pub(crate) fn frame(&self) -> Option<&PresentationFrame> {
         if self.lent {
-            return self.frame.get().map(|frame| &**frame);
+            return self.frame.get().map(Box::as_ref);
         }
         let runtime = self.runtime.as_ref()?;
         Some(self.frame.get_or_init(|| {
             let started = Instant::now();
-            let frame = Arc::new(PresentationFrame::capture(runtime, &self.sidebar_types));
+            let frame = Box::new(PresentationFrame::capture_with_looks(
+                runtime,
+                &self.sidebar_types,
+                self.status_rows,
+                &self.local_looks,
+                self.status_amounts,
+            ));
             let mut costs = self.snapshot_costs.get();
             costs.capture += started.elapsed();
             costs.captures += 1;
@@ -410,7 +458,7 @@ impl SimHost {
     }
 
     /// Have every frame of this scenario answer the local sidebar's `types`
-    /// too (`SidebarProjectionState::asked_types`). A home frame captured
+    /// too (`SidebarModel::asked_types`). A home frame captured
     /// without one of them is dropped, so the next read captures it; a lent
     /// tick's frame stands, as the sidebar adds types only from a tick that
     /// has come back.
@@ -419,6 +467,44 @@ impl SimHost {
             return;
         }
         self.sidebar_types = self.sidebar_types.union(types);
+        if !self.lent {
+            self.forget_frame();
+        }
+    }
+
+    /// Have frames capture VERA's Convenience Help status rows, or stop.
+    /// A home frame captured the other way is dropped, so the next read
+    /// captures it; a lent tick's frame stands until the tick comes back.
+    /// Have frames carry the client modules' local looks of objects
+    /// (`ui_modules`, `Decoration`). A home frame captured with others is
+    /// dropped; a lent tick's frame stands until the tick comes back.
+    pub(crate) fn set_local_looks(&mut self, looks: crate::app::presentation::frame::LocalLooks) {
+        if self.local_looks == looks {
+            return;
+        }
+        self.local_looks = looks;
+        if !self.lent {
+            self.forget_frame();
+        }
+    }
+
+    /// Have frames capture the amounts the client modules' status templates
+    /// read (`ui_modules::status`), or stop.
+    pub(crate) fn capture_status_amounts(&mut self, on: bool) {
+        if self.status_amounts == on {
+            return;
+        }
+        self.status_amounts = on;
+        if !self.lent {
+            self.forget_frame();
+        }
+    }
+
+    pub(crate) fn show_status_rows(&mut self, on: bool) {
+        if self.status_rows == on {
+            return;
+        }
+        self.status_rows = on;
         if !self.lent {
             self.forget_frame();
         }
@@ -446,6 +532,18 @@ impl SimHost {
     pub(crate) fn tick_parts(&mut self) -> Option<(&mut SimRuntime, &mut FrameChecksumState)> {
         self.reclaim(true);
         self.forget_frame();
+        let runtime = self.runtime.as_mut()?;
+        Some((runtime, &mut self.frame_checksums))
+    }
+
+    /// [`Self::tick_parts`] for a tick about to be lent ([`Self::lend`]):
+    /// the frame stands, so the tick publishes the frame the last read
+    /// captured instead of capturing the world again. Before it leaves, the
+    /// caller writes only what no frame records: the unit voice visit
+    /// interest, the hash interval and the profiling switch
+    /// (`sim_tick`'s threaded dispatch).
+    pub(crate) fn lend_parts(&mut self) -> Option<(&mut SimRuntime, &mut FrameChecksumState)> {
+        self.reclaim(true);
         let runtime = self.runtime.as_mut()?;
         Some((runtime, &mut self.frame_checksums))
     }
@@ -495,7 +593,8 @@ impl SimHost {
 /// in `kept`, which the draws beside a lent tick read (docs/sim-thread.md).
 /// Each one is also asked before a tick leaves
 /// (`cursor::answer_kept_questions`), so a kept answer is one tick old at
-/// most even when every frame is lent.
+/// most even when every frame is lent. `kept` is a cell because the draws
+/// that ask hold the app state through `&`.
 pub(crate) fn home_answer<T: Clone>(
     host: &SimHost,
     kept: &std::cell::RefCell<T>,
@@ -576,7 +675,7 @@ impl SimWorker {
         std::thread::Builder::new()
             .name("simulation".into())
             // The main thread's size: a tick recurses as deep there.
-            .stack_size(8 << 20)
+            .stack_size(crate::util::GAME_STACK_BYTES)
             .spawn(move || run_jobs(&job_queue, &send_back))
             .expect("start the simulation thread");
         Self { jobs, returned }
@@ -767,8 +866,27 @@ const _: () = {
 #[cfg(all(test, tests_app_match))]
 mod tests {
     use super::*;
-    use crate::net::lockstep::{ChecksumMismatch, FrameInfo, FrameInfoCompareGate};
+    use crate::sim::command_queue::{ChecksumMismatch, FrameInfo, FrameInfoCompareGate};
     use crate::sim::world::Simulation;
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn returning_to_skirmish_can_write_rules_while_the_old_frame_is_being_freed() {
+        crate::sim::parallel::on_single_worker_for_test(|| {
+            let mut host = SimHost::default();
+            host.install(Some(SimRuntime::from_simulation(Simulation::new())));
+            host.ensure_frame();
+
+            // Score Continue retires the scenario and the Skirmish dialog immediately
+            // writes the process countries into the retained match's Rules.
+            host.write_sim(SimWrite::Lifecycle)
+                .unwrap()
+                .simulation
+                .retire_scenario_started();
+            let runtime = host.write_sim(SimWrite::Rules).unwrap();
+            let _rules = &mut runtime.resources_mut().rules;
+        });
+    }
 
     #[test]
     fn a_lent_runtime_serves_reads_from_the_frame_until_a_write_takes_it_back() {
@@ -805,6 +923,54 @@ mod tests {
         assert!(host.lend(Box::new(|_| Box::new(()))));
         assert!(host.take_job_result().is_some());
         assert_eq!((host.lent_jobs, host.early_returns), (2, 1));
+    }
+
+    /// Drawing reads no trigger, so a lent tick's world copy holds none:
+    /// debug builds refuse the read, and the live world keeps its own.
+    #[test]
+    fn the_world_copy_leaves_the_triggers_with_the_live_world() {
+        let mut runtime = SimRuntime::from_simulation(Simulation::new());
+        runtime
+            .simulation
+            .set_trigger_variable_for_test(true, 3, true);
+        let copy = runtime.presentation_copy(None, None);
+        let refused = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            copy.simulation.global_variables()
+        }));
+        assert_eq!(refused.is_err(), cfg!(debug_assertions));
+        assert!(runtime.simulation.global_variables()[3]);
+    }
+
+    /// The world copy clones the anims beside the rest of the world: the
+    /// copy draws the live world's anims, and the live world keeps them.
+    #[test]
+    fn the_world_copy_holds_the_anims_the_live_world_keeps() {
+        use crate::rules::{art_data::ArtRegistry, ini_parser::IniFile, ruleset::RuleSet};
+        use crate::sim::{anim_class::AnimWorldCoord, components::AnimClassSpawnDescriptor};
+        let rules_ini = IniFile::from_str("[Animations]\n0=FIRE\n");
+        let art_ini = IniFile::from_str("[FIRE]\nEnd=20\n");
+        let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&rules_ini, &art_ini).unwrap();
+        rules.install_art_data(ArtRegistry::from_ini(&art_ini));
+        rules.bind_anim_frame_count_for_test("FIRE", 20);
+        let mut sim = Simulation::with_seed(31);
+        let fire = sim.intern("FIRE");
+        let coord = AnimWorldCoord {
+            x: 16512,
+            y: 16512,
+            z: 0,
+        };
+        let (rx, ry, sub_x, sub_y, z) = coord.to_cell_sub_z();
+        let anim = sim
+            .spawn_anim_at_world(
+                &rules,
+                AnimClassSpawnDescriptor::new(fire, rx, ry, sub_x, sub_y, z),
+                coord,
+            )
+            .unwrap();
+        let mut runtime = SimRuntime::from_simulation(sim);
+        let copy = runtime.presentation_copy(None, None);
+        assert!(copy.simulation.anim(anim).is_some());
+        assert!(runtime.simulation.anim(anim).is_some());
     }
 
     /// A frame answers every type the sidebar has asked of the scenario. A
@@ -849,6 +1015,28 @@ mod tests {
             .mark_radar_terrain_dirty_for_test([(3, 4)]);
         assert_eq!(host.take_radar_terrain_marks(), Some(vec![(3, 4)]));
         assert!(host.take_radar_terrain_marks().is_none());
+    }
+
+    /// A tick's tail captures the home frame for the sidebar; taking the
+    /// radar marks and setting up the next tick keep it, so lending that
+    /// tick publishes it instead of capturing the world a second time.
+    #[test]
+    fn a_tick_lent_after_its_setup_publishes_the_frame_already_captured() {
+        let mut host = SimHost::default();
+        host.install(Some(SimRuntime::from_simulation(Simulation::new())));
+        host.write_sim(SimWrite::Debug)
+            .unwrap()
+            .simulation
+            .mark_radar_terrain_dirty_for_test([(3, 4)]);
+        assert!(host.frame().is_some());
+        assert_eq!(host.take_radar_terrain_marks(), Some(vec![(3, 4)]));
+        let (runtime, _) = host.lend_parts().unwrap();
+        runtime
+            .simulation
+            .prepare_unit_voice_visits(Default::default());
+        assert!(host.lend(Box::new(|_| Box::new(()))));
+        assert_eq!(host.snapshot_costs.get().captures, 1);
+        assert!(host.take_job_result().is_some());
     }
 
     #[test]

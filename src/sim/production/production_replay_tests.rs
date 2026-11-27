@@ -169,10 +169,9 @@ fn record(
             .advance_app_frame(
                 &due,
                 rules,
-                None,
                 TICK_MS,
                 crate::sim::world::TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         hashes.push(output.tick.state_hash);
@@ -329,7 +328,7 @@ fn retail_builds_step_at_the_native_frames() {
                     .entities
                     .get(held.unwrap())
                     .expect("held head");
-                assert!(entity.lifecycle.in_limbo() && !entity.in_logic_vector.is_member());
+                assert!(entity.lifecycle.in_limbo() && !entity.seldom.in_logic_vector.is_member());
                 break;
             }
         }

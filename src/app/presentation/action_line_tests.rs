@@ -100,6 +100,7 @@ fn fixture(row: &Value) -> (Simulation, TargetLineState, TacticalViewport) {
         actor.set_owner_for_test(owner);
         actor.set_type_ref_for_test(sim.intern("MTNK"));
         actor
+            .seldom
             .selection
             .set_selected_for_test(actor_input["selected"].as_bool().unwrap_or(true));
         actor.set_on_bridge(actor_input["on_bridge"].as_bool().unwrap_or(false));
@@ -268,7 +269,7 @@ fn drawing_fixture(
         house.project_country_mults(&rules, &interner);
     }
     let frame = sim.session().binary_frame();
-    let actor = sim.entities_mut_for_test().get_mut(1).unwrap();
+    let actor = sim.entity_mut_for_test(1).unwrap();
     actor.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Drive));
     actor
         .body_facing
@@ -287,7 +288,7 @@ fn drawing_fixture(
     let mut target = GameEntity::test_default(2, "MTNK", "Americans", 20, 20);
     target.set_owner_for_test(owner);
     target.set_type_ref_for_test(type_ref);
-    target.selection.set_selected_for_test(false);
+    target.seldom.selection.set_selected_for_test(false);
     let [x, y, z] = point(&input["target_xyz"]);
     target.position.put_location(DriveCoord { x, y, z });
     let mut locomotor = LocomotorState::for_test_kind(LocomotorKind::Drive);
@@ -769,10 +770,47 @@ fn original_action_timer_wrap_sentinel_and_positive_remainder() {
 }
 
 #[test]
+fn move_line_ends_at_the_bridge_surface_over_a_depressed_lane() {
+    use crate::map::bridge_facts::{BridgeFlagStamp, BridgeStampFamily};
+    use crate::map::resolved_terrain::{test_flat_cell, test_grid};
+    use crate::util::lepton::{GROUND_LEVEL_HEIGHT_LEPTONS, absolute_leptons_to_screen};
+
+    let (mut sim, _, _) = fixture(&serde_json::json!({"input": {
+        "source": [5248, 5248, 0], "target_cell": [21, 20], "camera": [-80, 555]
+    }}));
+    let anchor = (21, 19);
+    let mut terrain = test_grid(32, 32, |rx, ry| {
+        let mut cell = test_flat_cell(rx, ry);
+        if (rx, ry) == anchor {
+            cell.level = 2;
+        }
+        cell
+    });
+    terrain.apply_runtime_bridge_mark_stamp(
+        BridgeFlagStamp::new(anchor, 0, true),
+        BridgeStampFamily::Nesw,
+    );
+    assert_eq!(terrain.corrected_high_bridge_deck_level((21, 20)), Some(6));
+    *sim.resolved_terrain_mut_for_test() = Some(terrain);
+    let cells = sim.resolved_terrain().map(NativeCellQuery::isolated);
+    let line =
+        action_line_endpoints(sim.entities().get(1).unwrap(), &sim, None, cells.as_ref()).unwrap();
+    assert_eq!(line.kind, SelectedLineKind::Move);
+    assert_eq!(
+        line.end,
+        absolute_leptons_to_screen(
+            21 * 256 + 128,
+            20 * 256 + 128,
+            6 * GROUND_LEVEL_HEIGHT_LEPTONS
+        )
+        .into(),
+    );
+}
+
+#[test]
 fn move_line_query_leaves_the_simulation_dummy_unchanged() {
     let (mut sim, state, view) = fixture(baseline_rows().next().unwrap());
-    sim.entities_mut_for_test()
-        .get_mut(1)
+    sim.entity_mut_for_test(1)
         .unwrap()
         .navigation
         .set_nav_com_for_test(Some(NavTargetRef::cell(u16::MAX, u16::MAX)));

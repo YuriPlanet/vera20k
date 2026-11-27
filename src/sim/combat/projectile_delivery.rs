@@ -124,7 +124,7 @@ pub(super) fn classify_projectile_delivery(
     classify_projectile_type(bullet_type(weapon, rules), weapon.speed, rules)
 }
 
-fn classify_projectile_type(
+pub(super) fn classify_projectile_type(
     projectile: &crate::rules::projectile_type::ProjectileType,
     max_speed: i32,
     rules: &RuleSet,
@@ -409,6 +409,7 @@ fn admit_bullet(
     );
     let spawn = delivery.spawn(&world.substrate.entities, rules, projectile_type, bullet);
     world.admit_projectile(bullet_id, spawn);
+    world.unlimbo_alpha_shape(bullet_id, crate::sim::world::ObjectKind::Projectile, rules);
     Simulation::construct_bullet_scheme(
         &world.interner,
         &world.substrate,
@@ -425,6 +426,11 @@ fn admit_bullet(
     }
     if rules.ares() && techno_fire {
         world.ares_fire_at_firestorm(bullet_id, bullet.origin, bullet.target_position, rules);
+    }
+    // Wasm module `Launch` (RFC 0001 section 9): a flying bullet, once
+    // launched; an `Inviso=` one does not fly.
+    if !delivery.inviso && world.projectiles.get(bullet_id).is_some() {
+        world.module_projectile_launched(rules, bullet_id);
     }
     if delivery.inviso {
         let on_bridge = bullet.target_on_bridge;
@@ -475,7 +481,7 @@ impl Simulation {
             .is_some_and(|kind| kind.flak_scatter);
         let Some(weapon) = payload
             .installed_weapon()
-            .and_then(|id| rules.weapon(self.interner.resolve(id)))
+            .and_then(|id| self.interner.weapon_type(id, rules))
         else {
             return placement;
         };
@@ -565,8 +571,10 @@ impl Simulation {
 /// SpawnShrapnel's Fire leaves its children on their target
 /// (`Simulation::admit_projectile_spawns`), unless Ares gave them their
 /// weapon (`Simulation::ares_shrapnel_flak_placement`).
+/// The Scenario stream is the world's field (`util::forked`), written only
+/// by a flak scatter's draws.
 fn inviso_fire_placement(
-    scenario_rng: &mut crate::sim::rng::SimRng,
+    scenario_rng: &mut crate::util::forked::Forked<crate::sim::rng::SimRng>,
     rules: &RuleSet,
     flak_scatter: bool,
     weapon: &WeaponType,

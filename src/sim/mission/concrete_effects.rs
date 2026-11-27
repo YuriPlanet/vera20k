@@ -140,7 +140,6 @@ pub(crate) struct RepresentedConcreteMissionEffects<'r> {
     /// Class setter type/contact/timer inputs; overlay data belongs to the
     /// moving Infantry receiver's current-cell admission query.
     rules: &'r crate::rules::ruleset::RuleSet,
-    overlay_registry: Option<&'r crate::rules::overlay_types::OverlayTypeRegistry>,
     frame_effects: FrameEffects<'r>,
     /// vt+0x480's mode 0 (keep NavQueue) instead of 1. Only Unit741970
     /// reads it; Infantry51AA40 and Aircraft41AA80 pass it to Foot4D94B0,
@@ -151,12 +150,10 @@ pub(crate) struct RepresentedConcreteMissionEffects<'r> {
 impl<'r> RepresentedConcreteMissionEffects<'r> {
     pub(crate) fn new(
         rules: &'r crate::rules::ruleset::RuleSet,
-        overlay_registry: Option<&'r crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: FrameEffects<'r>,
     ) -> Self {
         Self {
             rules,
-            overlay_registry,
             frame_effects,
             keep_queue: false,
         }
@@ -231,7 +228,7 @@ impl<'r> RepresentedConcreteMissionEffects<'r> {
                 receiver,
                 destination,
                 rules,
-                self.overlay_registry,
+                Some(self.rules.overlay_registry()),
             )
     }
 
@@ -309,14 +306,10 @@ impl ConcreteMissionEffects for RepresentedConcreteMissionEffects<'_> {
         // `0x00443B90`), which hands a target it refuses to this base setter
         // as NULL (`0x00443BA9`, `0x00443BFE`): the same-target test then
         // compares NULL, so a refused current target is cleared.
-        let requested = requested.filter(|_| {
-            sim.building_admits_target(
-                prepared.receiver,
-                requested,
-                self.rules,
-                self.overlay_registry,
-            )
-        });
+        // The TarCom before this setter, for the Wasm module `TargetChanged`.
+        let before = sim.module_target_before(prepared.receiver);
+        let requested = requested
+            .filter(|_| sim.building_admits_target(prepared.receiver, requested, self.rules));
         let entity = sim
             .substrate
             .entities
@@ -351,7 +344,7 @@ impl ConcreteMissionEffects for RepresentedConcreteMissionEffects<'_> {
         //6FCDD2..6FCDE1: only a receiver owning its manager clears the
         //designation here; aircraft and marked buildings borrow +294.
         if changes && entity.airstrike_link() == Some(prepared.receiver) {
-            sim.airstrike_clear_target(prepared.receiver, self.rules, self.frame_effects);
+            sim.airstrike_clear_target(prepared.receiver, self.rules, &mut self.frame_effects);
         }
         let stored = assign_target_stored(
             &sim.substrate.entities,
@@ -370,7 +363,18 @@ impl ConcreteMissionEffects for RepresentedConcreteMissionEffects<'_> {
             entity.clear_live_path_head();
         }
         if represented_assign_target_admitted(entity, requested, stored, self.rules.ares_form()) {
-            sim.assign_target_fire_teardown(prepared.receiver, self.rules, self.overlay_registry);
+            sim.assign_target_fire_teardown(
+                prepared.receiver,
+                self.rules,
+                Some(self.rules.overlay_registry()),
+            );
+            // Wasm module `TargetChanged` after the store (`0x006FCF3E`).
+            sim.raise_module_target_changed(
+                self.rules,
+                &mut self.frame_effects,
+                prepared.receiver,
+                before,
+            );
         }
         //51B2B1..51B33F: an Infiltrate= infantryman with no NavCom heads for
         // a building target it may enter (vt+0x480(target, 1)).
@@ -388,6 +392,7 @@ impl ConcreteMissionEffects for RepresentedConcreteMissionEffects<'_> {
                 .entities
                 .get_mut(prepared.receiver)
                 .unwrap()
+                .seldom
                 .tesla_charger
                 .clear();
         }
@@ -399,6 +404,21 @@ impl ConcreteMissionEffects for RepresentedConcreteMissionEffects<'_> {
         prepared: &Self::Prepared,
         requested: Option<NavTargetRef>,
     ) -> bool {
+        // Wasm module `DestinationSet` on a non-null destination
+        // (`ext_modules::control`): a replacement this setter's admission
+        // refuses keeps the native destination.
+        let requested = match requested {
+            Some(native) => match sim.module_destination(self.rules, prepared.receiver, native) {
+                Some(Some(replacement))
+                    if self.destination_available(sim, prepared.receiver, Some(replacement)) =>
+                {
+                    Some(replacement)
+                }
+                Some(None) => None,
+                _ => Some(native),
+            },
+            None => None,
+        };
         if sim
             .substrate
             .entities
@@ -420,8 +440,8 @@ impl ConcreteMissionEffects for RepresentedConcreteMissionEffects<'_> {
             sim.assign_null_destination(
                 prepared.receiver,
                 self.rules,
-                self.overlay_registry,
-                self.frame_effects,
+                Some(self.rules.overlay_registry()),
+                &mut self.frame_effects,
             );
             return true;
         }
@@ -443,7 +463,7 @@ impl ConcreteMissionEffects for RepresentedConcreteMissionEffects<'_> {
                         requested,
                         rules,
                         !self.keep_queue,
-                        self.frame_effects,
+                        &mut self.frame_effects,
                     );
                 }
                 // `InfantryClass::Assign_Destination @ 0x0051AA40`.
@@ -453,8 +473,8 @@ impl ConcreteMissionEffects for RepresentedConcreteMissionEffects<'_> {
                             prepared.receiver,
                             requested,
                             rules,
-                            self.overlay_registry,
-                            self.frame_effects,
+                            Some(self.rules.overlay_registry()),
+                            &mut self.frame_effects,
                         )
                         .expect("represented Infantry destination dependencies must be available");
                 }
@@ -464,7 +484,7 @@ impl ConcreteMissionEffects for RepresentedConcreteMissionEffects<'_> {
                         prepared.receiver,
                         Some(requested),
                         rules,
-                        self.frame_effects,
+                        &mut self.frame_effects,
                     );
                 }
                 crate::map::entities::EntityCategory::Structure => {
@@ -479,10 +499,9 @@ impl ConcreteMissionEffects for RepresentedConcreteMissionEffects<'_> {
             .get_mut(prepared.receiver)
             .expect("preflight guaranteed receiver");
         // RESIDUAL: a receiver no class setter above represents keeps the
-        // NavCom write set alone: a Unit without a constructed
-        // locomotor (the zero-speed gate in
-        // `should_construct_locomotor`), a Fly or Rocket Unit, or an Infantry
-        // on Drive, Ship, Hover, Fly or Rocket. Trigger: an order to such an
+        // NavCom write set alone: a Unit whose type has no rules data (so no
+        // constructed locomotor), a Fly or Rocket Unit, or an Infantry on
+        // Drive, Ship, Hover, Fly or Rocket. Trigger: an order to such an
         // object; in retail rules only the four types without rules data
         // (DeathDummy, YDUM, VISC_LRG, VISC_SML) lack a locomotor, and no
         // other VehicleType or InfantryType falls here
@@ -505,10 +524,8 @@ impl Simulation {
         receiver: u64,
         requested: NavTargetRef,
         rules: &crate::rules::ruleset::RuleSet,
-        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     ) -> bool {
-        let effects =
-            RepresentedConcreteMissionEffects::new(rules, overlay_registry, FrameEffects::empty());
+        let effects = RepresentedConcreteMissionEffects::new(rules, FrameEffects::empty());
         effects.class_setter_represents(self, receiver)
             && effects.destination_available(self, receiver, Some(requested))
     }
@@ -707,7 +724,7 @@ pub(crate) fn represented_assign_target_admitted(
     //SpawnOwner. A NULL request skips the arm (0x006FCDF3 jumps to the
     // store) and keeps the ammo.
     let requested = if requested.is_some()
-        && entity.type_facts.spawned_non_missile_aircraft()
+        && entity.seldom.type_facts.spawned_non_missile_aircraft()
         && matches!(crate::sim::aircraft::attack_state(entity), Some(5..=9))
         && let Some(ammo) = entity.ammo_mut()
         && ammo.current() != 0
@@ -718,21 +735,22 @@ pub(crate) fn represented_assign_target_admitted(
         stored
     };
 
+    let note = entity.note_names();
     if requested.is_none() {
         // `0x006FCF38..0x006FCF4E`: a NULL target goes on to the
         // SpawnManager (`SetTarget 0x006B7B90`), which drops a queued
         // retarget while it keeps a current target.
         if let Some(manager) = entity.spawn_manager.as_mut() {
-            manager.set_target(None);
+            manager.queue_target(None, note);
         }
         // `0x006FCF53..0x006FCF5B` resets CurrentBurstIndex; Ares 3.0
         // TechnoClass_SetTarget_Burst (1005D320, hook 0x6FCF53) keeps it.
         if !ares {
-            entity.weapon_burst.reset();
+            entity.seldom.weapon_burst.reset();
         }
     }
     // The store (`0x006FCF3E`).
-    entity.attack_target.set(requested);
+    entity.attack_target.set(requested, note);
     // `0x006FCF61..0x006FCF86`: InRange refuses a NULL target (`0x006F7237`).
     if requested.is_none() {
         entity.release_fire_particle_system();
@@ -749,7 +767,10 @@ pub(crate) fn represented_assign_destination(
 ) {
     match requested {
         Some(target) => crate::sim::movement::navcom::publish_nav_com(entity, target),
-        None => entity.navigation.publish_nav_com(None),
+        None => {
+            let note = entity.note_names();
+            entity.navigation.publish_nav_com(None, note);
+        }
     }
 }
 
@@ -864,7 +885,7 @@ impl ConcreteMissionEffects for RecordingConcreteMissionEffects {
             requested,
             mission_current: entity.mission.current(),
             suspended_mission: entity.mission.suspended(),
-            archived_target: entity.suspended_attack_target.target(),
+            archived_target: entity.seldom.suspended_attack_target.target(),
             archived_destination: entity.navigation.suspended_nav_com(),
         });
         if entity.attack_target.target() != requested {

@@ -28,8 +28,8 @@ impl Simulation {
         if self.resolved_terrain.is_none() || !self.reset_allocated_map_cell_cursor() {
             return false;
         }
-        let context = UninitContext::with_rules(rules);
-        while let Some(source) = self.next_allocated_map_cell(context) {
+        let context = UninitContext::new(rules);
+        while let Some(source) = self.next_allocated_map_cell(&context) {
             if let (Some(grid), Some(terrain)) =
                 (self.smudge_grid.as_mut(), self.resolved_terrain.as_ref())
                 && grid
@@ -104,7 +104,7 @@ impl Simulation {
         recreate_all: bool,
         rules: &RuleSet,
         overlay_registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(house) = self.houses.get(&owner) else {
             return false;
@@ -178,16 +178,14 @@ impl Simulation {
                 }
             }
 
-            let type_name = self.interner.resolve(type_id).to_owned();
-            let owner_name = self.interner.resolve(owner).to_owned();
             // Type+8C constructs at zero held Location.50D48C/50D49F
             // do not seek an existing resident or skip a still-present object.
             // For Buildings, Type+8C=45E880 constructs43B740.
             // Allocation/cast failure is unsafe natively at50D40F. Rust reports
             // unavailable construction rather than inventing a successful no-op.
             let Some(created) = self.construct_object_limbo_at_height(
-                &type_name,
-                &owner_name,
+                type_id,
+                owner,
                 0,
                 0,
                 0,
@@ -211,7 +209,7 @@ impl Simulation {
             let Some(coord) = coord else {
                 self.uninit_with_context(
                     created,
-                    UninitContext::new(rules, overlay_registry).with_effects(frame_effects),
+                    UninitContext::new(rules).with_effects(frame_effects),
                 );
                 return false;
             };
@@ -236,14 +234,17 @@ impl Simulation {
                     frame_effects,
                 )
             };
-            if placed.is_none() {
+            match placed {
+                // Wasm module `Birth` (RFC 0001 appendix 4.3) for the
+                // recreated object.
+                Some(placed) => self.raise_module_birth(rules, frame_effects, placed, None),
                 //50D421/50D507 call F8 even after the placement method
                 // has already uninitialized a failed new object. Preserve
                 // the shared owner's repeated lifecycle/queue semantics.
-                self.uninit_with_context(
+                None => self.uninit_with_context(
                     created,
-                    UninitContext::new(rules, overlay_registry).with_effects(frame_effects),
-                );
+                    UninitContext::new(rules).with_effects(frame_effects),
+                ),
             }
         }
         true
@@ -285,7 +286,7 @@ mod tests {
                     0,
                     0,
                     &rules,
-                    FrameEffects::default(),
+                    &mut FrameEffects::default(),
                 )
                 .unwrap();
             sim.substrate

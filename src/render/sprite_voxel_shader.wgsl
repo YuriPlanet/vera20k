@@ -25,7 +25,7 @@ struct Camera {
     world_height: f32,
     pad1: f32,
     native_z_origin_y: f32,
-    native_z_pad: f32,
+    native_z_pan: f32,
 };
 
 @group(0) @binding(0) var<uniform> camera: Camera;
@@ -133,56 +133,19 @@ fn vs_main(
 
 
 fn native_candidate(in: VertexOutput) -> i32 {
-    let camera_row: i32 = i32(round(camera.camera_pos.y + camera.native_z_origin_y));
-    var rect_top: f32 = in.rect_top_height.x;
-    var height: i32 = max(i32(round(in.rect_top_height.y)), 1);
-    var gradient: u32 = in.z_gradient & 0xFFu;
-    var z_adjust: i32 = i32(round(in.z_adjust));
-    // Unit final composite 0x73B140: full-width upper h-16 then bottom 16,
-    // seeded independently by Standard_SHP_blitter. A shared rectangle across
-    // hull/turret/barrel makes their depth decision identical at every pixel.
-    // Retain full quads/UVs so both regions sample the same source pixel grid.
-    if ((in.z_gradient & 0x400u) != 0u) {
-        rect_top = round(rect_top);
-        if (height > 16) {
-            let boundary: f32 = rect_top + f32(height - 16);
-            if (in.world_pos.y < boundary) {
-                height = height - 16;
-                gradient = 0u;
-                z_adjust = z_adjust - 5;
-            } else {
-                rect_top = boundary;
-                height = 16;
-                gradient = 2u;
-            }
-        }
-        // fx_params.w is this voxel body's tactical clip height in world
-        // pixels, supplied from the actual scissor. Zero retains the whole
-        // viewport for offscreen callers. Do not bake the sidebar/footer size
-        // into this shader or infer it from atlas storage padding.
-        let clip_height: f32 = select(
-            camera.screen_size.y / camera.zoom,
-            in.fx_params.w,
-            in.fx_params.w > 0.0,
-        );
-        let region_top: f32 = rect_top;
-        let region_bottom: f32 = rect_top + f32(height);
-        let bottom: f32 = min(region_bottom, f32(camera_row) + round(clip_height));
-        rect_top = max(rect_top, f32(camera_row));
-        height = i32(bottom - rect_top);
-        // Only actual tactical clip intersections cut coverage; the full quad
-        // and existing row clamp own natural edges. Re-testing those edges
-        // against interpolated coordinates can discard a boundary source row.
-        if (height <= 0
-            || (rect_top > region_top && in.world_pos.y < rect_top)
-            || (bottom < region_bottom && in.world_pos.y >= bottom)) {
-            discard;
-        }
+    // fx_params.w is this voxel body's tactical clip height in world pixels,
+    // supplied from the actual scissor. Zero retains the whole viewport for
+    // offscreen callers. Do not bake the sidebar/footer size into this
+    // shader or infer it from atlas storage padding.
+    let view_top: f32 = camera.camera_pos.y + camera.native_z_origin_y;
+    let candidate: vec2i = unit_composite_candidate(in.rect_top_height, in.world_pos.y,
+        in.z_gradient, in.z_adjust,
+        view_rows(view_top, in.fx_params.w, camera.screen_size.y / camera.zoom),
+        native_z_origin_row(view_top, camera.native_z_pan));
+    if (candidate.y == 0) {
+        discard;
     }
-    let screen_top: i32 = i32(round(rect_top)) - camera_row;
-    let row: i32 = clamp(i32(floor(in.world_pos.y - rect_top)), 0, height - 1);
-    let z: i32 = native_row_z(gradient, screen_top, height, z_adjust, row);
-    return z;
+    return candidate.x;
 }
 
 // PackedSpriteGpu keeps this shared prefix up to apply_fx; source-palette
@@ -218,7 +181,8 @@ fn apply_fx(color: vec4f, _flags: u32, params: vec4f) -> vec4f {
 // RA2_DEBUG_DEPTH_VIEW (camera.pad1 > 0.5): depth as grey, wrapping every
 // 128 world rows, so depth ordering can be read off a screenshot.
 fn debug_depth_color(depth: f32) -> vec4f {
-    let rows: f32 = world_row_from_native_depth(depth, camera.camera_pos.y + camera.native_z_origin_y);
+    let rows: f32 = world_row_from_native_depth(depth,
+        native_z_origin_row(camera.camera_pos.y + camera.native_z_origin_y, camera.native_z_pan));
     let g: f32 = fract(rows / 128.0);
     return vec4f(g, g, g, 1.0);
 }
@@ -228,6 +192,16 @@ struct FragOutput {
     @builtin(frag_depth) depth: f32,
 };
 
+fn voxel_byte(in: VertexOutput) -> u32 {
+    let atlas_size: vec2f = vec2f(textureDimensions(atlas));
+    let atlas_coord: vec2i = vec2i(in.atlas_uv * atlas_size);
+    return textureLoad(atlas, atlas_coord, 0).r;
+}
+
+// The Z-read pipeline. A candidate above 65535 never draws and a negative
+// one always does (signed compare; zsprite_shader.wgsl `fs_main`), here
+// tested as 0. merge_passes replays an opaque body that can reach either
+// through the signed manual compare (`voxel_needs_manual_depth`).
 @fragment
 fn fs_main(in: VertexOutput) -> FragOutput {
     // Unit73BEA4..73BF7B intersects the caller clip with the retained +3CA
@@ -237,17 +211,34 @@ fn fs_main(in: VertexOutput) -> FragOutput {
     if ((in.fx_flags & 128u) != 0u && in.world_pos.y >= in.sinking_row) {
         discard;
     }
-    let atlas_size: vec2f = vec2f(textureDimensions(atlas));
-    let atlas_coord: vec2i = vec2i(in.atlas_uv * atlas_size);
-    let byte: u32 = textureLoad(atlas, atlas_coord, 0).r;
-
+    let byte = voxel_byte(in);
     // Color 0 = transparent (matches gamemd visibility-map invariant).
     if (byte == 0u) {
         discard;
     }
+    let z = native_candidate(in);
+    if (z > 65535) {
+        discard;
+    }
+    return voxel_pixel(in, byte, max(z, 0));
+}
 
+// The colour/A-only pipeline (compare Always): no Z decision to make.
+@fragment
+fn fs_unread(in: VertexOutput) -> FragOutput {
+    if ((in.fx_flags & 128u) != 0u && in.world_pos.y >= in.sinking_row) {
+        discard;
+    }
+    let byte = voxel_byte(in);
+    if (byte == 0u) {
+        discard;
+    }
+    return voxel_pixel(in, byte, native_candidate(in));
+}
+
+fn voxel_pixel(in: VertexOutput, byte: u32, z: i32) -> FragOutput {
     var out: FragOutput;
-    out.depth = stored_native_depth(native_candidate(in));
+    out.depth = stored_native_depth(z);
 
     // Ground shadow stencil (FX_SHADOW = 1 << 6): every non-zero atlas byte
     // darkens the destination. The native darken blitter halves the encoded

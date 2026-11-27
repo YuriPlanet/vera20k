@@ -83,8 +83,7 @@ impl PrismScene {
                 source,
                 Some(TargetKind::Entity(victim)),
                 &rules,
-                None,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap();
         Some(Self {
@@ -155,7 +154,7 @@ impl PrismScene {
             100,
             &mut CombatEmit::default(),
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .expect("retail Comet launch")
     }
@@ -312,13 +311,11 @@ fn retail_comet_terrain_child_keeps_construction_height_through_first_logic() {
         ),
         Some(tree_coord)
     );
+    let session = &mut *scene.world.session;
+    session.set_binary_frame_for_test(session.binary_frame() + 1);
     scene
         .world
-        .session
-        .set_binary_frame_for_test(scene.world.session.binary_frame() + 1);
-    scene
-        .world
-        .visit_combat_tail(child.0, &scene.rules, None, FrameEffects::default());
+        .visit_combat_tail(child.0, &scene.rules, None, &mut FrameEffects::default());
     scene.world.flush_pending_delete();
     // Lowering the ground creates an above-ground Inviso bullet, not an
     // immediate impact. Ordinary AI467494..467B7A sees old height624, so
@@ -371,13 +368,11 @@ fn retail_elite_comet_terrain_child_recurses_from_its_tree_on_first_logic() {
         })
         .unwrap();
     scene.world.lifecycle_outputs.clear_for_test();
+    let session = &mut *scene.world.session;
+    session.set_binary_frame_for_test(session.binary_frame() + 1);
     scene
         .world
-        .session
-        .set_binary_frame_for_test(scene.world.session.binary_frame() + 1);
-    scene
-        .world
-        .visit_combat_tail(child, &scene.rules, None, FrameEffects::default());
+        .visit_combat_tail(child, &scene.rules, None, &mut FrameEffects::default());
     assert!(
         scene.world.lifecycle_outputs.iter().any(|output| matches!(
             output, LifecycleOutput::LaserCreated(beam) if beam.from == tree_coord
@@ -467,7 +462,7 @@ fn stock_shock_repairs_the_live_prism_terrain_child_before_limbo() {
             warhead,
             true,
             (shock_source, Some(owner), warhead_ref),
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
     }
     assert_eq!(scene.world.terrain_objects.objects()[&tree_id].health(), 25);
@@ -487,13 +482,11 @@ fn stock_shock_repairs_the_live_prism_terrain_child_before_limbo() {
     };
     assert!(position(parent) < position(spacer) && position(spacer) < position(shock));
     scene.world.clear_lifecycle_test_events_for_test();
+    let session = &mut *scene.world.session;
+    session.set_binary_frame_for_test(session.binary_frame() + 1);
     scene
         .world
-        .session
-        .set_binary_frame_for_test(scene.world.session.binary_frame() + 1);
-    scene
-        .world
-        .visit_combat_tail(parent, &scene.rules, None, FrameEffects::default());
+        .visit_combat_tail(parent, &scene.rules, None, &mut FrameEffects::default());
 
     // Native Logic55B608..55B619 increments after removal: parent skips
     // spacer, then Shock kills Terrain before the first appended child AI.
@@ -596,7 +589,7 @@ fn terrain_bullet_expiry_matches_original_live_observer() {
         };
         let expected = &row["observer"];
         scene.world.session.set_binary_frame_for_test(1000);
-        scene.world.scenario_rng = crate::sim::rng::SimRng::new(1);
+        *scene.world.scenario_rng = crate::sim::rng::SimRng::new(1);
         scene
             .world
             .resolved_terrain
@@ -684,7 +677,7 @@ fn terrain_bullet_expiry_matches_original_live_observer() {
         if row["case"]["source_first"] == true {
             scene.world.notify_pointer_expired(
                 scene.source,
-                crate::sim::world::UninitContext::with_rules(&scene.rules),
+                crate::sim::world::UninitContext::new(&scene.rules),
             );
             check(&scene, &expected["after_source_before_damage"]);
         }
@@ -706,17 +699,17 @@ fn terrain_bullet_expiry_matches_original_live_observer() {
             false,
             &scene.rules,
             None,
+            &mut Vec::new(),
         );
         run.finish();
         check(&scene, &expected["after_receiver"]);
-        scene.world.notify_pointer_expired(
-            tree_id,
-            crate::sim::world::UninitContext::with_rules(&scene.rules),
-        );
+        scene
+            .world
+            .notify_pointer_expired(tree_id, crate::sim::world::UninitContext::new(&scene.rules));
         check(&scene, &expected["after_repeat"]);
         scene.world.notify_pointer_expired(
             scene.source,
-            crate::sim::world::UninitContext::with_rules(&scene.rules),
+            crate::sim::world::UninitContext::new(&scene.rules),
         );
         check(&scene, &expected["after_source_expiry"]);
         assert_eq!(
@@ -865,7 +858,7 @@ fn spawn_shrapnel_matches_the_original(ares_way: bool) {
     use crate::sim::movement::locomotor::MovementLayer;
     use crate::sim::native_identity::NativeUniqueIdCursor;
     use crate::sim::occupancy::{CellListInsertion, OccupancyGrid};
-    use crate::sim::rng::{MainRng, SimRng};
+    use crate::sim::rng::SimRng;
     use crate::util::fixed_math::SimFixed;
     let Some(fixture) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
         return;
@@ -1006,7 +999,7 @@ fn spawn_shrapnel_matches_the_original(ares_way: bool) {
                 }
             }
         }
-        world.substrate.occupancy = OccupancyGrid::new();
+        *world.substrate.occupancy = OccupancyGrid::new();
         // The native fixture supplies explicit head->next lists. Feed that
         // list through the existing prepend owner, without relying on IDs.
         for actor in row["actors"].as_array().unwrap().iter().rev() {
@@ -1026,12 +1019,12 @@ fn spawn_shrapnel_matches_the_original(ares_way: bool) {
                 CellListInsertion::PrependNonBuilding,
             );
         }
-        world.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(
+        *world.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(
             row["native_id_before"].as_u64().unwrap() as u32,
         ));
-        world.main_rng = MainRng::new(seed);
-        world.scenario_rng = SimRng::new(seed + 1);
-        world.mapgen_rng = SimRng::new(seed + 2);
+        *world.main_rng = SimRng::new(seed);
+        *world.scenario_rng = SimRng::new(seed + 1);
+        *world.mapgen_rng = SimRng::new(seed + 2);
         assert_eq!(
             world.scenario_rng.native_state_hex(),
             row["rng_before"]["scenario"],
@@ -1309,7 +1302,7 @@ fn building_bounce_places_child_at_get_coords_and_beam_at_target_offset() {
         .world
         .spawn_object("GAYARD", "Russians", 18, 15, 0, &scene.rules)
         .unwrap();
-    scene.world.resolved_terrain = terrain;
+    *scene.world.resolved_terrain = terrain;
     let target = scene.world.substrate.entities.get(yard).unwrap();
     let center = crate::sim::movement::ground_pose::object_get_coords(
         target,
@@ -1386,13 +1379,14 @@ fn elite_bounces_recurse_only_when_children_get_their_logic_visits() {
         5
     );
     for _ in 0..20 {
-        scene
-            .world
-            .session
-            .set_binary_frame_for_test(scene.world.session.binary_frame() + 1);
-        scene
-            .world
-            .visit_combat_tail(first_child, &scene.rules, None, FrameEffects::default());
+        let session = &mut *scene.world.session;
+        session.set_binary_frame_for_test(session.binary_frame() + 1);
+        scene.world.visit_combat_tail(
+            first_child,
+            &scene.rules,
+            None,
+            &mut FrameEffects::default(),
+        );
         scene.world.flush_pending_delete();
     }
     assert_eq!(

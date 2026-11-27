@@ -251,6 +251,11 @@ impl Simulation {
         }
         self.trigger_runtime
             .fold_match_checksum(self.session.binary_frame() as i32, &mut checksum);
+        // Wasm extension modules (RFC 0001 section 15.1, item 7); none in
+        // stock play, so the stock checksum is unchanged.
+        for digest in self.ext_modules.checksum_digests() {
+            checksum.fold_value(digest);
+        }
         Ok(MultiplayerChecksumFrame {
             value: checksum.value(),
             ..frame
@@ -684,15 +689,11 @@ mod tests {
         let logic = sim.substrate.allocate_stable_id();
         sim.substrate.anims.insert(test_anim(logic, 7, 100, 110));
         // Submission order is deliberately the reverse of layer order.
+        assert!(sim.substrate.display.submit(top, Some(DisplayLayer::TOP)));
         assert!(
             sim.substrate
                 .display
-                .submit(top, Some(DisplayLayer::TOP), &|_| 0)
-        );
-        assert!(
-            sim.substrate
-                .display
-                .submit(surface, Some(DisplayLayer::SURFACE), &|_| 0)
+                .submit(surface, Some(DisplayLayer::SURFACE))
         );
         sim.register_live_object(logic);
         let mut reference = sim.scenario_rng.clone();
@@ -713,8 +714,7 @@ mod tests {
         let mut sim = Simulation::new();
         assert!(sim.substrate.display.submit(
             92,
-            Some(crate::sim::world::display_layers::DisplayLayer::AIR),
-            &|_| 0
+            Some(crate::sim::world::display_layers::DisplayLayer::AIR)
         ));
 
         assert_eq!(
@@ -739,10 +739,9 @@ mod tests {
             sim.advance_app_frame(
                 &[],
                 crate::rules::ruleset::RuleSet::empty_for_test(),
-                None,
                 67,
                 TickLane::Ordinary,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .expect("empty frame completes")
         };
@@ -810,10 +809,9 @@ mod tests {
                 .advance_app_frame(
                     &[],
                     crate::rules::ruleset::RuleSet::empty_for_test(),
-                    None,
                     67,
                     TickLane::Ordinary,
-                    FrameEffects::default(),
+                    &mut FrameEffects::default(),
                 )
                 .expect("the frame completes");
             output.multiplayer_checksum.unwrap().checksum.unwrap().value
@@ -909,9 +907,7 @@ mod tests {
             ParticleSystem::test_fixture(system_id, ParticleSystemTypeId(0), IVec3::new(64, 32, 0));
         system.set_particles_for_test(vec![child]);
         sim.substrate.particle_systems.insert(system);
-        assert!(
-            sim.reveal_particle_system(system_id, crate::rules::ruleset::RuleSet::empty_for_test())
-        );
+        assert!(sim.reveal_particle_system(system_id));
         sim.substrate
             .particle_systems
             .retain_detached_particle(detached);
@@ -919,7 +915,7 @@ mod tests {
             Simulation::reveal_particle(&mut sim.substrate, id);
         }
         let bytes = GameSnapshot::save(&sim, 0, 0, "particles", 0);
-        let rng = sim.scenario_rng.clone();
+        let rng = (*sim.scenario_rng).clone();
         let mut reference = rng.clone();
 
         let frame = sim.compute_retail_multiplayer_checksum().unwrap();
@@ -937,7 +933,7 @@ mod tests {
         let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
         restored.restore_after_snapshot_load().unwrap();
         // The loader reseeds Scenario; continue the saved stream.
-        restored.scenario_rng = rng;
+        *restored.scenario_rng = rng;
         assert_eq!(restored.compute_retail_multiplayer_checksum(), Ok(frame));
     }
 
@@ -965,10 +961,9 @@ mod tests {
             .advance_app_frame(
                 &[],
                 crate::rules::ruleset::RuleSet::empty_for_test(),
-                None,
                 67,
                 TickLane::Ordinary,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .expect("the frame completes");
 

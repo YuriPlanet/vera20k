@@ -202,8 +202,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(foot) = self.substrate.entities.get(id) else {
             return false;
@@ -216,7 +215,6 @@ impl Simulation {
             id,
             Some(NavTargetRef::object(best)),
             rules,
-            registry,
             effects,
         );
         let _ = self.mission_queue_exact(
@@ -239,7 +237,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         use crate::sim::combat::TargetKind;
         use crate::sim::movement::locomotor::MovementLayer;
@@ -269,8 +267,8 @@ impl Simulation {
             y: coordinate.y,
             z: coordinate.z,
         };
-        let context = UninitContext::new(rules, registry).with_effects(effects);
-        self.dispatch_object_tag_event(building_id, 1, Some(id), None, context);
+        let mut context = UninitContext::new(rules).with_effects(effects);
+        self.dispatch_object_tag_event(building_id, 1, Some(id), None, context.reborrow());
 
         //519790..519865: VoiceDie (local human only), then DieSound.
         //Playback may draw Main too, so flush before selecting the next list.
@@ -284,12 +282,14 @@ impl Simulation {
                     } else {
                         &object.die_sounds
                     },
-                    &self.main_rng,
+                    &mut self.main_rng,
                 )
             {
-                self.sound_events
-                    .emit(SimSoundEvent::voc_at_world_coord(sound_id, entry_world));
-                effects.flush_sound(self, rules);
+                self.sound_events.emit(SimSoundEvent::voc_at_world_coord(
+                    rules.sound_name(sound_id),
+                    entry_world,
+                ));
+                context.effects().flush_sound(self, rules);
             }
         }
         // Infantry51986A / Unit73A0A5: the actor's refund comes first.
@@ -297,7 +297,7 @@ impl Simulation {
         if unit {
             //73A0BC..73A13C explicitly pops two cargo levels through Foot's
             //RemoveFirstPassenger (including RemoveGunner), child before parent.
-            self.grind_cargo(id, building_id, true, rules, registry, effects);
+            self.grind_cargo(id, building_id, true, rules, registry, context.effects());
             //73A13E..73A18D credits the eater before suppression50 + ExitUnit.
             if let Some(eater) = self
                 .substrate
@@ -310,11 +310,11 @@ impl Simulation {
                     eater,
                     crate::sim::combat::parasite::FORCED_RELEASE_SUPPRESSION_FRAMES,
                     rules,
-                    effects,
+                    context.effects(),
                 );
             }
         }
-        self.dispatch_object_tag_event(id, 48, Some(id), None, context);
+        self.dispatch_object_tag_event(id, 48, Some(id), None, context.reborrow());
         let grinding = self
             .substrate
             .entities
@@ -324,7 +324,7 @@ impl Simulation {
         // Ares 3.0 100498D0 (hook 0x5198AD) / 1004C460 (hook 0x73A1BC), first
         // in the Grinding arm: reverse engineering and the hijacker refund.
         if rules.ares_form() && grinding {
-            self.ares_entered_grinder(id, building_id, rules, context);
+            self.ares_entered_grinder(id, building_id, rules, context.reborrow());
         }
         if grinding
             && let Some(building) = self.substrate.entities.get(building_id)
@@ -337,19 +337,19 @@ impl Simulation {
                     rules.general.condition_yellow,
                 )
             });
-            if let Some(sound_id) = rules.general.enter_grinder_sound.clone()
+            if let Some(sound_id) = rules.general.enter_grinder_sound.as_deref()
                 && let Some(foot) = self.substrate.entities.get(id)
             {
                 let coordinate = object_get_coords(foot, self.resolved_terrain.as_ref());
                 self.sound_events.emit(SimSoundEvent::voc_at_world_coord(
-                    sound_id,
+                    rules.sound_name(sound_id),
                     crate::sim::anim_class::AnimWorldCoord {
                         x: coordinate.x,
                         y: coordinate.y,
                         z: coordinate.z,
                     },
                 ));
-                effects.flush_sound(self, rules);
+                context.effects().flush_sound(self, rules);
             }
             //5198CE gates the animation switch on the existing Active3
             //instance, not on the presence of a SpecialAnim declaration.
@@ -379,29 +379,30 @@ impl Simulation {
         include_nested: bool,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         use crate::sim::passenger::{DepartureRoute, depart_cargo_head};
-        let context = crate::sim::world::UninitContext::new(rules, registry).with_effects(effects);
         while self
             .substrate
             .entities
             .get(transport)
-            .and_then(|e| e.passenger_role.cargo())
+            .and_then(|e| e.passenger_role().cargo())
             .is_some_and(|cargo| !cargo.is_empty())
         {
             let removed = depart_cargo_head(
                 self,
                 rules,
-                registry,
                 transport,
                 DepartureRoute::Vehicle,
-                |sim, passenger| {
+                |sim, passenger, effects| {
                     if include_nested {
                         sim.grind_cargo(passenger, building, false, rules, registry, effects);
                     }
                     sim.credit_grinder_refund(passenger, building, rules);
-                    sim.uninit_with_context(passenger, context);
+                    sim.uninit_with_context(
+                        passenger,
+                        crate::sim::world::UninitContext::new(rules).with_effects(effects),
+                    );
                     Ok(())
                 },
                 effects,
@@ -425,7 +426,7 @@ impl Simulation {
         if houses.get(&owner).is_some_and(|house| house.is_human())
             && let Some(passenger) = substrate.entities.get_mut(stable_id)
         {
-            passenger.building_entry.clear_absorber_seek();
+            passenger.seldom.building_entry.clear_absorber_seek();
         }
     }
 
@@ -441,8 +442,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(owner) = self.substrate.entities.get(id).map(GameEntity::owner) else {
             return false;
@@ -480,10 +480,10 @@ impl Simulation {
         };
         let (best, reissue) = pick_bio_reactor(
             candidates,
-            foot.radio_contacts.slot(0),
+            foot.seldom.radio_contacts.slot(0),
             foot.pending_entry(),
         );
-        foot.building_entry.should_enter_absorber = best.is_some();
+        foot.seldom.building_entry.should_enter_absorber = best.is_some();
         let Some(best) = best else {
             return false;
         };
@@ -502,7 +502,6 @@ impl Simulation {
             id,
             Some(NavTargetRef::object(best)),
             rules,
-            registry,
             effects,
         );
         true
@@ -522,8 +521,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(foot) = self.substrate.entities.get(id) else {
             return false;
@@ -535,7 +533,7 @@ impl Simulation {
         let Some(foot) = self.substrate.entities.get_mut(id) else {
             return false;
         };
-        foot.building_entry.should_enter_occupiable = best.is_some();
+        foot.seldom.building_entry.should_enter_occupiable = best.is_some();
         let Some(best) = best else {
             return false;
         };
@@ -546,7 +544,6 @@ impl Simulation {
             id,
             Some(NavTargetRef::object(best)),
             rules,
-            registry,
             effects,
         );
         let now = self.session.binary_frame();
@@ -569,8 +566,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         // Installed Ares Foot4DFE00 hook10049130 redirects only Ext+B0.
         if rules.ares_form()
@@ -578,9 +574,9 @@ impl Simulation {
                 .substrate
                 .entities
                 .get(id)
-                .is_some_and(|foot| foot.ares.vehicle_driver.vehicle_seek())
+                .is_some_and(|foot| foot.seldom.ares.vehicle_driver.vehicle_seek())
         {
-            return self.ares_enter_nearest_vehicle(id, rules, registry, effects);
+            return self.ares_enter_nearest_vehicle(id, rules, effects);
         }
         let mut best = None;
         let mut best_distance = i32::MAX;
@@ -607,7 +603,7 @@ impl Simulation {
         let Some(foot) = self.substrate.entities.get_mut(id) else {
             return false;
         };
-        foot.building_entry.should_enter_nearest_occupiable = best.is_some();
+        foot.seldom.building_entry.should_enter_nearest_occupiable = best.is_some();
         let Some(best) = best else {
             return false;
         };
@@ -618,7 +614,6 @@ impl Simulation {
             id,
             Some(NavTargetRef::object(best)),
             rules,
-            registry,
             effects,
         );
         let now = self.session.binary_frame();
@@ -646,8 +641,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         if !can_auto_deploy_here(self, id, rules) {
             return false;
@@ -658,7 +652,7 @@ impl Simulation {
         let walk = self.walk_from_last(foot, self.house_bunkers(foot.owner(), rules));
         let best = pick_nearest_admitted(walk, |bunker| {
             self.substrate.entities.get(bunker).is_some_and(|bunker| {
-                bunker.radio_contacts.slot(0).is_none() && bunker.bunker.occupant().is_none()
+                bunker.seldom.radio_contacts.slot(0).is_none() && bunker.bunker.occupant().is_none()
             })
         });
         let Some(best) = best else {
@@ -668,7 +662,6 @@ impl Simulation {
             id,
             Some(NavTargetRef::object(best)),
             rules,
-            registry,
             effects,
         );
         transmit(
@@ -719,18 +712,18 @@ impl Simulation {
 /// Sets `+0x68F` as a seek that found an absorber would.
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) fn set_should_enter_absorber_for_test(entity: &mut GameEntity, value: bool) {
-    entity.building_entry.should_enter_absorber = value;
+    entity.seldom.building_entry.should_enter_absorber = value;
 }
 
 /// Sets `+0x690` as a seek that found an occupiable building would.
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) fn set_should_enter_occupiable_for_test(entity: &mut GameEntity, value: bool) {
-    entity.building_entry.should_enter_occupiable = value;
+    entity.seldom.building_entry.should_enter_occupiable = value;
 }
 
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) fn set_should_enter_nearest_occupiable_for_test(entity: &mut GameEntity, value: bool) {
-    entity.building_entry.should_enter_nearest_occupiable = value;
+    entity.seldom.building_entry.should_enter_nearest_occupiable = value;
 }
 
 #[cfg(all(test, tests_sim_a_b))]

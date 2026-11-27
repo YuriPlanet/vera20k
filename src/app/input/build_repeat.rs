@@ -9,9 +9,17 @@
 //! events through [`super::commands::queue_build_by_type`], so other players,
 //! replays and the sync hash see nothing but repeated clicks, and the
 //! factory's own `[General] MaximumQueuedObjects=` and build-limit checks still
-//! decide every copy.
+//! decide every copy. A new world clears the repeats; the player's ShiftQueue
+//! option stays selected.
 
-use crate::app::AppState;
+use crate::app::PlatformState;
+use crate::app::diagnostics::state::DiagnosticsState;
+use crate::app::frontend::state::FrontendState;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
+use crate::audio::sfx::SfxPlayer;
 use crate::sim::production::{BuildQueueState, ProductionCategory, QueueItemView};
 
 /// Copies of a repeated type kept in its strip: the running build plus one
@@ -112,32 +120,50 @@ pub(crate) fn repeats(category: ProductionCategory) -> bool {
 }
 
 /// Top up every repeated type once per game frame, before the frame's logic.
-pub(crate) fn top_up(state: &mut AppState) {
-    if state.match_state.input.build_repeat.types.is_empty() {
+pub(crate) fn top_up(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
+) {
+    if match_state.input.build_repeat.types.is_empty() {
         return;
     }
-    let Some(tick) = state
-        .match_state
+    let Some(tick) = match_state
         .sim_runtime
         .runtime()
         .map(|runtime| runtime.simulation.session().tick())
     else {
         return;
     };
-    let queue = super::dispatch::local_queue_view(state);
+    let queue = super::dispatch::local_queue_view(frontend, match_state);
     let due = {
-        let sim = state
-            .match_state
+        let sim = match_state
             .sim_runtime
             .runtime()
             .map(|runtime| &runtime.simulation);
         let interned = |name: &str| sim.and_then(|sim| sim.interner().get(name));
         // Split borrow: the repeat set is in `input`, the sim in `sim_runtime`.
-        let repeat = &mut state.match_state.input.build_repeat;
+        let repeat = &mut match_state.input.build_repeat;
         repeat.due(tick, &queue, interned)
     };
     for type_id in due {
-        super::commands::queue_build_by_type(state, &type_id, 1);
+        super::commands::queue_build_by_type(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            sfx_player,
+            persistence,
+            &type_id,
+            1,
+        );
     }
 }
 
@@ -145,6 +171,27 @@ pub(crate) fn top_up(state: &mut AppState) {
 mod tests {
     use super::*;
     use crate::sim::intern::InternedId;
+
+    #[test]
+    fn a_previous_worlds_repeat_cannot_produce_units_in_a_fresh_world() {
+        let gi = InternedId::from_index(7);
+        let interned = |name: &str| (name == "E1").then_some(gi);
+        let mut input = crate::app::input::state::MatchInputState::new(Default::default());
+        assert!(input.build_repeat.toggle("E1"));
+        assert_eq!(input.build_repeat.due(100, &[], interned), ["E1"]);
+
+        input.reset_targeting_for_new_world();
+        assert!(
+            input.build_repeat.due(1000, &[], interned).is_empty(),
+            "a prior match's repeat must not request PRODUCE in the next world"
+        );
+        assert!(input.build_repeat.toggle("E1"));
+        assert_eq!(
+            input.build_repeat.due(1000, &[], interned),
+            ["E1"],
+            "an explicit new-world repeat still works"
+        );
+    }
 
     fn item(type_id: InternedId, state: BuildQueueState) -> QueueItemView {
         QueueItemView {

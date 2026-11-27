@@ -74,14 +74,14 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
         force: bool,
     ) {
         let frame = self.session.binary_frame() as i32;
         let Some(actor) = self.substrate.entities.get_mut(id) else {
             return;
         };
-        let Some(amount) = actor.ares.bounty_display.take_ready(
+        let Some(amount) = actor.seldom.ares.bounty_display.take_ready(
             frame,
             force,
             rules.bounty_rules().display_delay(),
@@ -197,7 +197,11 @@ pub(crate) fn award(
     //1004336B..1004338A redirects only the displayed sum for missiles.
     // Funds still go to this incoming attacker's live House.
     let display_actor = if attacker_type.missile_spawn {
-        attacker.spawn_owner_id.owner().unwrap_or(attacker_id)
+        attacker
+            .seldom
+            .spawn_owner_id
+            .owner()
+            .unwrap_or(attacker_id)
     } else {
         attacker_id
     };
@@ -212,7 +216,7 @@ pub(crate) fn award(
         house.economy_mut().spend_money(amount.wrapping_neg());
     }
     if display && let Some(actor) = entities.get_mut(display_actor) {
-        actor.ares.bounty_display.queue(amount);
+        actor.seldom.ares.bounty_display.queue(amount);
     }
 }
 
@@ -270,7 +274,7 @@ mod tests {
                 id,
                 source,
                 KillCallback::OwnerChange,
-                UninitContext::with_rules(&rules),
+                UninitContext::new(&rules),
             )
         };
         let source = KillSource::Techno(Some(hunter));
@@ -283,7 +287,7 @@ mod tests {
         let bank = sim
             .spawn_object("BANK", "Americans", 10, 10, 64, &rules)
             .unwrap();
-        sim.techno_limbo_with_rules(bank, &rules, None);
+        sim.techno_limbo_with_rules(bank, &rules);
         record(&mut sim, victim, source);
         assert_eq!(
             sim.houses[&owner].economy().credits(),
@@ -324,13 +328,13 @@ mod tests {
             "opposite ally bit does not block bounty"
         );
         let events = RefCell::new(Vec::new());
-        let observe = |sim: &Simulation, _: &RuleSet, text: BountyText| {
+        let mut observe = |sim: &Simulation, _: &RuleSet, text: BountyText| {
             events
                 .borrow_mut()
                 .push((text, sim.entities().get(text.entity_id).unwrap().owner()));
         };
-        let effects = FrameEffects::empty().with_bounty_text(&observe);
-        sim.flush_bounty_display(hunter, &rules, effects, false);
+        let mut effects = FrameEffects::empty().with_bounty_text(&mut observe);
+        sim.flush_bounty_display(hunter, &rules, &mut effects, false);
         assert_eq!(events.borrow()[0].0.amount, 30);
         sim.session.set_binary_frame_for_test(1);
         sim.substrate
@@ -340,14 +344,14 @@ mod tests {
             .veterancy
             .set_elite();
         record(&mut sim, victim, source);
-        sim.flush_bounty_display(hunter, &rules, effects, false);
+        sim.flush_bounty_display(hunter, &rules, &mut effects, false);
         assert_eq!(events.borrow().len(), 1, "delay retains a later kill's sum");
         record(&mut sim, penalty, KillSource::House(Some(owner)));
         sim.substrate
             .entities
             .get_mut(penalty)
             .unwrap()
-            .tracking_facts
+            .tracking_facts_mut_for_test()
             .set_dont_score_for_test(true);
         record(&mut sim, penalty, source);
         assert_eq!(
@@ -359,7 +363,7 @@ mod tests {
             .entities
             .get_mut(penalty)
             .unwrap()
-            .tracking_facts
+            .tracking_facts_mut_for_test()
             .set_dont_score_for_test(false);
         record(&mut sim, penalty, source);
         assert_eq!(sim.houses[&owner].economy().credits(), 0);
@@ -373,6 +377,7 @@ mod tests {
             .entities
             .get(hunter)
             .unwrap()
+            .seldom
             .ares
             .bounty_display
             .clone();
@@ -380,7 +385,7 @@ mod tests {
             serde_json::from_slice(&serde_json::to_vec(&state).unwrap()).unwrap();
         assert_eq!(saved, state);
         let before = sim.state_hash();
-        sim.change_owner_with_rules(hunter, enemy, &rules, None, effects);
+        sim.change_owner_with_rules(hunter, enemy, &rules, None, &mut effects);
         assert_eq!(
             events.borrow()[1].0.amount,
             -130,
@@ -397,7 +402,7 @@ mod tests {
             "ownership still changes gameplay state"
         );
         let before = sim.state_hash();
-        sim.flush_bounty_display(hunter, &rules, effects, true);
+        sim.flush_bounty_display(hunter, &rules, &mut effects, true);
         assert_eq!(events.borrow().len(), 2, "consumed sum never repeats");
         assert_eq!(
             sim.state_hash(),

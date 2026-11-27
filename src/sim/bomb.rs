@@ -107,6 +107,7 @@ use crate::sim::scenario_session::ScenarioSession;
 use crate::sim::world::FrameChannel;
 use crate::sim::world::ObjectSubstrate;
 use crate::sim::world::{SimSoundEvent, Simulation};
+use crate::util::forked::Forked;
 
 /// `BombListClass` (`0x0087F5D8`): the carriers of the live bombs and the
 /// BombVisible countdown. Nothing here is saved: the records live on their
@@ -626,7 +627,7 @@ impl Simulation {
         // player who owns the planter (+0x21C).
         if let Some(sound_id) = attach_sound {
             self.sound_events.emit(SimSoundEvent::VocAt {
-                sound_id,
+                sound_id: rules.sound_name(&sound_id),
                 audible_to: Some([planter_house, planter_house]),
                 rx: position.rx(),
                 ry: position.ry(),
@@ -784,7 +785,7 @@ impl Simulation {
         carrier: u64,
         rules: &RuleSet,
         overlay_registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         let sells = self
             .substrate
@@ -836,10 +837,12 @@ impl Simulation {
 
     /// `BombClass::Defuse @ 0x004389B0`: remove the bomb and detach its cue
     /// through VocHandle405FD0 (`0x004389D6`), leaving the current clip's tail.
+    /// Every UnInit asks it, so the sound channel is written only for a
+    /// carrier.
     pub(crate) fn bomb_defuse(
         substrate: &mut ObjectSubstrate,
         bombs: &mut BombList,
-        sound_events: &mut FrameChannel<SimSoundEvent>,
+        sound_events: &mut Forked<FrameChannel<SimSoundEvent>>,
         carrier: u64,
     ) {
         if bombs.carriers.remove(&carrier)
@@ -860,11 +863,18 @@ impl Simulation {
         expired: u64,
     ) {
         for &carrier in &bombs.carriers {
+            // Every object's expiry comes here, so a carrier whose bomb
+            // another object planted is only read: a hand-out would wake it
+            // and enter the store's touch logs.
             if let Some(bomb) = substrate
                 .entities
-                .get_mut(carrier)
+                .get_mut_if(carrier, |entity| {
+                    entity
+                        .bomb
+                        .as_ref()
+                        .is_some_and(|bomb| bomb.planter == Some(expired))
+                })
                 .and_then(|entity| entity.bomb.as_mut())
-                && bomb.planter == Some(expired)
             {
                 bomb.planter = None;
             }
@@ -945,7 +955,7 @@ impl Simulation {
         carrier: u64,
         rules: &RuleSet,
         overlay_registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(entity) = self.substrate.entities.get(carrier) else {
             return false;
@@ -984,7 +994,7 @@ impl Simulation {
             return false;
         };
         let combat = &rules.combat_damage;
-        if !self.house_is_human_player(bomb.planter_house) {
+        if !self.control_projection().can_order(bomb.house()) {
             return false;
         }
         if rules.ares_form() {
@@ -1006,14 +1016,15 @@ impl Simulation {
     /// (`TargetClass::As_Techno`) drops its planning tokens
     /// (`TechnoClass::ClearPlanningTokens`, [`Self::planning_detach_actor`]),
     /// then its bomb, if any, goes off ([`Self::bomb_detonate`]). The event's
-    /// house and the carrier's owner are not asked. Answers whether a bomb
-    /// went off.
+    /// house and the carrier's owner are not asked here; online, the VERA
+    /// network gate (`network_command_actor_foreign`) has already refused
+    /// another House's bomb. Answers whether a bomb went off.
     pub(crate) fn execute_detonate_event(
         &mut self,
         carrier: u64,
         rules: &RuleSet,
         overlay_registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         // Every entity in the store is a Techno.
         let Some(entity) = self.substrate.entities.get(carrier) else {
@@ -1036,7 +1047,7 @@ impl Simulation {
         carrier: u64,
         rules: &RuleSet,
         overlay_registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(blast) = Self::take_bomb_blast(
             &self.interner,
@@ -1074,7 +1085,6 @@ impl Simulation {
                 carrier,
                 warhead,
                 rules,
-                overlay_registry,
                 receipt.crit_active,
                 frame_effects,
             )
@@ -1090,7 +1100,8 @@ impl Simulation {
         carrier: u64,
         rules: &RuleSet,
         overlay_registry: Option<&OverlayTypeRegistry>,
-    ) -> Option<(DeathEffects, Vec<UnderAttackEvent>)> {
+        pings: &mut Vec<UnderAttackEvent>,
+    ) -> Option<DeathEffects> {
         let blast = Self::take_bomb_blast(
             &self.interner,
             &self.session,
@@ -1108,7 +1119,7 @@ impl Simulation {
             return None;
         };
         let origin = blast.origin(&mut self.interner, warhead);
-        let (mut effects, pings, crit_active, _area_result) = apply_area_damage_in_run(
+        let (mut effects, crit_active, _area_result) = apply_area_damage_in_run(
             self,
             run,
             rules,
@@ -1118,17 +1129,11 @@ impl Simulation {
             warhead,
             true,
             origin,
+            pings,
         );
-        effects.bridge_state_changed |= self.bomb_blast_tail(
-            &blast,
-            carrier,
-            warhead,
-            rules,
-            overlay_registry,
-            crit_active,
-            run.effects(),
-        );
-        Some((effects, pings))
+        effects.bridge_state_changed |=
+            self.bomb_blast_tail(&blast, carrier, warhead, rules, crit_active, run.effects());
+        Some(effects)
     }
 
     /// `BombClass::Detonate` after its Apply_area_damage (`0x004387A3`): the
@@ -1137,16 +1142,14 @@ impl Simulation {
     /// `BridgeRepairHut=` carrier's bridge (`0x0043896A`/`0x00438982`), then
     /// detach the cue (`0x00438995`, VocHandle405FD0).
     /// Returns whether a bridge changed.
-    #[allow(clippy::too_many_arguments)]
     fn bomb_blast_tail(
         &mut self,
         blast: &BombBlast,
         carrier: u64,
         warhead: &WarheadType,
         rules: &RuleSet,
-        overlay_registry: Option<&OverlayTypeRegistry>,
         crit_active: bool,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         let land = crate::sim::combat::detonation_anim::land_at(self, blast.location);
         if let Some(effect) = crate::sim::combat::detonation_anim::effect(
@@ -1167,7 +1170,6 @@ impl Simulation {
                 self,
                 rules,
                 (rx, ry),
-                overlay_registry,
                 frame_effects,
             )
         } else {
@@ -1189,7 +1191,7 @@ fn ivan_bomb_settings<'r>(
 ) -> &'r AresIvanBomb {
     static CONSTRUCTED: AresIvanBomb = AresIvanBomb::CONSTRUCTED;
     weapon
-        .and_then(|weapon| rules.weapon(interner.resolve(weapon)))
+        .and_then(|weapon| interner.weapon_type(weapon, rules))
         .map_or(&CONSTRUCTED, |weapon| &weapon.ares_ivan_bomb)
 }
 

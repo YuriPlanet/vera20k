@@ -57,7 +57,7 @@ fn apply(sim: &mut Simulation, owner: Option<InternedId>, kind: i32, tail: &str)
         &mut Vec::new(),
         crate::rules::ruleset::RuleSet::empty_for_test(),
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
 }
 
@@ -101,6 +101,24 @@ fn defense_actions_store_raw_cell_and_frame_without_changing_other_targets_or_rn
 }
 
 #[test]
+fn defense_action_resolves_three_letter_waypoints_from_the_map() {
+    let (mut sim, owner, _) = fixture();
+    let ini = IniFile::from_str(
+        "[Waypoints]\n701=11010\n702=21020\n18277=31030\n18278=41040\n018276=51050\n",
+    );
+    let waypoints = crate::map::waypoints::parse_waypoints(&ini);
+    assert!(!waypoints.contains_key(&18278));
+    sim.session.install_waypoints(&waypoints);
+
+    for (label, cell) in [("ZZ", (10, 11)), ("AAA", (20, 21)), ("zZz", (30, 31))] {
+        assert!(apply(&mut sim, Some(owner), 140, label), "{label}");
+        assert_eq!(sim.houses[&owner].super_weapon_defense().0, cell, "{label}");
+    }
+    assert_eq!(sim.session.waypoint_cell(18278), None);
+    assert!(!apply(&mut sim, Some(owner), 140, "ZZY")); // Noncanonical numeric key.
+}
+
+#[test]
 fn refused_defense_actions_preserve_the_existing_alert() {
     let (mut sim, owner, _) = fixture();
     sim.houses
@@ -132,7 +150,13 @@ fn ai_fire_cells(
     owner: InternedId,
 ) -> Vec<(u16, u16)> {
     AI_FIRE_LOG.with(|log| *log.borrow_mut() = Some(Vec::new()));
-    crate::sim::superweapon::ai_fire::try_fire(sim, rules, owner, None, FrameEffects::default());
+    crate::sim::superweapon::ai_fire::try_fire(
+        sim,
+        rules,
+        owner,
+        None,
+        &mut FrameEffects::default(),
+    );
     AI_FIRE_LOG.with(|log| {
         log.borrow_mut()
             .take()

@@ -41,9 +41,9 @@ impl ProfileCheck {
         frame: u32,
     ) -> Result<ProfileStep> {
         let lobby = if online {
-            rendered == PresentedShell::WolLobby && online::online_lobby_settled(state)
+            rendered == PresentedShell::WolLobby && online::online_lobby_settled(&state.frontend)
         } else {
-            rendered == PresentedShell::LanLobby && lobby_settled(state)
+            rendered == PresentedShell::LanLobby && lobby_settled(&state.frontend)
         };
         if self.backed && lobby {
             self.backed = false;
@@ -55,9 +55,9 @@ impl ProfileCheck {
         }
         if rendered != PresentedShell::NetworkSetup
             || !(if online {
-                online::online_setup_settled(state, true)
+                online::online_setup_settled(&state.frontend, true)
             } else {
-                setup_settled(state, true)
+                setup_settled(&state.frontend, true)
             })
         {
             return Ok(if self.backed {
@@ -80,7 +80,7 @@ impl ProfileCheck {
             "profile check needs the host alone on an admitted30-capable map"
         );
         if self.reconstructing {
-            let restored = snapshot(state, frame)?;
+            let restored = snapshot(&state.match_state.session, frame)?;
             let before = self.before.as_ref().context("remembered profile")?;
             ensure!(
                 restored["map"] == before["map"]
@@ -123,7 +123,7 @@ impl ProfileCheck {
                         && slot.color_index == 1),
             "actual combo choices were not applied"
         );
-        self.before = Some(snapshot(state, frame)?);
+        self.before = Some(snapshot(&state.match_state.session, frame)?);
         setup_button(state, crate::ui::multiplayer_setup::BACK)?;
         self.backed = true;
         Ok(ProfileStep::Waiting)
@@ -150,16 +150,17 @@ impl SetupComboInput {
         value: i32,
     ) -> Result<bool> {
         if let Some((control, index, expected)) = self.popup.take() {
-            let view = setup::view(state).context("presented setup combo")?;
-            let layout = setup_input::layout(state);
-            let ui = state
-                .frontend
-                .multiplayer_setup
-                .as_ref()
-                .context("setup popup owner")?;
+            let view = setup::view(
+                &state.renderer,
+                &state.frontend,
+                &state.match_state,
+                &state.process_assets,
+            )
+            .context("presented setup combo")?;
+            let open = setup_input::open_list(&state.frontend, &state.match_state);
             ensure!(
                 expected == value
-                    && ui.popup.control == Some(control)
+                    && open.map(|(id, _)| id) == Some(control)
                     && view
                         .combo(control)
                         .is_some_and(|combo| combo.row as usize == row
@@ -169,31 +170,32 @@ impl SetupComboInput {
                                 .is_some_and(|choice| choice.value == value)),
                 "setup popup changed before its rendered choice click"
             );
-            let popup = ui
-                .popup_geometry(&view, &layout)
-                .context("presented setup popup geometry")?;
+            let popup = open.context("presented setup popup geometry")?.1.popup;
             let Some(rect) = popup.row_rect(index) else {
                 // Player shows only three rows. Scroll the retained item through
                 // normal input, then require another presentation before clicking.
                 let geometry = popup.scroll_geometry();
                 let bar = geometry.scrollbar.context("setup popup scrollbar")?;
                 let down = index >= popup.first + popup.visible_rows;
-                let (x, y) =
-                    crate::ui::shell::list::scrollbar_arrow_origins(bar, geometry.metrics.arrow_h)
-                        [usize::from(down)];
+                let (x, y) = vera20k_gui::shell::list::scrollbar_arrow_origins(
+                    bar,
+                    geometry.metrics.arrow_h,
+                )[usize::from(down)];
                 setup_click(
                     state,
                     RectPx::new(x, y, bar.w - 2, geometry.metrics.arrow_h),
                 );
                 ensure!(
-                    state.frontend.multiplayer_setup.as_ref().is_some_and(|ui| {
-                        ui.popup.control == Some(control)
-                            && if down {
-                                ui.popup.top_index > popup.first
-                            } else {
-                                ui.popup.top_index < popup.first
-                            }
-                    }),
+                    setup_input::open_list(&state.frontend, &state.match_state).is_some_and(
+                        |(id, list)| {
+                            id == control
+                                && if down {
+                                    list.popup.first > popup.first
+                                } else {
+                                    list.popup.first < popup.first
+                                }
+                        }
+                    ),
                     "setup popup scrollbar did not advance toward the retained item"
                 );
                 self.popup = Some((control, index, value));
@@ -201,17 +203,19 @@ impl SetupComboInput {
             };
             setup_click(state, rect);
             ensure!(
-                state
-                    .frontend
-                    .multiplayer_setup
-                    .as_ref()
-                    .is_some_and(|ui| ui.popup.control.is_none()),
+                setup_input::open_list(&state.frontend, &state.match_state).is_none(),
                 "setup combo input did not close popup"
             );
             return Ok(true);
         }
         let control = setup_control_at_row(state, column, row)?.context("visible setup raw row")?;
-        let view = setup::view(state).context("setup combo view")?;
+        let view = setup::view(
+            &state.renderer,
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets,
+        )
+        .context("setup combo view")?;
         let combo = view.combo(control).context("setup combo")?;
         ensure!(
             combo.enabled && combo.visible,
@@ -222,18 +226,20 @@ impl SetupComboInput {
             .iter()
             .position(|choice| choice.value == value)
             .context("legal setup item")?;
-        let layout = setup_input::layout(state);
+        let layout = setup_input::layout(
+            &state.renderer,
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets,
+        );
         let face = layout.control_rect(control).context("setup combo face")?;
         setup_click(
             state,
             crate::ui::skirmish_shell::combo_arrow_hit_rect(face, layout.page.scale),
         );
         ensure!(
-            state
-                .frontend
-                .multiplayer_setup
-                .as_ref()
-                .is_some_and(|ui| ui.popup.control == Some(control)),
+            setup_input::open_list(&state.frontend, &state.match_state).map(|(id, _)| id)
+                == Some(control),
             "actual setup combo arrow did not open"
         );
         self.popup = Some((control, index, value));
@@ -241,8 +247,7 @@ impl SetupComboInput {
     }
 }
 
-fn snapshot(state: &AppState, frame: u32) -> Result<Value> {
-    let session = &state.match_state.session;
+fn snapshot(session: &MatchSession, frame: u32) -> Result<Value> {
     let launch = session.network_setup().context("profile setup snapshot")?;
     Ok(json!({"render_frame":frame,"process_id":std::process::id(),
         "capacity":session.network_map_metadata().context("profile map metadata")?.player_capacity,

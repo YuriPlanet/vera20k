@@ -15,6 +15,15 @@ use crate::sim::house_state::HouseDifficulty;
 use crate::sim::rng::SimRng;
 use crate::sim::world::TypeTechLevels;
 
+/// VERA's bound on the nodes one count inserts into a base plan: the extra
+/// refineries (`AIExtraRefineries=`/`AISlaveMinerNumber=`), Ares'
+/// `AIBuildCounts=`/`AIExtraCounts=` copies and the base defenses
+/// (`*BaseDefenseCounts=`). Each insertion draws once and shifts the list, so
+/// a count near `i32::MAX` hangs the AI's base planning; the bound applies
+/// only to these loops, and retail counts are far below it (every count
+/// below it draws as before).
+const BASE_PLAN_INSERT_LIMIT: i32 = 256;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RecalcPreflightError {
     UnknownCountry,
@@ -112,14 +121,14 @@ pub(crate) fn recalc_base_plan(
         })
         // NPSE AI_RecalcBuildOptions5056C1 -> C2C331 repeats the
         // eligible append, before seed selection505714 and prerequisites.
-        .flat_map(|candidate| std::iter::repeat_n(candidate, planning_repeats(candidate)))
+        .flat_map(|candidate| std::iter::repeat_n(candidate, planning_repeats(candidate, rules)))
         .collect();
     let mut selected = vec![false; eligible.len()];
     let mut priority: Vec<&ObjectType> = Vec::new();
 
     if let Some(build_const) = first_buildable_from_array(
         rules,
-        &rules.build_const_types,
+        rules.build_const_types(),
         country_name,
         side_index,
         super_weapons,
@@ -223,7 +232,7 @@ pub(crate) fn recalc_base_plan(
             .take(priority.len().saturating_sub(1))
             .position(|candidate| candidate.base_plan_type_index == refinery.base_plan_type_index)
     {
-        for _ in 0..duplicate_count.max(0) {
+        for _ in 0..duplicate_count.clamp(0, BASE_PLAN_INSERT_LIMIT) {
             let insert_after = scenario_rng.next_range_u32_inclusive(
                 refinery_index as u32,
                 priority.len().wrapping_sub(1) as u32,
@@ -251,7 +260,7 @@ pub(crate) fn recalc_base_plan(
                     .ai_extra_copies(difficulty.table_index(), |low, high| {
                         scenario_rng.next_range_i32_inclusive(low, high)
                     });
-                for _ in 0..copies {
+                for _ in 0..copies.min(BASE_PLAN_INSERT_LIMIT) {
                     let at = scenario_rng
                         .next_range_i32_inclusive(index as i32 + 1, priority.len() as i32)
                         as usize;
@@ -309,7 +318,7 @@ pub(crate) fn recalc_base_plan(
             defense_count = defense_count.wrapping_sub(1);
         }
     }
-    for _ in 0..defense_count.max(0) {
+    for _ in 0..defense_count.clamp(0, BASE_PLAN_INSERT_LIMIT) {
         let insert_after = scenario_rng
             .next_range_u32_inclusive(3, final_values.len().wrapping_sub(1) as u32)
             as usize;
@@ -327,8 +336,8 @@ pub(crate) fn recalc_base_plan(
 /// the `ReadInt` result through `al` (`0xC2E223..0xC2E237`). The loop's
 /// byte CMP/JL (`0xC2C35A..0xC2C361`) is signed, so 0 and high-bit counts
 /// keep one entry. Source: author-linked NPSE 2.0 #359 release.
-fn planning_repeats(candidate: &ObjectType) -> usize {
-    if crate::rules::NPATCH_ENABLED {
+fn planning_repeats(candidate: &ObjectType, rules: &RuleSet) -> usize {
+    if rules.npatch() {
         (candidate.ai_planning_count as i8).max(1) as usize
     } else {
         1
@@ -474,10 +483,11 @@ mod tests {
              [BAR]\nOwner=Americans,Russians,YuriCountry\nAIBuildThis=yes\nTechLevel=1\nFoundation=1x1\n\
              [WEAP]\nOwner=Americans,Russians,YuriCountry\nAIBuildThis=yes\nTechLevel=1\nFoundation=1x1\n\
              [RAD]\nOwner=Americans,Russians,YuriCountry\nAIBuildThis=no\nFoundation=1x1\n\
-             [TECH]\nOwner=Americans,Russians,YuriCountry\nAIBuildThis=no\nFoundation=1x1\n\
-             {extra_sections}"
+             [TECH]\nOwner=Americans,Russians,YuriCountry\nAIBuildThis=no\nFoundation=1x1"
         );
-        RuleSet::from_ini(&IniFile::from_str(&text)).expect("planner fixture")
+        let mut ini = IniFile::from_str(&text);
+        ini.merge(&IniFile::from_str(extra_sections));
+        RuleSet::from_ini(&ini).expect("planner fixture")
     }
 
     fn basic_rules(extra_registry: &str, extra_sections: &str) -> RuleSet {
@@ -531,8 +541,32 @@ mod tests {
             .collect()
     }
 
+    /// A defense count past VERA's bound inserts only the bound: one more
+    /// than the bound plans the same nodes as the bound itself.
     #[test]
-    fn ai_planning_count_respects_the_build_capability() {
+    fn a_huge_base_defense_count_inserts_only_the_bound() {
+        let defenses = |count: i32| {
+            let counts = format!("{count},{count},{count}");
+            let rules = planner_rules(
+                "HARV",
+                "Americans,Russians,YuriCountry",
+                "0,0,0",
+                "1,1,1",
+                &counts,
+                "0,0,0",
+                "0,0,0",
+                "",
+                "",
+            );
+            let (plan, _) = generated_values(&rules, "Americans", 0, HouseDifficulty::Normal, 7);
+            values(&plan).iter().filter(|&&value| value == -1).count()
+        };
+        let limit = BASE_PLAN_INSERT_LIMIT;
+        assert_eq!(defenses(limit + 1), limit as usize);
+    }
+
+    #[test]
+    fn ai_planning_count_key_turns_npatch_on_and_repeats_candidates() {
         let rules = basic_rules(
             "7=TEST\n\
              [TEST]\n\
@@ -540,11 +574,8 @@ mod tests {
              AIBuildThis=yes\nTechLevel=1\nFoundation=1x1\nAIPlanningCount=3\n",
             "",
         );
-        let expected = if crate::rules::NPATCH_ENABLED { 3 } else { 1 };
-        assert_eq!(
-            rules.object("TEST").unwrap().ai_planning_count,
-            if crate::rules::NPATCH_ENABLED { 3 } else { 0 },
-        );
+        assert!(rules.npatch(), "the authored key turns NPatch on");
+        assert_eq!(rules.object("TEST").unwrap().ai_planning_count, 3);
         let (plan, _) =
             generated_values(&rules, "Americans", 0, HouseDifficulty::Normal, 0xC057_0F01);
         let values = values(&plan);
@@ -555,11 +586,11 @@ mod tests {
             .expect("the counted type is planned");
         assert_eq!(
             values.iter().filter(|value| **value == test_index).count(),
-            expected,
-            "only an NPatch build honors the requested copies"
+            3,
+            "the NPatch game honors the requested copies"
         );
         assert!(
-            values[first..first + expected]
+            values[first..first + 3]
                 .iter()
                 .all(|value| *value == test_index),
             "the repeats are consecutive at the type's own position"
@@ -640,17 +671,12 @@ mod tests {
     /// construction-yard seed marks its first entry selected (505714).
     #[test]
     fn ai_planning_count_keeps_counted_seed_candidates() {
-        let mut rules = basic_rules(
+        let rules = basic_rules(
             "7=COUNTED\n",
-            "[COUNTED]\nOwner=Americans\nAIBuildThis=yes\nTechLevel=1\nAIPlanningCount=2\n",
+            "[COUNTED]\nOwner=Americans\nAIBuildThis=yes\nTechLevel=1\nAIPlanningCount=2\n[AI]\nBuildConst=COUNTED\n",
         );
-        assert_eq!(
-            rules.object("COUNTED").unwrap().ai_planning_count,
-            if crate::rules::NPATCH_ENABLED { 2 } else { 0 }
-        );
-        // Exercise the existing BuildConst selector with this reader-created
-        // type, without relying on a duplicate physical [CON] INI section.
-        rules.build_const_types = vec!["COUNTED".to_owned()];
+        assert!(rules.npatch(), "the authored key turns NPatch on");
+        assert_eq!(rules.object("COUNTED").unwrap().ai_planning_count, 2);
         let (plan, _) = generated_values(&rules, "Americans", 0, HouseDifficulty::Normal, 17);
         let index = rules.object("COUNTED").unwrap().base_plan_type_index;
         assert_eq!(
@@ -658,7 +684,7 @@ mod tests {
                 .iter()
                 .filter(|value| **value == index)
                 .count(),
-            if crate::rules::NPATCH_ENABLED { 2 } else { 1 }
+            2
         );
     }
 
@@ -804,8 +830,7 @@ mod tests {
     /// and plans that last one, the second POW.
     #[test]
     fn recalc_pass_continues_past_remaining_zero() {
-        let mut rules = basic_rules("", "");
-        rules.build_const_types = vec!["RAD".to_owned()];
+        let rules = basic_rules("", "[AI]\nBuildConst=RAD\n");
         let (plan, _) = generated_values(&rules, "Americans", 0, HouseDifficulty::Hard, 9);
         assert_eq!(values(&plan), [1, 3, 4, 2, 0, 1]);
     }

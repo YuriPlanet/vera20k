@@ -2,8 +2,8 @@
 //!
 //! The app owns when a profile is loaded and saved. Native Slot01..07 triples
 //! retain their key order, defaults and preservation-safe batched byte update.
-//! Extended network rows remain in this same snapshot for the process lifetime;
-//! they introduce no disk keys. This module has no UI or `AppState` dependency.
+//! Extended rows remain in their mode’s snapshot for the process lifetime.
+//! VERA.INI keeps its original seven computer keys. This module has no UI or `AppState` dependency.
 
 use crate::rules::error::RulesError;
 use crate::rules::ini_parser::{IniFile, IniSection};
@@ -27,13 +27,13 @@ impl SetupProfile {
 }
 
 pub const SKIRMISH_PERSISTED_SLOT_COUNT: usize = 7;
-const RETAINED_SETUP_SLOT_COUNT: usize = crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT - 1;
 
 const RANDOM_COMBO_ITEM_DATA: i32 = -2;
 const SLOT01_DEFAULT_TYPE: i32 = 6;
 const OTHER_SLOT_DEFAULT_TYPE: i32 = 1;
 
-/// The ten global fallback values supplied by the current Rules/session state.
+/// The ten global fallback values supplied by the current Rules/session state,
+/// and VERA's session options.
 ///
 /// Native `SessionClass__ReadSkirmishSettings` does not use one universal
 /// hardcoded default set: absent global keys inherit fields already loaded from
@@ -51,6 +51,7 @@ pub struct SkirmishGlobalDefaults {
     pub build_off_ally: bool,
     pub mcv_repacks: bool,
     pub crates_appear: bool,
+    pub session: crate::skirmish_launch::SessionOptions,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -93,14 +94,24 @@ pub struct MultiplayerSetupSnapshot {
     /// VERA's room options from the room's last game; kept for this run of
     /// the game only, never written to the INI.
     pub room: Option<crate::skirmish_launch::RoomOptions>,
+    /// The session options VERA's Game Options show. Skirmish keeps them
+    /// under VERA's own keys after gamemd's; a network room keeps its last
+    /// game's here for this run only, and opens on the rules' values before.
+    pub session: Option<crate::skirmish_launch::SessionOptions>,
     /// FUN_005ED400/005ED5A0 snapshot/restore rows1..7 (loop bounds at
     /// 005ED542/005EDC99; source: original gamemd.exe). VERA extends that
-    /// same process profile through row29; only the native prefix reaches INI.
-    pub slots: [SkirmishPersistedSlot; RETAINED_SETUP_SLOT_COUNT],
+    /// process profile to the rows its mode can seat; only the native prefix reaches INI.
+    pub slots: Box<[SkirmishPersistedSlot]>,
 }
 
 impl MultiplayerSetupSnapshot {
     pub fn from_global_defaults(defaults: SkirmishGlobalDefaults, profile: SetupProfile) -> Self {
+        let seats = match profile {
+            SetupProfile::Skirmish => crate::skirmish_launch::SKIRMISH_MAX_SLOT_COUNT,
+            SetupProfile::Lan | SetupProfile::Wol => {
+                crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT
+            }
+        };
         Self {
             profile,
             game_mode: defaults.game_mode,
@@ -114,18 +125,22 @@ impl MultiplayerSetupSnapshot {
             mcv_repacks: defaults.mcv_repacks,
             crates_appear: defaults.crates_appear,
             room: None,
-            slots: std::array::from_fn(|index| {
-                let mut slot = SkirmishPersistedSlot::native_default(index);
-                // 00698456/0069846F: LAN and WOL read with defaults 2/2.
-                if profile != SetupProfile::Skirmish {
-                    slot.row_type = 2;
-                }
-                slot
-            }),
+            session: (profile == SetupProfile::Skirmish).then_some(defaults.session),
+            slots: (0..seats - 1)
+                .map(|index| {
+                    let mut slot = SkirmishPersistedSlot::native_default(index);
+                    // 00698456/0069846F: LAN and WOL read with defaults 2/2.
+                    if profile != SetupProfile::Skirmish {
+                        slot.row_type = 2;
+                    }
+                    slot
+                })
+                .collect(),
         }
     }
 
-    /// Return all persisted key/value pairs in native writer order.
+    /// Return all persisted key/value pairs in native writer order, then
+    /// Skirmish's VERA keys.
     pub fn ini_updates(&self) -> Vec<(String, String)> {
         let mut updates = Vec::with_capacity(10 + SKIRMISH_PERSISTED_SLOT_COUNT);
         updates.push(("GameMode".to_string(), self.game_mode.to_string()));
@@ -161,11 +176,29 @@ impl MultiplayerSetupSnapshot {
                 format!("{},{},{}", slot.row_type, slot.country, slot.colour),
             ));
         }
+        if self.profile == SetupProfile::Skirmish
+            && let Some(session) = self.session
+        {
+            updates.extend(
+                [
+                    ("TechLevel", session.tech_level.to_string()),
+                    ("Bases", yes_no(session.bases).to_string()),
+                    ("FogOfWar", yes_no(session.fog_of_war).to_string()),
+                    ("MultiEngineer", yes_no(session.multi_engineer).to_string()),
+                    (
+                        "HarvesterTruce",
+                        yes_no(session.harvester_truce).to_string(),
+                    ),
+                ]
+                .map(|(key, value)| (key.to_string(), value)),
+            );
+        }
         updates
     }
 
     /// Apply this snapshot to raw `VERA.INI` bytes without rewriting any
-    /// unrelated byte. All seventeen keys are composed into one output buffer.
+    /// unrelated byte. All seventeen keys, and Skirmish's five VERA keys
+    /// after them, are composed into one output buffer.
     pub fn update_ini_bytes(&self, content: &[u8]) -> Vec<u8> {
         let updates = self.ini_updates();
         let borrowed: Vec<(&str, &str)> = updates
@@ -206,6 +239,15 @@ pub fn read_setup_snapshot(
     {
         read_native_slot_triple(section, &format!("Slot{:02}", slot_index + 1), slot);
     }
+    // VERA's keys, read as gamemd reads `[MultiplayerDialogSettings]`
+    // (`0x00671EF7`); the page's Tech Level slider sets up a stored value.
+    if let Some(session) = snapshot.session.as_mut() {
+        session.tech_level = section.read_int("TechLevel", session.tech_level);
+        session.bases = section.read_bool("Bases", session.bases);
+        session.fog_of_war = section.read_bool("FogOfWar", session.fog_of_war);
+        session.multi_engineer = section.read_bool("MultiEngineer", session.multi_engineer);
+        session.harvester_truce = section.read_bool("HarvesterTruce", session.harvester_truce);
+    }
     Ok(snapshot)
 }
 
@@ -245,7 +287,33 @@ mod tests {
             build_off_ally: true,
             mcv_repacks: true,
             crates_appear: true,
+            session: Default::default(),
         }
+    }
+
+    /// Skirmish writes the session options under VERA's keys and reads them
+    /// back; a room's are never written, so its profile opens without them.
+    #[test]
+    fn skirmish_keeps_the_session_options_and_rooms_write_none() {
+        use crate::skirmish_launch::SessionOptions;
+        let mut snapshot = read_setup_snapshot(b"", defaults(), SetupProfile::Skirmish).unwrap();
+        assert_eq!(snapshot.session, Some(SessionOptions::default()));
+        let session = SessionOptions {
+            tech_level: 6,
+            bases: false,
+            fog_of_war: true,
+            multi_engineer: true,
+            harvester_truce: true,
+        };
+        snapshot.session = Some(session);
+        let updated = snapshot.update_ini_bytes(b"");
+        let reread = read_setup_snapshot(&updated, defaults(), SetupProfile::Skirmish).unwrap();
+        assert_eq!(reread.session, Some(session));
+        let mut lan = read_setup_snapshot(&updated, defaults(), SetupProfile::Lan).unwrap();
+        assert_eq!(lan.session, None);
+        lan.session = Some(session);
+        let written = lan.update_ini_bytes(b"");
+        assert!(!String::from_utf8_lossy(&written).contains("TechLevel"));
     }
 
     #[test]
@@ -388,7 +456,8 @@ Slot02=5,-2,-2
 Credits=10000\r\nUnitCount=10\r\nShortGame=no\r\nSuperWeaponsAllowed=yes\r\n\
 BuildOffAlly=yes\r\nMCVRepacks=yes\r\nCratesAppear=yes\r\nSlot01=6,8,1\r\n\
 Slot02=1,-2,-2\r\nSlot03=1,-2,-2\r\nSlot04=1,-2,-2\r\n\
-Slot05=1,-2,-2\r\nSlot06=1,-2,-2\r\nSlot07=1,-2,-2\r\n";
+Slot05=1,-2,-2\r\nSlot06=1,-2,-2\r\nSlot07=1,-2,-2\r\n\
+TechLevel=10\r\nBases=yes\r\nFogOfWar=no\r\nMultiEngineer=no\r\nHarvesterTruce=no\r\n";
         assert_eq!(output, expected);
     }
 

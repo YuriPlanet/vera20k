@@ -83,7 +83,7 @@ fn global_promotion_cues_reach_normal_ai_without_general() {
             .any(|event| matches!(event, SimSoundEvent::UnitPromoted { .. }))
     );
     for (elite, expected) in [(false, "VeteranCue"), (true, "EliteCue")] {
-        let actor = sim.substrate.entities.get_mut(id).unwrap();
+        let actor = sim.entity_mut_for_test(id).unwrap();
         if elite {
             actor.veterancy.set_elite();
         } else {

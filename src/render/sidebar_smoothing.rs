@@ -8,6 +8,14 @@
 //! never filtered.
 //! Text, the names baked into the cameos, the darken and flash masks, the
 //! build clock and the radar keep their own pixels. Presentation only.
+//!
+//! VERA's HD art sidebar: with HD art on (`render::hd_switch`), a piece the art
+//! pack's `sidebar`
+//! folder has a picture for (`<hash>.png`, 4x the piece, the hash being
+//! `hd_art::frame_hash` of its size and RGBA) draws from that picture,
+//! resampled to the scale, instead of xBR. `VERA20K_HD_DUMP_SIDEBAR=<folder>`
+//! writes each piece the pack lacks as `<hash>.rgba` (u16 width, u16 height,
+//! RGBA) for an offline upscaler.
 
 use crate::assets::pal_file::Palette;
 use crate::render::batch::{BatchRenderer, BatchTexture, SpriteInstance};
@@ -28,6 +36,7 @@ pub struct SmoothSource {
 impl SmoothSource {
     pub fn new(rgba: Vec<u8>, size: [u32; 2], pieces: Vec<[u32; 4]>) -> Self {
         assert_eq!(rgba.len(), size[0] as usize * size[1] as usize * 4);
+        dump_pieces(&rgba, size[0] as usize, &pieces);
         Self {
             rgba,
             size,
@@ -155,13 +164,13 @@ const STRENGTH: u16 = 4;
 /// [`STRENGTH`]. xBR continues a piece's edge pixels past it, so a piece that
 /// tiles or meets another keeps its corners. None for an empty piece.
 fn scale_piece(rgba: &[u8], stride: usize, piece: [u32; 4], factor: usize) -> Option<Vec<u8>> {
-    let [x, y, width, height] = piece.map(|value| value as usize);
+    let [_, _, width, height] = piece.map(|value| value as usize);
     if width == 0 || height == 0 {
         return None;
     }
-    let mut pixels = Vec::with_capacity(width * height * 4);
-    for row in y..y + height {
-        pixels.extend_from_slice(&rgba[(row * stride + x) * 4..][..width * 4]);
+    let pixels = piece_pixels(rgba, stride, piece);
+    if let Some(picture) = hd_picture(&pixels, width, height, factor) {
+        return Some(picture);
     }
     let mut scaled = xbr::scale(&pixels, width, height, factor);
     let row = width * factor;
@@ -177,9 +186,85 @@ fn scale_piece(rgba: &[u8], stride: usize, piece: [u32; 4], factor: usize) -> Op
     Some(scaled)
 }
 
+fn piece_pixels(rgba: &[u8], stride: usize, piece: [u32; 4]) -> Vec<u8> {
+    let [x, y, width, height] = piece.map(|value| value as usize);
+    let mut pixels = Vec::with_capacity(width * height * 4);
+    for row in y..y + height {
+        pixels.extend_from_slice(&rgba[(row * stride + x) * 4..][..width * 4]);
+    }
+    pixels
+}
+
+/// The HD art picture of a piece at `factor`: the pack's 4x picture,
+/// resampled, alpha kept as the piece's own (blocks), or None.
+fn hd_picture(pixels: &[u8], width: usize, height: usize, factor: usize) -> Option<Vec<u8>> {
+    if !crate::render::hd_art::sidebar_active() {
+        return None;
+    }
+    let hash = crate::render::hd_art::frame_hash(width as u32, height as u32, pixels);
+    let path = crate::render::hd_art::pack_subdir("sidebar")?.join(format!("{hash:016x}.png"));
+    let picture = image::open(path).ok()?.into_rgba8();
+    if picture.dimensions() != (width as u32 * 4, height as u32 * 4) {
+        return None;
+    }
+    let picture = if factor == 4 {
+        picture
+    } else {
+        image::imageops::resize(
+            &picture,
+            (width * factor) as u32,
+            (height * factor) as u32,
+            image::imageops::FilterType::Lanczos3,
+        )
+    };
+    let mut out = picture.into_raw();
+    let row = width * factor;
+    for (index, pixel) in out.chunks_exact_mut(4).enumerate() {
+        let [column, line] = [index % row / factor, index / row / factor];
+        pixel[3] = pixels[(line * width + column) * 4 + 3];
+    }
+    Some(out)
+}
+
+/// `VERA20K_HD_DUMP_SIDEBAR`: write each piece the pack lacks.
+fn dump_pieces(rgba: &[u8], stride: usize, pieces: &[[u32; 4]]) {
+    let Some(dump) = std::env::var_os("VERA20K_HD_DUMP_SIDEBAR").map(std::path::PathBuf::from)
+    else {
+        return;
+    };
+    let pack = crate::render::hd_art::pack_subdir("sidebar");
+    let _ = std::fs::create_dir_all(&dump);
+    for &piece in pieces {
+        let [width, height] = [piece[2], piece[3]];
+        if width == 0 || height == 0 {
+            continue;
+        }
+        let pixels = piece_pixels(rgba, stride, piece);
+        let name = format!(
+            "{:016x}",
+            crate::render::hd_art::frame_hash(width, height, &pixels)
+        );
+        if pack
+            .as_ref()
+            .is_some_and(|pack| pack.join(format!("{name}.png")).exists())
+        {
+            continue;
+        }
+        let mut bytes = Vec::with_capacity(4 + pixels.len());
+        bytes.extend_from_slice(&(width as u16).to_le_bytes());
+        bytes.extend_from_slice(&(height as u16).to_le_bytes());
+        bytes.extend_from_slice(&pixels);
+        let _ = std::fs::write(dump.join(format!("{name}.rgba")), bytes);
+    }
+}
+
 /// A [`SmoothSource`] scaled for the sidebar's draw scale.
 pub struct SmoothCopy {
     scale: u32,
+    /// Whether it was made with the HD art pictures
+    /// ([`crate::render::hd_art::sidebar_active`]): switching them on or off
+    /// makes it again.
+    hd: bool,
     /// None when the copy would not fit a texture or xBR has no factor of
     /// the scale: the sidebar then draws the source's own pixels.
     texture: Option<BatchTexture>,
@@ -191,7 +276,8 @@ impl SmoothCopy {
     }
 }
 
-/// Keep `copy` at `scale`: build it when the scale changes, drop it for None.
+/// Keep `copy` at `scale`: build it when the scale or the HD pictures' state
+/// changes, drop it for None.
 pub fn follow_scale(
     copy: &mut Option<SmoothCopy>,
     source: &SmoothSource,
@@ -203,7 +289,11 @@ pub fn follow_scale(
         *copy = None;
         return;
     };
-    if copy.as_ref().is_some_and(|copy| copy.scale == scale) {
+    let hd = crate::render::hd_art::sidebar_active();
+    if copy
+        .as_ref()
+        .is_some_and(|copy| copy.scale == scale && copy.hd == hd)
+    {
         return;
     }
     let [width, height] = source.size.map(|value| value.saturating_mul(scale));
@@ -227,7 +317,7 @@ pub fn follow_scale(
         }
         texture
     };
-    *copy = Some(SmoothCopy { scale, texture });
+    *copy = Some(SmoothCopy { scale, hd, texture });
 }
 
 /// The pieces of a chrome atlas that the sidebar's surfaces draw, packed on

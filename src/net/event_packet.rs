@@ -2,10 +2,22 @@
 //! Uncompress64BDD0. The session owns these caches; Simulation keeps the only
 //! OutList/DoList. Inputs and mirror records are transient transfer values.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(clippy::unwrap_used, clippy::panic, clippy::unreachable)
+)]
+
 use std::collections::BTreeMap;
 
-use crate::sim::command::{COMMAND_RECORD_LEN, CommandRecord, MEGAMISSION_OPCODE};
-use crate::sim::command_queue::FrameInfo;
+use crate::sim::command::{
+    ADD_PLAYER_OPCODE, COMMAND_RECORD_LEN, CommandRecord, FRAME_SYNC_OPCODE,
+    MEGAMISSION_ACTION_OFFSET, MEGAMISSION_DESTINATION_KIND_OFFSET, MEGAMISSION_OPCODE,
+    MEGAMISSION_OWNED_PAYLOAD_LEN, MEGAMISSION_SECONDARY_VALUE_OFFSET,
+    MEGAMISSION_SOURCE_KIND_OFFSET, RESPONSE_TIME_OPCODE, event_body_len,
+};
+use crate::sim::command_queue::{FRAMEINFO_EVENT_OPCODE, FrameInfo};
+use crate::util::read_helpers::{array_at, read_i32_le};
 
 /// Session constructor69768C writes +2808 (A8DA40), passed by64764C.
 pub const NATIVE_EVENT_PACKET_CAPACITY: usize = 0x22e;
@@ -13,11 +25,12 @@ pub const EVENT_PACKET_HEADER_LEN: usize = 14;
 const HEADER_LEN: usize = EVENT_PACKET_HEADER_LEN;
 const CACHE_SLOTS: usize = 8;
 const MAX_RUN: usize = 128;
-const FRAME_SYNC: u8 = 0x19;
-const FRAME_INFO: u8 = 0x1c;
-const EXTENDED: u8 = 0x1f;
-const MEGA_LEN: usize = 23;
-type ActorToken = [u8; 5];
+/// A run's per-actor token: the MEGAMISSION source value and kind that
+/// start the payload.
+const ACTOR_TOKEN_LEN: usize = MEGAMISSION_SOURCE_KIND_OFFSET + 1;
+type ActorToken = [u8; ACTOR_TOKEN_LEN];
+/// A run's cache slot rides in the MEGAMISSION padding byte at Event+0D.
+const RUN_SLOT_PAYLOAD_OFFSET: usize = 6;
 
 /// VERA clients extend the native body with a full command frontier. The
 /// prefix is `VCM`, version1, then a little-endian u64. It stays inside the
@@ -67,10 +80,11 @@ impl EventPacketHeader {
 }
 
 pub fn live_command_frontier(bytes: &[u8]) -> Option<u64> {
-    (bytes.len() >= LIVE_EVENT_PREFIX_LEN + HEADER_LEN
-        && bytes.starts_with(&LIVE_EVENT_MAGIC)
-        && matches!(bytes[LIVE_EVENT_PREFIX_LEN], FRAME_INFO | FRAME_SYNC))
-    .then(|| u64::from_le_bytes(bytes[4..LIVE_EVENT_PREFIX_LEN].try_into().unwrap()))
+    let (frontier, body) = bytes
+        .strip_prefix(&LIVE_EVENT_MAGIC)?
+        .split_first_chunk::<{ LIVE_EVENT_PREFIX_LEN - LIVE_EVENT_MAGIC.len() }>()?;
+    (body.len() >= HEADER_LEN && matches!(body[0], FRAMEINFO_EVENT_OPCODE | FRAME_SYNC_OPCODE))
+        .then(|| u64::from_le_bytes(*frontier))
 }
 
 fn body_offset(bytes: &[u8]) -> usize {
@@ -89,10 +103,8 @@ pub fn encode_frame_sync(info: FrameInfo) -> Result<[u8; HEADER_LEN], PacketEnco
     if info.house_id < 0 {
         return Err(PacketEncodeError::InvalidHouse);
     }
-    let mut bytes: [u8; HEADER_LEN] = info.encode().as_bytes()[..HEADER_LEN]
-        .try_into()
-        .expect("fixed packet header");
-    bytes[0] = FRAME_SYNC;
+    let mut bytes = array_at::<0, HEADER_LEN, _>(info.encode().as_bytes());
+    bytes[0] = FRAME_SYNC_OPCODE;
     Ok(bytes)
 }
 
@@ -109,18 +121,18 @@ pub fn encode_live_frame_sync(
         frame_info: info,
         command_frontier,
     }
-    .bytes(FRAME_SYNC))
+    .bytes(FRAME_SYNC_OPCODE))
 }
 
 /// Inspect the leading header without admitting it to the command queue.
 pub fn decode_frame_info(bytes: &[u8]) -> Option<FrameInfo> {
-    decode_header(bytes, FRAME_INFO)
+    decode_header(bytes, FRAMEINFO_EVENT_OPCODE)
 }
 
 /// Probe fields have the same layout as FRAMEINFO, but its checksum field is
 /// a random seed.64BDD0 skips this header instead of admitting an Event.
 pub fn decode_frame_sync(bytes: &[u8]) -> Option<FrameInfo> {
-    decode_header(bytes, FRAME_SYNC)
+    decode_header(bytes, FRAME_SYNC_OPCODE)
 }
 
 fn decode_header(bytes: &[u8], opcode: u8) -> Option<FrameInfo> {
@@ -130,33 +142,8 @@ fn decode_header(bytes: &[u8], opcode: u8) -> Option<FrameInfo> {
     }
     let mut record = [0; COMMAND_RECORD_LEN];
     record[..HEADER_LEN].copy_from_slice(&bytes[..HEADER_LEN]);
-    record[0] = FRAME_INFO;
+    record[0] = FRAMEINFO_EVENT_OPCODE;
     FrameInfo::decode(&CommandRecord::decode_exact(&record).expect("fixed native Event"))
-}
-
-/// Original byte table8208EC, indexed by the 47 Event opcodes (0..2E).
-/// RESPONSE_TIME1B starts at Event+0D; ADDPLAYER1F carries external storage.
-const PAYLOAD_LENGTHS: [u8; 47] = [
-    0, 5, 5, 4, 23, 24, 5, 5, 0, 5, 5, 16, 0, 4, 12, 12, 12, 5, 8, 0, 16, 5, 5, 4, 4, 0, 0, 1, 7,
-    0, 10, 4, 5, 2, 0, 4, 4, 104, 64, 0, 4, 5, 10, 0, 5, 4, 12,
-];
-
-// VERA fixed records reuse this codec and its existing reliable/cache owners.
-// Native entries retain the original8208EC table unchanged.
-fn event_payload_len(opcode: u8) -> Option<u8> {
-    match opcode {
-        crate::sim::command::VERA_PAID_SUPER_OPCODE => {
-            Some(crate::sim::command::VERA_PAID_SUPER_PAYLOAD_LEN)
-        }
-        crate::sim::command::VERA_EJECT_BUNKER_OPCODE => Some(5),
-        crate::sim::command::VERA_CYCLE_PRODUCER_OPCODE => Some(1),
-        // Ares 3.0 1006A130: TrenchRedirectClick (0x60) carries 10 bytes. Only
-        // a game Ares plays in raises one (`context_order`'s trench Enter).
-        crate::sim::command::ARES_TRENCH_REDIRECT_OPCODE => {
-            Some(crate::sim::command::ARES_TRENCH_REDIRECT_PAYLOAD_LEN)
-        }
-        _ => PAYLOAD_LENGTHS.get(usize::from(opcode)).copied(),
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -282,7 +269,7 @@ impl EventPacketCodec {
     ) -> Result<EncodedEventPacket, PacketEncodeError> {
         let packet_header = header.into();
         let header = packet_header.frame_info();
-        let header_bytes = packet_header.bytes(FRAME_INFO);
+        let header_bytes = packet_header.bytes(FRAMEINFO_EVENT_OPCODE);
         if capacity < header_bytes.len() {
             return Err(PacketEncodeError::HeaderCapacity(capacity));
         }
@@ -300,10 +287,12 @@ impl EventPacketCodec {
         let mut run: Option<OpenRun> = None;
         for (index, &source) in records.iter().enumerate() {
             let opcode = source.opcode();
-            let payload_len = event_payload_len(opcode);
+            let payload_len = event_body_len(opcode);
             let unsupported = match opcode {
-                EXTENDED => Some(EncodeBlock::ExtendedPayload),
-                FRAME_INFO | FRAME_SYNC => Some(EncodeBlock::PacketHeaderOpcode(opcode)),
+                ADD_PLAYER_OPCODE => Some(EncodeBlock::ExtendedPayload),
+                FRAMEINFO_EVENT_OPCODE | FRAME_SYNC_OPCODE => {
+                    Some(EncodeBlock::PacketHeaderOpcode(opcode))
+                }
                 _ if payload_len.is_none() => Some(EncodeBlock::UnsupportedOpcode(opcode)),
                 _ => None,
             };
@@ -323,7 +312,7 @@ impl EventPacketCodec {
                 self.finish_run(&mut packet.bytes, run.take(), current_frame);
             }
             let required = if extend {
-                5
+                ACTOR_TOKEN_LEN
             } else {
                 1 + usize::from(payload_len.expect("checked opcode"))
                     + usize::from(opcode == MEGAMISSION_OPCODE)
@@ -358,7 +347,7 @@ impl EventPacketCodec {
                 let payload_offset = packet.bytes.len();
                 packet
                     .bytes
-                    .extend_from_slice(&source.payload()[..MEGA_LEN]);
+                    .extend_from_slice(&source.payload()[..MEGAMISSION_OWNED_PAYLOAD_LEN]);
                 run = Some(OpenRun {
                     count_offset,
                     payload_offset,
@@ -368,7 +357,7 @@ impl EventPacketCodec {
                 });
             } else {
                 packet.bytes.push(opcode);
-                let start = usize::from(opcode == 0x1b) * 6;
+                let start = usize::from(opcode == RESPONSE_TIME_OPCODE) * 6;
                 let len = usize::from(payload_len.expect("checked opcode"));
                 packet
                     .bytes
@@ -416,9 +405,9 @@ impl EventPacketCodec {
         };
         if let Some(slot) = self.matching_slot(&run.actors) {
             //64B596..64B5CF removes only the repeated trailing actor tokens.
-            bytes.truncate(run.payload_offset + MEGA_LEN);
+            bytes.truncate(run.payload_offset + MEGAMISSION_OWNED_PAYLOAD_LEN);
             bytes[run.count_offset] = 0;
-            bytes[run.payload_offset + 6] = slot as u8;
+            bytes[run.payload_offset + RUN_SLOT_PAYLOAD_OFFSET] = slot as u8;
             return;
         }
         let slot = self.replacement_slot(frame);
@@ -426,7 +415,7 @@ impl EventPacketCodec {
             actors: run.actors,
             assigned_frame: frame,
         };
-        bytes[run.payload_offset + 6] = slot as u8;
+        bytes[run.payload_offset + RUN_SLOT_PAYLOAD_OFFSET] = slot as u8;
     }
 
     fn replacement_slot(&self, frame: i32) -> usize {
@@ -483,7 +472,7 @@ impl EventPacketCodec {
                     DecodeFailureKind::UnexpectedHeader,
                 ));
             }
-            let Some(len) = event_payload_len(opcode) else {
+            let Some(len) = event_body_len(opcode) else {
                 return Err(decode_error(
                     bytes,
                     start,
@@ -491,7 +480,7 @@ impl EventPacketCodec {
                     DecodeFailureKind::UnsupportedOpcode(opcode),
                 ));
             };
-            if opcode == EXTENDED {
+            if opcode == ADD_PLAYER_OPCODE {
                 return Err(decode_error(
                     bytes,
                     start,
@@ -500,8 +489,8 @@ impl EventPacketCodec {
                 ));
             }
             let wire_len = match opcode {
-                FRAME_SYNC | FRAME_INFO => HEADER_LEN,
-                MEGAMISSION_OPCODE => 2 + MEGA_LEN,
+                FRAME_SYNC_OPCODE | FRAMEINFO_EVENT_OPCODE => HEADER_LEN,
+                MEGAMISSION_OPCODE => 2 + MEGAMISSION_OWNED_PAYLOAD_LEN,
                 _ => 1 + usize::from(len),
             };
             if bytes.len() - start < wire_len {
@@ -512,7 +501,9 @@ impl EventPacketCodec {
             // Our encoder emits exactly one leading header. Reject a second
             // one before it can replace the authenticated source's House.
             // This is transport hardening, not a legacy wire requirement.
-            if start != header_offset && matches!(opcode, FRAME_SYNC | FRAME_INFO) {
+            if start != header_offset
+                && matches!(opcode, FRAME_SYNC_OPCODE | FRAMEINFO_EVENT_OPCODE)
+            {
                 return Err(decode_error(
                     bytes,
                     start,
@@ -520,11 +511,11 @@ impl EventPacketCodec {
                     DecodeFailureKind::UnexpectedHeader,
                 ));
             }
-            if opcode == FRAME_SYNC {
+            if opcode == FRAME_SYNC_OPCODE {
                 report.consumed_bytes += HEADER_LEN;
                 continue;
             }
-            if opcode == FRAME_INFO {
+            if opcode == FRAMEINFO_EVENT_OPCODE {
                 house = bytes[start + 2] as i8;
                 if house < 0 {
                     return Err(decode_error(
@@ -534,7 +525,11 @@ impl EventPacketCodec {
                         DecodeFailureKind::InvalidHouse,
                     ));
                 }
-                frame = i32::from_le_bytes(bytes[start + 3..start + 7].try_into().unwrap());
+                // The FRAMEINFO header's wire length covered this stamp.
+                let Some(stamp) = read_i32_le(bytes, start + 3) else {
+                    break;
+                };
+                frame = stamp;
             }
             let mut record = CommandRecord::encode(opcode, i32::from(house), frame, &[])
                 .expect("native table fits an Event payload");
@@ -548,9 +543,9 @@ impl EventPacketCodec {
                         DecodeFailureKind::InvalidRunLength(count),
                     ));
                 }
-                record.payload_mut()[..MEGA_LEN]
-                    .copy_from_slice(&bytes[start + 2..start + 2 + MEGA_LEN]);
-                let slot = record.payload()[6];
+                record.payload_mut()[..MEGAMISSION_OWNED_PAYLOAD_LEN]
+                    .copy_from_slice(&bytes[start + 2..start + 2 + MEGAMISSION_OWNED_PAYLOAD_LEN]);
+                let slot = record.payload()[RUN_SLOT_PAYLOAD_OFFSET];
                 if count != 1 && usize::from(slot) >= CACHE_SLOTS {
                     return Err(decode_error(
                         bytes,
@@ -574,7 +569,7 @@ impl EventPacketCodec {
                     };
                     cached.clone()
                 } else {
-                    let trailing = (usize::from(count) - 1) * 5;
+                    let trailing = (usize::from(count) - 1) * ACTOR_TOKEN_LEN;
                     if bytes.len() - start < wire_len + trailing {
                         return Err(decode_error(
                             bytes,
@@ -584,25 +579,28 @@ impl EventPacketCodec {
                         ));
                     }
                     let mut actors = vec![actor_token(&record)];
-                    actors.extend(
+                    actors.extend_from_slice(
                         bytes[start + wire_len..start + wire_len + trailing]
-                            .chunks_exact(5)
-                            .map(|bytes| <[u8; 5]>::try_from(bytes).unwrap()),
+                            .as_chunks::<ACTOR_TOKEN_LEN>()
+                            .0,
                     );
                     actors
                 };
-                if count > 1 {
-                    self.receive.entry(source_house).or_default()[usize::from(slot)] =
-                        vec![actors[0]];
-                }
+                let mut cache = (count > 1).then(|| {
+                    let cache =
+                        &mut self.receive.entry(source_house).or_default()[usize::from(slot)];
+                    *cache = vec![actors[0]];
+                    cache
+                });
                 for (index, actor) in actors.iter().enumerate() {
-                    if count > 1 && index > 0 {
+                    if index > 0
+                        && let Some(cache) = cache.as_mut()
+                    {
                         //64C057..64C091 updates the next cached actor after
                         //the preceding admission, before attempting this one.
-                        self.receive.get_mut(&source_house).unwrap()[usize::from(slot)]
-                            .push(*actor);
+                        cache.push(*actor);
                     }
-                    record.payload_mut()[..5].copy_from_slice(actor);
+                    record.payload_mut()[..ACTOR_TOKEN_LEN].copy_from_slice(actor);
                     if !admit(record.clone()) {
                         return Err(decode_error(
                             bytes,
@@ -615,17 +613,17 @@ impl EventPacketCodec {
                 }
                 report.consumed_bytes += wire_len
                     + if count > 1 {
-                        (usize::from(count) - 1) * 5
+                        (usize::from(count) - 1) * ACTOR_TOKEN_LEN
                     } else {
                         0
                     };
             } else {
-                let payload_start = if opcode == FRAME_INFO {
+                let payload_start = if opcode == FRAMEINFO_EVENT_OPCODE {
                     start + 7
                 } else {
                     start + 1
                 };
-                let destination = usize::from(opcode == 0x1b) * 6;
+                let destination = usize::from(opcode == RESPONSE_TIME_OPCODE) * 6;
                 record.payload_mut()[destination..destination + usize::from(len)]
                     .copy_from_slice(&bytes[payload_start..payload_start + usize::from(len)]);
                 if !admit(record) {
@@ -645,15 +643,20 @@ impl EventPacketCodec {
 }
 
 fn actor_token(record: &CommandRecord) -> ActorToken {
-    record.payload()[..5]
-        .try_into()
-        .expect("five-byte actor token")
+    record.payload_field::<0, ACTOR_TOKEN_LEN>()
 }
 
 fn same_mission(left: &CommandRecord, right: &CommandRecord) -> bool {
     //64B73F..64B798 compares mission, Target and Destination only. It does
     //not compare the auxiliary token, planning flag or reserved byte.
-    left.payload()[5] == right.payload()[5] && left.payload()[7..17] == right.payload()[7..17]
+    fn compared(record: &CommandRecord) -> (u8, &[u8]) {
+        let payload = record.payload();
+        (
+            payload[MEGAMISSION_ACTION_OFFSET],
+            &payload[MEGAMISSION_SECONDARY_VALUE_OFFSET..=MEGAMISSION_DESTINATION_KIND_OFFSET],
+        )
+    }
+    compared(left) == compared(right)
 }
 
 fn decode_error(

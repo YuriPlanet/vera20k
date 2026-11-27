@@ -137,10 +137,10 @@ fn a_run_on_coordinates_no_cell_token_expresses_keeps_its_records() {
         .map(super::QueuedCommand::from_envelope)
         .collect();
     let before = run.clone();
-    sim.adjust_staged_megamission_destinations(&mut run, &rules, Some(&registry), None);
+    sim.adjust_staged_megamission_destinations(&mut run, &rules, None);
     assert_eq!(run, before);
 
-    sim.apply_due_commands(&records, &rules, 0, Some(&registry), Default::default());
+    sim.apply_due_commands(&records, &rules, 0, &mut Default::default());
     let grid = sim.path_grid.clone();
     for _ in 0..32 {
         sim.advance_tick(&[], Some(&rules), grid.as_deref(), Some(&registry), 67);
@@ -203,7 +203,7 @@ fn a_moving_member_takes_its_probe_ray_from_its_head() {
         .unwrap();
     assert!(loco.ensure_installed_track_state());
     assert!(loco.store_track_head(TrackFamily::Drive, Some(DriveCoord::cell(16, 16, 0))));
-    sim.adjust_staged_megamission_destinations(&mut commands, &rules, Some(&registry), None);
+    sim.adjust_staged_megamission_destinations(&mut commands, &rules, None);
     let destination = |command: &CommandEnvelope| match command.payload {
         Command::Move {
             target_rx,
@@ -259,7 +259,7 @@ fn planning_flags_use_the_production_group_destination_distributor() {
         })
         .collect();
     let mut ordinary = commands.clone();
-    sim.adjust_staged_megamission_destinations(&mut ordinary, &rules, Some(&registry), None);
+    sim.adjust_staged_megamission_destinations(&mut ordinary, &rules, None);
     assert!(
         ordinary
             .iter()
@@ -283,7 +283,7 @@ fn planning_flags_use_the_production_group_destination_distributor() {
     let destination = i32::from_le_bytes(record.payload()[12..16].try_into().unwrap());
     record.payload_mut()[12..16].copy_from_slice(&(destination + 65536 * 1000).to_le_bytes());
     let before = distinct.clone();
-    sim.adjust_staged_megamission_destinations(&mut distinct, &rules, Some(&registry), None);
+    sim.adjust_staged_megamission_destinations(&mut distinct, &rules, None);
     assert_eq!(
         distinct, before,
         "raw destination identity, not projected geometry, owns the run"
@@ -299,15 +299,13 @@ fn planning_flags_use_the_production_group_destination_distributor() {
                 CommandEnvelope::new(owner, 1, Command::PlanningRecord { record })
             })
             .collect();
-        sim.adjust_staged_megamission_destinations(&mut planned, &rules, Some(&registry), None);
+        sim.adjust_staged_megamission_destinations(&mut planned, &rules, None);
         for (actual, expected) in planned.iter().zip(&ordinary) {
             let Command::PlanningRecord { record } = &actual.payload else {
                 unreachable!()
             };
             assert_eq!(record.payload()[22], flag);
-            let mut ordinary_record = record.clone();
-            ordinary_record.payload_mut()[22] = 0;
-            let decoded = MegaMissionRecord::decode(&ordinary_record).unwrap();
+            let (decoded, _) = MegaMissionRecord::decode_planned(record).unwrap();
             let Command::Move {
                 target_rx,
                 target_ry,
@@ -342,8 +340,7 @@ fn planning_flags_use_the_production_group_destination_distributor() {
         &records,
         &rules,
         0,
-        Some(&registry),
-        crate::sim::world::FrameEffects::empty(),
+        &mut crate::sim::world::FrameEffects::empty(),
     );
     let graph = sim.planning_draw_graph(owner, None, None);
     assert_eq!(graph.nodes.len(), 1, "one click is one shared waypoint");
@@ -371,7 +368,7 @@ fn planning_flags_use_the_production_group_destination_distributor() {
                 )
             })
             .collect();
-        sim.apply_due_commands(&batch, &rules, 0, Some(&registry), Default::default());
+        sim.apply_due_commands(&batch, &rules, 0, &mut Default::default());
     }
     let graph = sim.planning_draw_graph(owner, None, None);
     assert_eq!(graph.nodes.len(), 3);
@@ -393,7 +390,7 @@ fn planning_flags_use_the_production_group_destination_distributor() {
     sim.publish_planning_commands();
     let due = sim.take_frame_commands_for_test();
     sim.session.set_binary_frame_for_test(5);
-    sim.apply_due_commands(&due, &rules, 2, Some(&registry), Default::default());
+    sim.apply_due_commands(&due, &rules, 2, &mut Default::default());
     for actor in actors {
         let entity = sim.entities().get(actor).unwrap();
         assert_eq!(

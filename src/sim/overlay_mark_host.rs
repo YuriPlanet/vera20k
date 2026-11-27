@@ -29,6 +29,8 @@ use crate::util::fixed_math::SimFixed;
 /// timeline; optional action owners report and refuse the failed operation.
 #[derive(Debug, thiserror::Error)]
 pub enum RuntimeOverlayError {
+    #[error("post-map initialization has no populated cell overlay grid")]
+    MissingPopulatedGrid,
     #[error(transparent)]
     Tiberium(#[from] crate::rules::overlay_types::TiberiumImageError),
     #[error(transparent)]
@@ -352,7 +354,7 @@ impl OverlayMarkHost for SimulationMarkHost<'_> {
             request,
             ground,
             AnimConstructorInput::Runtime,
-            self.effects,
+            &mut self.effects,
         )?)
     }
 
@@ -486,7 +488,7 @@ impl Simulation {
         request: OverlayCellAnim<'_>,
         ground: OverlayCellAnimGround,
         constructor: AnimConstructorInput,
-        effects: crate::sim::world::FrameEffects<'_>,
+        effects: &mut crate::sim::world::FrameEffects<'_>,
     ) -> Result<OverlayCellAnimHandle, AnimSpawnError> {
         let [x, y] = request.anim_xy;
         let ground_z = ground.z;

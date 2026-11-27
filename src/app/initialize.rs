@@ -29,6 +29,7 @@ pub(super) struct InitializationJob {
     resume: Box<dyn FnOnce() -> Result<InitializationStep>>,
     deferred_window_events: Vec<winit::event::WindowEvent>,
     resume_admitted: bool,
+    /// Set by the browser's GPU request future, which shares it by `Rc`.
     #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
     gpu_ready: Option<std::rc::Rc<std::cell::Cell<bool>>>,
 }
@@ -230,7 +231,7 @@ fn startup_asset_or_error<T>(result: Result<T>, error: &mut Option<String>) -> O
 /// `std::io::Error`'s own message is in the host's language, which need not
 /// be the player's. This walks the `anyhow` chain and states each I/O link
 /// from the language files, as our own context strings already are.
-fn describe_startup_error(err: &anyhow::Error) -> String {
+pub(super) fn describe_startup_error(err: &anyhow::Error) -> String {
     use crate::assets::error::AssetError;
 
     let mut parts: Vec<String> = Vec::new();
@@ -379,9 +380,28 @@ impl App {
                 }
                 Ok(config)
             });
-        let game_config = startup_asset_or_error(game_config, &mut main_menu_shell_error);
+        let mut game_config = startup_asset_or_error(game_config, &mut main_menu_shell_error);
         if let Some(config) = &game_config {
-            crate::map::source::set_downloaded_maps_dir(config.paths.downloaded_maps_dir());
+            let maps_dir = config.paths.downloaded_maps_dir();
+            #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
+            if let Err(error) = crate::map::installed::install_desktop_map(&maps_dir) {
+                log::warn!(
+                    "Could not install {} in {}: {error}",
+                    crate::map::installed::ARCTIC_MAP,
+                    maps_dir.display()
+                );
+            }
+            #[cfg(any(target_os = "macos", target_os = "linux"))]
+            if crate::app::app_bundle::package_path().is_some()
+                && let Err(error) =
+                    crate::assets::ice_pack::install_editor_files(config.paths.settings_dir())
+            {
+                log::warn!("Could not copy the installed terrain files for the map editor: {error}");
+            }
+            crate::map::source::set_downloaded_maps_dir(maps_dir);
+            crate::render::locomotor_visual::set_high_terrain_building_lift(
+                config.graphics.high_terrain_building_lift,
+            );
         }
         let startup_files = StartupFiles {
             config_file: GameConfig::path(),
@@ -399,12 +419,34 @@ impl App {
             options_load.startup_shell_screen,
         );
         let options_profile = options_load.retained_profile;
+        // RA2 mode holds for the whole launch, as the mod does: the `-ra2`
+        // switch or the saved edition, before any archive or CSF opens.
+        if let Some(config) = game_config.as_mut() {
+            config.use_ra2_mode(
+                options_profile.ra2_mode
+                    && !cfg!(all(target_arch = "wasm32", target_os = "unknown")),
+            );
+        }
+        if crate::util::ra2_launch::enabled() {
+            log::info!("RA2 mode for this start");
+        }
         personal_rules.set_terrain_deformation(options_profile.terrain_deformation);
         personal_rules.set_superweapon_limit(i32::from(options_profile.superweapon_limit));
+        personal_rules.set_building_production_queue(options_profile.building_production_queue);
+        personal_rules.set_wasm_budget(options_profile.wasm_budget);
         // The Ares setting holds for the whole launch, as the mod does.
         let ares_setting = spawn_ares.unwrap_or(options_profile.ares);
         if ares_setting != crate::util::ares_launch::AresSetting::Auto {
             log::info!("Ares setting for this start: {}", ares_setting.ini_value());
+        }
+        // The Kratos setting holds for the whole launch too; the rules the
+        // manager selects carry it into every game (`RuleSet::kratos`).
+        let kratos_setting = options_profile.kratos;
+        if kratos_setting != crate::util::kratos_launch::KratosSetting::Auto {
+            log::info!(
+                "Kratos setting for this start: {}",
+                kratos_setting.ini_value()
+            );
         }
         // Before the first CSF load below, which layers this language over it.
         crate::i18n::init(
@@ -425,6 +467,12 @@ impl App {
                 crate::app::mods::begin(&config.paths, mod_switch, capture_dimensions.is_some())
             })
             .unwrap_or_default();
+        let base_ini = game_config
+            .as_ref()
+            .map(|config| config.ini.clone())
+            .unwrap_or_default();
+        let (resources, ares_setting, kratos_setting) =
+            mods.select_resources(&base_ini, ares_setting, kratos_setting);
         // VERARULES.INI is no longer read: a file that still holds settings
         // is named once the main menu is up, in the language just chosen.
         if capture_dimensions.is_none()
@@ -435,6 +483,8 @@ impl App {
             mods.add_rules_file_notice(text);
         }
         crate::map::source::set_mod_dir(mods.dir().map(std::path::Path::to_owned));
+        // HD art can be on only when the mod brings an HD art pack.
+        crate::render::hd_art::refresh_pack_available();
         let (window_width, window_height, window_visible) =
             startup_window_projection(profile_screen, capture_dimensions);
         let window_visible = window_visible && !hidden_spawn_window;
@@ -503,10 +553,16 @@ impl App {
         // them at the edges the player scrolls against, where the system would
         // draw its own cursor over the game's. winit applies this to its own
         // set_fullscreen only, not to full screen from the title-bar button.
+        // The title bar draws no material of its own, so it shows the window's
+        // background, which `mac_title_bar::style` sets near black; the dark
+        // appearance keeps the window buttons and title text light on it.
         #[cfg(target_os = "macos")]
         {
             use winit::platform::macos::WindowAttributesExtMacOS;
-            window_attrs = window_attrs.with_borderless_game(true);
+            window_attrs = window_attrs
+                .with_borderless_game(true)
+                .with_titlebar_transparent(true)
+                .with_theme(Some(winit::window::Theme::Dark));
         }
         // Capture windows stay hidden, so only a visible session shows the icon.
         let window_icon = window_visible
@@ -548,17 +604,60 @@ impl App {
             window.set_visible(true);
         }
         #[cfg(target_os = "macos")]
-        if let Some(icon) = &window_icon {
-            icon.set_dock_icon();
+        {
+            super::mac_title_bar::style(&window);
+            if let Some(icon) = &window_icon {
+                icon.set_dock_icon();
+            }
         }
-        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
         // An invisible spawn test window renders into the same offscreen
         // target as a hidden capture: it has no presentable swapchain.
-        let gpu = GpuContext::new(
-            window.clone(),
-            event_loop.owned_display_handle(),
-            capture || hidden_spawn_window,
-        )?;
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+        let named_api = options_profile.graphics_api.backend();
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+        let first_backends = crate::app::persistence::startup_backend::backends(
+            game_config
+                .as_ref()
+                .map(|config| config.paths.settings_dir()),
+            named_api,
+        );
+        // An API that has no adapter here or cannot start (the one VERA.INI
+        // names, or the start record's DirectX 12 on a Windows without it)
+        // gives way to the next the start record allows, the default set last.
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+        let (gpu, backends) = {
+            let mut backends = first_backends;
+            loop {
+                let error = match GpuContext::new(
+                    window.clone(),
+                    event_loop.owned_display_handle(),
+                    capture || hidden_spawn_window,
+                    backends,
+                    crate::app::persistence::startup_backend::starting,
+                ) {
+                    Ok(gpu) => break (gpu, backends),
+                    Err(error) => error,
+                };
+                let Some(next) = crate::app::persistence::startup_backend::after_failure(backends)
+                else {
+                    return Err(error);
+                };
+                log::warn!(
+                    "No graphics adapter through {backends:?} ({error:#}); starting on {next:?}"
+                );
+                backends = next;
+            }
+        };
+        // The API VERA.INI names gave way to another: the player is told,
+        // with the line to remove, while the start goes on.
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+        if let Some(named) = named_api
+            && backends != first_backends
+            && !capture
+            && !hidden_spawn_window
+        {
+            crate::app::system_dialog::report_graphics_api_refused(named, gpu.graphics_api());
+        }
         // On the processor, building the renderers and reaching the first
         // picture can take minutes, and the window stays blank until then: a
         // player is told why while the start goes on.
@@ -593,7 +692,9 @@ impl App {
                 profile_screen,
                 external_launch,
                 quickplay_allowed,
+                resources,
                 ares_setting,
+                kratos_setting,
             )
         };
         #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
@@ -621,7 +722,9 @@ impl App {
         launch_window_size: ScreenSize,
         external_launch: bool,
         quickplay_allowed: bool,
+        resources: crate::util::mod_definition::ResourceConfig,
         ares_setting: crate::util::ares_launch::AresSetting,
+        kratos_setting: crate::util::kratos_launch::KratosSetting,
     ) -> Result<InitializationStep> {
         let batch_renderer: BatchRenderer = BatchRenderer::new(&gpu);
         let status_screen_fill = batch_renderer.create_texture(&gpu, &[255; 4], 1, 1);
@@ -635,6 +738,11 @@ impl App {
         );
         terrain_draw_renderer.generate_ion_blast_frames(&gpu.device, &gpu.queue);
         terrain_draw_renderer.set_gpu_timer(gpu.timer.clone());
+        if gpu.shared_memory_graphics() {
+            terrain_draw_renderer.set_passes_per_submission(
+                crate::render::terrain_draw::SHARED_MEMORY_PASSES_PER_SUBMISSION,
+            );
+        }
         let combat_light_renderer = crate::render::combat_light::CombatLightRenderer::new(&gpu);
         let performance_overlay =
             crate::app::diagnostics::performance_overlay::PerformanceOverlay::new(
@@ -658,12 +766,18 @@ impl App {
                     mods.dir(),
                     startup_options.media_archive_mode,
                     ares_setting,
+                    &resources.archives,
                 )
-                .and_then(|assets| assets.with_ini_roots(&config.ini))
+                .and_then(|assets| assets.with_resource_config(&resources))
                     .with_context(|| crate::i18n::tr("VERA:CannotLoadArchives")),
                 &mut main_menu_shell_error,
             )
         });
+        // This is the game the launch plays (`util::ares_launch`).
+        if let Some(assets) = &mut startup_asset_manager {
+            assets.set_kratos_setting(kratos_setting);
+            assets.open_for_play();
+        }
         // Native process startup seeds Scenario before the MPModes loader. The
         // Cooperative factory reached by that loader then advances this cursor
         // before the first shell is shown.
@@ -690,18 +804,13 @@ impl App {
                 &mut main_menu_shell_error,
             )
         });
-        let startup_fnt = startup_asset_manager.as_ref().and_then(|assets| {
-            assets.get_ref("GAME.FNT").and_then(|data| {
-                crate::assets::fnt_file::FntFile::from_bytes(data)
-                    .map_err(|err| log::warn!("Failed to parse startup GAME.FNT: {err}"))
-                    .ok()
-            })
-        });
-        let mut bit_font = match startup_fnt.as_ref() {
+        let startup_fnt = startup_asset_manager
+            .as_ref()
+            .and_then(crate::render::shell_ui_style_assets::load_game_font);
+        let bit_font = match startup_fnt.as_ref() {
             Some(fnt) => BitFont::from_fnt(&gpu.device, &gpu.queue, &batch_renderer, fnt),
             None => BitFont::without_fnt(&gpu.device, &gpu.queue, &batch_renderer),
         };
-        bit_font.set_locale(&crate::i18n::selected_language());
         let outcome_banner_art = startup_asset_manager.as_ref().and_then(|assets| {
             crate::app::presentation::outcome_banner::OutcomeBannerArt::build(
                 &gpu,
@@ -729,7 +838,7 @@ impl App {
                     &bit_font,
                     gpu.config.width,
                     gpu.config.height,
-                    options_profile.yr_original_style,
+                    options_profile.plays_yr_original_style(),
                 )
                 .map_err(|err| log::warn!("Could not build retail startup splash: {err:#}"))
                 .ok()
@@ -779,18 +888,15 @@ impl App {
             // Ordinary interactive startup runs with the frame above on
             // screen: the presented swapchain frame stays composited while this
             // thread blocks.
-            let mut process_assets =
-                crate::app::process_assets::ProcessAssets::new_with_ini_config(
-                    startup_options.media_archive_mode,
-                    startup_audio.load_audio_indices,
-                    game_config
-                        .as_ref()
-                        .map(|config| config.ini.clone())
-                        .unwrap_or_default(),
-                )
-                .with_personal_rules(personal_rules)
-                .with_mod_dir(mods.dir().map(Path::to_path_buf))
-                .with_ares_setting(ares_setting);
+            let mut process_assets = crate::app::process_assets::ProcessAssets::new(
+                startup_options.media_archive_mode,
+                startup_audio.load_audio_indices,
+            )
+            .with_resources(resources)
+            .with_mod_name(mods.active.as_ref().map(|active| active.folder.clone()))
+            .with_personal_rules(personal_rules)
+            .with_ares_setting(ares_setting)
+            .with_kratos_setting(kratos_setting);
             process_assets.csf = startup_csf;
             let (startup_rules, startup_rules_projection) = startup_asset_manager
                 .as_ref()
@@ -844,20 +950,24 @@ impl App {
                         log::warn!("Could not list Skirmish scenario records: {err:#}");
                         Vec::new()
                     });
-                let skirmish_scenario_records = if skirmish_scenario_records.is_empty() {
-                    scenario_sources::list_available_maps()
-                .unwrap_or_else(|err| {
-                    log::warn!("Could not list fallback maps: {:#}", err);
-                    Vec::new()
-                })
-                .iter()
-                .enumerate()
-                .map(|(idx, map)| {
-                    crate::map::skirmish_scenarios::SkirmishScenarioRecord::from_map_menu_entry(
-                        idx, map,
-                    )
-                })
-                .collect()
+                let skirmish_scenario_records = if skirmish_scenario_records.is_empty()
+                    && startup_asset_manager
+                        .as_ref()
+                        .is_none_or(|assets| assets.client_install().is_none())
+                {
+                    scenario_sources::list_available_maps(startup_asset_manager.as_ref())
+                        .unwrap_or_else(|err| {
+                            log::warn!("Could not list fallback maps: {err:#}");
+                            Vec::new()
+                        })
+                        .iter()
+                        .enumerate()
+                        .map(|(idx, map)| {
+                            crate::map::skirmish_scenarios::SkirmishScenarioRecord::from_map_menu_entry(
+                                idx, map,
+                            )
+                        })
+                        .collect()
                 } else {
                     skirmish_scenario_records
                 };
@@ -930,8 +1040,8 @@ impl App {
                     .as_ref()
                     .and_then(|config| config.profile.player_name())
                 {
-                    skirmish_shell_state.player_name_edit =
-                        crate::ui::skirmish_shell::PlayerNameEditState::with_name(profile_name);
+                    skirmish_shell_state.player_name =
+                        crate::ui::skirmish_shell::player_name_from_profile(profile_name);
                 }
                 crate::ui::skirmish_shell::repair_teams_for_selected_mode(
                     &mut skirmish_shell_state,
@@ -997,8 +1107,16 @@ impl App {
                         music_player.is_some(),
                         sfx_player.is_some(),
                     );
+                // Player-supplied in-match music: read once at startup from
+                // <settings>/musics/music.ini. Any absence or error keeps the
+                // retail playlist; this is a VERA-only, data-gated extension.
+                let custom_music = game_config
+                    .as_ref()
+                    .and_then(|config| crate::audio::custom_music::load(&config.paths.musics_dir()));
+                let mut startup_theme = crate::audio::theme::ThemeRuntime::default();
+                startup_theme.set_custom_music(custom_music);
                 let mut startup_audio_runtime = crate::app::audio_runtime::AppAudioRuntime {
-                    theme: crate::audio::theme::ThemeRuntime::default(),
+                    theme: startup_theme,
                     service_clock: crate::audio::arbiter::AudioServiceClock::default(),
                     music_player,
                     sfx_player,
@@ -1063,11 +1181,12 @@ impl App {
                 match_presentation: crate::app::presentation::state::MatchPresentationState {
                     sinking_waterlines: Default::default(),
                     voxel_images: Default::default(),
+                    zshape_skips: Default::default(),
                     building_zshape: None,
                     power_bar_anim: crate::ui::sidebar::PowerBarAnimState::new(),
                     sidebar_gadget_state: crate::ui::sidebar::gadget_flash::SidebarGadgetState::new(
                     ),
-                    in_game_gadgets: crate::app::input::gadget_input::InGameGadgets::new(),
+                    in_game_chrome: Default::default(),
                     sidebar_projection: Default::default(),
                     active_sidebar_tab: SidebarTab::default_active_tab(),
                     sidebar_layout_spec,
@@ -1076,6 +1195,11 @@ impl App {
                     player_layout_text: Vec::new(),
                     layout_edit: None,
                     added_parts: Default::default(),
+                    stock_parts: Default::default(),
+                    added_part_huds: Default::default(),
+                    chrome_paint: Default::default(),
+                    sidebar_huds: Default::default(),
+                    minimap_hud: Default::default(),
                     added_grid_scroll: Vec::new(),
                     tooltips: startup_tooltips,
                     tooltip_epoch: Instant::now(),
@@ -1088,17 +1212,15 @@ impl App {
                     in_game_menu: crate::ui::pause_menu::InGameMenuState::default(),
                     modal_latch: true,
                     pause_menu_has_saves: false,
-                    pause_menu_interaction: Default::default(),
+                    dialog_ui: Default::default(),
+                    connection_ui: Default::default(),
                     pause_menu_template: Default::default(),
                     internet_pause: Default::default(),
                     options_page: None,
                     options_page_category: None,
                     abort_secondary: Default::default(),
                     sound_dialog: None,
-                    abort_buttons: Default::default(),
-                    surrender_buttons: Default::default(),
-                    diplomacy: Default::default(),
-                    restate: Default::default(),
+                    diplomacy_page: Default::default(),
                     restate_text: String::new(),
                     saved_game_browser: None,
                     in_game_options: startup_in_game_options,
@@ -1115,17 +1237,25 @@ impl App {
                     placement_range_pulse: Default::default(),
                     superweapon_range_pulse: Default::default(),
                     detail: Default::default(),
+                    ares_fps_counter: false,
                     pixel_fx: Default::default(),
                     hidden_super_anims: Default::default(),
                     super_timer_blinks: Default::default(),
                     super_timer_next_flip_ms: None,
                     super_timer_dock: Default::default(),
+                    super_timer_frame: Default::default(),
+                    super_timer_hud: crate::app::presentation::text_hud::TextHud::named("Timers"),
+                    message_hud: crate::app::presentation::text_hud::TextHud::named("Messages"),
+                    tooltip_hud: Default::default(),
+                    layout_edit_hud: Default::default(),
+                    outcome_banner_huds: Default::default(),
                     minimap: None,
                     radar_anim: None,
                     radar_movies: Default::default(),
                     commander_feedback: Default::default(),
                     chrono_screen: Default::default(),
                     scenario_pause: Default::default(),
+                    narrative_sync: Default::default(),
                     radar_animation_source: None,
                     radar_content_insets: None,
                     has_radar: false,
@@ -1167,6 +1297,10 @@ impl App {
                     house_color_map: HashMap::new(),
                     house_roster: HouseRoster::default(),
                     relation_colors: false,
+                    team_colors: false,
+                    team_by_owner: None,
+                    superweapon_building_timers: false,
+                    convenience_help: false,
                     relation_color_map: None,
                     relation_color_generation: 0,
                     lighting: Default::default(),
@@ -1184,7 +1318,9 @@ impl App {
                     sidebar_chrome: None,
                     outcome_banner_side_art: None,
                     ares_status_texts: None,
+                    status_texts: Default::default(),
                     end_game_banner: None,
+                    outcome_banner_presentation: Default::default(),
                     software_cursor: startup_software_cursor,
                 },
                 match_audio: Default::default(),
@@ -1210,26 +1346,23 @@ impl App {
                 configured_input_delay_ticks: input_delay_ticks,
                 sandbox_full_visibility: false,
                 debug_pause: false,
-                // KD-3: unify the two game-speed sources. `in_game_options.game_speed`
-                // (in the presentation owner) is the single source of truth; seed it
-                // from the skirmish-setup speed (internal 1) and derive
-                // `sim_speed_tps` from the same value, so the Options slider
-                // reflects the current pace (GS1 -> 63 tps).
-                sim_speed_tps: crate::app::types::tps_for_game_speed(
-                    crate::app::types::DEFAULT_YR_SKIRMISH_GAME_SPEED,
-                ),
+                ui_modules: None,
             },
             frontend: crate::app::frontend::state::FrontendState {
                 shell_dialog_background: None,
                 asset_import: Default::default(),
+                status_card: Default::default(),
                 campaign_speed_control: startup_options.campaign_speed_control,
                 external_launch: false,
                 external_launch_error: None,
+                external_rules_mismatch: None,
                 match_result: None,
                 match_result_at: None,
                 match_winners: None,
                 external_progress: Default::default(),
                 network_goodbye_deadline: None,
+                #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+                graphics_lost: None,
                 #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
                 browser_exit_pending: false,
                 screen: GameScreen::default(),
@@ -1244,7 +1377,6 @@ impl App {
                 random_map_retention: RandomMapGenerationRetention::default(),
                 skirmish_preview_texture: None,
                 preview_zoom: None,
-                loading_screen_atlas: None,
                 loading_progress:
                     crate::app::loading::pump::LoadingProgressState::standard_skirmish(),
                 frontend_rules: startup_rules,
@@ -1252,6 +1384,7 @@ impl App {
                 map_library: Default::default(),
                 login_info: Default::default(),
                 map_pictures: Default::default(),
+                language_files: Default::default(),
                 mods,
                 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
                 updater: Default::default(),
@@ -1266,13 +1399,12 @@ impl App {
                 main_menu_shell_chrome,
                 main_menu_movie: None,
                 main_menu_movie_identity: None,
-                main_menu_movie_last_step: Instant::now(),
+                main_menu_movie_clock: Default::default(),
                 main_menu_shell_error,
                 startup_files,
                 status_screen_drawn: false,
                 shell_first_paint_slide: None,
                 shell_slide_active_shell: None,
-                shell_slide_generation: 0,
                 shell_monitor: Default::default(),
                 shell_page_title: crate::ui::shell::static_reveal::PresentedKind1Static::new(
                     crate::ui::shell::static_reveal::HEADING_KIND1,
@@ -1280,6 +1412,8 @@ impl App {
                 shell_status_line: crate::ui::shell::static_reveal::PresentedKind1Static::new(
                     crate::ui::shell::static_reveal::STATUS_LINE_KIND1,
                 ),
+                panel_statics: Default::default(),
+                loading_box: Default::default(),
                 shell_exit: None,
                 quit_cascade: None,
                 startup_splash,
@@ -1300,26 +1434,18 @@ impl App {
                 wol_account: Default::default(),
                 wol_test_credentials: Vec::new(),
                 native_shell_ui: false,
+                wol_capture_provider: None,
                 lan: None,
                 multiplayer_setup: None,
                 room_limits: Default::default(),
                 wol_room_name: None,
                 wol_room_unranked: false,
-                wol_room_watching: crate::ui::wol_lobby::RoomWatching::Delayed,
-                lan_rematch: None,
+                wol_room_watching: Default::default(),
                 network_setup_protocol: None,
-                wol_welcome_art: None,
-                wol_login_art: None,
-                wol_lobby_art: None,
-                wol_options_art: None,
-                wol_auto_login_art: None,
-                wol_my_info_art: None,
-                wol_buddy_art: None,
-                wol_quick_match_art: None,
+                wol_art: Vec::new(),
                 wol_buddies: Default::default(),
                 wol_test_buddies: crate::app::shell_wol::test_service_buddies(),
                 wol_test_guest: Default::default(),
-                wol_sound_options_art: None,
                 wol_lobby_globals: Default::default(),
                 wol_preferences: Default::default(),
                 score_page: None,
@@ -1338,6 +1464,7 @@ impl App {
                 screen_presentation:
                     crate::render::screen_presentation::ScreenPresentationPass::new(),
                 terrain_draw_renderer,
+                pass_log: Default::default(),
                 instance_pool: crate::render::batch::InstanceBufferPool::new(),
                 depth_view,
                 shell_surface_presenter,
@@ -1353,6 +1480,12 @@ impl App {
                 vxl_pose_frame_cache: std::cell::RefCell::new(Default::default()),
                 retail_screenshot_frame_cache: Default::default(),
                 terrain_picture: Default::default(),
+                native_z_seed: Default::default(),
+                hd_art: None,
+                hd_terrain: None,
+                hd_voxel: None,
+                hd_art_seen: false,
+                hd_art_zoom_pending: true,
             },
             process_assets,
             audio: startup_audio_runtime,
@@ -1393,10 +1526,18 @@ impl App {
                         );
                     }
                 }
-                Self::sync_zoom_pass(&mut state);
-                Self::sync_present_mode(&mut state);
+                Self::sync_zoom_pass(
+                    &state.platform,
+                    &mut state.renderer,
+                    &state.persistence.options_profile,
+                );
+                Self::sync_present_mode(
+                    &state.platform,
+                    &mut state.renderer.gpu,
+                    &state.persistence.options_profile,
+                );
                 #[cfg(feature = "telemetry-dashboard")]
-                attach_dashboard(&mut state);
+                attach_dashboard(&mut state.diag);
 
                 // The developer shortcut carries an authored-map sandbox through
                 // the unverified legacy Battle loader. It has no artificial AI
@@ -1419,7 +1560,11 @@ impl App {
                     crate::app::loading::pump::begin_loading(&mut state, request);
                 }
 
-                crate::app::mods::finish_start(&mut state, external_launch);
+                crate::app::mods::finish_start(
+                    &mut state.frontend,
+                    &state.process_assets,
+                    external_launch,
+                );
                 Ok(InitializationStep::Ready(Box::new(state), Vec::new()))
             })
         })
@@ -1443,12 +1588,12 @@ pub(crate) fn quickplay_launch_session(
         log::warn!("RA2_QUICKPLAY needs the MPModesMD.ini Battle row; not launching");
         return None;
     };
-    Some(SkirmishLaunchSession {
-        mode: SkirmishLaunchMode::from_game_mode(battle),
-        selected_map_file: Some(selected_map),
+    Some(SkirmishLaunchSession::from_rows(
+        SkirmishLaunchMode::from_game_mode(battle),
+        Some(selected_map),
         // The local House takes the player name, so naming it after the
         // country lets a fixture map's `Americans`-owned objects spawn.
-        humans: vec![crate::skirmish_launch::SkirmishHumanSlot {
+        vec![crate::skirmish_launch::SkirmishHumanSlot {
             raw_slot_index: Some(0),
             name: "Americans".to_string(),
             slot: SkirmishLocalSlot {
@@ -1463,13 +1608,11 @@ pub(crate) fn quickplay_launch_session(
             },
             role: crate::skirmish_launch::LaunchHumanRole::from_observer(false),
         }],
-        local_player_index: 0,
+        0,
         // An empty AI house is still a contender: its automatic defeat would
         // award victory to the fixture owner and end the comparison session.
-        ai_player_count: 0,
-        opponents: Vec::new(),
-        pre_fill_house_roster: crate::skirmish_launch::PreFillHouseRoster::from_compact_skirmish(0),
-        options: SkirmishLaunchOptions {
+        Vec::new(),
+        SkirmishLaunchOptions {
             // VERA developer shortcut: fixture maps carry their own objects.
             // Both native starting-force gates must be off: UnitCount=0 alone
             // still adds an MCV at each start and reveals an extra radar area.
@@ -1477,7 +1620,7 @@ pub(crate) fn quickplay_launch_session(
             unit_count: 0,
             ..SkirmishLaunchOptions::default()
         },
-    })
+    ))
 }
 
 #[cfg(all(test, tests_app))]
@@ -1565,7 +1708,7 @@ mod tests {
         assert_eq!(session.required_start_count(), 1);
         assert!(
             session
-                .pre_fill_house_roster
+                .pre_fill_house_roster()
                 .ai_slots()
                 .iter()
                 .all(|slot| !slot.valid)
@@ -1601,6 +1744,7 @@ mod tests {
                 // Its empty second contender must still exercise ordinary
                 // automatic defeat/victory, rather than globally disabling it.
                 session.opponents.push(SkirmishAiSlot {
+                    driver_policy: None,
                     raw_slot_index: 1,
                     country: LaunchCountry::Russia,
                     country_random: false,
@@ -1609,9 +1753,10 @@ mod tests {
                     start_position: LaunchStartPosition::Position(1),
                     team: LaunchTeam::None,
                     difficulty: AiDifficulty::Easy,
-                    driver_policy: None,
                 });
-                session.pre_fill_house_roster = PreFillHouseRoster::from_compact_skirmish(1);
+                session.set_recorded_house_roster_for_test(
+                    PreFillHouseRoster::from_compact_skirmish(1),
+                );
             }
             let descriptor = MatchLaunchDescriptor::from_resolved(session).unwrap();
             let mut loaded =
@@ -1653,7 +1798,7 @@ mod tests {
                         &[],
                         crate::app::types::SIM_TICK_MS,
                         TickLane::Ordinary,
-                        crate::sim::world::FrameEffects::default(),
+                        &mut crate::sim::world::FrameEffects::default(),
                     )
                     .expect("fixture frame must complete");
                 victory_edges += output.sound_events.iter().filter(|event| matches!(event,
@@ -1716,7 +1861,7 @@ mod tests {
                         &[exit],
                         crate::app::types::SIM_TICK_MS,
                         TickLane::Ordinary,
-                        crate::sim::world::FrameEffects::default(),
+                        &mut crate::sim::world::FrameEffects::default(),
                     )
                     .expect("fixture frame must complete");
                 assert_eq!(output.tick.executed_commands, 1);
@@ -1868,8 +2013,8 @@ mod tests {
 
 /// The credential is printed only to the local terminal, outside captured logs.
 #[cfg(feature = "telemetry-dashboard")]
-fn attach_dashboard(state: &mut crate::app::AppState) {
-    state.diag.telemetry_server = match crate::app::telemetry_server::start_from_env() {
+fn attach_dashboard(diag: &mut crate::app::diagnostics::state::DiagnosticsState) {
+    diag.telemetry_server = match crate::app::telemetry_server::start_from_env() {
         Some(Ok(server)) => {
             crate::util::logging::enable_telemetry_capture();
             #[cfg(feature = "debug-tools")]

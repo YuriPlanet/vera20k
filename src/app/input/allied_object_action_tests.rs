@@ -66,9 +66,9 @@ fn object_pair(rules: &RuleSet, actor_kind: &str, relation: &str) -> (Simulation
         )
         .unwrap();
     sim.fog_mut_for_test().reveal_all_for_owner(owner);
-    sim.entities_mut_for_test()
-        .get_mut(actor)
+    sim.entity_mut_for_test(actor)
         .unwrap()
+        .seldom
         .selection
         .set_selected_for_test(true);
     (sim, actor, target)
@@ -206,7 +206,6 @@ fn no_manual_fire_object_click(ares_way: bool) {
                 crate::app::input::commands::ordinary_cell_move_goal(
                     &sim,
                     &battle.rules,
-                    Some(&overlays),
                     owner,
                     actor,
                     (12, 10),
@@ -294,6 +293,7 @@ fn allied_object_ivan_cursor_consumes_the_canonical_grant() {
             crate::app::input::context_order::OrderModifier::Normal,
             false,
             false,
+            &mut Default::default(),
         ),
         native_ivan_bomb_feedback("attack_friendlies_only_ivan"),
     );
@@ -305,7 +305,8 @@ fn allied_object_ivan_click_consumes_the_canonical_grant() {
         return;
     };
     assert_eq!(
-        friendly_bomb_ivans(&sim, &battle.rules, &[actor], 1, target, None).contains(&actor),
+        friendly_ivans(&sim, &battle.rules, &[actor], 1, target, false, None)
+            .contains(&(actor, FriendlyIvanAction::Bomb)),
         native_ivan_bomb_feedback("attack_friendlies_only_ivan")
             == crate::app::types::CursorFeedbackKind::IvanBomb,
     );
@@ -462,7 +463,7 @@ fn allied_object_shared_grants_match_original_without_forking_weapon_selection()
         let (mut sim, actor, target) = object_pair(&battle.rules, "MTNK", "ally");
         if input["infested"] == true {
             crate::sim::arena_fixture::install_action_infestation(
-                sim.entities_mut_for_test().get_mut(target).unwrap(),
+                sim.entity_mut_for_test(target).unwrap(),
                 actor,
             );
         }
@@ -502,6 +503,7 @@ fn allied_object_cursor_does_not_offer_selection_for_another_allied_house() {
         crate::app::input::context_order::OrderModifier::Normal,
         false,
         false,
+        &mut Default::default(),
     );
     let corpus = crate::test_fixture::json("tools/spatial_oracle/allied_object_action.json");
     let native = corpus["action_controls"]
@@ -609,6 +611,7 @@ fn allied_object_infantry_and_building_owners_answer_their_own_tails() {
             OrderModifier::Normal,
             false,
             false,
+            &mut Default::default(),
         );
         assert_eq!(
             crate::app::input::cursor::cursor_id_for_feedback(feedback),
@@ -665,9 +668,9 @@ fn a_building_over_another_selected_building_does_nothing() {
     let other = sim
         .spawn_object("GAPILL", "Americans", 10, 14, 0, &battle.rules)
         .unwrap();
-    sim.entities_mut_for_test()
-        .get_mut(other)
+    sim.entity_mut_for_test(other)
         .unwrap()
+        .seldom
         .selection
         .set_selected_for_test(true);
     let selected = [pillbox, other];
@@ -687,6 +690,7 @@ fn a_building_over_another_selected_building_does_nothing() {
         OrderModifier::Normal,
         false,
         false,
+        &mut Default::default(),
     );
     assert_eq!(
         crate::app::input::cursor::cursor_id_for_feedback(feedback),
@@ -818,10 +822,7 @@ fn a_ground_owner_moves_onto_an_ally_worn_as_a_tree() {
         let tree = sim.intern("TREE01");
         let mut disguise = crate::sim::cloak_disguise::DisguiseRuntime::new(0);
         disguise.acquire(0, Some(tree), None);
-        sim.entities_mut_for_test()
-            .get_mut(target)
-            .unwrap()
-            .disguise = Some(disguise);
+        sim.entity_mut_for_test(target).unwrap().seldom.disguise = Some(disguise);
         assert_eq!(
             attack_action(
                 &sim,
@@ -844,6 +845,7 @@ fn a_ground_owner_moves_onto_an_ally_worn_as_a_tree() {
             OrderModifier::Normal,
             false,
             false,
+            &mut Default::default(),
         );
         assert_eq!(
             crate::app::input::cursor::cursor_id_for_feedback(feedback),
@@ -983,8 +985,7 @@ fn a_receiver_the_player_cannot_control_answers_its_attack_rung_under_alt() {
     let bunkered = sim
         .spawn_object("MTNK", "Americans", 10, 12, 0, &battle.rules)
         .unwrap();
-    sim.entities_mut_for_test()
-        .get_mut(bunkered)
+    sim.entity_mut_for_test(bunkered)
         .unwrap()
         .bunker
         .set_bunker_link_for_test(crate::sim::docking::bunker_link::BunkerLink::Installed(3));
@@ -1035,6 +1036,7 @@ fn a_receiver_the_player_cannot_control_answers_its_attack_rung_under_alt() {
             modifier,
             true,
             false,
+            &mut Default::default(),
         )
     };
     assert_ne!(
@@ -1082,9 +1084,6 @@ fn a_terrain_fire_weapon_attacks_an_enemy_worn_as_a_tree() {
     let tree = sim.intern("TREE01");
     let mut disguise = crate::sim::cloak_disguise::DisguiseRuntime::new(0);
     disguise.acquire(0, Some(tree), None);
-    sim.entities_mut_for_test()
-        .get_mut(target)
-        .unwrap()
-        .disguise = Some(disguise);
+    sim.entity_mut_for_test(target).unwrap().seldom.disguise = Some(disguise);
     assert_eq!(action(&sim), AttackAction::Attack);
 }

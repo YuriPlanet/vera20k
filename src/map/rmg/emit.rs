@@ -16,18 +16,12 @@ use crate::rules::ini_parser::IniFile;
 use super::grid::RmgGrid;
 use super::options::RmgOptions;
 use super::tiles::TILE_UNASSIGNED;
+use super::{LOCAL_LEFT, LOCAL_TOP, MapGeometry, padded_size};
 
 /// Placed-at-full-health value for emitted neutral structures (256 = 100%).
 const NEUTRAL_HEALTH: u16 = 256;
 /// House the generator assigns to neutral tech buildings.
 const NEUTRAL_OWNER: &str = "Neutral";
-
-/// The full map is the generated interior plus a fixed margin, and the
-/// playable area is inset from the top-left corner.
-const SIZE_PAD_X: u32 = 4;
-const SIZE_PAD_Y: u32 = 12;
-const LOCAL_LEFT: u32 = 2;
-const LOCAL_TOP: u32 = 5;
 
 /// Map the theater option to the engine's theater name.
 ///
@@ -43,18 +37,22 @@ pub fn theater_name(theater: i32) -> &'static str {
     }
 }
 
-/// A `MapFile` with header and empty sections, ready for phases to fill.
-///
-/// `gen_w`/`gen_h` are the generated interior dimensions.
+/// Project a generation's own interior into the header used by previews and the finished map.
+pub fn empty_map_from_geometry(options: &RmgOptions, geometry: MapGeometry) -> MapFile {
+    empty_map_file(options, geometry.gen_w as u32, geometry.gen_h as u32)
+}
+
+/// A `MapFile` with the given interior dimensions and empty sections.
 pub fn empty_map_file(options: &RmgOptions, gen_w: u32, gen_h: u32) -> MapFile {
+    let (width, height) = padded_size(gen_w, gen_h);
     let header = MapHeader {
         theater: theater_name(options.theater).to_string(),
         fill: "Clear".to_string(),
         level: 0,
-        width: gen_w + SIZE_PAD_X,
-        height: gen_h + SIZE_PAD_Y,
-        local_left: LOCAL_LEFT,
-        local_top: LOCAL_TOP,
+        width,
+        height,
+        local_left: u32::from(LOCAL_LEFT),
+        local_top: u32::from(LOCAL_TOP),
         local_width: gen_w,
         local_height: gen_h,
     };
@@ -104,8 +102,7 @@ pub fn populate(
 ) {
     let mut overlay_cells: Vec<(u16, u16, u8)> = Vec::new();
 
-    for (x, y) in grid.native_cells().collect::<Vec<_>>() {
-        let cell = grid.get(x, y).expect("native cell is in-band");
+    for ((x, y), cell) in grid.cells_in_native_order() {
         let (rx, ry) = (x as u16, y as u16);
 
         let tile_index = if cell.tile == TILE_UNASSIGNED {
@@ -315,6 +312,7 @@ mod tests {
         assert_eq!(building.type_id, "CAHOSP");
         assert_eq!(building.owner, "Neutral");
         assert_eq!(building.health, 256);
+        assert!(building.structure_online);
         assert_eq!(building.category, EntityCategory::Structure);
         assert_eq!((building.cell_x, building.cell_y), (25, 25));
 
@@ -339,12 +337,16 @@ mod tests {
 
     /// Architecture invariant: the simulation must never depend on the
     /// generator. Generation is pre-play map construction.
+    ///
+    /// A test module is exempt: `world/world_hash.rs` builds a map through the
+    /// generator so the MapGen cursor can be named among the hash differences,
+    /// and a test is not a code path the game runs.
     #[test]
     fn sim_does_not_reference_the_generator() {
         let mut offenders = Vec::new();
         for path in rust_files(&crate::test_fixture::checkout_root().join("src/sim")) {
             let text = std::fs::read_to_string(&path).unwrap_or_default();
-            if text.contains("map::rmg") {
+            if names_generator_outside_tests(&text) {
                 offenders.push(path.display().to_string());
             }
         }
@@ -352,6 +354,57 @@ mod tests {
             offenders.is_empty(),
             "sim/ must not depend on the map generator: {offenders:?}"
         );
+    }
+
+    /// Whether shipped code names the generator. Test modules sit at the
+    /// file's top level and are named `tests` or `…_tests`, so a top-level
+    /// `mod` opens one and a top-level `}` closes it; an indented `mod` is a
+    /// module inside a function and changes nothing.
+    fn names_generator_outside_tests(text: &str) -> bool {
+        let mut in_tests = false;
+        for line in text.lines() {
+            if !line.starts_with(' ') && !line.starts_with('\t') {
+                let body = line.trim_end();
+                if body.starts_with("mod ") || body.starts_with("pub mod ") {
+                    // `mod tests;` declares another file, so this one holds no
+                    // body to close and keeps the state it had.
+                    if !body.ends_with(';') {
+                        in_tests = is_test_module(body);
+                    }
+                } else if body == "}" || body == "};" {
+                    in_tests = false;
+                }
+            }
+            if !in_tests && line.contains("map::rmg") {
+                return true;
+            }
+        }
+        false
+    }
+
+    fn is_test_module(declaration: &str) -> bool {
+        let name = declaration
+            .trim_start_matches("pub ")
+            .trim_start_matches("mod ")
+            .split(|c: char| !c.is_alphanumeric() && c != '_')
+            .next()
+            .unwrap_or_default();
+        name == "tests" || name.ends_with("_tests")
+    }
+
+    #[test]
+    fn the_generator_check_reads_only_shipped_code() {
+        assert!(names_generator_outside_tests(
+            "fn hash() { let _ = crate::map::rmg::RmgOptions::default(); }\n"
+        ));
+        assert!(!names_generator_outside_tests(
+            "#[cfg(all(test, tests_world))]\nmod world_tests {\n    \
+             fn map() { crate::map::rmg::emit::empty_map_file(); }\n}\n"
+        ));
+        assert!(names_generator_outside_tests(
+            "#[cfg(test)]\nmod tests {\n    fn map() {}\n}\n\
+             fn ship() { let _ = crate::map::rmg::X; }\n"
+        ));
     }
 
     fn rust_files(root: &std::path::Path) -> Vec<std::path::PathBuf> {

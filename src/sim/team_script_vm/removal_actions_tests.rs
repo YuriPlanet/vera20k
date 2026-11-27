@@ -4,6 +4,7 @@
 
 use super::*;
 use crate::rules::ini_parser::IniFile;
+use crate::rules::rule_policy::RulePolicy;
 use crate::rules::team_ai_ini::TeamAiDefinitionSource;
 use crate::sim::house_state::HouseState;
 use crate::sim::team_script_vm::TeamScriptDefinition;
@@ -40,7 +41,7 @@ fn self_destruct_scene() -> Option<(Simulation, RuleSet, InternedId)> {
     let registry = crate::rules::team_ai_ini::TeamAiIniRegistry::from_sources(
         &IniFile::from_str(""),
         &map,
-        false,
+        RulePolicy::stock_campaign(),
     );
     sim.install_team_ai_registry(&registry, &rules);
     let owner = sim.interner.intern("Russians");
@@ -69,7 +70,7 @@ fn script31_uses_fatal_damage_and_finishes_the_death_weapon_chain() {
         .team_script_vm
         .create_team(owner, script, members.clone(), 0);
 
-    sim.team_step_script(team, &rules, None, Default::default());
+    sim.team_step_script(team, &rules, None, &mut Default::default());
 
     for member in members {
         assert!(
@@ -120,7 +121,7 @@ fn script31_skips_unmarked_and_limbo_members_and_still_advances() {
             0,
             0,
             &rules,
-            Default::default(),
+            &mut Default::default(),
         )
         .unwrap();
     let script = sim.interner.get("SUICIDE-SCRIPT").unwrap();
@@ -128,7 +129,7 @@ fn script31_skips_unmarked_and_limbo_members_and_still_advances() {
         .team_script_vm
         .create_team(owner, script, vec![unmarked, live, limbo], 0);
 
-    sim.team_step_script(team, &rules, None, Default::default());
+    sim.team_step_script(team, &rules, None, &mut Default::default());
 
     assert!(
         sim.substrate
@@ -201,7 +202,7 @@ fn script37_caches_native_next_and_uses_ordered_limbo_uninit_before_drain() {
             .create_team(owner, script, members.clone(), 0);
         sim.clear_lifecycle_test_events_for_test();
         sim.sound_events.clear_for_test();
-        sim.team_step_script(team, &rules, None, Default::default());
+        sim.team_step_script(team, &rules, None, &mut Default::default());
         let state = sim.team_script_vm.team(team).unwrap();
         assert_eq!(state.advance_pending(), row["advance"] == 1);
         assert_eq!(
@@ -266,7 +267,7 @@ fn script37_caches_native_next_and_uses_ordered_limbo_uninit_before_drain() {
             ).count(), 1, "FootLimbo detaches its sound once; UnInit's repeated Limbo does not");
         }
         assert_eq!(sim.houses[&owner].stats().units_lost(), 0);
-        sim.process_pending_delete_with(&rules, None, Default::default(), 1, true);
+        sim.process_pending_delete_with(&rules, &mut Default::default(), 1, true);
         assert!(
             members
                 .iter()
@@ -327,7 +328,7 @@ fn first_unit_limbo_uses_shared_stop_driver_before_hiding_the_actor() {
             .track_destination(TrackFamily::Drive),
         Some(target)
     );
-    sim.techno_limbo_with_context(member, UninitContext::with_rules(&rules));
+    sim.techno_limbo_with_context(member, UninitContext::new(&rules));
     let entity = sim.substrate.entities.get(member).unwrap();
     assert!(entity.lifecycle.in_limbo());
     assert_eq!(
@@ -363,9 +364,12 @@ fn retail_all01_return_programs_bind_script37_and_their_locomotor_types() {
         )
         .unwrap()
         .into_parts();
-    let registry =
-        crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(&assets, &map.ini, false)
-            .unwrap();
+    let registry = crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(
+        &assets,
+        &map.ini,
+        RulePolicy::stock_campaign(),
+    )
+    .unwrap();
     for id in ["0B7D63DC", "0AB4A90C", "0B1646CC", "0962056C"] {
         let script = registry
             .scripts

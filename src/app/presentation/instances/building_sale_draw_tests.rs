@@ -101,8 +101,7 @@ fn retail_gate_make_body_uses_native_gate_and_selling_reflections() {
     let gate = sim
         .spawn_object("GAGATE_A", "Americans", 10, 10, 0, &rules)
         .expect("retail gate placement");
-    sim.entities_mut_for_test()
-        .get_mut(gate)
+    sim.entity_mut_for_test(gate)
         .unwrap()
         .install_building_up(BuildingUp::completing_in_ticks(control[1], 0), 0);
 
@@ -154,8 +153,7 @@ fn retail_gate_make_body_uses_native_gate_and_selling_reflections() {
 
     runtime
         .simulation
-        .entities_mut_for_test()
-        .get_mut(gate)
+        .entity_mut_for_test(gate)
         .unwrap()
         .finish_building_construction_for_test();
     let owner = runtime.simulation.entities().get(gate).unwrap().owner();
@@ -201,8 +199,12 @@ fn gate_piece(
     use std::cell::RefCell;
     let lighting = CellLightGrid::new();
     let voxel_images = RefCell::new(VoxelImageCache::default());
-    let presented =
-        crate::app::presentation::frame::PresentationFrame::capture(runtime, &Default::default());
+    let zshape_skips = std::cell::RefCell::default();
+    let presented = crate::app::presentation::frame::PresentationFrame::capture(
+        runtime,
+        &Default::default(),
+        false,
+    );
     let input = ShpInputs {
         runtime,
         frame: &presented,
@@ -210,6 +212,7 @@ fn gate_piece(
         overlay_atlas: None,
         unit_atlas: None,
         voxel_images: &voxel_images,
+        zshape_skips: &zshape_skips,
         depth_tested_images: None,
         camera: [-1000.0, -1000.0],
         render_size: [5000, 5000],
@@ -224,11 +227,12 @@ fn gate_piece(
         ignore_visibility: true,
         lighting: &lighting,
         house_colors: colors,
-        building_zshape: true,
+        building_zshape: Some((0, 0)),
     };
-    let order = NativeDisplayOrder::from_display(runtime.simulation.display_layers());
-    let mut planned = Vec::new();
+    let order = NativeDisplayOrder::from_world(&runtime.simulation, None);
+    let mut planned = PlannedObjects::default();
     build_shp_instances_from_inputs(&input, &mut planned, &order);
+    let planned = planned.into_owned();
     let piece = planned
         .iter()
         .find(|planned| planned.parent.id == gate)

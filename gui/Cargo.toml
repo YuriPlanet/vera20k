@@ -1,0 +1,13 @@
+[package]
+name = "vera20k-gui"
+version = "0.3.8"
+edition = "2024"
+description = "Retained-mode, game-agnostic GUI library (docs/gui-library-api.md)"
+publish = false
+
+# No dependency on the engine crates: the host hands in images, text and input.
+[dependencies]
+web-time = "1"
+
+[lints]
+workspace = true

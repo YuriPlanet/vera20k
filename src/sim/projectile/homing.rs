@@ -9,7 +9,9 @@ use super::{
     ProjectileVelocity as Velocity,
 };
 use crate::util::direction_tables::{facing16_from_angle, round_facing16_to_8};
-use crate::util::native_x87::{NativeF64Bits as D, X87Chop53 as X, X87Ordering};
+use crate::util::native_x87::{
+    MaskedX87Chop53 as M, MaskedX87Value, NativeF64Bits as D, X87Chop53 as X, X87Ordering,
+};
 use crate::util::retail_trig::TrigTable;
 
 fn advance(p: Coord, v: Velocity, scale: i32) -> Coord {
@@ -84,6 +86,8 @@ pub(super) fn ramp(mut v: Velocity, g: &mut ProjectileGuidance, frame: i32) -> V
 
 /// 466BC5..466CF9: signed wrap/remainder, table sine, two separate ftol
 /// conversions (the second only inside 256 leptons), then the low byte.
+/// An infinite `MissileROTVar` (ReadDouble past binary32) plays as native:
+/// the masked sum is infinite or NaN and `Math::ftol` (`0x007C5F00`) gives 0.
 pub(super) fn turn_word(
     g: &ProjectileGuidance,
     identity: i32,
@@ -97,12 +101,15 @@ pub(super) fn turn_word(
         X::mul(X::load_i32(phase), d(D::from_bits(0x3fb1_1111_1111_1111))),
         d(D::from_bits(0x4019_21fb_5444_2d18)),
     ));
-    let variation = d(g.missile_rot_var);
-    let varied = X::add(
-        X::mul(trig.sin_from_table(d(angle)), variation),
-        X::add(variation, X::load_i32(1)),
+    let variation = M::load_f64(g.missile_rot_var);
+    let varied = M::add(
+        M::mul(
+            MaskedX87Value::from(trig.sin_from_table(d(angle))),
+            variation,
+        ),
+        M::add(variation, M::load_i32(1)),
     );
-    let mut rate = int(X::mul(varied, X::load_i32(g.rot)));
+    let mut rate = M::ftol_i32_low_masked(M::mul(varied, M::load_i32(g.rot)));
     if distance(delta(old, target), [1, 2, 0]) < 256 {
         rate = int(X::mul(
             X::load_i32(rate),
@@ -290,34 +297,32 @@ pub(super) fn step(
         target_is_aircraft,
         |coord| {
             let floor = super::projectile_ground_z(terrain, shared_cell_dummy, coord);
-            floor.wrapping_add(
-                if super::structural_bridge_at(terrain, shared_cell_dummy, coord) {
-                    crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS
-                } else {
-                    0
-                },
-            )
+            let cell = super::projectile_cell_at(terrain, shared_cell_dummy, coord);
+            if super::is_structural_bridge_cell(&cell) {
+                super::fixed_deck_z_for_cell_ref(terrain, &cell).unwrap_or_else(|| {
+                    crate::sim::movement::ground_pose::z_at_height(floor, 0, true)
+                })
+            } else {
+                floor
+            }
         },
         trig,
     );
     let mut candidate = tracked.candidate;
     // 466D44 resolves candidate Cell before copying the steered velocity.
-    let candidate_structural = super::structural_bridge_at(terrain, shared_cell_dummy, candidate);
+    let candidate_cell = super::projectile_cell_at(terrain, shared_cell_dummy, candidate);
+    let candidate_structural = super::is_structural_bridge_cell(&candidate_cell);
     projectile.velocity = tracked.velocity;
     projectile.speed_leptons_per_frame = super::projectile_velocity_magnitude(projectile.velocity)
         .clamp(0.0, f64::from(u16::MAX)) as u16;
     let old_height = previous_position
         .z
-        .wrapping_sub(super::projectile_ground_z(
+        .wrapping_sub(super::projectile_surface_z(
             terrain,
             shared_cell_dummy,
             previous_position,
-        ))
-        .wrapping_sub(if projectile.on_bridge {
-            crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS
-        } else {
-            0
-        });
+            projectile.on_bridge,
+        ));
     let (admit, snap) = super::homing_impact_admission(
         tracked.reached_distance,
         projectile.velocity,
@@ -352,17 +357,24 @@ pub(super) fn step(
     }
     // Guided bridge contact 467032 probes Cell before floor and uses
     // strict endpoint inequalities, unlike Vertical's contact helper.
-    if !impact_flag
-        && (candidate_structural
-            || super::structural_bridge_at(terrain, shared_cell_dummy, previous_position))
-    {
-        let deck = super::projectile_ground_z(terrain, shared_cell_dummy, candidate)
-            .wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS);
-        if (previous_position.z < deck && candidate.z > deck)
-            || (previous_position.z > deck && candidate.z < deck)
-        {
-            candidate.z = deck;
-            impact_flag = true;
+    if !impact_flag {
+        let bridge = if candidate_structural {
+            Some(candidate_cell)
+        } else {
+            let previous_cell =
+                super::projectile_cell_at(terrain, shared_cell_dummy, previous_position);
+            super::is_structural_bridge_cell(&previous_cell).then_some(previous_cell)
+        };
+        if let Some(bridge) = bridge {
+            let floor = super::projectile_ground_z(terrain, shared_cell_dummy, candidate);
+            let deck = super::fixed_deck_z_for_cell_ref(terrain, &bridge)
+                .unwrap_or_else(|| crate::sim::movement::ground_pose::z_at_height(floor, 0, true));
+            if (previous_position.z < deck && candidate.z > deck)
+                || (previous_position.z > deck && candidate.z < deck)
+            {
+                candidate.z = deck;
+                impact_flag = true;
+            }
         }
     }
     projectile.guidance = Some(guidance);
@@ -849,6 +861,32 @@ mod tests {
                 bullet.guidance.unwrap().closing_accumulator_bits,
                 row["closing_accum"].as_f64().unwrap().to_bits(),
                 "{name} complete closing"
+            );
+        }
+    }
+
+    #[test]
+    fn an_infinite_rot_variation_turns_as_native_instead_of_stopping() {
+        let g = ProjectileGuidance {
+            rot: 60,
+            missile_rot_var: D::from_bits(f64::INFINITY.to_bits()),
+            course_lock_duration: 0,
+            course_frames: 0,
+            course_locked: false,
+            very_high: false,
+            max_speed: 102,
+            acceleration: 3,
+            closing_frames: 0,
+            closing_accumulator_bits: 0,
+        };
+        let old = Coord::new(0, 0, 0);
+        // Phase 0 makes 0·inf (NaN) and phase 4 a positive sine (inf), each
+        // far from and inside the 256-lepton step.
+        for (frame, target) in [(0, 4096), (4, 4096), (4, 100)] {
+            let target = Coord::new(target, 0, 0);
+            assert_eq!(
+                turn_word(&g, 0, frame, old, target, TrigTable::embedded()),
+                0
             );
         }
     }

@@ -76,7 +76,6 @@ pub(crate) const FX_SINKING_CLIP: u32 = 1 << 7;
 pub struct CloakDrawInput {
     pub character: u8,
     pub progress: i32,
-    pub native_offset_words: i32,
     pub voxel: bool,
 }
 
@@ -157,9 +156,12 @@ pub struct DrawDecision {
 /// `remap_row` is the palette-ramp selection. `fx_params.x` is the final alpha
 /// multiplier selected by the native translucency bits; `fx_params.y` preserves
 /// those selector bits for diagnostics; `fx_params.z` is unused (1.0);
-/// For voxel unit bodies carrying the composite bridge-split flag,
-/// `fx_params.w` carries the tactical scissor height in world pixels (zero
-/// means full viewport). This shader-specific transport does not alter effects.
+/// for voxel unit bodies (`Z_GRADIENT_VOXEL_VIEW_CLIP_FLAG`, split or not)
+/// and raw SHP frames (`Z_GRADIENT_RAW_FRAME_FLAG`), `fx_params.w` carries
+/// the tactical scissor height in world pixels (zero means full viewport);
+/// for a body with an extended z-shape, its slot in the skip table
+/// (`render::zshape_skips`), 1-based, 0 for none. This shader-specific
+/// transport does not alter effects.
 /// `sinking_row` is the retained world row a voxel draw with FX_SINKING_CLIP
 /// clips at. An effect that changes an object's light, such as the Iron
 /// Curtain's tint, scales the intensity its `PaletteLight` carries, as the
@@ -171,8 +173,6 @@ pub struct DrawState {
     pub fx_flags: u32,
     pub fx_params: [f32; 4],
     pub sinking_row: f32,
-    /// Techno70BE50 signed packed-surface displacement, derived from GameEntity.
-    pub native_offset_words: i32,
 }
 
 impl Default for DrawState {
@@ -182,7 +182,6 @@ impl Default for DrawState {
             fx_flags: 0,
             fx_params: [1.0, 0.0, 1.0, 0.0],
             sinking_row: 0.0,
-            native_offset_words: 0,
         }
     }
 }
@@ -253,7 +252,6 @@ impl DrawState {
 
         if cloak_flag {
             state.fx_flags |= FX_CLOAK;
-            state.native_offset_words = input.cloak.map_or(0, |cloak| cloak.native_offset_words);
         }
         let selector_bits = cloak_selector | warp_selector | disguise_selector;
         state.fx_params[0] = opacity_for_selector_bits(selector_bits);
@@ -339,11 +337,6 @@ impl DrawState {
                 cloak: Some(CloakDrawInput {
                     character,
                     progress: entity.cloak_depth(),
-                    native_offset_words: if character == 4 && voxel {
-                        entity.native_cloak_offset_words()
-                    } else {
-                        0
-                    },
                     voxel,
                 }),
                 disguise: Self::disguise_input(entity, current_frame, observer),
@@ -423,7 +416,7 @@ fn cloak_selector(cloak: Option<CloakDrawInput>) -> Option<(u8, bool)> {
         return Some((0, false));
     };
     // Unit73B21F..73B259/Techno706640 consume the query, whereas SHP705E45
-    // does not add the displacement bit. See the executed selector corpus in
+    // does not add the warp bit. See the executed selector corpus in
     // tools/procedural_drawing_oracle/translucent_blitter_a.md.
     match cloak.character {
         0 => Some((0, false)),
@@ -514,7 +507,6 @@ mod tests {
                     cloak: Some(CloakDrawInput {
                         character,
                         progress: control["depth"].as_i64().unwrap() as i32,
-                        native_offset_words: control["offset_words"].as_i64().unwrap() as i32,
                         voxel: true,
                     }),
                     ..DrawStateInput::default()
@@ -541,7 +533,6 @@ mod tests {
                     cloak: Some(CloakDrawInput {
                         character: 4,
                         progress,
-                        native_offset_words: -1,
                         voxel: false,
                     }),
                     ..DrawStateInput::default()
@@ -560,7 +551,6 @@ mod tests {
                 cloak: Some(CloakDrawInput {
                     character: 1,
                     progress: 1,
-                    native_offset_words: 0,
                     voxel: true,
                 }),
                 disguise: Some(DisguiseDrawInput {

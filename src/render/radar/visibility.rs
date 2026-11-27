@@ -9,24 +9,10 @@ use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::veterancy::has_weapon_ability;
 use crate::sim::intern::InternedId;
 use crate::sim::vision::FogState;
+use crate::sim::world::ControlProjection;
 
 use super::helpers::{parse_foundation_size, world_to_minimap_pixel};
 use super::tracker::{RadarObjectUpdate, RadarProjectionFacts};
-
-pub(super) fn radar_owner_is_human_player(
-    owner: InternedId,
-    local_owner: InternedId,
-    houses: &crate::sim::houses::Houses,
-    game_mode_nonzero: bool,
-) -> bool {
-    if game_mode_nonzero {
-        owner == local_owner
-    } else {
-        houses
-            .get(&owner)
-            .is_some_and(|house| house.is_human() || house.player_control())
-    }
-}
 
 fn radar_packed_cell_from_leptons(x: i32, y: i32) -> (i32, i32) {
     // Coord2Cell uses signed division and then narrows to signed words.
@@ -47,7 +33,7 @@ fn enemy_sensed_prefilter(entity: &crate::sim::game_entity::GameEntity) -> bool 
     } else if entity.category() == EntityCategory::Aircraft {
         entity.ammo().is_none_or(|ammo| (ammo.current() as i8) < 0)
     } else {
-        entity.low_bridge_tube_state.is_none()
+        entity.active_tube().is_none()
     }
 }
 
@@ -96,11 +82,17 @@ fn radar_get_height_leptons(
                 .wrapping_mul(crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS)
         });
     // `object_world_z_leptons(entity, None)`.
-    let mut height = entity.world_z_leptons_off_map().wrapping_sub(ground);
-    if entity.on_bridge() {
-        height = height.wrapping_sub(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS);
-    }
-    height
+    let surface = if entity.on_bridge() {
+        resolved_terrain
+            .and_then(|terrain| terrain.corrected_high_bridge_deck_level((rx as u16, ry as u16)))
+            .map_or_else(
+                || ground.wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS),
+                |deck| i32::from(deck) * crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS,
+            )
+    } else {
+        ground
+    };
+    entity.world_z_leptons_off_map().wrapping_sub(surface)
 }
 
 /// `MapClass::IsShrouded @ 0x00586360` for `viewer` at `point`
@@ -309,12 +301,11 @@ impl RadarRegistrationVisibilityFacts {
 
 pub(super) fn build_radar_object_update(
     entity: &impl crate::render::snapshot::SnapshotObject,
-    houses: &crate::sim::houses::Houses,
     local_owner: Option<InternedId>,
     fog: &FogState,
     alliances: &crate::sim::house_diplomacy::HouseAlliances,
     full_visibility: bool,
-    game_mode_nonzero: bool,
+    control: &ControlProjection<'_>,
     rules: Option<&RuleSet>,
     interner: Option<&crate::sim::intern::StringInterner>,
     projection: RadarProjectionFacts,
@@ -349,9 +340,8 @@ pub(super) fn build_radar_object_update(
     );
     let facts = entity.radar();
     let foundation = facts.foundation;
-    let owner_is_human_player = local_owner.is_none_or(|local_owner| {
-        radar_owner_is_human_player(entity.owner(), local_owner, houses, game_mode_nonzero)
-    });
+    let owner_is_human_player = local_owner
+        .is_none_or(|local_owner| control.native_player_on(entity.owner(), Some(local_owner)));
     let [coord_x, coord_y] = entity.center_xy();
     let current_cell = radar_fog_cell_from_leptons(coord_x, coord_y);
     // The type-5 call at `0x0070DA95..0x0070DAD7` converts raw Object+0x9C,
@@ -483,7 +473,10 @@ fn radar_edge_cell_in_playfield(
 
 #[cfg(all(test, tests_render_a_r))]
 mod tests {
+    use super::super::helpers::test_radar_session;
     use super::*;
+    use crate::sim::scenario_session::ScenarioGameMode;
+
     use crate::map::resolved_terrain::{ResolvedTerrainCell, ResolvedTerrainGrid};
     use crate::map::tube_facts::TubeId;
     use crate::sim::ammo::TechnoAmmo;
@@ -558,6 +551,7 @@ mod tests {
             crate::sim::game_entity::GameEntity::test_default(1, "BLDG", "Enemy", 4, 5);
         entity.set_category_for_test(EntityCategory::Structure);
         entity
+            .seldom
             .type_facts
             .set_foundation_for_test("3x2".to_string().into());
         let raw = crate::sim::movement::ground_pose::position_world_xy(&entity.position);
@@ -588,12 +582,14 @@ mod tests {
         projection.native_surface = Some(surface);
         let update = build_radar_object_update(
             &crate::app::presentation::frame::ObjectRecord::of_test(&entity),
-            &crate::sim::houses::Houses::default(),
             None,
             &FogState::default(),
             &Default::default(),
             true,
-            false,
+            &ControlProjection::for_native_view(
+                &test_radar_session(ScenarioGameMode::Campaign),
+                &crate::sim::houses::Houses::default(),
+            ),
             None,
             None,
             projection,
@@ -630,12 +626,11 @@ mod tests {
                 crate::app::presentation::frame::PresentationFrame::of_test(sim, &rules)
                     .object(id)
                     .unwrap(),
-                sim.houses(),
                 None,
                 sim.fog(),
                 sim.house_alliances(),
                 true,
-                false,
+                &sim.control_projection(),
                 Some(&rules),
                 Some(sim.interner()),
                 visibility_projection(),
@@ -646,7 +641,7 @@ mod tests {
         let mut tracker = super::super::tracker::RetainedRadarTracker::default();
         tracker.update_object(update(&sim), false);
         assert!(tracker.is_registered(id));
-        sim.begin_ship_sinking(id, &rules, crate::sim::world::FrameEffects::default());
+        sim.begin_ship_sinking(id, &rules, &mut crate::sim::world::FrameEffects::default());
         assert!(sim.entities().get(id).unwrap().lifecycle.object_alive());
         tracker.update_object(update(&sim), false);
         assert!(
@@ -970,12 +965,14 @@ mod tests {
                 Some(&terrain),
                 crate::rules::ruleset::RuleSet::empty_for_test(),
             ),
-            &crate::sim::houses::Houses::default(),
             None,
             &FogState::default(),
             &Default::default(),
             true,
-            false,
+            &ControlProjection::for_native_view(
+                &test_radar_session(ScenarioGameMode::Campaign),
+                &crate::sim::houses::Houses::default(),
+            ),
             None,
             None,
             projection,
@@ -996,6 +993,7 @@ mod tests {
         let mut entity =
             crate::sim::game_entity::GameEntity::test_default(1, "BLDG", "Enemy", 4, 4);
         entity
+            .seldom
             .type_facts
             .set_foundation_for_test("3x2".to_string().into());
         let location = crate::sim::movement::ground_pose::object_location(&entity, None);
@@ -1028,6 +1026,7 @@ mod tests {
             crate::sim::game_entity::GameEntity::test_default(2, "BLDG", "Enemy", 10, 10);
         building.set_category_for_test(EntityCategory::Structure);
         building
+            .seldom
             .type_facts
             .set_foundation_for_test("2x2".to_string().into());
         building.lifecycle.set_in_limbo_for_test(false);
@@ -1036,12 +1035,14 @@ mod tests {
         let visible = |fog: &FogState| {
             build_radar_object_update(
                 &crate::app::presentation::frame::ObjectRecord::of_test(&building),
-                &crate::sim::houses::Houses::default(),
                 Some(local),
                 fog,
                 &Default::default(),
                 false,
-                true,
+                &ControlProjection::for_native_view(
+                    &test_radar_session(ScenarioGameMode::Skirmish),
+                    &crate::sim::houses::Houses::default(),
+                ),
                 None,
                 None,
                 visibility_projection(),
@@ -1081,12 +1082,14 @@ mod tests {
                     Some(&terrain),
                     crate::rules::ruleset::RuleSet::empty_for_test(),
                 ),
-                &crate::sim::houses::Houses::default(),
                 Some(local),
                 &fog,
                 &Default::default(),
                 false,
-                true,
+                &ControlProjection::for_native_view(
+                    &test_radar_session(ScenarioGameMode::Skirmish),
+                    &crate::sim::houses::Houses::default(),
+                ),
                 None,
                 None,
                 visibility_projection(),
@@ -1112,6 +1115,7 @@ mod tests {
             crate::sim::game_entity::GameEntity::test_default(2, "BLDG", "Enemy", 10, 10);
         building.set_category_for_test(EntityCategory::Structure);
         building
+            .seldom
             .type_facts
             .set_foundation_for_test("2x2".to_string().into());
         building.lifecycle.set_in_limbo_for_test(false);
@@ -1146,12 +1150,14 @@ mod tests {
             )]);
             let update = build_radar_object_update(
                 &crate::app::presentation::frame::ObjectRecord::of_test(&entity),
-                &houses,
                 Some(local),
                 &fog,
                 &super::super::helpers::test_alliances(alliances),
                 false,
-                true,
+                &ControlProjection::for_native_view(
+                    &test_radar_session(ScenarioGameMode::Skirmish),
+                    &houses,
+                ),
                 Some(&rules),
                 Some(&interner),
                 visibility_projection(),
@@ -1187,12 +1193,14 @@ mod tests {
         entity.lifecycle.set_in_limbo_for_test(false);
         let update = build_radar_object_update(
             &crate::app::presentation::frame::ObjectRecord::of_test(&entity),
-            &houses,
             Some(local),
             &fog,
             &Default::default(),
             false,
-            true,
+            &ControlProjection::for_native_view(
+                &test_radar_session(ScenarioGameMode::Skirmish),
+                &houses,
+            ),
             Some(&rules),
             Some(&interner),
             visibility_projection(),
@@ -1244,7 +1252,7 @@ impl RadarFacts {
         Self {
             enemy_sensed_prefilter: enemy_sensed_prefilter(entity),
             foundation: (entity.category() == EntityCategory::Structure)
-                .then(|| parse_foundation_size(entity.type_facts.foundation())),
+                .then(|| parse_foundation_size(entity.seldom.type_facts.foundation())),
             location: [location.x, location.y, location.z],
             navigation_cell: cells.and_then(|cells| {
                 crate::sim::movement::ground_pose::entity_navigation_cell_identity(
@@ -1254,7 +1262,10 @@ impl RadarFacts {
                 )
                 .ok()
             }),
-            combat_flash_remaining: entity.radar_combat_flash.remaining(binary_frame as i32),
+            combat_flash_remaining: entity
+                .seldom
+                .radar_combat_flash
+                .remaining(binary_frame as i32),
             disguise_house: [false, true]
                 .map(|allied| entity.disguise_house(false, observer, allied)),
             click_cell: sim

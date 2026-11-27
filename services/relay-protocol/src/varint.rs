@@ -1,11 +1,23 @@
 //! Unsigned LEB128 integers of the bandwidth compaction
 //! (`services/relay/bandwidth-compaction/spec.md` §8), the one varint codec
 //! every relay message shares: envelope v3 payloads (§6), the ordering
-//! messages (§7) and PACK v2 (§5).
+//! messages (§7) and PACK (§5).
 //!
 //! Each byte carries 7 data bits, least significant group first; a set top
 //! bit means another byte follows. Encoders write the shortest form and
 //! decoders refuse every other one, so a value has exactly one encoding.
+
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable,
+        clippy::indexing_slicing
+    )
+)]
 
 use crate::RelayError;
 
@@ -15,7 +27,7 @@ pub const MAX_LEN: usize = 10;
 /// The length in bytes, 1..=`MAX_LEN`, of `value`'s shortest encoding
 /// (§8): 1 for 0..=127, 2 for 128..=16_383, ..., 10 for values of
 /// 2⁶³ and above. Message encoders use it to size records and packs before
-/// writing them, as PACK v2's packing does (§5.4).
+/// writing them, as PACK's packing does (§5.4).
 pub fn encoded_len(value: u64) -> usize {
     // 7 data bits per byte; 0 still takes one byte.
     (64 - value.max(1).leading_zeros() as usize).div_ceil(7)

@@ -55,7 +55,7 @@ pub(super) fn approach(
     sim: &mut Simulation,
     id: u64,
     rules: &RuleSet,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) -> i32 {
     let frames = rules.general.spy_plane_camera_frames;
     let Some(entity) = sim.substrate.entities.get(id) else {
@@ -96,7 +96,7 @@ pub(super) fn overfly(
     sim: &mut Simulation,
     id: u64,
     rules: &RuleSet,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) -> i32 {
     let Some(entity) = sim.substrate.entities.get(id) else {
         return OVERFLY_FRAMES;
@@ -132,7 +132,7 @@ fn head_for_opposite_edge(
     sim: &mut Simulation,
     id: u64,
     rules: &RuleSet,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) {
     let edge = Edge::opposite_edge(sim.aircraft_house_waypoint_edge(id));
     if let Some((rx, ry)) = sim.aircraft_edge_cell(edge).filter(|&cell| cell != (0, 0)) {
@@ -157,21 +157,18 @@ fn snapshot(
     id: u64,
     rules: &RuleSet,
     sound: bool,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) {
     let Some((_, damage)) = weapon(sim, id, rules) else {
         return;
     };
     sim.refresh_object_sight(id, rules, damage, frame_effects);
-    sim.refresh_object_sight_border(
-        id,
-        UninitContext::new(rules, None).with_effects(frame_effects),
-    );
+    sim.refresh_object_sight_border(id, UninitContext::new(rules).with_effects(frame_effects));
     if sound
-        && let Some(camera) = rules.general.spy_plane_camera.clone()
+        && let Some(camera) = rules.general.spy_plane_camera.as_deref()
         && let Some(plane) = sim.substrate.entities.get(id)
     {
-        let event = SimSoundEvent::voc_at(camera, &plane.position);
+        let event = SimSoundEvent::voc_at(rules.sound_name(camera), &plane.position);
         sim.sound_events.emit(event);
     }
 }

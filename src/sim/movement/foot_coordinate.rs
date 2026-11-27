@@ -42,7 +42,9 @@ pub(super) fn stored_head(entity: &GameEntity) -> Option<DriveCoord> {
             .locomotor
             .as_ref()?
             .track_head(super::track_process::TrackFamily::Ship),
-        LocomotorKind::Walk | LocomotorKind::Hover => entity.locomotor.as_ref()?.step_head(),
+        LocomotorKind::Walk | LocomotorKind::Mech | LocomotorKind::Hover => {
+            entity.locomotor.as_ref()?.step_head()
+        }
         _ => None,
     }
 }
@@ -53,7 +55,7 @@ pub(super) fn navigation_coordinate(
 ) -> Result<DriveCoord, String> {
     // Foot+684 is tested before dereferencing the locomotor, even on a row
     // awaiting Uninit. Tube+28 is the exit, not the retained transit target.
-    if let Some(state) = entity.low_bridge_tube_state {
+    if let Some(state) = entity.active_tube() {
         let tube = terrain
             .and_then(|grid| grid.tube(state.tube_id()))
             .ok_or("Foot coordinate references a missing active TubeClass")?;
@@ -69,7 +71,11 @@ pub(super) fn navigation_coordinate(
         .ok_or("Foot coordinate requires an active locomotor")?;
     let current = current_coordinate(entity);
     match loco.active_kind() {
-        LocomotorKind::Drive | LocomotorKind::Ship | LocomotorKind::Walk | LocomotorKind::Hover => {
+        LocomotorKind::Drive
+        | LocomotorKind::Ship
+        | LocomotorKind::Walk
+        | LocomotorKind::Mech
+        | LocomotorKind::Hover => {
             // The owner installs constructor-default Drive/Ship storage
             // lazily as None. This is a null retained head, not a missing
             // active locomotor. Original constructors 4AF540/69EC50 and
@@ -107,7 +113,7 @@ impl Simulation {
             .ok_or("ShouldBeOnBridge requires map cells")?;
         let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
         let current = super::ground_pose::position_world_coord(&entity.position);
-        let in_tube = entity.low_bridge_tube_state.is_some();
+        let in_tube = entity.active_tube().is_some();
         let navigation = if in_tube {
             current
         } else {

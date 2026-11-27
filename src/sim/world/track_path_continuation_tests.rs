@@ -32,11 +32,11 @@ use serde_json::{Value, json};
 /// contact's power latch; no unit service-phase adapter remains.
 fn depot_is_servicing(sim: &Simulation, depot: u64, unit: u64) -> bool {
     sim.substrate.entities.get(depot).is_some_and(|building| {
-        building.radio_contacts.contains(unit)
+        building.seldom.radio_contacts.contains(unit)
             && building.mission.current().known() == Some(MissionType::Repair)
             && building.mission.handler_state() == 2
     }) && sim.substrate.entities.get(unit).is_some_and(|contact| {
-        contact.radio_contacts.contains(depot)
+        contact.seldom.radio_contacts.contains(depot)
             && contact
                 .locomotor
                 .as_ref()
@@ -115,7 +115,7 @@ fn order(sim: &mut Simulation, rules: &RuleSet, id: u64, target: (u16, u16)) {
         crate::sim::components::NavTargetRef::cell(target.0, target.1),
         rules,
         true,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     ));
 }
 
@@ -271,7 +271,7 @@ fn supplied_find_path_results_take_the_native_continuations() {
                 found,
                 &rules,
                 Some(&registry),
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         compare(&sim, id, &row, Some(outcome));
@@ -345,7 +345,7 @@ fn near_native_rows_stop_through_the_continuation_null_setter() {
             id,
             &rules,
             Some(&registry),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
         sim.finish_find_path_failure(
@@ -353,7 +353,7 @@ fn near_native_rows_stop_through_the_continuation_null_setter() {
             DriveCoord::cell(11, 10, 0),
             &rules,
             Some(&registry),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
         let e = sim.substrate.entities.get(id).unwrap();
@@ -367,7 +367,7 @@ fn near_native_rows_stop_through_the_continuation_null_setter() {
                 FindPathResult::Failed,
                 &rules,
                 Some(&registry),
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         compare(&sim, id, &row, Some(outcome));
@@ -406,7 +406,7 @@ fn post_warp_rows_refuse_the_own_cell_search() {
             own,
             crate::rules::ruleset::RuleSet::empty_for_test(),
             None,
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         ));
         sim.session.set_binary_frame_for_test(101);
         let rng = sim.rng_state();
@@ -496,6 +496,7 @@ fn depot_release_and_pad_entry_route_through_find_path() {
                 .entities
                 .get(first)
                 .unwrap()
+                .seldom
                 .radio_contacts
                 .contains(depot)
         {
@@ -577,8 +578,7 @@ fn teleporter_bound_for_its_refinery(
         miner,
         Some(NavTargetRef::cell(16, 10)),
         &rules,
-        Some(&registry),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
     .unwrap();
     let e = sim.substrate.entities.get_mut(miner).unwrap();
@@ -586,7 +586,7 @@ fn teleporter_bound_for_its_refinery(
         e.locomotor.as_ref().map(|loco| loco.active_kind()),
         Some(LocomotorKind::Drive)
     );
-    e.radio_contacts.set_slot(0, refinery);
+    e.seldom.radio_contacts.set_slot(0, refinery);
     // Facing the route's east words, so a clear step is taken in the call.
     e.body_facing = FacingClass::with_rate_of(2 << 13, &e.body_facing);
     sim.session.set_binary_frame_for_test(100);
@@ -614,8 +614,7 @@ fn teleporter_behind_a_moving_tank() -> (
         tank,
         Some(NavTargetRef::cell(14, 2)),
         &rules,
-        Some(&registry),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
     .unwrap();
     assert!(
@@ -630,19 +629,13 @@ fn teleporter_behind_a_moving_tank() -> (
     (sim, rules, registry, miner)
 }
 
-fn process_drive(
-    sim: &mut Simulation,
-    miner: u64,
-    rules: &RuleSet,
-    registry: &crate::rules::overlay_types::OverlayTypeRegistry,
-) -> Result<bool, String> {
+fn process_drive(sim: &mut Simulation, miner: u64, rules: &RuleSet) -> Result<bool, String> {
     sim.run_track_process_movement(
         miner,
         crate::sim::movement::track_process::TrackFamily::Drive,
         crate::sim::movement::ProcessMovementArgs::OUTER,
         rules,
-        Some(registry),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
 }
 
@@ -674,7 +667,7 @@ fn a_teleporter_its_redirect_stops_takes_its_last_step_without_a_destination() {
     use crate::sim::movement::track_process::TrackFamily;
     let (mut sim, rules, registry, miner) = teleporter_bound_for_its_refinery((14, 10));
 
-    assert_eq!(process_drive(&mut sim, miner, &rules, &registry), Ok(false));
+    assert_eq!(process_drive(&mut sim, miner, &rules), Ok(false));
 
     assert_stopped_for_enter(&sim, miner);
     let e = sim.substrate.entities.get(miner).unwrap();
@@ -700,7 +693,7 @@ fn a_teleporter_its_redirect_stops_waits_behind_a_moving_tank_without_a_destinat
     use crate::sim::movement::track_process::TrackFamily;
     let (mut sim, rules, registry, miner) = teleporter_behind_a_moving_tank();
 
-    assert_eq!(process_drive(&mut sim, miner, &rules, &registry), Ok(false));
+    assert_eq!(process_drive(&mut sim, miner, &rules), Ok(false));
 
     assert_stopped_for_enter(&sim, miner);
     let e = sim.substrate.entities.get(miner).unwrap();
@@ -734,9 +727,9 @@ fn batched_the_teleporter_ladder_waits_and_keeps_the_redirect_navcom() {
 
     for frame in 100..103 {
         sim.session.set_binary_frame_for_test(frame);
-        sim.answer_batched_path_searches(&rules, Some(&registry));
+        sim.answer_batched_work(&rules, None);
         assert_eq!(
-            process_drive(&mut sim, miner, &rules, &registry),
+            process_drive(&mut sim, miner, &rules),
             Ok(false),
             "frame {frame}"
         );
@@ -820,7 +813,7 @@ fn a_teleporter_and_a_hover_unit_are_serviced_at_a_depot() {
             let teleport = e.locomotor.as_ref().is_some_and(|loco| {
                 loco.active_kind() == crate::rules::locomotor_type::LocomotorKind::Teleport
             });
-            if serviced && !e.radio_contacts.contains(depot) && !on_footprint && teleport {
+            if serviced && !e.seldom.radio_contacts.contains(depot) && !on_footprint && teleport {
                 left = true;
                 break;
             }
@@ -930,7 +923,7 @@ fn forced_track_end_requests_its_own_cell_in_the_same_process() {
         head,
         crate::rules::ruleset::RuleSet::empty_for_test(),
         None,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     for frame in 101..300 {
         visit(&mut sim, &rules, &registry, id, frame);
@@ -1116,7 +1109,7 @@ fn after_active_rows_gate_the_same_call_continuation() {
                     id,
                     family,
                     &rules,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .unwrap();
         let events = row["events"].as_array().unwrap();
@@ -1228,7 +1221,7 @@ fn null_destination_mid_track_stops_the_tank_at_its_track_end() {
                     id,
                     &rules,
                     None,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 );
             }
             "retaliation" => {
@@ -1239,8 +1232,7 @@ fn null_destination_mid_track_stops_the_tank_at_its_track_end() {
                     id,
                     attacker,
                     &rules,
-                    Some(&registry),
-                    crate::sim::world::FrameEffects::default()
+                    &mut crate::sim::world::FrameEffects::default(),
                 ));
                 assert_eq!(
                     sim.substrate
@@ -1263,7 +1255,7 @@ fn null_destination_mid_track_stops_the_tank_at_its_track_end() {
                     owner,
                     &rules,
                     Some(&registry),
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 );
             }
         }
@@ -1344,8 +1336,7 @@ fn restore_mid_track_heads_for_the_restored_order_at_the_track_end() {
         id,
         attacker,
         &rules,
-        Some(&registry),
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default(),
     ));
     sim.session.set_binary_frame_for_test(frame);
     order(&mut sim, &rules, id, (10, 16));
@@ -1359,8 +1350,7 @@ fn restore_mid_track_heads_for_the_restored_order_at_the_track_end() {
         sim.mission_restore_represented(
             id,
             &rules,
-            Some(&registry),
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap()
     );

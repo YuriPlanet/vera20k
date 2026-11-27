@@ -12,7 +12,23 @@
 //! ## Dependency rules
 //! - Part of assets/ - no dependencies on game modules.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable
+    )
+)]
+
 use crate::assets::error::AssetError;
+
+/// VERA's per-frame expansion limit for RLE sprites, in palette indices.
+const MAX_DECODED_FRAME_PIXELS: usize = 16 * 1024 * 1024;
+/// Larger frames grow only as their rows are read.
+const INITIAL_FRAME_PIXELS: usize = 4 * 1024 * 1024;
 
 fn parse_error(detail: impl Into<String>) -> AssetError {
     AssetError::ParseError {
@@ -28,18 +44,32 @@ pub fn decode_rle_frame(data: &[u8], width: usize, height: usize) -> Result<Vec<
     let pixel_count = width
         .checked_mul(height)
         .ok_or_else(|| parse_error("RLE frame dimensions overflow addressable memory"))?;
+    if pixel_count > MAX_DECODED_FRAME_PIXELS {
+        return Err(parse_error(format!(
+            "RLE frame rectangle {width}x{height} is {pixel_count} pixels, past the \
+             {MAX_DECODED_FRAME_PIXELS}-pixel frame budget"
+        )));
+    }
     // Every produced pixel costs input: a nonzero literal one byte, a zero run
     // two bytes for up to 255 pixels. A frame claiming more pixels than
     // `255 * data.len()/2` has no payload behind its header: reject before the
     // capacity reflects the claim.
-    let max_pixels = 255 * (data.len() / 2);
+    let max_pixels = (data.len() / 2).saturating_mul(255);
     if pixel_count > max_pixels {
         return Err(parse_error(format!(
             "RLE frame needs {pixel_count} pixels but {} frame bytes cannot produce past {max_pixels}",
             data.len()
         )));
     }
-    let mut pixels = Vec::with_capacity(pixel_count);
+    let mut pixels = Vec::new();
+    let reserve_error = |_| {
+        parse_error(format!(
+            "RLE frame could not allocate its pixels for {width}x{height}"
+        ))
+    };
+    pixels
+        .try_reserve_exact(pixel_count.min(INITIAL_FRAME_PIXELS))
+        .map_err(reserve_error)?;
     let mut offset = 0usize;
 
     for row in 0..height {
@@ -72,6 +102,11 @@ pub fn decode_rle_frame(data: &[u8], width: usize, height: usize) -> Result<Vec<
             )));
         }
 
+        if pixels.capacity() - pixels.len() < width {
+            pixels
+                .try_reserve_exact(pixel_count - pixels.len())
+                .map_err(reserve_error)?;
+        }
         offset = prefix_end;
         let mut row_pixels = 0usize;
 
@@ -122,12 +157,30 @@ mod tests {
     }
 
     #[test]
+    fn a_frame_rectangle_past_the_absolute_budget_is_refused_before_decoding() {
+        // 4096x4097 is one row past the frame budget, while the payload bound
+        // alone would still allow it: the rectangle, not the byte count, is
+        // what has to be refused. A zero-filled tail is only padding here; the
+        // test asserts which rule answers, not what a decoder would produce.
+        let data = vec![0u8; 140_000];
+        let err = decode_rle_frame(&data, 4096, 4097)
+            .expect_err("a rectangle past the frame budget is refused");
+        let AssetError::ParseError { detail, .. } = err else {
+            panic!("expected a SHP parse error: {err:?}");
+        };
+        assert!(
+            detail.contains("frame budget"),
+            "unexpected detail: {detail}"
+        );
+    }
+
+    #[test]
     fn a_huge_header_pixel_count_cannot_reserve_past_the_frame_payload() {
-        // 65535x65535 claims 4.3 billion pixels behind four frame bytes; the
-        // expansion cap must reject before the capacity reflects the claim.
+        // 4096x4096 sits exactly on the frame budget, so the payload bound is
+        // the rule that answers: four frame bytes cannot produce 16M pixels.
         let data = [8u8, 0, 0, 0];
         let err =
-            decode_rle_frame(&data, 65535, 65535).expect_err("no payload behind the pixel count");
+            decode_rle_frame(&data, 4096, 4096).expect_err("no payload behind the pixel count");
         let AssetError::ParseError { detail, .. } = err else {
             panic!("expected a SHP parse error: {err:?}");
         };

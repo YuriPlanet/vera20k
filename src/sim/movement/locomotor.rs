@@ -73,8 +73,9 @@ pub(crate) struct LocomotorHashFields<'a> {
 /// [`Self::end_piggyback`]).
 ///
 /// `balloon_hover`, `speed_type` and `movement_zone` cache the
-/// Foot's type: set at construction, copied into a BEGIN's temporary and never
-/// written afterwards, so every object of one unit holds the same values.
+/// Foot's type: set at construction, copied into a BEGIN's temporary and
+/// rebound on every object at a type store ([`Self::rebind_type_caches`]), so
+/// every object of one unit holds the same values.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct LocomotorState {
     /// Which locomotor class this object is.
@@ -96,7 +97,9 @@ pub struct LocomotorState {
     runtime_payload: LocomotorRuntimePayload,
     /// Which spatial layer the unit currently occupies: the Foot's position,
     /// cached on the active object. `Bridge` is the Ground layer with the
-    /// Foot's OnBridge set.
+    /// Foot's OnBridge set. A Fly or Jumpjet answers its layer from its
+    /// height and a Rocket as Air (`world::entity_layer`); nothing reads a
+    /// Fly's or Rocket's cache, and only VeraX AutoLoad reads a Jumpjet's.
     layer: MovementLayer,
     /// Stay airborne after reaching destination (BalloonHover=yes).
     balloon_hover: bool,
@@ -128,7 +131,8 @@ impl LocomotorState {
 
     /// Ares conversion1004382D..100438AD compares the two Type CLSIDs, not
     /// the active (possibly piggybacked) locomotor. Equal CLSIDs retain the
-    /// instance and its timers; VERA's derived type caches still need rebinding.
+    /// instance and its timers, whose type caches the type store has already
+    /// rebound ([`Self::rebind_type_caches`]).
     pub(crate) fn change_type_binding(
         &mut self,
         old_type_kind: LocomotorKind,
@@ -141,13 +145,20 @@ impl LocomotorState {
             // world position and bridge/air occupancy are not constructor state.
             replacement.layer = self.layer;
             *self = replacement;
-        } else {
-            self.balloon_hover = object.balloon_hover;
-            self.speed_type = object.speed_type;
-            self.movement_zone = object.movement_zone;
-            if let Some(saved) = self.piggyback.as_mut() {
-                saved.change_type_binding(old_type_kind, object, frame);
-            }
+        }
+    }
+
+    /// Rebind the type caches of this object and every object suspended
+    /// beneath it to the Foot's new type `object`. Native locomotors read
+    /// `BalloonHover=`, `SpeedType=` and `MovementZone=` from the Type when
+    /// they use them, so every type store (Unit `+0x6C4`) changes them at
+    /// once, a bare one included.
+    pub(crate) fn rebind_type_caches(&mut self, object: &ObjectType) {
+        self.balloon_hover = object.balloon_hover;
+        self.speed_type = object.speed_type;
+        self.movement_zone = object.movement_zone;
+        if let Some(saved) = self.piggyback.as_mut() {
+            saved.rebind_type_caches(object);
         }
     }
 
@@ -205,6 +216,7 @@ impl LocomotorState {
         match kind {
             LocomotorKind::Drive
             | LocomotorKind::Walk
+            | LocomotorKind::Mech
             | LocomotorKind::Hover
             | LocomotorKind::Ship
             | LocomotorKind::Teleport
@@ -259,7 +271,11 @@ impl LocomotorState {
     pub fn is_ground_mover(&self) -> bool {
         matches!(
             self.kind,
-            LocomotorKind::Drive | LocomotorKind::Walk | LocomotorKind::Hover | LocomotorKind::Ship
+            LocomotorKind::Drive
+                | LocomotorKind::Walk
+                | LocomotorKind::Mech
+                | LocomotorKind::Hover
+                | LocomotorKind::Ship
         )
     }
 
@@ -366,7 +382,9 @@ impl LocomotorState {
     /// receivers75CA80/517210, tools/spatial_oracle/locomotor_at_coord.
     pub fn step_head(&self) -> Option<crate::sim::components::DriveCoord> {
         match (self.kind, &self.runtime_payload) {
-            (LocomotorKind::Walk, LocomotorRuntimePayload::Walk(state)) => state.head(),
+            (LocomotorKind::Walk | LocomotorKind::Mech, LocomotorRuntimePayload::Walk(state)) => {
+                state.head()
+            }
             (LocomotorKind::Hover, LocomotorRuntimePayload::Hover(runtime)) => runtime.head(),
             _ => None,
         }
@@ -374,7 +392,7 @@ impl LocomotorState {
 
     pub(crate) fn set_step_head(&mut self, head: Option<crate::sim::components::DriveCoord>) {
         // Hover's head has one writer, its ProcessMovement (`hover_process`).
-        if let (LocomotorKind::Walk, LocomotorRuntimePayload::Walk(state)) =
+        if let (LocomotorKind::Walk | LocomotorKind::Mech, LocomotorRuntimePayload::Walk(state)) =
             (self.kind, &mut self.runtime_payload)
         {
             state.store_head(head);
@@ -512,7 +530,9 @@ impl LocomotorState {
 
     pub fn walk_destination(&self) -> Option<crate::sim::components::DriveCoord> {
         match (self.kind, &self.runtime_payload) {
-            (LocomotorKind::Walk, LocomotorRuntimePayload::Walk(state)) => state.destination(),
+            (LocomotorKind::Walk | LocomotorKind::Mech, LocomotorRuntimePayload::Walk(state)) => {
+                state.destination()
+            }
             _ => None,
         }
     }
@@ -533,9 +553,20 @@ impl LocomotorState {
         }
     }
 
+    pub(in crate::sim::movement) fn walk_runtime_mut(
+        &mut self,
+    ) -> Option<&mut piggyback::WalkRuntime> {
+        match (self.kind, &mut self.runtime_payload) {
+            (LocomotorKind::Walk, LocomotorRuntimePayload::Walk(state)) => Some(state),
+            _ => None,
+        }
+    }
+
     pub fn walk_is_moving(&self) -> Option<bool> {
         match (self.kind, &self.runtime_payload) {
-            (LocomotorKind::Walk, LocomotorRuntimePayload::Walk(state)) => Some(state.moving()),
+            (LocomotorKind::Walk | LocomotorKind::Mech, LocomotorRuntimePayload::Walk(state)) => {
+                Some(state.moving())
+            }
             _ => None,
         }
     }
@@ -546,7 +577,7 @@ impl LocomotorState {
         &mut self,
         coord: Option<crate::sim::components::DriveCoord>,
     ) {
-        if let (LocomotorKind::Walk, LocomotorRuntimePayload::Walk(state)) =
+        if let (LocomotorKind::Walk | LocomotorKind::Mech, LocomotorRuntimePayload::Walk(state)) =
             (self.kind, &mut self.runtime_payload)
         {
             state.assign_destination(coord);
@@ -568,9 +599,7 @@ impl LocomotorState {
     /// nonnull head is admitted and before testing its remaining distance.
     /// Does not stand for the whole Process.
     pub(crate) fn begin_walk_motion(&mut self) {
-        if let (LocomotorKind::Walk, LocomotorRuntimePayload::Walk(state)) =
-            (self.kind, &mut self.runtime_payload)
-        {
+        if let Some(state) = self.walk_runtime_mut() {
             state.begin_motion();
         }
     }
@@ -588,16 +617,28 @@ impl LocomotorState {
         }
     }
 
+    pub(super) fn mech_move_to(&mut self, coord: crate::sim::components::DriveCoord) {
+        if let (LocomotorKind::Mech, LocomotorRuntimePayload::Walk(state)) =
+            (self.kind, &mut self.runtime_payload)
+        {
+            state.mech_move_to(coord);
+        }
+    }
+
     /// Stop75ADA0 differs from null MoveTo: no-head Stop also clears +36
     /// and dispatches the owner's +54C callback. The world receiver performs
     /// that dispatch before returning; this primitive returns its admission.
     pub(crate) fn stop_walk(&mut self) -> bool {
-        if let (LocomotorKind::Walk, LocomotorRuntimePayload::Walk(state)) =
-            (self.kind, &mut self.runtime_payload)
-        {
-            return state.stop();
+        match (self.kind, &mut self.runtime_payload) {
+            (LocomotorKind::Walk, LocomotorRuntimePayload::Walk(state)) => state.stop(),
+            (LocomotorKind::Mech, LocomotorRuntimePayload::Walk(state)) => {
+                // Mech Stop_Moving 5B0120 drops the destination and keeps
+                // IsMoving while a head remains. It has no infantry callback.
+                state.assign_destination(None);
+                false
+            }
+            _ => false,
         }
-        false
     }
 
     /// `Lock` (ILocomotion +0xB0): Walk `0x0075CB30` nulls its destination

@@ -2,6 +2,17 @@
 //! Handles per-tile cell parsing, diamond pixel unpacking, and extra data overlay.
 //! Part of assets/ — no dependencies on game modules.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable
+    )
+)]
+
 use crate::assets::error::AssetError;
 use crate::assets::tmp_file::TmpTile;
 use crate::util::read_helpers::{read_i32_le, read_u32_le};
@@ -15,6 +26,11 @@ const TILE_HEADER_SIZE: usize = 52;
 /// dimensions trigger oversized allocations). The diamond accumulator checks
 /// the same budget, which also bounds its per-row loop on absurd heights.
 const MAX_DECODED_TILE_BYTES: usize = 64 * 1024 * 1024;
+/// The longest side a decoded tile may have. Retail's tallest cliff and
+/// bridge tiles stay under 512 px; the decoded image spans the diamond and
+/// the extra image, so an extra origin thousands of pixels away would ask
+/// for planes of gigabytes with one extra byte in the file.
+const MAX_DECODED_TILE_SIDE: u32 = 2048;
 
 /// Bit flag: tile has extra pixel data (cliff faces, shadows).
 const FLAG_HAS_EXTRA_DATA: u32 = 0x01;
@@ -33,6 +49,61 @@ pub(crate) const DIAMOND_INITIAL_WIDTH: u32 = 4;
 /// Diamond row width increment/decrement per row.
 pub(crate) const DIAMOND_WIDTH_STEP: u32 = 4;
 
+/// A tile cell's 52-byte header.
+struct TileHeader {
+    stored_x: i32,
+    stored_y: i32,
+    extra_data_offset: u32,
+    z_data_offset: u32,
+    extra_z_data_offset: u32,
+    raw_extra_x: i32,
+    raw_extra_y: i32,
+    extra_width: u32,
+    extra_height: u32,
+    flags: u32,
+    height: u8,
+    terrain_type: u8,
+    ramp_type: u8,
+    radar_left: [u8; 3],
+    radar_right: [u8; 3],
+}
+
+impl TileHeader {
+    /// Read the header that starts `cell`, or `None` when the bytes end
+    /// before its 52.
+    fn read(cell: &[u8]) -> Option<Self> {
+        let header: &[u8] = cell.first_chunk::<TILE_HEADER_SIZE>()?;
+        let &[
+            height,
+            terrain_type,
+            ramp_type,
+            left_r,
+            left_g,
+            left_b,
+            right_r,
+            right_g,
+            right_b,
+        ] = header.get(40..)?.first_chunk::<9>()?;
+        Some(Self {
+            stored_x: read_i32_le(header, 0)?,
+            stored_y: read_i32_le(header, 4)?,
+            extra_data_offset: read_u32_le(header, 8)?,
+            z_data_offset: read_u32_le(header, 12)?,
+            extra_z_data_offset: read_u32_le(header, 16)?,
+            raw_extra_x: read_i32_le(header, 20)?,
+            raw_extra_y: read_i32_le(header, 24)?,
+            extra_width: read_u32_le(header, 28)?,
+            extra_height: read_u32_le(header, 32)?,
+            flags: read_u32_le(header, 36)?,
+            height,
+            terrain_type,
+            ramp_type,
+            radar_left: [left_r, left_g, left_b],
+            radar_right: [right_r, right_g, right_b],
+        })
+    }
+}
+
 /// Parse a single tile cell at the given file offset.
 ///
 /// Reads the 52-byte header, unpacks diamond pixel and depth data,
@@ -43,10 +114,24 @@ pub(crate) fn parse_tile_cell(
     tile_width: u32,
     tile_height: u32,
 ) -> Result<TmpTile, AssetError> {
-    let header_end: usize = offset
-        .checked_add(TILE_HEADER_SIZE)
-        .ok_or_else(|| invalid_tmp(format!("Tile cell offset {} overflows", offset)))?;
-    if header_end > data.len() {
+    let Some(TileHeader {
+        stored_x,
+        stored_y,
+        extra_data_offset,
+        z_data_offset,
+        extra_z_data_offset,
+        raw_extra_x,
+        raw_extra_y,
+        extra_width,
+        extra_height,
+        flags,
+        height,
+        terrain_type,
+        ramp_type,
+        radar_left,
+        radar_right,
+    }) = data.get(offset..).and_then(TileHeader::read)
+    else {
         return Err(AssetError::InvalidTmpFile {
             reason: format!(
                 "Tile cell at offset {} extends past file end ({})",
@@ -54,24 +139,7 @@ pub(crate) fn parse_tile_cell(
                 data.len()
             ),
         });
-    }
-
-    let stored_x: i32 = read_i32_le(data, offset);
-    let stored_y: i32 = read_i32_le(data, offset + 4);
-    let extra_data_offset: u32 = read_u32_le(data, offset + 8);
-    let z_data_offset: u32 = read_u32_le(data, offset + 12);
-    let extra_z_data_offset: u32 = read_u32_le(data, offset + 16);
-    let raw_extra_x: i32 = read_i32_le(data, offset + 20);
-    let raw_extra_y: i32 = read_i32_le(data, offset + 24);
-    let extra_width: u32 = read_u32_le(data, offset + 28);
-    let extra_height: u32 = read_u32_le(data, offset + 32);
-    let flags: u32 = read_u32_le(data, offset + 36);
-
-    let height: u8 = data[offset + 40];
-    let terrain_type: u8 = data[offset + 41];
-    let ramp_type: u8 = data[offset + 42];
-    let radar_left: [u8; 3] = [data[offset + 43], data[offset + 44], data[offset + 45]];
-    let radar_right: [u8; 3] = [data[offset + 46], data[offset + 47], data[offset + 48]];
+    };
 
     let has_extra: bool = (flags & FLAG_HAS_EXTRA_DATA) != 0;
     let has_z_data: bool = (flags & FLAG_HAS_Z_DATA) != 0;
@@ -124,6 +192,14 @@ pub(crate) fn parse_tile_cell(
     } else {
         (tile_width, tile_height, 0, 0)
     };
+    // The template header clamps the tile itself; only the extra image can
+    // push the decoded size out.
+    if has_extra && (pixel_width > MAX_DECODED_TILE_SIDE || pixel_height > MAX_DECODED_TILE_SIDE) {
+        return Err(invalid_tmp(format!(
+            "Decoded tile dimensions {}x{} exceed {} px a side: the extra image's origin is nowhere near its tile",
+            pixel_width, pixel_height, MAX_DECODED_TILE_SIDE
+        )));
+    }
 
     // Validate every payload slice before reserving the decoded planes: a
     // malformed header's dimensions and offsets must prove the bytes they
@@ -485,6 +561,24 @@ mod tests {
         let mut data = vec![0u8; TILE_HEADER_SIZE];
         data[36..40].copy_from_slice(&extra.to_le_bytes());
         data
+    }
+
+    /// An extra image whose origin sits 8000 px away from a 60x30 tile with
+    /// one extra byte behind it would pass the byte budget and zero two
+    /// 128 MiB planes; the side cap refuses it first.
+    #[test]
+    fn a_far_extra_origin_is_refused_before_its_planes_are_reserved() {
+        let mut data = header_only_cell(FLAG_HAS_EXTRA_DATA);
+        data[20..24].copy_from_slice(&(-8000i32).to_le_bytes());
+        data[24..28].copy_from_slice(&(-8000i32).to_le_bytes());
+        data[28..32].copy_from_slice(&1u32.to_le_bytes());
+        data[32..36].copy_from_slice(&1u32.to_le_bytes());
+        let err = parse_tile_cell(&data, 0, 60, 30)
+            .expect_err("an extra image thousands of pixels away must not decode");
+        let AssetError::InvalidTmpFile { reason } = err else {
+            panic!("expected a TMP parse error: {err:?}");
+        };
+        assert!(reason.contains("a side"), "unexpected reason: {reason}");
     }
 
     #[test]

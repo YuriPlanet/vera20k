@@ -20,7 +20,6 @@
 use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::intern::InternedId;
-use crate::sim::power_system::native_building_power_drain;
 use crate::sim::world::{FrameEffects, Simulation};
 
 impl Simulation {
@@ -29,7 +28,7 @@ impl Simulation {
         &mut self,
         owner: InternedId,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let globals = rules.ares_building_globals();
         let frame = self.session.binary_frame();
@@ -46,7 +45,7 @@ impl Simulation {
             || globals.toggle_power_iq > house.current_iq()
             || buildings.is_empty()
             || power.has_drained_power_source()
-            || house.is_controlled_by_human(self.session.game_mode_nonzero())
+            || house.is_controlled_by_human(self.session.rule_policy())
             || power.blackout_remaining(frame) > 0
         {
             return;
@@ -55,8 +54,7 @@ impl Simulation {
             return;
         }
         let (output, drain) = power.effective_totals();
-        // HasLowPower, inlined: a drain above the output.
-        let low_power = drain != 0 && drain > output;
+        let low_power = power.has_low_power();
         // (expendability, UniqueID, id, drain), sorted least expendable
         // first; the UniqueID tie-break makes the order total.
         let mut candidates: Vec<(i32, i32, u64, i32)> = buildings
@@ -67,7 +65,7 @@ impl Simulation {
                     return None;
                 }
                 let object = self.object_type(building.type_ref(), rules)?;
-                let drain = native_building_power_drain(object.power);
+                let drain = object.power_drain();
                 if !object.toggle_power
                     || drain <= 0
                     || building.building_art.stuff_enabled() != low_power
@@ -144,7 +142,7 @@ mod tests {
             power.set_total_output_for_test(output);
             power.set_total_drain_for_test(100);
             sim.session.set_binary_frame_for_test(frame);
-            sim.ares_update_toggle_power(owner, &rules, FrameEffects::default());
+            sim.ares_update_toggle_power(owner, &rules, &mut FrameEffects::default());
         };
         balance(&mut sim, 44, 50);
         assert!(online(&sim, gun) && online(&sim, lab), "not a multiple");

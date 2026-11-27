@@ -81,8 +81,6 @@ EngineerAlwaysCaptureTech=yes
 - The fogged-building cell arm of `EngineerRepairable` (`0x51FA82`) has no
   VERA counterpart. The RepairTrench (`0x5E`) and EngineerDamage (`0x57`)
   cursors are in [ares-cursors.md](ares-cursors.md).
-- `KickOutOfRubble` restores the selection the sim keeps; nothing else of
-  the client's selection.
 - The occupant's TechnoExt `GarrisonedIn` (only Ares trenches read it).
 - `SolidHeight`, `SolidLevel`, `SubjectToBuildings` and
   `AlliedSolidTransparency` belong to the
@@ -112,6 +110,9 @@ DockUnloadFacing=8                      ; 0..31 (default 8, east)
 [Americans]                             ; a country
 Degrades=no                             ; unset: not MultiplayPassive=
 
+[Americans]                             ; a map house, as [Houses] names it
+Degrades=yes                            ; unset: the country's answer
+
 [General]
 ReturnStructures=no
 Degrade.Enabled=no
@@ -130,7 +131,10 @@ TogglePower=-1                          ; the IQ a computer needs to balance
   (`LoadBeforeTypeData 1002AB60`, `LoadAfterTypeData 1002A800`);
   `LostEvaEvent` binds against EVAMD in `RuleSet::bind_type_eva_references`
   and the country `Degrades` is read with the other CountryExt keys
-  (`1001C5D0`, inherited by `1001BDC0`) in `native_processing.rs`.
+  (`1001C5D0`, inherited by `1001BDC0`) in `native_processing.rs`. A map
+  house section's `Degrades=` (HouseExt `10021A70`, hook `0x50114D` at the
+  end of `HouseClass::Read_Scenario_INI`) is read by the scenario house
+  bootstrap and overrides the country's (`HouseState::ares_degrades`).
 - `rules/buildup_asset_catalog.rs`: `UpdateBuildupFrames` (`1000F450`,
   hooks `0x45F2B4`, `0x465A48`, `0x45EAA5`) rates the build-up in Ares'
   divide-first order from `BuildupTime` and the sale from `SellTime`;
@@ -177,8 +181,6 @@ RulesExt `UnitsUnsellable` with the other `[General]` keys
 - `SecretLab.GenerateOnCapture`: part of the Ares Secret Lab rework
   (`SecretLab.PossibleBoons`, `UpdateSecretLab`), which VERA does not port
   ([ares-reverse-engineering.md](ares-reverse-engineering.md)).
-- HouseExt `Degrades=` in a map's house section (`10021A70`): a house takes
-  its country's answer.
 - `MassSelectable` (`10013CF0`, hook `0x459C03`): the stock band-selection
   test stays.
 - The stock `[AudioVisual] GateUp`/`GateDown` sounds of Mission_Open play in
@@ -187,9 +189,9 @@ RulesExt `UnitsUnsellable` with the other `[General]` keys
   other games keep them unplayed.
 - `ProduceCashDisplay` (`100117C0`) rides Ares' replaced ProduceCash payout
   (`100146E0`, `10013D40`: hooks `0x43FD2C`, `0x4482BD`, with the upgrades'
-  cash timers), ported in `sim::credit_income`. The upgrade's timer start at
-  Put (`10014490`, hook `0x4409F4`) is not
-  ([ares-building-house-hooks.md](ares-building-house-hooks.md)).
+  cash timers), ported in `sim::credit_income`. An upgrade starts its own
+  timer for its `ProduceCashDelay` when put on its host (`10014490`, hook
+  `0x4409F4`), so it first pays `ProduceCashDelay - 1` frames later.
 - `AIInnerBase` (`10023860`, hook `0x506306`) is consumed: it picks the
   inner-base key of `FindBaseBuildingSite` (`sim::ai_base_site`).
 - `IsBaseNormal`'s per-building `NoBaseNormal` (a `Deliver.BaseNormal=no`

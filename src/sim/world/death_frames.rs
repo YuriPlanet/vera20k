@@ -62,7 +62,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         if !self
             .substrate
@@ -86,10 +86,7 @@ impl Simulation {
         }
         self.unit_death_explosion(rules, id, &mut Vec::new(), registry, effects);
         self.foot_mark_remove(id, rules, registry, effects);
-        self.uninit_with_context(
-            id,
-            UninitContext::new(rules, registry).with_effects(effects),
-        );
+        self.uninit_with_context(id, UninitContext::new(rules).with_effects(effects));
         true
     }
 }

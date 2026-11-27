@@ -4,11 +4,11 @@
 //! Metadata enumeration and persistence belong here; the browser owns selection,
 //! descriptions and transactions. New filenames come from the shared CRT stream.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use super::options::RmgOptions;
+use crate::util::file_system;
 use crate::util::native_file_name::{self, NativeFileName};
-use std::io::{Read, Write};
 
 /// The extension every saved seed carries. Matched case-insensitively — the
 /// engine writes mixed case and players' files come from anywhere.
@@ -38,13 +38,56 @@ pub fn is_browsable_seed(file_name: &str) -> bool {
         && !is_reserved_seed_name(file_name)
 }
 
+/// A seed stays in the folder it came from when it is loaded, overwritten or
+/// deleted. Older installations kept player saves beside the working seed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SeedFolder {
+    RandomMaps,
+    Legacy,
+}
+
+impl SeedFolder {
+    fn path(self, maps: &Path) -> PathBuf {
+        match self {
+            Self::RandomMaps => maps.join("Random Maps"),
+            Self::Legacy => maps.to_path_buf(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SavedSeedFile {
+    folder: SeedFolder,
+    name: NativeFileName,
+}
+
+impl SavedSeedFile {
+    /// New saves go in the Random Maps folder.
+    pub fn in_random_maps(name: NativeFileName) -> Self {
+        Self {
+            folder: SeedFolder::RandomMaps,
+            name,
+        }
+    }
+
+    pub fn delete(&self, maps: &Path) -> std::io::Result<()> {
+        native_file_name::delete(&self.folder.path(maps), &self.name)
+    }
+}
+
+impl std::fmt::Display for SavedSeedFile {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.name.fmt(f)
+    }
+}
+
 /// Metadata accepted by MapSeed's callback, including invalid descriptions.
 ///
 /// Native 0x00597D60 returns true for an empty description but marks it invalid.
 /// RebuildEntryList 0x005596A0 sorts these records before omitting invalid rows.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SavedSeed {
-    pub file_name: NativeFileName,
+    pub file_name: SavedSeedFile,
     pub description: super::SeedDescription,
     /// Windows FILETIME ticks (100 ns since 1601), from the enumeration record.
     pub last_write_time: u64,
@@ -58,7 +101,14 @@ impl SavedSeed {
 
 /// Enumerate accepted metadata in filesystem order. The browser adds its New
 /// row before sorting the complete array; availability only tests valid data.
-pub fn list_saved_seeds(dir: &Path) -> Vec<SavedSeed> {
+pub fn list_saved_seeds(maps: &Path) -> Vec<SavedSeed> {
+    [SeedFolder::RandomMaps, SeedFolder::Legacy]
+        .into_iter()
+        .flat_map(|folder| list_folder(&folder.path(maps), folder))
+        .collect()
+}
+
+fn list_folder(dir: &Path, folder: SeedFolder) -> Vec<SavedSeed> {
     enumerate_seed_files(dir)
         .into_iter()
         .filter_map(|(name, attributes, time)| {
@@ -70,11 +120,7 @@ pub fn list_saved_seeds(dir: &Path) -> Vec<SavedSeed> {
                 return None;
             }
             // Metadata 0x00597E24 rejects INI load failure before sorting.
-            let mut bytes = Vec::new();
-            native_file_name::open(dir, &name, false)
-                .ok()?
-                .read_to_end(&mut bytes)
-                .ok()?;
+            let bytes = read_seed_bytes(dir, &name).ok()?;
             if !metadata_ini_has_section(&bytes) {
                 return None;
             }
@@ -87,7 +133,10 @@ pub fn list_saved_seeds(dir: &Path) -> Vec<SavedSeed> {
             Some(SavedSeed {
                 // Read using the full enumeration name; actions use the bounded
                 // copy at 0x00597E96, even if the boundary splits an ANSI character.
-                file_name: name.truncated(32),
+                file_name: SavedSeedFile {
+                    folder,
+                    name: name.truncated(32),
+                },
                 description: super::description::read_description(
                     section,
                     &super::SeedDescription::default(),
@@ -151,26 +200,47 @@ fn enumerate_seed_files(dir: &Path) -> Vec<(NativeFileName, u32, u64)> {
 /// `ares`: Ares.dll is loaded (the game is read the Ares way); see
 /// [`RmgOptions::apply_sed`].
 pub fn read_browser_seed(
-    dir: &Path,
-    name: &NativeFileName,
+    maps: &Path,
+    file: &SavedSeedFile,
     current: &RmgOptions,
     default: &str,
     ares: bool,
 ) -> std::io::Result<RmgOptions> {
-    let mut bytes = Vec::new();
-    native_file_name::open(dir, name, false)?.read_to_end(&mut bytes)?;
-    Ok(options_from_bytes(&bytes, current, default, ares))
+    let bytes = read_seed_bytes(&file.folder.path(maps), &file.name)?;
+    options_from_bytes(&bytes, current, default, ares)
 }
 
-/// `ares`: Ares.dll is loaded (the game is read the Ares way); see
-/// [`RmgOptions::to_sed_bytes`].
+/// Use the room's seed size limit when listing and loading saved maps.
+fn read_seed_bytes(dir: &Path, name: &NativeFileName) -> std::io::Result<Vec<u8>> {
+    native_file_name::read_limited(
+        dir,
+        name,
+        crate::map::source::TransferResource::Seed.limit(),
+    )
+}
+
+/// Save into the player's chosen slot. New claims a fresh filename; only the
+/// browser's confirmed Overwrite may replace an existing file.
+pub enum SeedWrite {
+    New,
+    Overwrite,
+}
+
 pub fn write_browser_seed(
-    dir: &Path,
-    name: &NativeFileName,
+    maps: &Path,
+    file: &SavedSeedFile,
     options: &RmgOptions,
     ares: bool,
+    action: SeedWrite,
 ) -> std::io::Result<()> {
-    native_file_name::open(dir, name, true)?.write_all(&options.to_sed_bytes(ares))
+    let dir = file.folder.path(maps);
+    file_system::create_dir_all(&dir)?;
+    native_file_name::write(
+        &dir,
+        &file.name,
+        &options.to_sed_bytes(ares),
+        matches!(action, SeedWrite::Overwrite),
+    )
 }
 
 pub fn system_time_to_file_time(time: crate::util::time::SystemTime) -> u64 {
@@ -198,15 +268,21 @@ pub fn saved_seeds_available(dir: &Path) -> bool {
 /// New-file allocation at 0x005592B0. The app supplies the shared UI-thread CRT
 /// stream and the original MIX-then-raw availability policy.
 pub fn allocate_seed_file_name(
+    maps: &Path,
     random: &mut crate::util::legacy_crt_rng::LegacyCrtRng,
-    mut available: impl FnMut(&str) -> bool,
-) -> NativeFileName {
-    loop {
-        let name = format!("SAVE{:04X}.SED", random.draw15());
-        if !available(&name) {
-            return name.into();
+    mut in_assets: impl FnMut(&str) -> bool,
+) -> std::io::Result<SavedSeedFile> {
+    let directory = SeedFolder::RandomMaps.path(maps);
+    // The CRT has only 32,768 possible names. A full folder must return
+    // control to the browser instead of blocking its input loop.
+    for _ in 0..=0xffff {
+        let candidate = format!("SAVE{:04X}.SED", random.draw15());
+        let name = NativeFileName::from(candidate.as_str());
+        if !in_assets(&candidate) && !native_file_name::available(&directory, &name) {
+            return Ok(SavedSeedFile::in_random_maps(name));
         }
     }
+    Err(std::io::Error::other("no free random map filename"))
 }
 
 /// Read a saved seed's options.
@@ -223,12 +299,7 @@ pub fn load_saved_seed(
     ares: bool,
 ) -> std::io::Result<RmgOptions> {
     let bytes = std::fs::read(path)?;
-    Ok(options_from_bytes(
-        &bytes,
-        current,
-        default_description,
-        ares,
-    ))
+    options_from_bytes(&bytes, current, default_description, ares)
 }
 
 fn options_from_bytes(
@@ -236,16 +307,22 @@ fn options_from_bytes(
     current: &RmgOptions,
     default_description: &str,
     ares: bool,
-) -> RmgOptions {
+) -> std::io::Result<RmgOptions> {
+    let ini = crate::rules::ini_parser::IniFile::from_bytes(bytes)
+        .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error.to_string()))?;
+    if ini.section("RandomMap").is_none() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "missing [RandomMap]",
+        ));
+    }
     let mut options = current.clone();
     // Unlike the integer keys, Description uses the localized default passed
     // at 0x00597AFD to INIClass__ReadCommaHexUTF16, not the current description.
     options.description = default_description.into();
-    if let Ok(ini) = crate::rules::ini_parser::IniFile::from_bytes(bytes) {
-        options.apply_sed(&ini, ares);
-    }
+    options.apply_sed(&ini, ares);
     options.normalize();
-    options
+    Ok(options)
 }
 
 /// Write a saved seed.
@@ -364,12 +441,18 @@ mod tests {
             seed: 42,
             description: "Prior map".into(),
             urban_areas: true,
+            tech_building_amount: 0,
+            derelict_amount: 0,
+            damage_amount: 0,
+            civilian_amount: 0,
+            animal_amount: 0,
+            wild_amount: 0,
         };
         let loaded = load_saved_seed(&path, &current, "Localized random map", true).unwrap();
         let expected = RmgOptions {
             seed: 4660,
             water_amount: 73,
-            num_players: 30,
+            num_players: 99,
             description: "Localized random map".into(),
             ..current.clone()
         };
@@ -447,6 +530,55 @@ mod tests {
             "delete removes the entry"
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn browser_saves_in_random_maps_and_keeps_a_same_named_older_seed() {
+        let base = std::env::temp_dir().join(format!("vera-folders-{}", std::process::id()));
+        std::fs::create_dir_all(&base).unwrap();
+        let name = "SAVE0042.SED";
+        let mut options = RmgOptions {
+            seed: 17,
+            description: "Earlier map".into(),
+            ..Default::default()
+        };
+        std::fs::write(base.join(name), options.to_sed_bytes(false)).unwrap();
+        options.seed = 42;
+        options.description = "New map".into();
+        let file = SavedSeedFile::in_random_maps(name.into());
+        write_browser_seed(&base, &file, &options, false, SeedWrite::New).unwrap();
+        assert!(base.join("Random Maps").join(name).is_file());
+        let entries = list_saved_seeds(&base);
+        assert_eq!(entries.len(), 2);
+        for (description, seed) in [("Earlier map", 17), ("New map", 42)] {
+            let row = entries
+                .iter()
+                .find(|row| row.description == description)
+                .unwrap();
+            let loaded =
+                read_browser_seed(&base, &row.file_name, &RmgOptions::default(), "", false)
+                    .unwrap();
+            assert_eq!(loaded.seed, seed);
+        }
+        let older = entries
+            .iter()
+            .find(|row| row.description == "Earlier map")
+            .unwrap();
+        write_browser_seed(
+            &base,
+            &older.file_name,
+            &options,
+            false,
+            SeedWrite::Overwrite,
+        )
+        .unwrap();
+        file.delete(&base).unwrap();
+        assert_eq!(list_saved_seeds(&base)[0].description, "New map");
+        assert_eq!(
+            std::fs::read(base.join(name)).unwrap(),
+            options.to_sed_bytes(false)
+        );
+        std::fs::remove_dir_all(base).unwrap();
     }
 
     #[test]

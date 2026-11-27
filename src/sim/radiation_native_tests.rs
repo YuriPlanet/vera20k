@@ -212,7 +212,7 @@ fn assert_light_lifecycle(map: &str, packet: &'static str) {
                 world
                     .session
                     .set_theater_for_test(scene.sim().session.theater().to_owned());
-                world.radiation = state.clone();
+                *world.radiation = state.clone();
                 let before = world.state_hash();
                 let bytes = save_codec::serialize(&state).unwrap();
                 let restored: RadiationState = save_codec::deserialize(&bytes).unwrap();
@@ -521,7 +521,7 @@ fn serialized_radius_that_changes_future_decay_is_hash_relevant() {
         &mut crate::sim::light_sources::LightingSources::default(),
     );
     let mut restored = crate::sim::world::Simulation::new();
-    restored.radiation =
+    *restored.radiation =
         save_codec::deserialize(&save_codec::serialize(&original.radiation).unwrap()).unwrap();
     restored
         .radiation

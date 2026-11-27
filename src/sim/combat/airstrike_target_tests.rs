@@ -61,6 +61,7 @@ fn chosen_weapon(rules: &RuleSet, sim: &Simulation, scorer: u64, target: u64) ->
         rules.object("TARGET").unwrap(),
         sim.resolved_terrain.as_ref(),
         false,
+        0,
         rules,
         &sim.interner,
     );
@@ -128,7 +129,6 @@ fn a_primary_airstrike_warhead_refuses_an_ineligible_target() {
     let error = FireSubject {
         world: &sim,
         rules: &rules,
-        overlay_registry: None,
         fog: None,
         firer: sim.substrate.entities.get(scorer).unwrap(),
         obj: rules.object("SCORER").unwrap(),

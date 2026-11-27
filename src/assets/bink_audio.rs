@@ -1,3 +1,13 @@
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable
+    )
+)]
 // Ported from FFmpeg's libavcodec/binkaudio.c.
 // Copyright (c) 2007-2011 Peter Ross (pross@xvid.org)
 // Copyright (c) 2009 Daniel Verkamp (daniel@drv.nu)
@@ -189,8 +199,8 @@ impl BinkAudioDecoder {
     ///
     /// A packet may contain MULTIPLE audio blocks back-to-back (binkaudio.c:342-346:
     /// FFmpeg consumes one block per receive_frame call and keeps the packet open
-    /// until its bitstream is exhausted). We decode them all in one shot here and
-    /// concatenate the samples.
+    /// until its bitstream is exhausted). The packet declares how many bytes of
+    /// 16-bit interleaved PCM to play, including a possibly partial last block.
     pub fn decode_packet(&mut self, bytes: &[u8]) -> Result<Vec<f32>, AssetError> {
         if bytes.len() < 4 {
             return Err(AssetError::BinkAudioError {
@@ -199,20 +209,20 @@ impl BinkAudioDecoder {
         }
 
         let mut gb = BitReader::from_bytes(bytes);
-        // Skip reported size (32 bits) per binkaudio.c:322. Only done once per packet.
-        gb.read_bits(32)?;
-
+        // BINKW32 BinkDoFrame 0x10009DD4 reads the uncompressed byte count.
+        // At 0x10009E33..0x10009E44 it decodes a whole block, then caps the
+        // copy to the remaining bytes. The overlap still uses the full block.
+        let pcm_bytes = gb.read_bits(32)? as usize;
+        if !pcm_bytes.is_multiple_of(2 * usize::from(self.channels)) {
+            return Err(AssetError::BinkAudioError {
+                reason: "audio packet declares an incomplete PCM frame".to_string(),
+            });
+        }
+        let sample_count = pcm_bytes / 2;
         let usable = self.frame_len - self.overlap_len;
         let mut out: Vec<f32> = Vec::new();
 
-        // Per binkaudio.c: require at least ~58 bits (58 for non-version-b) of
-        // body for a valid block. Anything less and we assume packet end.
-        const MIN_BLOCK_BITS: isize = 58;
-        loop {
-            if gb.bits_left() < MIN_BLOCK_BITS {
-                break;
-            }
-
+        while out.len() < sample_count {
             // Skip 2-bit header for DCT variant per binkaudio.c:183-184. Done
             // once per block (not just once per packet).
             if self.use_dct {
@@ -228,8 +238,9 @@ impl BinkAudioDecoder {
             self.apply_overlap_add();
 
             // Interleave DCT channels; RDFT output is already interleaved.
-            out.reserve(usable * self.transform_channels);
-            for i in 0..usable {
+            let to_emit = usable.min((sample_count - out.len()) / self.transform_channels);
+            out.reserve(to_emit * self.transform_channels);
+            for i in 0..to_emit {
                 for ch in 0..self.transform_channels {
                     out.push(self.out_per_ch[ch][i]);
                 }
@@ -339,7 +350,7 @@ impl BinkAudioDecoder {
     }
 
     fn inverse_transform_channel(&mut self, ch: usize) {
-        if self.use_dct {
+        let scale = if self.use_dct {
             // Pre-double DC per binkaudio.c:253.
             self.coeffs[0] *= 2.0;
             // Inverse DCT-II of size frame_len consumes coeffs[0..frame_len]
@@ -350,10 +361,7 @@ impl BinkAudioDecoder {
             // FFmpeg's DCT-III is (DC + 2 * sum(AC*cos)) / N
             // (n4.4.2 libavcodec/dct.c:96-124). Our primitive uses half-DC
             // weighting and an unnormalized FFT, so it needs 2/N here.
-            let scale = 2.0 / self.frame_len as f32;
-            for s in self.out_per_ch[ch].iter_mut() {
-                *s *= scale;
-            }
+            2.0 / self.frame_len as f32
         } else {
             // RDFT input layout shuffle per binkaudio.c:255-261.
             // Negate imaginary halves of bins 1..N/2-1.
@@ -371,10 +379,14 @@ impl BinkAudioDecoder {
             let coeffs_in: Vec<f32> = self.coeffs.clone();
             inverse_rdft(&coeffs_in, &mut self.out_per_ch[ch], &self.fft);
             // FFmpeg's AV_TX_FLOAT_RDFT inverse uses scale = 0.5
-            // (binkaudio.c:140). Our primitive is un-normalized, so apply here.
-            for s in self.out_per_ch[ch].iter_mut() {
-                *s *= 0.5;
-            }
+            // (binkaudio.c:140). Our primitive is un-normalized.
+            0.5
+        };
+        // BINKW32 0x10028EB0 saturates the transformed block to signed 16-bit
+        // PCM before 0x100289B0 crossfades it and saves its tail. DirectSound
+        // applies voice volume downstream. Keep the bounds in the float mixer.
+        for sample in &mut self.out_per_ch[ch] {
+            *sample = (*sample * scale).clamp(-1.0, 32767.0 / 32768.0);
         }
     }
 
@@ -697,8 +709,8 @@ mod tests {
             }
         }
 
-        // 4-byte reported size (placeholder).
-        bits.extend_from_slice(&[0u8; 4]);
+        let pcm_bytes = 2 * (d.frame_len - d.overlap_len) * d.transform_channels;
+        bits.extend_from_slice(&(pcm_bytes as u32).to_le_bytes());
 
         if d.use_dct {
             push(0, 2, &mut acc, &mut nbits, &mut bits);
@@ -724,6 +736,17 @@ mod tests {
             bits.push((acc & 0xFF) as u8);
         }
         bits
+    }
+
+    #[test]
+    fn rejects_incomplete_or_missing_declared_stereo_frames() {
+        let mut decoder = BinkAudioDecoder::new(make_track(22050, true, false)).unwrap();
+        let mut packet = make_silent_packet(&decoder);
+        let size = u32::from_le_bytes(packet[..4].try_into().unwrap());
+        packet[..4].copy_from_slice(&(size - 2).to_le_bytes());
+        assert!(decoder.decode_packet(&packet).is_err());
+        packet[..4].copy_from_slice(&(size + 4).to_le_bytes());
+        assert!(decoder.decode_packet(&packet).is_err());
     }
 
     #[test]

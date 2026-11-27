@@ -1,3 +1,14 @@
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable,
+        clippy::indexing_slicing
+    )
+)]
 // Ported from FFmpeg's libavformat/bink.c.
 // Copyright (c) 2008-2010 Peter Ross (pross@xvid.org)
 // Copyright (c) 2009 Daniel Verkamp (daniel@drv.nu)
@@ -8,8 +19,7 @@
 //! Parses the fixed header, audio track descriptors, per-frame offset table,
 //! and splits each frame packet into its audio blocks + video bitstream.
 //!
-//! Only BIKi and BIKk revisions are supported — the only variants that ship
-//! in RA2 / Yuri's Revenge cutscenes.
+//! Supports BIKi (the retail movies) and BIKk.
 //!
 //! ## Dependency rules
 //! - Part of assets/ — no dependencies on game modules.
@@ -18,7 +28,7 @@
 use std::sync::Arc;
 
 use crate::assets::error::AssetError;
-use crate::util::read_helpers::{read_u16_le, read_u32_le};
+use crate::util::read_helpers::read_u32_le;
 
 /// Bink file revision byte.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -26,7 +36,7 @@ pub enum BinkVersion {
     /// BIKi — standard Bink 1 used by nearly all RA2/YR cutscenes.
     BikI,
     /// BIKk — minor revision: extra 4-byte header field, 0xBB block-type XOR,
-    /// whole-plane fill shortcut, JPEG color range. One file in movmd03.mix.
+    /// whole-plane fill shortcut, JPEG color range.
     BikK,
 }
 
@@ -69,6 +79,11 @@ pub struct BinkHeader {
 }
 
 impl BinkHeader {
+    /// Inspect the dimensions and timing without parsing the frame index.
+    pub fn probe(data: &[u8]) -> Result<Self, AssetError> {
+        parse_fixed_header(data).map(|(header, _)| header)
+    }
+
     #[inline]
     pub fn has_alpha(&self) -> bool {
         self.video_flags & BINK_FLAG_ALPHA != 0
@@ -126,28 +141,28 @@ const MAX_AUDIO_TRACKS: u32 = 256;
 /// Returns the parsed header and the offset in `data` where the audio-track
 /// descriptors (if any) start.
 pub(crate) fn parse_fixed_header(data: &[u8]) -> Result<(BinkHeader, usize), AssetError> {
-    if data.len() < 0x2C {
-        return Err(AssetError::BinkError {
+    // The whole 0x2C-byte prefix is read before any field is judged.
+    let field = |offset: usize| {
+        read_u32_le(data, offset).ok_or_else(|| AssetError::BinkError {
             reason: format!(
                 "Bink header truncated: {} bytes, need at least 0x2C",
                 data.len()
             ),
-        });
-    }
-
-    let tag = read_u32_le(data, 0x00);
-    let version = BinkVersion::from_tag(tag)?;
-
-    let file_size = read_u32_le(data, 0x04) as u64 + 8;
-    let num_frames = read_u32_le(data, 0x08);
-    let largest_frame = read_u32_le(data, 0x0C);
+        })
+    };
+    let tag = field(0x00)?;
+    let file_size = field(0x04)? as u64 + 8;
+    let num_frames = field(0x08)?;
+    let largest_frame = field(0x0C)?;
     // 0x10 is skipped (unused).
-    let width = read_u32_le(data, 0x14);
-    let height = read_u32_le(data, 0x18);
-    let fps_num = read_u32_le(data, 0x1C);
-    let fps_den = read_u32_le(data, 0x20);
-    let video_flags = read_u32_le(data, 0x24);
-    let num_audio_tracks = read_u32_le(data, 0x28);
+    let width = field(0x14)?;
+    let height = field(0x18)?;
+    let fps_num = field(0x1C)?;
+    let fps_den = field(0x20)?;
+    let video_flags = field(0x24)?;
+    let num_audio_tracks = field(0x28)?;
+
+    let version = BinkVersion::from_tag(tag)?;
 
     // Sanity bounds — matches FFmpeg's probe + header validation.
     if num_frames == 0 || num_frames > MAX_FRAMES {
@@ -223,39 +238,29 @@ pub(crate) fn parse_audio_tracks(
 
     let n = header.num_audio_tracks as usize;
     // Layout: uint32 max_decoded_bytes[n] ; (u16 sample_rate + u16 flags) [n] ; uint32 track_id[n]
-    let needed = 4 * n + 4 * n + 4 * n;
-    if data.len() < start + needed {
+    // max_decoded_bytes[n] is skipped — FFmpeg does the same.
+    let words: &[[u8; 4]] = data
+        .get(start..)
+        .map_or(&[], |descriptors| descriptors.as_chunks().0);
+    let (Some(rates), Some(track_ids)) = (words.get(n..2 * n), words.get(2 * n..3 * n)) else {
         return Err(AssetError::BinkError {
             reason: "audio track descriptors truncated".to_string(),
         });
-    }
+    };
 
-    // Skip max_decoded_bytes[n] — FFmpeg does the same.
-    let mut off = start + 4 * n;
-
-    let mut tracks_partial: Vec<(u16, u16)> = Vec::with_capacity(n);
-    for _ in 0..n {
-        let sample_rate = read_u16_le(data, off);
-        let flags = read_u16_le(data, off + 2);
-        tracks_partial.push((sample_rate, flags));
-        off += 4;
-    }
-
-    let mut tracks = Vec::with_capacity(n);
-    for &(sample_rate, flags) in &tracks_partial {
-        #[cfg(test)]
-        let track_id = read_u32_le(data, off);
-        off += 4;
-        tracks.push(AudioTrack {
-            sample_rate,
-            flags,
-            #[cfg(test)]
-            track_id,
-        });
-    }
-
-    header.audio_tracks = tracks;
-    Ok(off)
+    header.audio_tracks = rates
+        .iter()
+        .zip(track_ids)
+        .map(
+            |(&[rate_low, rate_high, flags_low, flags_high], _track_id)| AudioTrack {
+                sample_rate: u16::from_le_bytes([rate_low, rate_high]),
+                flags: u16::from_le_bytes([flags_low, flags_high]),
+                #[cfg(test)]
+                track_id: u32::from_le_bytes(*_track_id),
+            },
+        )
+        .collect();
+    Ok(start + 12 * n)
 }
 
 /// One entry in the frame index table.
@@ -277,30 +282,32 @@ pub(crate) fn parse_frame_index(
     start: usize,
 ) -> Result<Vec<FrameIndexEntry>, AssetError> {
     let n = header.num_frames as usize;
-    let needed = 4 * n;
 
-    if data.len() < start + needed {
+    // Read raw offsets (with keyframe bits).
+    let Some(table) = data
+        .get(start..)
+        .and_then(|index| index.as_chunks::<4>().0.get(..n))
+    else {
         return Err(AssetError::BinkError {
             reason: "frame index table truncated".to_string(),
         });
-    }
-
-    // Read raw offsets (with keyframe bits).
-    let mut raw = Vec::with_capacity(n + 1);
-    for i in 0..n {
-        raw.push(read_u32_le(data, start + 4 * i));
-    }
+    };
     // Synthesize trailing sentinel using file_size.
-    raw.push(header.file_size as u32);
+    let raw: Vec<u32> = table
+        .iter()
+        .copied()
+        .map(u32::from_le_bytes)
+        .chain([header.file_size as u32])
+        .collect();
 
     let mut entries = Vec::with_capacity(n);
-    for i in 0..n {
-        let cur = raw[i];
-        let next = raw[i + 1] & !1;
+    for (i, pair) in raw.windows(2).enumerate() {
+        let &[cur, next] = pair else { continue };
+        let next = next & !1;
         let offset = cur & !1;
         // Per FFmpeg: frame 0 is always a keyframe; for subsequent frames the
         // low bit of entry i encodes whether frame i is a keyframe.
-        let is_keyframe = if i == 0 { true } else { (raw[i] & 1) != 0 };
+        let is_keyframe = if i == 0 { true } else { (cur & 1) != 0 };
         if next <= offset {
             return Err(AssetError::BinkError {
                 reason: format!("invalid frame index at {}: next <= current", i),
@@ -320,12 +327,11 @@ pub(crate) fn parse_frame_index(
 #[derive(Debug, Clone, Copy)]
 pub struct AudioPacket<'a> {
     pub track_index: usize,
-    /// Decompressed sample count (first 4 bytes of the packet payload, little-endian).
-    /// 0 if the packet is shorter than 4 bytes.
+    /// Number of decoded 16-bit PCM bytes, including all channels.
     #[cfg(test)]
-    pub sample_count: u32,
+    pub decoded_bytes: u32,
     /// Audio packet payload bytes, starting with the 4-byte little-endian
-    /// decompressed sample count that the audio decoder skips.
+    /// decoded PCM byte length.
     pub bytes: &'a [u8],
 }
 
@@ -352,47 +358,42 @@ impl BinkFile {
 
     /// Return the bitstream bytes for video frame `i` (audio already skipped).
     pub fn video_packet(&self, i: usize) -> Result<&[u8], AssetError> {
-        let entry = self
-            .frame_index
-            .get(i)
-            .ok_or(AssetError::BinkFrameOutOfRange {
-                index: i,
-                count: self.frame_index.len(),
-            })?;
-
-        let start = entry.offset as usize;
-        let end = start + entry.size as usize;
-        if end > self.data.len() {
-            return Err(AssetError::BinkError {
-                reason: format!("frame {} packet extends past EOF", i),
-            });
-        }
-        let mut cur = start;
-
-        // Skip audio packets for each track.
-        for _ in 0..self.header.num_audio_tracks {
-            if cur + 4 > end {
-                return Err(AssetError::BinkError {
-                    reason: format!("frame {} audio header truncated", i),
-                });
-            }
-            let audio_size = read_u32_le(&self.data, cur) as usize;
-            cur += 4;
-            if audio_size > end - cur {
-                return Err(AssetError::BinkError {
-                    reason: format!("frame {} audio size {} overflows packet", i, audio_size),
-                });
-            }
-            cur += audio_size;
-        }
-
-        Ok(&self.data[cur..end])
+        self.demux_frame(i, |_, _| {})
     }
 
     /// Return the audio packets for frame `i`: one per track that carries
     /// audio. A slot under four bytes holds none and is skipped, as FFmpeg's
     /// demuxer skips it (`libavformat/bink.c`, `read_packet`).
     pub fn audio_packets(&self, i: usize) -> Result<Vec<AudioPacket<'_>>, AssetError> {
+        let mut out = Vec::with_capacity(self.header.num_audio_tracks as usize);
+        self.demux_frame(i, |track_index, bytes| {
+            // A slot under four bytes carries no audio: the frame is silent on
+            // this track. The decoder's own length guard stays for malformed
+            // packets, but this is a legal container state, not a failure.
+            if bytes.len() >= 4 {
+                #[cfg(test)]
+                let decoded_bytes = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+                out.push(AudioPacket {
+                    track_index,
+                    #[cfg(test)]
+                    decoded_bytes,
+                    bytes,
+                });
+            }
+        })?;
+        Ok(out)
+    }
+
+    /// Split frame `i`'s packet as FFmpeg's demuxer does (`libavformat/bink.c`,
+    /// `read_packet`): one audio slot per track, in track order, each a
+    /// little-endian u32 size and that many bytes, then the video bitstream.
+    /// Hands `slot` each track's slot and returns the video bitstream. The
+    /// packet must lie inside the file and every slot inside the packet.
+    fn demux_frame<'a>(
+        &'a self,
+        i: usize,
+        mut slot: impl FnMut(usize, &'a [u8]),
+    ) -> Result<&'a [u8], AssetError> {
         let entry = self
             .frame_index
             .get(i)
@@ -403,40 +404,31 @@ impl BinkFile {
 
         let start = entry.offset as usize;
         let end = start + entry.size as usize;
-        let mut cur = start;
-        let mut out = Vec::with_capacity(self.header.num_audio_tracks as usize);
+        let mut rest = self
+            .data
+            .get(start..end)
+            .ok_or_else(|| AssetError::BinkError {
+                reason: format!("frame {} packet extends past EOF", i),
+            })?;
 
         for track_index in 0..self.header.num_audio_tracks as usize {
-            if cur + 4 > end {
+            let Some((size, tail)) = rest.split_first_chunk::<4>() else {
                 return Err(AssetError::BinkError {
                     reason: format!("frame {} audio header truncated", i),
                 });
-            }
-            let audio_size = read_u32_le(&self.data, cur) as usize;
-            let packet_start = cur + 4;
-            let packet_end = packet_start + audio_size;
-            if packet_end > end {
+            };
+            let audio_size = u32::from_le_bytes(*size) as usize;
+            if audio_size > tail.len() {
                 return Err(AssetError::BinkError {
-                    reason: format!("frame {} audio packet overflows", i),
+                    reason: format!("frame {} audio size {} overflows packet", i, audio_size),
                 });
             }
-            let bytes = &self.data[packet_start..packet_end];
-            // A slot under four bytes carries no audio: the frame is silent on
-            // this track. The decoder's own length guard stays for malformed
-            // packets, but this is a legal container state, not a failure.
-            if bytes.len() >= 4 {
-                #[cfg(test)]
-                let sample_count = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
-                out.push(AudioPacket {
-                    track_index,
-                    #[cfg(test)]
-                    sample_count,
-                    bytes,
-                });
-            }
-            cur = packet_end;
+            let (bytes, after) = tail.split_at(audio_size);
+            slot(track_index, bytes);
+            rest = after;
         }
-        Ok(out)
+
+        Ok(rest)
     }
 }
 
@@ -609,7 +601,7 @@ mod tests {
         let audios = f.audio_packets(0).unwrap();
         assert_eq!(audios.len(), 1);
         assert_eq!(audios[0].bytes, &[1u8, 2, 3, 4, 5, 6, 7, 8]);
-        assert_eq!(audios[0].sample_count, 0x04030201);
+        assert_eq!(audios[0].decoded_bytes, 0x04030201);
     }
 
     #[test]

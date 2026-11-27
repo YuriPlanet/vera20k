@@ -267,12 +267,14 @@ fn simulation_fixture_for_type(
     entity.set_type_ref_for_test(sim.intern(type_name));
     entity.set_owner_for_test(sim.intern(owner));
     entity
+        .seldom
         .selection
         .set_selected_for_test(input["selected"].as_bool().unwrap_or(true));
     entity
         .lifecycle
         .set_object_alive_for_test(input["alive"].as_bool().unwrap_or(true));
     entity
+        .seldom
         .type_facts
         .set_foundation_for_test(foundation.clone());
     let [tx, ty] = input.get("target_cell").map(point).unwrap_or([14, 20]);
@@ -479,8 +481,7 @@ fn retail_gapile_house_color_and_production_crop_match_original_rally_and_no_tar
 fn presentation_target_query_does_not_stamp_simulation_dummy_cell() {
     let row = &rally_native()["producer_cases"][0];
     let (mut sim, rules) = simulation_fixture(row);
-    sim.entities_mut_for_test()
-        .get_mut(10)
+    sim.entity_mut_for_test(10)
         .unwrap()
         .set_archive_target(Some(TargetKind::Cell(u16::MAX, u16::MAX)));
     let terrain = sim.resolved_terrain().unwrap();

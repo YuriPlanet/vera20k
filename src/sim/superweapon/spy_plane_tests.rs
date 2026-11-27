@@ -173,12 +173,12 @@ fn spy_planes(sim: &Simulation) -> Vec<u64> {
 
 /// The camera's sounds: `SpyPlaneCamera=` bound to its SOUNDMD entry, which
 /// retail spells `SpyPlaneSnapShot` (`VocClass::FindIndex` ignores case).
-fn camera_sounds(sim: &Simulation) -> usize {
+fn camera_sounds(rules: &RuleSet, sim: &Simulation) -> usize {
     sim.sound_events
         .iter()
         .filter(|event| {
             matches!(event, SimSoundEvent::VocAt { sound_id, .. }
-                if sound_id.eq_ignore_ascii_case("SpyPlaneSnapshot"))
+                if sound_id.name_in(rules).eq_ignore_ascii_case("SpyPlaneSnapshot"))
         })
         .count()
 }
@@ -264,7 +264,7 @@ fn launch_case_eight_matches_native() {
             americans,
             sw_type,
             cell,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(spy_planes(&sim).len(), sent, "{row}");
         assert_eq!(launched, sent > 0, "{row}");
@@ -367,7 +367,7 @@ fn send_spy_planes_matches_native() {
             americans,
             sw_type,
             TARGET,
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         ));
         let [id] = spy_planes(&sim)[..] else {
             panic!("one plane");
@@ -422,7 +422,7 @@ fn mission_plane(sim: &mut Simulation, rules: &RuleSet, row: &Value) -> u64 {
                 0,
                 0,
                 rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
         })
         .unwrap();
@@ -430,6 +430,7 @@ fn mission_plane(sim: &mut Simulation, rules: &RuleSet, row: &Value) -> u64 {
         .entities
         .get_mut(id)
         .unwrap()
+        .seldom
         .mission_only
         .mark();
     sim.with_object_placement_scope(|sim| {
@@ -441,7 +442,7 @@ fn mission_plane(sim: &mut Simulation, rules: &RuleSet, row: &Value) -> u64 {
             0,
             PlacementEvidence::MarkSucceeded,
             rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
     })
     .unwrap();
@@ -556,7 +557,12 @@ fn spyplane_missions_match_native() {
         let id = mission_plane(&mut sim, &rules, row);
         if flag(row, "latched") {
             // A snapshot held from before, as the row's `+0x250` stands for.
-            sim.refresh_object_sight(id, &rules, 4, crate::sim::world::FrameEffects::default());
+            sim.refresh_object_sight(
+                id,
+                &rules,
+                4,
+                &mut crate::sim::world::FrameEffects::default(),
+            );
         }
         let opposite = pick.map(|pick| {
             let opposite = edge(pick);
@@ -567,7 +573,7 @@ fn spyplane_missions_match_native() {
         sim.sound_events.clear_for_test();
         let now = sim.session.binary_frame();
 
-        crate::sim::aircraft::dispatch_mission(&mut sim, id, &rules, Default::default());
+        crate::sim::aircraft::dispatch_mission(&mut sim, id, &rules, &mut Default::default());
 
         let plane = sim.substrate.entities.get(id).unwrap();
         let queued = events(row, "queue")
@@ -601,7 +607,7 @@ fn spyplane_missions_match_native() {
         let sounds = events(row, "play_at")
             .filter(|event| int(&event[1]) >= 0)
             .count();
-        assert_eq!(camera_sounds(&sim), sounds, "{row}");
+        assert_eq!(camera_sounds(&rules, &sim), sounds, "{row}");
         let timer = plane.mission.dispatch_timer();
         assert_eq!(
             (timer.start_frame(), timer.delay()),
@@ -630,7 +636,7 @@ fn retail_spy_plane_camera_finishes_its_ground_edge_frames() {
     for _ in 0..3000 {
         sim.sound_events.clear_for_test();
         step(&mut sim, &rules);
-        if camera_sounds(&sim) == 0 {
+        if camera_sounds(&rules, &sim) == 0 {
             continue;
         }
         let source = sim.fog.source_sight(plane, americans).unwrap();
@@ -678,7 +684,13 @@ fn retail_enemy_spy_plane_refreshes_existing_player_ground_without_revealing() {
         .unwrap()
         .set_base_center_for_test(Some(TARGET));
     charge_super(&mut sim, computer, SPY_PLANE);
-    super::ai_fire::try_fire(&mut sim, &rules, computer, None, FrameEffects::default());
+    super::ai_fire::try_fire(
+        &mut sim,
+        &rules,
+        computer,
+        None,
+        &mut FrameEffects::default(),
+    );
     let [plane] = spy_planes(&sim)[..] else {
         panic!("one computer Spy Plane");
     };
@@ -689,7 +701,7 @@ fn retail_enemy_spy_plane_refreshes_existing_player_ground_without_revealing() {
         step(&mut sim, &rules);
         // Leave time for the next 16-frame camera before Logic's periodic
         // 120-frame edge sweep can repair the newly captured tank's border.
-        if camera_sounds(&sim) > 0 && sim.session.binary_frame() % 120 < 95 {
+        if camera_sounds(&rules, &sim) > 0 && sim.session.binary_frame() % 120 < 95 {
             let source = sim.fog.source_sight(plane, player).unwrap();
             assert_eq!(source.radius, 6);
             assert!(sim.fog.sight_admission(plane, player).is_none());
@@ -702,7 +714,7 @@ fn retail_enemy_spy_plane_refreshes_existing_player_ground_without_revealing() {
     let tank = sim
         .spawn_object("MTNK", "Russians", center.0, center.1, 0, &rules)
         .expect("a ground tank below the plane");
-    sim.change_owner_with_rules(tank, player, &rules, None, FrameEffects::default());
+    sim.change_owner_with_rules(tank, player, &rules, None, &mut FrameEffects::default());
     assert!(sim.fog.is_cell_revealed(player, center.0, center.1));
     assert_eq!(
         sim.fog.by_owner_mut_for_test()[&player]
@@ -715,7 +727,7 @@ fn retail_enemy_spy_plane_refreshes_existing_player_ground_without_revealing() {
     for _ in 0..20 {
         sim.sound_events.clear_for_test();
         step(&mut sim, &rules);
-        if camera_sounds(&sim) > 0 {
+        if camera_sounds(&rules, &sim) > 0 {
             assert!(sim.fog.sight_admission(plane, player).is_none());
             assert_eq!(
                 sim.fog.by_owner_mut_for_test()[&player]
@@ -782,7 +794,7 @@ fn retail_spy_plane_photographs_the_target_and_leaves() {
         sim.sound_events.clear_for_test();
         step(&mut sim, &rules);
         frames += 1;
-        snapshots += camera_sounds(&sim);
+        snapshots += camera_sounds(&rules, &sim);
         let current = sim.substrate.entities.get(plane).map(|entity| {
             saw_body_counter_advance |= entity.body_frame_counter.get() != 0;
             entity.mission.current()
@@ -853,15 +865,14 @@ fn retail_spy_plane_drops_dummy_cells_and_picks_another_exit() {
             plane,
             Some(NavTargetRef::cell(nav.0, nav.1)),
             &rules,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
         let target = if bad_target { dummy } else { TARGET };
         sim.assign_target_represented(
             plane,
             Some(TargetKind::Cell(target.0, target.1)),
             &rules,
-            None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap();
         let now = sim.session.binary_frame();
@@ -978,7 +989,7 @@ fn a_computer_mcv_deploy_replaces_the_human_spy_photo_with_normal_sight() {
     let [plane] = spy_planes(&sim)[..] else {
         panic!("one retail Spy Plane");
     };
-    assert!(sim.entities().get(plane).unwrap().sight.is_zero());
+    assert!(sim.entities().get(plane).unwrap().seldom.sight.is_zero());
     let mut witness = None;
     for _ in 0..1000 {
         step(&mut sim, &rules);
@@ -1000,6 +1011,7 @@ fn a_computer_mcv_deploy_replaces_the_human_spy_photo_with_normal_sight() {
         sim.entities()
             .get(plane)
             .unwrap()
+            .seldom
             .discovery
             .discovered_by_current_house(),
         "native Human callback requires Techno41B"
@@ -1017,7 +1029,7 @@ fn a_computer_mcv_deploy_replaces_the_human_spy_photo_with_normal_sight() {
     let mcv = sim
         .spawn_object_at_height("AMCV", "Americans", 22, 44, deploy_facing, 0, &rules)
         .expect("computer MCV on a clear site after the photograph");
-    assert!(sim.deploy_mcv(mcv, &rules, None, FrameEffects::default()));
+    assert!(sim.deploy_mcv(mcv, &rules, None, &mut FrameEffects::default()));
     assert!(
         sim.entities()
             .get(mcv)
@@ -1136,7 +1148,7 @@ fn retail_computer_sends_its_spy_plane_past_the_enemy_base() {
         &rules,
         russians,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
 
     assert!(!sim.super_weapons[&russians][&sw_type].is_ready);

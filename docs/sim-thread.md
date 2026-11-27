@@ -23,8 +23,8 @@ The starting point, before phase 0; the phases below take each apart.
    `app/match_runtime/frame_effects.rs` `FrameClientBoundary`). These run in
    native order *inside* a tick, and they cannot become post-tick events:
    - `SoundBoundary` plays the reached sound prefix at once. Gattling Stop must
-     finish before Report's Main draw, and sound and simulation share the
-     process Main RNG.
+     finish before Report's Main draw, as in gamemd, where sound and
+     simulation share one Main RNG.
    - `OutcomeWaitBoundary` lets `HouseClass::Update` (`4F860F`/`4F8736`)
      wait for the EVA voice. The frame suspends until Vox is idle.
    - `LocalPlanningBoundary::leave_planning` returns a command into the
@@ -55,10 +55,11 @@ The starting point, before phase 0; the phases below take each apart.
   `PlanningInputState`, `SelectionState`, `ClientRadarEvents` and
   `ScenarioPauseClock`. A compile-time probe checked this when this plan was
   written; phase 1 should assert it where it moves them.
-- The process Main RNG (`sim/rng.rs` `MainRng`) is outside saves and the
-  state hash, and it is already `Arc<Mutex<_>>`. Draws from two threads stay
-  deterministic for gameplay. Only the order of presentation draws (voices,
-  laser jitter) can differ from a single-threaded run.
+- The process Main RNG is outside saves and the state hash. The app's cell
+  (`sim/rng.rs` `MainRng`) is `Arc<Mutex<_>>`, drawn on the main thread and
+  the audio output thread; the simulation owns its Main as a plain `SimRng`.
+  Only the order of presentation draws (voices, laser jitter) can differ
+  from a single-threaded run.
 - Commands are already scheduled by frame, so replays and lockstep do not
   depend on when the main thread submits them.
 
@@ -155,14 +156,17 @@ storage with the world the simulation thread ticks:
   the other state only gameplay reads. Its fog is only the local player's
   (`FogState::presentation_copy`), whose shroud knowledge, like its terrain,
   overlays, smudges, terrain objects, interner and occupation grids, is the
-  previous copy brought up to date by copying only the chunks a write
-  changed (`util::synced`); the clone of the rest and the fog copy run at
-  once beside those syncs. Its Dummy cell, ally graph and Main RNG are its
-  own. Release builds take it when a tick is lent; debug builds with
-  every frame, so every test draw reads a lent tick's view.
+  previous copy brought up to date. The occupation grids track changes one
+  dense cell at a time and reuse the destination's occupant lists.
+  The House array, the substrate stores, the
+  clone of the rest and the fog copy run at once beside those syncs. Its
+  Dummy cell, ally graph and Main RNG are its own. Release builds take it when
+  a tick is lent; debug builds with every frame, so every test draw reads a
+  lent tick's view.
 
 The app's Main RNG is its own cell from a scenario's install on
-(`Simulation::install_fresh_process_main`); the simulation draws its own.
+(`Simulation::install_fresh_process_main`); the simulation draws its own
+generator through `&mut`.
 Main is outside saves and the hash: only which random voice plays can
 differ from gamemd.
 
@@ -175,20 +179,30 @@ placement preview, which the passes beside the tick keep: all are one tick
 late at most. An atlas refresh asked beside a tick (a growth published
 then) waits for the tick's tail.
 
-Still shared, read-only: `SimResources` (the rules, the terrain template, the
-overlay registry), which nothing writes once a match is loaded.
+The live world and its presentation copy share `SimResources` while the
+match runs. It holds the rules and the terrain template. The rules own the
+overlay types used by simulation and drawing. After an offline Skirmish, the
+setup dialog writes the current countries into the retained world's rules.
+The host releases the copy's reference before it returns that world for a
+write. The captured frame holds none: it sorts its Display order at capture.
 
 What the snapshot costs the main thread:
 
-- The records are captured on the worker pool while the scene frame is
-  captured on the calling thread. A record asks only what a drawer of that
-  object reads: an action line only for a selected or psychically detected
-  object, the airstrike tint only for a Structure, a Carryall's cargo only
-  for an Aircraft, the mind-control count only for a capture manager.
-- A frame that is replaced is freed on the pool
+- The records, the Display order, the anims' coordinates, the parachutes
+  and the control groups are captured on the worker pool while the scene
+  frame is captured on the calling thread. A record asks only what
+  a drawer of that object reads: an action line only for a selected or
+  psychically detected object, the airstrike tint only for a Structure, a
+  Carryall's cargo only for an Aircraft, the mind-control count only for a
+  capture manager.
+- Before a tick leaves, the pool files the frame's Display members
+  (`PresentationFrame::display_members`), a run at a time, so no draw beside
+  the tick files them.
+- A retired frame's object records and draw caches are freed on the pool
   (`sim::parallel::drop_on_pool`), as is the old world copy's unsynced part.
-- The world copy's syncs run on the pool beside the clone of its other parts
-  and the local player's fog.
+- The world copy's cell-at-a-time syncs, the local player's fog, the Anim
+  store, the House array and the substrate stores it carries run on the pool
+  beside the clone of its small rest.
 - The first world copy is a whole one; desktop takes it when a scenario is
   installed (`SimHost::install`), so the first lent tick only syncs it.
 
@@ -356,7 +370,9 @@ another thread, so two things differ:
   work would wait for in vain. Until the worker runs, frames tick inline.
   It is experimental and off unless the page turns it on:
   `set_simulation_thread` takes `1` to turn it on, `always` to lend every
-  frame it can take, or `0`. Lending then follows desktop's rules.
+  frame it can take, or `0`. Lending then follows desktop's rules, except
+  that a match with Wasm extension modules never lends: each module is a
+  JavaScript `WebAssembly.Instance` of the main thread (wasm-ext `browser.rs`).
 - **Nothing wakes the loop.** The next animation frame asks whether the
   tick has ended. Every window event waits while a tick is out, pointer
   motion too, and a write no route covers (a debug tool, a teardown) spins
@@ -366,8 +382,8 @@ another thread, so two things differ:
   session never leaves it.
 
 Nothing the draw and a tick can both take waits on the main thread
-(`util::sync`). The Main RNG and the zone grid's precheck memo lock with
-`wasm_sync`'s mutex, which spins there. Once-cells both can reach (the
+(`util::sync`). The zone grid's precheck memo, and the app's Main RNG cell,
+lock with `wasm_sync`'s mutex, which spins there. Once-cells both can reach (the
 static tables, such as `adjust_for_z_standard`'s) never wait: two threads
 that fill one at once both compute it, and one value is kept. (`wasm_sync`'s own
 once-cell reads the standard library's private state and spins forever on
@@ -396,22 +412,25 @@ Done: drawing reads the presentation frame and the world copy only; the
 world the simulation thread ticks shares no storage with them (the read-only
 `SimResources` aside). Entities, the zone grid, fog planes and team script
 definitions are no longer copy-on-write. The app and the simulation draw
-separate Main RNG cells.
+separate Main RNG generators.
 
 Not done:
 
-- **Snapshot cost.** The goal is 2 ms per tick at 20,000 objects. Measured
-  in a release build on sim-bench's 20,000-unit, 30-house march, on a
-  12-core machine other builds kept at a load of 30–40, the main thread's
-  part per lent tick: capturing the frame 5.0–5.6 ms (records and scene
-  frame side by side), syncing the world copy 3.5–3.8 ms, freeing the old
-  frame 0 ms (1.6–1.9 ms of pool work), 8.5–9.4 ms in all. The code before
-  these changes, run beside it: 9.3–10.6 + 2.7–3.0 ms capture, 6.4–7.4 ms
-  copy, 3.4–3.5 ms freeing, 21.8–24.5 ms in all. A record is 1,104 bytes.
-  The records are bound by reading 20,000 objects scattered in memory: each
-  touches several cache lines of its `GameEntity`. Left: answer placement,
-  lighting and the status strip only for objects near the screen (radar
-  facts stay for every object).
+- **Snapshot cost.** The goal is 2 ms per tick at 20,000 objects. The world
+  copy now takes 1.6 ms per lent tick, under that for its part: measured in
+  shipping `sim-bench` on the 20,000-unit, 30-house battle map (`--scenario
+  battle --map battle30.map --ticks 600 --threads 16
+  --presentation-frame`), AMD Ryzen 7 9800X3D (8 cores/16 threads),
+  2026-11-26: `presentation_copy_mean_ms` 1.611 and 1.622 over 300 frames,
+  against 3.462 and 3.189 for the copy before this change; all 600 per-frame
+  hashes and the final `a76b4b338c2e955a` matched. The cells a write reached
+  sync instead of their whole columns, and the House array and substrate
+  stores clone on the pool. Capturing the frame (5.0–5.6 ms on the earlier
+  12-core machine) and freeing are unchanged, so the whole snapshot is still
+  above 2 ms. A record is 1,104 bytes, and capture is bound by reading 20,000
+  objects scattered in memory, each touching several cache lines of its
+  `GameEntity`. Left: answer placement, lighting and the status strip only for
+  objects near the screen (radar facts stay for every object).
 - **The simulation thread ticking on its own**, several ticks per hand-off
   (Phase 4's first residual), is the next phase.
 
@@ -426,3 +445,98 @@ Not done:
   `always` ends without a desync.
 - Before phase 2, measure client draw CPU at 2,000 units. If drawing alone
   exceeds the frame budget, it needs its own work.
+
+## Where a 30-house frame goes
+
+Measured on the 30-house match map (`python -m tools.scale_map
+target/scale/match30.map --starts 30`, then `sim-bench --scenario match --map
+target/scale/match30.map --houses 30 --ticks 300`): 22,142 live objects,
+21,059 AI visits and 18,114 ground Processes a frame. The release build takes
+52.2 ms a frame; the 45 fps step needs 22 ms.
+
+The split below comes from per-object spans in a probe build that `main` does
+not carry; `main`'s `--frame-profile` reports the same frame in the phase
+slots of `sim::frame_profile`. The spans cost two clock reads per object and
+took the frame to 54.5 ms, so read the rows as proportions.
+
+| Part of one object's turn | ms |
+|---|---|
+| before the AI visit | 0.7 |
+| the AI visit | 6.6 |
+| between the visit and Process | 1.7 |
+| the ground locomotor's Process | 28.8 |
+| after the Process | 7.7 |
+| other class branches | 7.5 |
+
+Inside the Process: pending-work loop 16.2, track/turn gate 5.9, walk
+admission 2.2, path request 1.0, tail 2.3; the 6.2 ms of inline path searches
+are counted inside these parts, not beside them. Inside the post-Process tail:
+firing 3.0, Foot body cadence 1.2, Foot sounds 0.7, idle
+Scatter/piggyback/pending-entry 0.7, disguise/sinking/trailer 2.1.
+
+No single site costs 5 ms. Halving the frame needs either the sharded pass
+below or a general cut in per-object work; no one row reaches the 22 ms step
+on its own.
+
+### Inline path searches
+
+95 searches a frame run inline: 9,147 expansions and 6.2 ms, of which 14
+searches over 100 µs (the slowest 1.6 ms) own about 5 ms. By site:
+Drive/Ship 61 searches and 4.6 ms, walk 14.8 and 0.6, walk admission 19.2 and
+1.0, hover and linked cars none. They are immediate requests, a mission order
+or a Drive/Ship Process path the mover needs this frame, so deferring them to
+the batch would change behavior, as the batch already does for no-queue walk
+requests. `defer_path_search` declines about 292 requests a frame, but only
+because the Foot already has an answer to claim; a claimed answer's key
+mismatches 0.4 times a frame.
+
+Two attempts to remove them were measured and reverted:
+
+- Deferring only the own-cell requests left the inline count at 95 and
+  changed the state hash.
+- Answering several requests per Foot per frame (`ready` holding a slot per
+  registration, `pending` no longer one per Foot) took the count from 95.2 to
+  94.1 and the frame from 53.8 to 54.2 ms, and changed the state hash. The
+  one-answer-per-Foot rule is not what keeps these searches inline: of the 298
+  slots a pass staged, 202 carried an answer and 96 were empty because
+  `batched_search` refuses the request (a destination redirect, the Foot's own
+  cell, a `Stopped` or `CellEntryUnavailable` search, or no destination). Each
+  of those Feet then searches at its own turn, and an inline search costs about
+  ten times the batch's per expansion, because it walks its own code-2 chains
+  where the batch shares one cell's chain across every search that asks about
+  it.
+
+## Sharded object pass, costed
+
+The pass (`Simulation::advance_live_object_pass`) walks live objects in
+stable-id order, and each turn writes several owners besides its own entity:
+the substrate's cell and occupancy records, terrain objects, production
+queues, fog and shroud, sound events, another entity's health and lifecycle
+through damage and kills, and the path batch's registrations. The vision
+planes are the exception: the pass already defers them and applies them in
+parallel.
+
+Sharding cannot call today's turn as it stands. Every one of those writes
+needs a shard-local overlay merged in shard order, and every read needs the
+rule "my shard's writes, then the frame's start", which makes a write visible
+to another shard one tick late. That is a deviation: a probe that walked the
+same snapshot in reverse order diverged, with the path batch on or off.
+
+The payoff: the pass is 48 of the release build's 52.2 ms (92%). By Amdahl,
+5× on the pass leaves 13–14 ms and 8× leaves 10–11 ms, both inside 22 ms.
+
+A bench-only probe counted the writes an overlay would stage on the same map,
+with the state hash unchanged: 154,380 mutable hand-outs of the turn's own
+entity a frame, 548 of another entity (0.35% of hand-outs, about one per 40
+objects) and 15,691 writes of the shared cell grid (0.71 per object). That
+staging is small, since a shard owns its own entities outright. The pass is
+read-coupled rather than write-coupled: those cell writes matter because
+other turns read them.
+
+Status: set aside. The staging fits; splitting the `&mut Simulation` every
+turn takes into per-shard views does not, and no counter prices that work. A
+first step that keeps behavior identical would stage every write and apply it
+in the same stable-id order on one thread, with a per-owner write counter and
+`sim-bench`'s final hash unchanged against `main`; it would show which owners'
+writes really cross objects before any thread runs. Running shards
+concurrently is the step that carries the deviation.

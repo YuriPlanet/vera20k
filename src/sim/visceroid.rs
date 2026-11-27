@@ -24,7 +24,6 @@
 //! Ares merges them ([`Simulation::ares_visceroid_merge`], hook `0x00739F21`).
 
 use crate::map::entities::EntityCategory;
-use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::components::NavTargetRef;
 use crate::sim::movement::infantry_entry::InfantryEntryArgs;
@@ -59,8 +58,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
@@ -124,7 +122,6 @@ impl Simulation {
                     other,
                     Some(NavTargetRef::object(id)),
                     rules,
-                    registry,
                     effects,
                 );
                 self.set_idle_wander(id, -1);
@@ -137,7 +134,7 @@ impl Simulation {
         if entity.navigation.nav_com().is_some() || entity.attack_target.target().is_some() {
             return;
         }
-        let kept = entity.idle_wander.direction;
+        let kept = entity.seldom.idle_wander.direction;
         let direction = if kept == -1 || self.scenario_rng.next_range_i32_inclusive(0, 2) == 0 {
             let direction = self.scenario_rng.next_range_i32_inclusive(0, 7);
             self.set_idle_wander(id, direction);
@@ -147,14 +144,13 @@ impl Simulation {
         };
         let (dx, dy) = DIRECTION_DELTAS[(direction & 7) as usize];
         let target = (cell.0 + dx, cell.1 + dy);
-        if self.wander_cell_admits(id, cell, target, direction, rules, registry)
+        if self.wander_cell_admits(id, cell, target, direction, rules)
             && let (Ok(rx), Ok(ry)) = (u16::try_from(target.0), u16::try_from(target.1))
         {
             let _ = self.assign_destination_represented(
                 id,
                 Some(NavTargetRef::cell(rx, ry)),
                 rules,
-                registry,
                 effects,
             );
             return;
@@ -187,7 +183,6 @@ impl Simulation {
         target: (i32, i32),
         direction: i32,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
     ) -> bool {
         let (Some(terrain), Some(entity)) = (
             self.resolved_terrain.as_ref(),
@@ -207,7 +202,7 @@ impl Simulation {
             ),
             previous_cell: Some(cells.lookup(narrow(cell))),
         };
-        self.foot_can_enter(id, cells.lookup(narrow(target)), args, rules, registry)
+        self.foot_can_enter(id, cells.lookup(narrow(target)), args, rules)
             .is_ok_and(|code| code == 0)
     }
 
@@ -224,8 +219,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let small = |sim: &Self, entity: &crate::sim::game_entity::GameEntity| {
             entity.category() == EntityCategory::Unit
@@ -272,14 +266,14 @@ impl Simulation {
         self.refresh_spatial_threat(other, rules, None);
         self.uninit_with_context(
             id,
-            crate::sim::world::UninitContext::new(rules, registry).with_effects(effects),
+            crate::sim::world::UninitContext::new(rules).with_effects(effects),
         );
         true
     }
 
     fn set_idle_wander(&mut self, id: u64, direction: i32) {
         if let Some(entity) = self.substrate.entities.get_mut(id) {
-            entity.idle_wander.direction = direction;
+            entity.seldom.idle_wander.direction = direction;
         }
     }
 }

@@ -26,8 +26,8 @@
 //! ends with (the sound prefix, pending overlay Recalcs) still runs at its
 //! slot. The state hash and the save form read a sleeper as settled.
 //!
-//! It marks plain buildings (no weapon, factory, super weapon, occupants or
-//! sound of their own, at full health, on Guard) and standing infantry (on
+//! It marks plain buildings (no weapon, factory, super weapon or sound of
+//! their own, empty, at full health, on Guard) and standing infantry (on
 //! Guard or Area Guard, at full health, standing ready with no target,
 //! order or fear). Everything else stays awake. A game where an extension
 //! plays marks nothing ([`Simulation::extension_steps_unsorted`]): its
@@ -42,8 +42,8 @@
 use super::{FrameEffects, Simulation};
 use crate::map::entities::EntityCategory;
 use crate::rules::object_type::ObjectType;
-use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
+use crate::sim::game_entity::GameEntity;
 use crate::sim::intern::InternedId;
 use crate::sim::mission::{MissionId, MissionType};
 
@@ -54,9 +54,15 @@ const SLEEP_CAP_FRAMES: u32 = 64;
 #[derive(Debug, Default, Clone)]
 pub(crate) struct IdleSleep {
     on: bool,
-    check: bool,
+    pub(super) check: bool,
     /// Visits counted instead of run (or, when checking, run and compared).
     counted: u64,
+    /// Steady objects' AI visits counted instead of run (or, when checking,
+    /// run and compared; `world::steady_ai`).
+    pub(super) steady: u64,
+    /// When checking: the frame after the last whose steady visit had the
+    /// state hash compared too (`world::steady_ai`).
+    pub(super) steady_hashed: u32,
 }
 
 /// What the pass does with a Logic slot before its turn.
@@ -69,11 +75,15 @@ pub(super) enum SleepVisit {
     Check(Box<SleepCheck>),
 }
 
-/// A sleeper's state before a checked turn.
+/// An object's state before a checked turn or visit
+/// ([`Simulation::sleep_check`]).
 pub(super) struct SleepCheck {
-    expected: serde_json::Value,
-    /// The state hash's parts with the visit counted.
-    hash: [(&'static str, u64); 30],
+    /// Whose check it is, for its panic: idle sleep's or a steady visit's.
+    what: &'static str,
+    /// The object the turn must leave.
+    expected: GameEntity,
+    /// The state hash's parts with the visit counted, if asked.
+    hash: Option<super::world_hash::StateHashOwners>,
     scenario_rng: u64,
     main_rng: u64,
     logic_len: usize,
@@ -122,13 +132,18 @@ impl Simulation {
         )
     }
 
+    /// How many steady objects' AI visits were counted instead of run so far
+    /// (`world::steady_ai`).
+    pub fn steady_ai_visits(&self) -> u64 {
+        self.idle_sleep.steady
+    }
+
     /// The pass reached `id`'s slot: count its visit if it sleeps on.
     pub(super) fn visit_sleeper(
         &mut self,
         id: u64,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> SleepVisit {
         if !self.idle_sleep.on {
             return SleepVisit::Awake;
@@ -160,53 +175,60 @@ impl Simulation {
             self.substrate
                 .entities
                 .fit_to_sleep(id, frame.wrapping_sub(1));
-            // The state hash folds owed visits, so with this one counted it
-            // is the hash the turn must leave.
-            self.substrate.entities.owe_visit(id);
-            let hash = self.state_hash_owners();
-            self.substrate.entities.forget_owed(id);
-            let expected = self
+            let mut expected = self
                 .substrate
                 .entities
                 .get(id)
                 .expect("a sleeper is stored")
                 .clone();
             expected.settle_sleep(1);
-            return SleepVisit::Check(Box::new(SleepCheck {
-                expected: serde_json::to_value(&expected).expect("an entity serializes"),
-                hash,
-                scenario_rng: self.scenario_rng.state(),
-                main_rng: self.main_rng.state(),
-                logic_len: self.substrate.logic.len(),
-                entities: self.substrate.entities.len(),
-            }));
+            return SleepVisit::Check(Box::new(self.sleep_check("idle sleep", id, expected, true)));
         }
         self.substrate.entities.owe_visit(id);
         // What every turn ends with for the world, at this slot as before:
         // the sound prefix (`FootClass::AI`'s edge sounds) and the commit
         // that publishes pending overlay Recalcs and smudge dirt.
         effects.flush_sound(self, rules);
-        if self
-            .overlay_grid
-            .as_ref()
-            .is_some_and(|grid| grid.has_synchronous_navigation_cells())
-            || self
-                .smudge_grid
-                .as_ref()
-                .is_some_and(|grid| grid.has_dirty())
-        {
-            let _ = self.commit_no_fire(rules, registry, effects);
-        }
+        let _ = self.commit_no_fire(rules, effects);
         SleepVisit::Counted
     }
 
-    /// `id`'s checked turn is over: it must have been the visit sleeping
-    /// would have counted.
+    /// `id`'s state before a checked turn or visit, which must leave the
+    /// object as `expected`; with `hash`, the state hash's parts too, which
+    /// fold owed visits, so with this one counted they are the parts the
+    /// turn must leave.
+    pub(super) fn sleep_check(
+        &mut self,
+        what: &'static str,
+        id: u64,
+        expected: GameEntity,
+        hash: bool,
+    ) -> SleepCheck {
+        let hash = hash.then(|| {
+            self.substrate.entities.owe_visit(id);
+            let hash = self.state_hash_owners();
+            self.substrate.entities.forget_owed(id);
+            hash
+        });
+        SleepCheck {
+            what,
+            expected,
+            hash,
+            scenario_rng: self.scenario_rng.state(),
+            main_rng: self.main_rng.state(),
+            logic_len: self.substrate.logic.len(),
+            entities: self.substrate.entities.len(),
+        }
+    }
+
+    /// `id`'s checked turn or visit is over: it must have been the one
+    /// counting would have stood for.
     pub(super) fn finish_sleep_check(&self, id: u64, check: SleepCheck) {
+        let what = check.what;
         let after = self.substrate.entities.get(id).map(|entity| {
-            let entity = entity.clone();
+            let mut entity = entity.clone();
             entity.settle_sleep(self.substrate.entities.owed_visits(id));
-            serde_json::to_value(&entity).expect("an entity serializes")
+            entity
         });
         let name = self
             .substrate
@@ -217,27 +239,28 @@ impl Simulation {
         assert_eq!(
             self.scenario_rng.state(),
             check.scenario_rng,
-            "idle sleep: {name:?} {id} drew from the Scenario stream on frame {frame}"
+            "{what}: {name:?} {id} drew from the Scenario stream on frame {frame}"
         );
         assert_eq!(
             self.main_rng.state(),
             check.main_rng,
-            "idle sleep: {name:?} {id} drew from the Main stream on frame {frame}"
+            "{what}: {name:?} {id} drew from the Main stream on frame {frame}"
         );
         assert_eq!(
             (self.substrate.logic.len(), self.substrate.entities.len()),
             (check.logic_len, check.entities),
-            "idle sleep: {name:?} {id} changed the object lists on frame {frame}"
+            "{what}: {name:?} {id} changed the object lists on frame {frame}"
         );
-        let hash = self.state_hash_owners();
-        let changed: Vec<&str> = hash
-            .iter()
-            .zip(&check.hash)
-            .filter(|(after, before)| after != before)
-            .map(|((owner, _), _)| *owner)
-            .collect();
-        if after.as_ref() != Some(&check.expected) {
-            let differing: Vec<String> = match (&after, &check.expected) {
+        let saved = |entity: &GameEntity| serde_json::to_vec(entity).expect("an entity serializes");
+        // The bytes answer most checks; a map in the record may serialize in
+        // another order, so a difference is settled by value.
+        let value =
+            |entity: &GameEntity| serde_json::to_value(entity).expect("an entity serializes");
+        let same = after.as_ref().is_some_and(|after| {
+            saved(after) == saved(&check.expected) || value(after) == value(&check.expected)
+        });
+        if !same {
+            let differing: Vec<String> = match (after.as_ref().map(value), value(&check.expected)) {
                 (Some(serde_json::Value::Object(after)), serde_json::Value::Object(before)) => {
                     before
                         .iter()
@@ -247,12 +270,21 @@ impl Simulation {
                 }
                 _ => vec!["the object is gone".to_string()],
             };
-            panic!("idle sleep: {name:?} {id} changed on frame {frame}: {differing:#?}");
+            panic!("{what}: {name:?} {id} changed on frame {frame}: {differing:#?}");
         }
-        assert!(
-            changed.is_empty(),
-            "idle sleep: {name:?} {id} changed the state hash's {changed:?} on frame {frame}"
-        );
+        if let Some(before) = &check.hash {
+            let hash = self.state_hash_owners();
+            let changed: Vec<&str> = hash
+                .iter()
+                .zip(before)
+                .filter(|(after, before)| after != before)
+                .map(|((owner, _), _)| *owner)
+                .collect();
+            assert!(
+                changed.is_empty(),
+                "{what}: {name:?} {id} changed the state hash's {changed:?} on frame {frame}"
+            );
+        }
     }
 
     /// `id`'s full turn is over: mark it asleep if its next turns can change
@@ -301,7 +333,11 @@ impl Simulation {
     /// The frame plain idle building `id` may sleep until and its owner
     /// note, or `None` to stay awake.
     fn building_sleep(&self, id: u64, rules: &RuleSet) -> Option<(u32, u8)> {
-        if self.extension_steps_unsorted(rules) || !self.session.game_mode_nonzero() {
+        // Techno70D997 may update campaign discovery on an otherwise idle turn.
+        if self.extension_steps_unsorted(rules)
+            || self.session.uses_local_player_shroud()
+            || !self.session.rule_policy().allows_idle_object_sleep()
+        {
             return None;
         }
         let entity = self.substrate.entities.get(id)?;
@@ -314,7 +350,9 @@ impl Simulation {
             && object.super_weapon2.is_none()
             && !object.is_gattling
             && !object.has_turret
-            && !object.can_be_occupied
+            // A garrisonable building may sleep while it stands empty (the
+            // state test below): an occupant's admission and ejection write
+            // it, which wakes it. City maps are mostly such houses.
             && object.ambient_sound.is_none()
             && object.working_sound.is_none()
             && object.not_working_sound.is_none()
@@ -377,7 +415,7 @@ impl Simulation {
             && entity.slave_manager.is_none()
             && entity.cloak.is_none()
             && entity.rocking.is_none()
-            && entity.passenger_role.occupants().is_empty()
+            && entity.passenger_role().occupants().is_empty()
             && !entity.berserk.is_active()
             && !entity.deactivated.is_offline()
             && entity.building.tesla_charge.chargers().is_empty()
@@ -435,7 +473,13 @@ impl Simulation {
     /// checked at each visit ([`Self::infantry_disturbed`]).
     fn infantry_sleep(&self, id: u64, rules: &RuleSet) -> Option<(u32, u8)> {
         use crate::sim::movement::infantry_action::{DO_GUARD, DO_READY};
-        if self.extension_steps_unsorted(rules) || !self.session.game_mode_nonzero() {
+        // A Wasm module's push or `MoveFrame` (`ext_modules::motion`) acts at
+        // the locomotor Process of a standing infantryman too.
+        if self.extension_steps_unsorted(rules)
+            || self.module_motion_active()
+            || self.session.uses_local_player_shroud()
+            || !self.session.rule_policy().allows_idle_object_sleep()
+        {
             return None;
         }
         let entity = self.substrate.entities.get(id)?;
@@ -460,8 +504,8 @@ impl Simulation {
             && infantry.fear_level() == 0
             && !infantry.is_prone()
             && !infantry.is_psycho()
-            && entity.slave.owner().is_none()
-            && !entity.mega_mission.is_attack_move()
+            && entity.seldom.slave.owner().is_none()
+            && !entity.seldom.mega_mission.is_attack_move()
             && !crate::sim::movement::motion_query::is_moving_now(
                 entity,
                 crate::sim::movement::SpeedRules::new(rules, &self.interner, &self.houses),
@@ -522,7 +566,7 @@ fn infantry_rests(entity: &crate::sim::game_entity::GameEntity, object: &ObjectT
         && !entity.is_warped_out()
         && !entity.is_warping_in()
         // The tube tests return before the AI counter.
-        && entity.low_bridge_tube_state.is_none()
+        && entity.active_tube().is_none()
         && entity.drain.is_idle()
         && !entity.veterancy.rank_changed()
         && !crate::sim::rocking::updates(entity)

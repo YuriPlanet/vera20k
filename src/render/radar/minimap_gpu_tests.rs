@@ -24,7 +24,7 @@ fn ordinary_frame(scene: &mut HeadlessScenario, payload: Option<Command>) {
             &commands,
             crate::app::types::SIM_TICK_MS,
             TickLane::Ordinary,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap();
 }
@@ -130,7 +130,7 @@ fn new_presentation(gpu: &Gpu, scene: &HeadlessScenario, format: wgpu::TextureFo
     let overlay_data = crate::app::loading::transitions::build_minimap_overlay_data(
         &scene.map.overlays,
         &scene.map.terrain_objects,
-        Some(&scene.runtime.resources.overlay_registry),
+        Some(scene.runtime.resources.rules.overlay_registry()),
         Some(&scene.runtime.resources.rules),
     );
     let view = scene.runtime.view();
@@ -249,7 +249,7 @@ fn present(
     let runtime = &scene.runtime;
     let view = runtime.view();
     let frame =
-        crate::app::presentation::frame::PresentationFrame::capture(runtime, &Default::default());
+        crate::app::presentation::frame::PresentationFrame::capture(runtime, &Default::default(), false);
     let colors = HouseColorMap::new();
     let overlay_colors = HashMap::new();
     let mut first = None;
@@ -270,11 +270,10 @@ fn present(
                     view.fog(),
                     view.house_alliances(),
                     true,
-                    view.session().game_mode_nonzero(),
+                    view.control_projection(),
                     Some(&runtime.resources.rules),
                     Some(view.interner()),
                     view.overlay_grid(),
-                    Some(&runtime.resources.overlay_registry),
                     &overlay_colors,
                     view.resolved_terrain(),
                     None,

@@ -36,7 +36,6 @@
 //!   executable (`tools.native_inspect calls` and `find-bytes`).
 
 use crate::map::entities::EntityCategory;
-use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::movement::ground_pose::position_world_xy;
@@ -44,7 +43,8 @@ use crate::sim::world::FrameEffects;
 use crate::sim::world::Simulation;
 
 use super::{
-    TeamMember, TeamMemberTypeIdentity, TeamRules, member_type_identity, script_action_at,
+    AiTriggerFeedbackRules, TeamMember, TeamMemberTypeIdentity, member_type_identity,
+    script_action_at,
 };
 
 /// `Recruit`'s penalty on a candidate outside the team's group, added to
@@ -111,10 +111,11 @@ impl RecruitWalks {
 /// `Recruit`'s search (`0x006EAB86..0x006EAE19`) over one class array in
 /// order: a candidate in the team's `group` (any with -2), or any for a
 /// `Recruiter=` TeamType, is keyed by its squared XY distance to `origin`
-/// (`0x005F6560`, `native_coord::squared_xy_distance`) plus `0x3200` outside
-/// the group (wrapping); it
+/// (`0x005F6560`, `native_coord::squared_xy_distance_for_map`) plus `0x3200`
+/// outside the group (wrapping); it
 /// wins when it passes its own tests, its key is below the best (signed) or
-/// the best is still -1, and `can_add` admits it.
+/// the best is still -1, and `can_add` admits it. A VERA-only map compares the
+/// true 64-bit square, so the wrap cannot make a far candidate win.
 pub(super) fn recruit_pick(
     candidates: impl IntoIterator<Item = RecruitCandidate>,
     origin: [i32; 2],
@@ -122,23 +123,42 @@ pub(super) fn recruit_pick(
     recruiter: bool,
     mut can_add: impl FnMut(u64) -> bool,
     ares: bool,
+    vera_only_map: bool,
 ) -> Option<u64> {
-    let mut best = -1i32;
+    let mut best = -1i64;
     let mut winner = None;
     for candidate in candidates {
         if !(group == -2 || candidate.group == group || recruiter) {
             continue;
         }
-        let mut key = crate::util::native_coord::squared_xy_distance(candidate.xy, origin, ares);
-        if candidate.group != group {
-            key = key.wrapping_add(OTHER_GROUP_PENALTY);
-        }
+        let distance = crate::util::native_coord::squared_xy_distance_for_map(
+            candidate.xy,
+            origin,
+            ares,
+            vera_only_map,
+        );
+        let key = if candidate.group != group {
+            other_group_key(distance, vera_only_map)
+        } else {
+            distance
+        };
         if candidate.matches && (key < best || best == -1) && can_add(candidate.id) {
             winner = Some(candidate.id);
             best = key;
         }
     }
     winner
+}
+
+/// `OTHER_GROUP_PENALTY` added to a candidate outside the team's group. The
+/// original adds it in 32-bit wrapping arithmetic; a VERA-only map adds it to
+/// the true 64-bit square.
+fn other_group_key(distance: i64, vera_only_map: bool) -> i64 {
+    if vera_only_map {
+        distance + i64::from(OTHER_GROUP_PENALTY)
+    } else {
+        i64::from((distance as i32).wrapping_add(OTHER_GROUP_PENALTY))
+    }
 }
 
 impl Simulation {
@@ -169,7 +189,7 @@ impl Simulation {
         if entity.health.current() <= 0
             || !entity.lifecycle.object_alive()
             || entity.lifecycle.in_limbo()
-            || !entity.radio_contacts.is_empty()
+            || !entity.seldom.radio_contacts.is_empty()
             || entity.owner() != owner
             || !crate::sim::mission::control::mission_recruitable(rules, entity.mission.effective())
         {
@@ -179,8 +199,8 @@ impl Simulation {
             .team_type_ini
             .get(&team_type_id)
             .is_some_and(|metadata| metadata.autocreate);
-        if (!entity.base_defense_response.recruitable_a() && !autocreate)
-            || (!entity.base_defense_response.recruitable_b() && autocreate)
+        if (!entity.seldom.base_defense_response.recruitable_a() && !autocreate)
+            || (!entity.seldom.base_defense_response.recruitable_b() && autocreate)
             || current_type.is_some_and(|current| current.priority >= team_type.priority)
         {
             return false;
@@ -247,7 +267,7 @@ impl Simulation {
         }
         let aircraft = entity.category() == EntityCategory::Aircraft;
         let object = self.object_type(entity.type_ref(), rules)?;
-        if !entity.radio_contacts.is_empty() && !(aircraft && object.airport_bound) {
+        if !entity.seldom.radio_contacts.is_empty() && !(aircraft && object.airport_bound) {
             return None;
         }
         let entries = vm.task_force_entries(team);
@@ -264,16 +284,19 @@ impl Simulation {
         }
         let metadata = team.team_type_id.and_then(|id| vm.team_type_ini.get(&id));
         let autocreate = metadata.is_some_and(|metadata| metadata.autocreate);
-        if !entity.base_defense_response.recruitable_a() && !autocreate {
+        if !entity.seldom.base_defense_response.recruitable_a() && !autocreate {
             return None;
         }
         let unloading = script_action_at(vm.scripts.get(&team.script_id), team.cursor)
             .is_some_and(|action| action.action_id == 8);
-        if !entity.base_defense_response.recruitable_b() && autocreate && !(unloading || aircraft) {
+        if !entity.seldom.base_defense_response.recruitable_b()
+            && autocreate
+            && !(unloading || aircraft)
+        {
             return None;
         }
         // `0x006EA79B..0x006EA7A4`: one seeking a building's entry.
-        if entity.building_entry.seeking() {
+        if entity.seldom.building_entry.seeking() {
             return None;
         }
         if entity.drain.target().is_some() || entity.bunker.link().installed_in().is_some() {
@@ -318,8 +341,7 @@ impl Simulation {
         entity_id: u64,
         constrained: bool,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(slot) = self.team_can_add(team_id, entity_id, constrained, rules) else {
             return false;
@@ -356,7 +378,11 @@ impl Simulation {
         );
         // gamemd.exe Add_Member6EA500 stores Get_Group6F1870 at6EA57C,
         // after linking and before Tag inheritance. Remove_Member retains it.
-        let group = vm.team_group(vm.teams.get(&team_id).unwrap());
+        let group = vm.team_group(
+            vm.teams
+                .get(&team_id)
+                .expect("the member was linked to this Team just above"),
+        );
         if let Some(entity) = self.substrate.entities.get_mut(entity_id) {
             entity.assign_object_group(group);
         }
@@ -376,7 +402,7 @@ impl Simulation {
                 .attach_team_member_trigger_tag(team_id, entity_id);
         }
         if centreless {
-            self.team_calc_center(team_id, rules, registry);
+            self.team_calc_center(team_id, rules);
         }
         if let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
             team.altered = true;
@@ -385,6 +411,7 @@ impl Simulation {
         if let Some(entity) = self.substrate.entities.get_mut(entity_id) {
             // `+0x422` (`0x006EA5F5`).
             entity
+                .seldom
                 .base_defense_response
                 .set_team_recruitable(recruitable);
         }
@@ -406,7 +433,7 @@ impl Simulation {
         entity_id: u64,
         no_idle: bool,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         if self.team_script_vm.member_team.get(&entity_id) != Some(&team_id) {
             return;
@@ -418,7 +445,7 @@ impl Simulation {
             .entities
             .get(entity_id)
             .and_then(|entity| self.houses.get(&entity.owner()))
-            .is_some_and(|house| !house.is_controlled_by_human(self.session.game_mode_nonzero()))
+            .is_some_and(|house| !house.is_controlled_by_human(self.session.rule_policy()))
         {
             self.trigger_runtime
                 .clear_team_member_trigger_tag(team_id, entity_id);
@@ -453,13 +480,19 @@ impl Simulation {
             .is_some_and(|entity| {
                 entity.mission.clear_suspended();
                 entity.navigation.clear_suspended_nav_com();
-                entity.suspended_attack_target.clear();
+                entity.seldom.suspended_attack_target.clear();
                 entity.lifecycle.object_alive()
                     && !entity.crash.is_crashing()
                     && !entity.lifecycle.in_limbo()
             });
         if idles && !no_idle && !self.object_placement_scope_active() {
-            crate::sim::world::enter_idle_mode(self, entity_id, rules, None, frame_effects);
+            crate::sim::world::enter_idle_mode(
+                self,
+                entity_id,
+                rules,
+                Some(rules.overlay_registry()),
+                frame_effects,
+            );
         }
         if let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
             if !other_initiated && let Some(head) = team.members.first_mut() {
@@ -491,7 +524,7 @@ impl Simulation {
         entity_id: u64,
         no_idle: bool,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         if let Some(team_id) = self.team_script_vm.member_team.get(&entity_id).copied() {
             self.team_remove_member(team_id, entity_id, no_idle, rules, frame_effects);
@@ -505,7 +538,7 @@ impl Simulation {
         &mut self,
         team_id: u64,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         while let Some(head) = self
             .team_script_vm
@@ -548,8 +581,7 @@ impl Simulation {
         slot: usize,
         walks: &mut RecruitWalks,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         let vm = &self.team_script_vm;
         let Some(team) = vm.teams.get(&team_id) else {
@@ -649,6 +681,7 @@ impl Simulation {
                 recruiter,
                 can_add,
                 rules.ares(),
+                self.session.map_exceeds_original_size(),
             )
         } else {
             // Kept only when a later entry of the class may search again.
@@ -669,6 +702,7 @@ impl Simulation {
                 recruiter,
                 can_add,
                 rules.ares(),
+                self.session.map_exceeds_original_size(),
             );
             if later {
                 walks.keep(class, owned, typed);
@@ -679,7 +713,7 @@ impl Simulation {
             return false;
         };
         self.team_member_clear_target(winner, rules);
-        self.team_add_member(team_id, winner, false, rules, registry, frame_effects);
+        self.team_add_member(team_id, winner, false, rules, frame_effects);
         true
     }
 
@@ -692,11 +726,11 @@ impl Simulation {
         &mut self,
         team_id: u64,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
-        let team_rules = TeamRules::new(&rules.general, self.session.game_mode_nonzero());
+        let feedback_rules = AiTriggerFeedbackRules::new(&rules.general);
         self.team_script_vm
-            .record_trigger_outcome(team_id, &team_rules);
+            .record_trigger_outcome(team_id, &feedback_rules);
         self.team_remove_all_members(team_id, rules, frame_effects);
         Self::clear_team_trigger_tag(&mut self.substrate, &mut self.trigger_runtime, team_id);
         self.team_script_vm.teams.remove(&team_id);
@@ -711,7 +745,7 @@ impl Simulation {
         &mut self,
         team_type: crate::sim::intern::InternedId,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let mut index = 0;
         loop {
@@ -742,7 +776,7 @@ impl Simulation {
         priority: i32,
         duration: i32,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let current_frame = self.session.binary_frame() as i32;
         let vm = &self.team_script_vm;

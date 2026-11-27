@@ -109,7 +109,7 @@ pub(crate) fn launch(
     target_ry: u16,
     sw_type: InternedId,
     overlay_registry: Option<&OverlayTypeRegistry>,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) -> bool {
     if !super::is_charged(sim, owner, sw_type) {
         return false;
@@ -246,7 +246,7 @@ pub(super) fn ares_launch(
     sw: &SuperWeaponType,
     cell: (u16, u16),
     overlay_registry: Option<&OverlayTypeRegistry>,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) {
     if !super::is_charged(sim, owner, sw_type) {
         return;

@@ -1,11 +1,20 @@
-//! Direct IPv4 LAN socket owner for UDPInterfaceClass (`0x007B30B0`,
-//! `0x007B3450`, `0x007B3AA0`). Reliable queues and endpoint identity stay in
-//! `LanConnections`; this owner queues raw datagram attempts and adds/checks
-//! their four-byte UDP checksum.
+//! The IPv4 socket pair of UDPInterfaceClass (`0x007B30B0`, `0x007B3450`,
+//! `0x007B3AA0`): it queues raw datagram attempts and adds/checks their
+//! four-byte UDP checksum. On LAN they go straight to peers; online they go
+//! through the client relay route (`RelayRoute`: the relay session, its
+//! renewal, Leave retries, the absence release, the ordering inbox and peer
+//! probes). Reliable queues and endpoint identity stay in `LanConnections`,
+//! global messages in `GlobalChannel`.
 //!
 //! Global messages admit unknown sources; private messages require an admitted
-//! peer roster. Router/localhost rewriting, native self-source filtering, spare sockets and
-//! platform socket-buffer tuning remain outside this direct-peer owner.
+//! peer roster. Residual: router/localhost rewriting, native self-source
+//! filtering, spare sockets and platform socket-buffer tuning are not ported.
+
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(clippy::unwrap_used, clippy::panic, clippy::unreachable)
+)]
 
 use std::collections::VecDeque;
 use std::io;
@@ -34,7 +43,10 @@ pub fn browser_proxy_url() -> &'static str {
     }
 }
 
-use vera20k_relay_protocol::{ABSENT_MS, ClientSession, RelayError, ServerEvent};
+use vera20k_relay_protocol::{
+    ABSENT_MS, ClientSession, HOP_HANDSHAKE_INTERVAL_MS, HOP_PING_INTERVAL_MS,
+    HOP_READINESS_TIMEOUT_MS, LEAVE_ATTEMPTS, LEAVE_INTERVAL_MS, RelayError, ServerEvent,
+};
 pub use vera20k_relay_protocol::{
     CertificatePacing, MAX_PEERS as RELAY_MAX_PEERS, OrderingCertificate, Ticket as RelayTicket,
     WatchTicket as RelayWatchTicket, peer_endpoint as relay_peer_endpoint,
@@ -44,11 +56,39 @@ pub use vera20k_relay_protocol::{
 pub mod test_support {
     //Client regressions exercise the same authenticated server/codec owner.
     pub use vera20k_relay_protocol::{MAX_DATAGRAM, RelayServer, SecretKey, derive_packet_key};
+
+    use std::net::{Ipv4Addr, UdpSocket};
+
+    /// Returns once every datagram this thread has already sent over loopback can be
+    /// read. macOS delivers them on a kernel thread after `send_to` has returned, so a
+    /// read straight after a send usually finds nothing yet. A step in a test's relay
+    /// loop counts as 16 ms of match time but takes microseconds, so when a busy CI
+    /// machine stalls that thread, a whole loop can pass before its packets land.
+    /// Delivery keeps its order: once a datagram sent now comes back, the earlier ones
+    /// have arrived.
+    pub fn settle_loopback() {
+        thread_local! {
+            static PROBE: UdpSocket = {
+                let probe = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+                probe.connect(probe.local_addr().unwrap()).unwrap();
+                // A debug build on a loaded CI machine can stall for many seconds.
+                probe
+                    .set_read_timeout(Some(std::time::Duration::from_secs(120)))
+                    .unwrap();
+                probe
+            };
+        }
+        PROBE.with(|probe| {
+            probe.send(&[0]).unwrap();
+            // Only a wait: if the probe is ever lost, the step carries on without it.
+            let _ = probe.recv(&mut [0]);
+        });
+    }
 }
 
 use super::global::{
     GLOBAL_HEADER_LEN, GlobalChannel, GlobalConfig, GlobalDestination, GlobalMessage,
-    GlobalReceiveError,
+    GlobalReceiveError, with_port_override,
 };
 use super::lan_messages::{SessionScope, ingame::LoadingProgressMessage};
 use super::reliable::{LanConnections, ReceiveError, ReceivedMessage, udp_checksum};
@@ -67,22 +107,35 @@ pub const DEFAULT_LAN_PORT: u16 = 1234;
 pub const DEFAULT_ALTERNATE_PORT: u16 = 1236;
 /// Original recvfrom7B3EDD supplies a640-byte datagram buffer.
 pub const UDP_DATAGRAM_CAPACITY: usize = 640;
-const CHECKSUM_LEN: usize = 4;
+// A relay must carry every datagram the send queue admits.
+const _: () = assert!(UDP_DATAGRAM_CAPACITY <= vera20k_relay_protocol::MAX_PAYLOAD);
+pub(super) const CHECKSUM_LEN: usize = 4;
 // VERA physical scheduling only: leave the guard between bounded receive
 // passes, even when peers continuously replenish the socket. No extra inbox.
 const IO_PUMP_RECEIVE_BUDGET: usize = 256;
 const IO_PUMP_INTERVAL: Duration = Duration::from_millis(6);
-// VERA-only match boundary, outside the native checksum/connection codec.
+// VERA-only match boundary, outside the native checksum/connection codec: the
+// magic and the encoded `SessionScope` come before the checksum.
 // Scope admission precedes every global/private ACK, sequence and receive cache.
-const LAN_SCOPE_MAGIC: &[u8; 4] = b"VLS\x01";
-const LAN_SCOPE_HEADER_LEN: usize = 4 + 16 + 8;
-// Explicit Leave is resent every 16 wall buckets (256 ms) until the relay
-// acknowledges it. A relay that answers none of these attempts (about a
-// minute) is gone or unreachable: release the route rather than block every
-// later online admission. The relay then treats the place as a lost
-// connection, and the next match's newer generation supersedes it
-// (services/relay/README.md).
-const RELAY_LEAVE_ATTEMPTS: u16 = 235;
+pub(super) const LAN_SCOPE_MAGIC: &[u8; 4] = b"VLS\x01";
+pub(super) const LAN_SCOPE_HEADER_LEN: usize = LAN_SCOPE_MAGIC.len() + SessionScope::LEN;
+// The relay session's cadences (`vera20k_relay_protocol`) in 16 ms wall
+// buckets. Explicit Leave is resent until the relay acknowledges it. A relay
+// that answers none of `LEAVE_ATTEMPTS` (about a minute) is gone or
+// unreachable: release the route rather than block every later online
+// admission. The relay then treats the place as a lost connection, and the
+// next match's newer generation supersedes it (services/relay/README.md).
+const RELAY_LEAVE_TICKS: u32 = (LEAVE_INTERVAL_MS / 16) as u32;
+const RELAY_PING_TICKS: u32 = (HOP_PING_INTERVAL_MS / 16) as u32;
+const RELAY_HANDSHAKE_TICKS: u32 = (HOP_HANDSHAKE_INTERVAL_MS / 16) as u32;
+const RELAY_READINESS_TICKS: u32 = (HOP_READINESS_TIMEOUT_MS / 16) as u32;
+// Whole buckets, so these ticks and the netsim's 16 ms bucket clock agree.
+const _: () = assert!(
+    LEAVE_INTERVAL_MS % 16 == 0
+        && HOP_PING_INTERVAL_MS % 16 == 0
+        && HOP_HANDSHAKE_INTERVAL_MS % 16 == 0
+        && HOP_READINESS_TIMEOUT_MS % 16 == 0
+);
 // The relay retires a started player it has not heard for `ABSENT_MS`
 // (`retire_absent`, services/relay-protocol/src/sequenced.rs), and drops a
 // lapsed ticket unanswered, so nothing tells a game that its place is gone.
@@ -90,28 +143,53 @@ const RELAY_LEAVE_ATTEMPTS: u16 = 235;
 // released, in 16 ms service buckets: the relay counts from this game's last
 // packet and the game from the relay's last answer.
 const RELAY_ABSENT_TICKS: i32 = ((ABSENT_MS + 15_000) / 16) as i32;
+// VERA: the I/O worker answers for a game thread held up by a long frame or
+// a loading step, but not for one that is gone. Once the game thread has not
+// called `service` for 60 seconds, in 16 ms worker buckets, the worker leaves
+// a live relay route alone, so the relay hears the silence a closed game
+// leaves ("not responding" after 10 more seconds, removal after `ABSENT_MS`).
+// Ordinary frames and loading steps service far more often; a frozen loader
+// is still dropped by the relay no sooner than 60 seconds after this.
+const GAME_STALL_TICKS: i32 = (60_000 / 16) as i32;
+// Set once a panic ends the game (`stop_io_after_crash`).
+static GAME_CRASHED: AtomicBool = AtomicBool::new(false);
+
+/// The game is ending with a panic: from now on no I/O worker sends or
+/// receives for it. The crash box can stay up for as long as nobody clicks
+/// it; until then the relay and LAN peers hear the silence of a closed game.
+/// No Leave goes out, so the launcher can still resume the match.
+pub fn stop_io_after_crash() {
+    GAME_CRASHED.store(true, Ordering::Release);
+}
 
 /// One admitted route progresses from the existing global loading channel to
 /// private gameplay. Loading peers may finish on different service passes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum LanScopeState {
     Prepared(SessionScope),
+    ContinuationLoading(SessionScope),
     Active(SessionScope),
 }
 
 impl LanScopeState {
     fn scope(self) -> SessionScope {
         match self {
-            Self::Prepared(scope) | Self::Active(scope) => scope,
+            Self::Prepared(scope) | Self::ContinuationLoading(scope) | Self::Active(scope) => scope,
         }
     }
 
     fn outgoing(self) -> Option<SessionScope> {
         match self {
             Self::Prepared(_) => None,
-            Self::Active(scope) => Some(scope),
+            Self::ContinuationLoading(scope) | Self::Active(scope) => Some(scope),
         }
     }
+}
+
+#[derive(Debug)]
+struct RetiredLanReceipts {
+    scope: SessionScope,
+    received: Vec<GlobalMessage>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -199,8 +277,8 @@ impl UdpServiceReport {
     }
 }
 
-/// A derived global frontier and its still-unconsumed service failure, read
-/// under one I/O-owner lock. Empty after a timeout is not an acknowledged drain.
+/// The global queue and its pending service failure read under one I/O-owner
+/// lock, for the LAN setup drain.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct GlobalTransportObservation {
     pub queued_sends: usize,
@@ -265,9 +343,8 @@ impl UdpSendQueue {
         }
         let mut bytes = [0; UDP_DATAGRAM_CAPACITY];
         if let Some(scope) = lan_scope {
-            bytes[..4].copy_from_slice(LAN_SCOPE_MAGIC);
-            bytes[4..20].copy_from_slice(&scope.epoch);
-            bytes[20..LAN_SCOPE_HEADER_LEN].copy_from_slice(&scope.revision.to_le_bytes());
+            bytes[..LAN_SCOPE_MAGIC.len()].copy_from_slice(LAN_SCOPE_MAGIC);
+            bytes[LAN_SCOPE_MAGIC.len()..LAN_SCOPE_HEADER_LEN].copy_from_slice(&scope.encode());
         }
         bytes[scope_len..scope_len + CHECKSUM_LEN]
             .copy_from_slice(&udp_checksum(frame).to_le_bytes());
@@ -348,15 +425,20 @@ struct UdpIo {
     #[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
     relay_gateway: Option<String>,
     lan_scope: Option<LanScopeState>,
+    retired_lan_receipts: Option<RetiredLanReceipts>,
     pending_report: UdpServiceReport,
     // App play runs the IO pump: the relay session then times datagrams to
     // the millisecond. Manual-clock consumers time them by `service`.
     precise_relay_clock: bool,
+    // The game thread's last `service`, on the worker's clock when it runs
+    // one (`GAME_STALL_TICKS`).
+    game_serviced: u32,
 }
 
 struct IoPump {
     stop: Arc<AtomicBool>,
     worker: JoinHandle<()>,
+    wall_bucket: fn() -> u32,
 }
 
 /// A short read of the existing I/O owner. Do not hold this guard across a
@@ -447,6 +529,7 @@ impl LanUdpTransport {
             let mut io = self.lock();
             io.pending_report = UdpServiceReport::default();
             io.use_precise_relay_clock();
+            io.game_serviced = wall_bucket();
         }
         let io = Arc::clone(&self.io);
         let stop = Arc::new(AtomicBool::new(false));
@@ -456,21 +539,26 @@ impl LanUdpTransport {
             .spawn(move || {
                 while !worker_stop.load(Ordering::Acquire) {
                     {
+                        // Poisoned here means the game thread panicked with
+                        // the lock held: the game is already ending.
                         let mut io = io.lock().expect("UDP I/O owner poisoned");
                         if worker_stop.load(Ordering::Acquire) {
                             break;
                         }
                         // Sampling before lock acquisition could time packets
                         // with a stale frame-start sample after contention.
-                        let report = io.service(wall_bucket(), IO_PUMP_RECEIVE_BUDGET);
-                        io.pending_report.accumulate(report);
+                        io.background_pass(wall_bucket(), GAME_CRASHED.load(Ordering::Acquire));
                     }
                     // Scheduling request only; spurious/late wakes still
                     // recheck stop and resample the clock on the next pass.
                     thread::park_timeout(IO_PUMP_INTERVAL);
                 }
             })?;
-        self.pump = Some(IoPump { stop, worker });
+        self.pump = Some(IoPump {
+            stop,
+            worker,
+            wall_bucket,
+        });
         Ok(())
     }
 
@@ -488,6 +576,16 @@ impl LanUdpTransport {
         }
     }
 
+    /// A worker pass that panicked ends the game: this assert, the poisoned
+    /// lock below and the re-raise in `stop_io_pump` are deliberate. With a
+    /// worker, `UdpIo::service` runs on it alone, and only that marks the
+    /// relay absent, retries a Leave and releases a retirement. A transport
+    /// that outlived a failed pass would leave a relay match on Reconnecting
+    /// with no end, keep its place in the room looking alive to the relay
+    /// (the game thread still sends), and hold every later online admission
+    /// behind a retirement nothing services. Turning the failure into a lost
+    /// connection needs that close path to run without the worker first;
+    /// until then the crash is the outcome that ends cleanly for the room.
     fn check_worker(&self) {
         if let Some(pump) = &self.pump {
             assert!(
@@ -499,7 +597,9 @@ impl LanUdpTransport {
 
     fn lock(&self) -> MutexGuard<'_, UdpIo> {
         self.check_worker();
-        self.io.lock().expect("UDP I/O owner poisoned")
+        self.io
+            .lock()
+            .expect("a thread panicked while holding the UDP I/O lock (see check_worker)")
     }
 
     fn wake(&self) {
@@ -544,6 +644,45 @@ impl LanUdpTransport {
         self.write(|io| &io.global, |io| &mut io.global)
     }
 
+    /// Send a last notification on the current LAN scope or relay route
+    /// before its owner resets the match. Unlike waking the I/O worker, this
+    /// returns after each socket write has been attempted.
+    pub fn send_terminal_global(
+        &mut self,
+        payload: &[u8],
+        recipients: &[SocketAddrV4],
+    ) -> io::Result<()> {
+        let io = &mut *self.lock();
+        let frame = io.global.terminal_frame(payload).ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "terminal global payload is too long",
+            )
+        })?;
+        let mut report = UdpServiceReport::default();
+        for &endpoint in recipients {
+            // This scope is closing. Pending traffic and a failed write to
+            // one peer must not delay the last notification to another peer.
+            send_frame(
+                &io.primary,
+                &mut io.relay,
+                io.lan_scope.and_then(LanScopeState::outgoing),
+                UdpChannel::Primary,
+                &mut UdpSendQueue::default(),
+                endpoint,
+                &frame,
+                &mut report,
+            );
+        }
+        if report.sent_datagrams == recipients.len() {
+            Ok(())
+        } else {
+            Err(report
+                .first_io_error
+                .map_or_else(|| io::ErrorKind::WouldBlock.into(), |failure| failure.error))
+        }
+    }
+
     /// Keep a terminal queue change paired with its service result even when
     /// the physical worker runs between the App's poll and admission decision.
     /// Leave the report for its ordinary consumer; this snapshot consumes none.
@@ -562,6 +701,35 @@ impl LanUdpTransport {
 
     pub fn set_lan_scope(&mut self, scope: SessionScope) -> io::Result<()> {
         self.lock().set_lan_scope(scope)
+    }
+
+    /// Start an admitted authored stage on a fresh datagram revision. Only
+    /// exact final handoff receipts can elicit an ACK from the previous scope.
+    pub fn advance_lan_stage_scope(
+        &mut self,
+        scope: SessionScope,
+        receipts: Vec<GlobalMessage>,
+    ) -> io::Result<SessionScope> {
+        let mut io = self.lock();
+        if io.lan_scope != Some(LanScopeState::Active(scope)) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "LAN stage handoff has no matching active scope",
+            ));
+        }
+        let revision = scope.revision.checked_add(1).ok_or_else(|| {
+            io::Error::new(io::ErrorKind::InvalidInput, "LAN stage revision exhausted")
+        })?;
+        let next = SessionScope { revision, ..scope };
+        io.reset_session();
+        io.lan_scope = Some(LanScopeState::ContinuationLoading(next));
+        if !receipts.is_empty() {
+            io.retired_lan_receipts = Some(RetiredLanReceipts {
+                scope,
+                received: receipts,
+            });
+        }
+        Ok(next)
     }
 
     pub fn lan_scope(&self) -> Option<SessionScope> {
@@ -624,20 +792,12 @@ impl LanUdpTransport {
     /// The UDP owner retains only this transport capability, never simulation.
     pub fn set_ordering_certificate(&mut self, certificate: Vec<u8>) -> io::Result<()> {
         let mut io = self.lock();
-        let route = io
-            .relay
-            .as_mut()
-            .filter(|route| route.retiring.is_none())
-            .ok_or_else(|| io::Error::other("no relay route"))?;
-        let parsed = vera20k_relay_protocol::OrderingCertificate::parse(&certificate)
+        let route =
+            active_relay(&mut io.relay).ok_or_else(|| io::Error::other("no relay route"))?;
+        route
+            .session
+            .admit_certificate(&certificate)
             .map_err(relay_io_error)?;
-        // A watcher has no source of its own (relay README "Watchers").
-        if !route.session.is_watching() && parsed.sources_mask & (1 << route.session.source()) == 0
-        {
-            return Err(io::Error::other(
-                "ordering certificate excludes local source",
-            ));
-        }
         route.ordering_certificate = Some(certificate);
         Ok(())
     }
@@ -646,11 +806,8 @@ impl LanUdpTransport {
     /// this route. Set it before the pump answers the first challenge.
     pub fn set_federation_roster(&mut self, roster: &[u8]) -> io::Result<()> {
         let mut io = self.lock();
-        let route = io
-            .relay
-            .as_mut()
-            .filter(|route| route.retiring.is_none())
-            .ok_or_else(|| io::Error::other("no relay route"))?;
+        let route =
+            active_relay(&mut io.relay).ok_or_else(|| io::Error::other("no relay route"))?;
         route.session.set_federation(roster).map_err(relay_io_error)
     }
 
@@ -694,11 +851,7 @@ impl LanUdpTransport {
 
     /// Runs `apply` on the current relay session, if any.
     fn with_session<T>(&mut self, apply: impl FnOnce(&mut ClientSession) -> T) -> Option<T> {
-        self.lock()
-            .relay
-            .as_mut()
-            .filter(|route| route.retiring.is_none())
-            .map(|route| apply(&mut route.session))
+        active_relay(&mut self.lock().relay).map(|route| apply(&mut route.session))
     }
 
     /// See `ClientSession::seal_ordering_batch`.
@@ -708,14 +861,21 @@ impl LanUdpTransport {
             .map_err(relay_io_error)
     }
 
+    /// See `ClientSession::ordering_accepted_through`.
+    pub(super) fn ordering_accepted_through(&self) -> Option<u64> {
+        self.lock()
+            .relay
+            .as_ref()
+            .filter(|route| route.retiring.is_none())?
+            .session
+            .ordering_accepted_through()
+    }
+
     /// See `ClientSession::queue_ordering_checksums`.
     pub fn queue_ordering_checksums(&mut self, samples: &[(u32, u32)]) -> io::Result<()> {
         let mut io = self.lock();
-        let route = io
-            .relay
-            .as_mut()
-            .filter(|route| route.retiring.is_none())
-            .ok_or_else(|| io::Error::other("no relay route"))?;
+        let route =
+            active_relay(&mut io.relay).ok_or_else(|| io::Error::other("no relay route"))?;
         let now_ms = route.now_ms();
         route
             .session
@@ -744,7 +904,7 @@ impl LanUdpTransport {
         turn_ms: u32,
     ) {
         let mut io = self.lock();
-        let Some(route) = io.relay.as_mut().filter(|route| route.retiring.is_none()) else {
+        let Some(route) = active_relay(&mut io.relay) else {
             return;
         };
         let now_ms = route.now_ms();
@@ -757,7 +917,7 @@ impl LanUdpTransport {
     pub(super) fn poll_uplink(&mut self) -> io::Result<bool> {
         let mut io = self.lock();
         let io = &mut *io;
-        let Some(route) = io.relay.as_mut().filter(|route| route.retiring.is_none()) else {
+        let Some(route) = active_relay(&mut io.relay) else {
             return Ok(false);
         };
         let now_ms = route.now_ms();
@@ -772,7 +932,7 @@ impl LanUdpTransport {
     pub(super) fn poll_repair_pull(&mut self) -> io::Result<bool> {
         let mut io = self.lock();
         let io = &mut *io;
-        let Some(route) = io.relay.as_mut().filter(|route| route.retiring.is_none()) else {
+        let Some(route) = active_relay(&mut io.relay) else {
             return Ok(false);
         };
         let now_ms = route.now_ms();
@@ -828,11 +988,8 @@ impl LanUdpTransport {
     ) -> io::Result<()> {
         let mut io = self.lock();
         let io = &mut *io;
-        let route = io
-            .relay
-            .as_mut()
-            .filter(|route| route.retiring.is_none())
-            .ok_or_else(|| io::Error::other("no relay route"))?;
+        let route =
+            active_relay(&mut io.relay).ok_or_else(|| io::Error::other("no relay route"))?;
         let now_ms = route.now_ms();
         encode(route, now_ms).map_err(relay_io_error)?;
         io.primary
@@ -931,13 +1088,19 @@ impl LanUdpTransport {
     /// In worker mode, the caller's now may predate lengthy Logic/render work.
     /// Never apply it to I/O state. Wake the sole physical service owner and
     /// consume its aggregate once; manual-clock consumers retain exact service.
+    /// Each call also tells the worker the game thread is still there.
     pub fn service(&mut self, now_ticks: u32) -> UdpServiceReport {
-        if self.pump.is_some() {
-            self.wake();
-            std::mem::take(&mut self.lock().pending_report)
-        } else {
-            self.lock().service(now_ticks, usize::MAX)
+        let wall_bucket = self.pump.as_ref().map(|pump| pump.wall_bucket);
+        let mut io = self.lock();
+        // Sampled under the lock, as the worker samples its own.
+        io.game_serviced = wall_bucket.map_or(now_ticks, |bucket| bucket());
+        if wall_bucket.is_none() {
+            return io.service(now_ticks, usize::MAX);
         }
+        let report = std::mem::take(&mut io.pending_report);
+        drop(io);
+        self.wake();
+        report
     }
 
     pub fn pop_received(&mut self) -> Option<ReceivedMessage> {
@@ -1027,6 +1190,12 @@ impl RelayRoute {
     }
 }
 
+/// The route that takes new ordering traffic: a retiring route only resends
+/// its Leave until the relay acknowledges it.
+fn active_relay(relay: &mut Option<RelayRoute>) -> Option<&mut RelayRoute> {
+    relay.as_mut().filter(|route| route.retiring.is_none())
+}
+
 struct RelayRetirement {
     last_sent: Option<u32>,
     attempts: u16,
@@ -1093,13 +1262,7 @@ impl UdpIo {
         #[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
         let alternate = UdpSocket::bind(config.alternate, "alternate")?;
         alternate.set_nonblocking(true)?;
-        let global = GlobalChannel::new(
-            GlobalConfig {
-                product_id: connections.product_id(),
-                ..GlobalConfig::default()
-            },
-            connections.retry_timing(),
-        );
+        let global = GlobalChannel::new(GlobalConfig::default(), connections.retry_timing());
         Ok(Self {
             primary,
             alternate,
@@ -1113,8 +1276,10 @@ impl UdpIo {
             #[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
             relay_gateway: None,
             lan_scope: None,
+            retired_lan_receipts: None,
             pending_report: UdpServiceReport::default(),
             precise_relay_clock: false,
+            game_serviced: 0,
         })
     }
 
@@ -1156,6 +1321,7 @@ impl UdpIo {
     fn set_lan_scope(&mut self, scope: SessionScope) -> io::Result<()> {
         self.prepare_lan_scope(scope)?;
         self.lan_scope = Some(LanScopeState::Active(scope));
+        self.retired_lan_receipts = None;
         Ok(())
     }
 
@@ -1352,31 +1518,29 @@ impl UdpIo {
                 "invalid peer probe roster",
             ));
         }
-        if self.global.available_send_slots() < sources.len() {
-            return Err(io::Error::new(
-                io::ErrorKind::WouldBlock,
-                "global send queue is full",
-            ));
-        }
-        let mut probes = Vec::with_capacity(sources.len());
-        for &source in sources {
-            let endpoint = relay_peer_endpoint(source).map_err(relay_io_error)?;
-            let sequence = self.global.next_send_sequence();
-            let accepted = self.global.send(
-                &[],
-                GlobalDestination::direct(endpoint),
-                super::reliable::Delivery::Reliable,
-                0,
-            );
-            assert!(accepted, "reserved global probe slots must fit");
-            probes.push(PeerProbe {
-                source,
-                endpoint,
-                sequence,
-                elapsed: None,
-            });
-        }
-        route.peer_probes = Some(probes);
+        let endpoints = sources
+            .iter()
+            .map(|&source| relay_peer_endpoint(source).map_err(relay_io_error))
+            .collect::<io::Result<Vec<_>>>()?;
+        let batch = self
+            .global
+            .send_reliable_batch(&[], &endpoints)
+            .ok_or_else(|| {
+                io::Error::new(io::ErrorKind::WouldBlock, "global send queue is full")
+            })?;
+        route.peer_probes = Some(
+            sources
+                .iter()
+                .zip(endpoints)
+                .zip(batch.sequences())
+                .map(|((&source, endpoint), sequence)| PeerProbe {
+                    source,
+                    endpoint,
+                    sequence,
+                    elapsed: None,
+                })
+                .collect(),
+        );
         Ok(())
     }
 
@@ -1421,6 +1585,7 @@ impl UdpIo {
         self.connections.reset();
         self.global.reset();
         self.lan_scope = None;
+        self.retired_lan_receipts = None;
         self.pending_report = UdpServiceReport::default();
     }
 
@@ -1463,6 +1628,28 @@ impl UdpIo {
         }
     }
 
+    /// One pass of the I/O worker (`start_io_pump`) at its own `now_ticks`.
+    /// After a crash it does nothing; while the game thread has not serviced
+    /// a live relay route for `GAME_STALL_TICKS` it leaves that route alone,
+    /// keepalive and UPLINK heartbeat included, until the game services again.
+    /// A route being retired keeps its Leave retries, and a LAN transport
+    /// keeps its worker: a hidden lobby or room is serviced only from here.
+    fn background_pass(&mut self, now_ticks: u32, crashed: bool) {
+        // Signed, as `absent`: a game sample a bucket newer is no stall. A
+        // hang across the 2^28-bucket wrap (49.7 days of uptime) goes unseen
+        // until the game services again.
+        let stalled = self
+            .relay
+            .as_ref()
+            .is_some_and(|route| route.retiring.is_none())
+            && now_ticks.wrapping_sub(self.game_serviced) as i32 > GAME_STALL_TICKS;
+        if crashed || stalled {
+            return;
+        }
+        let report = self.service(now_ticks, IO_PUMP_RECEIVE_BUDGET);
+        self.pending_report.accumulate(report);
+    }
+
     ///541820 drains received datagrams before servicing private connections.
     /// Ordinary private/global ACKs use primary UDP7B3C5B even when received on
     /// the alternate socket.48C2CB/53FEC3 select alternate only for manager+4C,
@@ -1495,8 +1682,8 @@ impl UdpIo {
             if let Some(retiring) = route.retiring.as_mut() {
                 let due = retiring
                     .last_sent
-                    .is_none_or(|last| now_ticks.wrapping_sub(last) >= 16);
-                leave_unacknowledged = due && retiring.attempts == RELAY_LEAVE_ATTEMPTS;
+                    .is_none_or(|last| now_ticks.wrapping_sub(last) >= RELAY_LEAVE_TICKS);
+                leave_unacknowledged = due && retiring.attempts == LEAVE_ATTEMPTS;
                 if due && !leave_unacknowledged {
                     retiring.last_sent = Some(now_ticks);
                     retiring.attempts += 1;
@@ -1522,7 +1709,7 @@ impl UdpIo {
             } else {
                 if route
                     .last_response
-                    .is_some_and(|last| now_ticks.wrapping_sub(last) > 625)
+                    .is_some_and(|last| now_ticks.wrapping_sub(last) > RELAY_READINESS_TICKS)
                 {
                     route.session.forget_readiness();
                 }
@@ -1534,11 +1721,15 @@ impl UdpIo {
                     .is_some_and(|heard| now_ticks.wrapping_sub(heard) as i32 > RELAY_ABSENT_TICKS);
                 // Keep the NAT mapping alive even without player input. During
                 // initial admission retry once a second; established routes ping
-                // every two seconds. These wall buckets never enter simulation.
-                let interval = if route.session.is_ready() && route.renewing.is_none() {
-                    125
+                // every two seconds, except at an interval that finds the hop
+                // trading traffic both ways (`ClientSession::busy_both_ways`):
+                // a match's UPLINKs and the relay's pushes are its keepalive.
+                // These wall buckets never enter simulation.
+                let established = route.session.is_ready() && route.renewing.is_none();
+                let interval = if established {
+                    RELAY_PING_TICKS
                 } else {
-                    62
+                    RELAY_HANDSHAKE_TICKS
                 };
                 if route
                     .last_probe
@@ -1549,6 +1740,9 @@ impl UdpIo {
                     for session in
                         std::iter::once(&mut route.session).chain(route.renewing.iter_mut())
                     {
+                        if established && session.busy_both_ways(now_ms) {
+                            continue;
+                        }
                         match session.probe_at(now_ms, &mut route.encoded) {
                             Ok(()) => {
                                 if let Err(error) =
@@ -1573,6 +1767,7 @@ impl UdpIo {
                 }
                 // The IO thread's UPLINK heartbeat while the game thread is
                 // held up (spec §6.6); the session knows when one is due.
+                // A game gone for good sends none (`background_pass`).
                 let now_ms = route.now_ms();
                 if route.renewing.is_none()
                     && route.session.heartbeat_uplink(now_ms, &mut route.encoded)
@@ -1624,6 +1819,7 @@ impl UdpIo {
             &mut self.relay,
             &mut self.primary_send,
             self.lan_scope,
+            self.retired_lan_receipts.as_ref(),
             UdpChannel::Primary,
             &mut self.connections,
             &mut self.global,
@@ -1638,6 +1834,7 @@ impl UdpIo {
             &mut self.relay,
             &mut self.primary_send,
             self.lan_scope,
+            self.retired_lan_receipts.as_ref(),
             UdpChannel::Alternate,
             &mut self.connections,
             &mut self.global,
@@ -1731,6 +1928,7 @@ fn drain_socket(
     relay: &mut Option<RelayRoute>,
     ack_queue: &mut UdpSendQueue,
     lan_scope: Option<LanScopeState>,
+    retired_lan_receipts: Option<&RetiredLanReceipts>,
     channel: UdpChannel,
     connections: &mut LanConnections,
     global: &mut GlobalChannel,
@@ -1754,6 +1952,14 @@ fn drain_socket(
                 // learn.microsoft.com/windows/win32/api/winsock/nf-winsock-recvfrom
                 report.received_datagrams += 1;
                 report.malformed_datagrams += 1;
+                continue;
+            }
+            Err(error) if cfg!(windows) && error.raw_os_error() == Some(10054) => {
+                // WSAECONNRESET: Winsock reports the ICMP port-unreachable an
+                // earlier sendto drew on this later recvfrom. No datagram was
+                // read and the socket stays usable; the ones behind it follow.
+                // learn.microsoft.com/windows/win32/api/winsock/nf-winsock-recvfrom
+                record_io_error(report, channel, UdpIoOperation::Receive, error);
                 continue;
             }
             Err(error) => {
@@ -1821,10 +2027,13 @@ fn drain_socket(
                         }
                         continue;
                     }
+                    // The session yields a candidate only CHALLENGE and the
+                    // READY that promotes it; anything else is dropped.
                     ServerEvent::Payload { .. }
                     | ServerEvent::Ordering(_)
                     | ServerEvent::OrderingPack(_) => {
-                        unreachable!("candidate is promoted on READY")
+                        report.malformed_datagrams += 1;
+                        continue;
                     }
                 }
             }
@@ -1843,11 +2052,11 @@ fn drain_socket(
                 }
                 Ok(ServerEvent::Payload { source, bytes }) => {
                     route.last_response = Some(now_ticks);
-                    (
-                        bytes,
-                        relay_peer_endpoint(source).expect("authenticated source range"),
-                        None,
-                    )
+                    let Ok(source) = relay_peer_endpoint(source) else {
+                        report.malformed_datagrams += 1;
+                        continue;
+                    };
+                    (bytes, source, None)
                 }
                 Ok(ServerEvent::Ready) => {
                     route.last_response = Some(now_ticks);
@@ -1880,33 +2089,69 @@ fn drain_socket(
         } else {
             let datagram = &bytes[..length];
             if datagram.starts_with(LAN_SCOPE_MAGIC) {
-                let Some(scope) = lan_scope.map(LanScopeState::scope) else {
+                if lan_scope.is_none() {
                     // Retired match bytes never enter plain lobby receive state.
                     report.malformed_datagrams += 1;
                     continue;
-                };
+                }
                 if datagram.len() < LAN_SCOPE_HEADER_LEN + CHECKSUM_LEN
                     || datagram.len() > UDP_DATAGRAM_CAPACITY
-                    || datagram[4..20] != scope.epoch
-                    || datagram[20..LAN_SCOPE_HEADER_LEN] != scope.revision.to_le_bytes()
                 {
                     report.malformed_datagrams += 1;
                     continue;
                 }
+                let Some(scope) =
+                    SessionScope::decode(&datagram[LAN_SCOPE_MAGIC.len()..LAN_SCOPE_HEADER_LEN])
+                else {
+                    report.malformed_datagrams += 1;
+                    continue;
+                };
                 (&datagram[LAN_SCOPE_HEADER_LEN..], source, Some(scope))
             } else {
                 (datagram, source, None)
             }
         };
-        if datagram.len() < CHECKSUM_LEN || datagram.len() > UDP_DATAGRAM_CAPACITY {
+        let Some((checksum, frame)) = datagram
+            .split_first_chunk::<CHECKSUM_LEN>()
+            .filter(|_| datagram.len() <= UDP_DATAGRAM_CAPACITY)
+        else {
             report.malformed_datagrams += 1;
             continue;
-        }
-        let checksum = u32::from_le_bytes(datagram[..CHECKSUM_LEN].try_into().unwrap());
-        let frame = &datagram[CHECKSUM_LEN..];
+        };
+        let checksum = u32::from_le_bytes(*checksum);
         //7B3F82..7B3FB9 validates this before publishing to the manager.
         if checksum != udp_checksum(frame) {
             report.malformed_datagrams += 1;
+            continue;
+        }
+        if let Some(scope) = received_scope
+            && Some(scope) != lan_scope.map(LanScopeState::scope)
+        {
+            let acknowledged = retired_lan_receipts
+                .filter(|retired| retired.scope == scope)
+                .is_some_and(|retired| {
+                    global.acknowledge_retired_receipt(
+                        source,
+                        frame,
+                        &retired.received,
+                        |destination, ack| {
+                            send_global_frame(
+                                ack_socket,
+                                relay,
+                                Some(scope),
+                                UdpChannel::Primary,
+                                ack_queue,
+                                destination,
+                                broadcast_targets,
+                                ack,
+                                report,
+                            );
+                        },
+                    )
+                });
+            if !acknowledged {
+                report.malformed_datagrams += 1;
+            }
             continue;
         }
         //541820 demultiplexes the first word before private endpoint lookup;
@@ -1919,6 +2164,7 @@ fn drain_socket(
             // installs gameplay. In particular a late old plain packet must
             // not initialize a fresh private receive sequence during loading.
             Some(LanScopeState::Prepared(_)) => is_global,
+            Some(LanScopeState::ContinuationLoading(_)) => is_global && received_scope.is_some(),
             Some(LanScopeState::Active(scope)) if received_scope.is_none() => {
                 // A peer may still be loading after we received its100. Its
                 // retry stays plain until it promotes the same route. Only
@@ -1940,12 +2186,8 @@ fn drain_socket(
             //7B4038..408C stores a zero-port endpoint and the recvfrom port
             //separately;5418FB passes that override to53FCB0.
             let endpoint = SocketAddrV4::new(*source.ip(), 0);
-            if let Err(error) = global.receive(
-                endpoint,
-                source.port(),
-                frame,
-                now_ticks,
-                &mut |destination, ack| {
+            if let Err(error) =
+                global.receive(endpoint, source.port(), frame, &mut |destination, ack| {
                     send_global_frame(
                         ack_socket,
                         relay,
@@ -1957,8 +2199,8 @@ fn drain_socket(
                         ack,
                         report,
                     );
-                },
-            ) {
+                })
+            {
                 report.rejected_global += 1;
                 report.last_global_rejection = Some(error);
             }
@@ -1993,22 +2235,17 @@ fn send_global_frame(
 ) {
     match destination {
         GlobalDestination::Direct {
-            mut endpoint,
+            endpoint,
             port_override,
         } => {
-            if port_override != 0 {
-                endpoint.set_port(port_override);
-            }
+            let endpoint = with_port_override(endpoint, port_override);
             send_frame(
                 socket, relay, lan_scope, channel, queue, endpoint, frame, report,
             );
         }
         GlobalDestination::Broadcast { port_override } => {
             for &target in targets {
-                let mut endpoint = target;
-                if port_override != 0 {
-                    endpoint.set_port(port_override);
-                }
+                let endpoint = with_port_override(target, port_override);
                 send_frame(
                     socket, relay, lan_scope, channel, queue, endpoint, frame, report,
                 );
@@ -2227,7 +2464,7 @@ mod close_tests {
         );
         let mut decoded = GlobalChannel::new(GlobalConfig::default(), timing);
         decoded
-            .receive(binds.primary, 0, frame, 32, &mut |_, _| {
+            .receive(binds.primary, 0, frame, &mut |_, _| {
                 panic!("unreliable Departure must not request an ACK")
             })
             .unwrap();

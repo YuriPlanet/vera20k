@@ -6,7 +6,7 @@ use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::find_nearby_cell::NearbySearchOptions;
 use crate::sim::houses::Houses;
-use crate::sim::intern::StringInterner;
+use crate::sim::intern::InternedId;
 use crate::sim::mission::authority::LiveReadyInputProvider;
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::scenario_session::ScenarioSession;
@@ -47,7 +47,7 @@ pub(crate) fn spawn_building_free_unit(
     stable_id: u64,
     rules: &RuleSet,
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> bool {
     let Some((owner_id, type_ref, rx, ry, width, height)) =
         sim.substrate.entities.get(stable_id).and_then(|entity| {
@@ -58,14 +58,14 @@ pub(crate) fn spawn_building_free_unit(
             let human = sim
                 .houses
                 .get(&entity.owner())
-                .is_some_and(|house| house.is_controlled_by_human(sim.session.game_mode_nonzero()));
+                .is_some_and(|house| house.is_controlled_by_human(sim.session.rule_policy()));
             if human
                 && entity.production_start_price() != 0
                 && entity.production_start_price() <= rules.type_cost(object)
             {
                 return None;
             }
-            let (width, height) = entity.type_facts.foundation().dimensions();
+            let (width, height) = entity.seldom.type_facts.foundation().dimensions();
             Some((
                 entity.owner(),
                 entity.type_ref(),
@@ -78,13 +78,11 @@ pub(crate) fn spawn_building_free_unit(
     else {
         return false;
     };
-    let owner = sim.interner.resolve(owner_id).to_owned();
-    let building_type_id = sim.interner.resolve(type_ref).to_owned();
     try_spawn_building_free_unit(
         sim,
         rules,
-        &owner,
-        &building_type_id,
+        owner_id,
+        type_ref,
         rx,
         ry,
         width,
@@ -97,19 +95,18 @@ pub(crate) fn spawn_building_free_unit(
 fn try_spawn_building_free_unit(
     sim: &mut Simulation,
     rules: &RuleSet,
-    owner: &str,
-    building_type_id: &str,
+    owner: InternedId,
+    building_type: InternedId,
     building_rx: u16,
     building_ry: u16,
     width: u16,
     height: u16,
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> bool {
-    let Some(free_unit_type) = rules.building_free_unit(building_type_id) else {
+    let Some(free_unit_type) = rules.building_free_unit(sim.interner.resolve(building_type)) else {
         return false;
     };
-    let free_unit_type = free_unit_type.to_owned();
 
     let primary = primary_free_unit_cell(building_rx, building_ry, width, height);
     // Both nearby searches are seeded from the building's NORTH-WEST footprint cell —
@@ -124,7 +121,7 @@ fn try_spawn_building_free_unit(
     let (initial_rx, initial_ry) = primary.unwrap_or(search_seed);
     let initial_z = sim.terrain_cell_level(initial_rx, initial_ry).unwrap_or(0);
     let Some(free_unit_id) = sim.construct_object_limbo_at_height(
-        &free_unit_type,
+        free_unit_type,
         owner,
         initial_rx,
         initial_ry,
@@ -133,20 +130,13 @@ fn try_spawn_building_free_unit(
         rules,
         effects,
     ) else {
-        let refund = refund_free_unit(
-            &sim.interner,
-            &sim.session,
-            &mut sim.houses,
-            rules,
-            owner,
-            &free_unit_type,
-        );
+        let refund = refund_free_unit(&sim.session, &mut sim.houses, rules, owner, free_unit_type);
         log::warn!(
             "Completed refinery {} could not construct free unit {}; refunded {} to {}",
-            building_type_id,
+            sim.interner.resolve(building_type),
             free_unit_type,
             refund,
-            owner,
+            sim.interner.resolve(owner),
         );
         return false;
     };
@@ -165,11 +155,11 @@ fn try_spawn_building_free_unit(
     {
         log::info!(
             "Completed refinery {} spawned free {} at ({},{}) for {}",
-            building_type_id,
+            sim.interner.resolve(building_type),
             free_unit_type,
             primary_rx,
             primary_ry,
-            owner
+            sim.interner.resolve(owner)
         );
         return true;
     }
@@ -180,7 +170,7 @@ fn try_spawn_building_free_unit(
     // than being precomputed, so it sees the occupancy the placement will meet.
     for options in FREE_UNIT_FALLBACK_ATTEMPTS {
         let Some((fallback_rx, fallback_ry)) =
-            find_free_unit_nearby_cell(sim, rules, &free_unit_type, search_seed, options)
+            find_free_unit_nearby_cell(sim, rules, free_unit_type, search_seed, options)
         else {
             continue;
         };
@@ -196,35 +186,28 @@ fn try_spawn_building_free_unit(
         ) {
             log::info!(
                 "Completed refinery {} spawned free {} at fallback ({},{}) for {}",
-                building_type_id,
+                sim.interner.resolve(building_type),
                 free_unit_type,
                 fallback_rx,
                 fallback_ry,
-                owner
+                sim.interner.resolve(owner)
             );
             return true;
         }
     }
 
     // gamemd refunds before uninitializing the constructed UnitClass.
-    let refund = refund_free_unit(
-        &sim.interner,
-        &sim.session,
-        &mut sim.houses,
-        rules,
-        owner,
-        &free_unit_type,
-    );
+    let refund = refund_free_unit(&sim.session, &mut sim.houses, rules, owner, free_unit_type);
     sim.uninit_with_context(
         free_unit_id,
-        crate::sim::world::UninitContext::new(rules, overlay_registry).with_effects(effects),
+        crate::sim::world::UninitContext::new(rules).with_effects(effects),
     );
     log::warn!(
         "Completed refinery {} could not place free unit {}; refunded {} to {}",
-        building_type_id,
+        sim.interner.resolve(building_type),
         free_unit_type,
         refund,
-        owner,
+        sim.interner.resolve(owner),
     );
     false
 }
@@ -237,7 +220,7 @@ fn try_place_free_unit(
     facing: u8,
     rules: &RuleSet,
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> bool {
     // BuildingClass::OnConstructionComplete @ 0x00445F80 invokes the newly
     // constructed UnitClass through virtual Unlimbo for every primary/fallback
@@ -300,29 +283,20 @@ fn try_place_free_unit(
 /// `0x00446EB9..0x00446EDD`) through `HouseClass::Add_Credits @ 0x004F9950`.
 /// Returns the amount credited.
 fn refund_free_unit(
-    interner: &StringInterner,
     session: &ScenarioSession,
     houses: &mut Houses,
     rules: &RuleSet,
-    owner: &str,
+    owner_id: InternedId,
     unit_type: &str,
 ) -> i32 {
-    let Some(owner_id) = interner.get(owner) else {
-        return 0;
-    };
     let refund = match (
         rules.object(unit_type),
         houses.get(&owner_id),
         Simulation::house_cost_factors(houses, owner_id),
     ) {
-        (Some(object), Some(house), Some(factors)) => super::type_refund(
-            rules,
-            object,
-            house,
-            &factors,
-            session.game_mode_nonzero(),
-            true,
-        ),
+        (Some(object), Some(house), Some(factors)) => {
+            super::type_refund(rules, object, house, &factors, session.rule_policy(), true)
+        }
         _ => return 0,
     };
     crate::sim::credit_income::add_credits(houses, owner_id, refund);

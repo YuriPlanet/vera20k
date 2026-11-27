@@ -31,7 +31,7 @@ fn explicit_power_toggle_holds_and_resumes_the_existing_paid_factory_head() {
     let sim = &mut fixture.runtime.simulation;
     let rules = &fixture.runtime.resources.rules;
     let rng = sim.rng_state();
-    assert!(sim.go_building_offline(fixture.target, rules, FrameEffects::default()));
+    assert!(sim.go_building_offline(fixture.target, rules, &mut FrameEffects::default()));
     assert!(
         !sim.production
             .factories()
@@ -39,7 +39,7 @@ fn explicit_power_toggle_holds_and_resumes_the_existing_paid_factory_head() {
             .unwrap()
             .suspended
     );
-    assert!(sim.go_building_offline(fixture.barracks, rules, FrameEffects::default()));
+    assert!(sim.go_building_offline(fixture.barracks, rules, &mut FrameEffects::default()));
     let held = sim
         .production
         .factories()
@@ -49,7 +49,7 @@ fn explicit_power_toggle_holds_and_resumes_the_existing_paid_factory_head() {
     assert_eq!(held.object.unwrap().entity_id, Some(fixture.original));
     let stage = held.progress;
     let queued: Vec<_> = held.queue.iter().map(|entry| entry.type_id).collect();
-    assert!(sim.go_building_online(fixture.barracks, rules, FrameEffects::default()));
+    assert!(sim.go_building_online(fixture.barracks, rules, &mut FrameEffects::default()));
     let resumed = sim
         .production
         .factories()
@@ -127,16 +127,22 @@ impl PaidHead {
             .or_default();
         power.set_total_output_for_test(99);
         power.set_total_drain_for_test(0);
-        assert!(sim.recheck_house_tech_tree(owner, rules).is_empty());
+        assert!(
+            sim.recheck_house_tech_tree(owner, rules, &mut Default::default())
+                .is_empty()
+        );
         for _ in 0..2 {
-            assert!(production::enqueue_by_type(
-                sim,
-                rules,
-                "Russians",
-                "E2",
-                FrameEffects::default(),
-                false,
-            ));
+            assert!(
+                production::enqueue_by_type(
+                    sim,
+                    rules,
+                    "Russians",
+                    "E2",
+                    &mut FrameEffects::default(),
+                    false,
+                )
+                .is_ok()
+            );
         }
         // The native harness also visits only FactoryAI here. A whole frame
         // would publish readiness/deliver the old head before the forced seam.
@@ -152,8 +158,8 @@ impl PaidHead {
             {
                 break;
             }
-            sim.session
-                .set_binary_frame_for_test(sim.session.binary_frame().wrapping_add(1));
+            let session = &mut *sim.session;
+            session.set_binary_frame_for_test(session.binary_frame().wrapping_add(1));
             production::step_factories(sim);
         }
         let factory = sim.production.factories().view(owner, CATEGORY).unwrap();
@@ -168,12 +174,11 @@ impl PaidHead {
         let type_id = sim.interner.get("E2").unwrap();
         // All fixture constructors/payments precede this recorded boundary.
         // Streams are installed once and retained through every measured phase.
-        sim.main_rng =
-            SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap())
-                .into();
-        sim.scenario_rng =
+        *sim.main_rng =
+            SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap());
+        *sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["scenario"].as_str().unwrap());
-        sim.mapgen_rng =
+        *sim.mapgen_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["mapgen"].as_str().unwrap());
         Some(Self {
             runtime,
@@ -260,8 +265,7 @@ impl PaidHead {
                     &commands,
                     rules,
                     sim.session.tick(),
-                    None,
-                    FrameEffects::default(),
+                    &mut FrameEffects::default(),
                 );
                 assert_eq!(executed, 1);
                 assert!(!spawned);
@@ -272,7 +276,7 @@ impl PaidHead {
                     Some(self.target),
                     rules,
                     None,
-                    FrameEffects::default(),
+                    &mut FrameEffects::default(),
                 );
                 self.notice_executed = true;
             }
@@ -288,10 +292,10 @@ impl PaidHead {
                 self.barracks,
                 production::SellOrder::Player,
                 None,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )),
             "online_barracks_limbo" => {
-                sim.techno_limbo_with_rules(self.barracks, rules, None);
+                sim.techno_limbo_with_rules(self.barracks, rules);
             }
             "original_temporal_release" => crate::sim::world::Simulation::temporal_let_go(
                 &mut sim.substrate,
@@ -301,7 +305,10 @@ impl PaidHead {
                 rules.ares_form(),
             ),
             "release_house_suffix" => {
-                assert!(sim.recheck_house_tech_tree(self.owner, rules).is_empty())
+                assert!(
+                    sim.recheck_house_tech_tree(self.owner, rules, &mut Default::default())
+                        .is_empty()
+                )
             }
             "release_rate_refresh" => {
                 production::refresh_factory_rates_for_house(sim, rules, self.owner)
@@ -311,10 +318,10 @@ impl PaidHead {
                 rules,
                 self.owner,
                 CATEGORY,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             ),
             "declared_successful_delivery_completion" => {
-                assert!(sim.production.factories_mut().complete_production(
+                assert!(sim.production.edit_factories().complete_production(
                     self.owner,
                     CATEGORY,
                     sim.session.binary_frame(),
@@ -327,7 +334,7 @@ impl PaidHead {
                     rules,
                     self.owner,
                     CATEGORY,
-                    FrameEffects::default(),
+                    &mut FrameEffects::default(),
                 );
                 let successor = sim
                     .production

@@ -60,6 +60,12 @@
 //! - Returns un-truncated f64 from `read_double`; the single f64->SimFixed
 //!   conversion stays in `util::fixed_math`. No float enters sim/.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(clippy::unwrap_used, clippy::panic, clippy::unreachable)
+)]
+
 use super::{IniSection, is_native_none_type_name};
 use crate::rules::locomotor_type::SpeedType;
 use crate::util::native_x87::{MaskedX87Chop53, NativeF32Bits, NativeF64Bits};
@@ -302,12 +308,24 @@ impl IniSection {
     /// This projection keeps an absent constructor value as Option::None and
     /// returns canonical names for actual reads, including action0's "None".
     pub(crate) fn read_action_name(&self, key: &str) -> Option<&'static str> {
+        self.read_action_name_with(key, None)
+    }
+
+    /// [`Self::read_action_name`] that also knows `extra`, an action past
+    /// gamemd's table (a VERA type's own action, such as Tiberian Sun's
+    /// IonCannon).
+    pub(crate) fn read_action_name_with(
+        &self,
+        key: &str,
+        extra: Option<&'static str>,
+    ) -> Option<&'static str> {
         self.fold_rules_values(key, None, |_, raw| {
             let name = strtrim_ascii(truncate_native_bytes(raw, 0x1f));
             Some(
                 ACTION_NAMES
                     .iter()
                     .copied()
+                    .chain(extra)
                     .find(|candidate| candidate.eq_ignore_ascii_case(name))
                     .unwrap_or(ACTION_NAMES[0]),
             )
@@ -350,6 +368,20 @@ impl IniSection {
             ("personblue", 11),
             ("personpurple", 12),
         ];
+        if crate::rules::ares_switch::ares_way() {
+            // Ares INIClass_GetPipIdx (hook 0x004748A0, body 1005CC40, resumes
+            // 0x00474907) replaces the whole function: ReadString(2048) with
+            // an empty default, so a missing or empty value keeps the current
+            // FRAME; then the same 11 names (0x0081B958..0x0081B9B0, strcmpi),
+            // else Parser<int>::TryParse, else the current frame. A negative
+            // integer keeps the current frame here; Ares would draw it.
+            return self.read_string_with(key, 2048, current, |current, value| {
+                PIPS.iter()
+                    .find_map(|&(name, frame)| name.eq_ignore_ascii_case(value).then_some(frame))
+                    .or_else(|| parse_ares_int(value).and_then(|frame| u32::try_from(frame).ok()))
+                    .unwrap_or(current)
+            });
+        }
         // Constructor1/7 and every mapped frame close over indices0..=12.
         // The adjacent literal pointers are original81B9B0/81B9B8; their
         // unrelated numeric table values must not become pip return values.
@@ -578,6 +610,19 @@ impl IniSection {
         let _ares = crate::rules::ares_switch::ares_reads();
         self.read_string_with(key, 2048, current, |previous, value| {
             parse_ares_coord3(value).unwrap_or(previous)
+        })
+    }
+
+    /// Kratos PP v0.2.4 INIBuffer::GetParsed<CoordStruct> zeroes its three
+    /// integers and accepts any nonzero count from Parser<int, 3>::Parse.
+    pub(crate) fn read_kratos_coord3(&self, key: &str, default: [i32; 3]) -> [i32; 3] {
+        self.read_string_with(key, 2048, default, |previous, value| {
+            let mut coords = [0; 3];
+            if scan_ares_fields(value, &mut coords) > 0 {
+                coords
+            } else {
+                previous
+            }
         })
     }
 
@@ -1422,17 +1467,18 @@ impl IniSection {
     /// Otherwise the value is a CELL count that the reader converts to leptons:
     /// `FMUL double ptr [0x007E1710]` at `0x0047464C`, where that address holds
     /// `0x4070000000000000` = `256.0`, then `Math__ftol @ 0x007C5F00`, whose
-    /// control word `0x0E7F` selects chop. `f64 as i32` truncates toward zero
-    /// like it does. Fixed-point `to_num::<i32>()` instead floors toward −∞;
-    /// it is not interchangeable with this reader's chop conversion.
+    /// control word `0x0E7F` selects chop. Fixed-point `to_num::<i32>()`
+    /// instead floors toward −∞; it is not interchangeable with this reader's
+    /// chop conversion.
     ///
-    /// Two residuals at the extremes, both out of reach of retail data:
+    /// `Math__ftol` executes `FISTP qword` and the caller keeps only the low
+    /// dword, so from 8388608 cells on the leptons wrap, and past 2^63 (or at
+    /// `±inf`) `FISTP` stores integer-indefinite, whose low dword is zero. A
+    /// host's `Range=2147483647` (2^31 cells after the binary32 scan) is
+    /// therefore 0 leptons, as in gamemd, not a range over the whole map.
     ///
-    /// * `Math__ftol` executes `FISTP qword` and the caller keeps only the low
-    ///   dword, so a magnitude past `i32` WRAPS while `f64 as i32` saturates.
-    ///   That band starts at |value| >= 8388608 cells and ends at 2^63, beyond
-    ///   which `FISTP` stores integer-indefinite and the low dword is zero.
-    ///   `±inf` therefore yields 0 natively against `i32::MAX` here.
+    /// One residual, out of reach of any data:
+    ///
     /// * A NaN never reaches `ftol` at all: `FCOM` against `-1.0` sets C3 for
     ///   unordered as well as equal, and the `TEST AH,0x40` at `0x0047463E`
     ///   takes the sentinel exit, returning the caller's default. Rust returns
@@ -1451,7 +1497,7 @@ impl IniSection {
             if parsed == -1.0 {
                 current
             } else {
-                (parsed * 256.0) as i32
+                crate::util::native_x87::X87Chop53::ftol_f64_low_masked(parsed * 256.0)
             }
         })
     }
@@ -2650,6 +2696,15 @@ mod tests {
         assert_eq!(s.read_range("B", -1), 1280, "5 cells");
         assert_eq!(s.read_range("C", -1), 102, "0.4 cells is 102.4 leptons");
         assert_eq!(s.read_range("MISSING", 7), 7); // absent -> default (sentinel -1.0)
+    }
+
+    /// `Math__ftol` keeps only the low dword of the qword conversion.
+    #[test]
+    fn read_range_keeps_the_native_low_dword() {
+        let ini = sec("[S]\nA=2147483647\nB=1e999\n");
+        let s = ini.section("S").unwrap();
+        assert_eq!(s.read_range("A", -1), 0);
+        assert_eq!(s.read_range("B", -1), 0);
     }
 
     /// The scratch seed is the section name's CRCEngine hash; these are the

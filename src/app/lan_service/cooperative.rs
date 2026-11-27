@@ -11,7 +11,7 @@
 
 use super::*;
 use crate::app::match_runtime::session::{
-    CooperativeRoundEvent, CooperativeRoundOptions, NetworkAiOptions, NetworkLoadingRequest,
+    CooperativeRoundEvent, CooperativeRoundOptions, NetworkAiOptions, NetworkSendRequest,
 };
 use crate::net::lan_messages::cooperative::{
     CooperativeAiWords, CooperativeHumanWords, CooperativeOptionsRecord, CooperativeSignal,
@@ -20,23 +20,6 @@ use crate::skirmish_launch::{
     LaunchCountry, LaunchStartPosition, LaunchTeam, SkirmishAiSlot, SkirmishLaunchSession,
     SkirmishLocalSlot,
 };
-
-/// At a LAN co-op mission's end, before `retire_finished_scenario`: take the
-/// match's transport back without leaving its scope, so the shared teardown
-/// finds no match transport to return.
-pub(crate) fn hold_transport(state: &mut AppState) {
-    if state.match_state.session_mode() != SessionMode::Lan {
-        return;
-    }
-    let Some(live) = state.match_state.live_network.take() else {
-        return;
-    };
-    if let Some(service) = state.match_state.lan_service.as_mut() {
-        let mut transport = live.into_transport();
-        transport.connections_mut().reset();
-        service.transport = Some(transport);
-    }
-}
 
 /// BC6's exit to the shell: its last records (Quit's `0x24`) go out first,
 /// then the visit leaves the match scope as [`return_transport`] does.
@@ -51,7 +34,7 @@ pub(crate) fn release_transport(state: &mut AppState) {
     let now = super::super::match_runtime::frame_pacer::frame_bucket(
         super::super::match_runtime::frame_pacer::wall_clock_ms(),
     );
-    service_transport(state, now);
+    service_transport(&state.platform, &mut state.match_state, now);
     if let Some(service) = state.match_state.lan_service.as_mut() {
         if let Some(transport) = service.transport.as_mut() {
             transport.connections_mut().reset();
@@ -68,6 +51,10 @@ pub(super) fn poll(state: &mut AppState, now: u32) -> bool {
     {
         return false;
     }
+    crate::app::cooperative_round::poll_start_deadline(state, now);
+    if state.match_state.session.cooperative_round().is_none() {
+        return false;
+    }
     loop {
         let Some(incoming) = state
             .match_state
@@ -77,10 +64,10 @@ pub(super) fn poll(state: &mut AppState, now: u32) -> bool {
         else {
             break;
         };
-        if let Err(error) = receive(state, incoming) {
+        if let Err(error) = receive(state, incoming, now) {
             log::debug!("Ignored co-op round packet: {error:#}");
         }
-        service_transport(state, now);
+        service_transport(&state.platform, &mut state.match_state, now);
         // Go or Quit closed the round: later packets (the next mission's
         // loading) belong to the ordinary service.
         if state.match_state.session.cooperative_round().is_none() {
@@ -92,8 +79,11 @@ pub(super) fn poll(state: &mut AppState, now: u32) -> bool {
 }
 
 /// The loop's dispatch (`0x0047009F`) for a packet from a round participant.
-fn receive(state: &mut AppState, incoming: GlobalMessage) -> anyhow::Result<()> {
-    anyhow::ensure!(incoming.product_id == 0xaa04, "different LAN product");
+fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        incoming.product_id == LAN_PRODUCT_ID,
+        "different LAN product"
+    );
     let source = state
         .match_state
         .session
@@ -106,26 +96,55 @@ fn receive(state: &mut AppState, incoming: GlobalMessage) -> anyhow::Result<()> 
                 .contains(source)
         })
         .ok_or_else(|| anyhow::anyhow!("not a round participant"))?;
+    let from_host = !state.match_state.session.host()
+        && state
+            .match_state
+            .lan_service
+            .as_ref()
+            .and_then(|service| service.admitted_host.as_ref())
+            .is_some_and(|(_, endpoint)| *endpoint == incoming.source);
     let event = if let Some(signal) = CooperativeSignal::decode(&incoming.payload) {
         match signal {
             CooperativeSignal::Ack => CooperativeRoundEvent::Ack { source },
             CooperativeSignal::Left => CooperativeRoundEvent::PeerLeft { source },
             CooperativeSignal::Waiting => CooperativeRoundEvent::PeerWaiting { source },
             CooperativeSignal::Ready => CooperativeRoundEvent::PeerReady { source },
-            CooperativeSignal::Go => CooperativeRoundEvent::Go,
-            CooperativeSignal::Begin => CooperativeRoundEvent::Begin,
+            CooperativeSignal::Go if from_host => CooperativeRoundEvent::Go,
+            CooperativeSignal::Begin if from_host => CooperativeRoundEvent::Begin { now },
+            CooperativeSignal::Go | CooperativeSignal::Begin => anyhow::bail!("not the round host"),
         }
     } else {
         let message = LanMessage::decode(&incoming.payload)?;
-        if let Some(record) = CooperativeOptionsRecord::decode(&message) {
+        if message.kind() == LanMessageKind::Departure {
+            let source = state
+                .match_state
+                .lan_service
+                .as_ref()
+                .and_then(|service| {
+                    service
+                        .loading_departure_source(
+                            &state.match_state.session,
+                            incoming.source,
+                            &message,
+                        )
+                        .ok()
+                        .flatten()
+                })
+                .ok_or_else(|| anyhow::anyhow!("not an admitted departure"))?;
+            CooperativeRoundEvent::PeerLeft { source }
+        } else if let Some(record) = CooperativeOptionsRecord::decode(&message) {
+            anyhow::ensure!(from_host, "not the round host");
             let launch = state
                 .match_state
                 .session
                 .network_setup()
                 .ok_or_else(|| anyhow::anyhow!("no round roster"))?;
-            CooperativeRoundEvent::Options(round_options(launch, &record)?)
+            CooperativeRoundEvent::Options {
+                options: round_options(launch, &record)?,
+                now,
+            }
         } else if let Some(chat) = message.in_game_chat_fields() {
-            let game = super::active_game_name(state).unwrap_or_default();
+            let game = super::active_game_name(&state.match_state).unwrap_or_default();
             let Some(event) = chat_event(source, &chat, &game) else {
                 return Ok(());
             };
@@ -156,32 +175,44 @@ fn chat_event(
 }
 
 /// A queued round record to every other node.
-pub(super) fn send(state: &mut AppState, request: NetworkLoadingRequest) {
-    if state.match_state.session_mode() != SessionMode::Lan {
+pub(super) fn send(
+    frontend: &crate::app::frontend::state::FrontendState,
+    match_state: &mut crate::app::match_runtime::state::MatchState,
+    request: NetworkSendRequest,
+) {
+    if match_state.session_mode() != SessionMode::Lan {
         return;
     }
-    let name = local_name(state);
-    let peers: Vec<_> =
-        super::super::match_runtime::network_match::nodes(&state.match_state.session)
-            .into_iter()
-            .skip(1)
-            .collect();
+    if request == NetworkSendRequest::CooperativeAbort {
+        let now = super::super::match_runtime::frame_pacer::wall_clock_bucket();
+        if let Some(service) = match_state.lan_service.as_mut()
+            && let Err(error) = service.queue_departure(&match_state.session, now)
+        {
+            log::warn!("Co-op handoff departure did not queue: {error:#}");
+        }
+        return;
+    }
+    let name = local_name(frontend, &match_state.session);
+    let peers: Vec<_> = super::super::match_runtime::network_match::nodes(&match_state.session)
+        .into_iter()
+        .skip(1)
+        .collect();
     let signal = match request {
-        NetworkLoadingRequest::CooperativeReady => CooperativeSignal::Ready,
-        NetworkLoadingRequest::CooperativeLeave => CooperativeSignal::Left,
-        NetworkLoadingRequest::CooperativeBegin => CooperativeSignal::Begin,
-        NetworkLoadingRequest::CooperativeAck => CooperativeSignal::Ack,
-        NetworkLoadingRequest::CooperativeGo => CooperativeSignal::Go,
-        NetworkLoadingRequest::CooperativeOptions(options) => {
+        NetworkSendRequest::CooperativeReady => CooperativeSignal::Ready,
+        NetworkSendRequest::CooperativeLeave => CooperativeSignal::Left,
+        NetworkSendRequest::CooperativeBegin => CooperativeSignal::Begin,
+        NetworkSendRequest::CooperativeAck => CooperativeSignal::Ack,
+        NetworkSendRequest::CooperativeGo => CooperativeSignal::Go,
+        NetworkSendRequest::CooperativeOptions(options) => {
             if let Ok(message) = options_record(&options).encode(&name) {
-                send_sources(state, message.as_bytes(), peers);
+                send_sources(match_state, message.as_bytes(), peers);
             }
             return;
         }
         _ => return,
     };
     if let Ok(bytes) = signal.encode(&name) {
-        send_sources(state, &bytes, peers);
+        send_sources(match_state, &bytes, peers);
     }
 }
 
@@ -201,17 +232,9 @@ fn options_record(options: &CooperativeRoundOptions) -> CooperativeOptionsRecord
                     color: -1,
                 },
                 |(_, choices)| CooperativeHumanWords {
-                    start: options::start_value(choices.start_position),
-                    country: if choices.country_random {
-                        -2
-                    } else {
-                        i32::from(choices.country.raw_index())
-                    },
-                    color: if choices.color_random {
-                        -2
-                    } else {
-                        i32::from(choices.color_index)
-                    },
+                    start: choices.start_position.shell_value(),
+                    country: choices.country_shell_value(false),
+                    color: choices.color_shell_value(),
                 },
             )
     });
@@ -252,12 +275,12 @@ fn round_options(
         if words.country == -1 {
             continue;
         }
-        let choices = options::decoded_choices(
+        let choices = super::picks::decoded_pick(
             &human.slot,
             words.country,
             words.color,
             words.start,
-            options::team_value(human.slot.team),
+            human.slot.team.shell_value(),
         )?;
         humans.push((row, choices));
     }
@@ -276,7 +299,7 @@ fn round_options(
             start_position: LaunchStartPosition::Auto,
             team: LaunchTeam::None,
         };
-        let choices = options::decoded_choices(
+        let choices = super::picks::decoded_pick(
             &placeholder,
             words.country,
             words.color,
@@ -284,6 +307,7 @@ fn round_options(
             words.team,
         )?;
         opponents.push(SkirmishAiSlot {
+            driver_policy: None,
             raw_slot_index: row as u8,
             country: choices.country,
             country_random: choices.country_random,
@@ -292,7 +316,6 @@ fn round_options(
             start_position: choices.start_position,
             team: choices.team,
             difficulty: options::decoded_difficulty(words.difficulty)?,
-            driver_policy: None,
         });
     }
     Ok(CooperativeRoundOptions {
@@ -356,6 +379,7 @@ mod tests {
             humans: vec![(0, launch.humans[0].slot.clone()), (1, guest_choices)],
             ai_player_count: 1,
             opponents: vec![SkirmishAiSlot {
+                driver_policy: None,
                 raw_slot_index: 3,
                 country: LaunchCountry::from_country_index(2),
                 country_random: false,
@@ -364,7 +388,6 @@ mod tests {
                 start_position: LaunchStartPosition::Position(4),
                 team: LaunchTeam::Team(1),
                 difficulty: AiDifficulty::Hard,
-                driver_policy: None,
             }],
         };
         let message = options_record(&options).encode("Host").unwrap();

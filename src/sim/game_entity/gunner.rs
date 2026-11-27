@@ -33,11 +33,11 @@ impl TurretSelection {
 
 impl GameEntity {
     pub fn current_weapon_number(&self) -> i32 {
-        self.turret_selection.current_weapon_number
+        self.seldom.turret_selection.current_weapon_number
     }
 
     pub fn current_turret_index(&self) -> i32 {
-        self.turret_selection.current_turret_index
+        self.seldom.turret_selection.current_turret_index
     }
 
     /// Ares TechnoClass_Update (Ares.dll 1004B320, hook 0x6F9E50, `#1208`):
@@ -46,8 +46,8 @@ impl GameEntity {
     pub(crate) fn update_passenger_turret(&mut self, object: &ObjectType) {
         if object.techno_combat().movement().passenger_turret() {
             let passengers =
-                i32::try_from(self.passenger_role.passenger_count()).unwrap_or(i32::MAX);
-            self.turret_selection.current_turret_index =
+                i32::try_from(self.passenger_role().passenger_count()).unwrap_or(i32::MAX);
+            self.seldom.turret_selection.current_turret_index =
                 passengers.min(17).min(object.turret_count.wrapping_sub(1));
         }
     }
@@ -69,15 +69,16 @@ impl GameEntity {
             WEAPON_SLOT_COUNT as i32
         };
         let mode = if (0..limit).contains(&mode) { mode } else { 0 };
-        self.turret_selection.current_weapon_number = mode;
-        self.turret_selection.current_turret_index = object.gunner_turrets.turret_for_weapon(mode);
+        self.seldom.turret_selection.current_weapon_number = mode;
+        self.seldom.turret_selection.current_turret_index =
+            object.gunner_turrets.turret_for_weapon(mode);
     }
 
     /// FireAt6FE4A4/6FF29E retains GetROF's final duration in +2F8 as well
     /// as starting +2EC. Other rearm writers do not change this saved word.
     pub(crate) fn rearm_after_fire(&mut self, frame: i32, duration: i32) {
-        self.turret_selection.charge_turret_delay = duration;
-        self.rearm_timer.start(frame, duration);
+        self.seldom.turret_selection.charge_turret_delay = duration;
+        self.seldom.rearm_timer.start(frame, duration);
     }
 
     /// Whether [`Self::update_charge_turret`] runs for `object`'s type: a
@@ -93,8 +94,8 @@ impl GameEntity {
         if !Self::charges_turret(object) {
             return;
         }
-        let rearm_remaining = self.rearm_timer.remaining(frame);
-        let selection = &self.turret_selection;
+        let rearm_remaining = self.seldom.rearm_timer.remaining(frame);
+        let selection = &self.seldom.turret_selection;
         let index = if selection.charge_turret_delay <= 0 {
             0
         } else {
@@ -103,7 +104,7 @@ impl GameEntity {
         };
         // An unchanged index writes nothing.
         if selection.current_turret_index != index {
-            self.turret_selection.current_turret_index = index;
+            self.seldom.turret_selection.current_turret_index = index;
         }
     }
 
@@ -111,8 +112,8 @@ impl GameEntity {
     /// constructor, SetGunnerWeapon and charge AI above.
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_gunner_selection_for_test(&mut self, weapon: i32, turret: i32) {
-        self.turret_selection.current_weapon_number = weapon;
-        self.turret_selection.current_turret_index = turret;
+        self.seldom.turret_selection.current_weapon_number = weapon;
+        self.seldom.turret_selection.current_turret_index = turret;
     }
 }
 

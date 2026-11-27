@@ -1,39 +1,65 @@
 //! Choose Map `0x6B` state (proc `0x005E6920`): the game-type list `0x6EB`,
 //! the map list `0x553` and the three buttons.
 //!
-//! Both lists are the shell list subclass `0x00618D40` (`ui::shell::list`):
-//! a press on a row selects it and plays GenericClick (`0x0061AA5A`), a
-//! press below the last row is ignored, the scrollbar captures and repeats,
-//! and no key or wheel case exists (`0x00618D40..0x0061C600`).
+//! Both lists are the shell list subclass `0x00618D40` as `vera20k-gui`
+//! lists ([`super::super::choose_map_page`]): a press on a row selects it and
+//! plays GenericClick (`0x0061AA5A`), a press below the last row is ignored,
+//! the scrollbar captures and repeats, and no key or wheel case exists
+//! (`0x00618D40..0x0061C600`). This state keeps what the lists show.
 
-use crate::util::time::{Duration, Instant};
-
+use crate::map::rmg::saved_seeds::SavedSeed;
 use crate::map::skirmish_scenarios::{
     SkirmishScenarioRecord, SkirmishScenarioSource, filter_records_for_mode, is_valid_map,
     upsert_random_map_sentinel,
 };
 use crate::skirmish_modes::{SkirmishGameMode, mode_by_id};
-use crate::ui::shell::list::{ListMetrics, ListScrollInteraction, ShellListGeometry};
+use crate::ui::shell::modal::ShellBox;
 use crate::ui::shell::static_reveal::DialogStatics;
+use vera20k_gui::shell::list::{ListMetrics, ShellListGeometry};
 
 use super::super::layout::{ChooseMapModalButton, ChooseMapModalLayout, RectPx};
+use super::super::online_map_folders::OnlineMapFolders;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SkirmishModeSelection {
+    pub id: i32,
+    /// Only needed for a non-first entry with this numeric ID. The catalog
+    /// stays fixed for the lifetime of the shell.
+    catalog_index: Option<usize>,
+}
+
+impl From<i32> for SkirmishModeSelection {
+    fn from(id: i32) -> Self {
+        Self {
+            id,
+            catalog_index: None,
+        }
+    }
+}
+
+impl SkirmishModeSelection {
+    pub(crate) fn for_skirmish_row(index: usize, modes: &[SkirmishGameMode]) -> Option<Self> {
+        let mode = modes.get(index)?;
+        // The catalog is sorted by ID. Only a duplicate needs a row index.
+        let use_index = index > 0 && modes[index - 1].id == mode.id;
+        Some(Self {
+            id: mode.id,
+            catalog_index: use_index.then_some(index),
+        })
+    }
+
+    pub fn resolve(self, modes: &[SkirmishGameMode]) -> Option<&SkirmishGameMode> {
+        match self.catalog_index {
+            Some(index) => modes.get(index).filter(|mode| mode.id == self.id),
+            None => mode_by_id(modes, self.id),
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ChooseMapSelection {
-    pub mode_id: i32,
+    pub mode: SkirmishModeSelection,
     pub record_index: Option<usize>,
-}
-
-/// What a press on the chooser's lists did.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ChooseMapListPress {
-    /// Not on either list.
-    Missed,
-    /// On a scrollbar or below the last row: no sound.
-    Consumed,
-    /// On a row: the list plays GenericClick. `rebuilt` when a game-type
-    /// click rebuilt the map list.
-    RowClicked { rebuilt: bool },
 }
 
 /// The buttons of Use Map's two-button box: OK (or Download) and Cancel.
@@ -81,15 +107,37 @@ pub enum ChooseMapPromptAnswer {
     Wait,
 }
 
-/// Use Map's two-button box over the chooser.
+/// Use Map's two-button box over the chooser. Its buttons are the shared
+/// box's widgets ([`Self::shell_box`]), which keep the press.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ChooseMapPrompt {
     pub selection: ChooseMapSelection,
-    pub pressed: Option<ChooseMapPromptButton>,
     pub kind: ChooseMapPromptKind,
 }
 
 impl ChooseMapPrompt {
+    /// The box as it paints and takes the pointer: the two-button message
+    /// box `0x120` with `body` over OK (`ok`'s caption) and Cancel, OK
+    /// greyed while a download runs.
+    pub fn shell_box(&self, body: String, ok: String, cancel: String) -> ShellBox {
+        use crate::ui::shell::modal::control::{CANCEL, OK};
+        ShellBox::new(crate::ui::shell::descriptor::DialogResourceId(0x120), body)
+            .button(OK, ok)
+            .button(CANCEL, cancel)
+            .disabled(OK, !self.button_enabled(ChooseMapPromptButton::Ok))
+    }
+
+    /// The button Enter answers with: Cancel on the eject question
+    /// (`0x005D370D`); VERA's boxes take it as OK, as the room's
+    /// missing-map offer does (a running download's greyed OK takes none).
+    pub fn default_button(&self) -> u16 {
+        use crate::ui::shell::modal::control::{CANCEL, OK};
+        match self.kind {
+            ChooseMapPromptKind::EjectAi => CANCEL,
+            _ => OK,
+        }
+    }
+
     /// Whether a button takes presses: Download waits while one runs.
     pub fn button_enabled(&self, button: ChooseMapPromptButton) -> bool {
         button == ChooseMapPromptButton::Cancel || self.kind != ChooseMapPromptKind::Downloading
@@ -133,9 +181,40 @@ pub const ONLINE_MAPS_ROW: i32 = i32::MIN;
 /// before Online Maps. It lists the maps the player starred.
 pub const FAVORITES_ROW: i32 = i32::MIN + 1;
 
+/// The folder of seeds saved from Create Random Map.
+pub const RANDOM_MAPS_ROW: i32 = i32::MIN + 2;
+
+// The website's gallery category IDs. These chooser rows are local navigation;
+// Use Map still returns the actual game type admitted by the selected map.
+const FIRST_ONLINE_CATEGORY: i32 = RANDOM_MAPS_ROW + 1;
+const ONLINE_CATEGORIES: [(&str, &str); 8] = [
+    ("missions", "VERA:OnlineMapMissions"),
+    ("survival", "VERA:OnlineMapSurvival"),
+    ("duels", "VERA:OnlineMapDuels"),
+    ("small", "VERA:OnlineMapSmall"),
+    ("large", "VERA:OnlineMapLarge"),
+    ("oil", "VERA:OnlineMapOil"),
+    ("megawealth", "VERA:OnlineMapMegawealth"),
+    ("navalwar", "VERA:OnlineMapNavalWar"),
+];
+
+impl SkirmishModeSelection {
+    fn online_category(self) -> Option<(&'static str, &'static str)> {
+        let index = self.id.checked_sub(FIRST_ONLINE_CATEGORY)?;
+        ONLINE_CATEGORIES.get(usize::try_from(index).ok()?).copied()
+    }
+
+    pub(crate) fn online_category_label(self) -> Option<&'static str> {
+        self.online_category().map(|(_, label)| label)
+    }
+}
+
 /// Whether `mode_id` is a row VERA fills itself, not a game type.
 fn is_own_row(mode_id: i32) -> bool {
-    mode_id == ONLINE_MAPS_ROW || mode_id == FAVORITES_ROW
+    matches!(mode_id, ONLINE_MAPS_ROW | FAVORITES_ROW | RANDOM_MAPS_ROW)
+        || SkirmishModeSelection::from(mode_id)
+            .online_category()
+            .is_some()
 }
 
 /// VERA: what a star is kept under: an online map's SHA-256, any other
@@ -158,20 +237,26 @@ fn list_surface(window: RectPx) -> RectPx {
 #[derive(Debug, Clone)]
 pub struct ChooseMapModalState {
     pub saved_selection: ChooseMapSelection,
-    /// The game-type list's rows: the ids of the modes Skirmish lists, in
-    /// mode order (`0x005D6130`).
-    mode_rows: Vec<i32>,
+    /// FillModeList binds the mode object to the row (`0x005D6298`),
+    /// and Use Map keeps that object as the current mode (`0x005E7367`).
+    mode_rows: Vec<SkirmishModeSelection>,
+    online_folders: OnlineMapFolders,
     /// The game type whose maps are listed; the list cursor is on its row
     /// when it has one.
-    pub selected_mode_id: i32,
+    pub selected_mode: SkirmishModeSelection,
     /// `0x583`'s enable, set when the map list is built (`0x005E6CB3`).
     random_maps_allowed: bool,
     /// [`ChooseMapContext::official_only`].
     official_only: bool,
     pub filtered_record_indices: Vec<usize>,
+    /// A saved seed becomes a playable scenario only after generation.
+    saved_seeds: Vec<SavedSeed>,
+    filtered_seed_indices: Vec<usize>,
+    /// The last listed game type that allowed random maps.
+    random_maps_mode: Option<SkirmishModeSelection>,
     /// Favorites and Online Maps only: the game type each row's map is
     /// played with, the first listed one that admits it.
-    row_modes: Vec<i32>,
+    row_modes: Vec<SkirmishModeSelection>,
     /// VERA: typed text; every list shows only maps whose name holds it.
     pub search: String,
     /// VERA: the maps the player starred, by [`favorite_key`]: a copy of
@@ -187,11 +272,9 @@ pub struct ChooseMapModalState {
     /// (`[0xAC0EC8]`), which a rebuilt list reselects.
     reselect_name: String,
     pub highlighted_filtered_index: Option<usize>,
+    /// The lists' first rows; their scrollbars move them.
     pub mode_top_index: usize,
     pub map_top_index: usize,
-    pub mode_scroll: ListScrollInteraction,
-    pub map_scroll: ListScrollInteraction,
-    pub pressed_button: Option<ChooseMapModalButton>,
     /// Heading `0x694` and status line `0x695`, alive while `0x105` hides
     /// the chooser. A child writes the status help from its own mouse moves;
     /// `0x6B` has no dialog hit test that clears it, so it keeps the last
@@ -199,21 +282,14 @@ pub struct ChooseMapModalState {
     pub(crate) statics: DialogStatics,
     /// Use Map's two-button box while it shows.
     pub message_box: Option<ChooseMapPrompt>,
+    /// The map Use Map accepted, kept here while `0x6B` slides out so a
+    /// catalog change in the meantime (a kept online map replacing its row,
+    /// `map_library`) can remap its record index.
+    pub use_selection: Option<ChooseMapSelection>,
     /// Create Random Map hides the chooser (`0x005E6A0B`) until the
     /// random-map run returns. It then shows again (`0x005E6B51`) unless its
     /// Use Map closes it; it stays hidden while that Use Map's eject box asks.
     hidden: bool,
-    /// The list window and time/point of the last press on list rows, for
-    /// Windows' double-click test.
-    last_list: Option<ChooseMapList>,
-    last_press: Option<(Instant, i32, i32)>,
-}
-
-/// One of the two list windows.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ChooseMapList {
-    Mode,
-    Map,
 }
 
 /// Native chooser admission depends on its caller: offline requires mode
@@ -279,22 +355,33 @@ impl ChooseMapModalState {
     ) -> Self {
         let selected_mode_id = mode_by_id(modes, current_mode_id)
             .or_else(|| modes.first())
-            .map(|mode| mode.id)
-            .unwrap_or(current_mode_id);
+            .map_or(current_mode_id, |mode| mode.id);
         let mut state = Self {
             saved_selection: ChooseMapSelection {
-                mode_id: current_mode_id,
+                mode: current_mode_id.into(),
                 record_index: current_record_index,
             },
             mode_rows: modes
                 .iter()
-                .filter(|mode| context.permits(mode))
-                .map(|mode| mode.id)
+                .enumerate()
+                .filter(|(_, mode)| context.permits(mode))
+                .filter_map(|(index, mode)| {
+                    if context == ChooseMapContext::Skirmish {
+                        SkirmishModeSelection::for_skirmish_row(index, modes)
+                    } else {
+                        // Peers exchange only the ID, which resolves to the first match.
+                        Some(mode.id.into())
+                    }
+                })
                 .collect(),
-            selected_mode_id,
+            selected_mode: selected_mode_id.into(),
+            online_folders: OnlineMapFolders::default(),
             random_maps_allowed: false,
             official_only: context.official_only(),
             filtered_record_indices: Vec::new(),
+            saved_seeds: Vec::new(),
+            filtered_seed_indices: Vec::new(),
+            random_maps_mode: None,
             row_modes: Vec::new(),
             search: String::new(),
             favorites: Default::default(),
@@ -304,14 +391,10 @@ impl ChooseMapModalState {
             highlighted_filtered_index: None,
             mode_top_index: 0,
             map_top_index: 0,
-            mode_scroll: ListScrollInteraction::default(),
-            map_scroll: ListScrollInteraction::default(),
-            pressed_button: None,
             statics: DialogStatics::default(),
             message_box: None,
+            use_selection: None,
             hidden: false,
-            last_list: None,
-            last_press: None,
         };
         state.build_map_list(modes, records);
         // The fill selects only the current scenario; when the list lacks it
@@ -326,18 +409,108 @@ impl ChooseMapModalState {
         state
     }
 
-    /// The ids of the listed game types, top row first.
-    pub fn mode_rows(&self) -> &[i32] {
+    /// The listed game types, top row first.
+    pub fn mode_rows(&self) -> &[SkirmishModeSelection] {
         &self.mode_rows
     }
 
     /// VERA: list the Favorites row after the game types, with the
     /// player's starred maps.
     pub fn add_favorites_row(&mut self, favorites: std::collections::BTreeSet<String>) {
-        if !self.mode_rows.contains(&FAVORITES_ROW) {
-            self.mode_rows.push(FAVORITES_ROW);
+        if !self.mode_rows.contains(&FAVORITES_ROW.into()) {
+            self.mode_rows.push(FAVORITES_ROW.into());
         }
         self.favorites = favorites;
+    }
+
+    pub fn add_random_maps_row(&mut self, modes: &[SkirmishGameMode]) {
+        let Some(mode) = self.random_maps_game_mode(modes) else {
+            return;
+        };
+        self.random_maps_mode = Some(mode);
+        if !self.mode_rows.contains(&RANDOM_MAPS_ROW.into()) {
+            self.mode_rows.push(RANDOM_MAPS_ROW.into());
+        }
+    }
+
+    /// Refresh the open folder by file identity so two saves with the same
+    /// description remain distinct.
+    pub fn set_saved_seeds(&mut self, mut seeds: Vec<SavedSeed>, layout: &ChooseMapModalLayout) {
+        let selected = self
+            .selected_saved_seed()
+            .map(|seed| seed.file_name.clone());
+        seeds.retain(SavedSeed::is_valid);
+        seeds.sort_by_key(|seed| std::cmp::Reverse(seed.last_write_time));
+        self.saved_seeds = seeds;
+        self.filter_saved_seeds();
+        self.highlighted_filtered_index = selected
+            .and_then(|file| {
+                self.filtered_seed_indices
+                    .iter()
+                    .position(|&idx| self.saved_seeds[idx].file_name == file)
+            })
+            .or_else(|| (!self.filtered_seed_indices.is_empty()).then_some(0));
+        self.scroll_map_selection_to_top(layout);
+    }
+
+    pub fn random_maps_selected(&self) -> bool {
+        self.selected_mode.id == RANDOM_MAPS_ROW
+    }
+
+    /// Play a saved seed with the selected game type, the last eligible one,
+    /// or the first listed type that allows the generator.
+    pub fn random_maps_game_mode(
+        &self,
+        modes: &[SkirmishGameMode],
+    ) -> Option<SkirmishModeSelection> {
+        std::iter::once(self.selected_mode)
+            .chain(self.random_maps_mode)
+            .chain(self.mode_rows.iter().copied())
+            .find(|row| {
+                self.mode_rows.contains(row)
+                    && !is_own_row(row.id)
+                    && row
+                        .resolve(modes)
+                        .is_some_and(|mode| mode.random_maps_allowed)
+            })
+    }
+
+    pub fn selected_saved_seed(&self) -> Option<&SavedSeed> {
+        self.saved_seed_at(self.highlighted_filtered_index?)
+    }
+
+    pub fn saved_seed_at(&self, row: usize) -> Option<&SavedSeed> {
+        self.saved_seeds.get(*self.filtered_seed_indices.get(row)?)
+    }
+
+    fn filter_saved_seeds(&mut self) {
+        let search = self.search.to_lowercase();
+        self.filtered_seed_indices = self
+            .saved_seeds
+            .iter()
+            .enumerate()
+            .filter(|(_, seed)| {
+                search.is_empty()
+                    || seed
+                        .description
+                        .display_text()
+                        .to_lowercase()
+                        .contains(&search)
+            })
+            .map(|(index, _)| index)
+            .collect();
+    }
+
+    fn map_row_indices(&self) -> &[usize] {
+        if self.random_maps_selected() {
+            &self.filtered_seed_indices
+        } else {
+            &self.filtered_record_indices
+        }
+    }
+
+    pub fn map_row_count(&self) -> usize {
+        self.map_row_indices().len()
     }
 
     /// VERA: list the Online Maps row last. A room that takes only official
@@ -346,14 +519,44 @@ impl ChooseMapModalState {
         if self.official_only {
             return;
         }
-        if !self.mode_rows.contains(&ONLINE_MAPS_ROW) {
-            self.mode_rows.push(ONLINE_MAPS_ROW);
+        if !self.mode_rows.contains(&ONLINE_MAPS_ROW.into()) {
+            self.mode_rows.push(ONLINE_MAPS_ROW.into());
+        }
+    }
+
+    pub(crate) fn set_online_categories(&mut self, folders: OnlineMapFolders) {
+        self.online_folders = folders;
+    }
+
+    fn sync_online_category_rows(&mut self, layout: &ChooseMapModalLayout) {
+        let expanded = self
+            .mode_rows
+            .last()
+            .is_some_and(|row| row.online_category().is_some());
+        let show = self.online_maps_selected() && self.online_folders.has_categories();
+        if expanded == show {
+            return;
+        }
+        if show {
+            // Bring Online Maps up the list so its newly opened folders are visible.
+            let parent = self.mode_rows.len().saturating_sub(1);
+            self.mode_rows.extend(
+                (0..ONLINE_CATEGORIES.len())
+                    .map(|i| SkirmishModeSelection::from(FIRST_ONLINE_CATEGORY + i as i32)),
+            );
+            self.mode_top_index = parent.min(self.mode_geometry(layout).max_top);
+        } else {
+            self.mode_rows.retain(|row| row.online_category().is_none());
+            if self.selected_mode.online_category().is_some() {
+                self.selected_mode = ONLINE_MAPS_ROW.into();
+            }
+            self.mode_top_index = self.mode_top_index.min(self.mode_geometry(layout).max_top);
         }
     }
 
     /// Whether the Favorites row is the selected one.
     pub fn favorites_selected(&self) -> bool {
-        self.selected_mode_id == FAVORITES_ROW
+        self.selected_mode.id == FAVORITES_ROW
     }
 
     /// VERA: the catalog's rows changed (the library arrived, or a map was
@@ -364,14 +567,15 @@ impl ChooseMapModalState {
         records: &[SkirmishScenarioRecord],
         layout: &ChooseMapModalLayout,
     ) {
+        self.sync_online_category_rows(layout);
         if self.row_labels.is_none() {
             self.rebuild_keeping_highlight(modes, records, layout);
         }
     }
 
-    /// Whether the Online Maps row is the selected one.
+    /// Whether Online Maps or one of its categories is selected.
     pub fn online_maps_selected(&self) -> bool {
-        self.selected_mode_id == ONLINE_MAPS_ROW
+        self.selected_mode.id == ONLINE_MAPS_ROW || self.selected_mode.online_category().is_some()
     }
 
     fn matches_search(&self, record: &SkirmishScenarioRecord) -> bool {
@@ -399,7 +603,7 @@ impl ChooseMapModalState {
     pub fn map_geometry(&self, layout: &ChooseMapModalLayout) -> ShellListGeometry {
         ShellListGeometry::new(
             list_surface(layout.map_list),
-            self.filtered_record_indices.len(),
+            self.map_row_count(),
             self.map_top_index,
             ListMetrics::scaled(layout.scale),
         )
@@ -414,7 +618,7 @@ impl ChooseMapModalState {
     pub fn selected_mode_row(&self) -> Option<usize> {
         self.mode_rows
             .iter()
-            .position(|id| *id == self.selected_mode_id)
+            .position(|mode| *mode == self.selected_mode)
     }
 
     fn build_map_list(&mut self, modes: &[SkirmishGameMode], records: &[SkirmishScenarioRecord]) {
@@ -429,7 +633,14 @@ impl ChooseMapModalState {
     fn build_map_rows(&mut self, modes: &[SkirmishGameMode], records: &[SkirmishScenarioRecord]) {
         self.row_labels = None;
         self.row_modes.clear();
-        if is_own_row(self.selected_mode_id) {
+        self.filtered_seed_indices.clear();
+        if self.random_maps_selected() {
+            self.filtered_record_indices.clear();
+            self.filter_saved_seeds();
+            self.random_maps_allowed = self.random_maps_game_mode(modes).is_some();
+            return;
+        }
+        if is_own_row(self.selected_mode.id) {
             // Each map is played with the first listed game type that takes
             // it, Cooperative aside: it plays campaigns, not maps. One no
             // listed type takes is not offered. Favorites lists
@@ -437,28 +648,29 @@ impl ChooseMapModalState {
             // Online Maps lists its starred maps first. Catalog order
             // otherwise.
             let favorites = self.favorites_selected();
-            let online_listed = self.mode_rows.contains(&ONLINE_MAPS_ROW);
-            let listed: Vec<&SkirmishGameMode> = self
+            let category = self.selected_mode.online_category().map(|(slug, _)| slug);
+            let online_listed = self.mode_rows.contains(&ONLINE_MAPS_ROW.into());
+            let listed: Vec<_> = self
                 .mode_rows
                 .iter()
-                .filter_map(|id| mode_by_id(modes, *id))
-                .filter(|mode| mode.class != crate::skirmish_modes::MpModeClass::Cooperative)
+                .filter_map(|row| row.resolve(modes).map(|mode| (*row, mode)))
+                .filter(|(_, mode)| mode.class != crate::skirmish_modes::MpModeClass::Cooperative)
                 .collect();
-            let mut rows: Vec<(usize, i32)> = (0..records.len())
+            let mut rows: Vec<_> = (0..records.len())
                 .filter(|index| {
                     let record = &records[*index];
                     let listed = if favorites {
                         self.is_favorite(record) && (online_listed || !record.is_online())
                     } else {
-                        record.is_online()
+                        self.online_folders.includes(record, category)
                     };
                     listed && self.matches_search(record)
                 })
                 .filter_map(|index| {
-                    let mode = listed
-                        .iter()
-                        .find(|mode| is_valid_map(&records[index], mode, self.official_only))?;
-                    Some((index, mode.id))
+                    let (row, _) = listed.iter().find(|(_, mode)| {
+                        is_valid_map(&records[index], mode, self.official_only)
+                    })?;
+                    Some((index, *row))
                 })
                 .collect();
             if !favorites {
@@ -466,10 +678,9 @@ impl ChooseMapModalState {
             }
             (self.filtered_record_indices, self.row_modes) = rows.into_iter().unzip();
             self.random_maps_allowed = false;
-            self.map_scroll.cancel();
             return;
         }
-        let mode = mode_by_id(modes, self.selected_mode_id);
+        let mode = self.selected_mode.resolve(modes);
         // Online maps list only under Online Maps and Favorites.
         self.filtered_record_indices = mode
             .map(|mode| filter_records_for_mode(records, mode, self.official_only))
@@ -478,7 +689,6 @@ impl ChooseMapModalState {
             .filter(|index| !records[*index].is_online() && self.matches_search(&records[*index]))
             .collect();
         self.random_maps_allowed = mode.is_some_and(|mode| mode.random_maps_allowed);
-        self.map_scroll.cancel();
     }
 
     /// `LB_SETTOPINDEX(selection)`, clamped by the list.
@@ -492,12 +702,15 @@ impl ChooseMapModalState {
     /// wins, row 0 when none), scrolled to the top (`0x005E6C81..0x005E6D43`).
     pub fn select_mode(
         &mut self,
-        mode_id: i32,
+        mode: impl Into<SkirmishModeSelection>,
         modes: &[SkirmishGameMode],
         records: &[SkirmishScenarioRecord],
         layout: &ChooseMapModalLayout,
     ) -> bool {
-        if !is_own_row(mode_id) && mode_by_id(modes, mode_id).is_none() {
+        let mode = mode.into();
+        if (is_own_row(mode.id) && !self.mode_rows.contains(&mode))
+            || (!is_own_row(mode.id) && mode.resolve(modes).is_none())
+        {
             return false;
         }
         self.reselect_name = self
@@ -505,7 +718,9 @@ impl ChooseMapModalState {
             .and_then(|record| records.get(record))
             .map(|record| record.display_name.clone())
             .unwrap_or_default();
-        self.selected_mode_id = mode_id;
+        self.selected_mode = mode;
+        self.sync_online_category_rows(layout);
+        self.random_maps_mode = self.random_maps_game_mode(modes);
         self.build_map_list(modes, records);
         self.reselect(records, layout);
         true
@@ -519,7 +734,7 @@ impl ChooseMapModalState {
                 .is_some_and(|record| &record.display_name == name)
         });
         self.highlighted_filtered_index =
-            matched.or_else(|| (!self.filtered_record_indices.is_empty()).then_some(0));
+            matched.or_else(|| (self.map_row_count() > 0).then_some(0));
         self.scroll_map_selection_to_top(layout);
     }
 
@@ -536,20 +751,6 @@ impl ChooseMapModalState {
         if self.row_labels.is_none() {
             self.rebuild_keeping_highlight(modes, records, layout);
         }
-    }
-
-    /// VERA: append committed text from the chooser's keyboard or input
-    /// method, ignoring control characters before rebuilding the list.
-    pub fn append_search_text(
-        &mut self,
-        text: &str,
-        modes: &[SkirmishGameMode],
-        records: &[SkirmishScenarioRecord],
-        layout: &ChooseMapModalLayout,
-    ) {
-        let mut search = self.search.clone();
-        search.extend(text.chars().filter(|ch| !ch.is_control()));
-        self.set_search(search, modes, records, layout);
     }
 
     /// VERA: star or unstar the highlighted map. Returns its
@@ -588,15 +789,13 @@ impl ChooseMapModalState {
         records: &[SkirmishScenarioRecord],
         layout: &ChooseMapModalLayout,
     ) {
-        let highlighted = self.selected_record_index();
+        let highlighted = self
+            .highlighted_filtered_index
+            .and_then(|i| self.map_row_indices().get(i).copied());
         self.build_map_list(modes, records);
         self.highlighted_filtered_index = highlighted
-            .and_then(|record| {
-                self.filtered_record_indices
-                    .iter()
-                    .position(|row| *row == record)
-            })
-            .or_else(|| (!self.filtered_record_indices.is_empty()).then_some(0));
+            .and_then(|index| self.map_row_indices().iter().position(|row| *row == index))
+            .or_else(|| (self.map_row_count() > 0).then_some(0));
         // The highlighted map stays in view.
         let geometry = self.map_geometry(layout);
         let mut top = self.map_top_index;
@@ -660,135 +859,47 @@ impl ChooseMapModalState {
         }
     }
 
-    /// Whether a press is the second click of a double-click on one list's
-    /// rows. Windows then sends `WM_LBUTTONDBLCLK`, which the list subclass
-    /// only forwards as `LBN_DBLCLK` (`0x0061A904..0x0061A945`; `0x6B`
-    /// ignores it): no selection, no sound. A press anywhere else, or on the
-    /// other list, starts a new sequence.
-    pub fn is_double_click(
+    /// A press on game-type row `row` (`0x0061A948`). A row whose index
+    /// equals the last one clicked (`[0x8316FC]`, which lives across chooser
+    /// visits and starts at -1) moves the cursor without rebuilding the map
+    /// list (`0x005E6BB7`). VERA rebuilds if the mode selection changes to or
+    /// from an explicit catalog entry, since the remembered row can outlive
+    /// the map list built for that entry. Online Maps and Favorites always
+    /// rebuild their lists. Returns whether it rebuilt.
+    pub fn click_mode_row(
         &mut self,
-        layout: &ChooseMapModalLayout,
-        (x, y): (i32, i32),
-        now: Instant,
-        limits: (Duration, i32, i32),
-    ) -> bool {
-        let list = if self.mode_geometry(layout).content.contains(x, y) {
-            ChooseMapList::Mode
-        } else if self.map_geometry(layout).content.contains(x, y) {
-            ChooseMapList::Map
-        } else {
-            self.last_press = None;
-            return false;
-        };
-        if self.last_list != Some(list) {
-            self.last_list = Some(list);
-            self.last_press = None;
-        }
-        crate::ui::shell::list::is_double_click(&mut self.last_press, now, x, y, limits)
-    }
-
-    /// A press on the lists (`0x0061A948`): scrollbar capture, or a row. A
-    /// game-type row whose index equals the last one clicked (`[0x8316FC]`,
-    /// which lives across chooser visits and starts at -1) moves the cursor
-    /// without rebuilding the map list (`0x005E6BB7`). VERA's Online Maps and
-    /// Favorites rows always rebuild: their lists are not a game type's.
-    pub fn mouse_down(
-        &mut self,
+        row: usize,
         layout: &ChooseMapModalLayout,
         modes: &[SkirmishGameMode],
         records: &[SkirmishScenarioRecord],
         last_mode_row: &mut Option<usize>,
-        (x, y): (i32, i32),
-        now: Instant,
-    ) -> ChooseMapListPress {
-        let mode_geometry = self.mode_geometry(layout);
-        if let Some(part) = mode_geometry.scroll_part_at(x, y) {
-            self.mode_scroll
-                .press(part, mode_geometry, &mut self.mode_top_index, y, now);
-            return ChooseMapListPress::Consumed;
-        }
-        let map_geometry = self.map_geometry(layout);
-        if let Some(part) = map_geometry.scroll_part_at(x, y) {
-            self.map_scroll
-                .press(part, map_geometry, &mut self.map_top_index, y, now);
-            return ChooseMapListPress::Consumed;
-        }
-        if mode_geometry.outer.contains(x, y) {
-            let count = self.mode_rows.len();
-            let Some(row) = mode_geometry.row_at(count, self.mode_top_index, x, y) else {
-                return ChooseMapListPress::Consumed;
-            };
-            let mode_id = self.mode_rows[row];
-            self.selected_mode_id = mode_id;
-            if *last_mode_row == Some(row) && !is_own_row(mode_id) {
-                return ChooseMapListPress::RowClicked { rebuilt: false };
-            }
-            *last_mode_row = Some(row);
-            self.select_mode(mode_id, modes, records, layout);
-            return ChooseMapListPress::RowClicked { rebuilt: true };
-        }
-        if map_geometry.outer.contains(x, y) {
-            let count = self.filtered_record_indices.len();
-            let Some(row) = map_geometry.row_at(count, self.map_top_index, x, y) else {
-                return ChooseMapListPress::Consumed;
-            };
-            self.highlighted_filtered_index = Some(row);
-            return ChooseMapListPress::RowClicked { rebuilt: false };
-        }
-        ChooseMapListPress::Missed
-    }
-
-    /// Pointer motion: a captured thumb follows it.
-    pub fn mouse_move(&mut self, layout: &ChooseMapModalLayout, x: i32, y: i32) {
-        let geometry = self.mode_geometry(layout);
-        self.mode_scroll
-            .pointer_moved(geometry, &mut self.mode_top_index, x, y);
-        let geometry = self.map_geometry(layout);
-        self.map_scroll
-            .pointer_moved(geometry, &mut self.map_top_index, x, y);
-    }
-
-    /// The button release ends any scrollbar capture.
-    pub fn mouse_up(&mut self) {
-        self.mode_scroll.cancel();
-        self.map_scroll.cancel();
-    }
-
-    /// Arrow auto-repeat; returns whether a list moved.
-    pub fn poll_scroll(
-        &mut self,
-        layout: &ChooseMapModalLayout,
-        x: i32,
-        y: i32,
-        now: Instant,
     ) -> bool {
-        let geometry = self.mode_geometry(layout);
-        let mode = self
-            .mode_scroll
-            .poll(geometry, &mut self.mode_top_index, x, y, now);
-        let geometry = self.map_geometry(layout);
-        let map = self
-            .map_scroll
-            .poll(geometry, &mut self.map_top_index, x, y, now);
-        mode || map
-    }
-
-    /// The earlier of the two lists' repeat deadlines.
-    pub fn scroll_deadline(&self) -> Option<Instant> {
-        match (self.mode_scroll.repeat_at(), self.map_scroll.repeat_at()) {
-            (Some(a), Some(b)) => Some(a.min(b)),
-            (a, b) => a.or(b),
+        let Some(&mode) = self.mode_rows.get(row) else {
+            return false;
+        };
+        let changes_catalog_entry = self.selected_mode != mode
+            && (self.selected_mode.catalog_index.is_some() || mode.catalog_index.is_some());
+        if *last_mode_row == Some(row)
+            && !is_own_row(self.selected_mode.id)
+            && !is_own_row(mode.id)
+            && !changes_catalog_entry
+        {
+            self.selected_mode = mode;
+            return false;
         }
+        *last_mode_row = Some(row);
+        self.select_mode(mode, modes, records, layout);
+        true
     }
 
     pub fn accept_selection(&self) -> Option<ChooseMapSelection> {
-        let mode_id = if is_own_row(self.selected_mode_id) {
+        let mode = if is_own_row(self.selected_mode.id) {
             *self.row_modes.get(self.highlighted_filtered_index?)?
         } else {
-            self.selected_mode_id
+            self.selected_mode
         };
         Some(ChooseMapSelection {
-            mode_id,
+            mode,
             record_index: Some(self.selected_record_index()?),
         })
     }
@@ -806,6 +917,9 @@ impl ChooseMapModalState {
     pub fn button_enabled(&self, button: ChooseMapModalButton) -> bool {
         match button {
             ChooseMapModalButton::CreateRandomMap0x583 => self.random_map_button_enabled(),
+            ChooseMapModalButton::UseMap0x6c5 if self.random_maps_selected() => {
+                self.selected_saved_seed().is_some()
+            }
             ChooseMapModalButton::Favorite => {
                 self.row_labels.is_none()
                     && self
@@ -815,28 +929,6 @@ impl ChooseMapModalState {
             }
             _ => true,
         }
-    }
-
-    /// Arm an enabled owner-draw button. Disabled controls consume the hit but
-    /// never acquire pressed state, which also keeps their click sound silent.
-    pub fn press_button(&mut self, button: ChooseMapModalButton) -> bool {
-        let enabled = self.button_enabled(button);
-        self.pressed_button = enabled.then_some(button);
-        enabled
-    }
-
-    /// Release the captured button, rechecking admission so a stale press can
-    /// never dispatch after the selected mode has disabled that command.
-    pub fn release_button(
-        &mut self,
-        released_button: Option<ChooseMapModalButton>,
-    ) -> (bool, Option<ChooseMapModalButton>) {
-        let Some(pressed_button) = self.pressed_button.take() else {
-            return (false, None);
-        };
-        let should_fire =
-            Some(pressed_button) == released_button && self.button_enabled(pressed_button);
-        (true, should_fire.then_some(pressed_button))
     }
 
     pub const fn cancel_selection(&self) -> ChooseMapSelection {
@@ -874,10 +966,9 @@ impl ChooseMapModalState {
     pub fn show_random_map_failure(&mut self) {
         self.message_box = Some(ChooseMapPrompt {
             selection: ChooseMapSelection {
-                mode_id: self.selected_mode_id,
+                mode: self.selected_mode,
                 record_index: None,
             },
-            pressed: None,
             kind: ChooseMapPromptKind::RandomMapFailed,
         });
     }
@@ -896,6 +987,9 @@ impl ChooseMapModalState {
             return None;
         }
 
+        if self.random_maps_selected() {
+            self.selected_mode = self.random_maps_game_mode(modes)?;
+        }
         let record_index = upsert_random_map_sentinel(records, display_name, player_capacity);
         self.build_map_list(modes, records);
         self.highlighted_filtered_index = self
@@ -912,8 +1006,73 @@ impl ChooseMapModalState {
 mod tests {
     use super::*;
     use crate::skirmish_modes::stock_skirmish_modes;
+    use crate::ui::shell::page::PageCue;
+    use crate::ui::skirmish_shell::choose_map_page::{self, ChooserInput};
     use crate::ui::skirmish_shell::compute_choose_map_modal_layout;
-    use std::time::Duration;
+    use crate::ui::skirmish_shell::page::Pointer;
+    use crate::util::time::{Duration, Instant};
+
+    // The chooser's widgets driven as the app drives them, one shell
+    // controller per test thread.
+    thread_local! {
+        static UI: std::cell::RefCell<crate::ui::shell::controller::DialogController> =
+            Default::default();
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn drive(
+        modal: &mut ChooseMapModalState,
+        layout: &ChooseMapModalLayout,
+        lists: (&[SkirmishGameMode], &[SkirmishScenarioRecord]),
+        last: &mut Option<usize>,
+        at: Pointer,
+        (x, y): (i32, i32),
+    ) -> ChooserInput {
+        UI.with_borrow_mut(|ui| choose_map_page::pointer(ui, modal, layout, lists, last, at, x, y))
+    }
+
+    /// What a press on the chooser's lists did.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum ChooseMapListPress {
+        Missed,
+        Consumed,
+        RowClicked { rebuilt: bool },
+    }
+
+    /// A press that starts a new click sequence (a press off the dialog
+    /// first ends any double-click pairing).
+    fn mouse_down(
+        modal: &mut ChooseMapModalState,
+        layout: &ChooseMapModalLayout,
+        modes: &[SkirmishGameMode],
+        records: &[SkirmishScenarioRecord],
+        last: &mut Option<usize>,
+        point: (i32, i32),
+        _now: Instant,
+    ) -> ChooseMapListPress {
+        drive(
+            modal,
+            layout,
+            (modes, records),
+            last,
+            Pointer::Down,
+            (-1, -1),
+        );
+        drive(modal, layout, (modes, records), last, Pointer::Up, (-1, -1));
+        let input = drive(modal, layout, (modes, records), last, Pointer::Down, point);
+        let on_list = [layout.mode_list, layout.map_list]
+            .iter()
+            .any(|list| list_surface(*list).contains(point.0, point.1));
+        if input.cues.contains(&PageCue::ListClick) {
+            ChooseMapListPress::RowClicked {
+                rebuilt: input.rebuilt,
+            }
+        } else if on_list {
+            ChooseMapListPress::Consumed
+        } else {
+            ChooseMapListPress::Missed
+        }
+    }
 
     fn record(name: &str) -> SkirmishScenarioRecord {
         let mut record = SkirmishScenarioRecord::concrete_from_ini(
@@ -939,13 +1098,25 @@ mod tests {
             &[],
             &layout,
         );
-        let random = ChooseMapModalButton::CreateRandomMap0x583;
-        assert!(!modal.press_button(random));
-        assert_eq!(modal.release_button(Some(random)), (false, None));
+        let random = layout.rect(0x583);
+        let random = (random.x + 2, random.y + 2);
+        let at = |modal: &mut ChooseMapModalState, pointer| {
+            drive(modal, &layout, (&modes, &[]), &mut None, pointer, random)
+        };
+        assert!(
+            !at(&mut modal, Pointer::Down)
+                .cues
+                .contains(&PageCue::Button)
+        );
+        assert_eq!(at(&mut modal, Pointer::Up).activated, None);
         assert!(modal.select_mode(1, &modes, &[], &layout));
-        assert!(modal.press_button(random));
+        assert!(
+            at(&mut modal, Pointer::Down)
+                .cues
+                .contains(&PageCue::Button)
+        );
         assert!(modal.select_mode(9, &modes, &[], &layout));
-        assert_eq!(modal.release_button(Some(random)), (true, None));
+        assert_eq!(at(&mut modal, Pointer::Up).activated, None);
         let mut records = Vec::new();
         assert_eq!(
             modal.create_random_map(&mut records, &modes, "Disallowed", 4, &layout),
@@ -997,6 +1168,118 @@ mod tests {
     }
 
     #[test]
+    fn clicking_a_mode_row_uses_its_own_filter_when_ids_collide() {
+        let mod_dir = std::env::temp_dir().join(format!("vera-mode-alias-{}", std::process::id()));
+        std::fs::create_dir_all(&mod_dir).unwrap();
+        let roster_path = mod_dir.join("MPModesMD.ini");
+        let mode_rules_path = mod_dir.join("MPMWMD.ini");
+        std::fs::write(
+            &roster_path,
+            "[Battle]\n\
+             1=GUI:Battle,STT:ModeBattle,MPBattleMD.ini,standard,true\n\
+             01=GUI:Megawealth,STT:ModeMegawealth,MPMWMD.ini,megawealth,false\n",
+        )
+        .unwrap();
+        std::fs::write(
+            &mode_rules_path,
+            "[MultiplayerDialogSettings]\nAlliesAllowed=no\n",
+        )
+        .unwrap();
+        let modes = {
+            let assets =
+                crate::assets::asset_manager::AssetManager::from_loose_root_for_test(&mod_dir);
+            crate::skirmish_modes::skirmish_modes_from_assets(&assets).unwrap()
+        };
+        std::fs::remove_file(roster_path).unwrap();
+        std::fs::remove_file(mode_rules_path).unwrap();
+        std::fs::remove_dir(mod_dir).unwrap();
+        assert_eq!(modes.iter().map(|mode| mode.id).collect::<Vec<_>>(), [1, 1]);
+        let maps = [
+            record_for("Battle Map", &["standard"]),
+            record_for("Megawealth Map", &["megawealth"]),
+        ];
+        let layout = compute_choose_map_modal_layout(800, 600);
+        let mut modal = ChooseMapModalState::open(
+            ChooseMapContext::Skirmish,
+            1,
+            Some(0),
+            &modes,
+            &maps,
+            &layout,
+        );
+        assert_eq!(modal.filtered_record_indices, [0]);
+        let second_mode = modal.mode_geometry(&layout).row(1);
+        let second_mode_point = (second_mode.x + 2, second_mode.y + 2);
+        let mut last_mode_row = None;
+        assert_eq!(
+            mouse_down(
+                &mut modal,
+                &layout,
+                &modes,
+                &maps,
+                &mut last_mode_row,
+                second_mode_point,
+                Instant::now(),
+            ),
+            ChooseMapListPress::RowClicked { rebuilt: true },
+        );
+        assert_eq!(modal.filtered_record_indices, [1], "Megawealth Map");
+
+        let previous = modal.cancel_selection();
+        let mut modal = ChooseMapModalState::open(
+            ChooseMapContext::Skirmish,
+            previous.mode.id,
+            previous.record_index,
+            &modes,
+            &maps,
+            &layout,
+        );
+        assert_eq!(
+            modal.filtered_record_indices,
+            [0],
+            "cancel keeps Battle Map"
+        );
+        mouse_down(
+            &mut modal,
+            &layout,
+            &modes,
+            &maps,
+            &mut last_mode_row,
+            second_mode_point,
+            Instant::now(),
+        );
+        assert_eq!(
+            modal.filtered_record_indices,
+            [1],
+            "reopening and clicking the same row must show Megawealth Map"
+        );
+        assert_eq!(modal.selected_mode_row(), Some(1));
+        assert!(!modal.button_enabled(ChooseMapModalButton::CreateRandomMap0x583));
+        let choice = modal.accept_selection().unwrap();
+        let shell = crate::ui::skirmish_shell::SkirmishShellState {
+            selected_mode: choice.mode,
+            selected_map_idx: choice.record_index.unwrap(),
+            ..Default::default()
+        };
+        let launch = crate::ui::skirmish_shell::pack_launch_session_without_start_validation(
+            &shell,
+            &maps
+                .each_ref()
+                .map(SkirmishScenarioRecord::to_map_menu_entry),
+            &modes,
+        )
+        .unwrap();
+        assert_eq!(
+            launch.selected_map_file.as_deref(),
+            Some(maps[1].file_name.as_str())
+        );
+        assert_eq!(launch.mode.id, 1);
+        assert_eq!(launch.mode.ui_name_key, "GUI:Megawealth");
+        assert_eq!(launch.mode.override_file, "MPMWMD.ini");
+        assert!(!launch.mode.allies_allowed);
+    }
+
+    #[test]
     fn the_last_same_named_map_wins_and_no_match_takes_row_0() {
         // `0x005E6CDF..0x005E6D43`: `wcscmp` over the new list, the last
         // match kept; no match selects row 0.
@@ -1044,7 +1327,7 @@ mod tests {
         let layout = compute_choose_map_modal_layout(800, 600);
         let loose = |name: &str, game_modes: &[&str]| {
             let mut record = record_for(name, game_modes);
-            record.source = SkirmishScenarioSource::LooseYrm(format!("{name}.map"));
+            record.source = SkirmishScenarioSource::LooseMap(format!("{name}.map"));
             record
         };
         let mut arctic = record_for("Arctic Pass", &["standard"]);
@@ -1071,7 +1354,7 @@ mod tests {
             [1],
             "an online map lists only where Online Maps does"
         );
-        assert_eq!(modal.accept_selection().unwrap().mode_id, 9, "Bravo's own");
+        assert_eq!(modal.accept_selection().unwrap().mode.id, 9, "Bravo's own");
         modal.add_online_maps_row();
         assert!(modal.select_mode(FAVORITES_ROW, &modes, &all, &layout));
         assert_eq!(modal.filtered_record_indices, [1, 2]);
@@ -1090,6 +1373,46 @@ mod tests {
         assert!(!modal.button_enabled(ChooseMapModalButton::Favorite));
         modal.highlighted_filtered_index = Some(0);
         assert!(modal.button_enabled(ChooseMapModalButton::Favorite));
+    }
+
+    #[test]
+    fn saved_random_maps_filter_by_name_and_reopen_in_a_playable_mode() {
+        use crate::map::rmg::saved_seeds::SavedSeedFile;
+
+        let modes = stock_skirmish_modes();
+        let layout = compute_choose_map_modal_layout(800, 600);
+        let mut records = vec![record("Ordinary map")];
+        let mut modal = ChooseMapModalState::open(
+            ChooseMapContext::Skirmish,
+            2,
+            Some(0),
+            &modes,
+            &records,
+            &layout,
+        );
+        let seed = |name: &str, description: &str, time| SavedSeed {
+            file_name: SavedSeedFile::in_random_maps(name.into()),
+            description: description.into(),
+            last_write_time: time,
+        };
+        let older = seed("SAVE0001.SED", "Snow pass", 3);
+        let newer = seed("SAVE0002.SED", "Twin peaks", 5);
+        modal.add_random_maps_row(&modes);
+        assert!(modal.select_mode(RANDOM_MAPS_ROW, &modes, &records, &layout));
+        modal.set_saved_seeds(vec![older.clone(), newer.clone()], &layout);
+        assert_eq!(modal.selected_saved_seed(), Some(&newer));
+        assert_eq!(modal.selected_record_index(), None);
+        assert_eq!(modal.favorite_button(&records), None);
+        let use_map = ChooseMapModalButton::UseMap0x6c5;
+        modal.set_search("missing".into(), &modes, &records, &layout);
+        assert!(!modal.button_enabled(use_map));
+        modal.set_search("SNOW".into(), &modes, &records, &layout);
+        assert_eq!(modal.selected_saved_seed(), Some(&older));
+        assert!(modal.button_enabled(use_map));
+
+        let saved = modal.create_random_map(&mut records, &modes, "Snow pass", 4, &layout);
+        assert_eq!(modal.selected_mode.id, 2, "keep Free For All");
+        assert_eq!(modal.accept_selection().unwrap().record_index, saved);
     }
 
     #[test]
@@ -1128,10 +1451,10 @@ mod tests {
             [2, 1],
             "starred first; none for a map no listed game type takes"
         );
-        assert_eq!(modal.accept_selection().unwrap().mode_id, 1);
+        assert_eq!(modal.accept_selection().unwrap().mode.id, 1);
         modal.highlighted_filtered_index = Some(1);
         assert_eq!(
-            modal.accept_selection().unwrap().mode_id,
+            modal.accept_selection().unwrap().mode.id,
             9,
             "its own game type"
         );
@@ -1155,7 +1478,8 @@ mod tests {
         let at = modal.mode_geometry(&layout).row(row);
         let mut last = Some(row);
         assert_eq!(
-            modal.mouse_down(
+            mouse_down(
+                &mut modal,
                 &layout,
                 &modes,
                 &all,
@@ -1182,11 +1506,65 @@ mod tests {
             &layout,
         );
         modal.add_online_maps_row();
-        assert!(!modal.mode_rows().contains(&ONLINE_MAPS_ROW));
+        assert!(!modal.mode_rows().contains(&ONLINE_MAPS_ROW.into()));
     }
 
     #[test]
-    fn committed_unicode_search_text_appends_and_filters_map_names() {
+    fn online_folders_filter_search_and_use_the_maps_real_game_type() {
+        let layout = compute_choose_map_modal_layout(800, 600);
+        let modes = stock_skirmish_modes();
+        let sha = "a".repeat(64);
+        let mut sea = record_for("Open Sea", &["teamgame"]);
+        sea.source = SkirmishScenarioSource::Online(sha.clone());
+        let mut land = record_for("Mainland", &["standard"]);
+        land.source = SkirmishScenarioSource::Online("b".repeat(64));
+        let records = [sea, land];
+        let mut modal = ChooseMapModalState::open(
+            ChooseMapContext::Network {
+                observer: false,
+                clan_room: false,
+                tournament_room: false,
+            },
+            1,
+            None,
+            &modes,
+            &records,
+            &layout,
+        );
+        modal.add_online_maps_row();
+        assert!(modal.select_mode(ONLINE_MAPS_ROW, &modes, &records, &layout));
+        assert_eq!(modal.filtered_record_indices, [0, 1]);
+        let root_rows = modal.mode_rows().len();
+
+        // Memberships can arrive while the host already has Online Maps open.
+        modal.set_online_categories(OnlineMapFolders::from_memberships(
+            [(sha, vec!["megawealth".into(), "navalwar".into()])].into(),
+        ));
+        modal.refresh(&modes, &records, &layout);
+        assert_eq!(modal.mode_rows().len(), root_rows + ONLINE_CATEGORIES.len());
+        for category in ["megawealth", "navalwar"] {
+            let row = modal
+                .mode_rows()
+                .iter()
+                .position(|row| {
+                    row.online_category()
+                        .is_some_and(|(slug, _)| slug == category)
+                })
+                .unwrap();
+            assert!(modal.click_mode_row(row, &layout, &modes, &records, &mut None));
+            assert_eq!(modal.filtered_record_indices, [0]);
+            assert_eq!(modal.accept_selection().unwrap().mode.id, 9);
+        }
+        modal.set_search("Mainland".into(), &modes, &records, &layout);
+        assert!(modal.accept_selection().is_none());
+        assert!(modal.select_mode(ONLINE_MAPS_ROW, &modes, &records, &layout));
+        assert_eq!(modal.filtered_record_indices, [1]);
+        assert!(modal.select_mode(1, &modes, &records, &layout));
+        assert_eq!(modal.mode_rows().len(), root_rows);
+    }
+
+    #[test]
+    fn the_search_edit_takes_typed_text_and_backspace_and_filters_map_names() {
         let modes = stock_skirmish_modes();
         let layout = compute_choose_map_modal_layout(800, 600);
         let all = vec![record("雪地遭遇战"), record("沙漠遭遇战")];
@@ -1198,12 +1576,24 @@ mod tests {
             &all,
             &layout,
         );
-        modal.set_search("雪".into(), &modes, &all, &layout);
-
-        modal.append_search_text("\u{0001}地", &modes, &all, &layout);
-
+        let input = |modal: &mut ChooseMapModalState, event| {
+            UI.with_borrow_mut(|ui| {
+                choose_map_page::search_input(ui, modal, &layout, (&modes, &all), event)
+            })
+        };
+        use vera20k_gui::{InputEvent, Key};
+        input(&mut modal, InputEvent::Text("雪".into()));
+        input(&mut modal, InputEvent::Text("地".into()));
         assert_eq!(modal.search, "雪地");
         assert_eq!(modal.filtered_record_indices, [0]);
+        input(&mut modal, InputEvent::Key(Key::Backspace));
+        assert_eq!(modal.search, "雪");
+        // The search keeps its first 32 characters; Backspace then takes the
+        // 32nd.
+        input(&mut modal, InputEvent::Text("x".repeat(40)));
+        assert_eq!(modal.search.chars().count(), SEARCH_MAX_CHARS);
+        input(&mut modal, InputEvent::Key(Key::Backspace));
+        assert_eq!(modal.search.chars().count(), SEARCH_MAX_CHARS - 1);
     }
 
     #[test]
@@ -1238,31 +1628,34 @@ mod tests {
             &[],
             &layout,
         );
-        let limits = (Duration::from_millis(500), 4, 4);
-        let now = Instant::now();
         let mode_row = modal.mode_geometry(&layout).row(0);
         let map_row = modal.map_geometry(&layout).row(0);
         let mode_point = (mode_row.x + 2, mode_row.y + 2);
         let map_point = (map_row.x + 2, map_row.y + 2);
-        assert!(!modal.is_double_click(&layout, mode_point, now, limits));
-        assert!(modal.is_double_click(
-            &layout,
-            mode_point,
-            now + Duration::from_millis(100),
-            limits
-        ));
+        // Presses follow each other well within the double-click time.
+        let mut is_double_click = |point| {
+            drive(
+                &mut modal,
+                &layout,
+                (&modes, &[]),
+                &mut None,
+                Pointer::Down,
+                point,
+            )
+            .double_click
+        };
+        assert!(!is_double_click(mode_point));
+        assert!(is_double_click(mode_point));
         // The other list starts a new sequence.
-        assert!(!modal.is_double_click(&layout, mode_point, now, limits));
-        assert!(!modal.is_double_click(&layout, map_point, now, limits));
-        assert!(!modal.is_double_click(&layout, mode_point, now, limits));
+        assert!(!is_double_click(mode_point));
+        assert!(!is_double_click(map_point));
+        assert!(!is_double_click(mode_point));
         // A press off the lists breaks the sequence.
-        assert!(!modal.is_double_click(
-            &layout,
-            (layout.use_map_button.x + 2, layout.use_map_button.y + 2),
-            now,
-            limits
-        ));
-        assert!(!modal.is_double_click(&layout, mode_point, now, limits));
+        assert!(!is_double_click((
+            layout.rect(0x6C5).x + 2,
+            layout.rect(0x6C5).y + 2
+        )));
+        assert!(!is_double_click(mode_point));
     }
 
     #[test]
@@ -1284,13 +1677,22 @@ mod tests {
         let geometry = modal.map_geometry(&layout);
         let row = geometry.row(2);
         assert_eq!(
-            modal.mouse_down(&layout, &modes, &[], &mut last, (row.x + 2, row.y + 2), now),
+            mouse_down(
+                &mut modal,
+                &layout,
+                &modes,
+                &[],
+                &mut last,
+                (row.x + 2, row.y + 2),
+                now
+            ),
             ChooseMapListPress::RowClicked { rebuilt: false }
         );
         assert_eq!(modal.highlighted_filtered_index, Some(2));
         let bar = geometry.scrollbar.expect("30 rows overflow 18");
         assert_eq!(
-            modal.mouse_down(
+            mouse_down(
+                &mut modal,
                 &layout,
                 &modes,
                 &[],
@@ -1302,15 +1704,21 @@ mod tests {
         );
         assert_eq!(modal.map_top_index, 1);
         // The arrow repeats after 500 ms while held.
-        assert!(modal.poll_scroll(
-            &layout,
-            bar.x + 3,
-            bar.y + bar.h - 3,
-            now + Duration::from_millis(500)
-        ));
+        std::thread::sleep(Duration::from_millis(510));
+        let poll = |modal: &mut ChooseMapModalState| {
+            UI.with_borrow_mut(|ui| choose_map_page::poll(ui, modal, &layout))
+        };
+        assert!(poll(&mut modal).0);
         assert_eq!(modal.map_top_index, 2);
-        modal.mouse_up();
-        assert_eq!(modal.scroll_deadline(), None);
+        drive(
+            &mut modal,
+            &layout,
+            (&modes, &[]),
+            &mut last,
+            Pointer::Up,
+            (bar.x + 3, bar.y + bar.h - 3),
+        );
+        assert_eq!(poll(&mut modal).1, None);
     }
 
     #[test]
@@ -1345,7 +1753,8 @@ mod tests {
         let now = Instant::now();
         let mut last = None;
         assert_eq!(
-            modal.mouse_down(
+            mouse_down(
+                &mut modal,
                 &layout,
                 &modes,
                 &[],
@@ -1357,7 +1766,8 @@ mod tests {
         );
         assert_eq!(last, Some(1));
         assert_eq!(
-            modal.mouse_down(
+            mouse_down(
+                &mut modal,
                 &layout,
                 &modes,
                 &[],
@@ -1377,7 +1787,8 @@ mod tests {
             &layout,
         );
         assert_eq!(
-            modal.mouse_down(
+            mouse_down(
+                &mut modal,
                 &layout,
                 &modes,
                 &[],
@@ -1388,7 +1799,7 @@ mod tests {
             ChooseMapListPress::RowClicked { rebuilt: false }
         );
         assert_eq!(
-            modal.selected_mode_id,
+            modal.selected_mode,
             modal.mode_rows()[1],
             "the cursor still moves"
         );
@@ -1421,7 +1832,7 @@ mod tests {
         // VERA: the map rows start 20 px lower, under the search box.
         assert_eq!(maps.row(0), RectPx::new(339, 148, 195, 19));
         assert_eq!(maps.scrollbar.map(|bar| bar.x), Some(534));
-        let lines = crate::ui::shell::list::list_frame_lines(layout.mode_list);
+        let lines = vera20k_gui::shell::list::list_frame_lines(layout.mode_list);
         let left = lines.iter().map(|(r, _)| r.x).min();
         let right = lines.iter().map(|(r, _)| r.x + r.w - 1).max();
         let top = lines.iter().map(|(r, _)| r.y).min();
@@ -1444,7 +1855,14 @@ mod tests {
             &[],
             &layout,
         );
-        assert_eq!(modal.mode_rows(), [1, 2, 9]);
+        assert_eq!(
+            modal
+                .mode_rows()
+                .iter()
+                .map(|row| row.id)
+                .collect::<Vec<_>>(),
+            [1, 2, 9]
+        );
         assert_eq!(modal.selected_mode_row(), Some(2));
         // A current mode Skirmish does not list keeps its maps, on no row.
         let modal = ChooseMapModalState::open(
@@ -1455,7 +1873,7 @@ mod tests {
             &[],
             &layout,
         );
-        assert_eq!(modal.selected_mode_id, 3);
+        assert_eq!(modal.selected_mode.id, 3);
         assert_eq!(modal.selected_mode_row(), None);
     }
 }

@@ -121,7 +121,7 @@ fn paid_e2_negative_build_limit_prunes_and_refuses_stale_produce_after_load() {
             sidebar.items.iter().all(|item| item.type_id != "E2"),
             "negative E2 limit must remove the spent cameo; loaded={loaded}"
         );
-        assert_eq!(fixture.projection.cameo_request(e2), None);
+        assert_eq!(fixture.projection.model.cameo_request(e2), None);
         let option =
             production::all_build_options_for_owner(&fixture.sim, &fixture.rules, &owner_name)
                 .into_iter()

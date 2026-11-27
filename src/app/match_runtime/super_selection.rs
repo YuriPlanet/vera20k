@@ -143,8 +143,13 @@ pub(super) fn follow_selection_writes(
         }
         match rules
             .super_weapon(sim.interner().resolve(*sw_type))
-            .map(|sw| sw.kind)
-        {
+            .map(|sw| {
+                if ares {
+                    sw.kind.ares_handler_kind()
+                } else {
+                    sw.kind
+                }
+            }) {
             Some(
                 SuperWeaponKind::GenericWarhead
                 | SuperWeaponKind::UnitDelivery
@@ -188,7 +193,9 @@ pub(super) fn follow_selection_writes(
                 | SuperWeaponKind::SpyPlane
                 | SuperWeaponKind::GeneticConverter
                 | SuperWeaponKind::ForceShield
-                | SuperWeaponKind::PsychicReveal,
+                | SuperWeaponKind::PsychicReveal
+                // Firestorm 2.0 SuperClass::Place case 3 (0x60BE8D).
+                | SuperWeaponKind::IonCannon,
             ) if selected.is_some() => {
                 *targeting = None;
             }

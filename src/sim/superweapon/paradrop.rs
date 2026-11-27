@@ -41,6 +41,9 @@
 //!   2^32 minus its size natively (the loop counts down through zero); VERA
 //!   sends such a plane empty. Trigger: rules authoring either; retail
 //!   authors one entry in each list. Effect: an empty plane flies the run.
+//!   A count above VERA's own `PARADROP_PASSENGER_LIMIT` boards only the
+//!   limit (native boards the full count). Trigger: rules authoring only, no
+//!   retail list comes near it. Effect: a smaller drop than asked.
 //! - An infantry name VERA has no type for. The list reader allocates a
 //!   type for an unknown name (`InfantryTypeClass::FindOrAllocate @
 //!   0x00524CB0`) and SendParadropPlanes builds it; VERA builds no passenger.
@@ -78,7 +81,7 @@ use crate::rules::ruleset::RuleSet;
 use crate::rules::superweapon_type::{AresParaDropOwner, SuperWeaponType, TechnoTypeReference};
 use crate::sim::combat::TargetKind;
 use crate::sim::find_nearby_cell::{NearbyArgs, NearbyFootprint, PassabilityArgs};
-use crate::sim::intern::InternedId;
+use crate::sim::intern::{InternKey, InternedId};
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::world::FrameEffects;
 use crate::sim::world::edge_cell::{Edge, find_paradrop_edge_cell};
@@ -130,7 +133,7 @@ pub(crate) fn launch(
     target_ry: u16,
     kind: ParaDropKind,
     sw_type: InternedId,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) -> bool {
     if !super::is_charged(sim, owner, sw_type) {
         return false;
@@ -196,7 +199,7 @@ pub(super) fn ares_launch(
     sw_type: InternedId,
     sw: &SuperWeaponType,
     target: (u16, u16),
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) -> bool {
     if !super::is_charged(sim, owner, sw_type) {
         return false;
@@ -225,7 +228,7 @@ fn send_paradrop(
     owner: InternedId,
     sw: &SuperWeaponType,
     cell: (u16, u16),
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) {
     let house = sim.houses.get(&owner);
     let side = house.map_or(-1, |house| house.side_index());
@@ -429,25 +432,15 @@ pub(super) fn send_planes(
     mission: MissionType,
     target: (u16, u16),
     payload: Payload<'_>,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) -> bool {
     if let Payload::Ares(types, counts) = payload
         && (counts.len() != types.len() || counts.is_empty())
     {
         return false;
     }
-    let owner_name = sim.interner.resolve(owner).to_string();
     let plane = sim.with_object_placement_scope(|sim| {
-        sim.construct_object_limbo_at_height(
-            plane_type,
-            &owner_name,
-            0,
-            0,
-            0,
-            0,
-            rules,
-            frame_effects,
-        )
+        sim.construct_object_limbo_at_height(plane_type, owner, 0, 0, 0, 0, rules, frame_effects)
     });
     let Some(plane) = plane else {
         return false;
@@ -457,7 +450,7 @@ pub(super) fn send_planes(
         .entities
         .get_mut(plane)
         .expect("constructed plane");
-    entity.mission_only.mark();
+    entity.seldom.mission_only.mark();
     let (authored, waypoint) = sim.houses.get(&owner).map_or((-1, 0), |house| {
         (house.authored_edge(), house.waypoint_edge())
     });
@@ -513,7 +506,7 @@ pub(super) fn send_planes(
             sim,
             rules,
             plane,
-            &owner_name,
+            owner,
             ObjectCategory::Infantry,
             infantry,
             count,
@@ -530,7 +523,7 @@ pub(super) fn send_planes(
                         sim,
                         rules,
                         plane,
-                        &owner_name,
+                        owner,
                         ty.category,
                         &ty.id,
                         count.max(0) as u32,
@@ -547,28 +540,39 @@ pub(super) fn send_planes(
     placed.is_some()
 }
 
+/// VERA's bound on the passengers one type puts in one plane. The counts come
+/// raw from `[General] *ParaDropNum=` and Ares' `[Side]`/`[Country]`/
+/// superweapon `ParaDrop.Num=` lists; their values are read only by this
+/// loop (the Spy Plane compares list lengths), so the bound sits here, where
+/// the loop is sized, instead of at five readers: a count near `i32::MAX`
+/// would construct passengers until the tick hangs, and outside data never
+/// stops the game. Retail lists ask far fewer (single digits).
+const PARADROP_PASSENGER_LIMIT: u32 = 256;
+
 /// SendParadropPlanes's passenger block (`0x0065E7BF..0x0065E7FB`), and
 /// SendPDPlane's for each type: `count` passengers of the `category` type
-/// `type_id`, each at the cargo's head. A plane whose type declares no
+/// `type_id`, each at the cargo's head, at most
+/// [`PARADROP_PASSENGER_LIMIT`]. A plane whose type declares no
 /// `Passengers=` gets its hold here: native carries a CargoClass in every
 /// Foot.
-fn board_passengers(
+fn board_passengers<'k>(
     sim: &mut Simulation,
     rules: &RuleSet,
     plane: u64,
-    owner_name: &str,
+    owner: impl Into<InternKey<'k>>,
     category: ObjectCategory,
     type_id: &str,
     count: u32,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) {
     let Some(object) = rules.object_in_category(category, type_id) else {
         return;
     };
-    for _ in 0..count {
+    let owner = owner.into();
+    for _ in 0..count.min(PARADROP_PASSENGER_LIMIT) {
         let Some(passenger) = sim.construct_resolved_object_limbo_at_height(
             object,
-            owner_name,
+            owner,
             0,
             0,
             0,
@@ -578,16 +582,13 @@ fn board_passengers(
         ) else {
             continue;
         };
-        if let Some(rider) = sim.substrate.entities.get_mut(passenger) {
-            rider.passenger_role.set_inside_transport(plane, false);
-        }
         if !sim.substrate.entities.contains(plane) {
             return;
         }
-        let _ = sim.add_cargo_passenger_chain(
+        let _ = sim.add_cargo_members(
             plane,
             &[(passenger, object.size)],
-            crate::sim::world::UninitContext::with_rules(rules).with_effects(frame_effects),
+            crate::sim::world::UninitContext::new(rules).with_effects(frame_effects),
         );
     }
 }

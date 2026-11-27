@@ -1,17 +1,8 @@
 use super::*;
+use crate::test_fixture::unhex;
 
-fn corpus() -> serde_json::Value {
-    serde_json::from_str(crate::test_fixture::text(
-        "tools/storage_oracle/lan_messages.json",
-    ))
-    .unwrap()
-}
-
-fn unhex(text: &str) -> Vec<u8> {
-    (0..text.len())
-        .step_by(2)
-        .map(|offset| u8::from_str_radix(&text[offset..offset + 2], 16).unwrap())
-        .collect()
+fn corpus() -> &'static serde_json::Value {
+    crate::test_fixture::json("tools/storage_oracle/lan_messages.json")
 }
 
 #[test]
@@ -103,15 +94,13 @@ fn readers_keep_signed_fields_and_raw_unknown_bytes() {
     let data = corpus();
     for case in data["packets"].as_array().unwrap() {
         let message = LanMessage::decode(&unhex(case["payload"].as_str().unwrap())).unwrap();
-        match message.kind() {
-            LanMessageKind::JoinRequest => {
-                let fields = message.join_fields().unwrap();
+        match message.payload() {
+            LanPayload::JoinRequest(fields) => {
                 assert_eq!((fields.country, fields.color), (-3, 6));
                 assert_eq!(fields.observer_request, 0x23);
-                assert_eq!(message.serial_bytes(), b"1234567890123456789012");
             }
-            LanMessageKind::JoinAccepted => assert_eq!(
-                message.acceptance_fields().unwrap(),
+            LanPayload::JoinAccepted(fields) => assert_eq!(
+                fields,
                 LanAcceptance {
                     country: -3,
                     color: 6,
@@ -119,11 +108,10 @@ fn readers_keep_signed_fields_and_raw_unknown_bytes() {
                     observer_row: 7
                 }
             ),
-            LanMessageKind::Advertisement => assert_eq!(message.advertisement_flags(), Some(1)),
-            LanMessageKind::JoinDenied => assert_eq!(
-                message.denial_reason(),
-                Some(if case["name"] == "kick" { 4 } else { 5 })
-            ),
+            LanPayload::Advertisement { flags } => assert_eq!(flags, 1),
+            LanPayload::JoinDenied { reason } => {
+                assert_eq!(reason, if case["name"] == "kick" { 4 } else { 5 })
+            }
             _ => {}
         }
     }

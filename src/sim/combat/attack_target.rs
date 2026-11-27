@@ -167,14 +167,14 @@ impl TarCom {
     /// (`Simulation::detach_all`) and in UnInit's. An
     /// infantryman deployed without `DeployFire=` refuses that write
     /// (`0x0051B273..0x0051B299`) and keeps the target.
-    pub(crate) fn set(&mut self, target: Option<TargetKind>) {
+    pub(crate) fn set(&mut self, target: Option<TargetKind>, _: crate::sim::game_entity::NameNote) {
         self.target = target;
     }
 
     /// Install a fixture's target without the setter's effects.
     #[cfg(any(test, feature = "test-support"))]
     pub fn set_for_test(&mut self, target: Option<TargetKind>) {
-        self.target = target;
+        self.set(target, crate::sim::game_entity::NameNote::fixture());
     }
 }
 
@@ -305,7 +305,7 @@ pub fn object_distance_to(
             .get(id)
             .filter(|building| building.category() == EntityCategory::Structure)
             .map(|building| {
-                let (width, height) = building.type_facts.foundation().dimensions();
+                let (width, height) = building.seldom.type_facts.foundation().dimensions();
                 (i32::from(width), i32::from(height))
             }),
         TargetKind::Cell(..) => None,

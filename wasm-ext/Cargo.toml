@@ -1,0 +1,41 @@
+[package]
+name = "vera20k-wasm-ext"
+version = "0.1.0"
+edition = "2024"
+description = "Sandbox for VERA20k Wasm extension modules (RFC 0001): load checks, metering and the vera:sim host boundary"
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+# Saved module state (memory pages, globals) travels in the game snapshot.
+serde = { workspace = true }
+# Load checks and the load-time rewrite (metering, call depth, NaN
+# canonicalization), shared by every runtime so all count the same work.
+wasmparser = "0.245"
+wasm-encoder = { version = "0.245", default-features = false, features = ["std", "wasmparser"] }
+
+# Desktop runs the rewritten module with Wasmtime.
+[target.'cfg(not(any(target_os = "wasi", all(target_arch = "wasm32", target_os = "unknown"))))'.dependencies]
+wasmtime = { version = "51", default-features = false, features = ["cranelift", "runtime", "std"] }
+
+# The hardened macOS game interprets Cranelift's Pulley bytecode.
+[target.'cfg(target_os = "macos")'.dependencies]
+wasmtime = { version = "51", default-features = false, features = ["pulley"] }
+
+# WASI tools run standalone without executable memory or JavaScript bindings.
+[target.'cfg(target_os = "wasi")'.dependencies]
+wasmi = { version = "2.0.3", default-features = false, features = ["stable", "std", "validate", "portable-dispatch"] }
+
+# The browser build runs the same rewritten module with the browser's own
+# WebAssembly engine (RFC 0001 open question 1).
+[target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
+js-sys = "0.3"
+wasm-bindgen = "0.2"
+
+[dev-dependencies]
+wat = "1"
+
+[lints]
+workspace = true

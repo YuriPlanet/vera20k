@@ -15,11 +15,24 @@ pub enum RulesError {
     #[error("Invalid saved Rules state: {0}")]
     InvalidSavedState(&'static str),
 
+    /// A building's art asks for `Foundation=Custom` with a size VERA
+    /// cannot hold (`Foundation::read_custom_pass`).
+    #[error(
+        "[{type_id}] Foundation=Custom is out of range in its art: Foundation.X and \
+         Foundation.Y must lie in 0 to 65535, and FoundationOutline.Length at most 1048576"
+    )]
+    InvalidFoundation { type_id: String },
+
     /// Load_Game_Rules52CD70 returns false at52D302 when LANGRULE's
     /// ReadCCFile (52D26F) reports status 2, and Init_Game52C963 then fails
     /// with "Failed to initialize Rules!".
     #[error("LANGRULE.INI failed its Digest check")]
     LangRuleDigestRejected,
+
+    /// A Wasm extension module's `on_rules` failed (RFC 0001 section 3): the
+    /// scenario does not start.
+    #[error("{0}")]
+    ExtModule(String),
 
     /// The INI data is not valid UTF-8.
     #[error("INI data is not valid UTF-8: {0}")]

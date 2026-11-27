@@ -276,9 +276,9 @@ impl Simulation {
         let carrier = self.substrate.entities.get(aircraft)?;
         let unit = self.substrate.entities.get(target)?;
         if !self.is_carryall(aircraft, rules)
-            || !self.house_is_human_player(carrier.owner())
+            || !self.control_projection().can_order(carrier.owner())
             || !self.mutually_allied(carrier.owner(), unit.owner())
-            || carrier.passenger_role.passenger_count() != 0
+            || carrier.passenger_role().passenger_count() != 0
             || unit.category() != crate::map::entities::EntityCategory::Unit
         {
             return None;
@@ -371,7 +371,7 @@ impl Simulation {
             .substrate
             .entities
             .get(aircraft)?
-            .passenger_role
+            .passenger_role()
             .cargo()?;
         hold.passengers().first().copied()
     }
@@ -384,7 +384,7 @@ impl Simulation {
         };
         let target = crate::sim::radio::as_techno(self, id)?;
         let unit = self.substrate.entities.get(target)?;
-        if carrier.passenger_role.passenger_count() != 0
+        if carrier.passenger_role().passenger_count() != 0
             || !self.mutually_allied(carrier.owner(), unit.owner())
             || unit.category() != crate::map::entities::EntityCategory::Unit
         {
@@ -409,15 +409,13 @@ impl Simulation {
         aircraft: u64,
         unit: u64,
         rules: &RuleSet,
-        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
-        let context = UninitContext::new(rules, registry).with_effects(effects);
-        let _ = self.techno_limbo_with_context(unit, context);
+        let mut context = UninitContext::new(rules).with_effects(effects);
+        let _ = self.techno_limbo_with_context(unit, context.reborrow());
         let Some(type_ref) = self.substrate.entities.get_mut(unit).map(|cargo| {
             cargo.on_bridge.store(false);
-            cargo.on_carryall.set(true);
-            cargo.passenger_role.set_inside_transport(aircraft, false);
+            cargo.seldom.on_carryall.set(true);
             cargo.type_ref()
         }) else {
             return;
@@ -425,7 +423,7 @@ impl Simulation {
         let size = self
             .object_type(type_ref, rules)
             .map_or(1.0, |object| object.size);
-        let _ = self.add_cargo_passenger_chain(aircraft, &[(unit, size)], context);
+        let _ = self.add_cargo_members(aircraft, &[(unit, size)], context);
     }
 
     /// `AircraftClass::AI`'s Carryall block (`0x00415136..0x00415184`), after
@@ -443,7 +441,7 @@ impl Simulation {
         aircraft: u64,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         // `0x00414DAA`: an aircraft its own FootClass::AI removed never gets
         // here.
@@ -459,7 +457,7 @@ impl Simulation {
             return;
         };
         let Some(&cargo) = carrier
-            .passenger_role
+            .passenger_role()
             .cargo()
             .and_then(|hold| hold.passengers().first())
         else {
@@ -505,7 +503,7 @@ impl Simulation {
         aircraft: u64,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let terrain = self.resolved_terrain.as_ref();
         let Some(carrier) = self.substrate.entities.get(aircraft) else {
@@ -521,15 +519,14 @@ impl Simulation {
         )
         .unwrap_or(0);
         let bridge = terrain.is_some_and(|terrain| {
-            let cell = terrain
-                .native_cell_identity(((location.x / 256) as i16, (location.y / 256) as i16));
-            terrain.native_cell_flags(cell) & 0x100 != 0
+            let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
+            let cell = cells.lookup_world(location.x, location.y);
+            let bridge = cells.flags(cell) & crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL != 0;
+            if bridge {
+                coord.z = crate::sim::movement::ground_pose::deck_surface_z(&cells, cell, coord.z);
+            }
+            bridge
         });
-        if bridge {
-            coord.z = coord
-                .z
-                .wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS);
-        }
         let requested = carrier.position.at_location_with_level(coord);
         let frame = self.session.binary_frame();
         let ares = rules.ares_form();
@@ -548,10 +545,9 @@ impl Simulation {
         let _ = depart_cargo_head(
             self,
             rules,
-            registry,
             aircraft,
             DepartureRoute::Carryall,
-            |sim, cargo| {
+            |sim, cargo, effects| {
                 let object = sim
                     .substrate
                     .entities
@@ -571,7 +567,6 @@ impl Simulation {
                     requested,
                     PlacementEvidence::EvaluateMark,
                     rules,
-                    registry,
                 ) else {
                     return Err(DepartureFailure::Placement);
                 };
@@ -587,10 +582,16 @@ impl Simulation {
                 )?;
                 // 10048920's success arm: the rates the AI copy brought from
                 // the Carryall go back to the cargo type's `ROT=` and
-                // `TurretROT=` (else `ROT=`).
-                if ares && let Some(entity) = sim.substrate.entities.get_mut(cargo) {
-                    entity.body_facing.set_rot(object.turret_rot);
-                    if let Some(turret) = entity.barrel_facing.as_mut() {
+                // `TurretROT=` (else `ROT=`), the body's through a module
+                // `ROTMultiplier`.
+                if ares {
+                    sim.set_body_rot(cargo, object.turret_rot);
+                    if let Some(turret) = sim
+                        .substrate
+                        .entities
+                        .get_mut(cargo)
+                        .and_then(|entity| entity.barrel_facing.as_mut())
+                    {
                         turret.set_rot(object.secondary_turn_rate());
                     }
                 }
@@ -609,7 +610,7 @@ impl Simulation {
             return;
         };
         if let Some(entity) = self.substrate.entities.get_mut(cargo) {
-            entity.on_carryall.set(false);
+            entity.seldom.on_carryall.set(false);
         }
         self.refresh_object_sight(cargo, rules, 0, effects);
         // Ares 3.0 AircraftClass_Carryall_Unload_UpdateCargo (10048A10, hook
@@ -633,16 +634,13 @@ impl Simulation {
                 locomotor.power_off();
             }
         }
-        self.refresh_object_sight_border(
-            cargo,
-            UninitContext::new(rules, registry).with_effects(effects),
-        );
+        self.refresh_object_sight_border(cargo, UninitContext::new(rules).with_effects(effects));
         let nearby = self.techno_nearby_location(aircraft, None, rules);
         if self
             .substrate
             .entities
             .get(aircraft)
-            .and_then(|entity| entity.radio_contacts.slot(0))
+            .and_then(|entity| entity.seldom.radio_contacts.slot(0))
             == Some(cargo)
         {
             crate::sim::radio::transmit_to_contact(
@@ -665,7 +663,7 @@ impl Simulation {
         // to start (vt+0x1E8(5, 1)) and its team takes it again.
         if ares {
             if let Some(entity) = self.substrate.entities.get_mut(cargo) {
-                entity.passenger_role.clear_transporter();
+                entity.passenger_role_mut().clear_transporter();
             }
             let _ = self.mission_queue_exact(
                 cargo,
@@ -674,8 +672,8 @@ impl Simulation {
                 self.session.binary_frame(),
                 &crate::sim::mission::authority::LiveReadyInputProvider { rules },
             );
-            if let Some((team, _)) = self.team_script_vm.team_for_member(cargo) {
-                self.team_add_member(team, cargo, false, rules, registry, effects);
+            if let Some(team) = self.team_script_vm.team_of(cargo) {
+                self.team_add_member(team, cargo, false, rules, effects);
             }
         }
         let destination = nearby
@@ -699,7 +697,7 @@ impl Simulation {
         aircraft: u64,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(health) = self
             .substrate

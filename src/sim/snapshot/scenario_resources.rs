@@ -56,8 +56,14 @@ impl<'a> SavedScenarioResourcesRef<'a> {
         processed_rules: &'a ProcessedRulesLayers,
         fixed_art_hash: u64,
         terrain: SavedTerrainTemplate,
-        map: SavedMapMetadata,
+        mut map: SavedMapMetadata,
     ) -> Self {
+        // Save the catalog actually bound for the scenario. Its Rules view
+        // also contains unrelated [Map] keys inherited from a mod or mode.
+        map.source.bundled_ice = resources
+            .terrain_template
+            .as_ref()
+            .is_some_and(|terrain| terrain.uses_bundled_ice());
         Self {
             processed_rules,
             fixed_art_hash,
@@ -116,7 +122,6 @@ impl SavedScenarioResources {
     pub fn into_restored_parts(
         self,
         rules: RuleSet,
-        overlay_registry: crate::rules::overlay_types::OverlayTypeRegistry,
         dummy: SharedCellDummy,
     ) -> Result<(SimResources, ProcessedRulesLayers, SavedMapMetadata), SavedTerrainError> {
         let terrain = self.terrain.restore_values(dummy)?;
@@ -124,7 +129,6 @@ impl SavedScenarioResources {
             SimResources {
                 rules,
                 terrain_template: Some(terrain),
-                overlay_registry,
             },
             self.processed_rules,
             self.map,
@@ -139,7 +143,7 @@ impl SavedScenarioResources {
 pub struct SavedMapMetadata {
     map_hash: u64,
     #[serde(with = "source_identity")]
-    source: crate::map::source::LoadedMapSource,
+    source: SavedMapSource,
     basic: crate::map::basic::BasicSection,
     ranking: crate::map::ranking::RankingSection,
     /// ScenarioSave689310 retains Full_Init's resolved +1360/+13DA names.
@@ -173,10 +177,6 @@ pub struct SavedStaticSound {
 }
 
 impl SavedMapMetadata {
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "capture existing map, presentation, clock and Theme owners at one save boundary"
-    )]
     pub fn capture(
         map_hash: u64,
         source: &crate::map::source::LoadedMapSource,
@@ -194,7 +194,10 @@ impl SavedMapMetadata {
     ) -> Self {
         Self {
             map_hash,
-            source: source.clone(),
+            source: SavedMapSource {
+                identity: source.clone(),
+                bundled_ice: false,
+            },
             basic: basic.clone(),
             ranking: ranking.clone(),
             campaign_names: campaign_names.clone(),
@@ -220,7 +223,10 @@ impl SavedMapMetadata {
         self.map_hash
     }
     pub fn source(&self) -> &crate::map::source::LoadedMapSource {
-        &self.source
+        &self.source.identity
+    }
+    pub fn uses_bundled_ice(&self) -> bool {
+        self.source.bundled_ice
     }
     pub fn basic(&self) -> &crate::map::basic::BasicSection {
         &self.basic
@@ -261,6 +267,17 @@ impl SavedMapMetadata {
     }
 }
 
+/// Source and map-local terrain selection are restored together. The optional
+/// field extends the source JSON already stored in saves; older records and
+/// maps using a mod's own ice catalog both select the ordinary theater.
+#[derive(Clone, Serialize, Deserialize)]
+struct SavedMapSource {
+    #[serde(flatten)]
+    identity: crate::map::source::LoadedMapSource,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    bundled_ice: bool,
+}
+
 /// Source identity already has a tagged diagnostic JSON representation. Keep
 /// that one schema inside the binary envelope: bincode cannot deserialize its
 /// internally tagged enum through `deserialize_any`. No source file is read.
@@ -268,7 +285,7 @@ mod source_identity {
     use super::*;
 
     pub(super) fn serialize<S: serde::Serializer>(
-        value: &crate::map::source::LoadedMapSource,
+        value: &SavedMapSource,
         serializer: S,
     ) -> Result<S::Ok, S::Error> {
         serde_json::to_string(value)
@@ -278,12 +295,15 @@ mod source_identity {
 
     pub(super) fn deserialize<'de, D: serde::Deserializer<'de>>(
         deserializer: D,
-    ) -> Result<crate::map::source::LoadedMapSource, D::Error> {
+    ) -> Result<SavedMapSource, D::Error> {
         let json = String::deserialize(deserializer)?;
         // The JSON inside is outside the traced save layout; a schema change
         // fails here as a decode error rather than as another layout.
         if crate::util::save_codec::layout::describing() {
-            return Ok(crate::map::source::LoadedMapSource::LegacyFallback { label: json });
+            return Ok(SavedMapSource {
+                identity: crate::map::source::LoadedMapSource::LegacyFallback { label: json },
+                bundled_ice: false,
+            });
         }
         serde_json::from_str(&json).map_err(serde::de::Error::custom)
     }
@@ -298,7 +318,9 @@ mod tests {
     #[test]
     fn saved_resource_wire_restores_without_source_map_or_rule_replay() {
         let mut owner = NativeRulesProcessOwner::from_cold_start_sources(
-            IniFile::from_str("[BuildingTypes]\n0=ROOT\n[ROOT]\nStrength=200\n"),
+            IniFile::from_str(
+                "[Map]\nVeraIce=yes\n[BuildingTypes]\n0=ROOT\n[ROOT]\nStrength=200\n",
+            ),
             None,
             IniFile::from_str(""),
             std::sync::Arc::default(),
@@ -360,6 +382,10 @@ mod tests {
         let restored: SavedScenarioResources =
             crate::util::save_codec::deserialize(&bytes).unwrap();
         assert_eq!(restored.map().source(), &source);
+        assert!(
+            !restored.map().uses_bundled_ice(),
+            "only the map can opt into VERA ice"
+        );
         assert_eq!(restored.map().map_hash(), 123);
         assert_eq!(restored.map().static_sounds(), [ambient]);
         assert_eq!(restored.terrain().dimensions(), (3, 3));
@@ -368,11 +394,7 @@ mod tests {
             .unwrap();
         assert_eq!(rules.simulation_config_hash(), expected_hash);
         let (restored, processed, _) = restored
-            .into_restored_parts(
-                rules,
-                crate::rules::overlay_types::OverlayTypeRegistry::empty(),
-                SharedCellDummy::fresh(),
-            )
+            .into_restored_parts(rules, SharedCellDummy::fresh())
             .unwrap();
         assert_eq!(
             restored.terrain_template.unwrap().cells(),

@@ -3,6 +3,7 @@
 //! UI overlays, selection brackets, target lines, and the overlay render index.
 
 pub(crate) mod airstrike_lines;
+pub(crate) mod ares_tactical_text;
 pub(crate) mod beacon_labels;
 pub(crate) mod build_text;
 pub(crate) mod building_anim;
@@ -14,7 +15,10 @@ pub(crate) mod digital_display;
 pub(crate) mod display_members;
 pub(crate) mod electric_bolts;
 pub(crate) mod field_parts;
+pub(crate) mod health_templates;
 pub(crate) mod layout_parts;
+pub(crate) mod picture_hud;
+pub(crate) mod text_hud;
 pub(crate) mod player_layout;
 pub(crate) mod fire_effects;
 pub(crate) mod flying_credits;
@@ -46,6 +50,7 @@ pub(crate) mod state;
 pub(crate) mod sw_sidebar;
 #[cfg(feature = "phobos")]
 pub(crate) mod sw_sidebar_build;
+pub(crate) mod super_timer_groups;
 pub(crate) mod super_timers;
 pub(crate) mod tactical_composite;
 pub(crate) mod talk_bubble;

@@ -9,12 +9,16 @@ use std::collections::{BTreeMap, HashMap};
 
 use crate::assets::asset_manager::AssetManager;
 use crate::assets::pal_file::{Color, Palette};
-use crate::assets::pcx_file::PcxFile;
-use crate::assets::shp_file::ShpFile;
 use crate::render::batch::{BatchRenderer, BatchTexture};
-use crate::render::chrome_atlas::{ChromeAtlasEntry, ChromePiece, pack_chrome_atlas};
+/// Loading-screen palettes come from ConvertClass__BuildFromPaletteFile
+/// `0x0072ADE0` and the meter base from Init_Game's TEMPERAT.PAL loop
+/// (`0x0052BC6A..0x0052BCB9`); both convert like every other palette load.
+pub(crate) use crate::render::chrome_atlas::load_palette as load_named_ui_palette;
+use crate::render::chrome_atlas::{
+    ChromeAtlasEntry, ChromePiece, load_palette, load_shp, pack_chrome_atlas, pcx_piece,
+    shp_file_piece, shp_piece,
+};
 use crate::render::gpu::GpuContext;
-use crate::render::native_surface_format::ACTIVE_RETAIL_RGB565_PRESENTATION;
 
 /// Synthetic atlas label for the 1x1 white texel used to draw the solid backing
 /// fill (G3) as a tinted quad. Not an asset on disk.
@@ -32,10 +36,6 @@ const CAMPAIGN_PROGRESS_LABEL: &str = "__campaign_progress__";
 
 const MMPB_ASSET_NAME: &str = "mmpb.shp";
 const MMPB_MARKER_LABEL_PREFIX: &str = "__mmpb_marker_color_";
-
-/// Native converts this RGB key to the active DirectDraw format before blitting
-/// the standard Skirmish country insignia.
-const SIDE_ICON_TRANSPARENT_RGB: [u8; 3] = [255, 0, 255];
 
 /// Native screen widths that select dedicated marker projection rectangles.
 const MMPB_REGION_WIDTH_800: u32 = 800;
@@ -163,10 +163,19 @@ impl LoadingArtVariant {
         };
         let row = crate::rules::country_loading::stock_country_loading(index)
             .expect("stock loading variant has a literal row");
-        {
-            let (token, palette) = row.art();
-            LoadingArtManifest::new(token, palette)
-        }
+        let (token, palette) = row.art();
+        // Original RA2's `game.exe` literals at 0x3F8B68 are a single
+        // `MPLS.PAL` for every country (`MPLSOBS.PAL` only for the observer).
+        // The per-country `MPLSU.PAL` / `MPLSR.PAL` / ... table lives in YR's
+        // `gamemd.exe` and does not exist in an RA2 install; using it makes
+        // the loading atlas fail and fall back to YR artwork. Keep the SHP
+        // token, swap only the palette on the RA2 branch.
+        let palette = if crate::util::ra2_launch::enabled() {
+            "MPLS.PAL"
+        } else {
+            palette
+        };
+        LoadingArtManifest::new(token, palette)
     }
 }
 
@@ -328,7 +337,7 @@ fn render_loading_background(
     } else if let Some(variant) = art.variant {
         let manifest = variant.manifest();
         let name = manifest.background_asset(width);
-        let palette = load_named_ui_palette(assets, manifest.palette_name)?;
+        let palette = load_palette(assets, manifest.palette_name)?;
         Some(Some(mandatory_shp(
             assets,
             &name,
@@ -368,7 +377,7 @@ pub fn build_loading_screen_atlas_with_composition<'a>(
     // `ColorScheme__Constructor @ 0x0068C710` hands that fixed buffer to
     // `ColorScheme__BuildRampPalette @ 0x0068C3B0`, whose first step is the 768-byte base
     // copy, and `Init_Game` fills it from `TEMPERAT.PAL` whatever the selected theater.
-    let house_convert_base_palette = load_named_ui_palette(assets, "TEMPERAT.PAL")?;
+    let house_convert_base_palette = load_palette(assets, "TEMPERAT.PAL")?;
     let progress_palette =
         progress_palette_with_player_ramp(&house_convert_base_palette, progress_ramp);
 
@@ -380,7 +389,7 @@ pub fn build_loading_screen_atlas_with_composition<'a>(
         rendered.push(background);
     }
     let insignia_measure_size =
-        render_pcx_entry(assets, LoadingArtVariant::Americans.side_icon_pcx())
+        pcx_piece(assets, LoadingArtVariant::Americans.side_icon_pcx(), true)
             .map(|entry| [entry.width as i32, entry.height as i32]);
 
     let (preview_label, marker_labels) = append_optional_composition_entries(
@@ -393,7 +402,7 @@ pub fn build_loading_screen_atlas_with_composition<'a>(
     // Side-icon is non-fatal: if its PCX is missing or malformed the bar still
     // draws. Record its label so it can be looked up after packing.
     let side_icon_label = variant.and_then(|variant| {
-        let entry = render_pcx_entry(assets, variant.side_icon_pcx())?;
+        let entry = pcx_piece(assets, variant.side_icon_pcx(), true)?;
         let label = entry.label.clone();
         rendered.push(entry);
         Some(label)
@@ -418,7 +427,7 @@ pub fn build_loading_screen_atlas_with_composition<'a>(
                 if rendered.iter().any(|entry| entry.label == label) {
                     Some(label)
                 } else {
-                    let entry = render_pcx_entry(assets, name)?;
+                    let entry = pcx_piece(assets, name, true)?;
                     let label = entry.label.clone();
                     rendered.push(entry);
                     Some(label)
@@ -454,37 +463,6 @@ pub fn build_loading_screen_atlas_with_composition<'a>(
         side_icon,
         insignia_measure_size,
         solid_texel: *by_label.get(SOLID_TEXEL_LABEL)?,
-    })
-}
-
-///642C20 transfer callers load only PROGBARM; their shell backdrop is
-/// composed by the shell owner. Reuse this atlas/decoder/palette owner without
-/// requiring an unrelated country's loading background to exist.
-pub fn build_transfer_progress_atlas(
-    gpu: &GpuContext,
-    batch: &BatchRenderer,
-    assets: &AssetManager,
-    progress_ramp: &[Color; 16],
-) -> Option<LoadingScreenAtlas> {
-    let base = load_named_ui_palette(assets, "TEMPERAT.PAL")?;
-    let palette = progress_palette_with_player_ramp(&base, progress_ramp);
-    let entries = [
-        mandatory_shp(assets, "PROGBARM.SHP", &palette, 0, "TEMPERAT.PAL")?,
-        solid_texel_entry(),
-    ];
-    let (texture, packed) = pack_chrome_atlas(gpu, batch, "Loading", &entries)?;
-    Some(LoadingScreenAtlas {
-        texture,
-        background: None,
-        progress_frame0: packed[0],
-        participants: Vec::new(),
-        title_bar: None,
-        progress_background: None,
-        preview: None,
-        mmpb_markers: BTreeMap::new(),
-        side_icon: None,
-        insignia_measure_size: None,
-        solid_texel: packed[1],
     })
 }
 
@@ -529,6 +507,30 @@ pub fn build_campaign_loading_screen_atlas(
     })
 }
 
+/// Map an original-RA2 loading background SHP to its palette. The authored
+/// name is `LS800S01.SHP` / `LS640A07.SHP` / `LS800B01.SHP`: position 5
+/// (0-based) is the faction letter. `load.mix` carries `LDSCRNS.PAL`,
+/// `LDSCRNA.PAL` and the neutral `LDSCRN.PAL`, but the neutral one is **not**
+/// what the Boot Camp screens use: LS800B01/B02 share the Allied palette
+/// (verified by rendering both SHPs against every LDSCRN* palette — only
+/// LDSCRNA.PAL produces the olive-drab hat, blue dossier and grey vehicles).
+/// Returns `None` for any name that does not follow the pattern.
+fn ra2_loading_background_palette(background_name: &str) -> Option<&'static str> {
+    let bytes = background_name.as_bytes();
+    if bytes.len() < 6 {
+        return None;
+    }
+    let prefix = &bytes[..5];
+    if !prefix.eq_ignore_ascii_case(b"LS800") && !prefix.eq_ignore_ascii_case(b"LS640") {
+        return None;
+    }
+    match bytes[5].to_ascii_uppercase() {
+        b'S' => Some("LDSCRNS.PAL"),
+        b'A' | b'B' => Some("LDSCRNA.PAL"),
+        _ => None,
+    }
+}
+
 fn render_campaign_entries(
     assets: &AssetManager,
     width: LoadingScreenWidth,
@@ -538,7 +540,26 @@ fn render_campaign_entries(
     if background_name.is_empty() {
         return None;
     }
-    let background_palette = load_named_ui_palette(assets, background_palette_name)?;
+    // Original RA2 picks the loading palette from the background SHP's faction
+    // letter (`ra2.mix -> load.mix`):
+    //   LS800Sxx / LS640Sxx (Soviet)   -> LDSCRNS.PAL
+    //   LS800Axx / LS640Axx (Allied)   -> LDSCRNA.PAL
+    //   LS800Bxx / LS640Bxx (Bootcamp) -> LDSCRNA.PAL (not the neutral LDSCRN)
+    // Retail MISSION.INI has no palette keys; the loose compatibility patch
+    // used to add one LDSCRNS.PAL for every section, which is why the Boot
+    // Camp (and Allied) screens were tinted with the Soviet palette. In RA2
+    // mode the SHP letter is authoritative even when a stale authored name is
+    // present. YR keeps the authored name and is untouched.
+    let resolved_background_palette = if crate::util::ra2_launch::enabled() {
+        match ra2_loading_background_palette(background_name) {
+            Some(name) => name,
+            None if background_palette_name.is_empty() => "LDSCRN.PAL",
+            None => background_palette_name,
+        }
+    } else {
+        background_palette_name
+    };
+    let background_palette = load_named_ui_palette(assets, resolved_background_palette)?;
     let title_palette = load_named_ui_palette(assets, "LDSCRN.PAL")?;
     let bar_palette = load_named_ui_palette(assets, "SPLDBR.PAL")?;
     let mut background = mandatory_shp(
@@ -546,7 +567,7 @@ fn render_campaign_entries(
         background_name,
         &background_palette,
         0,
-        background_palette_name,
+        resolved_background_palette,
     )?;
     background.label = CAMPAIGN_BACKGROUND_LABEL.to_owned();
     let mut progress = mandatory_shp(assets, "SPLDBR.SHP", &bar_palette, 0, "SPLDBR.PAL")?;
@@ -556,11 +577,11 @@ fn render_campaign_entries(
         LoadingScreenWidth::W640 => ("TTLBR640.SHP", "SPLDBRS.SHP"),
         LoadingScreenWidth::W800 => ("TTLBR800.SHP", "SPLDBRL.SHP"),
     };
-    if let Some(mut title) = render_shp_entry(assets, title_name, &title_palette, 0) {
+    if let Some(mut title) = shp_file_piece(assets, title_name, title_name, &title_palette, 0) {
         title.label = CAMPAIGN_TITLE_LABEL.to_owned();
         rendered.push(title);
     }
-    if let Some(mut bar) = render_shp_entry(assets, bar_name, &bar_palette, 0) {
+    if let Some(mut bar) = shp_file_piece(assets, bar_name, bar_name, &bar_palette, 0) {
         bar.label = CAMPAIGN_BAR_BACKGROUND_LABEL.to_owned();
         rendered.push(bar);
     }
@@ -590,12 +611,12 @@ fn append_optional_composition_entries(
     if composition.marker_remaps.is_empty() {
         return (Some(preview_label), Vec::new());
     }
-    if assets.load_file_from_mix(MMPB_ASSET_NAME).is_none() {
+    let Some(marker) = load_shp(assets, MMPB_ASSET_NAME) else {
         log::warn!(
             "Missing optional standard Skirmish loading marker asset {MMPB_ASSET_NAME}; preview remains available"
         );
         return (Some(preview_label), Vec::new());
-    }
+    };
 
     let mut distinct_remaps = BTreeMap::new();
     for remap in composition.marker_remaps {
@@ -607,7 +628,8 @@ fn append_optional_composition_entries(
     let mut marker_labels = Vec::with_capacity(distinct_remaps.len());
     for (color_key, ramp) in distinct_remaps {
         let palette = remap_base_palette.with_house_colors(ramp);
-        let Some(mut marker_entry) = render_shp_entry(assets, MMPB_ASSET_NAME, &palette, 0) else {
+        let Some(mut marker_entry) = shp_piece(&marker, MMPB_ASSET_NAME, &palette, 0).ok()
+        else {
             log::warn!(
                 "Could not prepare optional standard Skirmish loading marker color {color_key}"
             );
@@ -678,43 +700,6 @@ fn solid_texel_entry() -> ChromePiece {
     }
 }
 
-/// Decode a country-insignia PCX into an atlas entry using the native
-/// RGB-magenta transparency key.
-fn render_pcx_entry(assets: &AssetManager, file_name: &str) -> Option<ChromePiece> {
-    let bytes = assets.get_ref(file_name)?;
-    let pcx = PcxFile::from_bytes(bytes)
-        .map_err(|err| {
-            log::warn!("Could not parse standard Skirmish loading side icon {file_name}: {err:#}");
-            err
-        })
-        .ok()?;
-    let mut rgba = pcx.to_rgba(None);
-    ACTIVE_RETAIL_RGB565_PRESENTATION
-        .apply_packed_color_key_rgba8(&mut rgba, SIDE_ICON_TRANSPARENT_RGB);
-    Some(ChromePiece {
-        label: file_name.to_ascii_lowercase(),
-        width: pcx.width as u32,
-        height: pcx.height as u32,
-        rgba,
-    })
-}
-
-/// Loading-screen palettes come from ConvertClass__BuildFromPaletteFile
-/// `0x0072ADE0` and the meter base from Init_Game's TEMPERAT.PAL loop
-/// (`0x0052BC6A..0x0052BCB9`); both convert like every other palette load.
-pub(crate) fn load_named_ui_palette(assets: &AssetManager, name: &str) -> Option<Palette> {
-    let Some(bytes) = assets.get_ref(name) else {
-        log::warn!("Missing loading palette {name}");
-        return None;
-    };
-    Palette::from_bytes(bytes)
-        .map_err(|err| {
-            log::warn!("Could not parse loading palette {name}: {err:#}");
-            err
-        })
-        .ok()
-}
-
 fn mandatory_shp(
     assets: &AssetManager,
     file_name: &str,
@@ -722,70 +707,11 @@ fn mandatory_shp(
     frame: usize,
     palette_name: &str,
 ) -> Option<ChromePiece> {
-    render_shp_entry(assets, file_name, palette, frame).or_else(|| {
+    shp_file_piece(assets, file_name, file_name, palette, frame).or_else(|| {
         log::warn!(
             "Missing mandatory loading asset {file_name} frame {frame} decoded with {palette_name}"
         );
         None
-    })
-}
-
-fn render_shp_entry(
-    assets: &AssetManager,
-    file_name: &str,
-    palette: &Palette,
-    frame: usize,
-) -> Option<ChromePiece> {
-    let Some(load) = assets.load_file_from_mix(file_name) else {
-        log::warn!("Missing loading SHP {file_name}");
-        return None;
-    };
-    let shp = ShpFile::from_bytes(&load.bytes)
-        .map_err(|err| {
-            log::warn!("Could not parse loading SHP {file_name}: {err:#}");
-            err
-        })
-        .ok()?;
-    if frame >= shp.frames.len() {
-        log::warn!(
-            "Loading SHP {file_name} missing frame {frame}; frame count {}",
-            shp.frames.len()
-        );
-        return None;
-    }
-    let frame_rgba = shp
-        .frame_to_rgba(frame, palette)
-        .map_err(|err| {
-            log::warn!("Could not decode loading SHP {file_name} frame {frame}: {err:#}");
-            err
-        })
-        .ok()?;
-    let canvas_w = shp.width as u32;
-    let canvas_h = shp.height as u32;
-    let shp_frame = &shp.frames[frame];
-    let frame_w = shp_frame.frame_width as u32;
-    let frame_h = shp_frame.frame_height as u32;
-    let frame_x = shp_frame.frame_x as u32;
-    let frame_y = shp_frame.frame_y as u32;
-    let rgba = if frame_w == canvas_w && frame_h == canvas_h && frame_x == 0 && frame_y == 0 {
-        frame_rgba
-    } else {
-        let mut canvas = vec![0u8; (canvas_w * canvas_h * 4) as usize];
-        for row in 0..frame_h {
-            let src = (row * frame_w * 4) as usize;
-            let dst = (((frame_y + row) * canvas_w + frame_x) * 4) as usize;
-            let len = (frame_w * 4) as usize;
-            if src + len <= frame_rgba.len() && dst + len <= canvas.len() {
-                canvas[dst..dst + len].copy_from_slice(&frame_rgba[src..src + len]);
-            }
-        }
-        canvas
-    };
-    Some(ChromePiece {
-        label: file_name.to_ascii_lowercase(),
-        width: canvas_w,
-        height: canvas_h,
-        rgba,
     })
 }
 
@@ -795,10 +721,73 @@ mod tests {
         CAMPAIGN_BACKGROUND_LABEL, CAMPAIGN_BAR_BACKGROUND_LABEL, CAMPAIGN_PROGRESS_LABEL,
         CAMPAIGN_TITLE_LABEL, LOADING_PREVIEW_LABEL, LoadingArtVariant, LoadingScreenWidth,
         MmpbRegionRect, PreparedLoadingPreviewRgba, mmpb_region_rect, prepared_preview_entry,
-        progress_palette_with_player_ramp, render_campaign_entries, render_pcx_entry,
-        render_shp_entry,
+        progress_palette_with_player_ramp, ra2_loading_background_palette,
+        render_campaign_entries,
     };
     use crate::assets::pal_file::{Color, Palette};
+
+    fn render_shp_entry(
+        assets: &crate::assets::asset_manager::AssetManager,
+        file: &str,
+        palette: &Palette,
+        frame: usize,
+    ) -> Option<crate::render::chrome_atlas::ChromePiece> {
+        crate::render::chrome_atlas::shp_file_piece(assets, file, file, palette, frame)
+    }
+
+    fn render_pcx_entry(
+        assets: &crate::assets::asset_manager::AssetManager,
+        file: &str,
+    ) -> Option<crate::render::chrome_atlas::ChromePiece> {
+        crate::render::chrome_atlas::pcx_piece(assets, file, true)
+    }
+
+    #[test]
+    fn ra2_loading_background_palette_follows_faction_letter() {
+        assert_eq!(
+            ra2_loading_background_palette("LS800S01.SHP"),
+            Some("LDSCRNS.PAL")
+        );
+        assert_eq!(
+            ra2_loading_background_palette("LS640S12.SHP"),
+            Some("LDSCRNS.PAL")
+        );
+        assert_eq!(
+            ra2_loading_background_palette("LS800A07.SHP"),
+            Some("LDSCRNA.PAL")
+        );
+        assert_eq!(
+            ra2_loading_background_palette("LS640B01.SHP"),
+            Some("LDSCRNA.PAL")
+        );
+        assert_eq!(ra2_loading_background_palette("TTLBR800.SHP"), None);
+        assert_eq!(ra2_loading_background_palette("LS800.SHP"), None);
+    }
+
+    #[test]
+    fn loading_insignia_decodes_mod_art_ahead_of_stock_language() {
+        use crate::assets::asset_manager::test_support::{TestDirectory, audio_test_install};
+        use crate::assets::asset_manager::{AssetManager, MediaArchiveMode};
+        use crate::assets::pcx_file::encode_direct_rgb;
+
+        let install = audio_test_install("stock-loading-insignia");
+        let addon = TestDirectory::new("mod-loading-insignia");
+        let name = LoadingArtVariant::Americans.side_icon_pcx();
+        let stock = encode_direct_rgb(2, 1, &[32, 32, 32, 32, 32, 32]).unwrap();
+        let replacement = encode_direct_rgb(2, 1, &[255, 0, 0, 255, 0, 0]).unwrap();
+        install.write_mix("language.mix", name, &stock);
+        addon.write_mix("expandmd01.mix", name, &replacement);
+        std::fs::write(addon.path().join(name), b"broken PCX").unwrap();
+        let assets = AssetManager::with_mod(
+            install.path(),
+            Some(addon.path()),
+            MediaArchiveMode::STOCK_DIGITAL,
+        )
+        .unwrap();
+
+        let insignia = render_pcx_entry(&assets, name).unwrap();
+        assert_eq!(insignia.rgba, [255, 0, 0, 255, 255, 0, 0, 255]);
+    }
 
     #[test]
     fn ares_country_loading_background_consumes_frozen_palette_and_late_shape() {
@@ -1155,6 +1144,16 @@ mod tests {
                 manifest.background_asset(LoadingScreenWidth::W800),
                 expected_800
             );
+            // `-ra2` binds the single MPLS.PAL for every Country; Yuri, which
+            // does not exist in RA2, is the only other observer-style case in
+            // this table. Observer keeps MPLSOBS.PAL in both profiles.
+            let expected_palette = if crate::util::ra2_launch::enabled()
+                && variant != LoadingArtVariant::Observer
+            {
+                "MPLS.PAL"
+            } else {
+                expected_palette
+            };
             assert_eq!(manifest.palette_name, expected_palette);
         }
     }

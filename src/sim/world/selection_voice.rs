@@ -13,9 +13,10 @@
 //! type+430, then the deactivated latch +1C8 (708EFD, `sim::powered_unit`)
 //! before type+44C, instead of the normal+414 list. All three use this one
 //! owner; a click can select an offline Robot Tank (Select5F4520 does not
-//! test +1C8), so its line is reachable. The process audio service
-//! borrows this same Main continuation through Simulation's RNG capability.
-//! These selection controls alone do not establish its device/queue behavior.
+//! test +1C8), so its line is reachable. The simulation draws its own Main
+//! generator through `&mut`; the app's audio service draws the process cell
+//! (`install_fresh_process_main`). These selection controls alone do not
+//! establish its device/queue behavior.
 
 use super::Simulation;
 use crate::rules::ruleset::RuleSet;
@@ -61,32 +62,33 @@ impl Simulation {
     /// TechnoSelect6FBFA0 admits VoiceSelect only for House50B6F0 or
     /// HouseType+1A6 (MultiplayPassive), and only while the caller's selection
     /// voice latch is enabled (6FBFF4..6FC018). Rejection consumes no draw.
+    /// Delegated matches substitute local tactical authority for House50B6F0.
     /// The returned registered sound name is a presentation request; this
     /// operation changes only the existing process Main cursor.
     pub fn selection_voice_request<'a>(
-        &self,
+        &mut self,
         rules: &'a RuleSet,
         entity_id: u64,
         voices_enabled: bool,
     ) -> Option<&'a str> {
         let entity = self.entities().get(entity_id)?;
-        let human_player = self.house_is_human_player(entity.owner());
+        let audible_owner = self.control_projection().can_order(entity.owner());
         let passive = self
             .houses
             .get(&entity.owner())
             .is_some_and(|house| house.multiplay_passive());
-        if !voices_enabled || (!human_player && !passive) {
+        if !voices_enabled || (!audible_owner && !passive) {
             return None;
         }
         let object = self.interner.object_type(entity.type_ref(), rules)?;
-        let voices = if entity.slave.owner().is_some() {
+        let voices = if entity.seldom.slave.owner().is_some() {
             &object.voice_select_enslaved
         } else if entity.deactivated.is_offline() {
             &object.voice_select_deactivated
         } else {
             &object.voice_select
         };
-        self.voice_request_from_list(voices, voices_enabled, human_player)
+        self.voice_request_from_list(voices, voices_enabled, audible_owner)
     }
 
     /// QueueMegaMission6FFCBD..6FFDA5 chooses the committed order's voice
@@ -100,7 +102,7 @@ impl Simulation {
     /// VoiceMove708FC0 consumes the full fixed-catalog list retained by the
     /// existing type-processing owner, including Enter/Capture/Harvest fallback.
     pub fn order_voice_request<'a>(
-        &self,
+        &mut self,
         rules: &'a RuleSet,
         entity_id: u64,
         voice_field: &str,
@@ -114,7 +116,7 @@ impl Simulation {
             return self.attack_voice_request(rules, entity_id, target, voices_enabled);
         }
         let entity = self.entities().get(entity_id)?;
-        let human_player = self.house_is_human_player(entity.owner());
+        let audible_owner = self.control_projection().can_order(entity.owner());
         let object = self.interner.object_type(entity.type_ref(), rules)?;
         // 6FFD42's default arm, including AreaGuard and Sabotage. Caller
         // loops own suppression of later actors; this owner spends only Main.
@@ -122,7 +124,7 @@ impl Simulation {
             return self.voice_request_from_list(
                 &object.voice_special_attack,
                 voices_enabled,
-                human_player,
+                audible_owner,
             );
         }
         let scalar = match voice_field {
@@ -133,13 +135,13 @@ impl Simulation {
             _ => return None,
         };
         if let Some(sound) = scalar {
-            return Self::queue_voice_request(Some(sound), voices_enabled, human_player);
+            return Self::queue_voice_request(Some(sound), voices_enabled, audible_owner);
         }
         // VoiceMove708FD6..70900C: every nonempty list, including a
         // singleton, spends one raw Main65C780 draw before
         // QueueVoice's enable/House rejection. The caller enable gate above
         // instead prevents reaching VoiceMove at all (6FFCBD..6FFCCB).
-        self.voice_request_from_list(object.voice_move(), voices_enabled, human_player)
+        self.voice_request_from_list(object.voice_move(), voices_enabled, audible_owner)
     }
 
     /// VoiceAttack7090A0 through the existing SelectWeapon/GetWeapon,
@@ -148,7 +150,7 @@ impl Simulation {
     /// A reached list still draws before QueueVoice rejects disabled/nonhuman
     /// requests; QueueMegaMission's earlier enable gate is owned above.
     fn attack_voice_request<'a>(
-        &self,
+        &mut self,
         rules: &'a RuleSet,
         entity_id: u64,
         target: Option<crate::sim::combat::TargetKind>,
@@ -158,7 +160,7 @@ impl Simulation {
         use crate::sim::combat::{combat_weapon, veterancy};
 
         let entity = self.entities().get(entity_id)?;
-        let human_player = self.house_is_human_player(entity.owner());
+        let audible_owner = self.control_projection().can_order(entity.owner());
         let object = self.interner.object_type(entity.type_ref(), rules)?;
         // Input-time selection keeps the shared fallback Cell unchanged.
         let cells = self
@@ -216,7 +218,7 @@ impl Simulation {
                 })
                 .or_else(|| set(object.voice_attack_override(index, false)));
             if let Some(sound) = voice {
-                return Self::queue_voice_request(Some(sound), voices_enabled, human_player);
+                return Self::queue_voice_request(Some(sound), voices_enabled, audible_owner);
             }
             let voices = object.voice_attack();
             if voices.is_empty() {
@@ -228,7 +230,7 @@ impl Simulation {
             return Self::queue_voice_request(
                 voices.get(index as usize).map(String::as_str),
                 voices_enabled,
-                human_player,
+                audible_owner,
             );
         }
         let scalar = if weapon.is_some_and(|weapon| weapon.damage < 0)
@@ -241,21 +243,21 @@ impl Simulation {
             object.voice_attack_override(index, veterancy::raw_is_elite(entity.veterancy.raw()))
         };
         if let Some(sound) = scalar {
-            return Self::queue_voice_request(Some(sound), voices_enabled, human_player);
+            return Self::queue_voice_request(Some(sound), voices_enabled, audible_owner);
         }
         //70918D..7091C4: unsigned raw draw/modulo, including a singleton.
-        self.voice_request_from_list(object.voice_attack(), voices_enabled, human_player)
+        self.voice_request_from_list(object.voice_attack(), voices_enabled, audible_owner)
     }
 
     /// QueueVoice708D90's sole admission predicate. The caller owns any list
-    /// draw and House50B6F0 query; the audio owner alone retains the pending
+    /// draw and owner projection; the audio owner alone retains the pending
     /// and playing slots. Scalar requests consume no random draw.
     fn queue_voice_request(
         sound: Option<&str>,
         voices_enabled: bool,
-        human_player: bool,
+        audible_owner: bool,
     ) -> Option<&str> {
-        sound.filter(|sound| voices_enabled && human_player && !sound.is_empty())
+        sound.filter(|sound| voices_enabled && audible_owner && !sound.is_empty())
     }
 
     /// Building459C20's resource-Archive override, then common
@@ -274,16 +276,20 @@ impl Simulation {
         use crate::sim::combat::TargetKind;
 
         let entity = self.entities().get(entity_id)?;
-        let human_player = self.house_is_human_player(entity.owner());
+        let audible_owner = self.control_projection().can_order(entity.owner());
         let object = self.interner.object_type(entity.type_ref(), rules)?;
         if entity.category() == EntityCategory::Structure
             && object.resource_gatherer
             && object.resource_destination
             && let Some(TargetKind::Cell(x, y)) = entity.archive_target()
-            && crate::sim::miner::ore_scan::cell_is_tiberium_land(self, None, (x, y))
+            && crate::sim::miner::ore_scan::cell_is_tiberium_land(
+                self,
+                Some(rules.overlay_registry()),
+                (x, y),
+            )
             && let Some(sound) = object.voice_harvest()
         {
-            return Self::queue_voice_request(Some(sound), voices_enabled, human_player);
+            return Self::queue_voice_request(Some(sound), voices_enabled, audible_owner);
         }
         let request = if entity.deploy_voice_suppressed() {
             None
@@ -293,11 +299,12 @@ impl Simulation {
             } else {
                 object.voice_deploy()
             };
-            Self::queue_voice_request(sound, voices_enabled, human_player)
+            Self::queue_voice_request(sound, voices_enabled, audible_owner)
         };
         self.substrate
             .entities
             .get_mut(entity_id)?
+            .seldom
             .suppress_deploy_voice
             .clear();
         request
@@ -310,16 +317,16 @@ impl Simulation {
     /// Native ReadSoundList binding skips unresolved names, so its selected-ID
     /// -1 rejection is represented only by deliberately unbound test inputs.
     fn voice_request_from_list<'a>(
-        &self,
+        &mut self,
         voices: &'a [String],
         voices_enabled: bool,
-        human_player: bool,
+        audible_owner: bool,
     ) -> Option<&'a str> {
         if voices.is_empty() {
             return None;
         }
         let index = (self.main_rng.next_u32() % voices.len() as u32) as usize;
         // Empty is the existing sound-name representation of native ID -1.
-        Self::queue_voice_request(Some(voices[index].as_str()), voices_enabled, human_player)
+        Self::queue_voice_request(Some(voices[index].as_str()), voices_enabled, audible_owner)
     }
 }

@@ -15,7 +15,7 @@ fn frames(sim: &Simulation, rules: &RuleSet, reactor: u64, hover: Option<u64>) -
         sim.scenario_rng().native_state_hex(),
         sim.mapgen_rng().native_state_hex(),
         entity
-            .passenger_role
+            .passenger_role()
             .cargo()
             .map(|cargo| (cargo.passengers().to_vec(), cargo.total_size())),
     );
@@ -38,7 +38,7 @@ fn frames(sim: &Simulation, rules: &RuleSet, reactor: u64, hover: Option<u64>) -
             sim.scenario_rng().native_state_hex(),
             sim.mapgen_rng().native_state_hex(),
             entity
-                .passenger_role
+                .passenger_role()
                 .cargo()
                 .map(|cargo| (cargo.passengers().to_vec(), cargo.total_size())),
         ),
@@ -90,10 +90,9 @@ fn advance(sim: &mut Simulation, rules: &RuleSet) {
     sim.advance_app_frame(
         &[],
         rules,
-        None,
         33,
         TickLane::Ordinary,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
     .expect("ordinary stock Bio Reactor frame");
 }
@@ -176,14 +175,14 @@ fn stock_bio_reactor_pips_follow_boarding_cargo_head_departure_and_selection() {
                     .entities()
                     .get(passenger)
                     .unwrap()
-                    .passenger_role
+                    .passenger_role()
                     .is_inside_transport()
                 {
                     break;
                 }
             }
             let rider = sim.entities().get(passenger).unwrap();
-            assert_eq!(rider.passenger_role.inside_transport_id(), Some(reactor));
+            assert_eq!(rider.passenger_role().inside_transport_id(), Some(reactor));
             assert!(rider.lifecycle.in_limbo());
             assert_eq!(&frames(&sim, rules, reactor, None), &expected[&types]);
         }
@@ -191,7 +190,7 @@ fn stock_bio_reactor_pips_follow_boarding_cargo_head_departure_and_selection() {
             sim.entities()
                 .get(reactor)
                 .unwrap()
-                .passenger_role
+                .passenger_role()
                 .cargo()
                 .unwrap()
                 .passengers(),
@@ -215,7 +214,7 @@ fn stock_bio_reactor_pips_follow_boarding_cargo_head_departure_and_selection() {
                 .entities()
                 .get(reactor)
                 .unwrap()
-                .passenger_role
+                .passenger_role()
                 .cargo()
                 .unwrap();
             let types: Vec<_> = cargo
@@ -235,14 +234,14 @@ fn stock_bio_reactor_pips_follow_boarding_cargo_head_departure_and_selection() {
             sim.entities()
                 .get(reactor)
                 .unwrap()
-                .passenger_role
+                .passenger_role()
                 .cargo()
                 .unwrap()
                 .is_empty()
         );
         for passenger in [engineer, initiate] {
             let rider = sim.entities().get(passenger).unwrap();
-            assert!(!rider.passenger_role.is_inside_transport());
+            assert!(!rider.passenger_role().is_inside_transport());
             assert!(!rider.lifecycle.in_limbo());
         }
         assert_eq!(&frames(&sim, rules, reactor, None), empty);

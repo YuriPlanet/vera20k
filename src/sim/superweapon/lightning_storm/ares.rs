@@ -38,13 +38,12 @@ use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::anim_class::AnimWorldCoord;
 use crate::sim::cell_rect::{CellRef, get_cellclass_fallback, get_cellclass_fallback_leptons};
-use crate::sim::intern::InternedId;
+use crate::sim::intern::{InternKey, InternedId};
 use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::projectile::ProjectileCoord;
 use crate::sim::radar::{RadarEventRequest, RadarEventType};
 use crate::sim::world::FrameEffects;
 use crate::sim::world::{SimSoundEvent, Simulation};
-use crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS;
 
 /// CurrentLightningStorm's owner, type and SWTypeExt launch fields.
 pub(super) type AresStorm<'r> = (
@@ -73,18 +72,12 @@ fn cell_exists(sim: &Simulation, (x, y): (i16, i16)) -> bool {
 /// CellClass::GetCoordsWithBridge, inlined by the Ares hooks: the cell's
 /// GetCoords (vt+0x48, `0x00486840`) plus the bridge height when the cell
 /// carries one (`+0x140 & 0x100`).
-fn coords_with_bridge(cell: &CellRef<'_>) -> [i32; 3] {
+fn coords_with_bridge(
+    cell: &CellRef<'_>,
+    terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
+) -> [i32; 3] {
     let at = cell.get_coords();
-    let bridge = cell.bridge_flags_0x1180() & crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL != 0;
-    [
-        at.x,
-        at.y,
-        at.z.wrapping_add(if bridge {
-            BRIDGE_DECK_HEIGHT_LEPTONS
-        } else {
-            0
-        }),
-    ]
+    [at.x, at.y, StormCell::of(cell).surface_z(terrain, at.z)]
 }
 
 /// Whether the object `id` is a building whose type has `LightningRod=`.
@@ -252,11 +245,12 @@ pub(super) fn start(
     }
     let sound = rules
         .super_weapon(sim.interner.resolve(sw_type))
-        .and_then(|sw| sw.presentation.activation_sound.clone())
-        .unwrap_or_else(|| general.storm_sound.clone());
+        .and_then(|sw| sw.presentation.activation_sound.as_ref())
+        .map_or(general.storm_sound.as_deref(), Option::as_deref);
     if let Some(sound_id) = sound {
-        sim.sound_events
-            .emit(SimSoundEvent::VocCentered { sound_id });
+        sim.sound_events.emit(SimSoundEvent::VocCentered {
+            sound_id: rules.sound_name(sound_id),
+        });
     }
     if launch.radar_event() {
         sim.sound_events.emit(SimSoundEvent::RadarEvent {
@@ -282,7 +276,7 @@ pub(super) fn process_lists(
     sim: &mut Simulation,
     rules: &RuleSet,
     overlay_registry: Option<&OverlayTypeRegistry>,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) -> bool {
     let mut bridge_changed = false;
     let manifesting = std::mem::take(&mut sim.lightning_storm.clouds_manifesting);
@@ -516,11 +510,9 @@ pub(super) fn create_cloud_bolt(
 ) {
     let lightning = launch.lightning();
     let general = &rules.general;
-    let mut coords = coords_with_bridge(&get_cellclass_fallback(
-        sim.resolved_terrain.as_ref(),
-        i32::from(cell.0),
-        i32::from(cell.1),
-    ));
+    let terrain = sim.resolved_terrain.as_ref();
+    let cell_ref = get_cellclass_fallback(terrain, i32::from(cell.0), i32::from(cell.1));
+    let mut coords = coords_with_bridge(&cell_ref, terrain);
     if coords == [0, 0, 0] {
         return;
     }
@@ -586,13 +578,16 @@ pub(super) fn ground_strike(
     overlay_registry: Option<&OverlayTypeRegistry>,
     (super_owner, _, launch): AresStorm<'_>,
     [x, y]: [i32; 2],
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) -> bool {
     let lightning = launch.lightning();
     let general = &rules.general;
     let (target, strike) = {
         let cell = get_cellclass_fallback_leptons(sim.resolved_terrain.as_ref(), x, y);
-        (StormCell::of(&cell), coords_with_bridge(&cell))
+        (
+            StormCell::of(&cell),
+            coords_with_bridge(&cell, sim.resolved_terrain.as_ref()),
+        )
     };
     if strike == [0, 0, 0] {
         return false;
@@ -623,7 +618,7 @@ pub(super) fn ground_strike(
         }
         .to_cell_sub_z();
         sim.sound_events.emit(SimSoundEvent::VocAt {
-            sound_id: sounds[pick as usize].clone(),
+            sound_id: rules.sound_name(&sounds[pick as usize]),
             audible_to: None,
             rx,
             ry,
@@ -693,8 +688,7 @@ pub(super) fn ground_strike(
             if let Some(anim) = crate::sim::combat::detonation_anim::select(
                 sim, rules, warhead, damage, land, coordinate, false,
             ) {
-                let name = sim.interner.resolve(anim).to_string();
-                let _ = crate::sim::superweapon::spawn_super_anim(sim, rules, &name, strike);
+                let _ = crate::sim::superweapon::spawn_super_anim(sim, rules, anim, strike);
             }
         } else {
             log::warn!("Ares Lightning Storm warhead {warhead_name:?} not found in rules");
@@ -705,15 +699,13 @@ pub(super) fn ground_strike(
         StrikeCell::read(sim, &StormCell::of(&cell), coordinate)
     };
     debris |= after.nearest != before.nearest;
-    let pieces: Vec<String> = match &lightning.debris {
-        Some(debris) => debris.clone(),
-        None => sim
-            .metallic_debris()
-            .iter()
-            .map(|&id| sim.interner.resolve(id).to_string())
-            .collect(),
-    };
-    if pieces.is_empty() || before.nearest_is_infantry || !debris {
+    // The storm's own debris names, else [General] MetallicDebris as the
+    // world interned it.
+    let pieces = lightning
+        .debris
+        .as_ref()
+        .map_or(sim.metallic_debris().len(), Vec::len);
+    if pieces == 0 || before.nearest_is_infantry || !debris {
         return bridge_changed;
     }
     let count = sim
@@ -722,9 +714,18 @@ pub(super) fn ground_strike(
     for _ in 0..count.max(0) {
         let pick = sim
             .superweapon_rng()
-            .next_range_i32_inclusive(0, pieces.len() as i32 - 1);
-        let _ =
-            crate::sim::superweapon::spawn_super_anim(sim, rules, &pieces[pick as usize], strike);
+            .next_range_i32_inclusive(0, pieces as i32 - 1) as usize;
+        let piece = match &lightning.debris {
+            Some(names) => names.get(pick).map(InternKey::from),
+            None => sim
+                .metallic_debris()
+                .get(pick)
+                .copied()
+                .map(InternKey::from),
+        };
+        if let Some(piece) = piece {
+            let _ = crate::sim::superweapon::spawn_super_anim(sim, rules, piece, strike);
+        }
     }
     bridge_changed
 }

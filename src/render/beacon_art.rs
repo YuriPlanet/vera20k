@@ -49,7 +49,6 @@ impl BeaconArt {
 
     /// `unit_palette` is the theater's unit palette; `ramps` holds each
     /// beacon row's House ramp, in House order.
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
@@ -60,8 +59,16 @@ impl BeaconArt {
         unit_palette: Option<&Palette>,
         ramps: &[[Color; 16]],
     ) -> Self {
-        let file = |name| side_mix_file(assets, side_index, ares, name);
-        let shape = |name| ShpFile::from_bytes(file(name)?).ok();
+        let shape = |name| {
+            use crate::render::shell_ui_style_assets::{decode_ui_shp, ui_art_candidates};
+            if assets.mod_selected() {
+                ui_art_candidates(assets, name)
+                    .find_map(|asset| decode_ui_shp(asset.bytes).ok())
+                    .or_else(|| decode_ui_shp(side_mix_file(assets, side_index, ares, name)?).ok())
+            } else {
+                ShpFile::from_bytes(side_mix_file(assets, side_index, ares, name)?).ok()
+            }
+        };
         let palettes: Vec<Palette> = unit_palette
             .map(|base| {
                 ramps

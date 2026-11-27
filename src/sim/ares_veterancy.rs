@@ -37,7 +37,7 @@ impl Simulation {
         silent: bool,
         flash: bool,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
@@ -47,14 +47,19 @@ impl Simulation {
         if cached == level {
             return;
         }
+        // The rank a promotion reached, for the Wasm module `Promoted`.
+        let mut promoted = None;
         if cached != LEVEL_UNSAMPLED
             && let Some(object) = self.entity_object_type(entity, rules)
         {
             let ext = object.ares_veterancy();
             if ext.include_passengers() {
                 let raw = entity.veterancy.raw();
+                // A copy: each passenger's own rank update below runs through
+                // `&mut self` (its promotion and its own passengers), so the
+                // walk keeps the cargo this change saw.
                 let passengers = entity
-                    .passenger_role
+                    .passenger_role()
                     .cargo()
                     .map(|cargo| cargo.passengers().to_vec())
                     .unwrap_or_default();
@@ -81,6 +86,7 @@ impl Simulation {
             };
             if let Some(rank) = rank {
                 let elite = rank == PromotedRank::Elite;
+                promoted = Some(if elite { 2 } else { 1 });
                 let global_sound = if elite {
                     rules.general.upgrade_elite_sound.as_deref()
                 } else {
@@ -123,6 +129,11 @@ impl Simulation {
         if let Some(entity) = self.substrate.entities.get_mut(id) {
             entity.veterancy.store_level(level);
         }
+        // Wasm module `Promoted` (1 veteran, 2 elite), after the rank is
+        // stored; a silent update (a passenger, a gunner) raises it too.
+        if let Some(rank) = promoted {
+            self.raise_module_promoted(rules, effects, id, rank);
+        }
     }
 
     /// UpdateVeterancy10046D2F..10046D54: VocClass::PlayAt at the
@@ -135,7 +146,7 @@ impl Simulation {
         let owner = entity.owner();
         let type_id = entity.type_ref();
         let source = entity
-            .passenger_role
+            .passenger_role()
             .transporter()
             .and_then(|transporter| self.substrate.entities.get(transporter))
             .unwrap_or(entity);

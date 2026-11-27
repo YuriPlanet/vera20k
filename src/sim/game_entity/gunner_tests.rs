@@ -54,14 +54,17 @@ fn assert_selection(entity: &GameEntity, expected: &Value, context: &str) {
 }
 
 fn replay_selector_events(entity: &mut GameEntity, object: &ObjectType, events: &Value) {
-    let before_timer = entity.rearm_timer.timer();
-    let before_delay = entity.turret_selection.charge_turret_delay;
+    let before_timer = entity.seldom.rearm_timer.timer();
+    let before_delay = entity.seldom.turret_selection.charge_turret_delay;
     for event in events.as_array().unwrap() {
         assert_eq!(event["event"], "set_gunner", "unexpected native event");
         entity.set_gunner_weapon(int(event, "mode"), object, false);
     }
-    assert_eq!(entity.rearm_timer.timer(), before_timer);
-    assert_eq!(entity.turret_selection.charge_turret_delay, before_delay);
+    assert_eq!(entity.seldom.rearm_timer.timer(), before_timer);
+    assert_eq!(
+        entity.seldom.turret_selection.charge_turret_delay,
+        before_delay
+    );
 }
 
 // The installed Ares SwitchGunner hook uses WeaponCount instead of eighteen.
@@ -77,7 +80,7 @@ fn gunner_constructor_and_selector_match_original_components() {
             "Techno constructor",
         );
         assert_eq!(
-            entity.turret_selection.charge_turret_delay,
+            entity.seldom.turret_selection.charge_turret_delay,
             native["charge"]["constructor_delay"].as_i64().unwrap() as i32,
         );
         replay_selector_events(&mut entity, &object, &row["initialization"]["events"]);
@@ -136,23 +139,27 @@ fn charge_turret_ai_and_restored_owner_match_original_arithmetic() {
             input["gattling"].as_bool().unwrap(),
         );
         let mut entity = GameEntity::test_default(1, "FV", "Americans", 5, 5);
-        entity.turret_selection.current_weapon_number = int(input, "initial_weapon");
-        entity.turret_selection.current_turret_index = int(input, "initial_turret");
-        entity.turret_selection.charge_turret_delay = int(input, "charge_delay");
-        entity.rearm_timer.set_for_test(CdTimer::from_raw(
+        entity.seldom.turret_selection.current_weapon_number = int(input, "initial_weapon");
+        entity.seldom.turret_selection.current_turret_index = int(input, "initial_turret");
+        entity.seldom.turret_selection.charge_turret_delay = int(input, "charge_delay");
+        entity.seldom.rearm_timer.set_for_test(CdTimer::from_raw(
             int(input, "start"),
             int(input, "duration"),
         ));
-        let before_timer = entity.rearm_timer.timer();
-        let before_delay = entity.turret_selection.charge_turret_delay;
+        let before_timer = entity.seldom.rearm_timer.timer();
+        let before_delay = entity.seldom.turret_selection.charge_turret_delay;
         let encoded = save_codec::serialize(&entity).unwrap();
         let mut restored: GameEntity = save_codec::deserialize(&encoded).unwrap();
         for entity in [&mut entity, &mut restored] {
             entity.update_charge_turret(int(input, "frame"), &object);
             assert_selection(entity, &row["after"], context);
-            assert_eq!(entity.rearm_timer.timer(), before_timer, "timer: {context}");
             assert_eq!(
-                entity.turret_selection.charge_turret_delay, before_delay,
+                entity.seldom.rearm_timer.timer(),
+                before_timer,
+                "timer: {context}"
+            );
+            assert_eq!(
+                entity.seldom.turret_selection.charge_turret_delay, before_delay,
                 "delay: {context}"
             );
         }
@@ -182,17 +189,17 @@ fn fireat_rearm_copy_matches_original_normal_and_disk_writers() {
         };
         entity.rearm_after_fire(int(row, "frame"), duration);
         assert_eq!(
-            entity.turret_selection.charge_turret_delay,
+            entity.seldom.turret_selection.charge_turret_delay,
             int(row, "charge_delay"),
             "{row}"
         );
         assert_eq!(
-            entity.rearm_timer.start_frame(),
+            entity.seldom.rearm_timer.start_frame(),
             int(row, "timer_start"),
             "{row}"
         );
         assert_eq!(
-            entity.rearm_timer.duration(),
+            entity.seldom.rearm_timer.duration(),
             int(row, "timer_duration"),
             "{row}"
         );
@@ -220,7 +227,7 @@ fn ares_passenger_turret_follows_the_passenger_count() {
     let turret = |passengers: usize| {
         let mut entity = GameEntity::test_default(1, "IFV", "A", 1, 1);
         entity
-            .passenger_role
+            .passenger_role_mut_for_test()
             .ensure_hold()
             .set_passengers_for_test((10..10 + passengers as u64).collect());
         entity.update_passenger_turret(object);

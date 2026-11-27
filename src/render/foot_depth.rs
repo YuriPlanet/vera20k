@@ -18,6 +18,7 @@ pub(crate) type CellCoord = [i16; 2];
 pub(crate) struct DepthCell {
     pub coord: CellCoord,
     pub level: i8,
+    pub fixed_deck_z: Option<i32>,
     pub ramp: u8,
     pub flags: u32,
     pub iso_tile_index: i32,
@@ -35,6 +36,7 @@ impl Default for DepthCell {
         Self {
             coord: [0, 0],
             level: 0,
+            fixed_deck_z: None,
             ramp: 0,
             flags: 0,
             iso_tile_index: 0xffff,
@@ -43,6 +45,13 @@ impl Default for DepthCell {
             tmp_height: 30,
             is_dummy: false,
         }
+    }
+}
+
+impl DepthCell {
+    pub(crate) fn deck_z(self, floor: i32) -> i32 {
+        self.fixed_deck_z
+            .unwrap_or_else(|| floor.wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS))
     }
 }
 
@@ -360,8 +369,7 @@ pub(crate) fn foot_z_adjust(
 /// Unit's final composite draw at 0x73B140, before its height > 16 test.
 /// The bridge arm consumes raw 0x703B10 / 0x703E70 results, independently of
 /// ZFudge coefficients. The other arm is NavCom plus radio slot zero's
-/// WeaponsFactory building. See docs/research/bridges/06-render-presentation-audio/
-/// UNIT_COMPOSITE_BRIDGE_SPLIT_73B140_GHIDRA_REPORT.md.
+/// WeaponsFactory building.
 pub(crate) fn unit_composite_split(
     context: FootDepthContext,
     too_big: bool,

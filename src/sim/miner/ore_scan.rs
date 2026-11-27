@@ -128,7 +128,7 @@ pub(crate) fn search_for_tiberium_and_move(
     overlay_registry: Option<&OverlayTypeRegistry>,
     id: u64,
     range: i32,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) -> Result<bool, TiberiumImageError> {
     let Some(entity) = sim.substrate.entities.get(id) else {
         return Ok(false);
@@ -143,14 +143,7 @@ pub(crate) fn search_for_tiberium_and_move(
     if cell == own {
         return Ok(true);
     }
-    super::miner_system::assign_miner_cell_destination(
-        sim,
-        rules,
-        id,
-        cell,
-        overlay_registry,
-        frame_effects,
-    );
+    super::miner_system::assign_miner_cell_destination(sim, rules, id, cell, frame_effects);
     Ok(false)
 }
 
@@ -170,10 +163,13 @@ pub(crate) fn scan_for_tiberium(
     let Some(entity) = sim.substrate.entities.get(id) else {
         return Ok(None);
     };
-    if entity.category() == crate::map::entities::EntityCategory::Structure {
-        return techno_scan_for_tiberium(sim, rules, overlay_registry, id, range);
-    }
-    foot_scan_for_tiberium(sim, rules, overlay_registry, id, range)
+    let native = if entity.category() == crate::map::entities::EntityCategory::Structure {
+        techno_scan_for_tiberium(sim, rules, overlay_registry, id, range)?
+    } else {
+        foot_scan_for_tiberium(sim, rules, overlay_registry, id, range)?
+    };
+    // Wasm module `HarvestCell` on the scan's answer (`ext_modules::control`).
+    Ok(sim.module_harvest_cell(rules, id, native))
 }
 
 /// `FootClass::Scan_For_Tiberium @ 0x004DD0A0`: the mover's own cell when
@@ -194,8 +190,10 @@ fn foot_scan_for_tiberium(
     if cell_is_tiberium_land(sim, overlay_registry, own) {
         return Ok(Some(own));
     }
+    let checks_player_shroud = sim.session.uses_local_player_shroud();
     best_in_rings(sim, own, range, |sim, candidate| {
-        let Some(cell) = is_cell_harvestable(sim, rules, overlay_registry, id, candidate) else {
+        let Some(cell) = is_cell_harvestable(sim, rules, id, candidate, checks_player_shroud)
+        else {
             return Ok(None);
         };
         Ok(Some((
@@ -260,6 +258,24 @@ fn best_in_rings(
     let (x, y) = (i32::from(own.0), i32::from(own.1));
     let mut best_value = -1;
     let mut best = None;
+    // Ordinary scans keep their visits (including native Dummy lookups).
+    // A radius larger than any supported grid cannot find additional ore.
+    let range = if range > i32::from(crate::map::cell_index::MAX_CELL_SIDE) {
+        let (width, height) = sim.resolved_terrain.as_ref().map_or_else(
+            || {
+                sim.overlay_grid
+                    .as_ref()
+                    .map_or((0, 0), |grid| (grid.width(), grid.height()))
+            },
+            |terrain| (terrain.width(), terrain.height()),
+        );
+        range.min(crate::map::cell_index::square_rings_covering_rect(
+            (x, y),
+            [0, 0, i32::from(width), i32::from(height)],
+        ))
+    } else {
+        range
+    };
     for r in 1..range {
         for i in -r..=r {
             for candidate in [
@@ -334,7 +350,7 @@ pub(crate) fn harvest_reach(sim: &Simulation, rules: &RuleSet, id: u64) -> Optio
     // ground lookups can stamp shared Dummy; caching OnBridge per scan loses
     // both the head-height decision and the query order.
     let current = ground_pose::position_world_coord(&entity.position);
-    let in_tube = entity.low_bridge_tube_state.is_some();
+    let in_tube = entity.active_tube().is_some();
     let source_on_bridge = ground_pose::navigation_should_be_on_bridge(
         &cells,
         if in_tube { current } else { navigation },
@@ -365,9 +381,9 @@ pub(crate) fn harvest_reach(sim: &Simulation, rules: &RuleSet, id: u64) -> Optio
 fn is_cell_harvestable(
     sim: &Simulation,
     rules: &RuleSet,
-    overlay_registry: Option<&OverlayTypeRegistry>,
     id: u64,
     candidate: (i32, i32),
+    checks_player_shroud: bool,
 ) -> Option<(u16, u16)> {
     let terrain = sim.resolved_terrain.as_ref();
     if !crate::sim::cell_rect::cell_is_in_playfield_height_aware(
@@ -381,11 +397,12 @@ fn is_cell_harvestable(
     // owner byte query the current client's shroud. The caller constructs
     // its packed candidate's centre, samples Map578080's floor (no bridge
     // rise), then calls Map586360 before even asking for the source zone.
-    if !sim.session.game_mode_nonzero()
+    if checks_player_shroud
         && sim
             .substrate
             .entities
             .get(id)?
+            .seldom
             .discovery
             .owned_by_current_house()
         && let Some(viewer) = sim.session.current_house()
@@ -427,7 +444,6 @@ fn is_cell_harvestable(
             native_cell,
             crate::sim::movement::infantry_entry::InfantryEntryArgs::REPAIR,
             rules,
-            overlay_registry,
         )
         .ok()?;
     (code == 0).then_some(cell)
@@ -455,12 +471,12 @@ mod tests {
             let input = &row["input"];
             let terrain = native::terrain(input);
             let mut sim = Simulation::new();
-            sim.zone_grid = Some(native::zones(&terrain, row).into());
-            sim.resolved_terrain = Some(terrain);
+            *sim.zone_grid = Some(native::zones(&terrain, row).into());
+            *sim.resolved_terrain = Some(terrain);
             sim.substrate
                 .entities
                 .insert(native::candidate(input, 1, "MINER"));
-            sim.interner = crate::sim::intern::test_interner();
+            *sim.interner = crate::sim::intern::test_interner();
             let reach = harvest_reach(&sim, &rules, 1).unwrap();
             assert_eq!(
                 serde_json::json!([reach.source.0, reach.source.1]),

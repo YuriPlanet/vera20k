@@ -10,10 +10,8 @@ use crate::map::rmg::randomize::{
     RandomRanged, derive_from_map_type, randomize, randomize_from_combos,
 };
 use crate::map::rmg::settings::RmgSettings;
-use crate::ui::shell::combobox::ComboPress;
-use crate::ui::shell::geom::{RectPx, ShellScale};
 use crate::ui::shell::static_reveal::DialogStatics;
-use crate::ui::shell::trackbar::{TrackbarHold, TrackbarPress, TrackbarRange};
+use vera20k_gui::shell::trackbar::TrackbarRange;
 
 use super::super::layout::{AdvancedField, RandomMapSetupControl};
 use super::choose_map::ChooseMapSelection;
@@ -214,8 +212,8 @@ pub enum AcceptOutcome {
 }
 
 /// The Players slider's range in steps of 1. The original runs 2..8
-/// (`TBM_SETRANGE` at `0x0059722C`; no `0x4AB`); VERA's runs to thirty in
-/// every dialog.
+/// (`TBM_SETRANGE` at `0x0059722C`; no `0x4AB`); VERA's runs to the offline
+/// Skirmish row count. A network dialog keeps the room’s player limit.
 pub const PLAYERS_RANGE: TrackbarRange = TrackbarRange::new(2, crate::map::rmg::MAX_PLAYERS, 1);
 
 /// VERA extension: a ready-made option set the Presets button applies in one
@@ -272,13 +270,50 @@ impl RandomMapPreset {
     /// A ready-made preset's players, landform (`map_type`), size, resources,
     /// theater and Advanced values: water, hills, buildings, vegetation, ore
     /// fields, plateau size, accessibility. None for one of the player's own.
-    const fn values(self) -> Option<(i32, i32, i32, i32, Option<i32>, [i32; 7])> {
+    const fn values(self) -> Option<(i32, i32, i32, i32, Option<i32>, [i32; 13])> {
+        // The trailing six zeros are VERA's Advanced additions: the ready-made
+        // presets predate those sliders and leave them at their default.
         Some(match self {
-            Self::Duel => (2, 3, 1, 1, None, [10, 25, 0, 40, 60, 50, 80]),
-            Self::Brawl => (30, 3, 7, 2, None, [5, 20, 0, 30, 70, 50, 90]),
-            Self::CityWar => (4, 3, 2, 1, Some(2), [5, 10, 100, 20, 50, 60, 90]),
-            Self::Islands => (4, 0, 2, 2, Some(0), [60, 20, 0, 50, 60, 50, 50]),
-            Self::Teams => (8, 2, 4, 2, None, [35, 25, 0, 40, 60, 50, 70]),
+            Self::Duel => (
+                2,
+                3,
+                1,
+                1,
+                None,
+                [10, 25, 0, 40, 60, 50, 80, 0, 0, 0, 0, 0, 0],
+            ),
+            Self::Brawl => (
+                30,
+                3,
+                7,
+                2,
+                None,
+                [5, 20, 0, 30, 70, 50, 90, 0, 0, 0, 0, 0, 0],
+            ),
+            Self::CityWar => (
+                4,
+                3,
+                2,
+                1,
+                Some(2),
+                [5, 10, 100, 20, 50, 60, 90, 0, 0, 0, 0, 0, 0],
+            ),
+            Self::Islands => (
+                4,
+                0,
+                2,
+                2,
+                Some(0),
+                [60, 20, 0, 50, 60, 50, 50, 0, 0, 0, 0, 0, 0],
+            ),
+            Self::Teams => (
+                8,
+                2,
+                4,
+                2,
+                None,
+                [35, 25, 0, 40, 60, 50, 70, 0, 0, 0, 0, 0, 0],
+            ),
             Self::Mine(_) => return None,
         })
     }
@@ -289,17 +324,16 @@ impl RandomMapPreset {
 pub struct RandomMapSetupModalState {
     /// The working option set the controls edit.
     pub options: RmgOptions,
+    pub players_range: TrackbarRange,
     /// True once Generate has run and no option has changed since.
     pub generated: bool,
     /// True while the synchronous generate block owns the dialog.
     pub generating: bool,
+    /// Last percentage reported by the active map generator.
+    pub(crate) progress_percent: u8,
     /// Load/Delete enablement. Starts at saved-seed availability, but the
     /// generate action turns it on unconditionally, as the original does.
     pub saved_seed_buttons_enabled: bool,
-    pub open_combo: Option<SetupCombo>,
-    /// The Players slider holding the mouse since a press on it.
-    pub players_hold: Option<TrackbarHold>,
-    pub pressed_control: Option<RandomMapSetupControl>,
     /// The rasterised preview of the last generated map, shown in the preview
     /// box. `None` until a generate has produced one; any option edit clears it,
     /// because it no longer describes the configured map.
@@ -320,9 +354,10 @@ pub struct RandomMapSetupModalState {
     /// [`AdvancedField::row`]. `None` until a slider moves; Surprise Me clears
     /// them. While set they replace the map-type-derived values that every
     /// Generate re-rolls, after the re-roll's draws.
-    pub advanced_values: Option<[i32; 7]>,
-    /// An Advanced slider holding the mouse since a press on it.
-    pub advanced_hold: Option<TrackbarHold<AdvancedField>>,
+    pub advanced_values: Option<[i32; 13]>,
+    /// VERA extension: which page of the Advanced sliders is on show. The
+    /// dialog has seven rows; VERA's three sliders are scrolled into view.
+    pub advanced_page: usize,
     /// VERA extension: the generated map on show was written as a map file;
     /// Export Map rests until the next Generate.
     pub exported: bool,
@@ -372,6 +407,12 @@ fn advanced_field_mut(options: &mut RmgOptions, field: AdvancedField) -> &mut i3
         AdvancedField::OreFields => &mut options.tiberium_layout,
         AdvancedField::PlateauSize => &mut options.region_size,
         AdvancedField::Accessibility => &mut options.accessibility,
+        AdvancedField::TechBuildings => &mut options.tech_building_amount,
+        AdvancedField::Derelicts => &mut options.derelict_amount,
+        AdvancedField::Damage => &mut options.damage_amount,
+        AdvancedField::Civilians => &mut options.civilian_amount,
+        AdvancedField::Animals => &mut options.animal_amount,
+        AdvancedField::Wild => &mut options.wild_amount,
     }
 }
 
@@ -384,6 +425,12 @@ fn advanced_field(options: &RmgOptions, field: AdvancedField) -> i32 {
         AdvancedField::OreFields => options.tiberium_layout,
         AdvancedField::PlateauSize => options.region_size,
         AdvancedField::Accessibility => options.accessibility,
+        AdvancedField::TechBuildings => options.tech_building_amount,
+        AdvancedField::Derelicts => options.derelict_amount,
+        AdvancedField::Damage => options.damage_amount,
+        AdvancedField::Civilians => options.civilian_amount,
+        AdvancedField::Animals => options.animal_amount,
+        AdvancedField::Wild => options.wild_amount,
     }
 }
 
@@ -404,19 +451,18 @@ impl RandomMapSetupModalState {
         );
         let mut modal = Self {
             options,
+            players_range: PLAYERS_RANGE,
             generated: false,
             generating: false,
+            progress_percent: 0,
             saved_seed_buttons_enabled: saved_seeds_available,
-            open_combo: None,
-            players_hold: None,
-            pressed_control: None,
             generated_preview: None,
             preview_generation: 0,
             previous_selection,
             statics: DialogStatics::default(),
             advanced: false,
             advanced_values: None,
-            advanced_hold: None,
+            advanced_page: 0,
             exported: false,
             preset: None,
             extras_page: None,
@@ -430,6 +476,17 @@ impl RandomMapSetupModalState {
         };
         modal.options.normalize();
         modal
+    }
+
+    /// A room can publish start staging for its network seats only.
+    pub fn use_network_player_limit(&mut self) {
+        self.players_range.max = crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT as i32;
+        self.options.num_players = self.options.num_players.min(self.players_range.max);
+    }
+
+    fn normalize_options(&mut self) {
+        self.options.normalize();
+        self.options.num_players = self.options.num_players.min(self.players_range.max);
     }
 
     /// An option edit made by the Extras view.
@@ -503,28 +560,9 @@ impl RandomMapSetupModalState {
         self.on_option_changed();
     }
 
-    /// A press at device `(x, y)` on the Players slider window. Returns whether
-    /// the value changed; the slider then clicks (GenericClick, `0x0061E6DD`),
-    /// since `0x105` never turns its cue off (`0x4AE`).
-    pub fn press_players(&mut self, x: i32, y: i32, window: RectPx, scale: ShellScale) -> bool {
-        let press = PLAYERS_RANGE.press_in(self.options.num_players, x, y, window, scale);
-        self.players_hold = press.hold(());
-        match press {
-            TrackbarPress::Jump(value) => self.change_num_players(value),
-            _ => false,
-        }
-    }
-
-    /// A move while the Players slider holds the mouse: a held thumb follows
-    /// device `x`. Returns whether the value changed.
-    pub fn drag_players(&mut self, x: i32, window: RectPx, scale: ShellScale) -> bool {
-        self.players_hold.is_some_and(|hold| hold.dragging)
-            && self.change_num_players(PLAYERS_RANGE.value_at_in(x, window, scale))
-    }
-
-    /// The slider notifies (`WM_HSCROLL`, case `0x00596B04`) only when its
-    /// position changes (`0x0061E609`).
-    fn change_num_players(&mut self, value: i32) -> bool {
+    /// The Players slider's new position. The slider notifies (`WM_HSCROLL`,
+    /// case `0x00596B04`) only when its position changes (`0x0061E609`).
+    pub(crate) fn change_num_players(&mut self, value: i32) -> bool {
         let changed = self.options.num_players != value;
         if changed {
             self.set_num_players(value);
@@ -554,7 +592,7 @@ impl RandomMapSetupModalState {
             .position(|entry| entry.value == value)
     }
 
-    /// Commit a picked entry and close the dropdown.
+    /// Commit a picked entry.
     pub fn set_combo_value(&mut self, combo: SetupCombo, value: i32) {
         match combo {
             SetupCombo::MapType => self.set_map_type(value),
@@ -563,53 +601,10 @@ impl RandomMapSetupModalState {
             SetupCombo::Size => self.set_size(value),
             SetupCombo::Resources => self.set_resources(value),
         }
-        self.open_combo = None;
-    }
-
-    /// A mouse press on the combos, and the cue it plays; `None` when the
-    /// press is not theirs. [`ComboPress`] holds the native face and drop
-    /// window rules; this dialog keeps its own list rows.
-    pub fn press_combos(
-        &mut self,
-        layout: &super::super::layout::RandomMapSetupLayout,
-        x: i32,
-        y: i32,
-    ) -> Option<super::SkirmishShellUiSound> {
-        let press = if let Some(combo) = self.open_combo {
-            let items = self.combo_items(combo);
-            let press = super::super::layout::random_map_setup_dropdown_row_at(
-                layout,
-                combo.row(),
-                items.len(),
-                x,
-                y,
-            )
-            .map_or(ComboPress::Dismiss, ComboPress::Pick);
-            if let ComboPress::Pick(index) = press {
-                self.set_combo_value(combo, items[index].value);
-            }
-            self.open_combo = None;
-            press
-        } else {
-            if self.advanced {
-                // VERA: the Advanced view hides the combos.
-                return None;
-            }
-            let combo = super::super::layout::random_map_setup_control_at(layout, x, y, self.ares)
-                .and_then(SetupCombo::from_control)
-                .filter(|combo| self.is_enabled(combo.control()))?;
-            let face = layout.control_rects[combo.row()];
-            let press = ComboPress::on_face(face, layout.scale, x, y);
-            if press == ComboPress::Open {
-                self.open_combo = Some(combo);
-            }
-            press
-        };
-        press.cue().map(super::SkirmishShellUiSound::combo)
     }
 
     fn on_option_changed(&mut self) {
-        self.options.normalize();
+        self.normalize_options();
         self.generated = false;
         self.generated_preview = None;
         self.preset = None;
@@ -665,7 +660,6 @@ impl RandomMapSetupModalState {
             }
             _ => return,
         }
-        self.open_combo = None;
         self.on_option_changed();
         self.preset = Some(next);
     }
@@ -708,9 +702,8 @@ impl RandomMapSetupModalState {
     /// player set, so they show the seed's.
     pub fn adopt_saved_seed(&mut self, options: RmgOptions) {
         self.options = options;
-        self.options.normalize();
+        self.normalize_options();
         self.advanced_values = None;
-        self.advanced_hold = None;
         self.preset = None;
     }
 
@@ -747,7 +740,6 @@ impl RandomMapSetupModalState {
         }
         self.generated = false;
         self.generated_preview = None;
-        self.open_combo = None;
     }
 
     /// Toggle the Ares Urban Areas box (control 5000). The box is
@@ -786,18 +778,51 @@ impl RandomMapSetupModalState {
     }
 
     /// Step the option rows to their next view: the original controls, the
-    /// Advanced sliders, then the Extras, whose first page shows. Any open
-    /// list or held slider lets go.
+    /// Advanced sliders (scrolled with their own scrollbar), then the Extras,
+    /// whose first page shows. A held scrollbar lets go (the hidden widgets
+    /// let go of theirs).
     pub fn toggle_advanced(&mut self) {
-        (self.advanced, self.extras_page) = match (self.advanced, self.extras_page) {
-            (false, _) => (true, None),
-            (true, None) => (true, Some(0)),
-            (true, Some(_)) => (false, None),
-        };
+        match (self.advanced, self.extras_page) {
+            (false, _) => {
+                self.advanced = true;
+                self.extras_page = None;
+                self.advanced_page = 0;
+            }
+            (true, None) => {
+                self.extras_page = Some(0);
+                self.advanced_page = 0;
+            }
+            (true, Some(_)) => {
+                self.advanced = false;
+                self.extras_page = None;
+                self.advanced_page = 0;
+            }
+        }
         self.extras_note = None;
-        self.open_combo = None;
-        self.players_hold = None;
-        self.advanced_hold = None;
+    }
+
+    /// Scroll the Advanced sliders by arrow-button steps, clamped to the
+    /// seven-row window. Returns whether the visible rows changed. The
+    /// Advanced scrollbar widget steps through [`Self::set_advanced_scroll`].
+    #[cfg(test)]
+    pub fn scroll_advanced(&mut self, delta: i32) -> bool {
+        let next = (i32::try_from(self.advanced_page).unwrap_or(i32::MAX) + delta)
+            .clamp(0, AdvancedField::PAGE_COUNT as i32 - 1) as usize;
+        if next == self.advanced_page {
+            return false;
+        }
+        self.advanced_page = next;
+        true
+    }
+
+    /// Set the scroll offset from a track press or a thumb drag.
+    pub fn set_advanced_scroll(&mut self, page: usize) -> bool {
+        let page = page.min(AdvancedField::PAGE_COUNT - 1);
+        if page == self.advanced_page {
+            return false;
+        }
+        self.advanced_page = page;
+        true
     }
 
     /// The value an Advanced slider shows: the player's, else the option's.
@@ -811,33 +836,6 @@ impl RandomMapSetupModalState {
             || advanced_field(&self.options, field),
             |values| values[field.row()],
         )
-    }
-
-    /// A press at device `(x, y)` on an Advanced slider window. Returns
-    /// whether the value changed.
-    pub fn press_advanced(
-        &mut self,
-        field: AdvancedField,
-        x: i32,
-        y: i32,
-        window: RectPx,
-        scale: ShellScale,
-    ) -> bool {
-        let press = ADVANCED_RANGE.press_in(self.advanced_value(field), x, y, window, scale);
-        self.advanced_hold = press.hold(field);
-        match press {
-            TrackbarPress::Jump(value) => self.change_advanced(field, value),
-            _ => false,
-        }
-    }
-
-    /// A move while an Advanced slider holds the mouse. Returns whether the
-    /// value changed.
-    pub fn drag_advanced(&mut self, x: i32, window: RectPx, scale: ShellScale) -> bool {
-        let Some(hold) = self.advanced_hold.filter(|hold| hold.dragging) else {
-            return false;
-        };
-        self.change_advanced(hold.id, ADVANCED_RANGE.value_at_in(x, window, scale))
     }
 
     /// Set one Advanced value. The first change captures every field's
@@ -864,17 +862,21 @@ impl RandomMapSetupModalState {
     /// Begin the synchronous generate block: every control goes inert.
     pub fn begin_generate(&mut self) {
         self.generating = true;
-        self.open_combo = None;
-        self.players_hold = None;
-        self.advanced_hold = None;
+        self.progress_percent = 0;
     }
 
     /// Release a failed worker without presenting an old/partial map as a
     /// successful result. Only finish_generate may enable Save and Accept.
     pub fn fail_generate(&mut self) {
         self.generating = false;
+        self.progress_percent = 0;
         self.generated = false;
         self.generated_preview = None;
+        self.exported = false;
+        self.extras_note = Some((
+            "VERA:RandomMapGenerateFailed",
+            "Could not generate this map. Try again or choose another map.",
+        ));
     }
 
     /// Show the map as it stands part-way through the generate block.
@@ -895,6 +897,7 @@ impl RandomMapSetupModalState {
     /// any saved seed actually exists.
     pub fn finish_generate(&mut self, preview: Option<PreviewImage>) {
         self.generating = false;
+        self.progress_percent = 100;
         self.generated = true;
         self.exported = false;
         self.exported_to = None;
@@ -933,6 +936,7 @@ impl RandomMapSetupModalState {
 #[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
+    use crate::ui::shell::page::PageCue;
 
     /// Always returns `max`, so draws are identifiable.
     struct MaxRng;
@@ -1079,7 +1083,8 @@ mod tests {
         assert!(offline.advanced);
     }
 
-    /// VERA's Extras view: the toggle steps Basic, Advanced, Extras; a
+    /// VERA's Extras view: the toggle steps Basic, Advanced p1, Advanced p2,
+    /// Extras; a
     /// variant row steps its value as an option edit and asks for its map at
     /// once; a share code brings another dialog's options, seed included.
     #[test]
@@ -1089,6 +1094,11 @@ mod tests {
         let mut dialog = opened();
         assert!(dialog.extras_rows().is_empty(), "no rows outside the view");
         dialog.toggle_advanced();
+        assert_eq!(
+            (dialog.advanced, dialog.extras_page, dialog.advanced_page),
+            (true, None, 0),
+            "first toggle opens Advanced"
+        );
         dialog.toggle_advanced();
         assert_eq!((dialog.advanced, dialog.extras_page), (true, Some(0)));
         let rows = dialog.extras_rows();
@@ -1130,6 +1140,29 @@ mod tests {
 
         dialog.toggle_advanced();
         assert_eq!((dialog.advanced, dialog.extras_page), (false, None));
+    }
+
+    /// VERA: the Advanced scrollbar moves the seven-row window over all
+    /// thirteen sliders, stops at both ends, and lets go when the view changes.
+    #[test]
+    fn the_advanced_scrollbar_steps_and_clamps_the_visible_rows() {
+        let mut dialog = opened();
+        dialog.toggle_advanced();
+        assert!(!dialog.scroll_advanced(-1));
+        assert_eq!(dialog.advanced_page, 0);
+        assert!(dialog.scroll_advanced(1));
+        assert_eq!(dialog.advanced_page, 1);
+        assert!(!dialog.scroll_advanced(1), "the last page clamps");
+        assert!(dialog.set_advanced_scroll(0));
+        assert_eq!(dialog.advanced_page, 0);
+        assert!(dialog.set_advanced_scroll(99));
+        assert_eq!(dialog.advanced_page, AdvancedField::PAGE_COUNT - 1);
+        assert!(
+            !dialog.set_advanced_scroll(99),
+            "no change at the last page"
+        );
+        dialog.toggle_advanced();
+        assert_eq!(dialog.advanced_page, 0);
     }
 
     /// A row past the view's last.
@@ -1234,14 +1267,13 @@ mod tests {
         assert!(some.is_enabled(RandomMapSetupControl::Delete0x6c4));
     }
 
-    /// VERA extension: every dialog, LAN and online too, keeps thirty
-    /// players, the sizes past Very Large, the added theaters and VERA's
-    /// switches, and offers their controls.
+    /// Both dialogs offer the extended controls. A network room retains its
+    /// 30-player limit when it opens a 120-player offline seed.
     #[test]
-    fn every_dialog_offers_thirty_players_large_sizes_and_vera_switches() {
+    fn network_dialog_keeps_thirty_players_when_opening_an_offline_seed() {
         let mut options = RmgOptions {
             seed: 1,
-            num_players: 30,
+            num_players: 120,
             width: 7,
             height: 7,
             theater: 3,
@@ -1258,6 +1290,11 @@ mod tests {
         assert_eq!(modal.combo_items(SetupCombo::Size).len(), 8);
         assert!(modal.is_enabled(RandomMapSetupControl::AdvancedToggle));
         assert!(modal.is_enabled(RandomMapSetupControl::PresetCycle));
+        assert_eq!(modal.options.num_players, 120);
+        modal.use_network_player_limit();
+        assert_eq!(modal.options.num_players, 30);
+        modal.adopt_saved_seed(options);
+        assert_eq!(modal.options.num_players, 30);
         modal.set_num_players(12);
         assert_eq!(modal.options.num_players, 12);
     }
@@ -1451,13 +1488,52 @@ mod tests {
         assert_eq!(state.selected_item_index(SetupCombo::Size), Some(2));
     }
 
+    /// The dialog's widgets, driven as the app drives them: a press and its
+    /// release at `at`; the combo cue it played.
+    fn click(
+        ui: &mut crate::ui::shell::controller::DialogController,
+        state: &mut RandomMapSetupModalState,
+        layout: &super::super::super::layout::RandomMapSetupLayout,
+        at: (i32, i32),
+    ) -> Option<PageCue> {
+        use super::super::super::page::Pointer;
+        use super::super::super::random_map_page::pointer;
+        let (sounds, _) = pointer(ui, state, layout, Pointer::Down, at.0, at.1);
+        pointer(ui, state, layout, Pointer::Up, at.0, at.1);
+        sounds
+            .into_iter()
+            .find(|sound| matches!(sound, PageCue::ComboOpen | PageCue::ComboClose))
+    }
+
+    fn open_combo(
+        ui: &crate::ui::shell::controller::DialogController,
+        state: &RandomMapSetupModalState,
+    ) -> Option<SetupCombo> {
+        super::super::super::random_map_page::view(ui, state).0
+    }
+
     #[test]
     fn picking_an_entry_closes_the_dropdown_and_invalidates_the_result() {
+        let layout = super::super::super::layout::compute_random_map_setup_layout(800, 600);
+        let mut ui = crate::ui::shell::controller::DialogController::default();
         let mut state = opened();
-        state.open_combo = Some(SetupCombo::Resources);
+        let face = layout.control_rects[SetupCombo::Resources.row()];
+        click(
+            &mut ui,
+            &mut state,
+            &layout,
+            (face.x + face.w - 4, face.y + 4),
+        );
+        assert_eq!(open_combo(&ui, &state), Some(SetupCombo::Resources));
         state.generated = true;
-        state.set_combo_value(SetupCombo::Resources, 3);
-        assert_eq!(state.open_combo, None);
+        let list = super::super::super::layout::random_map_setup_dropdown_rect(
+            &layout,
+            SetupCombo::Resources.row(),
+            RESOURCE_ITEMS.len(),
+        );
+        let extreme = list.y + 3 * vera20k_gui::shell::combobox::COMBO_DROPDOWN_ROW_H + 10;
+        click(&mut ui, &mut state, &layout, (list.x + 4, extreme));
+        assert_eq!(open_combo(&ui, &state), None);
         assert_eq!(state.options.resources, 3);
         assert!(!state.generated);
     }
@@ -1467,21 +1543,16 @@ mod tests {
     /// closes it; both play the close cue.
     #[test]
     fn combo_presses_open_from_the_arrow_and_close_from_anywhere() {
-        use super::super::SkirmishShellUiSound::{GuiComboCloseSound, GuiComboOpenSound};
+        use crate::ui::shell::page::PageCue::{ComboClose, ComboOpen};
         let layout = super::super::super::layout::compute_random_map_setup_layout(800, 600);
+        let mut ui = crate::ui::shell::controller::DialogController::default();
         let mut state = opened();
         let time = layout.control_rects[SetupCombo::Time.row()];
         let (text, arrow) = ((time.x + 4, time.y + 4), (time.x + time.w - 4, time.y + 4));
-        assert_eq!(
-            state.press_combos(&layout, text.0, text.1),
-            Some(GuiComboOpenSound)
-        );
-        assert_eq!(state.open_combo, None);
-        assert_eq!(
-            state.press_combos(&layout, arrow.0, arrow.1),
-            Some(GuiComboOpenSound)
-        );
-        assert_eq!(state.open_combo, Some(SetupCombo::Time));
+        assert_eq!(click(&mut ui, &mut state, &layout, text), Some(ComboOpen));
+        assert_eq!(open_combo(&ui, &state), None);
+        assert_eq!(click(&mut ui, &mut state, &layout, arrow), Some(ComboOpen));
+        assert_eq!(open_combo(&ui, &state), Some(SetupCombo::Time));
         let list = super::super::super::layout::random_map_setup_dropdown_rect(
             &layout,
             SetupCombo::Time.row(),
@@ -1489,32 +1560,29 @@ mod tests {
         );
         let dusk_row = list.y + list.h * 5 / 8;
         assert_eq!(
-            state.press_combos(&layout, list.x + 4, dusk_row),
-            Some(GuiComboCloseSound)
+            click(&mut ui, &mut state, &layout, (list.x + 4, dusk_row)),
+            Some(ComboClose)
         );
         assert_eq!(
             (
-                state.open_combo,
+                open_combo(&ui, &state),
                 state.selected_item_index(SetupCombo::Time)
             ),
             (None, Some(2))
         );
+        assert_eq!(click(&mut ui, &mut state, &layout, arrow), Some(ComboOpen));
+        let outside = (layout.rect(0x621).x + 1, layout.rect(0x621).y + 1);
         assert_eq!(
-            state.press_combos(&layout, arrow.0, arrow.1),
-            Some(GuiComboOpenSound)
-        );
-        let outside = (layout.randomize.x + 1, layout.randomize.y + 1);
-        assert_eq!(
-            state.press_combos(&layout, outside.0, outside.1),
-            Some(GuiComboCloseSound)
+            click(&mut ui, &mut state, &layout, outside),
+            Some(ComboClose)
         );
         assert_eq!(
             (
-                state.open_combo,
+                open_combo(&ui, &state),
                 state.selected_item_index(SetupCombo::Time)
             ),
             (None, Some(2))
         );
-        assert_eq!(state.press_combos(&layout, outside.0, outside.1), None);
+        assert_eq!(click(&mut ui, &mut state, &layout, outside), None);
     }
 }

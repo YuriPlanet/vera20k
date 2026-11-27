@@ -654,13 +654,18 @@ pub struct SpriteAtlas {
     pub pages: Vec<SpriteAtlasPage>,
     /// Lookup: (type_id, facing, frame, house_color) → UV rectangle + offset + page.
     entries: HashMap<ShpSpriteKey, ShpSpriteEntry>,
+    /// The SHP file and frame each entry's indices decoded from, for a reader
+    /// that needs them on the CPU ([`Self::frame_indices`]): a handle on the
+    /// archive's bytes, not a copy. Kept and dropped with `entries`.
+    frame_sources: HashMap<ShpSpriteKey, (SharedBytes, usize)>,
     /// Derived allocation index for these pages, not another asset/pixel cache.
     /// Source contents plus selected decoded frame identify immutable indices;
     /// logical entries retain their own palette, canvas and draw offsets.
     /// Updated after placement/upload and dropped with the atlas on map load.
     physical_frames: HashMap<ShpPhysicalFrame, ShpFramePlacement>,
     /// Building type → number of make (build-up) animation frames.
-    /// Key is the base type_id (e.g., "GACNST"), not the "_MAKE" suffixed key.
+    /// Keyed by the make image's atlas name, the type id with `_MAKE`
+    /// appended (e.g. "GACNST_MAKE").
     pub make_frame_counts: HashMap<String, u16>,
     /// Building/world-animation type → available non-shadow frame count.
     /// Building consumers use this only to ensure their live animation frame is
@@ -675,6 +680,11 @@ pub struct SpriteAtlas {
     /// health/frame and camera. Growth publishes it with the atlas transaction;
     /// map/theater/rules reload drops the atlas and its bounds together.
     building_type_bounds: HashMap<String, [i32; 4]>,
+    /// Upper-case names of every building animation (ActiveAnim, IdleAnim,
+    /// their variants, SHP turrets), bib and infantry type registered so
+    /// far: VERA's HD art (`render::hd_art`) redraws their frames as
+    /// well as building bodies'.
+    hd_images: HashSet<String>,
     /// Keys with nothing to draw: the SHP is missing or fails to decode, or
     /// the frame is empty. Remembered so a refresh never renders them again.
     unrenderable: HashSet<ShpSpriteKey>,
@@ -753,11 +763,13 @@ impl SpriteAtlas {
         Self {
             pages,
             entries,
+            frame_sources: HashMap::new(),
             physical_frames: HashMap::new(),
             make_frame_counts: HashMap::new(),
             active_anim_frame_counts: HashMap::new(),
             object_shp_frame_counts: HashMap::new(),
             building_type_bounds: HashMap::new(),
+            hd_images: HashSet::new(),
             unrenderable: HashSet::new(),
             covered_objects: HashMap::new(),
             covered_anim_remaps: HashSet::new(),
@@ -774,6 +786,14 @@ impl SpriteAtlas {
     /// Look up the atlas entry for a given sprite key.
     /// The returned entry includes a `page` field identifying which atlas page
     /// holds this sprite's texture data.
+    /// The palette indices of `key`'s frame as its page holds them (the
+    /// stored frame rectangle, `pixel_size` wide), decoded again from its
+    /// file; None for a key this atlas did not render.
+    pub(crate) fn frame_indices(&self, key: &ShpSpriteKey) -> Option<Vec<u8>> {
+        let (shp, frame) = self.frame_sources.get(key)?;
+        ShpFile::decode_frame(shp, *frame).ok()
+    }
+
     pub fn get(&self, key: &ShpSpriteKey) -> Option<&ShpSpriteEntry> {
         self.entries.get(key)
     }
@@ -803,6 +823,30 @@ impl SpriteAtlas {
     /// A known empty image/rectangle remains `Some`, including its origin.
     pub(crate) fn building_type_bounds(&self, type_id: &str) -> Option<[i32; 4]> {
         self.building_type_bounds.get(type_id).copied()
+    }
+
+    /// VERA's HD art (`render::hd_art`): every resident frame with its
+    /// entry. Buildings, their animations and bibs, infantry, and every
+    /// other SHP the atlas holds (explosions, fire, smoke, projectiles); a
+    /// frame the pack has no art for simply stays native.
+    pub(crate) fn building_frames(&self) -> impl Iterator<Item = (&ShpSpriteKey, &ShpSpriteEntry)> {
+        self.entries.iter()
+    }
+
+    /// The RGBA bytes (256 entries) of every palette row, in row order:
+    /// `ShpSpriteEntry::source_palette` minus one indexes it.
+    pub(crate) fn palette_rows(&self) -> &[Vec<u8>] {
+        &self.palettes.colors
+    }
+
+    /// A cheap change signal for consumers that derive data from the
+    /// entries: grows whenever a refresh adds pages, entries or rows.
+    pub(crate) fn generation(&self) -> (usize, usize, usize) {
+        (
+            self.pages.len(),
+            self.entries.len(),
+            self.palettes.colors.len(),
+        )
     }
 
     /// Exact frame lookup; an absent frame is not substituted or wrapped.
@@ -884,6 +928,8 @@ impl SpriteAtlas {
             Some(entry) => {
                 self.physical_frames
                     .insert(sprite.physical_frame(), placement);
+                self.frame_sources
+                    .insert(sprite.key.clone(), (sprite.shp.clone(), sprite.frame));
                 self.entries.insert(sprite.key.clone(), entry);
             }
             None => {
@@ -1098,15 +1144,17 @@ impl RenderedShpSprite {
 /// End a refresh without changing the atlas the renderer is already using.
 ///
 /// A refresh mutates the prior atlas only after every fallible step has
-/// passed, so dropping it here leaves that atlas exactly as it was. Initial
-/// construction deliberately has no fallback and keeps the existing fail-fast
-/// contract for required cell-drawer assets.
+/// passed, so dropping it here leaves that atlas exactly as it was.
 #[cold]
-fn abandon_sprite_atlas_refresh(initial: bool, failure: &str) {
-    if initial {
-        panic!("{failure}");
-    }
+fn keep_previous_sprite_atlas(failure: &str) {
     log::warn!("{failure}; keeping the previous valid sprite atlas");
+}
+
+/// A map-load build that cannot draw what the map needs fails the load,
+/// which returns the player to the shell with this message.
+#[cold]
+fn sprite_atlas_load_error(failure: String) -> anyhow::Error {
+    anyhow::Error::msg(failure).context("could not prepare the map's sprites")
 }
 
 /// Whether `atlas` — None while no sprite atlas exists — already holds
@@ -1171,6 +1219,7 @@ fn entity_pairs<'a>(
             // no real infantryman supplies that type/colour to the atlas.
             let disguise = if entity.category() == EntityCategory::Infantry {
                 entity
+                    .seldom
                     .disguise
                     .as_ref()
                     .filter(|disguise| disguise.is_disguised())
@@ -1204,8 +1253,9 @@ fn entity_pairs<'a>(
 /// alone adds the scenario-start crate CellAnim remaps
 /// (`startup_crate_anim_remap_keys`), whose AnimObjects do not exist yet.
 pub(crate) struct EntityAtlasCoverage<'r> {
-    /// Deploy targets, pre-loaded in every house colour.
-    pub(crate) extra_buildings: Vec<&'r str>,
+    /// Deploy targets and Ares SHP water images, pre-loaded in every house
+    /// colour.
+    pub(crate) extra_types: Vec<&'r str>,
     /// Live AnimClass palette variants.
     pub(crate) anim_remap_keys: HashSet<AnimRemapKey>,
     /// Terrain tile animations, drawn from the theater ISO palette.
@@ -1220,8 +1270,20 @@ impl<'r> EntityAtlasCoverage<'r> {
         rules: Option<&'r RuleSet>,
         house_colors: &HouseColorMap,
     ) -> Self {
+        let mut extra_types = deployable_building_types(rules);
+        extra_types.extend(ares_shp_water_image_types(rules));
+        // VERA: the types a module's `ImageOverride` draws objects as.
+        if let Some(rules) = rules {
+            for image in sim.ext_module_images() {
+                if let Some(object) = rules.object(image)
+                    && !extra_types.iter().any(|known| known.eq_ignore_ascii_case(&object.id))
+                {
+                    extra_types.push(&object.id);
+                }
+            }
+        }
         Self {
-            extra_buildings: deployable_building_types(rules),
+            extra_types,
             anim_remap_keys: collect_anim_remap_base_keys(sim, house_colors),
             cell_drawer_type_ids: sim
                 .resolved_terrain()
@@ -1258,6 +1320,29 @@ pub(crate) fn deployable_building_types(rules: Option<&RuleSet>) -> Vec<&str> {
                 .any(|r| r.eq_ignore_ascii_case(&target_obj.id))
         {
             result.push(&target_obj.id);
+        }
+    }
+    result
+}
+
+/// SHP VehicleTypes another type names as its `WaterImage=` in a game Ares
+/// plays. `UnitClass_DrawSHP_WaterType` (hook `0x0073C5FC`) draws one the
+/// moment its owner enters water, so the atlas loads it before any object of
+/// that type exists; a voxel water image has no SHP to load.
+pub(crate) fn ares_shp_water_image_types(rules: Option<&RuleSet>) -> Vec<&str> {
+    let Some(rules) = rules.filter(|rules| rules.ares()) else {
+        return Vec::new();
+    };
+    let mut result: Vec<&str> = Vec::new();
+    for object in rules.all_objects() {
+        if let Some(water) = object.water_image().and_then(|name| rules.object(name))
+            && !rules
+                .art()
+                .resolve_metadata_entry(&water.id, &water.image)
+                .is_some_and(|art| art.voxel)
+            && !result.iter().any(|id| id.eq_ignore_ascii_case(&water.id))
+        {
+            result.push(&water.id);
         }
     }
     result
@@ -1531,6 +1616,10 @@ pub(crate) enum SpritePaletteChoice {
     /// The selected successfully loaded extra building palette for the
     /// active theater (`RuleSet::load_extra_building_palette`).
     ExtraBuilding,
+    /// An Ares AnimType `CustomPalette=` file ([`AresCustomPalettes`]). Both
+    /// hooks hand over its plain convert with no ColorScheme, so 16..31 keep
+    /// the file's own colours.
+    AresCustom,
 }
 
 /// Pick the palette a sprite key's frames are baked against.
@@ -1569,19 +1658,115 @@ pub(crate) fn sprite_palette_choice(
     }
 }
 
+/// The Ares AnimType `CustomPalette=` files that loaded, by atlas type id
+/// (uppercase), as resolved names.
+///
+/// AnimClass_Draw_SetPalette (Ares.dll `1000ACE0`, hook `0x4232CE`, resumes
+/// at `0x4232D4`) swaps an anim's ANIM.PAL convert for its own palette.
+/// BulletClass_Draw_SetAnimPalette (`1001A7B0`, hook `0x468379`, resumes at
+/// `0x4683D7`) gives a bullet the palette of the AnimType its ImageFile
+/// names (GetConvert `10019360`, AnimType Find `1000D3E0`), skipping
+/// PALETTE.PAL, ANIM.PAL and the firer's scheme.
+#[derive(Default)]
+struct AresCustomPalettes {
+    anims: HashMap<String, String>,
+    bullets: HashMap<String, String>,
+}
+
+impl AresCustomPalettes {
+    /// The palette file the hook for `key`'s context would use, if any.
+    fn file(&self, key: &ShpSpriteKey) -> Option<&str> {
+        let by_type = match key.palette_context {
+            ShpPaletteContext::GlobalAnim => &self.anims,
+            ShpPaletteContext::BulletDefault
+            | ShpPaletteContext::BulletAnim
+            | ShpPaletteContext::BulletFirer => &self.bullets,
+            _ => return None,
+        };
+        by_type
+            .get(&key.type_id.to_ascii_uppercase())
+            .map(String::as_str)
+    }
+
+    /// Load and register the palette `key`'s AnimType names, once per type.
+    /// CustomPalette::LoadFromINI (`10076160`) turns the first `~~~` into the
+    /// theater extension and opens the name as written, adding no `.pal`. A
+    /// file that does not load keeps the stock palette.
+    ///
+    /// A bullet's Image must name an existing AnimType: Find `1000D3E0`
+    /// searches only AnimTypeClass's array, and a miss keeps the stock arms.
+    /// An `IsVeins=yes` anim takes the player's scheme at `0x42312A` and
+    /// never reaches hook `0x4232CE`.
+    fn register(
+        &mut self,
+        key: &ShpSpriteKey,
+        rules: Option<&RuleSet>,
+        art: Option<&ArtRegistry>,
+        theater_ext: &str,
+        load: &mut impl FnMut(&str) -> bool,
+    ) {
+        let (by_type, anim) = match key.palette_context {
+            ShpPaletteContext::GlobalAnim => (&mut self.anims, Some(key.type_id.as_str())),
+            ShpPaletteContext::BulletDefault
+            | ShpPaletteContext::BulletAnim
+            | ShpPaletteContext::BulletFirer => (
+                &mut self.bullets,
+                rules.and_then(|rules| {
+                    let image = rules.projectile(key.type_id.as_str())?.image.as_deref()?;
+                    rules
+                        .anim_type_names
+                        .contains(&image.to_ascii_uppercase())
+                        .then_some(image)
+                }),
+            ),
+            _ => return,
+        };
+        let upper = key.type_id.to_ascii_uppercase();
+        if by_type.contains_key(&upper) {
+            return;
+        }
+        let Some(name) = anim
+            .and_then(|anim| art?.anim_runtime_config(anim))
+            .filter(|config| !config.is_veins)
+            .and_then(|config| config.custom_palette())
+        else {
+            return;
+        };
+        let file = name.replacen("~~~", theater_ext, 1);
+        if load(&file) {
+            by_type.insert(upper, file);
+        }
+    }
+}
+
 /// `extra_palette_type_ids` holds the custom-palette TechnoTypes, `None` when
 /// the extra building palette did not load. TechnoClass::DrawSHP tests
 /// TerrainPalette first (`0x00705EC7`), then draws from GetRemapColour
 /// (`0x00705F81`), whose `+0xDF0` arm (`0x00705D82..0x00705D9A`) picks the
 /// house's scheme from the type's generated palette.
+///
+/// `ares_palettes` holds the Ares `CustomPalette=` files that loaded. A bullet
+/// takes its file in every context (hook `0x468379`). An anim takes it only
+/// in GlobalAnim: a cell-drawn anim (+0x196, AnimCell, `0x4231FB`) and one
+/// with its own scheme (+0xD4, AnimScheme, `0x4232AB`) skip hook `0x4232CE`,
+/// and `AltPalette=` replaces the convert again after the hook resumes
+/// (`0x4232D8`).
 fn sprite_palette_for_key(
     key: &ShpSpriteKey,
     art: Option<&ArtRegistry>,
     effect_type_ids: &HashSet<String>,
     cell_palette_type_ids: &HashSet<String>,
     extra_palette_type_ids: Option<&HashSet<String>>,
+    ares_palettes: &AresCustomPalettes,
 ) -> SpritePaletteChoice {
     match key.palette_context {
+        ShpPaletteContext::BulletDefault
+        | ShpPaletteContext::BulletAnim
+        | ShpPaletteContext::BulletFirer
+            if ares_palettes.file(key).is_some() =>
+        {
+            SpritePaletteChoice::AresCustom
+        }
         ShpPaletteContext::BulletDefault => SpritePaletteChoice::Bullet,
         ShpPaletteContext::BulletAnim => SpritePaletteChoice::Anim,
         ShpPaletteContext::AnimPalette | ShpPaletteContext::Harvest => SpritePaletteChoice::Anim,
@@ -1597,6 +1782,8 @@ fn sprite_palette_for_key(
                 .is_some_and(|c| c.alt_palette)
             {
                 SpritePaletteChoice::Unit
+            } else if ares_palettes.file(key).is_some() {
+                SpritePaletteChoice::AresCustom
             } else {
                 SpritePaletteChoice::Anim
             }
@@ -1791,11 +1978,21 @@ fn insert_object_keys(
                 }
             }
             // A `Turret=yes` SHP Unit draws its turret from the same SHP:
-            // thirty-two frames from `WalkFrames * 8`. The draw picks one from
-            // the turret heading, so all of them stay resident.
+            // thirty-two frames from `WalkFrames * 8`, or with Ares from
+            // `WalkFrames * Facings` (`UnitClass_DrawSHP_FacingsB`). The draw
+            // picks one from the turret heading, so all of them stay resident.
             if let Some(turret) = seq_set.and_then(|set| set.shp_vehicle_turret()) {
-                for slot in 0..turret.facings {
-                    insert(turret.start_frame.saturating_add(slot));
+                let start = match rules.filter(|rules| rules.ares()) {
+                    Some(rules) => rules
+                        .object(type_str)
+                        .and_then(|object| rules.unit_shp_read_state_of(object))
+                        .and_then(|art| art.ares_turret_start_frame()),
+                    None => Some(turret.start_frame),
+                };
+                if let Some(start) = start {
+                    for slot in 0..crate::rules::art_data::SHP_TURRET_FACING_FRAMES {
+                        insert(start.saturating_add(slot));
+                    }
                 }
             }
         }
@@ -1873,20 +2070,20 @@ fn insert_new_object_keys(
         .collect();
     let mut sources = HashMap::new();
     let mut frame_sets: HashMap<&str, Vec<u16>> = HashMap::new();
+    let water_images = ares_shp_water_image_types(rules);
     for (type_str, color_idx) in new_objects {
         let category = categories
             .get(type_str.as_str())
             .copied()
             .unwrap_or_else(|| {
-                if rules
+                use crate::rules::object_type::ObjectCategory;
+                match rules
                     .and_then(|rules| rules.object(type_str))
-                    .is_some_and(|object| {
-                        object.category == crate::rules::object_type::ObjectCategory::Infantry
-                    })
+                    .map(|object| object.category)
                 {
-                    EntityCategory::Infantry
-                } else {
-                    EntityCategory::Structure
+                    Some(ObjectCategory::Infantry) => EntityCategory::Infantry,
+                    Some(ObjectCategory::Vehicle) => EntityCategory::Unit,
+                    _ => EntityCategory::Structure,
                 }
             });
         let infantry_frames = if category == EntityCategory::Infantry {
@@ -1982,6 +2179,27 @@ fn insert_new_object_keys(
                     }
                 }
                 let shadow_start = raw_count / 2;
+                // An Ares water image is drawn with its owner's facing count
+                // and turret block (`UnitClass_DrawSHP_ChangeType1`,
+                // `FacingsA`/`FacingsB`), which its own blocks need not
+                // match: keep its whole body half resident.
+                if category == EntityCategory::Unit
+                    && water_images
+                        .iter()
+                        .any(|water| water.eq_ignore_ascii_case(type_str))
+                {
+                    for frame in 0..shadow_start {
+                        let key = ShpSpriteKey {
+                            palette_context: ShpPaletteContext::Legacy,
+                            type_id: type_str.as_str().into(),
+                            facing: 0,
+                            frame,
+                            house_color: *color_idx,
+                        };
+                        needed.insert(key.clone());
+                        body_keys.push(key);
+                    }
+                }
                 // Techno7064C2..7064CD adds half the physical SHP count
                 // to the selected body frame. Infantry51958A calls this same
                 // Techno draw; retain its companions too, including nonempty
@@ -2140,8 +2358,12 @@ pub fn build_sprite_atlas(
         interner,
     );
     let mut atlas = existing;
-    if let PreparedSpriteAtlas::Raster(work, upload) = prepared {
-        upload.finish(device, queue, batch, work.render(), &mut atlas);
+    match prepared {
+        PreparedSpriteAtlas::Unchanged => {}
+        PreparedSpriteAtlas::Abandoned(failure) => keep_previous_sprite_atlas(&failure),
+        PreparedSpriteAtlas::Raster(work, upload) => {
+            upload.finish(device, queue, batch, work.render(), &mut atlas);
+        }
     }
     atlas
 }
@@ -2288,6 +2510,9 @@ pub(crate) fn prepare_sprite_atlas(
     // effects, so a building on the map at load gets the same frames as one
     // that appears later, and the effect keeps the presentation count.
     let mut building_anim_counts: HashMap<String, (u16, u16)> = HashMap::new();
+    let mut hd_images = previous_atlas
+        .map(|atlas| atlas.hd_images.clone())
+        .unwrap_or_default();
     if let Some(art_reg) = art {
         for (type_id, house_color) in &new_objects {
             let rules_image: String = rules
@@ -2365,6 +2590,7 @@ pub(crate) fn prepare_sprite_atlas(
                         source.found_name.clone(),
                     );
                     object_shp_frame_counts.insert(name.clone(), count);
+                    hd_images.insert(name.clone());
                     for frame in 0..count {
                         needed.insert(ShpSpriteKey {
                             palette_context: building_art_palette_context(entry),
@@ -2378,7 +2604,18 @@ pub(crate) fn prepare_sprite_atlas(
             }
         }
     }
+    for (type_id, _) in &new_objects {
+        if rules
+            .and_then(|rules| rules.object(type_id))
+            .is_some_and(|object| {
+                object.category == crate::rules::object_type::ObjectCategory::Infantry
+            })
+        {
+            hd_images.insert(type_id.to_ascii_uppercase());
+        }
+    }
     for (anim_type, (count, _)) in building_anim_counts {
+        hd_images.insert(anim_type.clone());
         active_anim_frame_counts.entry(anim_type).or_insert(count);
     }
 
@@ -2494,6 +2731,53 @@ pub(crate) fn prepare_sprite_atlas(
         }
     }
 
+    // Step 1c'': Firestorm's `[AudioVisual] WebbedInfantry=` image, every
+    // frame, for each infantry type with a `Struggle=` record: Firestorm 2.0
+    // `InfantryClass::Get_Image_Data` 0x004D9030 draws a struggling man from
+    // it (docs/ts-webs.md). Absent without webs.
+    if let Some(webbed) = rules.and_then(|rules| rules.general.webbed_infantry.as_deref()) {
+        let upper = webbed.to_ascii_uppercase();
+        for (type_id, color) in &new_objects {
+            let struggles = rules
+                .and_then(|rules| {
+                    rules.animation_sequence_in_category(
+                        crate::rules::object_type::ObjectCategory::Infantry,
+                        type_id,
+                    )
+                })
+                .and_then(|set| set.infantry_action(crate::rules::infantry_sequence::DO_STRUGGLE))
+                .is_some();
+            if !struggles {
+                continue;
+            }
+            let count = match object_shp_frame_counts.get(&upper) {
+                Some(&count) => count,
+                None => {
+                    let candidates =
+                        effect_anim_shp_candidates(webbed, art, theater_ext, theater_name);
+                    let Some((file, data)) = find_shp(asset_manager, &candidates) else {
+                        break;
+                    };
+                    let Ok(count) = ShpFile::frame_count_from_bytes(&data) else {
+                        break;
+                    };
+                    object_shp_frame_counts.insert(upper.clone(), count);
+                    shp_files.insert((ShpImageKind::Object, upper.clone()), file.to_string());
+                    count
+                }
+            };
+            for frame in 0..count {
+                needed.insert(ShpSpriteKey {
+                    palette_context: ShpPaletteContext::Legacy,
+                    type_id: upper.as_str().into(),
+                    facing: 0,
+                    frame,
+                    house_color: *color,
+                });
+            }
+        }
+    }
+
     // Step 1d: Pre-load world effect SHPs (warp animations, explosions, etc.)
     // once, at map load. Names come from rules.ini [General]
     // WarpIn=/WarpOut=/WarpAway= — NOT hardcoded. These use anim.pal (effect
@@ -2579,18 +2863,16 @@ pub(crate) fn prepare_sprite_atlas(
                     log::debug!("Effect anim SHP {}: {} frames from {}", name, count, file);
                 }
                 Err(error) if required_cell_drawer => {
-                    return PreparedSpriteAtlas::abandoned(
-                        previous_atlas.is_none(),
-                        format!("bound cell-drawer animation [{name}] failed SHP decode: {error}"),
-                    );
+                    return PreparedSpriteAtlas::Abandoned(format!(
+                        "bound cell-drawer animation [{name}] failed SHP decode: {error}"
+                    ));
                 }
                 Err(_) => {}
             },
             None if required_cell_drawer => {
-                return PreparedSpriteAtlas::abandoned(
-                    previous_atlas.is_none(),
-                    format!("bound cell-drawer animation [{name}] has no SHP asset"),
-                );
+                return PreparedSpriteAtlas::Abandoned(format!(
+                    "bound cell-drawer animation [{name}] has no SHP asset"
+                ));
             }
             None => {}
         }
@@ -2606,7 +2888,7 @@ pub(crate) fn prepare_sprite_atlas(
     let mut parachutes: Vec<&str> = Vec::new();
     if let Some(rules) = rules.filter(|_| previous_atlas.is_none()) {
         parachutes.extend(rules.general.parachute_shp.as_deref());
-        if crate::rules::NPATCH_ENABLED {
+        if rules.npatch() {
             parachutes.extend(rules.general.vehicle_parachute.as_deref());
         }
     }
@@ -2794,6 +3076,20 @@ pub(crate) fn prepare_sprite_atlas(
             });
         }
     }
+    let mut ares_palette_files: HashMap<String, Option<Palette>> = HashMap::new();
+    let mut ares_palettes = AresCustomPalettes::default();
+    for key in &new_keys {
+        ares_palettes.register(key, rules, art, theater_ext, &mut |file| {
+            ares_palette_files
+                .entry(file.to_owned())
+                .or_insert_with(|| {
+                    asset_manager
+                        .get_ref(file)
+                        .and_then(|data| Palette::from_bytes(data).ok())
+                })
+                .is_some()
+        });
+    }
     let palette_choices: Vec<SpritePaletteChoice> = new_keys
         .iter()
         .map(|key| {
@@ -2809,33 +3105,32 @@ pub(crate) fn prepare_sprite_atlas(
                 &effects.type_ids,
                 &cell_palette_type_ids,
                 extra_available.then_some(&extra_palette_type_ids),
+                &ares_palettes,
             )
         })
         .collect();
     if cell_palette.is_none() && palette_choices.contains(&SpritePaletteChoice::CellIso) {
-        return PreparedSpriteAtlas::abandoned(
-            previous_atlas.is_none(),
+        return PreparedSpriteAtlas::Abandoned(
             "terrain-attached animations require the active theater ISO palette".to_string(),
         );
     }
     if bullet_palette.is_none() && palette_choices.contains(&SpritePaletteChoice::Bullet) {
-        return PreparedSpriteAtlas::abandoned(
-            previous_atlas.is_none(),
+        return PreparedSpriteAtlas::Abandoned(
             "visible projectiles require PALETTE.PAL".to_string(),
         );
     }
     if effect_palette.is_none()
-        && new_keys.iter().any(|key| {
-            matches!(
-                key.palette_context,
-                ShpPaletteContext::BulletAnim
-                    | ShpPaletteContext::AnimPalette
-                    | ShpPaletteContext::Harvest
-            )
+        && new_keys.iter().zip(&palette_choices).any(|(key, choice)| {
+            *choice != SpritePaletteChoice::AresCustom
+                && matches!(
+                    key.palette_context,
+                    ShpPaletteContext::BulletAnim
+                        | ShpPaletteContext::AnimPalette
+                        | ShpPaletteContext::Harvest
+                )
         })
     {
-        return PreparedSpriteAtlas::abandoned(
-            previous_atlas.is_none(),
+        return PreparedSpriteAtlas::Abandoned(
             "literal animation palettes require ANIM.PAL".to_string(),
         );
     }
@@ -2920,6 +3215,15 @@ pub(crate) fn prepare_sprite_atlas(
                     .expect("chosen only when loaded");
                 (palette, name)
             }
+            SpritePaletteChoice::AresCustom => {
+                let name = ares_palettes
+                    .file(&key)
+                    .expect("chosen only when registered");
+                let palette = ares_palette_files[name]
+                    .as_ref()
+                    .expect("registered only when loaded");
+                (palette, name)
+            }
         };
         // 0x00627590 builds each scheme with ColorScheme's constructor
         // (0x0068C710), which writes the colour's ramp over indices 16..31.
@@ -2967,6 +3271,7 @@ pub(crate) fn prepare_sprite_atlas(
             active_anim_frame_counts,
             object_shp_frame_counts,
             building_type_bounds,
+            hd_images,
             shp_files,
             projectile_files,
             new_objects,
@@ -2981,32 +3286,35 @@ pub(crate) fn prepare_sprite_atlas(
 /// across frames while those existing owners stay in their original phase,
 /// and live growth draws its frames on a worker.
 pub(crate) enum PreparedSpriteAtlas {
-    /// Nothing to draw: no sprite at map load, or a refresh abandoned before
-    /// any frame was drawn.
+    /// Nothing to draw: no sprite at map load.
     Unchanged,
+    /// A required asset or palette is missing, before any frame was drawn:
+    /// a map load fails, a refresh keeps its atlas.
+    Abandoned(String),
     /// The frames to draw and the bookkeeping published with them.
     Raster(ShpRasterWork, ShpAtlasUpload),
 }
 
 impl PreparedSpriteAtlas {
-    #[cold]
-    fn abandoned(initial: bool, failure: String) -> Self {
-        abandon_sprite_atlas_refresh(initial, &failure);
-        Self::Unchanged
-    }
-
-    /// Draw the frames on this thread and complete a map-load build.
+    /// Draw the frames on this thread and complete a map-load build. An
+    /// abandoned build is the load's error.
     pub(crate) fn finish(
         self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         batch: &BatchRenderer,
-    ) -> Option<SpriteAtlas> {
+    ) -> anyhow::Result<Option<SpriteAtlas>> {
+        let (work, upload) = match self {
+            Self::Unchanged => return Ok(None),
+            Self::Abandoned(failure) => return Err(sprite_atlas_load_error(failure)),
+            Self::Raster(work, upload) => (work, upload),
+        };
+        let drawn = upload
+            .drawn(work.render())
+            .map_err(sprite_atlas_load_error)?;
         let mut atlas = None;
-        if let Self::Raster(work, upload) = self {
-            upload.finish(device, queue, batch, work.render(), &mut atlas);
-        }
-        atlas
+        upload.finish_drawn(device, queue, batch, drawn, &mut atlas);
+        Ok(atlas)
     }
 }
 
@@ -3067,6 +3375,9 @@ pub(crate) struct ShpRasterWork {
 
 /// What [`ShpRasterWork`] drew, or why its refresh must be abandoned.
 pub(crate) struct ShpRasterOutput(ShpRaster);
+
+/// A raster's drawn frames, its unrenderable keys and its palette rows.
+type DrawnShpSprites = (Vec<RenderedShpSprite>, Vec<ShpSpriteKey>, ShpPalettes);
 
 enum ShpRaster {
     Drawn {
@@ -3168,13 +3479,15 @@ impl ShpRasterWork {
 /// The bookkeeping a build or refresh publishes with its frames.
 pub(crate) struct ShpAtlasUpload {
     started: Instant,
-    /// Prepared without an atlas: a map-load build, which has no fallback.
+    /// Prepared without an atlas: a map-load build, which publishes the
+    /// effect registry.
     initial: bool,
     registered_effects: EffectRegistry,
     make_frame_counts: HashMap<String, u16>,
     active_anim_frame_counts: HashMap<String, u16>,
     object_shp_frame_counts: HashMap<String, u16>,
     building_type_bounds: HashMap<String, [i32; 4]>,
+    hd_images: HashSet<String>,
     shp_files: HashMap<(ShpImageKind, String), String>,
     projectile_files: HashMap<String, (String, u16)>,
     new_objects: HashSet<(String, HouseColorIndex)>,
@@ -3196,9 +3509,24 @@ impl ShpAtlasUpload {
         output: ShpRasterOutput,
         atlas: &mut Option<SpriteAtlas>,
     ) -> bool {
-        let Some((rendered, unrenderable, rows)) = self.drawn(output) else {
-            return false;
-        };
+        match self.drawn(output) {
+            Ok(drawn) => self.finish_drawn(device, queue, batch, drawn, atlas),
+            Err(failure) => {
+                keep_previous_sprite_atlas(&failure);
+                false
+            }
+        }
+    }
+
+    /// [`Self::finish`] once the frames are drawn.
+    fn finish_drawn(
+        self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        batch: &BatchRenderer,
+        (rendered, unrenderable, rows): DrawnShpSprites,
+        atlas: &mut Option<SpriteAtlas>,
+    ) -> bool {
         let added = rendered.len();
         let atlas = match atlas {
             Some(atlas) => {
@@ -3215,22 +3543,16 @@ impl ShpAtlasUpload {
         true
     }
 
-    /// The drawn frames, unrenderable keys and palette rows, or None once an
-    /// abandoned refresh is reported.
-    fn drawn(
-        &self,
-        output: ShpRasterOutput,
-    ) -> Option<(Vec<RenderedShpSprite>, Vec<ShpSpriteKey>, ShpPalettes)> {
+    /// The drawn frames, unrenderable keys and palette rows, or why the
+    /// raster abandoned them.
+    fn drawn(&self, output: ShpRasterOutput) -> Result<DrawnShpSprites, String> {
         match output.0 {
             ShpRaster::Drawn {
                 rendered,
                 unrenderable,
                 rows,
-            } => Some((rendered, unrenderable, rows)),
-            ShpRaster::Abandoned(failure) => {
-                abandon_sprite_atlas_refresh(self.initial, &failure);
-                None
-            }
+            } => Ok((rendered, unrenderable, rows)),
+            ShpRaster::Abandoned(failure) => Err(failure),
         }
     }
 
@@ -3245,6 +3567,7 @@ impl ShpAtlasUpload {
             active_anim_frame_counts,
             object_shp_frame_counts,
             building_type_bounds,
+            hd_images,
             shp_files,
             projectile_files,
             new_objects,
@@ -3259,6 +3582,7 @@ impl ShpAtlasUpload {
         atlas.active_anim_frame_counts = active_anim_frame_counts;
         atlas.object_shp_frame_counts = object_shp_frame_counts;
         atlas.building_type_bounds = building_type_bounds;
+        atlas.hd_images = hd_images;
         atlas.shp_files = shp_files;
         atlas.projectile_files = projectile_files;
         for (type_id, color) in new_objects {

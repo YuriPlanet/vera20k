@@ -34,7 +34,7 @@ fn particle_type(rules: &RuleSet, value: &Value) -> ParticleTypeId {
 }
 fn sim(bridge: bool) -> Simulation {
     let mut sim = Simulation::new();
-    sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(1000));
+    *sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(1000));
     let cells = (0..64)
         .flat_map(|y| {
             (0..64).map(move |x| {
@@ -49,11 +49,11 @@ fn sim(bridge: bool) -> Simulation {
             })
         })
         .collect();
-    sim.resolved_terrain = Some(ResolvedTerrainGrid::from_cells(64, 64, cells));
+    *sim.resolved_terrain = Some(ResolvedTerrainGrid::from_cells(64, 64, cells));
     sim
 }
 fn adopt_rng(sim: &mut Simulation, case: &Value) {
-    sim.scenario_rng =
+    *sim.scenario_rng =
         SimRng::from_native_state_hex_for_test(case["scenario_before"].as_str().unwrap());
 }
 fn assert_particle(p: &Particle, expected: &Value) {
@@ -103,7 +103,7 @@ fn original_smoke_constructors_preserve_signed_delta_then_lifetime_rng() {
     for case in data["constructors"].as_array().unwrap() {
         let rules = rules(&data, &case["input"]);
         let mut sim = sim(false);
-        sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(
+        *sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(
             case["native_id_cursor_before"].as_u64().unwrap() as u32,
         ));
         adopt_rng(&mut sim, case);
@@ -112,7 +112,7 @@ fn original_smoke_constructors_preserve_signed_delta_then_lifetime_rng() {
             id,
             coords(&case["particle"]["coords"]),
             IVec3::ZERO,
-            rules.particle_type(id),
+            &rules,
             &mut sim,
         );
         assert_particle(&p, &case["particle"]);
@@ -161,7 +161,7 @@ fn original_smoke_move_uses_old_live_bridge_and_retains_move_death_coords() {
             &mut p,
             rules.particle_type(ty),
             rules.general.wind_direction(),
-            &sim,
+            sim.resolved_terrain.as_ref(),
         )
         .unwrap();
         assert_particle(&p, &case["after"]);
@@ -184,7 +184,13 @@ fn a_wind_direction_outside_the_table_moves_smoke_with_no_wind() {
         let mut p = declared_particle(&mut sim, &rules, &case["before"]);
         let before = p.coords;
         let ty = p.type_id;
-        move_smoke(&mut p, rules.particle_type(ty), wind, &sim).unwrap();
+        move_smoke(
+            &mut p,
+            rules.particle_type(ty),
+            wind,
+            sim.resolved_terrain.as_ref(),
+        )
+        .unwrap();
         assert_eq!(
             (p.coords.x - before.x, p.coords.y - before.y),
             (p.drift_x, p.drift_y)
@@ -232,7 +238,10 @@ fn install_system(
                     z: c.z,
                 });
             if category == EntityCategory::Structure {
-                entity.type_facts.set_foundation_for_test("2x2".into());
+                entity
+                    .seldom
+                    .type_facts
+                    .set_foundation_for_test("2x2".into());
             }
         }
         sim.substrate.entities.insert(entity);
@@ -269,13 +278,14 @@ fn install_system(
         .chain([system.native_unique_id()])
         .max()
         .unwrap() as u32;
-    sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(cursor));
+    *sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(cursor));
     sim.substrate.particle_systems.reinsert_after_tick(system);
     if let Some(owner) = owner {
         sim.substrate
             .entities
             .get_mut(owner)
             .unwrap()
+            .seldom
             .damage_smoke_system_id
             .set_for_test(Some(id));
         if !input["moved_owner_coords"].is_null() {
@@ -344,7 +354,7 @@ fn original_smoke_follows_owner_offset_leaves_trail_and_suppresses_tube_births()
                 &mut sim,
                 &rules,
                 id,
-                crate::sim::world::UninitContext::with_rules(&rules)
+                crate::sim::world::UninitContext::new(&rules)
             ));
             assert_system(&sim, id, Some(owner), expected);
             assert_eq!(
@@ -388,6 +398,7 @@ fn assert_system(sim: &Simulation, id: u64, owner: Option<u64>, expected: &Value
                 .entities
                 .get(owner)
                 .unwrap()
+                .seldom
                 .damage_smoke_system_id
                 .system()
                 == Some(id),
@@ -411,7 +422,7 @@ fn original_smoke_system_birth_split_emission_cutoff_and_limbo() {
                 &mut sim,
                 &rules,
                 id,
-                crate::sim::world::UninitContext::with_rules(&rules)
+                crate::sim::world::UninitContext::new(&rules)
             ));
             assert_system(&sim, id, owner, &visit["state"]);
         }
@@ -459,7 +470,7 @@ fn original_stored_smoke_accumulator_preserves_long_run_rng_boundaries() {
             &mut sim,
             &rules,
             id,
-            crate::sim::world::UninitContext::with_rules(&rules),
+            crate::sim::world::UninitContext::new(&rules),
         );
         if let Some(point) = points.iter().find(|point| point["frame"] == frame) {
             assert_system(&sim, id, None, &point["state"]);
@@ -499,7 +510,7 @@ fn smoke_scalar_and_air_authorities_survive_existing_snapshot_roundtrip() {
         &mut sim,
         &rules,
         id,
-        crate::sim::world::UninitContext::with_rules(&rules),
+        crate::sim::world::UninitContext::new(&rules),
     );
     sim.session
         .set_map_name_for_test("damage-smoke-continuation".into());
@@ -515,7 +526,7 @@ fn smoke_scalar_and_air_authorities_survive_existing_snapshot_roundtrip() {
     );
     // Existing load deliberately reseeds Scenario; this check changes no load
     // flow. Adopt the same tested continuation boundary for the gameplay owner.
-    restored.scenario_rng =
+    *restored.scenario_rng =
         SimRng::from_native_state_hex_for_test(&sim.scenario_rng.native_state_hex());
     let c = coords(&input["steps"][1]["coords"]);
     for world in [&mut sim, &mut restored] {
@@ -535,13 +546,13 @@ fn smoke_scalar_and_air_authorities_survive_existing_snapshot_roundtrip() {
         &mut sim,
         &rules,
         id,
-        crate::sim::world::UninitContext::with_rules(&rules),
+        crate::sim::world::UninitContext::new(&rules),
     );
     super::super::system_ai::tick_particle_system(
         &mut restored,
         &rules,
         id,
-        crate::sim::world::UninitContext::with_rules(&rules),
+        crate::sim::world::UninitContext::new(&rules),
     );
     assert_system(&restored, id, owner, &case["visits"][1]);
     let a = sim.particle_systems().get(id).unwrap();

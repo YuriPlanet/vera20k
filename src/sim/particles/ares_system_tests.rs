@@ -30,7 +30,7 @@ fn tick(sim: &mut Simulation, rules: &RuleSet, id: u64) {
         sim,
         rules,
         id,
-        UninitContext::with_rules(rules),
+        UninitContext::new(rules),
     ));
 }
 

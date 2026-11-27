@@ -1,18 +1,19 @@
 //! `online-live-watch` within LiveRoundFlow: a third account watches the
 //! configured host's running match (docs/Networking.md "Watching"). Only the
-//! ordinary lobby mouse adapter and the watcher's own keys
-//! (`match_runtime::watching::key`) make inputs; the lobby's list poll, the
-//! grant, the map, the relay's stream, its catch-up and the exit run as in an
-//! interactive game. A desync or a lost relay stops the match with its usual
-//! message, which `LiveLanCapture::after_present` fails on.
+//! ordinary lobby mouse adapter and the watcher's own keys and mouse buttons
+//! (`match_runtime::watching::key` and `mouse`) make inputs; the lobby's list
+//! poll, the grant, the map, the relay's stream, its catch-up and the exit run
+//! as in an interactive game. A desync or a lost relay stops the match with its
+//! usual message, which `LiveLanCapture::after_present` fails on.
 
 use super::*;
 use crate::app::match_runtime::watching;
+use winit::event::MouseButton;
 
 /// Frames the watcher must play once it has caught up.
 const FRAMES_AFTER_CATCH_UP: u32 = REQUIRED_FRAMES;
 /// The host signs in, makes its room and loads before its match is listed,
-/// and the lobby asks for the list every 30 s.
+/// and the game asks for the list every 5 s (`shell_wol::lobby::GAMES_PERIOD`).
 const LIST_WAIT: Duration = Duration::from_secs(600);
 /// How long, beyond the grant's delay, the watched world may run no frame.
 const STALL: Duration = Duration::from_secs(60);
@@ -20,6 +21,11 @@ const STALL: Duration = Duration::from_secs(60);
 const RETURN_WAIT: Duration = Duration::from_secs(60);
 /// Tab's stops at most: 30 players and the observer's sidebar.
 const TAB_STOPS: usize = 31;
+/// How far right of its anchor the right drag holds the pointer, in frame
+/// pixels: past any drag threshold, and on the battlefield from its middle.
+const PAN_PIXELS: f32 = 120.0;
+/// How long the right drag may leave the view where it was.
+const PAN_WAIT: Duration = Duration::from_secs(10);
 /// The observer's sidebar among the views Tab shows; every other is a House.
 const OBSERVER_VIEW: &str = "the observer's sidebar";
 
@@ -31,7 +37,9 @@ enum Step {
     Joining,
     /// The watched match, through its catch-up and the frames after it.
     Playing,
-    /// Tab went through the views; Escape comes a presented frame later.
+    /// Tab went through the views; the right mouse button drags the view.
+    Panning,
+    /// The drag moved the view; Escape comes a presented frame later.
     Followed,
     /// Escape pressed: back to the online lobby.
     Returning,
@@ -50,6 +58,11 @@ pub(super) struct WatchRun {
     frames_after: u32,
     /// The view before Tab and each it showed, back to that one.
     tab: Option<(String, Vec<String>)>,
+    /// The view when the right drag began, whether the drag turned left,
+    /// and how far it moved the view.
+    pan_from: Option<(f32, f32)>,
+    pan_turned: bool,
+    pan: Option<[f32; 2]>,
     exit_route: Vec<Value>,
 }
 
@@ -73,6 +86,9 @@ impl LiveRoundFlow {
             last_frame: None,
             frames_after: 0,
             tab: None,
+            pan_from: None,
+            pan_turned: false,
+            pan: None,
             exit_route: Vec::new(),
         });
         self.record(
@@ -91,9 +107,36 @@ impl LiveRoundFlow {
         let mut run = self.watch.take().context("online watch run")?;
         let result = match run.step {
             Step::List => self.join_listed_match(&mut run, state, rendered, frame),
-            Step::Joining => self.await_watched_match(&mut run, state, frame),
-            Step::Playing => self.play_watched_match(&mut run, state, frame),
-            Step::Followed => self.leave_watched_match(&mut run, state, frame),
+            Step::Joining => {
+                self.await_watched_match(&mut run, &state.frontend, &state.match_state, frame)
+            }
+            Step::Playing => self.play_watched_match(
+                &mut run,
+                &state.platform,
+                &mut state.renderer,
+                &state.frontend,
+                &mut state.match_state,
+                &mut state.audio.sfx_player,
+                &state.persistence,
+                frame,
+            ),
+            Step::Panning => self.pan_watched_view(
+                &mut run,
+                &state.platform,
+                &mut state.renderer,
+                &state.frontend,
+                &mut state.match_state,
+                &state.persistence,
+                frame,
+            ),
+            Step::Followed => self.leave_watched_match(
+                &mut run,
+                &state.platform,
+                &state.frontend,
+                &mut state.match_state,
+                &mut state.audio.sfx_player,
+                frame,
+            ),
             Step::Returning => self.watch_returned(&mut run, state, rendered, frame),
         };
         self.watch = Some(run);
@@ -108,7 +151,7 @@ impl LiveRoundFlow {
         rendered: PresentedShell,
         frame: u32,
     ) -> Result<()> {
-        if !lobby_ready(state, rendered) {
+        if !lobby_ready(&state.frontend, rendered) {
             return Ok(());
         }
         let host = self.online_config().host.clone();
@@ -122,7 +165,7 @@ impl LiveRoundFlow {
             lobby.ui.is_modern(),
             "only the modern online lobby lists matches to watch"
         );
-        let matches = crate::app::shell_wol::lobby::watch_matches(state);
+        let matches = crate::app::shell_wol::lobby::watch_matches(state.frontend.wol.as_ref());
         let listed = lobby
             .ui
             .game_rows
@@ -162,11 +205,11 @@ impl LiveRoundFlow {
     fn await_watched_match(
         &mut self,
         run: &mut WatchRun,
-        state: &AppState,
+        frontend: &FrontendState,
+        match_state: &MatchState,
         frame: u32,
     ) -> Result<()> {
-        if let Some(message) = state
-            .frontend
+        if let Some(message) = frontend
             .wol
             .as_ref()
             .and_then(|visit| visit.lobby())
@@ -174,17 +217,27 @@ impl LiveRoundFlow {
         {
             bail!("the watch did not start: {}", message.body);
         }
-        if state.frontend.screen != GameScreen::InGame {
+        if frontend.screen != GameScreen::InGame {
             return Ok(());
         }
-        let delay = state
-            .match_state
+        let delay = match_state
             .live_network
             .as_ref()
             .filter(|live| live.watching())
             .and_then(|live| live.relay_watch_delay())
             .context("the watched match runs without a watcher's relay route")?;
-        let native = native_frame(state)?;
+        ensure!(
+            match_state
+                .sim_runtime
+                .runtime()
+                .is_some_and(|runtime| runtime.simulation.session().watcher()),
+            "the watched match started as a player's world"
+        );
+        ensure!(
+            !match_state.sandbox_full_visibility,
+            "the watched match started on the whole map, not its followed player's sight"
+        );
+        let native = native_frame(&match_state.sim_runtime)?;
         run.delay_seconds = Some(delay);
         run.first_frame = Some(native);
         run.last_frame = Some((native, Instant::now()));
@@ -203,15 +256,20 @@ impl LiveRoundFlow {
     fn play_watched_match(
         &mut self,
         run: &mut WatchRun,
-        state: &mut AppState,
+        platform: &PlatformState,
+        renderer: &mut RendererState,
+        frontend: &FrontendState,
+        match_state: &mut MatchState,
+        sfx_player: &mut Option<SfxPlayer>,
+        persistence: &PersistenceState,
         frame: u32,
     ) -> Result<()> {
         ensure!(
-            state.frontend.screen == GameScreen::InGame && watching::active(state),
+            frontend.screen == GameScreen::InGame && watching::active(match_state),
             "the watched match ended {} frames after its catch-up, before {FRAMES_AFTER_CATCH_UP}",
             run.frames_after
         );
-        let native = native_frame(state)?;
+        let native = native_frame(&match_state.sim_runtime)?;
         let (last, at) = run.last_frame.context("watched frame")?;
         if native != last {
             run.last_frame = Some((native, Instant::now()));
@@ -225,7 +283,7 @@ impl LiveRoundFlow {
             );
         }
         let now_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms() as u32;
-        if watching::catching_up(state, now_ms) {
+        if watching::catching_up(match_state, now_ms) {
             if !run.catch_up_seen || run.caught_up_frame.is_some() {
                 self.record(frame, &format!("Catching up at native frame {native}"));
             }
@@ -257,7 +315,7 @@ impl LiveRoundFlow {
         }
         // Tab goes through the other players and the observer's sidebar back
         // to the player it started with.
-        let start = shown_view(state)?;
+        let start = shown_view(&match_state.sim_runtime)?;
         let mut views: Vec<String> = Vec::new();
         while views.last() != Some(&start) {
             ensure!(
@@ -265,11 +323,19 @@ impl LiveRoundFlow {
                 "Tab never came back to {start}: {}",
                 views.join(" -> ")
             );
-            press(state, KeyCode::Tab)?;
-            let view = shown_view(state)?;
+            press(platform, frontend, match_state, sfx_player, KeyCode::Tab)?;
+            let view = shown_view(&match_state.sim_runtime)?;
             ensure!(
                 views.last().unwrap_or(&start) != &view,
                 "Tab kept showing {view}"
+            );
+            // Only the observer's sidebar sees the whole map; a player's view
+            // sees what that player sees.
+            let whole = match_state.sandbox_full_visibility;
+            ensure!(
+                whole == (view == OBSERVER_VIEW),
+                "{view} {} the whole map",
+                if whole { "showed" } else { "did not show" }
             );
             views.push(view);
         }
@@ -292,6 +358,64 @@ impl LiveRoundFlow {
             ),
         );
         run.tab = Some((start, views));
+        run.pan_from = Some(begin_pan(
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            persistence,
+        )?);
+        run.advance(Step::Panning);
+        Ok(())
+    }
+
+    /// The right drag must move the view within [`PAN_WAIT`]. A view already
+    /// at the map's right edge cannot move right, so halfway through the
+    /// drag turns left, past its anchor by as much.
+    fn pan_watched_view(
+        &mut self,
+        run: &mut WatchRun,
+        platform: &PlatformState,
+        renderer: &mut RendererState,
+        frontend: &FrontendState,
+        match_state: &mut MatchState,
+        persistence: &PersistenceState,
+        frame: u32,
+    ) -> Result<()> {
+        let from = run.pan_from.context("right drag start")?;
+        let camera = (match_state.input.camera_x, match_state.input.camera_y);
+        if camera == from {
+            let waited = run.since.elapsed();
+            ensure!(
+                waited < PAN_WAIT,
+                "a right drag over the battlefield did not move the watcher's view within {} s",
+                PAN_WAIT.as_secs()
+            );
+            if waited >= PAN_WAIT / 2 && !run.pan_turned {
+                match_state.input.cursor_x -= 2.0 * PAN_PIXELS;
+                run.pan_turned = true;
+            }
+            return Ok(());
+        }
+        watching::mouse(
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            persistence,
+            MouseButton::Right,
+            false,
+        );
+        MoviesCapture::restore_neutral_pointer(&renderer.gpu, &mut match_state.input);
+        let moved = [camera.0 - from.0, camera.1 - from.1];
+        self.record(
+            frame,
+            &format!(
+                "A right drag moved the view by ({:.0}, {:.0}) world pixels",
+                moved[0], moved[1]
+            ),
+        );
+        run.pan = Some(moved);
         run.advance(Step::Followed);
         Ok(())
     }
@@ -299,11 +423,14 @@ impl LiveRoundFlow {
     fn leave_watched_match(
         &mut self,
         run: &mut WatchRun,
-        state: &mut AppState,
+        platform: &PlatformState,
+        frontend: &FrontendState,
+        match_state: &mut MatchState,
+        sfx_player: &mut Option<SfxPlayer>,
         frame: u32,
     ) -> Result<()> {
-        let native = native_frame(state)?;
-        press(state, KeyCode::Escape)?;
+        let native = native_frame(&match_state.sim_runtime)?;
+        press(platform, frontend, match_state, sfx_player, KeyCode::Escape)?;
         run.exit_route
             .push(json!({"step":"Escape","render_frame":frame,"native_frame":native}));
         self.record(frame, "Escape pressed in the watched match");
@@ -320,7 +447,7 @@ impl LiveRoundFlow {
         rendered: PresentedShell,
         frame: u32,
     ) -> Result<()> {
-        if !lobby_ready(state, rendered) {
+        if !lobby_ready(&state.frontend, rendered) {
             ensure!(
                 run.since.elapsed() < RETURN_WAIT,
                 "Escape did not return to the online lobby within {} s",
@@ -336,10 +463,11 @@ impl LiveRoundFlow {
         run.exit_route
             .push(json!({"step":"online lobby","render_frame":frame}));
         self.record(frame, "Escape returned to the online lobby");
-        let rect = crate::app::shell_wol::lobby::layout(state)
-            .page
-            .button_rect(wol_lobby::BACK)
-            .context("WOL lobby Back button")?;
+        let rect =
+            crate::app::shell_wol::lobby::layout(state.frontend.wol.as_ref(), &state.renderer.gpu)
+                .page
+                .button_rect(wol_lobby::BACK)
+                .context("WOL lobby Back button")?;
         click(state, rect);
         self.record(
             frame,
@@ -349,7 +477,11 @@ impl LiveRoundFlow {
         Ok(())
     }
 
-    pub(super) fn watch_receipt(&self, state: &AppState, run: &WatchRun) -> Result<Value> {
+    pub(super) fn watch_receipt(
+        &self,
+        live_network: &Option<LiveCommandSession>,
+        run: &WatchRun,
+    ) -> Result<Value> {
         let (start, views) = run
             .tab
             .as_ref()
@@ -360,7 +492,7 @@ impl LiveRoundFlow {
             .context("online watch capture did not return to the settled Main Menu")?;
         ensure!(self.ready(), "online watch capture is incomplete");
         ensure!(
-            state.match_state.live_network.is_none(),
+            live_network.is_none(),
             "finished watch capture retained command transport"
         );
         let mut exit_route = run.exit_route.clone();
@@ -369,22 +501,20 @@ impl LiveRoundFlow {
         Ok(
             json!({"target":"online-live-watch","account":config.account,"host":config.host,
             "service_boundary":"normal WOL UI, deployed HTTPS lobby and its watch grant, the relay's delayed stream to a watcher, production loading and frame boundary",
-            "scope":"a third account finds the host's running match in the lobby's watch list, loads it, catches up to the delayed present, plays 300 frames more without a stop, goes through the players and the observer's sidebar with Tab and leaves with Escape to the lobby and the settled Main Menu; no result or cross-client checksum claim beyond the watcher's own check",
+            "scope":"a third account finds the host's running match in the lobby's watch list, loads it as a watcher with its followed player's sight, catches up to the delayed present, plays 300 frames more without a stop, goes through the players (each with their own sight) and the observer's sidebar (the whole map) with Tab, moves the view with a right drag and leaves with Escape to the lobby and the settled Main Menu; no result or cross-client checksum claim beyond the watcher's own check",
             "watch":{"match_id":run.match_id,"delay_seconds":run.delay_seconds,
                 "first_native_frame":run.first_frame,"catch_up_seen":run.catch_up_seen,
                 "caught_up_native_frame":run.caught_up_frame,
                 "frames_after_catch_up":run.frames_after,
-                "tab_start":start,"tab_views":views,
+                "tab_start":start,"tab_views":views,"right_drag_moved":run.pan,
                 "exit_route":exit_route},
             "returned_to_menu":true,"menu_return":menu,"route":self.route}),
         )
     }
 }
 
-fn native_frame(state: &AppState) -> Result<u32> {
-    Ok(state
-        .match_state
-        .sim_runtime
+fn native_frame(sim_runtime: &SimHost) -> Result<u32> {
+    Ok(sim_runtime
         .runtime()
         .context("watched world")?
         .simulation
@@ -394,13 +524,8 @@ fn native_frame(state: &AppState) -> Result<u32> {
 
 /// What the watcher shows: the observer's sidebar, or the House it stands in
 /// for (`current_house`).
-fn shown_view(state: &AppState) -> Result<String> {
-    let sim = &state
-        .match_state
-        .sim_runtime
-        .runtime()
-        .context("watched world")?
-        .simulation;
+fn shown_view(sim_runtime: &SimHost) -> Result<String> {
+    let sim = &sim_runtime.runtime().context("watched world")?.simulation;
     if sim.session().watcher_observes() {
         return Ok(OBSERVER_VIEW.to_owned());
     }
@@ -415,16 +540,65 @@ fn shown_view(state: &AppState) -> Result<String> {
         .to_owned())
 }
 
+/// A right press at the resting pointer through the watcher's mouse adapter,
+/// as the window's button events reach it in a watched match, and the pointer
+/// moved right past the drag threshold. Answers the view before the drag.
+fn begin_pan(
+    platform: &PlatformState,
+    renderer: &mut RendererState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    persistence: &PersistenceState,
+) -> Result<(f32, f32)> {
+    MoviesCapture::restore_neutral_pointer(&renderer.gpu, &mut match_state.input);
+    ensure!(
+        crate::app::input::camera::cursor_over_battlefield(
+            platform,
+            renderer,
+            &frontend.screen,
+            match_state,
+            persistence
+        ),
+        "the resting pointer is off the battlefield"
+    );
+    let from = (match_state.input.camera_x, match_state.input.camera_y);
+    watching::mouse(
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        persistence,
+        MouseButton::Right,
+        true,
+    );
+    match_state.input.cursor_x += PAN_PIXELS;
+    Ok(from)
+}
+
 /// A press and release through the watcher's key adapter, as the window's
 /// key events reach it in a watched match.
-fn press(state: &mut AppState, code: KeyCode) -> Result<()> {
+fn press(
+    platform: &PlatformState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    sfx_player: &mut Option<SfxPlayer>,
+    code: KeyCode,
+) -> Result<()> {
     ensure!(
-        state.frontend.screen == GameScreen::InGame && watching::active(state),
+        frontend.screen == GameScreen::InGame && watching::active(match_state),
         "{code:?} reached no watched match"
     );
     for pressed in [true, false] {
         ensure!(
-            watching::key(state, code, pressed, false),
+            watching::key(
+                platform,
+                frontend,
+                match_state,
+                sfx_player,
+                code,
+                pressed,
+                false
+            ),
             "{code:?} is no watcher's key"
         );
     }

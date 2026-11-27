@@ -3,8 +3,7 @@
 use std::path::PathBuf;
 
 use super::{
-    SidebarSideRoute, build_gclock_cpu_atlas, is_generic_sidebar_shp_name,
-    resolve_sidebar_asset_in_order,
+    SidebarSideRoute, SidebarThemeRoute, build_gclock_cpu_atlas, resolve_sidebar_asset_in_order,
 };
 use crate::app::presentation::sidebar_build::build_gclock_instance;
 use crate::assets::asset_manager::{AssetManager, MediaArchiveMode};
@@ -116,9 +115,42 @@ fn side_route_prefers_md_then_base_then_neutral() {
 }
 
 fn resolved_shp<'a>(route: SidebarSideRoute<'a>, name: &str) -> (&'a str, ShpFile) {
-    let resolved = route.resolve_generic_shp(name).expect(name);
+    let resolved = route.resolve(name).expect(name);
     let shp = ShpFile::from_bytes(resolved.bytes).expect(name);
     (resolved.archive_name, shp)
+}
+
+#[test]
+fn non_ares_clock_uses_valid_mod_art_ahead_of_the_named_side() {
+    use crate::assets::asset_manager::test_support::{
+        TestDirectory, audio_test_install, make_new_format_mix_bytes,
+    };
+
+    let install = audio_test_install("sidebar-clock-stock");
+    let addon = TestDirectory::new("sidebar-clock-mod");
+    let mut shape = [0u8; 33];
+    for offset in [2, 4, 6, 12, 14] {
+        shape[offset] = 1;
+    }
+    shape[28] = 32;
+    shape[32] = 1;
+    let side = make_new_format_mix_bytes("GCLOCK2.SHP", &shape);
+    install.write_mix("ra2.mix", "sidec01.mix", &side);
+    shape[32] = 2;
+    addon.write_mix("expandmd01.mix", "GCLOCK2.SHP", &shape);
+    std::fs::write(addon.path().join("GCLOCK2.SHP"), b"bad loose SHP").unwrap();
+
+    let assets = AssetManager::with_mod(
+        install.path(),
+        Some(addon.path()),
+        MediaArchiveMode::STOCK_DIGITAL,
+    )
+    .unwrap();
+    let route = SidebarSideRoute::for_theme(&assets, SidebarTheme::Allied);
+    let palette = Palette::from_bytes(&[0; 768]).unwrap();
+    let clock = build_gclock_cpu_atlas(route, "GCLOCK2.SHP", &palette).unwrap();
+    assert_eq!(clock.source_archive, "expandmd01.mix");
+    assert_eq!(clock.indices, [2]);
 }
 
 fn atlas_cell_has_alpha(
@@ -176,10 +208,21 @@ fn retail_yuri_generic_route_uses_side_two_and_builds_production_clock() {
     assert!(yuri_theme.get_by_name("RADARYURI.PAL").is_some());
     assert!(yuri_theme.get_by_name("RADARY.SHP").is_some());
     assert!(yuri_theme.get_by_name("BKGDLGY.SHP").is_some());
-    assert!(!is_generic_sidebar_shp_name("RADARY.SHP"));
-    assert!(!is_generic_sidebar_shp_name("BKGDLGY.SHP"));
+    // The generic chrome is the built-in layout's pictures but the radar's.
+    let generic: Vec<String> = crate::ui::match_layout::sidebar_art(
+        crate::ui::match_layout::MatchLayout::original(false),
+        SidebarTheme::Yuri,
+    )
+    .into_iter()
+    .filter(|art| art.part != crate::ui::sidebar::SidebarPart::Radar)
+    .map(|art| art.file)
+    .collect();
+    for name in ["RADARY.SHP", "BKGDLGY.SHP"] {
+        assert!(!generic.iter().any(|file| file.eq_ignore_ascii_case(name)));
+    }
 
-    let atlas = build_gclock_cpu_atlas(yuri, &generic_palette).expect("Yuri GCLOCK2 atlas");
+    let atlas =
+        build_gclock_cpu_atlas(yuri, "GCLOCK2.SHP", &generic_palette).expect("Yuri GCLOCK2 atlas");
     assert_eq!(atlas.source_archive, "sidec02.mix");
     assert_eq!((atlas.width, atlas.height), (480, 336));
     assert_eq!(atlas.frames.len(), 55);
@@ -328,7 +371,12 @@ fn retail_observer_art_finds_every_background_and_flag() {
     let assets = AssetManager::new(&retail_ra2_dir(), MediaArchiveMode::STOCK_DIGITAL)
         .expect("load retail asset stack");
     let mix = assets.archive("sidec01.mix").expect("sidec01.mix");
-    let art = super::observer_art::load(&assets, mix, "sidec01.mix", false);
+    let art = super::observer_art::load(SidebarThemeRoute {
+        assets: &assets,
+        mix,
+        mix_name: "sidec01.mix",
+        ares: false,
+    });
     for side in 0..3 {
         assert!(art.background(side).is_some(), "side {side}");
     }
@@ -377,13 +425,15 @@ fn retail_modal_backgrounds_use_ui_palette_for_every_theme_and_size() {
                 assert!(assets.activate_sidebar_archives(mix_index).unwrap());
             }
             let archive = assets.archive(archive_name).unwrap();
-            let (entries, identity) = super::in_game_shell::load_backgrounds(
-                &assets,
-                archive,
-                archive_name,
+            let (entries, _, identity) = super::in_game_shell::load_backgrounds(
+                SidebarThemeRoute {
+                    assets: &assets,
+                    mix: archive,
+                    mix_name: archive_name,
+                    ares,
+                },
                 names,
                 super::SidebarArtNames::for_yuri(theme == SidebarTheme::Yuri).background_palette,
-                ares,
             )
             .unwrap();
             assert_eq!(identity.logical_name, palette_name);

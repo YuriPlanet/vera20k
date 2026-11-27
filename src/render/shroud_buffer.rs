@@ -114,18 +114,22 @@ fn blits_over(
 const NO_FRAME: u16 = u16::MAX;
 
 /// One AlphaShapeClass glow (`sim::world::alpha_shape`): its origin in
-/// absolute world pixels and its type's AlphaImage.
+/// absolute world pixels, its type's AlphaImage and the frame it draws
+/// (0 in stock; Ares' facing frame for a Techno).
 #[derive(Debug, Clone)]
 pub struct AlphaShapeDraw {
     pub origin: [i32; 2],
     pub image: Arc<AlphaImage>,
+    pub frame: u16,
 }
 
 /// Images are immutable rules resources, so the same allocation is the same
 /// image and a frame's list compares without reading pixels.
 impl PartialEq for AlphaShapeDraw {
     fn eq(&self, other: &Self) -> bool {
-        self.origin == other.origin && Arc::ptr_eq(&self.image, &other.image)
+        self.origin == other.origin
+            && self.frame == other.frame
+            && Arc::ptr_eq(&self.image, &other.image)
     }
 }
 
@@ -197,16 +201,17 @@ impl FrameAtlas {
         let area = canvas[0] as usize * canvas[1] as usize;
         assert!(frames.iter().all(|frame| frame.len() == area));
         let limit = device.limits().max_texture_dimension_2d;
-        let per_column = (limit / canvas[1].max(1)).max(1);
-        let count = u32::try_from(frames.len()).expect("frame count");
-        let size = [
-            (count.div_ceil(per_column) * canvas[0]).max(1),
-            (count.min(per_column) * canvas[1]).max(1),
-        ];
-        assert!(
-            size[0] <= limit && size[1] <= limit,
-            "frame atlas exceeds the GPU limit"
-        );
+        let count = u32::try_from(frames.len()).unwrap_or(u32::MAX);
+        let Some((size, per_column)) = frame_atlas_size(count, canvas, limit) else {
+            // A mod's SHROUD.SHP or FOG.SHP past the device's textures: the
+            // shroud draws without its frames rather than not at all.
+            log::error!(
+                "Shroud frame atlas: {count} frames of {}x{} px do not fit this GPU's {limit} px textures; the frames are left out",
+                canvas[0],
+                canvas[1]
+            );
+            return Self::new(device, queue, Vec::new(), canvas);
+        };
         let mut texels = vec![TRANSPARENT; size[0] as usize * size[1] as usize];
         if area != 0 {
             for (index, frame) in frames.iter().enumerate() {
@@ -245,6 +250,17 @@ impl FrameAtlas {
     fn has(&self, frame: u16) -> bool {
         frame != NO_FRAME && usize::from(frame) < self.count
     }
+}
+
+/// The frame atlas for `count` frames of `canvas` px within a `limit` px
+/// texture, with its frames per column, or `None` when no column layout fits.
+fn frame_atlas_size(count: u32, canvas: [u32; 2], limit: u32) -> Option<([u32; 2], u32)> {
+    let per_column = (limit / canvas[1].max(1)).max(1);
+    let size = [
+        (count.div_ceil(per_column).saturating_mul(canvas[0])).max(1),
+        (count.min(per_column).saturating_mul(canvas[1])).max(1),
+    ];
+    (size[0] <= limit && size[1] <= limit).then_some((size, per_column))
 }
 
 fn atlas_origin(index: usize, per_column: u32, canvas: [u32; 2]) -> [u32; 2] {
@@ -380,8 +396,8 @@ struct Compositor {
     glow_binding: Option<(wgpu::TextureView, wgpu::BindGroup)>,
     /// Glow results before their copy back; grows to the largest group.
     scratch: Option<wgpu::Texture>,
-    /// One binding per distinct glow image, holding its allocation.
-    images: Vec<(Arc<AlphaImage>, wgpu::BindGroup)>,
+    /// One binding per distinct glow image frame, holding its allocation.
+    images: Vec<(Arc<AlphaImage>, u16, wgpu::BindGroup)>,
     cells: Vec<CellInstance>,
     runs: Vec<CellRun>,
     glows: Vec<GlowInstance>,
@@ -575,7 +591,6 @@ impl Compositor {
     /// cells cannot meet draws all its copies, then all its blends; that is
     /// the whole list when the frames tile, else one diagonal's run of
     /// canvases that lie apart.
-    #[allow(clippy::too_many_arguments)]
     fn encode_cells(
         &mut self,
         device: &wgpu::Device,
@@ -705,7 +720,6 @@ impl Compositor {
     /// the plane through its own scratch result and copies it back. Glows in
     /// one group never overlap, so they share a pass; an overlap starts the
     /// next group, which reads the earlier group's copies.
-    #[allow(clippy::too_many_arguments)]
     fn encode_glows(
         &mut self,
         device: &wgpu::Device,
@@ -726,7 +740,7 @@ impl Compositor {
         let mut extent = [1, 1];
         for shape in shapes {
             let origin = [shape.origin[0] - camera[0], shape.origin[1] - camera[1]];
-            let Some(rect) = glow_rect(&shape.image, origin, plane_size) else {
+            let Some(rect) = glow_rect(&shape.image, shape.frame, origin, plane_size) else {
                 continue;
             };
             let size = [rect[2] - rect[0], rect[3] - rect[1]];
@@ -741,14 +755,14 @@ impl Compositor {
                 group = self.glows.len();
                 x = 0;
             }
-            let [frame_x, frame_y, _, _] = shape.image.frame_bounds();
+            let [frame_x, frame_y, _, _] = shape.image.frame_bounds(shape.frame);
             self.glows.push(GlowInstance {
                 scratch: [x, 0],
                 size,
                 plane: [rect[0], rect[1]],
                 image: [origin[0] + frame_x, origin[1] + frame_y],
             });
-            let image = self.image_binding(device, queue, &shape.image);
+            let image = self.image_binding(device, queue, &shape.image, shape.frame);
             self.glow_images.push(image);
             x += size[0];
             extent = [extent[0].max(x), extent[1].max(size[1])];
@@ -832,7 +846,7 @@ impl Compositor {
                 pass.set_pipeline(&self.glow);
                 pass.set_bind_group(0, binding, &[]);
                 for index in group.clone() {
-                    pass.set_bind_group(1, &self.images[self.glow_images[index]].1, &[]);
+                    pass.set_bind_group(1, &self.images[self.glow_images[index]].2, &[]);
                     let offset = index as u64 * GLOW_STRIDE;
                     pass.set_vertex_buffer(0, instances.slice(offset..offset + GLOW_STRIDE));
                     pass.draw(0..4, 0..1);
@@ -870,21 +884,31 @@ impl Compositor {
         }
     }
 
-    /// The binding of one glow image, uploaded with its first use.
+    /// The binding of one glow image frame, uploaded with its first use.
     fn image_binding(
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         image: &Arc<AlphaImage>,
+        frame: u16,
     ) -> usize {
         if let Some(index) = self
             .images
             .iter()
-            .position(|(known, _)| Arc::ptr_eq(known, image))
+            .position(|(known, known_frame, _)| *known_frame == frame && Arc::ptr_eq(known, image))
         {
             return index;
         }
-        let [_, _, width, height] = image.frame_bounds().map(|v| v.max(1) as u32);
+        let [_, _, width, height] = image.frame_bounds(frame).map(|v| v.max(1) as u32);
+        // A mod's AlphaImage past the device's textures: the glow draws blank
+        // (its texels are not written below) rather than failing validation.
+        let limit = device.limits().max_texture_dimension_2d;
+        if width > limit || height > limit {
+            log::warn!(
+                "Glow AlphaImage of {width}x{height} px does not fit this GPU's {limit} px textures; it draws blank"
+            );
+        }
+        let (width, height) = (width.min(limit), height.min(limit));
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("Glow AlphaImage frame"),
             size: wgpu::Extent3d {
@@ -899,14 +923,14 @@ impl Compositor {
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         });
-        if image.pixels().len() == (width * height) as usize {
+        if image.pixels(frame).len() == (width * height) as usize {
             crate::render::atlas_growth::write_texels(
                 queue,
                 &texture,
                 [0, 0],
                 [width, height],
                 1,
-                image.pixels(),
+                image.pixels(frame),
             );
         }
         let binding = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -919,19 +943,21 @@ impl Compositor {
                 ),
             }],
         });
-        self.images.push((image.clone(), binding));
+        self.images.push((image.clone(), frame, binding));
         self.images.len() - 1
     }
 }
 
 /// The plane rectangle one glow rescales, `origin` in plane pixels. Nothing
 /// is drawn unless the canvas meets the plane (`Rect_Intersect` at
-/// `0x004213FA`, tested at `0x00421411..0x0042141E`). Frame 0 then starts at
-/// its own offset: the left and top edges clip to the canvas and plane, the
-/// right and bottom to the plane alone (`0x00421480..0x004214F4`). Every
-/// frame byte, 0 included, rescales the A beneath it.
+/// `0x004213FA`, tested at `0x00421411..0x0042141E`). The frame (0, or the
+/// one Ares' `0x0042146E` hook passes) then starts at its own offset: the
+/// left and top edges clip to the canvas and plane, the right and bottom to
+/// the plane alone (`0x00421480..0x004214F4`). Every frame byte, 0 included,
+/// rescales the A beneath it.
 fn glow_rect(
     image: &AlphaImage,
+    frame: u16,
     [x, y]: [i32; 2],
     [plane_w, plane_h]: [i32; 2],
 ) -> Option<[i32; 4]> {
@@ -940,7 +966,7 @@ fn glow_rect(
     if (x + canvas_w).min(plane_w) <= left || (y + canvas_h).min(plane_h) <= top {
         return None;
     }
-    let [frame_x, frame_y, frame_w, frame_h] = image.frame_bounds();
+    let [frame_x, frame_y, frame_w, frame_h] = image.frame_bounds(frame);
     let left = left.max(x + frame_x);
     let top = top.max(y + frame_y);
     let right = (x + frame_x + frame_w).min(plane_w);
@@ -1217,7 +1243,6 @@ impl ShroudBuffer {
     /// Native per-cell ordering is retained. A new fog generation that
     /// selects the same frames for every cell in view keeps the plane as
     /// drawn. Returns whether the plane was recomposed.
-    #[allow(clippy::too_many_arguments)]
     pub fn rebuild_if_needed(
         &mut self,
         device: &wgpu::Device,
@@ -1564,7 +1589,6 @@ impl ShroudBuffer {
 
     /// Rebuild through a submission of its own, as a frame would.
     #[cfg(test)]
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn rebuild_submitted(
         &mut self,
         device: &wgpu::Device,
@@ -1660,6 +1684,16 @@ mod tests {
     use super::*;
     use crate::sim::intern;
     use crate::sim::vision::apply_gap_generators;
+
+    /// Frames stack in columns of as many as the limit holds; a canvas or a
+    /// column count past the limit is refused rather than asserted.
+    #[test]
+    fn a_frame_atlas_past_the_device_limit_is_refused_not_asserted() {
+        assert_eq!(frame_atlas_size(10, [64, 64], 256), Some(([192, 256], 4)));
+        assert_eq!(frame_atlas_size(0, [64, 64], 256), Some(([1, 1], 4)));
+        assert_eq!(frame_atlas_size(1, [9000, 1], 8192), None);
+        assert_eq!(frame_atlas_size(200, [64, 64], 256), None);
+    }
 
     /// A scrolled plane holds the same cells at other lattice origins, and
     /// only the cells over the compared world pixels matter.
@@ -1808,10 +1842,7 @@ mod tests {
 
         sim.reveal_entire_map(
             Some(local),
-            crate::sim::world::UninitContext::new(
-                crate::rules::ruleset::RuleSet::empty_for_test(),
-                None,
-            ),
+            crate::sim::world::UninitContext::new(crate::rules::ruleset::RuleSet::empty_for_test()),
         );
 
         assert_eq!(
@@ -1991,6 +2022,7 @@ mod tests {
         let glow = || AlphaShapeDraw {
             origin: [98, 80],
             image: image.clone(),
+            frame: 0,
         };
         source.set_alpha_shapes([glow()]);
         assert!(rebuild(&mut source));

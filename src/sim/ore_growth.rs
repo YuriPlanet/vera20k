@@ -6,8 +6,9 @@
 //! - map INI [Basic] `TiberiumGrowthEnabled` (`ScenarioClass+0x34A6`) gates
 //!   both per-type drivers;
 //! - `ScenarioClass` flags bits `0x40`/`0x80` (`TiberiumGrows`/
-//!   `TiberiumSpreads`): forced on at every skirmish/multiplayer start, read
-//!   from the map `[SpecialFlags]` only in GameMode 0.
+//!   `TiberiumSpreads`), owned by the scenario session: forced on at every
+//!   skirmish/multiplayer start, read from the map `[SpecialFlags]` only in
+//!   GameMode 0.
 //!
 //! ## Dependency rules
 //! - Part of sim/ — depends on sim/overlay_grid, sim/tiberium, sim/rng
@@ -18,7 +19,7 @@ use std::collections::BTreeSet;
 use std::hash::{Hash, Hasher};
 
 use crate::map::authored_overlay::NativeOverlayMapShape;
-use crate::map::basic::{BasicSection, SpecialFlagsSection};
+use crate::map::basic::BasicSection;
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::rules::overlay_types::{OverlayTypeRegistry, TiberiumImageError};
 use crate::rules::ruleset::RuleSet;
@@ -132,35 +133,21 @@ impl OreGrowthConfig {
     /// Resolve the native gates for this session.
     ///
     /// `[Basic] TiberiumGrowthEnabled` is read in every game mode. The
-    /// `TiberiumGrows`/`TiberiumSpreads` flag bits come from the session when
-    /// GameMode != 0 (`Full_Init @ 0x00687C23` overwrites the scenario dword
-    /// with the session dword every skirmish/multiplayer start forces to
-    /// `| 0xC0`) and from the map `[SpecialFlags]` only in GameMode 0
-    /// (`0x006B8CA0`, default = the pre-existing bit). The loader fills that
-    /// default first ([`crate::map::basic::SpecialFlagsSection::resolve_campaign_defaults`]:
-    /// the retained scenario's bits, else the cold ctor's grows off, spreads
-    /// on), so the `true` fallbacks below serve only fixtures that skip it.
+    /// The session owns the two admitted scenario flags. Stock skirmish and
+    /// multiplayer force both on in PregameSetup (0x005E74CD), and Full_Init
+    /// copies the staged word at 0x00687C23. The campaign reader (0x006B8CA0)
+    /// takes the map overrides, with the retained bits as defaults.
     /// `[General] TiberiumGrows/TiberiumSpreads` have no gamemd reader (the
     /// only readers of those key strings are `[SpecialFlags]` I/O at
     /// `0x006B8B30`/`0x006B8CA0` and `[MultiplayerDialogSettings]` at
     /// `0x006720AA`).
     pub fn resolve(
         basic: &BasicSection,
-        special_flags: &SpecialFlagsSection,
         session: &crate::sim::scenario_session::ScenarioSession,
     ) -> Self {
         let grows = basic.tiberium_growth_enabled.unwrap_or(true);
-        let (tiberium_grows_flag, spreads) = if session.game_mode_nonzero() {
-            (
-                session.tiberium_grows_flag(),
-                session.tiberium_spreads_flag(),
-            )
-        } else {
-            (
-                special_flags.tiberium_grows.unwrap_or(true),
-                special_flags.tiberium_spreads.unwrap_or(true),
-            )
-        };
+        let tiberium_grows_flag = session.tiberium_grows_flag();
+        let spreads = session.tiberium_spreads_flag();
         log::info!(
             "OreGrowthConfig: grows={}, spreads={}, tiberium_grows_flag={}",
             grows,
@@ -179,10 +166,9 @@ impl OreGrowthConfig {
     pub(crate) fn reload_for_scenario(
         &mut self,
         basic: &BasicSection,
-        special_flags: &SpecialFlagsSection,
         session: &crate::sim::scenario_session::ScenarioSession,
     ) {
-        *self = Self::resolve(basic, special_flags, session);
+        *self = Self::resolve(basic, session);
     }
 
     /// Disabled config — no growth or spread.
@@ -1182,7 +1168,7 @@ impl Simulation {
         &mut self,
         rules: &RuleSet,
         overlay_registry: &OverlayTypeRegistry,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<NativeGrowthProcessStats, RuntimeOverlayError> {
         let tiberium_types = &rules.tiberium_types;
         let current_frame = self.session.binary_frame();
@@ -1237,7 +1223,7 @@ impl Simulation {
         type_id: TiberiumTypeId,
         rules: &RuleSet,
         overlay_registry: &OverlayTypeRegistry,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<NativeGrowthProcessStats, RuntimeOverlayError> {
         let tiberium_types = &rules.tiberium_types;
         let current_frame = self.session.binary_frame();
@@ -1422,7 +1408,7 @@ impl Simulation {
         &mut self,
         rules: &RuleSet,
         overlay_registry: &OverlayTypeRegistry,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<NativeSpreadProcessStats, RuntimeOverlayError> {
         let tiberium_types = &rules.tiberium_types;
         let current_frame = self.session.binary_frame();
@@ -1478,7 +1464,7 @@ impl Simulation {
         type_id: TiberiumTypeId,
         rules: &RuleSet,
         overlay_registry: &OverlayTypeRegistry,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<NativeSpreadProcessStats, RuntimeOverlayError> {
         let tiberium_types = &rules.tiberium_types;
         let spread_enabled = self.ore_growth_config.spreads();
@@ -1707,7 +1693,7 @@ impl OreGrowthState {
                     type_id,
                     rules,
                     registry,
-                    FrameEffects::default(),
+                    &mut FrameEffects::default(),
                 )
             },
         )
@@ -1749,9 +1735,9 @@ impl OreGrowthState {
         crate::sim::tiberium::test_support::with_placement_fixture(
             &mut context,
             |sim, rules, registry| {
-                sim.ore_growth_config =
+                *sim.ore_growth_config =
                     OreGrowthConfig::for_test(growth_enabled, spread_enabled, tiberium_grows_flag);
-                sim.tick_native_growth_driver(rules, registry, FrameEffects::default())
+                sim.tick_native_growth_driver(rules, registry, &mut FrameEffects::default())
             },
         )
         .expect("valid queue fixture")
@@ -1787,12 +1773,12 @@ impl OreGrowthState {
         crate::sim::tiberium::test_support::with_placement_fixture(
             &mut context,
             |sim, rules, registry| {
-                sim.ore_growth_config = OreGrowthConfig::for_test(true, spread_enabled, false);
+                *sim.ore_growth_config = OreGrowthConfig::for_test(true, spread_enabled, false);
                 sim.process_native_growth_for_type_with_placement(
                     type_id,
                     rules,
                     registry,
-                    FrameEffects::default(),
+                    &mut FrameEffects::default(),
                 )
             },
         )
@@ -1833,9 +1819,9 @@ impl OreGrowthState {
         crate::sim::tiberium::test_support::with_placement_fixture(
             &mut context,
             |sim, rules, registry| {
-                sim.ore_growth_config =
+                *sim.ore_growth_config =
                     OreGrowthConfig::for_test(growth_enabled, spread_enabled, false);
-                sim.tick_native_spread_driver(rules, registry, FrameEffects::default())
+                sim.tick_native_spread_driver(rules, registry, &mut FrameEffects::default())
             },
         )
         .expect("valid queue fixture")
@@ -1874,12 +1860,12 @@ impl OreGrowthState {
         crate::sim::tiberium::test_support::with_placement_fixture(
             &mut context,
             |sim, rules, registry| {
-                sim.ore_growth_config = OreGrowthConfig::for_test(true, spread_enabled, false);
+                *sim.ore_growth_config = OreGrowthConfig::for_test(true, spread_enabled, false);
                 sim.process_native_spread_for_type_with_placement(
                     type_id,
                     rules,
                     registry,
-                    FrameEffects::default(),
+                    &mut FrameEffects::default(),
                 )
             },
         )
@@ -2713,42 +2699,38 @@ SpreadPercentage=.06
         assert_eq!(run(false), vec![0]);
     }
 
-    /// `OreGrowthConfig::resolve`: GameMode != 0 takes the session bits and
-    /// ignores the map `[SpecialFlags]` keys (never read there, `0x006B8CA0`);
-    /// GameMode 0 reads the map keys; `[Basic] TiberiumGrowthEnabled` gates in
-    /// every mode.
+    /// `OreGrowthConfig::resolve`: the flag bits are the session's in every
+    /// game mode (the startup session forces them on when GameMode != 0 and
+    /// reads the map `[SpecialFlags]` keys in GameMode 0, `0x006B8CA0`);
+    /// `[Basic] TiberiumGrowthEnabled` gates in every mode.
     #[test]
-    fn gsi_09_04_config_resolves_flag_bits_from_session_in_nonzero_game_mode() {
-        use crate::map::basic::{BasicSection, SpecialFlagsSection};
+    fn gsi_09_04_config_resolves_flag_bits_from_the_session() {
+        use crate::map::basic::BasicSection;
         use crate::sim::scenario_session::{ScenarioDescriptor, ScenarioSession};
 
-        let map_off = SpecialFlagsSection {
-            tiberium_grows: Some(false),
-            tiberium_spreads: Some(false),
-            ..SpecialFlagsSection::default()
-        };
         let basic = BasicSection::default();
-
         let skirmish = ScenarioSession::from_descriptor(&ScenarioDescriptor {
-            game_mode_nonzero: true,
+            rule_policy: crate::rules::rule_policy::RulePolicy::stock_multiplayer(),
             tiberium_grows_flag: true,
             tiberium_spreads_flag: true,
             ..ScenarioDescriptor::default()
         });
-        let config = OreGrowthConfig::resolve(&basic, &map_off, &skirmish);
+        let config = OreGrowthConfig::resolve(&basic, &skirmish);
         assert!(config.grows && config.spreads && config.tiberium_grows_flag);
 
-        let campaign = ScenarioSession::from_descriptor(&ScenarioDescriptor::default());
-        let config = OreGrowthConfig::resolve(&basic, &map_off, &campaign);
-        assert!(config.grows && !config.spreads && !config.tiberium_grows_flag);
-        let config = OreGrowthConfig::resolve(&basic, &SpecialFlagsSection::default(), &campaign);
-        assert!(config.grows && config.spreads && config.tiberium_grows_flag);
+        // A campaign map's `TiberiumGrows=yes`, `TiberiumSpreads=no`.
+        let campaign = ScenarioSession::from_descriptor(&ScenarioDescriptor {
+            tiberium_grows_flag: true,
+            ..ScenarioDescriptor::default()
+        });
+        let config = OreGrowthConfig::resolve(&basic, &campaign);
+        assert!(config.grows && !config.spreads && config.tiberium_grows_flag);
 
         let basic_off = BasicSection {
             tiberium_growth_enabled: Some(false),
             ..BasicSection::default()
         };
-        let config = OreGrowthConfig::resolve(&basic_off, &map_off, &skirmish);
+        let config = OreGrowthConfig::resolve(&basic_off, &skirmish);
         assert!(!config.grows && config.spreads && config.tiberium_grows_flag);
     }
 

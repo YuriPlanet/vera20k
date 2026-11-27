@@ -6,8 +6,9 @@
 //! cursor), LoadFromINI `0x10074C20` (`Protect.Duration`, `.PowerOutage`,
 //! `.PlayFadeSoundTime`), GetRange `0x10074AD0` (the type's `SW.Range`, else
 //! a 3x3 rectangle) and GetAnim `0x10074A90` (`SW.Animation`, else
-//! `IronCurtainInvokeAnim=`, built by the common Launch). A Protect type is
-//! never the Force Shield arm: Protect_IsForceShield is set only for a
+//! `IronCurtainInvokeAnim=`, built by the common Launch). The Protect handler
+//! also handles the stock Iron Curtain (`HandlesType 0x10074B40`). It is
+//! never the Force Shield arm here: Protect_IsForceShield is set only for a
 //! redirected `Type=ForceShield`, whose stock owner VERA keeps.
 //!
 //! Activate on a charged Super, at the target cell's GetCoords: the type's
@@ -44,7 +45,7 @@ pub(super) fn launch(
     sw: &SuperWeaponType,
     (rx, ry): (u16, u16),
     overlay_registry: Option<&OverlayTypeRegistry>,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) {
     if !super::is_charged(sim, owner, sw_type) {
         return;

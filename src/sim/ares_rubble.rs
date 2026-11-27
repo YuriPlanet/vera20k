@@ -45,7 +45,7 @@ impl Simulation {
         switch: &RubbleSwitch,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Option<u64> {
         let building = self.substrate.entities.get(building_id)?;
         let owner = building.owner();
@@ -61,7 +61,7 @@ impl Simulation {
         );
         // `Facing.current().value256()` (`((raw >> 7) + 1) >> 1`).
         let facing = building.body_facing_dir(self.session.binary_frame());
-        let context = UninitContext::new(rules, registry).with_effects(effects);
+        let context = UninitContext::new(rules).with_effects(effects);
         let _ = self.techno_limbo_with_context(building_id, context);
         self.clear_all_building_anim_slots(building_id);
 
@@ -92,16 +92,8 @@ impl Simulation {
                 .as_deref()
                 .and_then(|name| rules.object_in_category(ObjectCategory::Building, name));
             if let (Some(house), Some(object)) = (house, object) {
-                let house_name = self.interner.resolve(house).to_owned();
                 new = self.construct_resolved_object_limbo_at_height(
-                    object,
-                    &house_name,
-                    rx,
-                    ry,
-                    facing,
-                    z,
-                    rules,
-                    effects,
+                    object, house, rx, ry, facing, z, rules, effects,
                 );
             }
             if let (Some(new_id), Some(object)) = (new, object) {
@@ -156,7 +148,7 @@ impl Simulation {
         building_id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(switch) = self.rubble_destroyed_switch(building_id, rules) else {
             return;
@@ -169,14 +161,15 @@ impl Simulation {
     /// every Foot in each foundation cell's content (the deck list over a
     /// bridge head) of the destroyed building that Remove takes off the map
     /// is kicked out by the destroyed building (`KickOutUnit`, vt+0x100,
-    /// with its Location cell); a kicked-out one is selected again if it
-    /// was, any other is UnInit.
+    /// with its Location cell); a kicked-out one that was selected is
+    /// Selected again (vt+0x14C, [`Self::techno_select`],
+    /// `10012AC7..10012AD2`), any other is UnInit.
     pub(crate) fn ares_kick_out_of_rubble(
         &mut self,
         building_id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         if self.rubble_destroyed_switch(building_id, rules).is_none() {
             return;
@@ -188,7 +181,7 @@ impl Simulation {
             return;
         };
         let origin = (building.position.rx(), building.position.ry());
-        let context = UninitContext::new(rules, registry).with_effects(effects);
+        let mut context = UninitContext::new(rules).with_effects(effects);
         let mut removed = Vec::new();
         for cell in
             crate::sim::crew_survival::foundation_cells(origin.0, origin.1, &object.foundation)
@@ -215,8 +208,10 @@ impl Simulation {
                     .substrate
                     .entities
                     .get(foot)
-                    .is_some_and(|entity| entity.selection.is_selected());
-                if self.techno_limbo_with_context(foot, context) == ConcealOutcome::Concealed {
+                    .is_some_and(|entity| entity.seldom.selection.is_selected());
+                if self.techno_limbo_with_context(foot, context.reborrow())
+                    == ConcealOutcome::Concealed
+                {
                     removed.push((foot, selected));
                 }
             }
@@ -230,14 +225,14 @@ impl Simulation {
                 foot,
                 exit_cell,
                 registry,
-                effects,
+                context.effects(),
             );
             if exit == crate::sim::ai_base_building::BuildingExit::Placed {
-                if selected && let Some(entity) = self.substrate.entities.get_mut(foot) {
-                    entity.selection.select();
+                if selected {
+                    self.techno_select(foot, context.reborrow());
                 }
             } else {
-                self.uninit_with_context(foot, context);
+                self.uninit_with_context(foot, context.reborrow());
             }
         }
     }
@@ -247,8 +242,10 @@ impl Simulation {
     /// `Rubble.Intact.Remove`: the rubble switches with the `Rubble.Intact*`
     /// keys and is UnInit. Without a new building the engineer is turned away
     /// (`0x00519FB9`, `false`); otherwise he is removed and the new building
-    /// kicks him out from his cell, selected again if he was, and
-    /// PerCellProcess returns (`0x0051A65D`, `true`). He is not consumed.
+    /// kicks him out from his cell, he is Selected again if he was (vt+0x14C,
+    /// [`Self::techno_select`], `1002585F..10025868`, whatever KickOutUnit
+    /// returned), and PerCellProcess returns (`0x0051A65D`, `true`). He is
+    /// not consumed.
     pub(crate) fn ares_engineer_rebuilds_rubble(
         &mut self,
         engineer_id: u64,
@@ -256,11 +253,11 @@ impl Simulation {
         switch: &RubbleSwitch,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let new = self.ares_switch_rubble(building_id, switch, rules, registry, effects);
-        let context = UninitContext::new(rules, registry).with_effects(effects);
-        self.uninit_with_context(building_id, context);
+        let mut context = UninitContext::new(rules).with_effects(effects);
+        self.uninit_with_context(building_id, context.reborrow());
         let Some(new) = new else {
             return false;
         };
@@ -268,8 +265,8 @@ impl Simulation {
             .substrate
             .entities
             .get(engineer_id)
-            .is_some_and(|entity| entity.selection.is_selected());
-        let _ = self.techno_limbo_with_context(engineer_id, context);
+            .is_some_and(|entity| entity.seldom.selection.is_selected());
+        let _ = self.techno_limbo_with_context(engineer_id, context.reborrow());
         // GetMapCoords after Remove: the cell of his retained Location.
         let Some(cell) = self
             .substrate
@@ -287,10 +284,10 @@ impl Simulation {
             engineer_id,
             cell,
             registry,
-            effects,
+            context.effects(),
         );
-        if selected && let Some(entity) = self.substrate.entities.get_mut(engineer_id) {
-            entity.selection.select();
+        if selected {
+            self.techno_select(engineer_id, context);
         }
         true
     }

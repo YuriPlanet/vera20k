@@ -201,7 +201,10 @@ pub(crate) struct DeathEffects {
     /// admitted cell inline, before the cell's damage.
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) tiberium_reduction_requests: Vec<TiberiumReductionRequest>,
-    pub(crate) death_sounds: Vec<(String, crate::sim::anim_class::AnimWorldCoord)>,
+    pub(crate) death_sounds: Vec<(
+        crate::rules::ruleset::SoundName,
+        crate::sim::anim_class::AnimWorldCoord,
+    )>,
     pub(crate) smudge_spawn_requests: Vec<SmudgeSpawnRequest>,
     pub(crate) rad_detonations: Vec<crate::sim::radiation::RadDetonation>,
     pub(crate) under_attack_events: Vec<UnderAttackEvent>,

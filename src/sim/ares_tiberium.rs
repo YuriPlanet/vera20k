@@ -49,7 +49,7 @@ fn stored_bales(entity: &GameEntity) -> impl Iterator<Item = &CargoBale> {
         .as_ref()
         .map_or(&[][..], |miner| miner.cargo())
         .iter()
-        .chain(entity.slave.cargo())
+        .chain(entity.seldom.slave.cargo())
 }
 
 /// [`crate::sim::tiberium::tiberium_cell_view`] for an Ares tiberium effect.
@@ -142,7 +142,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         if !rules.ares_tiberium_globals().damage_enabled() || !self.at_tiberium_height(id, rules) {
             return false;
@@ -236,7 +236,6 @@ impl Simulation {
     ///
     /// RESIDUAL: 3.0 keeps (leaks) an object whose Put fails and still
     /// returns true; VERA deletes it. A coordinate off the map creates none.
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn ares_spawn_visceroid(
         &mut self,
         coord: DriveCoord,
@@ -245,7 +244,7 @@ impl Simulation {
         ignore_map_flag: bool,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         if !ignore_map_flag && !self.session.tiberium_death_to_visceroid() {
             return false;
@@ -266,11 +265,10 @@ impl Simulation {
         else {
             return false;
         };
-        let owner = self.interner.resolve(owner).to_owned();
         let level =
             u8::try_from(coord.z / crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS).unwrap_or(0);
         let Some(created) = self
-            .construct_object_limbo_at_height(visceroid, &owner, rx, ry, 0, level, rules, effects)
+            .construct_object_limbo_at_height(visceroid, owner, rx, ry, 0, level, rules, effects)
         else {
             return false;
         };
@@ -385,7 +383,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
@@ -440,27 +438,32 @@ impl Simulation {
         });
     }
 
-    /// Ares 3.0 1004B050 (hook 0x702216), after the Stun: a dying techno
-    /// whose `TiberiumRemains` holds (default: `TiberiumHeal=yes` and
-    /// `[General] TiberiumHealEnabled`) leaves `RandomRanged(0, 2)` Riparius
-    /// on the four orthogonal neighbours (directions 0, 2, 4, 6) and the
-    /// centre (8) of the cell of its GetCoords.
+    /// Ares 3.0 1004B050's test: whether a dying techno's `TiberiumRemains`
+    /// holds (default: `TiberiumHeal=yes` and `[General]
+    /// TiberiumHealEnabled`). The death plan reads it
+    /// (`combat::death_plan`), so its tiberium-remains bit is the one
+    /// decision.
+    pub(crate) fn ares_leaves_tiberium_remains(&self, id: u64, rules: &RuleSet) -> bool {
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return false;
+        };
+        self.object_type(entity.type_ref(), rules).is_some_and(|object| {
+            let default = object.tiberium_heal && rules.ares_tiberium_globals().heal_enabled();
+            object.techno_combat().tiberium().tiberium_remains(default)
+        })
+    }
+
+    /// Ares 3.0 1004B050 (hook 0x702216), after the Stun, for a death plan
+    /// with its tiberium-remains bit ([`Self::ares_leaves_tiberium_remains`]
+    /// natively): `RandomRanged(0, 2)` Riparius on the four orthogonal
+    /// neighbours (directions 0, 2, 4, 6) and the centre (8) of the cell of
+    /// the dying techno's GetCoords.
     pub(crate) fn ares_tiberium_remains(
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
-        let Some(entity) = self.substrate.entities.get(id) else {
-            return;
-        };
-        let Some(object) = self.object_type(entity.type_ref(), rules) else {
-            return;
-        };
-        let default = object.tiberium_heal && rules.ares_tiberium_globals().heal_enabled();
-        if !object.techno_combat().tiberium().tiberium_remains(default) {
-            return;
-        }
         let Some(center) = self.coords_cell(id) else {
             return;
         };
@@ -522,7 +525,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         if !rules.combat_damage.tiberium_explosive || self.session.harvester_immune() {
             return;
@@ -560,6 +563,7 @@ impl Simulation {
             .and_then(|name| rules.warhead(name))
         {
             let warhead_ref = self.interner.intern(&warhead.id);
+            // 1004BE4D..1004BE59: DamageArea(coord, sum, unit, warhead, 0, NULL).
             crate::sim::combat::world_receiver::apply_area_damage(
                 self,
                 rules,
@@ -598,7 +602,6 @@ impl Simulation {
     /// through the same `MapClass::GetCellAt` lookup the walk uses; the
     /// shared Dummy has no overlay. A non-tiberium overlay passes the hook
     /// but CellChainReact ignores it.
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn ares_area_damage_chain_reaction(
         &mut self,
         impact: (u16, u16),
@@ -607,7 +610,7 @@ impl Simulation {
         affects_tiberium: bool,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         if !affects_tiberium || !warhead.tiberium {
             return;
@@ -683,7 +686,7 @@ impl Simulation {
         cell: (u16, u16),
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(registry) = registry else {
             return;
@@ -738,8 +741,7 @@ impl Simulation {
                 impact,
                 false,
             ) {
-                let anim = self.interner.resolve(anim).to_owned();
-                self.spawn_named_anim(rules, &anim, anim_coord, 0, 0x600, 0);
+                self.spawn_named_anim(rules, anim, anim_coord, 0, 0x600, 0);
             }
             let warhead_ref = self.interner.intern(&warhead.id);
             crate::sim::combat::world_receiver::apply_area_damage(

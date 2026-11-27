@@ -101,8 +101,8 @@ impl crate::sim::scenario_session::ScenarioSession {
         let commands = self.step_chrono_screen_state();
         for command in commands {
             match command {
-                ChronoScreenCommand::Pause => effects.extend(self.pause_scenario(0)),
-                ChronoScreenCommand::Finish => effects.extend(self.resume_scenario()),
+                ChronoScreenCommand::Pause => effects.extend(Vec::from(self.pause_scenario(0))),
+                ChronoScreenCommand::Finish => effects.extend(Vec::from(self.resume_scenario())),
                 _ => {}
             }
             effects.push(TriggerEffect::ChronoScreen { command });
@@ -136,6 +136,41 @@ impl crate::sim::scenario_session::ScenarioSession {
             locked: true,
             was_locked,
         });
+    }
+}
+
+impl crate::sim::world::Simulation {
+    /// Execute127's [`ScenarioSession::start_chrono_screen_effect`]
+    /// ([`Self::publish_chrono_screen_edge`]).
+    ///
+    /// [`ScenarioSession::start_chrono_screen_effect`]: crate::sim::scenario_session::ScenarioSession::start_chrono_screen_effect
+    pub(crate) fn start_chrono_screen(&mut self, duration: i32, effects: &mut Vec<TriggerEffect>) {
+        let was_active = self.session.chrono_screen().active();
+        self.session.start_chrono_screen_effect(duration, effects);
+        self.publish_chrono_screen_edge(was_active);
+    }
+
+    /// [`ScenarioSession::process_chrono_screen_effect`] for both of
+    /// `0x0053B560`'s callers, the frame's `0x0053A747` rung and
+    /// Main_Tick's paused visit at `0x0055D83A`
+    /// ([`Self::publish_chrono_screen_edge`]).
+    ///
+    /// [`ScenarioSession::process_chrono_screen_effect`]: crate::sim::scenario_session::ScenarioSession::process_chrono_screen_effect
+    pub(crate) fn step_chrono_screen(&mut self) -> Vec<TriggerEffect> {
+        let was_active = self.session.chrono_screen().active();
+        let effects = self.session.process_chrono_screen_effect();
+        self.publish_chrono_screen_edge(was_active);
+        effects
+    }
+
+    /// The effect's start (`0x0053B460`) and end (`0x0053B560`) refresh no
+    /// cell, but LightConvert555DA0 constructs a new Convert with the nuke's
+    /// RGB while it runs ([`Self::palette_constructor_rgb`]): either edge
+    /// publishes that in the ordered lighting stream.
+    fn publish_chrono_screen_edge(&mut self, was_active: bool) {
+        if self.session.chrono_screen().active() != was_active {
+            self.publish_relight_profile();
+        }
     }
 }
 

@@ -51,14 +51,21 @@ fn origin(sim: &Simulation, id: u64) -> (u16, u16) {
     (position.rx(), position.ry())
 }
 
-/// An Americans engineer on Capture arriving in `building`; then PerCell's
-/// building entry.
-fn arrive(sim: &mut Simulation, rules: &RuleSet, building: u64) -> u64 {
+/// An Americans engineer on Capture, selected or not, arriving in
+/// `building`; then PerCell's building entry.
+fn arrive(sim: &mut Simulation, rules: &RuleSet, building: u64, selected: bool) -> u64 {
     use crate::sim::components::{DriveCoord, NavTargetRef};
     use crate::sim::mission::{MissionId, MissionType};
     let engineer = sim
         .spawn_object("ENGI", "Americans", 13, 4, 0, rules)
         .unwrap();
+    sim.substrate
+        .entities
+        .get_mut(engineer)
+        .unwrap()
+        .seldom
+        .selection
+        .set_selected_for_test(selected);
     sim.substrate
         .mission_assign_exact(engineer, MissionId::from_known(MissionType::Capture), 0)
         .unwrap();
@@ -78,10 +85,10 @@ fn arrive(sim: &mut Simulation, rules: &RuleSet, building: u64) -> u64 {
         },
         rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     let result = sim
-        .infantry_per_cell_building_entry(engineer, rules, None, FrameEffects::default())
+        .infantry_per_cell_building_entry(engineer, rules, None, &mut FrameEffects::default())
         .unwrap();
     assert!(result.return_before_foot);
     engineer
@@ -109,7 +116,7 @@ fn a_destroyed_building_turns_into_its_rubble() {
             arg6: false,
         },
     );
-    let _ = sim.commit_direct_damage_receiver(&rules, None, hit, FrameEffects::default());
+    let _ = sim.commit_direct_damage_receiver(&rules, None, hit, &mut FrameEffects::default());
 
     let ruins = placed(&sim, "RUIN");
     assert_eq!(ruins.len(), 1, "one rubble");
@@ -138,7 +145,7 @@ fn an_engineer_rebuilds_a_friendly_rubble_and_survives() {
         Some(EngineerBuildingAction::Repair(true))
     );
 
-    let engineer = arrive(&mut sim, &rules, ruin);
+    let engineer = arrive(&mut sim, &rules, ruin, false);
 
     let rebuilt = placed(&sim, "BLDG");
     assert_eq!(rebuilt.len(), 1, "one rebuilt building");
@@ -148,6 +155,49 @@ fn an_engineer_rebuilds_a_friendly_rubble_and_survives() {
     assert!(placed(&sim, "RUIN").is_empty(), "the rubble is gone");
     let engineer = sim.substrate.entities.get(engineer).unwrap();
     assert!(engineer.is_object_alive() && !engineer.in_limbo());
+}
+
+/// A selected engineer kicked out of the building he rebuilt is Selected
+/// again through `TechnoClass::Select` (vt+0x14C, `1002585F..10025868`): a
+/// Select the game makes itself, which the client's current-objects vector
+/// takes in after his Remove's Deselect, not a bare IsSelected byte.
+#[test]
+fn a_selected_engineer_is_selected_again_through_select() {
+    use crate::sim::world::LifecycleOutput;
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let (mut sim, rules) = arena();
+    let ruin = sim
+        .spawn_object("RUIN", "Americans", 10, 10, 0, &rules)
+        .unwrap();
+    sim.take_lifecycle_outputs_for_test();
+
+    let engineer = arrive(&mut sim, &rules, ruin, true);
+
+    let entity = sim.substrate.entities.get(engineer).unwrap();
+    assert!(entity.is_object_alive() && !entity.in_limbo());
+    assert!(entity.seldom.selection.is_selected());
+    // Remove's Deselect lets the follow camera go before the Select.
+    let selection: Vec<_> = sim
+        .take_lifecycle_outputs_for_test()
+        .into_iter()
+        .filter(|output| {
+            matches!(
+                output,
+                LifecycleOutput::ObjectSelected { .. } | LifecycleOutput::FollowReleased { .. }
+            )
+        })
+        .collect();
+    assert_eq!(
+        selection,
+        [
+            LifecycleOutput::FollowReleased {
+                stable_id: engineer
+            },
+            LifecycleOutput::ObjectSelected {
+                stable_id: engineer
+            }
+        ]
+    );
 }
 
 /// `EngineerRepairable=no` overrides `Repairable=yes`: no repair action over
@@ -170,7 +220,7 @@ fn engineer_repairable_no_keeps_engineers_off_a_damaged_building() {
         .unwrap();
     assert_eq!(sim.engineer_building_action(probe, shed, &rules), None);
 
-    let engineer = arrive(&mut sim, &rules, shed);
+    let engineer = arrive(&mut sim, &rules, shed, false);
 
     assert_eq!(
         sim.substrate.entities.get(shed).unwrap().health.current(),
@@ -226,7 +276,7 @@ fn engineer_damage_decides_a_hostile_building_above_the_capture_level() {
         sim.engineer_building_action(probe, building, &rules),
         Some(EngineerBuildingAction::Damage)
     );
-    let engineer = arrive(&mut sim, &rules, building);
+    let engineer = arrive(&mut sim, &rules, building, false);
     assert_eq!(
         sim.substrate
             .entities
@@ -242,6 +292,23 @@ fn engineer_damage_decides_a_hostile_building_above_the_capture_level() {
             .get(engineer)
             .is_some_and(|engineer| engineer.is_object_alive())
     );
+
+    // A lockstep MapHouses scenario retains the campaign branch of the Ares
+    // hook even though the transport mode is LAN and MultiEngineer is set.
+    sim.install_session_admission(
+        crate::sim::scenario_session::ScenarioGameMode::Lan,
+        None,
+        crate::rules::rule_policy::RulePolicy::stock_campaign()
+            .with_counts_player_control_as_human(false),
+    );
+    assert_eq!(
+        sim.engineer_building_action(probe, building, &rules),
+        Some(EngineerBuildingAction::Capture)
+    );
+    arrive(&mut sim, &rules, building, false);
+    let captured = sim.substrate.entities.get(building).unwrap();
+    assert_eq!(captured.owner(), americans);
+    assert_eq!(captured.health.current(), 750);
 }
 
 /// Ares `InfantryClass_IsCellOccupied @ 10014D70` (hook `0x51C4C8`): an
@@ -266,7 +333,6 @@ fn an_is_passable_building_does_not_block_entry() {
             cells.lookup(cell),
             crate::sim::movement::infantry_entry::InfantryEntryArgs::REPAIR,
             &rules,
-            None,
         )
         .unwrap()
     };

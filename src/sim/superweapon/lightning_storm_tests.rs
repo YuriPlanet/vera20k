@@ -166,11 +166,11 @@ fn fixture_world(
     sim.intern_rule_type_ids(rules);
     sim.resolve_type_handles(rules);
     sim.resolve_rule_animation_lists(rules);
-    sim.scenario_rng = SimRng::new(seed as u64);
+    *sim.scenario_rng = SimRng::new(seed as u64);
     sim.session.set_binary_frame_for_test(frame as u32);
     sim.session.set_map_width_for_test(FIXTURE_MAP);
     sim.session.set_map_height_for_test(FIXTURE_MAP);
-    sim.resolved_terrain = Some(test_grid(FIXTURE_MAP, FIXTURE_MAP, |x, y| {
+    *sim.resolved_terrain = Some(test_grid(FIXTURE_MAP, FIXTURE_MAP, |x, y| {
         fixture_cell(
             x,
             y,
@@ -338,7 +338,7 @@ enum Sound {
 }
 
 impl Calls {
-    fn of(sim: &Simulation, anims_before: usize) -> Self {
+    fn of(sim: &Simulation, rules: &RuleSet, anims_before: usize) -> Self {
         let sounds = sim
             .sound_events
             .iter()
@@ -358,7 +358,7 @@ impl Calls {
                     world_z_leptons,
                     ..
                 } => Some(Sound::At(
-                    sound_id.clone(),
+                    sound_id.name_in(rules).to_string(),
                     [
                         i32::from(*rx) * 256 + sub_x.to_num::<i32>(),
                         i32::from(*ry) * 256 + sub_y.to_num::<i32>(),
@@ -488,7 +488,7 @@ fn storm_start_matches_native_rows() {
                 .unwrap()
                 .set_is_defeated_for_test(true);
         }
-        sim.lightning_storm = LightningStorm::for_test(
+        *sim.lightning_storm = LightningStorm::for_test(
             flag(&row["active"]),
             false,
             int(&row["current_deferment"]),
@@ -506,7 +506,7 @@ fn storm_start_matches_native_rows() {
             house_ref(&houses, &row["owner"]),
         );
         assert_globals(&sim, &houses, &row["storm"], row);
-        assert_eq!(Calls::of(&sim, 0), Calls::expected(row), "{row}");
+        assert_eq!(Calls::of(&sim, &rules, 0), Calls::expected(row), "{row}");
         assert_eq!(
             house_states(&sim, &houses),
             expected_house_states(row),
@@ -551,7 +551,7 @@ fn storm_cloud_matches_native_rows() {
         let anims: Vec<AnimId> = sim.anims().map(|(&id, _)| id).collect();
         assert_eq!(lists(&sim, &anims), expected_lists(&row["storm"]), "{row}");
         assert_eq!(
-            Calls::of(&sim, existing.len()),
+            Calls::of(&sim, &rules, existing.len()),
             Calls::expected(row),
             "{row}"
         );
@@ -674,18 +674,18 @@ fn storm_strike_matches_native_rows() {
             .map(|name| sim.interner.intern(name.as_str().unwrap()))
             .collect();
         let owner = house_ref(&houses, &row["owner"]);
-        sim.lightning_storm =
+        *sim.lightning_storm =
             LightningStorm::for_test(true, false, 0, 180, 0, (at.0 as i16, at.1 as i16), owner);
         let _ = lightning_storm::ground_strike(
             &mut sim,
             &rules,
             None,
             coords,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
 
         let mut expected = Calls::expected(row);
-        let mut seen = Calls::of(&sim, 0);
+        let mut seen = Calls::of(&sim, &rules, 0);
         if row["explosion"].is_null() {
             // RESIDUAL (module doc): VERA constructs nothing for a null type.
             expected.anims.retain(|(name, ..)| !name.is_empty());
@@ -770,7 +770,7 @@ fn storm_process_matches_native_rows() {
         );
         let before = &row["storm_before"];
         let field = |key: &str, default: i32| before.get(key).map_or(default, int);
-        sim.lightning_storm = LightningStorm::for_test(
+        *sim.lightning_storm = LightningStorm::for_test(
             before.get("active").is_some_and(flag),
             before.get("time_to_end").is_some_and(flag),
             field("deferment", 0),
@@ -815,7 +815,7 @@ fn storm_process_matches_native_rows() {
             &mut sim,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
 
         assert_globals(&sim, &houses, &row["storm"], row);
@@ -851,7 +851,11 @@ fn storm_process_matches_native_rows() {
             })
             .collect();
         assert_eq!(table, expected_table, "{row}");
-        assert_eq!(Calls::of(&sim, anims_before), Calls::expected(row), "{row}");
+        assert_eq!(
+            Calls::of(&sim, &rules, anims_before),
+            Calls::expected(row),
+            "{row}"
+        );
         assert_eq!(
             house_states(&sim, &houses),
             expected_house_states(row),
@@ -1004,13 +1008,13 @@ fn strike(
     registry: Option<&OverlayTypeRegistry>,
 ) {
     let owner = sim.interner.intern("Americans");
-    sim.lightning_storm = LightningStorm::raging_for_test(owner, (x as i16, y as i16));
+    *sim.lightning_storm = LightningStorm::raging_for_test(owner, (x as i16, y as i16));
     let _ = lightning_storm::ground_strike(
         sim,
         rules,
         registry,
         [i32::from(x) * 256 + 128, i32::from(y) * 256 + 128, 0],
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
 }
 
@@ -1069,19 +1073,19 @@ fn a_strikes_explosion_precedes_its_area_damage_on_ore() {
     let ore_id = overlay_registry.id_for_name("ORE").expect("ORE overlay id");
 
     let mut sim = Simulation::with_seed(1);
-    sim.resolved_terrain = Some(test_grid(10, 10, |rx, ry| ResolvedTerrainCell {
+    *sim.resolved_terrain = Some(test_grid(10, 10, |rx, ry| ResolvedTerrainCell {
         filled_clear: true,
         accepts_smudge: true,
         allows_tiberium: true,
         ..crate::map::resolved_terrain::test_flat_cell(rx, ry)
     }));
-    sim.smudge_grid = Some(crate::sim::smudge_grid::SmudgeGrid::new(10, 10));
-    sim.ore_growth_state = crate::sim::ore_growth::OreGrowthState::new(10, 10);
+    *sim.smudge_grid = Some(crate::sim::smudge_grid::SmudgeGrid::new(10, 10));
+    *sim.ore_growth_state = crate::sim::ore_growth::OreGrowthState::new(10, 10);
     let mut overlay = OverlayGrid::new(10, 10);
     // Raw data 9 is ten density units. The crater reduces six and stays
     // blocked by the surviving overlay; Damage=100 then clears the four left.
     overlay.place_overlay(5, 5, ore_id, 9);
-    sim.overlay_grid = Some(overlay);
+    *sim.overlay_grid = Some(overlay);
 
     strike(&mut sim, &rules, (5, 5), Some(&overlay_registry));
 
@@ -1145,8 +1149,8 @@ fn a_strike_destroying_a_wall_publishes_navigation_and_radar_inline() {
     let _ = overlays.take_dirty_cells();
 
     let mut sim = Simulation::with_seed(1);
-    sim.overlay_grid = Some(overlays);
-    sim.resolved_terrain = Some(terrain);
+    *sim.overlay_grid = Some(overlays);
+    *sim.resolved_terrain = Some(terrain);
     assert!(sim.rebuild_dynamic_navigation(&rules));
     assert!(!sim.path_grid().unwrap().is_walkable(5, 5));
     let ground_zone = |sim: &Simulation| {
@@ -1248,7 +1252,7 @@ fn a_bridge_strike_hits_the_deck_only() {
             .occupancy
             .add(5, 5, id, layer, None, CellListInsertion::PrependNonBuilding);
     }
-    sim.resolved_terrain = Some(test_grid(10, 10, |rx, ry| {
+    *sim.resolved_terrain = Some(test_grid(10, 10, |rx, ry| {
         let mut cell = crate::map::resolved_terrain::test_flat_cell(rx, ry);
         if (rx, ry) == (5, 5) {
             cell.bridge_facts = BridgeCellFacts {
@@ -1342,8 +1346,8 @@ fn a_fatal_strike_runs_the_death_transaction_inline() {
         let _ = sim.reveal(10);
         let mut overlays = OverlayGrid::new(12, 12);
         overlays.place_overlay(5, 5, 0, 0);
-        sim.overlay_grid = Some(overlays);
-        sim.resolved_terrain = Some(crate::sim::tiberium::test_support::flat_terrain(12, 12));
+        *sim.overlay_grid = Some(overlays);
+        *sim.resolved_terrain = Some(crate::sim::tiberium::test_support::flat_terrain(12, 12));
         strike(&mut sim, &rules, (5, 5), Some(&registry));
         let rng = sim.scenario_rng.state();
         (sim, rng)
@@ -1353,7 +1357,7 @@ fn a_fatal_strike_runs_the_death_transaction_inline() {
     assert!(fatal.substrate.entities.get(10).is_some_and(|entity| {
         entity.health.current() == 0
             && entity.death.is_dying()
-            && !entity.in_logic_vector.is_member()
+            && !entity.seldom.in_logic_vector.is_member()
     }));
     assert_eq!(
         fatal.overlay_grid.as_ref().unwrap().cell(5, 5).overlay_id,
@@ -1538,7 +1542,7 @@ fn retail_storm_strikes_through_production_frames() {
             .sound_events
             .iter()
             .filter(|event| {
-                matches!(event, SimSoundEvent::VocAt { sound_id, .. } if sound_id == "WeatherStrike")
+                matches!(event, SimSoundEvent::VocAt { sound_id, .. } if sound_id.name_in(&rules) == "WeatherStrike")
             })
             .count();
         assert!(frames < 2000, "the storm ends");
@@ -1600,7 +1604,7 @@ fn ares_fire_storm(
         sw_type,
         cell,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
         false,
     )
 }
@@ -1746,7 +1750,7 @@ fn ares_storm_starts_with_its_type_keys() {
     )));
     assert!(events.iter().any(|event| matches!(
         event,
-        SimSoundEvent::VocCentered { sound_id } if sound_id == "WeatherIntro"
+        SimSoundEvent::VocCentered { sound_id } if sound_id.name_in(&rules) == "WeatherIntro"
     )));
     assert!(!events.iter().any(began), "no stock line");
 
@@ -1756,7 +1760,7 @@ fn ares_storm_starts_with_its_type_keys() {
             sim,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
     };
     process(&mut sim, 1002);
@@ -1836,7 +1840,7 @@ fn ares_storm_strike_scales_a_lightning_rods_damage() {
         &rules,
         None,
         [i32::from(at.0) * 256 + 128, i32::from(at.1) * 256 + 128, 0],
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(
         sim.substrate.entities.get(rod).unwrap().health.current(),
@@ -1861,7 +1865,7 @@ fn ares_storm_lists_strike_from_half_front_to_back() {
     let rules = fixture_rules();
     let houses = [serde_json::json!([0, false])];
     let (mut sim, ids) = fixture_world(&rules, 7, 1003, (60, 60), &[], &houses, Some(0));
-    sim.lightning_storm =
+    *sim.lightning_storm =
         LightningStorm::for_test(true, false, 0, 180, 900, (40, 40), Some(ids[0]));
     let clouds: Vec<AnimId> = [(40, 40), (44, 40)]
         .into_iter()
@@ -1888,7 +1892,7 @@ fn ares_storm_lists_strike_from_half_front_to_back() {
         &mut sim,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert!(sim.lightning_storm.clouds_for_test().1.is_empty());
     let bolts: Vec<i32> = sim

@@ -127,13 +127,13 @@ fn fixture(input: &Value) -> (Simulation, RuleSet, u64) {
         );
         occupant.set_type_ref_for_test(sim.interner.intern("E1"));
         occupant.set_owner_for_test(sim.interner.intern("A"));
-        occupant.passenger_role = PassengerRole::inside_for_test(id, false);
+        occupant.set_passenger_role_for_test(PassengerRole::inside_for_test(id, false));
         sim.substrate.entities.insert(occupant);
         occupants.push(occupant_id);
     }
     let building = sim.substrate.entities.get_mut(id).unwrap();
     building
-        .passenger_role
+        .passenger_role_mut_for_test()
         .occupants_mut()
         .set_ids_for_test(occupants);
     building.health.set_for_test(integer(&input["current_hp"]));

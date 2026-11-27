@@ -1,6 +1,7 @@
 //! Action84 consumes the existing authored Group and deferred Mission owners.
 //! Native Execute6DDCEC..6DDD74 (WakeupGroup6E03B0) queues Guard(5,false).
 
+use crate::rules::rule_policy::RulePolicy;
 use crate::rules::team_ai_ini::TeamAiIniRegistry;
 use crate::sim::house_state::HouseState;
 use crate::sim::mission::MissionType;
@@ -19,7 +20,7 @@ fn authored_signed_group_queues_guard_across_houses() {
     // The clear arena and registered Houses are scene priors. Group, missions,
     // object construction and the live elapsed Trigger use production readers.
     crate::sim::arena_fixture::flat_arena(&mut sim, rules);
-    sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
+    *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
     sim.session.set_game_mode(ScenarioGameMode::Skirmish);
     // This unit-only scene uses the normal non-short-game defeat policy.
     sim.session.game_options_mut_for_test().short_game = false;
@@ -44,7 +45,7 @@ fn authored_signed_group_queues_guard_across_houses() {
     let teams = TeamAiIniRegistry::from_sources(
         &crate::rules::ini_parser::IniFile::empty(),
         &map.ini,
-        true,
+        RulePolicy::stock_multiplayer(),
     );
     sim.initialize_trigger_definitions(&map, &teams, None, None, None);
     assert_eq!(sim.spawn_from_map(&map.entities, Some(rules)), 4);
@@ -76,7 +77,7 @@ fn authored_signed_group_queues_guard_across_houses() {
     sim.advance_triggers(
         rules,
         Some(rules.overlay_registry()),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     for (index, id) in ids.into_iter().enumerate() {
         let mission = sim.entities().get(id).unwrap().mission.clone();

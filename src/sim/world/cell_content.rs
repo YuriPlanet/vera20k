@@ -22,7 +22,7 @@ impl Simulation {
         cell: NativeCellIdentity,
         rules: &crate::rules::ruleset::RuleSet,
         registry: &crate::rules::overlay_types::OverlayTypeRegistry,
-        effects: super::FrameEffects<'_>,
+        effects: &mut super::FrameEffects<'_>,
     ) -> bool {
         if !self
             .cell_overlay(cell)
@@ -62,7 +62,7 @@ impl Simulation {
             &[coord],
         );
         self.publish_cell_and_assign_orphaned_zone(rules, coord, Some(&blocked));
-        self.stop_all_targeting_cell(coord.0, coord.1, rules, Some(registry), effects);
+        self.stop_all_targeting_cell(coord.0, coord.1, rules, effects);
         true
     }
 

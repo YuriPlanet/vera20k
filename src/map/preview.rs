@@ -3,6 +3,17 @@
 //! This records preview metadata and decodes the packed thumbnail pixels used
 //! by the skirmish shell on demand. GPU upload remains in the app/render layer.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable
+    )
+)]
+
 use std::fmt;
 
 use crate::rules::ini_parser::IniFile;
@@ -62,10 +73,11 @@ impl ScenarioStartHeader {
 /// Start slots the native staging holds (`Scenario+0x1140`, 8 pairs), and so
 /// the slots every `'W'` record carries.
 pub const NATIVE_START_STAGING_SLOTS: usize = 8;
-/// VERA extension: the staging holds a start for each of thirty players, so a
-/// random map for more than eight players keeps every start. A `'W'` record
-/// grows past the native 8 slots only when a slot beyond them is used.
-pub const START_STAGING_SLOTS: usize = crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT;
+/// VERA extension: the staging holds a start for each offline Skirmish row
+/// ([`crate::skirmish_launch::SKIRMISH_MAX_SLOT_COUNT`]), so a random map for
+/// more than eight players keeps every start. A `'W'` record grows past the
+/// native 8 slots only when a slot beyond them is used.
+pub const START_STAGING_SLOTS: usize = crate::skirmish_launch::SKIRMISH_MAX_SLOT_COUNT;
 
 /// The retained Scenario start staging `+0x112C..+0x11DF` that the host's
 /// `'W'` options string carries to its guests.
@@ -75,7 +87,7 @@ pub const START_STAGING_SLOTS: usize = crate::skirmish_launch::NETWORK_PLAYER_SL
 /// overwrites it from every `'W'` it receives (`0x005E3E96..0x005E40C6`).
 /// Full_Init copies `cells` into waypoints 0..7 for a random map
 /// (`0x006873E6..0x0068740E`) before House start assignment.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ScenarioStartStaging {
     /// `+0x112C` / `+0x1130`: the playfield's minimum screen X/60, Y/30.
     pub start_x: i32,
@@ -89,6 +101,22 @@ pub struct ScenarioStartStaging {
     pub pairs: [(i32, i32); START_STAGING_SLOTS],
     /// `+0x11C0`: start waypoint cells; `(0, 0)` is the null cell (undefined).
     pub cells: [(i16, i16); START_STAGING_SLOTS],
+}
+
+impl Default for ScenarioStartStaging {
+    /// Arrays past thirty-two elements do not implement `Default`; the native
+    /// staging starts cleared.
+    fn default() -> Self {
+        Self {
+            start_x: 0,
+            start_y: 0,
+            width: 0,
+            height: 0,
+            count: 0,
+            pairs: [(0, 0); START_STAGING_SLOTS],
+            cells: [(0, 0); START_STAGING_SLOTS],
+        }
+    }
 }
 
 impl ScenarioStartStaging {
@@ -181,147 +209,9 @@ impl ScenarioStartStaging {
     }
 }
 
-/// The colours the LAN host's preview upload asks for (`0x005E8340`).
-pub const PALETTED_PREVIEW_COLORS: usize = 64;
-/// `LZOPipe(0, 0x2000)` for `Preview.bin` (`0x005E837E`).
-const PREVIEW_BIN_BLOCK_SIZE: usize = 0x2000;
 // VERA resource ceiling for authored/network thumbnails, not a native format
 // limit. Custom previews up to 2048x2048 remain supported (16 MiB decoded RGBA).
 const MAX_PREVIEW_SIDE: u32 = 2048;
-const MAX_PREVIEW_PIXELS: usize = MAX_PREVIEW_SIDE as usize * MAX_PREVIEW_SIDE as usize;
-const MAX_PALETTED_PREVIEW_BYTES: usize = 12 + 256 * 2 + MAX_PREVIEW_PIXELS;
-
-/// `CreatePalettedPreview 0x00642130`: the LAN host's preview, halved and
-/// cut to `colors` 12-bit colours, as the blob
-/// `u32 w, u32 h, u32 colors, colors × u16 0xRGB, w×h u8 indices`.
-///
-/// - Each pixel keeps the top four bits of each channel; the palette is the
-///   most frequent such colours, the lowest code first on a tie, and stops
-///   early when the image has fewer (`0x00642300..0x0064236F`).
-/// - Each pixel takes the first entry at the least L1 distance, and the first
-///   exact match at once (`0x0064246A..0x006424DC`).
-///
-/// The header always records `colors`. Native leaves the unfilled entries as
-/// uninitialised heap; they are zero here, and no pixel can reach them,
-/// because they exist only when every pixel has an exact match before them.
-/// RESIDUAL: the halving is `DSurface::CopyFromPart`'s stretch blit, whose
-/// sampling is not traced; this takes the source pixel at `x·w/(w/2)`.
-pub fn create_paletted_preview(preview: &DecodedPreview, colors: usize) -> Vec<u8> {
-    let (src_w, src_h) = (preview.width as usize, preview.height as usize);
-    let (width, height) = (src_w / 2, src_h / 2);
-    let mut pixels = Vec::with_capacity(width * height);
-    let mut histogram = vec![0u32; 0x1000];
-    for y in 0..height {
-        for x in 0..width {
-            let at = ((y * src_h / height) * src_w + x * src_w / width) * 4;
-            let [r, g, b] = [0, 1, 2].map(|channel| preview.rgba[at + channel] & 0xF0);
-            histogram[(usize::from(r) << 4) | usize::from(g) | usize::from(b >> 4)] += 1;
-            pixels.push([r, g, b]);
-        }
-    }
-    let mut palette = vec![0u16; colors];
-    for entry in &mut palette {
-        let mut best: Option<(usize, u32)> = None;
-        for (code, count) in histogram.iter().copied().enumerate() {
-            if count > best.map_or(0, |(_, most)| most) {
-                best = Some((code, count));
-            }
-        }
-        let Some((code, _)) = best else {
-            break;
-        };
-        histogram[code] = 0;
-        *entry = code as u16;
-    }
-    let mut blob = Vec::with_capacity(12 + 2 * colors + pixels.len());
-    for field in [width, height, colors] {
-        blob.extend_from_slice(&(field as u32).to_le_bytes());
-    }
-    for entry in &palette {
-        blob.extend_from_slice(&entry.to_le_bytes());
-    }
-    for [r, g, b] in pixels {
-        let mut best: Option<usize> = None;
-        let mut least = 0xFFFF;
-        for (index, &code) in palette.iter().enumerate() {
-            let distance = (i32::from((code >> 4) & 0xF0) - i32::from(r)).abs()
-                + (i32::from((code & 0xF) << 4) - i32::from(b)).abs()
-                + (i32::from(code & 0xF0) - i32::from(g)).abs();
-            if distance == 0 {
-                best = Some(index);
-                break;
-            }
-            if distance < least {
-                least = distance;
-                best = Some(index);
-            }
-        }
-        blob.push(best.filter(|index| *index < 0x100).unwrap_or(0) as u8);
-    }
-    blob
-}
-
-/// `PreviewClass::CreatePreviewSurface 0x006425F0`: the blob's `w×h` image,
-/// each index read as a palette entry `0xRGB` (`R = (v>>4)&0xF0`,
-/// `G = v&0xF0`, `B = (v&0xF)<<4`). Native reads the entry at the index
-/// without checking it against the colour count; an entry past the blob
-/// reads as black here. A blob shorter than its header refuses.
-pub fn paletted_preview_image(blob: &[u8]) -> Option<DecodedPreview> {
-    let field = |at: usize| -> Option<usize> {
-        Some(u32::from_le_bytes(blob.get(at..at + 4)?.try_into().ok()?) as usize)
-    };
-    let (width, height, colors) = (field(0)?, field(4)?, field(8)?);
-    let rgba_len =
-        expected_preview_rgba_len(width.try_into().ok()?, height.try_into().ok()?).ok()?;
-    if colors > 256 {
-        return None;
-    }
-    let indices_at = 12usize.checked_add(colors.checked_mul(2)?)?;
-    let indices = blob.get(indices_at..indices_at.checked_add(rgba_len / 4)?)?;
-    let mut rgba = Vec::with_capacity(rgba_len);
-    for &index in indices {
-        let at = 12 + 2 * usize::from(index);
-        let code = blob
-            .get(at..at + 2)
-            .map_or(0, |bytes| u16::from_le_bytes([bytes[0], bytes[1]]));
-        rgba.extend_from_slice(&[
-            ((code >> 4) & 0xF0) as u8,
-            (code & 0xF0) as u8,
-            ((code & 0xF) << 4) as u8,
-            0xFF,
-        ]);
-    }
-    Some(DecodedPreview {
-        width: width as u32,
-        height: height as u32,
-        rgba,
-    })
-}
-
-/// `Preview.bin` as the host writes it (`0x005E83CA..0x005E8459`): the
-/// blob's length, then the blob through `LZOPipe(0, 0x2000)`.
-pub fn preview_bin_bytes(blob: &[u8]) -> Vec<u8> {
-    let mut bytes = (blob.len() as u32).to_le_bytes().to_vec();
-    bytes.extend(crate::util::lzo::compress_chunks(
-        blob,
-        PREVIEW_BIN_BLOCK_SIZE,
-    ));
-    bytes
-}
-
-/// The guest's read of `Preview.bin` (`0x005E7920`): dword 0 is the blob's
-/// length, and `LZOStraw(1, 0x2000)` decodes the rest.
-pub fn preview_bin_blob(bytes: &[u8]) -> Option<Vec<u8>> {
-    let length = u32::from_le_bytes(bytes.get(..4)?.try_into().ok()?) as usize;
-    if !(12..=MAX_PALETTED_PREVIEW_BYTES).contains(&length) {
-        return None;
-    }
-    let mut blob = decompress_chunks(&bytes[4..], length).ok()?;
-    (blob.len() >= length).then(|| {
-        blob.truncate(length);
-        blob
-    })
-}
 
 /// CPU RGBA thumbnail decoded from `[PreviewPack]`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -555,9 +445,6 @@ mod tests {
             decode_preview_pack("invalid base64", 2049, 1),
             Err(PreviewDecodeError::PixelBufferTooLarge)
         );
-        let mut bin = 16u32.to_le_bytes().to_vec();
-        bin.extend(crate::util::lzo::compress_chunks(&[0; 32], 16));
-        assert!(preview_bin_blob(&bin).is_none());
     }
 
     #[test]
@@ -594,71 +481,6 @@ mod scenario_start_header_tests {
         let mut fresh = ScenarioStartHeader::default();
         fresh.read_ini(&IniFile::from_str("[Header]\nStartX=1"));
         assert_eq!(fresh.coop_human_start_spots(), 4);
-    }
-}
-
-#[cfg(all(test, tests_map))]
-mod paletted_preview_tests {
-    use super::*;
-
-    fn image(width: u32, height: u32, pixel: impl Fn(u32, u32) -> [u8; 3]) -> DecodedPreview {
-        let mut rgba = Vec::new();
-        for y in 0..height {
-            for x in 0..width {
-                let [r, g, b] = pixel(x, y);
-                rgba.extend_from_slice(&[r, g, b, 0xFF]);
-            }
-        }
-        DecodedPreview {
-            width,
-            height,
-            rgba,
-        }
-    }
-
-    #[test]
-    fn the_blob_halves_ranks_colours_and_round_trips_through_preview_bin() {
-        // Left half red-ish, right half blue-ish, one green pixel; the halved
-        // 4x2 image samples even source pixels.
-        let source = image(8, 4, |x, y| match (x, y) {
-            (2, 2) => [0x00, 0xF7, 0x08],
-            (x, _) if x < 4 => [0xF8, 0x1C, 0x07],
-            _ => [0x07, 0x2F, 0xEE],
-        });
-        let blob = create_paletted_preview(&source, PALETTED_PREVIEW_COLORS);
-        assert_eq!(blob.len(), 12 + 2 * 64 + 8);
-        assert_eq!(&blob[..12], &[4, 0, 0, 0, 2, 0, 0, 0, 64, 0, 0, 0]);
-        // Blue 0x02E has four pixels, red 0xF10 three and green one; the
-        // unfilled entries are zero.
-        let entry = |i: usize| u16::from_le_bytes([blob[12 + 2 * i], blob[13 + 2 * i]]);
-        assert_eq!(
-            [entry(0), entry(1), entry(2), entry(3)],
-            [0x02E, 0xF10, 0x0F0, 0]
-        );
-        assert_eq!(&blob[140..], &[1, 1, 0, 0, 1, 2, 0, 0]);
-        let decoded = paletted_preview_image(&blob).expect("decodes");
-        assert_eq!((decoded.width, decoded.height), (4, 2));
-        assert_eq!(&decoded.rgba[..4], &[0xF0, 0x10, 0x00, 0xFF]);
-        assert_eq!(&decoded.rgba[20..24], &[0x00, 0xF0, 0x00, 0xFF]);
-        assert_eq!(
-            preview_bin_blob(&preview_bin_bytes(&blob)).as_deref(),
-            Some(&blob[..])
-        );
-    }
-
-    #[test]
-    fn more_colours_than_the_palette_take_the_nearest() {
-        let source = image(32, 2, |x, _| [(x as u8) << 3, 0, 0]);
-        let blob = create_paletted_preview(&source, 4);
-        // Sixteen reds at one pixel each: the four lowest codes win the tie.
-        let entry = |i: usize| u16::from_le_bytes([blob[12 + 2 * i], blob[13 + 2 * i]]);
-        assert_eq!(
-            [entry(0), entry(1), entry(2), entry(3)],
-            [0x000, 0x100, 0x200, 0x300]
-        );
-        // Red 0xF0 is nearest to 0x300's 0x30; the first of equals wins.
-        assert_eq!(*blob.last().unwrap(), 3);
-        assert!(paletted_preview_image(&blob[..blob.len() - 1]).is_none());
     }
 }
 

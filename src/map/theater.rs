@@ -9,17 +9,19 @@
 //! - Part of map/ — depends on assets/, rules/ (for INI parsing).
 //! - Does NOT depend on render/ or sim/.
 
-use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 
-use crate::assets::asset_manager::AssetManager;
-use crate::assets::mix_archive::MixArchive;
+use anyhow::Context;
+
+use crate::assets::asset_manager::{AssetManager, PinnedNames};
 use crate::assets::mix_hash::mix_hash;
 use crate::assets::pal_file::Palette;
 use crate::assets::tmp_file::TmpFile;
 use crate::map::bridge_rim_tiles::HighBridgeRimTiles;
 use crate::map::map_file::MapError;
 use crate::rules::ini_parser::{IniFile, IniSection};
+use crate::rules::object_image::ImageTheater;
+use crate::rules::retail_sources::{RetailArchive, registered_retail, retail_archive};
 
 /// Marker for "no tile" after raw Pack5 compatibility translation.
 ///
@@ -63,6 +65,10 @@ struct TheaterDef {
     /// Theater control-file name. `Read_Theater_TileSets_INI` (`0x00545150`)
     /// appends the INI suffix to it (`IniRoots::theater_ini`).
     control_name: &'static str,
+    /// The radar's terrain brightness, `+0x58` of the TheaterType records at
+    /// `0x007E1B78 + index*0x70` that `CellClass::GetRadarColor` reads: 0.8
+    /// for Snow and 1.0 for every other theater.
+    radar_brightness: f32,
     /// File extension for TMP files (e.g., "tem" for temperate).
     extension: &'static str,
     /// Exact isometric, unit, and theater/ore palette filenames.
@@ -79,6 +85,7 @@ const THEATER_DEFS: &[(&str, TheaterDef)] = &[
         "TEMPERATE",
         TheaterDef {
             control_name: "temperat",
+            radar_brightness: 1.0,
             extension: "tem",
             iso_palette_name: "isotem.pal",
             unit_palette_name: "unittem.pal",
@@ -90,6 +97,7 @@ const THEATER_DEFS: &[(&str, TheaterDef)] = &[
         "SNOW",
         TheaterDef {
             control_name: "snow",
+            radar_brightness: 0.8,
             extension: "sno",
             iso_palette_name: "isosno.pal",
             unit_palette_name: "unitsno.pal",
@@ -107,6 +115,7 @@ const THEATER_DEFS: &[(&str, TheaterDef)] = &[
         "URBAN",
         TheaterDef {
             control_name: "urban",
+            radar_brightness: 1.0,
             extension: "urb",
             iso_palette_name: "isourb.pal",
             unit_palette_name: "uniturb.pal",
@@ -118,6 +127,7 @@ const THEATER_DEFS: &[(&str, TheaterDef)] = &[
         "LUNAR",
         TheaterDef {
             control_name: "lunar",
+            radar_brightness: 1.0,
             extension: "lun",
             iso_palette_name: "isolun.pal",
             unit_palette_name: "unitlun.pal",
@@ -129,6 +139,7 @@ const THEATER_DEFS: &[(&str, TheaterDef)] = &[
         "DESERT",
         TheaterDef {
             control_name: "desert",
+            radar_brightness: 1.0,
             extension: "des",
             iso_palette_name: "isodes.pal",
             unit_palette_name: "unitdes.pal",
@@ -140,6 +151,7 @@ const THEATER_DEFS: &[(&str, TheaterDef)] = &[
         "NEWURBAN",
         TheaterDef {
             control_name: "urbann",
+            radar_brightness: 1.0,
             extension: "ubn",
             iso_palette_name: "isoubn.pal",
             unit_palette_name: "unitubn.pal",
@@ -533,17 +545,16 @@ fn checked_tileset_ordinal(ordinal: u32) -> Result<u16, MapError> {
 }
 
 fn read_tileset_row(ini: &IniFile, ordinal: u32) -> Result<Option<(&IniSection, i32)>, MapError> {
-    let section_name = format!("TileSet{ordinal:04}");
-    let section = ini.section(&section_name);
-    let tiles_in_set = section.map_or(-1, |section| section.read_int("TilesInSet", -1));
+    // An absent section reads the -1 default, which ends the registry too.
+    let Some(section) = ini.section(&format!("TileSet{ordinal:04}")) else {
+        return Ok(None);
+    };
+    let tiles_in_set = section.read_int("TilesInSet", -1);
     if tiles_in_set == -1 {
         return Ok(None);
     }
     checked_tileset_ordinal(ordinal)?;
-    Ok(Some((
-        section.expect("nonterminating TilesInSet requires a section"),
-        tiles_in_set,
-    )))
+    Ok(Some((section, tiles_in_set)))
 }
 
 /// Parse a theater INI file into a TilesetLookup.
@@ -741,12 +752,20 @@ pub fn theater_names_and_extensions() -> impl Iterator<Item = (&'static str, &'s
         .map(|(name, def)| (*name, def.extension))
 }
 
-/// Look up the theater definition for a theater name (e.g., "TEMPERATE").
+/// The radar's terrain brightness for a theater name: that of the theater
+/// [`theater_def`] finds, 1.0 when it finds none.
+pub fn theater_radar_brightness(name: &str) -> f32 {
+    theater_def(name).map_or(1.0, |def| def.radar_brightness)
+}
+
+/// Look up the theater definition for a theater name (e.g., "TEMPERATE"):
+/// the definition of the theater `FindTheater @ 0x0048DBE0`
+/// ([`ImageTheater::from_name`]) finds for it, `None` when it finds none.
 fn theater_def(name: &str) -> Option<&'static TheaterDef> {
-    let upper: String = name.to_ascii_uppercase();
+    let theater = ImageTheater::from_name(name);
     THEATER_DEFS
         .iter()
-        .find(|(n, _)| *n == upper)
+        .find(|(identifier, _)| ImageTheater::from_name(identifier) == theater)
         .map(|(_, def)| def)
 }
 
@@ -793,9 +812,18 @@ pub struct TheaterData {
     pub cliff_ranges: TheaterCliffRanges,
     /// Tile-identity `[General]` keys consumed by the random-map generator.
     pub rmg_tiles: RmgTileKeys,
+    /// First tiles of `[General] Ice1Set`/`Ice2Set`/`Ice3Set`, the Firestorm
+    /// ice chain's three families (docs/ts-ice.md). `None` keeps ice off.
+    pub ice_sets: Option<[u16; 3]>,
+    pub(crate) terrain_files: TerrainFiles,
 }
 
 impl TheaterData {
+    /// The map selected VERA's built-in snow tiles. A mod can supply its own ice separately.
+    pub fn uses_bundled_ice(&self) -> bool {
+        self.terrain_files == TerrainFiles::BundledIce
+    }
+
     /// `BridgeMiddle1/2` as tile-index offsets: the NS (EW) bridgehead variant
     /// block occupies `BridgeSet_start + {N-1, N, N+1, N+2}`. Negative and
     /// oversized signed keys have no u16 tile identity and are None.
@@ -847,7 +875,7 @@ impl BridgeMiddleTiles {
 /// stock INI before a suffix was selected loading.
 fn theater_ini_name(asset_manager: &AssetManager, control_name: &str) -> String {
     let selected = asset_manager.ini_roots().theater_ini(control_name);
-    if asset_manager.resolve_ref(&selected).is_some() {
+    if asset_manager.installed_file(&selected).is_some() {
         return selected;
     }
     crate::util::ini_roots::IniRoots::default().theater_ini(control_name)
@@ -891,13 +919,10 @@ pub struct ChangedTiles {
 /// MIXes as `AssetManager::theater_archives_unmounted` finds them.
 pub fn changed_tiles(asset_manager: &AssetManager) -> ChangedTiles {
     use crate::rules::retail_sources::{game_folder_file, shipped_source};
-    let registered: Vec<_> = asset_manager
-        .registered_archives()
-        .filter_map(|(source, archive)| retail_archive(asset_manager, source, Some(archive)))
-        .collect();
+    let registered = registered_retail(asset_manager);
     // The first registered archive listing each name, as `lookup_index`.
     let mut registered_index = HashMap::new();
-    for (position, (_, archive)) in registered.iter().enumerate() {
+    for (position, (_, _, archive)) in registered.iter().enumerate() {
         for entry in archive.entries() {
             registered_index.entry(entry.id).or_insert(position);
         }
@@ -906,31 +931,22 @@ pub fn changed_tiles(asset_manager: &AssetManager) -> ChangedTiles {
     let mut digest: Option<crate::util::sha256::Sha256> = None;
     for (_, def) in THEATER_DEFS {
         let Some(lookup) = asset_manager
-            .get_with_source_ref(&theater_ini_name(asset_manager, def.control_name))
-            .and_then(|(bytes, _)| IniFile::from_bytes(bytes).ok())
+            .installed_file(&theater_ini_name(asset_manager, def.control_name))
+            .and_then(|(_, bytes)| IniFile::from_bytes(bytes).ok())
             .and_then(|ini| parse_tileset_sections(&ini, def.extension).ok())
         else {
             continue;
         };
         let theater = asset_manager.theater_archives_unmounted(def.mix_archives);
-        let theater_retail: Vec<_> = theater
-            .iter()
-            .filter_map(|unmounted| {
-                retail_archive(
-                    asset_manager,
-                    &unmounted.source,
-                    unmounted.archive.as_deref(),
-                )
-            })
-            .collect();
+        let theater_retail = unmounted_retail(asset_manager, &theater);
         let read = |name: &str| asset_manager.resolve_ref_with_unmounted(name, &theater);
         let read_retail = |name: &str| {
             let id = mix_hash(name);
-            let (replaces, archive) = match registered_index.get(&id) {
+            let (_, replaces, archive) = match registered_index.get(&id) {
                 Some(&position) => &registered[position],
                 None => theater_retail
                     .iter()
-                    .find(|(_, archive)| archive.contains_id(id))?,
+                    .find(|(_, _, archive)| archive.contains_id(id))?,
             };
             archive.get_by_id(id).map(|bytes| (*replaces, bytes))
         };
@@ -990,22 +1006,25 @@ pub fn changed_tiles(asset_manager: &AssetManager) -> ChangedTiles {
     }
 }
 
-/// What a retail install searches in place of one archive (`None` when it
-/// does not open): the archive itself when it ships; else the shipped copy of
-/// the archive of its name, with the source it stands in for; else nothing
-/// (`expandmd99.mix`).
-fn retail_archive<'a>(
-    assets: &AssetManager,
-    source: &'a str,
-    archive: Option<&'a MixArchive>,
-) -> Option<(Option<&'a str>, Cow<'a, MixArchive>)> {
-    if let Some(archive) = archive.filter(|_| crate::rules::retail_sources::shipped_source(source))
-    {
-        return Some((None, Cow::Borrowed(archive)));
-    }
-    let name = source.rsplit("->").next().unwrap_or(source).trim();
-    crate::rules::retail_sources::shipped_nested_archive(assets, name)
-        .map(|copy| (Some(source), Cow::Owned(copy)))
+/// A theater's archives that are not registered
+/// (`AssetManager::theater_archives_unmounted`) as a retail install searches
+/// them, after the registered ones. A loose one that does not open still
+/// gives the shipped copy it hides.
+fn unmounted_retail<'a>(
+    asset_manager: &'a AssetManager,
+    unmounted: &'a [crate::assets::asset_manager::UnmountedArchive<'a>],
+) -> Vec<RetailArchive<'a>> {
+    unmounted
+        .iter()
+        .filter_map(|unmounted| {
+            let (replaces, retail) = retail_archive(
+                asset_manager,
+                &unmounted.source,
+                unmounted.archive.as_deref(),
+            )?;
+            Some((unmounted.source.as_str(), replaces, retail))
+        })
+        .collect()
 }
 
 /// A tile's files as a theater reads them: the pristine file and its
@@ -1020,6 +1039,92 @@ fn tile_files(pristine: &str, mut exists: impl FnMut(&str) -> bool) -> Vec<Strin
         .collect()
 }
 
+/// VERA: which copies of a theater's INI and tile files a load reads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TerrainFiles {
+    /// As every other file is found, the game folder's changes included.
+    GameFolder,
+    /// As a retail install reads them ([`original_terrain_names`]), whatever
+    /// the game folder adds or changes. Players whose folders differ in
+    /// terrain files then load one world.
+    Original,
+    /// The original Yuri's Revenge snow terrain with VERA's map-authoring extension.
+    BundledIce,
+}
+
+impl TerrainFiles {
+    fn ini_name(self, assets: &AssetManager, def: &TheaterDef) -> String {
+        if self == Self::BundledIce {
+            "snowmd.ini".to_owned()
+        } else {
+            theater_ini_name(assets, def.control_name)
+        }
+    }
+}
+
+/// VERA: the terrain files network play of the original game reads: the
+/// original ones, unless a mod is selected, whose terrain is its game.
+/// Players whose game folders hold other terrain files then load, and make
+/// from a seed, one world, and the rules agreement leaves those files out
+/// (the app's `ProcessAssets::multiplayer_rules_digest`).
+pub fn network_terrain_files(asset_manager: &AssetManager, network: bool) -> TerrainFiles {
+    if network && !asset_manager.mod_selected() {
+        TerrainFiles::Original
+    } else {
+        TerrainFiles::GameFolder
+    }
+}
+
+/// VERA: [`load_theater_with`] the files [`network_terrain_files`] names, or
+/// the game folder's when no retail copy of the theater's INI is found.
+/// `AssetManager::names_pinned` tells which it read.
+pub fn load_theater_for_play(
+    asset_manager: &mut AssetManager,
+    theater_name: &str,
+    network: bool,
+) -> Option<TheaterData> {
+    if network_terrain_files(asset_manager, network) == TerrainFiles::Original
+        && let Ok(theater) = load_theater_with(asset_manager, theater_name, TerrainFiles::Original)
+    {
+        return Some(theater);
+    }
+    load_theater(asset_manager, theater_name)
+}
+
+/// A map opts into the bundled tiles independently of the rules layers and of
+/// IceGrowthEnabled, which controls refreezing in an existing ice theater.
+pub fn map_requests_bundled_ice(theater_name: &str, ini: &IniFile) -> bool {
+    ImageTheater::from_name(theater_name) == ImageTheater::Snow
+        && ini.section_or_empty("Map").read_bool("VeraIce", false)
+}
+
+/// Resolve the terrain requested by a particular scenario. Ordinary scenarios
+/// can launch without a complete theater where their caller permits it. An
+/// ice map needs the installed pack and its stock snow base to play.
+pub fn load_scenario_theater(
+    asset_manager: &mut AssetManager,
+    theater_name: &str,
+    map_ini: &IniFile,
+    network: bool,
+) -> anyhow::Result<Option<TheaterData>> {
+    let enabled = map_requests_bundled_ice(theater_name, map_ini);
+    load_theater_with_bundled_ice(asset_manager, theater_name, enabled, network)
+}
+
+/// Rebind the same terrain for a fresh map or a saved world.
+pub fn load_theater_with_bundled_ice(
+    asset_manager: &mut AssetManager,
+    theater_name: &str,
+    enabled: bool,
+    network: bool,
+) -> anyhow::Result<Option<TheaterData>> {
+    if enabled && ImageTheater::from_name(theater_name) == ImageTheater::Snow {
+        load_theater_with(asset_manager, theater_name, TerrainFiles::BundledIce).map(Some)
+    } else {
+        Ok(load_theater_for_play(asset_manager, theater_name, network))
+    }
+}
+
 /// Load tileset data for a theater.
 ///
 /// Replaces the active theater MIX group, then loads the theater INI the
@@ -1028,26 +1133,41 @@ fn tile_files(pristine: &str, mut exists: impl FnMut(&str) -> bool) -> Vec<Strin
 /// filenames.
 /// The AssetManager is mutable because theater MIX archives are loaded on demand.
 pub fn load_theater(asset_manager: &mut AssetManager, theater_name: &str) -> Option<TheaterData> {
-    let def: &TheaterDef = theater_def(theater_name)?;
+    load_theater_with(asset_manager, theater_name, TerrainFiles::GameFolder)
+        .inspect_err(|error| log::warn!("Theater {theater_name}: {error:#}"))
+        .ok()
+}
 
-    if let Err(err) = asset_manager.activate_theater_archives(theater_name, def.mix_archives) {
-        log::warn!(
-            "Theater {}: archive activation failed: {}",
-            theater_name,
-            err
-        );
-        return None;
-    }
+/// VERA: [`load_theater`] reading the theater's INI and tile files as `files`
+/// says. The choice holds for every later read of those names, the tiles a
+/// match loads after this included, until the next theater load.
+pub fn load_theater_with(
+    asset_manager: &mut AssetManager,
+    theater_name: &str,
+    files: TerrainFiles,
+) -> anyhow::Result<TheaterData> {
+    asset_manager.pin_names(None);
+    let def =
+        theater_def(theater_name).with_context(|| format!("Unknown map theater {theater_name}"))?;
+    asset_manager
+        .activate_theater_archives(theater_name, def.mix_archives)
+        .with_context(|| format!("Could not open the {theater_name} terrain archives"))?;
+    let ini_name = files.ini_name(asset_manager, def);
+    let pinned_table = if files == TerrainFiles::GameFolder {
+        None
+    } else {
+        let (pinned, ini, lookup) = original_terrain_names(asset_manager, def, files, &ini_name)?;
+        asset_manager.pin_names(Some(pinned));
+        Some((ini, lookup))
+    };
 
     let selected = asset_manager.ini_roots().theater_ini(def.control_name);
-    let ini_name = theater_ini_name(asset_manager, def.control_name);
-    if ini_name != selected {
+    if files != TerrainFiles::BundledIce && ini_name != selected {
         log::warn!("Theater {theater_name}: INI '{selected}' not found; reading '{ini_name}'");
     }
-    let Some((ini_data, ini_source)) = asset_manager.get_with_source(&ini_name) else {
-        log::warn!("Theater {theater_name}: INI '{ini_name}' not found");
-        return None;
-    };
+    let (ini_data, ini_source) = asset_manager
+        .get_with_source(&ini_name)
+        .with_context(|| format!("Could not find {ini_name} for the {theater_name} theater"))?;
     log::info!(
         "Theater {}: INI '{}' from {}",
         theater_name,
@@ -1058,8 +1178,13 @@ pub fn load_theater(asset_manager: &mut AssetManager, theater_name: &str) -> Opt
     // TileSet rows and General metadata share the native INI parser. Original
     // 545535..545C3F uses exact-case General keys and ReadInt5276D0 syntax;
     // tools/rules_oracle/theater_general_reader.md preserves executed results.
-    let ini = IniFile::from_bytes(&ini_data).ok()?;
-    let mut lookup = parse_tileset_sections(&ini, def.extension).ok()?;
+    let (ini, mut lookup) = if let Some(table) = pinned_table {
+        table
+    } else {
+        let ini = IniFile::from_bytes(&ini_data)?;
+        let lookup = parse_tileset_sections(&ini, def.extension)?;
+        (ini, lookup)
+    };
     // Diagnostic: log first 15 tilesets for debugging tile mapping.
     for (idx, (bounds, name)) in lookup
         .tileset_bounds
@@ -1096,7 +1221,8 @@ pub fn load_theater(asset_manager: &mut AssetManager, theater_name: &str) -> Opt
     );
 
     let (unit_palette, iso_palette) =
-        load_theater_unit_and_iso_palettes(asset_manager, theater_name)?;
+        load_theater_unit_and_iso_palettes(asset_manager, theater_name)
+            .with_context(|| format!("Could not find the {theater_name} theater palettes. Check your game data folder in Options and try again."))?;
     let tiberium_palette = load_exact_palette(
         asset_manager,
         def.theater_palette_name,
@@ -1131,6 +1257,14 @@ pub fn load_theater(asset_manager: &mut AssetManager, theater_name: &str) -> Opt
         &mut cliff_ranges,
         &mut rmg_tiles,
     );
+    let ice_sets = resolve_ice_sets(theater_name, &lookup, general);
+    // The published map format assigns fixed numbers to these tiles. Never
+    // silently play an ice map on a different layout of the base snow theater.
+    if files == TerrainFiles::BundledIce && ice_sets != Some([4096, 4160, 4224]) {
+        anyhow::bail!(
+            "This map needs the original Yuri’s Revenge snow terrain. Check your game data folder in Options and try again."
+        );
+    }
     let high_bridge_rim_tiles = HighBridgeRimTiles::read(
         bridge_set
             .and_then(|set| lookup.bounds().get(usize::from(set)))
@@ -1159,6 +1293,8 @@ pub fn load_theater(asset_manager: &mut AssetManager, theater_name: &str) -> Opt
         automatic_tube_bases,
         cliff_ranges,
         rmg_tiles,
+        ice_sets,
+        terrain_files: files,
     };
     let [bridge_middle_1, bridge_middle_2] = theater.bridge_middles();
     if bridge_set.is_some() || wood_bridge_set.is_some() {
@@ -1191,7 +1327,107 @@ pub fn load_theater(asset_manager: &mut AssetManager, theater_name: &str) -> Opt
         );
     }
 
-    Some(theater)
+    Ok(theater)
+}
+
+/// VERA: a theater's INI, its isometric palette and the tile files its
+/// tilesets name, pinned to the archives a retail install reads them from, as
+/// [`changed_tiles`] compares them: the registered archives in their order
+/// ([`registered_retail`]), then the theater's archives that are not
+/// registered ([`unmounted_retail`]), and no loose file. The names are the
+/// INI as [`theater_ini_name`] selects it, each tile's pristine file and
+/// every variant suffix a load can probe ([`contiguous_variant_filenames`]),
+/// so a tile or variant that only the game folder has reads as absent, and
+/// the palette that draws those tiles. Called with the theater's archives
+/// active. The returned table is also the one the scenario uses.
+fn original_terrain_names(
+    asset_manager: &AssetManager,
+    def: &TheaterDef,
+    files: TerrainFiles,
+    ini_name: &str,
+) -> anyhow::Result<(PinnedNames, IniFile, TilesetLookup)> {
+    let unmounted = asset_manager.theater_archives_unmounted(def.mix_archives);
+    let mut archives = registered_retail(asset_manager);
+    archives.extend(unmounted_retail(asset_manager, &unmounted));
+    let ini_id = mix_hash(ini_name);
+    let bytes = archives
+        .iter()
+        .find(|(_, _, archive)| archive.contains_id(ini_id))
+        .and_then(|(_, _, archive)| archive.get_by_id(ini_id))
+        .with_context(|| format!("Could not find retail {ini_name}. Check your game data folder in Options and try again."))?;
+    let mut ini = IniFile::from_bytes(bytes)?;
+    if files == TerrainFiles::BundledIce {
+        // The loose files belong to one release. Pin the checked MIX and merge
+        // its companion definitions into the same table used for all tile reads.
+        let (mix, definitions) = crate::assets::ice_pack::load().context(
+            "This map needs VERA’s ice tiles. Reinstall VERA20K to restore its Terrain folder.",
+        )?;
+        let ice = crate::assets::mix_archive::MixArchive::from_bytes(mix)?;
+        ini.merge(&IniFile::from_bytes(&definitions)?);
+        archives.insert(0, ("vera_ice.mix", None, std::borrow::Cow::Owned(ice)));
+    }
+    let lookup = parse_tileset_sections(&ini, def.extension)?;
+    let mut names = vec![ini_name.to_owned(), def.iso_palette_name.to_owned()];
+    for pristine in lookup.entries.iter().flatten() {
+        names.push(pristine.clone());
+        if let Some((stem, extension)) = pristine.rsplit_once('.') {
+            names
+                .extend((0..MAX_VARIANT_SUFFIXES).map(|offset| {
+                    format!("{stem}{}.{extension}", char::from(b'a' + offset as u8))
+                }));
+        }
+    }
+    let pinned = PinnedNames::new(
+        names.iter().map(String::as_str),
+        archives
+            .into_iter()
+            .map(|(source, _, archive)| (source.to_owned(), archive)),
+    );
+    Ok((pinned, ini, lookup))
+}
+
+/// A game folder for terrain tests, as a tile pack leaves one. `ra2md.mix`
+/// ships a Snow whose table names two tiles and holds one, `clear01.sno` with
+/// its variant `clear01a.sno`. `expandmd06.mix` changes the table, gives
+/// that tile other bytes and fills the empty slot with `clear02.sno`, and a
+/// loose `clear01b.sno` adds a variant.
+#[cfg(any(test, feature = "test-support"))]
+pub fn terrain_test_install(
+    label: &str,
+) -> crate::assets::asset_manager::test_support::TestDirectory {
+    use crate::map::source::test_support::make_new_format_mix_bytes;
+    let dir = crate::assets::asset_manager::test_support::audio_test_install(label);
+    let local = make_new_format_mix_bytes(&[(
+        "snowmd.ini",
+        b"[TileSet0000]\nFileName=clear\nTilesInSet=2\n",
+    )]);
+    let tiles = make_new_format_mix_bytes(&[
+        ("clear01.sno", b"tile"),
+        ("clear01a.sno", b"next"),
+        ("isosno.pal", &[0; 768]),
+    ]);
+    std::fs::remove_file(dir.path().join("localmd.mix")).unwrap();
+    let pack = make_new_format_mix_bytes(&[
+        (
+            "snowmd.ini",
+            b"[TileSet0000]\nFileName=clear\nTilesInSet=2\nMorphable=yes\n",
+        ),
+        ("clear01.sno", b"changed"),
+        ("clear02.sno", b"added"),
+    ]);
+    let files: [(&str, &[u8]); 4] = [
+        (
+            "ra2md.mix",
+            &make_new_format_mix_bytes(&[("localmd.mix", &local), ("isosnomd.mix", &tiles)]),
+        ),
+        ("expandmd06.mix", &pack),
+        ("clear01b.sno", b"added"),
+        ("unitsno.pal", &[0; 768]),
+    ];
+    for (name, bytes) in files {
+        std::fs::write(dir.path().join(name), bytes).unwrap();
+    }
+    dir
 }
 
 /// The stock corpus stops at `g`. The alphabet-wide cap is deliberately well
@@ -1299,6 +1535,34 @@ pub(crate) fn resolve_rmg_tile_keys(
     }
 }
 
+/// Firestorm 2.0 Read_Theater 0x4f3950 reads `Ice1Set`, `Ice2Set`, `Ice3Set`
+/// and `IceShoreSet` with Get_Int (default -1) and keeps each set's first
+/// tile; gamemd reads none of them. Its ice code runs on every SNOW map, but
+/// classifies tiles by fixed 0x40-tile windows from those bases, so VERA runs
+/// it only where they hold real tiles: a Snow theater whose three ice sets
+/// have 0x40 tiles each and whose shore set has any. Retail SNOWMD.INI keeps
+/// all four with `TilesInSet = 0`, which leaves ice off.
+fn resolve_ice_sets(
+    theater_name: &str,
+    lookup: &TilesetLookup,
+    general: Option<&IniSection>,
+) -> Option<[u16; 3]> {
+    if ImageTheater::from_name(theater_name) != ImageTheater::Snow {
+        return None;
+    }
+    let bounds = |key: &str| {
+        let ordinal = general?.read_int(key, -1);
+        lookup.bounds().get(usize::try_from(ordinal).ok()?).copied()
+    };
+    let ice = |key: &str| {
+        bounds(key)
+            .filter(|set| set.count >= 0x40)
+            .map(|set| set.start)
+    };
+    bounds("IceShoreSet").filter(|set| set.count > 0)?;
+    Some([ice("Ice1Set")?, ice("Ice2Set")?, ice("Ice3Set")?])
+}
+
 /// The `[General] Medians=` ordinal ReadTheater545150 keeps. Ares' MediansFix
 /// (Ares.dll 1006A920, hook 0x545904 right after the ReadInt) turns the
 /// missing-key -1 into 71: SNOWMD.INI, the one shipped theater without the
@@ -1342,7 +1606,7 @@ fn apply_lunar_global_zeroing(
     cliff_ranges: &mut TheaterCliffRanges,
     rmg_tiles: &mut RmgTileKeys,
 ) {
-    if !theater_name.eq_ignore_ascii_case("LUNAR") {
+    if ImageTheater::from_name(theater_name) != ImageTheater::Lunar {
         return;
     }
     *bridge_set = None;
@@ -1491,16 +1755,16 @@ pub fn inject_template_tiles(
         .ok_or_else(|| format!("TMP {filename} missing from MIX archives"))?;
     let tmp = TmpFile::from_bytes(tmp_data)
         .map_err(|error| format!("TMP {filename} failed to parse: {error:#}"))?;
-    let cell_count = (tmp.template_width * tmp.template_height) as usize;
-    for sub_tile in 0..cell_count {
-        if tmp.tiles[sub_tile].is_none() {
-            continue;
+    // A map cell names its subtile in one byte, so a template's cells past
+    // the 256th can never be drawn.
+    for (sub_tile, cell) in (0..=u8::MAX).zip(&tmp.tiles) {
+        if cell.is_some() {
+            needed.insert(TileKey {
+                tile_id,
+                sub_tile,
+                variant: 0,
+            });
         }
-        needed.insert(TileKey {
-            tile_id,
-            sub_tile: sub_tile as u8,
-            variant: 0,
-        });
     }
     Ok(())
 }

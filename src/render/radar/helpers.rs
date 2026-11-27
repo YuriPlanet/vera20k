@@ -29,9 +29,6 @@ pub(super) const MINIMAP_DEPTH: f32 = 0.0;
 /// Shrouded / unexplored area color (pure black, matches original PutPixel(0)).
 pub(super) const COLOR_SHROUD: [u8; 4] = [0, 0, 0, 255];
 
-const THEATER_BRIGHTNESS_DEFAULT: f32 = 1.0;
-const THEATER_BRIGHTNESS_SNOW: f32 = 0.8;
-
 /// Classification of an overlay for minimap coloring.
 ///
 /// Defined in render/ so that the minimap doesn't depend on rules::overlay_types.
@@ -430,21 +427,6 @@ pub(super) fn dim_color(color: [u8; 4], factor: f32) -> [u8; 4] {
     ]
 }
 
-/// Get the terrain brightness multiplier for a theater.
-///
-/// Live TheaterType table field read by `CellClass::GetRadarColor`.
-///
-/// The `TEMPERATE,SNOW,URBAN,DESERT,NEWURBAN,LUNAR` records at
-/// `0x007E1B78 + index*0x70` carry brightness at `+0x58`: Snow is 0.8 and
-/// every other retail theater is 1.0. The later unsigned `>>1` is separate.
-pub(super) fn terrain_brightness_for_theater(theater_name: &str) -> f32 {
-    if theater_name.eq_ignore_ascii_case("SNOW") {
-        THEATER_BRIGHTNESS_SNOW
-    } else {
-        THEATER_BRIGHTNESS_DEFAULT
-    }
-}
-
 /// Resolve a gamemd foundation name into minimap footprint dimensions.
 pub(super) fn parse_foundation_size(
     foundation: &crate::rules::foundation::Foundation,
@@ -569,15 +551,23 @@ mod radar_color_tests {
     fn native_tmp_color_is_identical_truncated_shifted_and_has_explicit_absence() {
         let sample = cell([144, 151, 64], [3, 5, 7]);
         assert_eq!(
-            radar_colors_for_cell(&sample, true, terrain_brightness_for_theater("TEMPERATE")),
+            radar_colors_for_cell(
+                &sample,
+                true,
+                crate::map::theater::theater_radar_brightness("TEMPERATE")
+            ),
             ([72, 75, 32], [72, 75, 32]),
         );
         assert_eq!(
-            radar_colors_for_cell(&sample, true, terrain_brightness_for_theater("SNOW")),
+            radar_colors_for_cell(
+                &sample,
+                true,
+                crate::map::theater::theater_radar_brightness("SNOW")
+            ),
             ([57, 60, 25], [57, 60, 25]),
             "x87 144*.8 truncates to 115 before >>1",
         );
-        assert_eq!(terrain_brightness_for_theater("URBAN"), 1.0);
+        assert_eq!(crate::map::theater::theater_radar_brightness("URBAN"), 1.0);
         assert_eq!(
             radar_colors_for_cell(&cell([0; 3], [9; 3]), true, 1.0),
             ([0; 3], [0; 3]),
@@ -688,4 +678,14 @@ mod radar_color_tests {
             "the terminal overlay retains its current frame and valid black",
         );
     }
+}
+
+#[cfg(test)]
+pub(super) fn test_radar_session(
+    mode: crate::sim::scenario_session::ScenarioGameMode,
+) -> crate::sim::scenario_session::ScenarioSession {
+    use crate::sim::scenario_session::{ScenarioDescriptor, ScenarioSession};
+    let mut session = ScenarioSession::from_descriptor(&ScenarioDescriptor::default());
+    session.set_game_mode(mode);
+    session
 }

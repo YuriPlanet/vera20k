@@ -48,7 +48,7 @@ fn multiple_passenger_gunner_keeps_the_first_boarded_weapon() {
         ifv,
         super::BoardingArm::InfantryTransport,
         None,
-        FrameEffects::default()
+        &mut FrameEffects::default()
     ));
     assert_selection(&sim, ifv, (1, 2));
     assert!(super::board_passenger(
@@ -58,9 +58,9 @@ fn multiple_passenger_gunner_keeps_the_first_boarded_weapon() {
         ifv,
         super::BoardingArm::InfantryTransport,
         None,
-        FrameEffects::default()
+        &mut FrameEffects::default()
     ));
-    assert_eq!(entity(&sim, ifv).passenger_role.passenger_count(), 2);
+    assert_eq!(entity(&sim, ifv).passenger_role().passenger_count(), 2);
     assert_selection(&sim, ifv, (1, 2));
     assert_current_weapon(&sim, &rules, ifv, "RepairBullet");
 }
@@ -133,12 +133,18 @@ fn spawn_and_board(sim: &mut Simulation, rules: &RuleSet, passenger_type: &str) 
         Some(rules),
     ));
     // The Infantry setter's HELLO (`0x0051AC4B`) leaves the IFV its contact.
-    assert_eq!(entity(sim, passenger).radio_contacts.slot(0), Some(ifv));
+    assert_eq!(
+        entity(sim, passenger).seldom.radio_contacts.slot(0),
+        Some(ifv)
+    );
     // Walk to the occupied transport cell through the production entry path.
     let grid = sim.path_grid_snapshot().unwrap();
     for _ in 0..240 {
         sim.advance_tick(&[], Some(rules), Some(&grid), None, 33);
-        if entity(sim, passenger).passenger_role.is_inside_transport() {
+        if entity(sim, passenger)
+            .passenger_role()
+            .is_inside_transport()
+        {
             break;
         }
     }
@@ -147,12 +153,15 @@ fn spawn_and_board(sim: &mut Simulation, rules: &RuleSet, passenger_type: &str) 
 }
 
 fn assert_boarded(sim: &Simulation, ifv: u64, passenger: u64) {
-    let cargo = entity(sim, ifv).passenger_role.cargo().expect("IFV cargo");
+    let cargo = entity(sim, ifv)
+        .passenger_role()
+        .cargo()
+        .expect("IFV cargo");
     assert_eq!(cargo.passengers, [passenger]);
     assert_eq!(cargo.passenger_sizes, [1.0]);
     assert_eq!(cargo.total_size, 1);
     let pax = entity(sim, passenger);
-    assert_eq!(pax.passenger_role.inside_transport(), Some((ifv, false)));
+    assert_eq!(pax.passenger_role().inside_transport(), Some((ifv, false)));
     assert!(pax.lifecycle.in_limbo());
     assert!(!sim.live_object_order_snapshot().contains(&passenger));
 }
@@ -166,10 +175,9 @@ fn unload_at_clear_exit(sim: &mut Simulation, rules: &RuleSet, ifv: u64, passeng
         depart_cargo_head(
             sim,
             rules,
-            None,
             ifv,
             DepartureRoute::Vehicle,
-            |sim, departing| {
+            |sim, departing, _| {
                 assert_eq!(departing, passenger);
                 // FootClass::RemoveFirstPassenger 4DE710 resets the gunner before
                 // UnitClass::Mission_Unload attempts the passenger's Unlimbo.
@@ -183,21 +191,21 @@ fn unload_at_clear_exit(sim: &mut Simulation, rules: &RuleSet, ifv: u64, passeng
                     position,
                     crate::sim::world::PlacementEvidence::MarkSucceeded,
                     None,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
             },
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         ),
         Ok(())
     );
     assert_selection(sim, ifv, (0, 0));
     assert_current_weapon(sim, rules, ifv, "HoverMissile");
-    let cargo = entity(sim, ifv).passenger_role.cargo().unwrap();
+    let cargo = entity(sim, ifv).passenger_role().cargo().unwrap();
     assert!(cargo.is_empty());
     assert!(cargo.passenger_sizes.is_empty());
     assert_eq!(cargo.total_size, 0);
     let pax = entity(sim, passenger);
-    assert!(pax.passenger_role.is_none());
+    assert!(pax.passenger_role().is_none());
     assert!(!pax.lifecycle.in_limbo());
     assert_eq!((pax.position.rx(), pax.position.ry()), exit);
     assert_eq!(
@@ -271,19 +279,28 @@ fn retail_infantry_transport_boarding_waits_for_transport_cell() {
         crate::sim::movement::PerCellReason::Arrival,
         rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
     .unwrap();
     let pax = entity(&sim, passenger);
     assert!(
-        !pax.passenger_role.is_inside_transport() && !pax.lifecycle.in_limbo(),
+        !pax.passenger_role().is_inside_transport() && !pax.lifecycle.in_limbo(),
         "an adjacent passenger must remain visible until it reaches the vehicle cell"
     );
-    assert_eq!(pax.radio_contacts.slot(0), Some(ifv));
-    assert!(entity(&sim, ifv).passenger_role.cargo().unwrap().is_empty());
+    assert_eq!(pax.seldom.radio_contacts.slot(0), Some(ifv));
+    assert!(
+        entity(&sim, ifv)
+            .passenger_role()
+            .cargo()
+            .unwrap()
+            .is_empty()
+    );
     for _ in 0..180 {
         sim.advance_tick(&[], Some(rules), Some(&grid), None, 33);
-        if entity(&sim, passenger).passenger_role.is_inside_transport() {
+        if entity(&sim, passenger)
+            .passenger_role()
+            .is_inside_transport()
+        {
             assert_boarded(&sim, ifv, passenger);
             return;
         }
@@ -316,7 +333,10 @@ fn retail_chrono_remote_transport_enter_keeps_object_and_boards() {
     );
     for _ in 0..180 {
         sim.advance_tick(&[], Some(rules), Some(&grid), None, 33);
-        if entity(&sim, passenger).passenger_role.is_inside_transport() {
+        if entity(&sim, passenger)
+            .passenger_role()
+            .is_inside_transport()
+        {
             assert_boarded(&sim, ifv, passenger);
             assert_current_weapon(&sim, rules, ifv, "CRNeutronRifle");
             // The self-warp epoch continues while cargo is concealed. Its
@@ -388,7 +408,7 @@ fn retail_vehicle_enter_keeps_live_transport_target() {
             &mut sim,
             rules,
             passenger,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(entity(&sim, passenger).pending_entry(), None);
         assert_eq!(
@@ -398,11 +418,14 @@ fn retail_vehicle_enter_keeps_live_transport_target() {
         );
         for _ in 0..600 {
             sim.advance_tick(&[], Some(rules), Some(&grid), None, 67);
-            if entity(&sim, passenger).passenger_role.is_inside_transport() {
+            if entity(&sim, passenger)
+                .passenger_role()
+                .is_inside_transport()
+            {
                 break;
             }
         }
-        let cargo = entity(&sim, transport).passenger_role.cargo().unwrap();
+        let cargo = entity(&sim, transport).passenger_role().cargo().unwrap();
         let size = rules.object(passenger_type).unwrap().size;
         assert_eq!(cargo.passengers, [passenger], "{passenger_type}: cargo");
         assert_eq!(cargo.passenger_sizes, [size]);
@@ -453,19 +476,24 @@ fn retail_tanks_scatter_after_their_transport_is_destroyed() {
         ));
         for _ in 0..600 {
             sim.advance_tick(&[], Some(rules), Some(&grid), None, 67);
-            if entity(&sim, passenger).passenger_role.is_inside_transport() {
+            if entity(&sim, passenger)
+                .passenger_role()
+                .is_inside_transport()
+            {
                 break;
             }
         }
         assert_eq!(
-            entity(&sim, passenger).passenger_role.inside_transport_id(),
+            entity(&sim, passenger)
+                .passenger_role()
+                .inside_transport_id(),
             Some(transport),
             "the stock tank must board through its Enter command"
         );
         assert!(entity(&sim, passenger).lifecycle.in_limbo());
         passengers.push(passenger);
     }
-    let cargo = entity(&sim, transport).passenger_role.cargo().unwrap();
+    let cargo = entity(&sim, transport).passenger_role().cargo().unwrap();
     assert_eq!(cargo.passengers, [passengers[1], passengers[0]]);
     assert_eq!(cargo.passenger_sizes, [3.0, 3.0]);
     assert_eq!(cargo.total_size, 6);
@@ -483,11 +511,11 @@ fn retail_tanks_scatter_after_their_transport_is_destroyed() {
             arg6: false,
         },
     );
-    sim.commit_noncombat_aoe_hits(rules, None, &[hit], FrameEffects::default());
+    sim.commit_noncombat_aoe_hits(rules, None, &[hit], &mut FrameEffects::default());
     assert!(sim.substrate.pending_delete.contains_object(&transport));
     assert!(
         entity(&sim, transport)
-            .passenger_role
+            .passenger_role()
             .cargo()
             .unwrap()
             .is_empty()
@@ -498,7 +526,7 @@ fn retail_tanks_scatter_after_their_transport_is_destroyed() {
     for &id in &passengers {
         let escaped = entity(&sim, id);
         assert!(escaped.lifecycle.object_alive() && !escaped.lifecycle.in_limbo());
-        assert!(escaped.passenger_role.is_none());
+        assert!(escaped.passenger_role().is_none());
         assert_eq!(
             (escaped.position.rx(), escaped.position.ry()),
             (source.rx(), source.ry())
@@ -530,7 +558,7 @@ fn retail_tanks_scatter_after_their_transport_is_destroyed() {
     for id in passengers {
         let escaped = entity(&sim, id);
         assert!(escaped.lifecycle.object_alive() && !escaped.lifecycle.in_limbo());
-        assert!(escaped.passenger_role.is_none());
+        assert!(escaped.passenger_role().is_none());
     }
 }
 
@@ -543,7 +571,7 @@ fn retail_loaded_ifv_survives_transport_snapshot_unload_and_reentry() {
     let (mut sim, grid) = arena(rules);
     let (ifv, engineer) = spawn_and_board(&mut sim, rules, "ENGINEER");
     let initial_cargo =
-        serde_json::to_value(entity(&sim, ifv).passenger_role.cargo().unwrap()).unwrap();
+        serde_json::to_value(entity(&sim, ifv).passenger_role().cargo().unwrap()).unwrap();
     let boat = sim.spawn_object("LCRF", OWNER, 16, 19, 64, rules).unwrap();
     assert!(crate::sim::passenger::can_enter_transport(
         &sim, rules, ifv, boat
@@ -559,17 +587,17 @@ fn retail_loaded_ifv_survives_transport_snapshot_unload_and_reentry() {
     ));
     for _ in 0..600 {
         sim.advance_tick(&[], Some(rules), Some(&grid), None, 67);
-        if entity(&sim, ifv).passenger_role.is_inside_transport() {
+        if entity(&sim, ifv).passenger_role().is_inside_transport() {
             break;
         }
     }
     assert_eq!(
-        entity(&sim, ifv).passenger_role.inside_transport_id(),
+        entity(&sim, ifv).passenger_role().inside_transport_id(),
         Some(boat)
     );
     assert_boarded(&sim, ifv, engineer);
     assert_selection(&sim, ifv, (1, 2));
-    let outer_cargo = entity(&sim, boat).passenger_role.cargo().unwrap();
+    let outer_cargo = entity(&sim, boat).passenger_role().cargo().unwrap();
     assert_eq!(outer_cargo.passengers, [ifv]);
     assert_eq!(outer_cargo.total_size, 3);
 
@@ -581,7 +609,7 @@ fn retail_loaded_ifv_survives_transport_snapshot_unload_and_reentry() {
         .entities
         .get_mut(ifv)
         .unwrap()
-        .passenger_role
+        .passenger_role_mut_for_test()
         .set_inside_transport(u64::MAX, false);
     let error = dangling.restore_after_snapshot_load().unwrap_err();
     assert!(format!("{error:?}").contains("passenger_role.inside"));
@@ -594,7 +622,7 @@ fn retail_loaded_ifv_survives_transport_snapshot_unload_and_reentry() {
     sim.install_resolved_terrain_for_new_map(terrain_template);
     assert!(sim.rebuild_dynamic_navigation(rules));
     assert_eq!(
-        entity(&sim, ifv).passenger_role.inside_transport_id(),
+        entity(&sim, ifv).passenger_role().inside_transport_id(),
         Some(boat)
     );
     assert_boarded(&sim, ifv, engineer);
@@ -604,10 +632,9 @@ fn retail_loaded_ifv_survives_transport_snapshot_unload_and_reentry() {
         depart_cargo_head(
             &mut sim,
             rules,
-            None,
             boat,
             DepartureRoute::Vehicle,
-            |sim, departing| {
+            |sim, departing, _| {
                 assert_eq!(departing, ifv);
                 let position = exit_cell_position(sim, departing, 16, 20, 0);
                 reveal_unloaded_passenger(
@@ -618,17 +645,20 @@ fn retail_loaded_ifv_survives_transport_snapshot_unload_and_reentry() {
                     position,
                     crate::sim::world::PlacementEvidence::MarkSucceeded,
                     None,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
             },
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         ),
         Ok(())
     );
-    assert_eq!(entity(&sim, ifv).passenger_role.inside_transport_id(), None);
+    assert_eq!(
+        entity(&sim, ifv).passenger_role().inside_transport_id(),
+        None
+    );
     assert!(!entity(&sim, ifv).lifecycle.in_limbo());
     assert_eq!(
-        serde_json::to_value(entity(&sim, ifv).passenger_role.cargo().unwrap()).unwrap(),
+        serde_json::to_value(entity(&sim, ifv).passenger_role().cargo().unwrap()).unwrap(),
         initial_cargo
     );
     assert_boarded(&sim, ifv, engineer);
@@ -646,7 +676,10 @@ fn retail_loaded_ifv_survives_transport_snapshot_unload_and_reentry() {
     let grid = sim.path_grid_snapshot().unwrap();
     for _ in 0..240 {
         sim.advance_tick(&[], Some(rules), Some(&grid), None, 67);
-        if entity(&sim, engineer).passenger_role.is_inside_transport() {
+        if entity(&sim, engineer)
+            .passenger_role()
+            .is_inside_transport()
+        {
             break;
         }
     }
@@ -685,10 +718,14 @@ fn retail_replacement_move_cancels_pending_vehicle_boarding() {
         sim.advance_tick(&[], Some(rules), Some(&grid), None, 33);
     }
     assert!(
-        entity(&sim, ifv).passenger_role.cargo().unwrap().is_empty(),
+        entity(&sim, ifv)
+            .passenger_role()
+            .cargo()
+            .unwrap()
+            .is_empty(),
         "crossing the old destination cannot board after Move replaced NavCom"
     );
-    assert!(entity(&sim, passenger).passenger_role.is_none());
+    assert!(entity(&sim, passenger).passenger_role().is_none());
     assert!(!entity(&sim, passenger).lifecycle.in_limbo());
 }
 
@@ -711,20 +748,19 @@ fn retail_ifv_boarding_and_departure_retry_keep_one_selection_owner() {
         assert_selection(&sim, ifv, expected);
         assert_current_weapon(&sim, rules, ifv, weapon);
         let before_cargo =
-            serde_json::to_value(entity(&sim, ifv).passenger_role.cargo().unwrap()).unwrap();
+            serde_json::to_value(entity(&sim, ifv).passenger_role().cargo().unwrap()).unwrap();
         assert_eq!(
             depart_cargo_head(
                 &mut sim,
                 rules,
-                None,
                 ifv,
                 DepartureRoute::Vehicle,
-                |sim, departing| {
+                |sim, departing, _| {
                     assert_eq!(departing, passenger);
                     assert_selection(sim, ifv, (0, 0));
                     Err(DepartureFailure::Placement)
                 },
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             ),
             Err(DepartureFailure::Placement)
         );
@@ -732,7 +768,7 @@ fn retail_ifv_boarding_and_departure_retry_keep_one_selection_owner() {
         assert_current_weapon(&sim, rules, ifv, weapon);
         assert_boarded(&sim, ifv, passenger);
         assert_eq!(
-            serde_json::to_value(entity(&sim, ifv).passenger_role.cargo().unwrap()).unwrap(),
+            serde_json::to_value(entity(&sim, ifv).passenger_role().cargo().unwrap()).unwrap(),
             before_cargo,
             "{passenger_type}: a refused exit restores exact cargo bookkeeping"
         );
@@ -752,7 +788,7 @@ fn retail_empty_ifv_departure_resets_selection_without_a_passenger() {
         .expect("spawn retail FV");
     assert_selection(&sim, ifv, (0, 0));
     let initial_cargo =
-        serde_json::to_value(entity(&sim, ifv).passenger_role.cargo().unwrap()).unwrap();
+        serde_json::to_value(entity(&sim, ifv).passenger_role().cargo().unwrap()).unwrap();
     for initial in [(0, 0), (2, 1)] {
         // The native Foot4DE710 -> Unit7464E0 null-passenger control resets
         // even an already-empty hold. Select the stale mode with the same
@@ -767,18 +803,17 @@ fn retail_empty_ifv_departure_resets_selection_without_a_passenger() {
             depart_cargo_head(
                 &mut sim,
                 rules,
-                None,
                 ifv,
                 DepartureRoute::Vehicle,
-                |_, _| { panic!("an empty hold must never attempt passenger placement") },
-                crate::sim::world::FrameEffects::default()
+                |_, _, _| { panic!("an empty hold must never attempt passenger placement") },
+                &mut crate::sim::world::FrameEffects::default()
             ),
             Err(DepartureFailure::NoCargo)
         );
         assert_selection(&sim, ifv, (0, 0));
         assert_current_weapon(&sim, rules, ifv, "HoverMissile");
         assert_eq!(
-            serde_json::to_value(entity(&sim, ifv).passenger_role.cargo().unwrap()).unwrap(),
+            serde_json::to_value(entity(&sim, ifv).passenger_role().cargo().unwrap()).unwrap(),
             initial_cargo
         );
     }
@@ -793,7 +828,7 @@ fn retail_boarded_ifv_snapshot_restores_selection_and_cargo_then_unloads() {
     let (mut sim, _) = arena(rules);
     let (ifv, passenger) = spawn_and_board(&mut sim, rules, "ENGINEER");
     assert_selection(&sim, ifv, (1, 2));
-    let cargo = serde_json::to_value(entity(&sim, ifv).passenger_role.cargo().unwrap()).unwrap();
+    let cargo = serde_json::to_value(entity(&sim, ifv).passenger_role().cargo().unwrap()).unwrap();
     let terrain_template = sim.resolved_terrain.as_ref().unwrap().clone();
     let bytes = GameSnapshot::save(&sim, 0, 0, "ifv gunner", 0);
     let mut restored = GameSnapshot::load(&bytes).expect("IFV snapshot").sim;
@@ -809,7 +844,7 @@ fn retail_boarded_ifv_snapshot_restores_selection_and_cargo_then_unloads() {
     assert_current_weapon(&restored, rules, ifv, "RepairBullet");
     assert_boarded(&restored, ifv, passenger);
     assert_eq!(
-        serde_json::to_value(entity(&restored, ifv).passenger_role.cargo().unwrap()).unwrap(),
+        serde_json::to_value(entity(&restored, ifv).passenger_role().cargo().unwrap()).unwrap(),
         cargo
     );
     unload_at_clear_exit(&mut restored, rules, ifv, passenger);
@@ -847,7 +882,7 @@ fn retail_gi_ifv_fires_its_selected_weapon_without_changing_the_turret() {
             .find(|event| event.attacker_id == ifv)
         {
             assert_eq!(sim.interner.resolve(event.weapon_id), "CRM60");
-            assert!(entity(&sim, ifv).rearm_timer.duration() > 0);
+            assert!(entity(&sim, ifv).seldom.rearm_timer.duration() > 0);
             fired = true;
             break;
         }
@@ -920,45 +955,47 @@ fn retail_temporal_gunner_unload_rearms_before_exit_and_retry() {
     let (mut sim, _, ifv, passenger, target) = temporal_attack_arena(rules);
     let frame = sim.session.binary_frame() as i32;
     let cargo_before =
-        serde_json::to_value(entity(&sim, ifv).passenger_role.cargo().unwrap()).unwrap();
+        serde_json::to_value(entity(&sim, ifv).passenger_role().cargo().unwrap()).unwrap();
     assert_eq!(
         depart_cargo_head(
             &mut sim,
             rules,
-            None,
             ifv,
             DepartureRoute::Vehicle,
-            |sim, departing| {
+            |sim, departing, _| {
                 assert_eq!(departing, passenger);
                 assert_selection(sim, ifv, (0, 0));
                 assert!(entity(sim, passenger).temporal.has_link());
                 assert!(!entity(sim, ifv).temporal.has_link());
                 assert!(!entity(sim, target).temporal.is_warped());
                 assert_eq!(
-                    entity(sim, passenger).weapon_burst.index(),
+                    entity(sim, passenger).seldom.weapon_burst.index(),
                     1,
                     "RemoveGunner increments the receiving gunner before exit"
                 );
-                assert_eq!(entity(sim, passenger).rearm_timer.start_frame(), frame);
-                assert!(entity(sim, passenger).rearm_timer.remaining(frame) > 0);
+                assert_eq!(
+                    entity(sim, passenger).seldom.rearm_timer.start_frame(),
+                    frame
+                );
+                assert!(entity(sim, passenger).seldom.rearm_timer.remaining(frame) > 0);
                 Err(DepartureFailure::Placement)
             },
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         ),
         Err(DepartureFailure::Placement)
     );
     assert_boarded(&sim, ifv, passenger);
     assert_selection(&sim, ifv, (10, 3));
     assert_eq!(
-        serde_json::to_value(entity(&sim, ifv).passenger_role.cargo().unwrap()).unwrap(),
+        serde_json::to_value(entity(&sim, ifv).passenger_role().cargo().unwrap()).unwrap(),
         cargo_before
     );
     assert!(entity(&sim, ifv).temporal.has_link());
     assert!(!entity(&sim, passenger).temporal.has_link());
     assert!(!entity(&sim, ifv).temporal.is_warping_someone());
-    assert_eq!(entity(&sim, ifv).weapon_burst.index(), 1);
-    assert_eq!(entity(&sim, ifv).rearm_timer.start_frame(), frame);
-    assert!(entity(&sim, ifv).rearm_timer.remaining(frame) > 0);
+    assert_eq!(entity(&sim, ifv).seldom.weapon_burst.index(), 1);
+    assert_eq!(entity(&sim, ifv).seldom.rearm_timer.start_frame(), frame);
+    assert!(entity(&sim, ifv).seldom.rearm_timer.remaining(frame) > 0);
 }
 
 fn temporal_attack_arena(rules: &RuleSet) -> (Simulation, PathGrid, u64, u64, u64) {
@@ -992,7 +1029,7 @@ fn temporal_attack_arena(rules: &RuleSet) -> (Simulation, PathGrid, u64, u64, u6
         "the boarded CLEG IFV must fire through ordinary Attack"
     );
     let frame = sim.session.binary_frame() as i32;
-    assert!(entity(&sim, ifv).rearm_timer.remaining(frame) > 0);
+    assert!(entity(&sim, ifv).seldom.rearm_timer.remaining(frame) > 0);
     assert!(entity(&sim, target).temporal.is_warped());
     (sim, grid, ifv, passenger, target)
 }
@@ -1032,7 +1069,10 @@ fn retail_boarding_plays_the_transports_enter_transport_sound() {
     sim.sound_events.clear_for_test();
     for _ in 0..180 {
         sim.advance_tick(&[], Some(rules), Some(&grid), None, 33);
-        if entity(&sim, passenger).passenger_role.is_inside_transport() {
+        if entity(&sim, passenger)
+            .passenger_role()
+            .is_inside_transport()
+        {
             break;
         }
     }
@@ -1044,7 +1084,7 @@ fn retail_boarding_plays_the_transports_enter_transport_sound() {
                 sound_id,
                 coordinate,
                 flags,
-            } if sound_id == "IFVTransform" => Some((*coordinate, *flags)),
+            } if sound_id.name_in(&rules) == "IFVTransform" => Some((*coordinate, *flags)),
             _ => None,
         })
         .collect();
@@ -1078,18 +1118,18 @@ fn retail_a_second_passenger_waits_for_a_busy_transport() {
             Some(rules),
         ));
     }
-    assert_eq!(entity(&sim, first).radio_contacts.slot(0), Some(htk));
+    assert_eq!(entity(&sim, first).seldom.radio_contacts.slot(0), Some(htk));
     let waiting = entity(&sim, second);
     assert_eq!(waiting.pending_entry(), Some(htk));
     assert_eq!(waiting.navigation.nav_com(), None);
-    assert!(waiting.radio_contacts.is_empty());
+    assert!(waiting.seldom.radio_contacts.is_empty());
     for _ in 0..900 {
         sim.advance_tick(&[], Some(rules), Some(&grid), None, 33);
-        if entity(&sim, second).passenger_role.is_inside_transport() {
+        if entity(&sim, second).passenger_role().is_inside_transport() {
             break;
         }
     }
-    let cargo = entity(&sim, htk).passenger_role.cargo().unwrap();
+    let cargo = entity(&sim, htk).passenger_role().cargo().unwrap();
     assert_eq!(
         cargo.passengers(),
         [second, first],
@@ -1132,15 +1172,15 @@ fn retail_an_amphibious_transport_comes_ashore_for_its_passenger() {
         "the transport comes for him"
     );
     assert_eq!(entity(&sim, gi).navigation.nav_com(), None, "he waits");
-    assert_eq!(entity(&sim, gi).radio_contacts.slot(0), Some(boat));
+    assert_eq!(entity(&sim, gi).seldom.radio_contacts.slot(0), Some(boat));
     for _ in 0..900 {
         sim.advance_tick(&[], Some(rules), Some(&grid), None, 33);
-        if entity(&sim, gi).passenger_role.is_inside_transport() {
+        if entity(&sim, gi).passenger_role().is_inside_transport() {
             break;
         }
     }
     assert_eq!(
-        entity(&sim, gi).passenger_role.inside_transport_id(),
+        entity(&sim, gi).passenger_role().inside_transport_id(),
         Some(boat)
     );
 }
@@ -1181,12 +1221,12 @@ fn retail_a_walking_passenger_runs_mission_enter() {
         &mut sim,
         gi,
         rules,
-        crate::sim::world::ObjectAiCtx::default(),
+        &mut crate::sim::world::ObjectAiCtx::default(),
     )
     .unwrap();
     assert_eq!(sim.scenario_rng.state(), replay.state());
     assert_eq!(entity(&sim, gi).mission.dispatch_timer().delay(), delay);
-    assert_eq!(entity(&sim, gi).radio_contacts.slot(0), Some(ifv));
+    assert_eq!(entity(&sim, gi).seldom.radio_contacts.slot(0), Some(ifv));
 }
 
 /// Mission_Enter's DOCKING (`0x004D92B2..0x004D92E8`) to a transport on
@@ -1210,7 +1250,7 @@ fn retail_a_passenger_gives_up_when_its_transport_drives_off() {
         ),
         Some(rules),
     ));
-    assert_eq!(entity(&sim, gi).radio_contacts.slot(0), Some(ifv));
+    assert_eq!(entity(&sim, gi).seldom.radio_contacts.slot(0), Some(ifv));
     assert!(sim.apply_command(
         OWNER,
         &Command::Move {
@@ -1224,13 +1264,19 @@ fn retail_a_passenger_gives_up_when_its_transport_drives_off() {
         sim.advance_tick(&[], Some(rules), Some(&grid), None, 33);
     }
     let pax = entity(&sim, gi);
-    assert!(!pax.passenger_role.is_inside_transport());
-    assert!(pax.radio_contacts.is_empty());
+    assert!(!pax.passenger_role().is_inside_transport());
+    assert!(pax.seldom.radio_contacts.is_empty());
     assert_ne!(
         pax.mission.effective(),
         crate::sim::mission::MissionId::from_known(crate::sim::mission::MissionType::Enter)
     );
-    assert!(entity(&sim, ifv).passenger_role.cargo().unwrap().is_empty());
+    assert!(
+        entity(&sim, ifv)
+            .passenger_role()
+            .cargo()
+            .unwrap()
+            .is_empty()
+    );
 }
 
 /// The Unit setter (`0x00741AD1..0x00741B22`): a transport whose first
@@ -1255,16 +1301,15 @@ fn retail_a_transport_sent_elsewhere_breaks_its_passengers_contact() {
         ),
         Some(rules),
     ));
-    assert_eq!(entity(&sim, htk).radio_contacts.slot(0), Some(gi));
+    assert_eq!(entity(&sim, htk).seldom.radio_contacts.slot(0), Some(gi));
     let _ = sim.assign_destination_represented(
         htk,
         Some(crate::sim::components::NavTargetRef::object(other)),
         rules,
-        None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
-    assert!(entity(&sim, htk).radio_contacts.is_empty());
-    assert!(entity(&sim, gi).radio_contacts.is_empty());
+    assert!(entity(&sim, htk).seldom.radio_contacts.is_empty());
+    assert!(entity(&sim, gi).seldom.radio_contacts.is_empty());
     assert_eq!(
         entity(&sim, htk).navigation.nav_com(),
         Some(crate::sim::components::NavTargetRef::object(other))
@@ -1292,7 +1337,7 @@ fn retail_the_setters_break_spares_every_other_contact() {
                 crate::sim::radio::RadioMessage::Hello,
                 crate::sim::radio::RadioPayload::default(),
                 rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             ),
             crate::sim::radio::RadioResponse::Roger
         );
@@ -1302,8 +1347,7 @@ fn retail_the_setters_break_spares_every_other_contact() {
             unit,
             Some(crate::sim::components::NavTargetRef::object(target)),
             rules,
-            None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
     };
     let htk = sim.spawn_object("HTK", OWNER, 16, 16, 64, rules).unwrap();
@@ -1311,7 +1355,7 @@ fn retail_the_setters_break_spares_every_other_contact() {
     hello(&mut sim, gi, htk);
     send(&mut sim, htk, gi);
     assert_eq!(
-        entity(&sim, htk).radio_contacts.slot(0),
+        entity(&sim, htk).seldom.radio_contacts.slot(0),
         Some(gi),
         "sent to it"
     );
@@ -1322,7 +1366,7 @@ fn retail_the_setters_break_spares_every_other_contact() {
     hello(&mut sim, rider, carrier);
     send(&mut sim, carrier, elsewhere);
     assert_eq!(
-        entity(&sim, carrier).radio_contacts.slot(0),
+        entity(&sim, carrier).seldom.radio_contacts.slot(0),
         Some(rider),
         "a vehicle contact"
     );
@@ -1332,7 +1376,7 @@ fn retail_the_setters_break_spares_every_other_contact() {
     hello(&mut sim, walker, tank);
     send(&mut sim, tank, elsewhere);
     assert_eq!(
-        entity(&sim, tank).radio_contacts.slot(0),
+        entity(&sim, tank).seldom.radio_contacts.slot(0),
         Some(walker),
         "no Passengers="
     );
@@ -1362,7 +1406,7 @@ fn retail_a_refused_move_here_breaks_the_passengers_contact() {
             crate::sim::radio::RadioMessage::Hello,
             crate::sim::radio::RadioPayload::default(),
             rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         ),
         crate::sim::radio::RadioResponse::Roger
     );
@@ -1372,27 +1416,30 @@ fn retail_a_refused_move_here_breaks_the_passengers_contact() {
         at,
         rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
 
     crate::sim::world::dispatch_foot_mission(
         &mut sim,
         gi,
         rules,
-        crate::sim::world::ObjectAiCtx::default(),
+        &mut crate::sim::world::ObjectAiCtx::default(),
     )
     .unwrap();
 
     let pax = entity(&sim, gi);
-    assert!(pax.radio_contacts.is_empty(), "the transport broke it");
-    assert!(entity(&sim, ifv).radio_contacts.is_empty());
+    assert!(
+        pax.seldom.radio_contacts.is_empty(),
+        "the transport broke it"
+    );
+    assert!(entity(&sim, ifv).seldom.radio_contacts.is_empty());
     assert_eq!(pax.mission.effective(), enter);
     assert_eq!(
         pax.mission.queued(),
         crate::sim::mission::MissionId::NONE,
         "he does not idle"
     );
-    assert!(!pax.passenger_role.is_inside_transport());
+    assert!(!pax.passenger_role().is_inside_transport());
 }
 
 /// A vehicle asks DOCKING only from Mission_Enter (`0x004D92B2`), once
@@ -1438,8 +1485,8 @@ fn retail_a_vehicle_gives_up_on_a_transport_at_sea_that_comes_for_it() {
         }
     }
     assert!(came, "the transport takes the vehicle as its destination");
-    assert!(entity(&sim, tank).radio_contacts.is_empty());
-    assert!(entity(&sim, boat).radio_contacts.is_empty());
+    assert!(entity(&sim, tank).seldom.radio_contacts.is_empty());
+    assert!(entity(&sim, boat).seldom.radio_contacts.is_empty());
     for _ in 0..30 {
         sim.advance_tick(&[], Some(rules), Some(&grid), None, 33);
     }
@@ -1449,10 +1496,10 @@ fn retail_a_vehicle_gives_up_on_a_transport_at_sea_that_comes_for_it() {
         crate::sim::mission::MissionId::from_known(crate::sim::mission::MissionType::Enter),
         "the vehicle gave up"
     );
-    assert!(!vehicle.passenger_role.is_inside_transport());
+    assert!(!vehicle.passenger_role().is_inside_transport());
     assert!(
         entity(&sim, boat)
-            .passenger_role
+            .passenger_role()
             .cargo()
             .unwrap()
             .is_empty()

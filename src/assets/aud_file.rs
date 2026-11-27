@@ -27,6 +27,17 @@
 //! - IMA ADPCM sample math comes from `assets::ima_adpcm`, the crate's single
 //!   implementation.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable
+    )
+)]
+
 use super::ima_adpcm::{ImaAdpcmState, decode_nibbles};
 
 /// Magic value at the start of each audio chunk.
@@ -101,7 +112,11 @@ pub fn decode_aud(data: &[u8]) -> Option<(AudHeader, Vec<i16>)> {
         return None;
     }
 
-    let estimated_samples: usize = header.output_size as usize / 2;
+    // The header's size is only a reservation hint, and the data must back
+    // it: IMA ADPCM yields two samples a byte, so a short file cannot reserve
+    // gigabytes by naming a large `output_size`.
+    let estimated_samples: usize =
+        (header.output_size as usize / 2).min(data.len().saturating_mul(2));
     let mut samples: Vec<i16> = Vec::with_capacity(estimated_samples);
     let mut offset: usize = HEADER_SIZE;
     let mut state = ImaAdpcmState::new();

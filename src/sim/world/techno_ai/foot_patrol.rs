@@ -37,7 +37,7 @@ pub(super) fn mission_patrol(
     sim: &mut Simulation,
     id: u64,
     rules: &RuleSet,
-    ctx: ObjectAiCtx<'_>,
+    ctx: &mut ObjectAiCtx<'_>,
 ) -> i32 {
     let actor = sim.substrate.entities.get(id).expect("Patrol receiver");
     if actor.category() == EntityCategory::Unit {
@@ -73,19 +73,37 @@ pub(super) fn mission_patrol(
             let candidate = scan(sim, id, rules, ctx, point);
             let weapon = target_scan::select_weapon(sim, rules, id, candidate);
             if let Some(candidate) = candidate
-                && qualifies(sim, id, candidate, weapon, None, limit, rules, ctx)
+                && qualifies(sim, id, candidate, weapon, None, limit, rules)
             {
                 let mut post = sim
                     .object_navigation_cell_identity(id, rules)
                     .expect("Patrol post requires its navigation cell");
-                sim.substrate.entities.get_mut(id).unwrap().patrol_post.cell = Some(post);
+                sim.substrate
+                    .entities
+                    .get_mut(id)
+                    .unwrap()
+                    .seldom
+                    .patrol_post
+                    .cell = Some(post);
                 if cell_bridge(sim, post) && !should_bridge(sim, id, rules) {
                     let Some(found) = bridge_post(sim, id, post, rules) else {
-                        sim.substrate.entities.get_mut(id).unwrap().patrol_post.cell = None;
+                        sim.substrate
+                            .entities
+                            .get_mut(id)
+                            .unwrap()
+                            .seldom
+                            .patrol_post
+                            .cell = None;
                         return 60;
                     };
                     post = found;
-                    sim.substrate.entities.get_mut(id).unwrap().patrol_post.cell = Some(post);
+                    sim.substrate
+                        .entities
+                        .get_mut(id)
+                        .unwrap()
+                        .seldom
+                        .patrol_post
+                        .cell = Some(post);
                 }
                 let actor = sim.substrate.entities.get(id).unwrap();
                 if actor.archive_target().is_none() {
@@ -128,17 +146,8 @@ pub(super) fn mission_patrol(
             if let Some(object) = object {
                 if healthy_allied_building_for_engineer(sim, id, object, rules) {
                     target(sim, id, None, rules, ctx);
-                } else if qualifies(
-                    sim,
-                    id,
-                    object,
-                    weapon,
-                    Some(post(sim, id)),
-                    limit,
-                    rules,
-                    ctx,
-                ) {
-                    sim.approach_target(id, rules, ctx.overlay_registry, ctx.effects);
+                } else if qualifies(sim, id, object, weapon, Some(post(sim, id)), limit, rules) {
+                    sim.approach_target(id, rules, ctx.overlay_registry, &mut ctx.effects);
                     if sim
                         .substrate
                         .entities
@@ -152,7 +161,7 @@ pub(super) fn mission_patrol(
                         destination(sim, id, archive.map(NavTargetRef::from), rules, ctx);
                         let actor = sim.substrate.entities.get_mut(id).unwrap();
                         actor.set_archive_target(None);
-                        actor.patrol_post.cell = None;
+                        actor.seldom.patrol_post.cell = None;
                         actor.mission.set_handler_state(0);
                         return 45;
                     }
@@ -182,7 +191,6 @@ pub(super) fn mission_patrol(
                         Some(post(sim, id)),
                         limit,
                         rules,
-                        ctx,
                     )
                 {
                     target(sim, id, Some(candidate), rules, ctx);
@@ -245,7 +253,6 @@ pub(super) fn mission_patrol(
                     Some(post(sim, id)),
                     limit,
                     rules,
-                    ctx,
                 )
             {
                 target(sim, id, Some(candidate), rules, ctx);
@@ -268,7 +275,7 @@ pub(super) fn mission_patrol(
                 destination(sim, id, Some(archive.into()), rules, ctx);
                 let actor = sim.substrate.entities.get_mut(id).unwrap();
                 actor.set_archive_target(None);
-                actor.patrol_post.cell = None;
+                actor.seldom.patrol_post.cell = None;
                 actor.mission.set_handler_state(0);
             }
         }
@@ -296,6 +303,7 @@ fn post(sim: &Simulation, id: u64) -> NativeCellIdentity {
         .entities
         .get(id)
         .unwrap()
+        .seldom
         .patrol_post
         .cell
         .expect("Patrol states1/2 require the retained post")
@@ -340,7 +348,7 @@ fn scan(
     sim: &mut Simulation,
     id: u64,
     rules: &RuleSet,
-    ctx: ObjectAiCtx<'_>,
+    ctx: &mut ObjectAiCtx<'_>,
     point: DriveCoord,
 ) -> Option<TargetKind> {
     sim.greatest_threat_represented(
@@ -380,7 +388,7 @@ fn threat_range(sim: &Simulation, id: u64, rules: &RuleSet) -> i32 {
 /// query; otherwise Object5F6A70 samples +4C then raw Object+9C Location.
 fn should_bridge(sim: &Simulation, id: u64, rules: &RuleSet) -> bool {
     let actor = sim.substrate.entities.get(id);
-    if actor.is_some_and(|a| a.category().is_foot() && a.low_bridge_tube_state.is_some()) {
+    if actor.is_some_and(|a| a.category().is_foot() && a.active_tube().is_some()) {
         return false;
     }
     let navigation = sim
@@ -405,7 +413,6 @@ fn should_bridge(sim: &Simulation, id: u64, rules: &RuleSet) -> bool {
     .expect("Patrol bridge ground")
 }
 
-#[allow(clippy::too_many_arguments)]
 fn qualifies(
     sim: &Simulation,
     id: u64,
@@ -414,9 +421,8 @@ fn qualifies(
     post: Option<NativeCellIdentity>,
     limit: i32,
     rules: &RuleSet,
-    ctx: ObjectAiCtx<'_>,
 ) -> bool {
-    if target_scan::can_fire_at(sim, rules, id, candidate, weapon, ctx.overlay_registry) {
+    if target_scan::can_fire_at(sim, rules, id, candidate, weapon) {
         return true;
     }
     let TargetKind::Entity(candidate) = candidate else {
@@ -558,9 +564,9 @@ fn target(
     id: u64,
     target: Option<TargetKind>,
     rules: &RuleSet,
-    ctx: ObjectAiCtx<'_>,
+    ctx: &mut ObjectAiCtx<'_>,
 ) {
-    let _ = sim.assign_target_represented(id, target, rules, ctx.overlay_registry, ctx.effects);
+    let _ = sim.assign_target_represented(id, target, rules, &mut ctx.effects);
 }
 
 fn destination(
@@ -568,14 +574,13 @@ fn destination(
     id: u64,
     target: Option<NavTargetRef>,
     rules: &RuleSet,
-    ctx: ObjectAiCtx<'_>,
+    ctx: &mut ObjectAiCtx<'_>,
 ) {
-    let _ =
-        sim.assign_destination_represented(id, target, rules, ctx.overlay_registry, ctx.effects);
+    let _ = sim.assign_destination_represented(id, target, rules, &mut ctx.effects);
 }
 
-fn idle(sim: &mut Simulation, id: u64, rules: &RuleSet, ctx: ObjectAiCtx<'_>) -> i32 {
-    crate::sim::world::enter_idle_mode(sim, id, rules, ctx.overlay_registry, ctx.effects);
+fn idle(sim: &mut Simulation, id: u64, rules: &RuleSet, ctx: &mut ObjectAiCtx<'_>) -> i32 {
+    crate::sim::world::enter_idle_mode(sim, id, rules, ctx.overlay_registry, &mut ctx.effects);
     set_state(sim, id, 3);
     1
 }

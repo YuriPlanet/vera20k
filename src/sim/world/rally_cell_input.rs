@@ -2,7 +2,7 @@
 //! Input isolates the fallback Cell; the opening uses the live simulation Cell.
 //! Both publish prepared targets through the existing event1E command owner.
 
-use super::Simulation;
+use super::{ControlProjection, Simulation};
 use crate::map::resolved_terrain::NativeCellQuery;
 use crate::rules::locomotor_type::{MovementZone, SpeedType};
 use crate::rules::object_type::FactoryType;
@@ -30,7 +30,17 @@ impl Simulation {
         clicked: (u16, u16),
         rules: &RuleSet,
     ) -> Result<Option<(u16, u16)>, String> {
-        self.factory_rally_cell(id, clicked, rules, false)
+        self.factory_rally_cell_input_with(&self.control_projection(), id, clicked, rules)
+    }
+
+    pub fn factory_rally_cell_input_with(
+        &self,
+        control: &ControlProjection<'_>,
+        id: u64,
+        clicked: (u16, u16),
+        rules: &RuleSet,
+    ) -> Result<Option<(u16, u16)>, String> {
+        self.factory_rally_cell(id, clicked, rules, Some(control))
     }
 
     /// The sole SetRallyPoint443860 search, shared by input and live Logic.
@@ -39,7 +49,7 @@ impl Simulation {
         id: u64,
         clicked: (u16, u16),
         rules: &RuleSet,
-        live: bool,
+        control: Option<&ControlProjection<'_>>,
     ) -> Result<Option<(u16, u16)>, String> {
         let Some(entity) = self.substrate.entities.get(id) else {
             return Ok(None);
@@ -61,7 +71,7 @@ impl Simulation {
         let size = self
             .map_size_diamond()
             .ok_or("rally input lacks native map dimensions")?;
-        let cells = if live {
+        let cells = if control.is_none() {
             NativeCellQuery::canonical(terrain)
         } else {
             NativeCellQuery::isolated(terrain)
@@ -97,8 +107,7 @@ impl Simulation {
         // still reaches the announcement (`0x00443A89` -> `0x00443A2B`),
         // which the click owner plays. It also queues the following SELL.
         let redeploy_yard = object.construction_yard
-            && self.session.game_mode_nonzero()
-            && self.construction_yard_redeploy_core_gate(entity);
+            && self.can_redeploy_construction_yard_from_input(entity, control);
         Ok(if redeploy_yard {
             self.object_coords_cell(id)
         } else {
@@ -153,7 +162,7 @@ impl Simulation {
         if clicked == (0, 0) {
             return;
         }
-        let prepared = self.factory_rally_cell(id, clicked, rules, true);
+        let prepared = self.factory_rally_cell(id, clicked, rules, None);
         match prepared {
             Ok(Some((rx, ry))) => {
                 let _ = self.issue_local_command(crate::sim::command::CommandEnvelope::new(
@@ -297,11 +306,11 @@ mod tests {
             actor.position.set_sub_y_for_test(SimFixed::from_num(64));
             actor.set_archive_target(Some(TargetKind::Cell(6, 5)));
             sim.substrate.entities.insert(actor);
-            sim.resolved_terrain = Some(terrain);
-            sim.zone_grid = Some(zones.into());
-            sim.substrate.raw_cell_occupation = raw;
-            sim.playfield_bounds = Some(bounds());
-            sim.playfield_size_height = Some(8);
+            *sim.resolved_terrain = Some(terrain);
+            *sim.zone_grid = Some(zones.into());
+            *sim.substrate.raw_cell_occupation = raw;
+            *sim.playfield_bounds = Some(bounds());
+            *sim.playfield_size_height = Some(8);
             sim.session.set_binary_frame_for_test(100);
             let rng = sim.scenario_rng.state();
             let prepared = sim.factory_rally_cell_input(1, (11, 5), &rules).unwrap();

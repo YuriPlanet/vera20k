@@ -110,7 +110,7 @@ pub fn launch(
             None,
             final_pass,
             &config,
-            crate::sim::world::UninitContext::with_rules(rules),
+            crate::sim::world::UninitContext::new(rules),
             crate::sim::vision::MapRevealProjection::Transient,
             sim.session.current_house(),
         );
@@ -123,4 +123,124 @@ pub fn launch(
         world: ground.into(),
     });
     true
+}
+
+/// Ares SW_PsychicReveal::Activate (10075150), hooked at 6CC390: on a
+/// charged Super, project the target (including a bridge deck) to the ground
+/// plane and map the eligible viewers' cells twice. The common Ares launch
+/// owns presentation, charge and cleanup. No RNG or lasting sight source.
+pub(super) fn ares_launch(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    sw_type: InternedId,
+    sw: &crate::rules::superweapon_type::SuperWeaponType,
+    target: (u16, u16),
+) {
+    if !super::is_charged(sim, owner, sw_type) {
+        return;
+    }
+    let Some(metadata) = rules.super_weapon_metadata(&sw.id) else {
+        return;
+    };
+    let (width, height) = metadata
+        .launch()
+        .range_or_radius(rules.general.psychic_reveal_radius.min(10));
+    let center = vision::conceal_area_centre(super::deck_coords(sim, target));
+    // 100751A1 also admits a radar spy through RadarVisibleTo (+0x54E4).
+    // Its House state is the shared residual documented in sim::spy_infiltration.
+    let local = sim.session.current_house();
+    let viewers: Vec<_> = vision::direct_reveal_viewers(
+        sim.house_alliances.as_map(),
+        owner,
+        &sim.sight_reveal_config(rules),
+        &sim.interner,
+        &sim.fog_viewers(),
+    )
+    .into_iter()
+    .map(|viewer| (viewer, sim.reveal_notifies_viewer(viewer, local)))
+    .collect();
+    if viewers.is_empty() {
+        return;
+    }
+
+    // RevealHelper 100692D5..10069315 and 10069480: competitive LAN/WOL
+    // modes leave three map-relative cells hidden; cooperative vt+4 is true.
+    let size = sim.map_size_diamond();
+    let excluded = size
+        .filter(|_| {
+            sim.session.execution_topology().is_lockstep()
+                && sim.session.rule_policy().ares_psychic_reveal_exclusions()
+        })
+        .map(|(w, h)| [(7, w + 5), (13, w + 11), (h + 13, w + h - 15)]);
+    let mut context = crate::sim::world::UninitContext::new(rules);
+    for final_pass in [false, true] {
+        let reveal = |sim: &mut Simulation,
+                      cell: (u16, u16),
+                      context: &mut crate::sim::world::UninitContext<'_>| {
+            let (x, y) = (i32::from(cell.0), i32::from(cell.1));
+            if size.is_some_and(|(w, h)| {
+                !crate::map::playfield::size_diamond_contains(w, h, (cell.0 as i16, cell.1 as i16))
+            }) || excluded.is_some_and(|cells| cells.contains(&(x, y)))
+            {
+                return;
+            }
+            for &(viewer, notify) in &viewers {
+                sim.apply_reveal_map_cell(
+                    viewer,
+                    cell,
+                    final_pass,
+                    vision::MapRevealProjection::Transient,
+                    notify,
+                    context.reborrow(),
+                );
+            }
+        };
+        if width < 0.0 {
+            // 10075024..100750CB uses the shared Reset/Next allocated-cell
+            // cursor, so discoveries may affect its next step.
+            sim.for_each_allocated_map_cell(&mut context, reveal);
+        } else {
+            let (cx, cy) = (i32::from(center.0), i32::from(center.1));
+            // 10074E40: a positive truncated width and height form a
+            // rectangle. Otherwise 10074C90 visits a radius in row order,
+            // and 10074DE4 excludes the exact circumference. Bound all
+            // visits to stored cells, even for an infinite authored radius.
+            let (left, top, right, bottom) = if height > 0 {
+                if !(1.0..2147483648.0).contains(&width) {
+                    return;
+                }
+                let w = width as i32;
+                let left = cx - w / 2;
+                let top = cy - height / 2;
+                (left, top, left + w, top + height)
+            } else {
+                let radius = width.ceil() as i32;
+                (
+                    cx.saturating_sub(radius),
+                    cy.saturating_sub(radius),
+                    cx.saturating_add(radius).saturating_add(1),
+                    cy.saturating_add(radius).saturating_add(1),
+                )
+            };
+            let radius_sq = f64::from(width) * f64::from(width);
+            for y in top.max(0)..bottom.min(i32::from(sim.fog.height())) {
+                for x in left.max(0)..right.min(i32::from(sim.fog.width())) {
+                    let Some(terrain) = sim.resolved_terrain.as_ref() else {
+                        return;
+                    };
+                    let Some(index) = terrain.native_fixed_cell_index(x as i16, y as i16) else {
+                        continue;
+                    };
+                    let (x, y) = terrain
+                        .native_cell_coord(crate::map::cell_index::NativeCellIdentity::Real(index));
+                    let dx = f64::from(i32::from(x) - cx);
+                    let dy = f64::from(i32::from(y) - cy);
+                    if height > 0 || dx * dx + dy * dy < radius_sq {
+                        reveal(sim, (x as u16, y as u16), &mut context);
+                    }
+                }
+            }
+        }
+    }
 }

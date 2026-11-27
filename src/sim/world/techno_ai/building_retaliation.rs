@@ -85,7 +85,7 @@ impl Simulation {
         malicious: bool,
         rules: &RuleSet,
         overlay_registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Option<UnderAttackEvent> {
         // No source (`0x00442942`) or a result of 0 (`0x0044294A`).
         let source = source.filter(|&source| self.substrate.entities.contains(source))?;
@@ -136,7 +136,7 @@ impl Simulation {
             || !building_weapon0_aims(self, rules, id)
             || building.attack_target.target().is_some_and(|attack| {
                 let weapon = select_weapon(self, rules, id, Some(attack));
-                can_fire_at(self, rules, id, attack, weapon, overlay_registry)
+                can_fire_at(self, rules, id, attack, weapon)
             })
         {
             return ping;
@@ -158,8 +158,7 @@ impl Simulation {
                 id,
                 Some(TargetKind::Entity(source)),
                 rules,
-                overlay_registry,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
         }
         ping

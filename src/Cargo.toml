@@ -1,6 +1,6 @@
 [package]
 name = "vera20k-core"
-version = "0.3.5"
+version = "0.4.3"
 edition = "2024"
 description = "VERA20k's GPU-free engine: assets, rules, map, simulation, lockstep and the headless scenario"
 publish = false
@@ -80,12 +80,9 @@ wasm = ["dep:web-time", "dep:getrandom", "dep:js-sys"]
 wasm-net = ["wasm", "dep:wasm-bindgen"]
 wasm-lan = ["wasm-net"]
 wasm-threads = ["wasm", "dep:rayon", "dep:wasm_sync"]
-# Compile the supported Phobos behavior; INIs cannot enable an absent capability.
-# Ares needs no feature: it switches on from a game's data in every build
-# (`rules::ares_switch`).
+# Ares and NPatch need no feature: they switch on from a game's data in every
+# build (`rules::ares_switch`, `rules::npatch_switch`).
 phobos = []
-# Placeholder: NPatch-specific readers land with their first chain.
-npatch = []
 # VERA20K's own first-party extension capability.
 verax = []
 # VERA20K's opt-in bug-fix extension adopting the NPExt changelog corrections;
@@ -132,6 +129,8 @@ tests-util = []
 [dependencies]
 # Shared authenticated datagram codec used by the standalone relay.
 vera20k-relay-protocol = { path = "../services/relay-protocol" }
+# Wasm extension modules (docs/rfcs/0001-wasm-extension-modules.md).
+vera20k-wasm-ext = { path = "../wasm-ext" }
 glam = { workspace = true }
 # Fixed-point arithmetic for simulation positions and other fixed-width mechanisms.
 # Native floating-point mechanisms document their numeric contract at their owner.
@@ -175,6 +174,9 @@ num-bigint = "0.4"
 [target.'cfg(not(all(target_arch = "wasm32", target_os = "unknown")))'.dependencies]
 memmap2 = "0.9.12"
 rayon = "1.11"
+# Desktop mod packages accept ZIPs with Stored and DEFLATE entries.
+tempfile = "=3.27.0"
+zip = { version = "=9.8.1", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 
 [target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
 web-time = { version = "1", optional = true }
@@ -205,11 +207,25 @@ half = { version = "2", default-features = false, features = ["num-traits"] }
 hashbrown = { version = "0.16", default-features = false, features = ["default-hasher", "inline-more"] }
 num-traits = { version = "0.2", features = ["libm"] }
 unicode-ident = "1"
+# Extension module tests write their modules in WAT.
+wat = "1"
 
-# The native client's tungstenite -> rand enables chacha20's RNG support, and
-# its handshake's sha1 -> hybrid-array enables typenum's const generics.
+# The native client's tungstenite -> rand enables chacha20's RNG support and
+# getrandom's std and sys_rng, and its handshake's sha1 -> hybrid-array enables
+# typenum's const generics. The client's image -> png enables the defaults of
+# flate2, miniz_oxide and (through fdeflate) simd-adler32. Core reaches these and
+# getrandom 0.4 only through its native zip and tempfile. It reaches hashbrown
+# 0.17 and smallvec only through the native Wasmtime. The client's wgpu and naga
+# enable hashbrown's inline-more and its parley hashbrown's raw-entry; its ICU
+# fixed_decimal enables smallvec's const_new.
 [target.'cfg(not(all(target_arch = "wasm32", target_os = "unknown")))'.dev-dependencies]
 chacha20 = { version = "0.10", default-features = false, features = ["rng"] }
+flate2 = "1"
+getrandom = { version = "0.4", default-features = false, features = ["std", "sys_rng"] }
+hashbrown-0-17 = { package = "hashbrown", version = "0.17", default-features = false, features = ["inline-more", "raw-entry"] }
+miniz_oxide = "0.8"
+simd-adler32 = "0.3"
+smallvec = { version = "1", features = ["const_new"] }
 typenum = { version = "1", features = ["const-generics"] }
 
 # wgpu's Vulkan/DX12 platform package enables gpu-allocator's hashbrown defaults.
@@ -218,9 +234,26 @@ typenum = { version = "1", features = ["const-generics"] }
 hashbrown = { version = "0.16", default-features = false, features = ["default"] }
 
 # winit's Wayland decorations (this is winit's cfg) enable tiny-skia's SIMD,
-# which adds bytemuck's aarch64_simd feature to the client build.
+# which adds bytemuck's aarch64_simd feature to the client build. Its Wayland
+# and X11 crates enable once_cell's defaults and more of rustix, both of which
+# core reaches through tempfile.
 [target.'cfg(all(unix, not(any(target_os = "redox", target_family = "wasm", target_os = "android", target_os = "ios", target_os = "macos"))))'.dev-dependencies]
 bytemuck = { version = "1", default-features = false, features = ["aarch64_simd"] }
+once_cell = "1"
+rustix = { version = "1", features = ["event", "net", "pipe", "process", "shm", "system", "time"] }
+
+# Core's tempfile and zip use windows-sys; the client's window code, arboard and
+# rustls-platform-verifier enable more of it.
+[target.'cfg(windows)'.dev-dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Graphics_Gdi", "Win32_Security_Cryptography", "Win32_System_DataExchange", "Win32_System_Memory", "Win32_System_Ole", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
+
+# Not used by core's build script: like the dev-dependencies above, this
+# aligns features with the workspace build. Proc macros and their dependencies
+# resolve features as host dependencies, apart from dev-dependencies. The
+# client's ICU derive crates (yoke, zerofrom, zerovec and synstructure) enable
+# more of the syn 3 that core reaches only through Wasmtime's macros.
+[build-dependencies]
+syn = { version = "3", default-features = false, features = ["extra-traits", "fold", "visit"] }
 
 [lints]
 workspace = true

@@ -81,17 +81,13 @@ fn water_voxel_draw_switches_live_cell_model_and_preserves_bridge_dispatch() {
     let (model, body) = draw(&sim);
     assert_eq!(model, "MTNK");
     assert!(matches!(body, BodyDraw::Turret { .. }));
-    sim.entities_mut_for_test()
-        .get_mut(id)
+    sim.entity_mut_for_test(id)
         .unwrap()
         .set_unit_simple_deploy_for_test(true, false, false);
     assert_eq!(draw(&sim).0, "MTNK", "water wins over deployed art");
-    sim.entities_mut_for_test()
-        .get_mut(id)
-        .unwrap()
-        .set_on_bridge(true);
+    sim.entity_mut_for_test(id).unwrap().set_on_bridge(true);
     assert_eq!(draw(&sim).0, "HTNK");
-    let unit = sim.entities_mut_for_test().get_mut(id).unwrap();
+    let unit = sim.entity_mut_for_test(id).unwrap();
     unit.set_on_bridge(false);
     unit.set_unit_simple_deploy_for_test(false, false, false);
     unit.position.set_rx_for_test(11);
@@ -112,7 +108,7 @@ fn normal_fly_pose_uses_strict_pitch_speed_gate_and_secondary_turn_sign() {
     let id = sim
         .spawn_object_limbo_at_height("SPYP", "Americans", 10, 10, 0, 0x40, &retail.rules)
         .expect("construct stock Fly");
-    let entity = sim.entities_mut_for_test().get_mut(id).unwrap();
+    let entity = sim.entity_mut_for_test(id).unwrap();
     entity
         .locomotor
         .as_mut()
@@ -162,8 +158,7 @@ fn normal_fly_pose_uses_strict_pitch_speed_gate_and_secondary_turn_sign() {
     assert_eq!(tilt, None);
 
     let locomotor = sim
-        .entities_mut_for_test()
-        .get_mut(id)
+        .entity_mut_for_test(id)
         .unwrap()
         .locomotor
         .as_mut()
@@ -185,7 +180,7 @@ fn normal_fly_pose_uses_strict_pitch_speed_gate_and_secondary_turn_sign() {
         matches!(pose, crate::render::unit_atlas::PoseTilt::FlyNormal { pitch: 0.0, roll } if (roll - 30.0_f32.to_radians()).abs() < 1.0e-6)
     );
 
-    let entity = sim.entities_mut_for_test().get_mut(id).unwrap();
+    let entity = sim.entity_mut_for_test(id).unwrap();
     let mut secondary = FacingClass::new(0, 4);
     assert!(secondary.set(0xC000, 0));
     entity.barrel_facing = Some(secondary);
@@ -196,7 +191,7 @@ fn normal_fly_pose_uses_strict_pitch_speed_gate_and_secondary_turn_sign() {
         matches!(pose, crate::render::unit_atlas::PoseTilt::FlyNormal { pitch: 0.0, roll } if (roll + 30.0_f32.to_radians()).abs() < 1.0e-6)
     );
 
-    let entity = sim.entities_mut_for_test().get_mut(id).unwrap();
+    let entity = sim.entity_mut_for_test(id).unwrap();
     entity.barrel_facing.as_mut().unwrap().snap(0xC000, 0);
     let (_, direction, pose) = production_pose(&sim);
     assert_eq!(direction, None);
@@ -258,9 +253,9 @@ fn body_draw_against_seed(
 /// The dock latch's presentation write (`refinery_dock::set_unload_latch`).
 fn latch_unloading_image(sim: &mut Simulation, id: u64, image: &str) {
     let image = sim.intern(image);
-    sim.entities_mut_for_test()
-        .get_mut(id)
+    sim.entity_mut_for_test(id)
         .expect("the object was just built")
+        .seldom
         .display_type_override
         .set_for_test(Some(image));
 }
@@ -389,8 +384,7 @@ fn retail_siege_chopper_draws_schd_only_after_deployment_completes() {
         .spawn_object_limbo_at_height("SCHP", "Americans", 10, 10, 0, 0, rules)
         .expect("retail Siege Chopper builds");
     assert!(sim.entities().get(id).unwrap().is_voxel());
-    sim.entities_mut_for_test()
-        .get_mut(id)
+    sim.entity_mut_for_test(id)
         .unwrap()
         .body_frame_counter
         .set_for_test(1);
@@ -405,8 +399,7 @@ fn retail_siege_chopper_draws_schd_only_after_deployment_completes() {
         (true, false, true, None),
         (false, false, false, Some(("SCHP", true))),
     ] {
-        sim.entities_mut_for_test()
-            .get_mut(id)
+        sim.entity_mut_for_test(id)
             .unwrap()
             .set_unit_simple_deploy_for_test(deployed, begin, reverse);
         assert_eq!(
@@ -521,7 +514,9 @@ fn unit_hva_frames_match_native_selected_model_remainders() {
 #[test]
 #[ignore = "requires GPU and retail assets; ordinary SpyPlane flight counters reach both physical HVA atlas frames and the production voxel backend"]
 fn retail_spy_plane_flight_counter_reaches_both_physical_hva_frames_on_gpu() {
-    use crate::app::presentation::render::draw_plan_lowering::lower_object_instances;
+    use crate::app::presentation::render::draw_plan_lowering::{
+        OwnedPlannedObject, lower_object_instances,
+    };
     use crate::assets::{hva_file::HvaFile, pal_file::Palette, vxl_file::VxlFile};
     use crate::render::batch::{BatchRenderer, InstanceBufferPool};
     use crate::render::palette_light::PaletteLight;
@@ -596,7 +591,7 @@ fn retail_spy_plane_flight_counter_reaches_both_physical_hva_frames_on_gpu() {
         }
         scene
             .runtime
-            .advance_frame(&[], 22, TickLane::Ordinary, FrameEffects::default())
+            .advance_frame(&[], 22, TickLane::Ordinary, &mut FrameEffects::default())
             .unwrap();
     }
     assert!(
@@ -618,7 +613,12 @@ fn retail_spy_plane_flight_counter_reaches_both_physical_hva_frames_on_gpu() {
         let commands = scene.runtime.simulation.take_due_commands();
         scene
             .runtime
-            .advance_frame(&commands, 22, TickLane::Ordinary, FrameEffects::default())
+            .advance_frame(
+                &commands,
+                22,
+                TickLane::Ordinary,
+                &mut FrameEffects::default(),
+            )
             .unwrap();
         let sim = scene.sim();
         let Some(plane) = sim
@@ -647,12 +647,13 @@ fn retail_spy_plane_flight_counter_reaches_both_physical_hva_frames_on_gpu() {
             .layer_of(plane.stable_id())
             .and_then(super::super::helpers::layer_draw_band)
             .unwrap();
-        let parent = NativeDisplayOrder::from_display(sim.display_layers())
+        let parent = NativeDisplayOrder::from_world(&sim, None)
             .object_draw(plane.stable_id(), SpriteEncoding::Voxel)
             .unwrap();
         let record = crate::app::presentation::frame::PresentationFrame::capture(
             &scene.runtime,
             &Default::default(),
+            false,
         )
         .object(plane.stable_id())
         .cloned()
@@ -794,7 +795,7 @@ fn retail_spy_plane_flight_counter_reaches_both_physical_hva_frames_on_gpu() {
                 &mut pieces,
             );
             let layers =
-                lower_object_instances(vec![PlannedObjectInstance::object(*parent, pieces)]);
+                lower_object_instances(vec![OwnedPlannedObject::object(*parent, pieces)].into());
             let layer = &layers[parent.layer.0 as usize];
             assert_eq!(layer.owners, [plane.stable_id()]);
             assert_eq!(layer.runs.len(), 1);
@@ -896,7 +897,7 @@ fn deployed_model_overrides_disguise_no_spawn_alt_and_miner_display_hints() {
     let disguise = sim.intern("DECOY");
     latch_unloading_image(&mut sim, id, "MINERHINT");
     {
-        let entity = sim.entities_mut_for_test().get_mut(id).unwrap();
+        let entity = sim.entity_mut_for_test(id).unwrap();
         entity
             .spawn_manager
             .as_mut()
@@ -904,6 +905,7 @@ fn deployed_model_overrides_disguise_no_spawn_alt_and_miner_display_hints() {
             .slots_mut_for_test()
             .clear();
         entity
+            .seldom
             .disguise
             .get_or_insert_with(Default::default)
             .acquire(0, Some(disguise), None);
@@ -923,33 +925,31 @@ fn deployed_model_overrides_disguise_no_spawn_alt_and_miner_display_hints() {
     };
     latch_unloading_image(&mut sim, hinted, "MINERHINT");
     assert_eq!(model(&sim, hinted), "MINERHINT");
-    sim.entities_mut_for_test()
-        .get_mut(hinted)
+    sim.entity_mut_for_test(hinted)
         .unwrap()
         .set_unit_simple_deploy_for_test(true, false, false);
     assert_eq!(model(&sim, hinted), "GUNNED");
     assert_eq!(model(&sim, id), "DECOY");
-    sim.entities_mut_for_test()
-        .get_mut(id)
+    sim.entity_mut_for_test(id)
         .unwrap()
         .set_unit_simple_deploy_for_test(true, false, false);
     assert_eq!(model(&sim, id), "GUNNED");
-    sim.entities_mut_for_test()
-        .get_mut(id)
+    sim.entity_mut_for_test(id)
         .unwrap()
+        .seldom
         .disguise
         .as_mut()
         .unwrap()
         .clear_unit();
     assert_eq!(model(&sim, id), "GUNNED");
-    sim.entities_mut_for_test()
-        .get_mut(id)
+    sim.entity_mut_for_test(id)
         .unwrap()
         .set_unit_simple_deploy_for_test(false, false, false);
     assert_eq!(model(&sim, id), "HELIWO");
 
-    let entity = sim.entities_mut_for_test().get_mut(no_model).unwrap();
+    let entity = sim.entity_mut_for_test(no_model).unwrap();
     entity
+        .seldom
         .disguise
         .get_or_insert_with(Default::default)
         .acquire(0, Some(disguise), None);
@@ -1115,8 +1115,8 @@ fn retail_mirage_unit_route_matches_original_observer_dispatch() {
             // DrawState's original-byte test covers that supplied input leaf.
             continue;
         }
-        let actor = sim.entities_mut_for_test().get_mut(id).unwrap();
-        let disguise = actor.disguise.as_mut().unwrap();
+        let actor = sim.entity_mut_for_test(id).unwrap();
+        let disguise = actor.seldom.disguise.as_mut().unwrap();
         if input["raw_disguised"].as_bool().unwrap() {
             disguise.acquire(
                 input["creation"].as_i64().unwrap() as u32,
@@ -1220,7 +1220,12 @@ fn retail_mirage_body_frame_matches_original_unit_shp() {
         let input = &row["input"];
         let body_frame = crate::sim::animation::resolve_shp_vehicle_body_frame(
             set,
-            (input["facing_u16"].as_u64().unwrap() >> 8) as u8,
+            crate::sim::animation::shp_vehicle_facing_slot(
+                8,
+                input["facing_u16"].as_u64().unwrap() as u16,
+                true,
+                false,
+            ),
             input["body_counter"].as_u64().unwrap() as u32,
             -1,
             -1,
@@ -1342,4 +1347,78 @@ fn a_tanks_body_draw_looks_no_type_up_by_name() {
     .expect("a Grizzly draws a voxel body");
     assert_eq!(model, "MTNK");
     assert_eq!(RuleSet::type_name_lookups() - before, 0);
+}
+
+#[test]
+fn retail_no_spawn_alt_draw_borrows_the_rules_wo_name() {
+    let Some(retail) = retail_battle_rules() else {
+        return;
+    };
+    let rules = &retail.rules;
+    let mut checked = 0;
+    for id in &rules.vehicle_ids {
+        let object = rules.object(id).expect("listed vehicle");
+        if !object.no_spawn_alt() {
+            continue;
+        }
+        let drawn = no_spawn_alt_type_id(id, Some(object), Some(0)).expect("empty rack");
+        assert!(matches!(drawn, Cow::Borrowed(_)), "{id} borrows its name");
+        assert_eq!(drawn, format!("{id}WO"), "{id}");
+        checked += 1;
+    }
+    assert!(checked > 0, "retail rules carry NoSpawnAlt vehicles");
+}
+
+/// Ares' UnitClass_Draw_OreGatherAnim (Ares.dll `10053E50`, hook
+/// `0x0073D219`) refuses the gather overlay to a harvester under EMP
+/// (vt+0x37C); stock YR, which tests only the warps, still draws it.
+#[test]
+fn only_ares_hides_the_gather_overlay_under_emp() {
+    use crate::app::presentation::frame::PresentationFrame;
+    use crate::sim::runtime::{SimResources, SimRuntime};
+
+    for ares in [false, true] {
+        let _way = crate::rules::ares_switch::read_ares_way(ares);
+        let ini = format!(
+            "{}[VehicleTypes]\n0=HARV\n[HARV]\nStrength=100\nHarvester=yes\nSpeed=4\n",
+            if ares {
+                "[General]\nTogglePowerAllowed=yes\n"
+            } else {
+                ""
+            }
+        );
+        let rules = RuleSet::from_ini(&IniFile::from_str(&ini)).unwrap();
+        assert_eq!(rules.ares(), ares);
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 31);
+        sim.intern_rule_type_ids(&rules);
+        sim.resolve_type_handles(&rules);
+        let id = sim
+            .spawn_object("HARV", "Americans", 10, 20, 0, &rules)
+            .unwrap();
+        sim.entity_mut_for_test(id)
+            .and_then(|harvester| harvester.miner.as_mut())
+            .expect("a Harvester= unit has a miner")
+            .set_harvesting_for_test(true);
+        let mut runtime = SimRuntime {
+            simulation: sim,
+            resources: SimResources::new(rules).into(),
+        };
+        let drawn = |runtime: &SimRuntime| {
+            let frame = PresentationFrame::capture(runtime, &Default::default(), false);
+            harvest_overlay(
+                Some(&runtime.resources.rules),
+                &runtime.simulation,
+                frame.object(id).unwrap(),
+                0,
+            )
+            .is_some()
+        };
+        assert!(drawn(&runtime), "a harvesting miner shows the overlay");
+        runtime
+            .simulation
+            .entity_mut_for_test(id)
+            .unwrap()
+            .set_emp_remaining_for_test(30);
+        assert_eq!(drawn(&runtime), !ares, "ares {ares}");
+    }
 }

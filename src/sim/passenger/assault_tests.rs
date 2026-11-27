@@ -68,7 +68,7 @@ pub(crate) fn ordered_assault(extra: &str) -> Option<AssaultScene> {
                 occupant,
                 bunker,
                 None,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap()
         );
@@ -113,7 +113,9 @@ impl AssaultScene {
             .substrate
             .entities
             .get(self.bunker)
-            .map_or(0, |bunker| bunker.passenger_role.occupants().count() as u32)
+            .map_or(0, |bunker| {
+                bunker.passenger_role().occupants().count() as u32
+            })
     }
 
     pub(crate) fn stats(&self, house: &str) -> (u32, u32) {
@@ -149,7 +151,7 @@ fn an_assaulter_kills_the_occupants_of_an_enemy_building() {
     let bunker = sim.substrate.entities.get(scene.bunker).unwrap();
     assert_eq!(sim.interner.resolve(bunker.owner()), "Russians");
     let boris = sim.substrate.entities.get(scene.boris).unwrap();
-    assert!(boris.lifecycle.object_alive() && !boris.passenger_role.is_inside_transport());
+    assert!(boris.lifecycle.object_alive() && !boris.passenger_role().is_inside_transport());
     assert_eq!(boris.category(), EntityCategory::Infantry);
     let splashes = sim
         .substrate

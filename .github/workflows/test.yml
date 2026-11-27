@@ -40,3 +40,14 @@ jobs:
         # Each package's tests run even after another package's fail, so a
         # failed run lists every failure, not only the first package's.
         run: cargo test --workspace --lib --no-fail-fast
+      - name: Run Wasm module callbacks under the macOS release signing policy
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          executable=$(cargo test --workspace --lib --no-run --message-format=json |
+            jq -er 'select(.target.name == "vera20k_wasm_ext" and .executable != null) | .executable')
+          signed="$RUNNER_TEMP/wasm-module-tests"
+          cp "$executable" "$signed"
+          codesign --force --sign - --options runtime "$signed"
+          "$signed"

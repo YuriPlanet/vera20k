@@ -23,7 +23,7 @@
 //! fetched there.
 #![cfg_attr(
     not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")),
-    allow(dead_code)
+    expect(dead_code, reason = "only the browser build fetches fonts")
 )]
 
 use std::path::Path;
@@ -78,6 +78,11 @@ enum Fetch {
 
 /// Every font asked for, by its place in [`fonts::bundled`]. A font is asked
 /// for once a session; one that fails stays out.
+///
+/// Process-wide because every [`super::TextEngine`] (shell, loading, match)
+/// registers the same fetched fonts, and a browser fetch completes in a
+/// promise continuation that holds none of them; a `static` must be `Sync`,
+/// hence this lock and [`ARRIVALS`]'s atomic.
 static FETCHES: Mutex<Vec<(usize, Fetch)>> = Mutex::new(Vec::new());
 /// Fonts fetched so far: an engine that saw fewer looks for new ones.
 static ARRIVALS: AtomicUsize = AtomicUsize::new(0);
@@ -99,7 +104,10 @@ pub(super) fn fetched(place: usize) -> Option<Blob<u8>> {
 /// browser package, or elsewhere from `folder`.
 #[cfg_attr(
     all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"),
-    allow(unused_variables)
+    expect(
+        unused_variables,
+        reason = "the browser build fetches from its package"
+    )
 )]
 pub(super) fn fetch(place: usize, folder: Option<&Path>) {
     {
@@ -186,73 +194,42 @@ pub(crate) use browser::preload;
 mod browser {
     use wasm_bindgen::prelude::*;
 
-    // A snippet sits in `pkg/snippets/<crate>-<hash>/`, so its own URL leads
-    // to `pkg/fonts/` wherever the page loads the package from.
-    #[wasm_bindgen(inline_js = "export function veraFetchFont(path) {
-        return fetch(new URL(`../../fonts/${path}`, import.meta.url)).then((response) => {
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            return response.arrayBuffer();
-        }).then((buffer) => new Uint8Array(buffer));
-    }")]
-    extern "C" {
-        #[wasm_bindgen(js_name = veraFetchFont)]
-        fn fetch_font(path: &str) -> js_sys::Promise;
-    }
-
-    thread_local! {
-        /// [`preload`]'s promise, made once.
-        static PRELOAD: std::cell::OnceCell<js_sys::Promise> = const { std::cell::OnceCell::new() };
-    }
-
-    /// Fetch the files the game needs before it starts ([`super::PRELOADS`]),
-    /// once: the promise resolves when both have come, and rejects if one
-    /// cannot be fetched or is not what it should be.
-    pub(crate) fn preload() -> js_sys::Promise {
-        PRELOAD.with(|promise| {
-            promise
-                .get_or_init(|| {
-                    let requests: Vec<_> = super::PRELOADS
-                        .iter()
-                        .map(|(file, _)| {
-                            (
-                                *file,
-                                fetch_font(&format!("{file}?v={}", super::version(file))),
-                            )
-                        })
-                        .collect();
-                    wasm_bindgen_futures::future_to_promise(async move {
-                        for (file, request) in requests {
-                            let bytes = wasm_bindgen_futures::JsFuture::from(request)
-                                .await
-                                .map_err(|error| {
-                                    JsValue::from_str(&format!("Could not fetch {file}: {error:?}"))
-                                })?;
-                            let bytes = js_sys::Uint8Array::new(&bytes).to_vec();
-                            if file == super::fonts::NOTO_SANS_FILE
-                                && swash::FontRef::from_index(&bytes, 0).is_none()
-                            {
-                                return Err(JsValue::from_str(&format!(
-                                    "The fetched {file} is not a font"
-                                )));
-                            }
-                            log::info!("Fetched {file} ({} bytes)", bytes.len());
-                            let slot = super::PRELOADS
-                                .iter()
-                                .find(|(known, _)| *known == file)
-                                .map(|(_, slot)| slot)
-                                .expect("a preloaded file");
-                            let _ = slot.set(Vec::leak(bytes));
-                        }
-                        Ok(JsValue::UNDEFINED)
-                    })
-                })
-                .clone()
-        })
+    /// Start both font requests immediately so they load alongside the ice
+    /// terrain. The startup promise in `crate::web::fonts_ready` runs this once.
+    pub(crate) fn preload() -> impl Future<Output = Result<JsValue, JsValue>> {
+        let requests: Vec<_> = super::PRELOADS
+            .iter()
+            .map(|(file, slot)| {
+                let path = format!("fonts/{file}?v={}", super::version(file));
+                let response = wasm_bindgen_futures::JsFuture::from(
+                    crate::web::fetch_package_file(&path, false),
+                );
+                (*file, slot, response)
+            })
+            .collect();
+        async move {
+            for (file, slot, response) in requests {
+                let data = response.await.map_err(|error| {
+                    JsValue::from_str(&format!("Could not fetch {file}: {error:?}"))
+                })?;
+                let bytes = data.unchecked_into::<js_sys::Uint8Array>().to_vec();
+                if file == super::fonts::NOTO_SANS_FILE
+                    && swash::FontRef::from_index(&bytes, 0).is_none()
+                {
+                    return Err(JsValue::from_str(&format!(
+                        "The fetched {file} is not a font"
+                    )));
+                }
+                log::info!("Fetched {file} ({} bytes)", bytes.len());
+                let _ = slot.set(Vec::leak(bytes));
+            }
+            Ok(JsValue::UNDEFINED)
+        }
     }
 
     /// Fetch `file`, versioned so that a browser keeps it until it changes.
     pub(super) fn fetch(place: usize, file: &'static str, version: &str) {
-        let request = fetch_font(&format!("{file}?v={version}"));
+        let request = crate::web::fetch_package_file(&format!("fonts/{file}?v={version}"), false);
         wasm_bindgen_futures::spawn_local(async move {
             let bytes = match wasm_bindgen_futures::JsFuture::from(request).await {
                 Ok(bytes) => Some(js_sys::Uint8Array::new(&bytes).to_vec()),

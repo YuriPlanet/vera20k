@@ -16,6 +16,10 @@ use crate::map::rmg::scratch::RmgScratch;
 use super::carve::stamp_iso_block;
 use super::shore::TileBlocks;
 
+/// The cliff set's piece count: the materializer stamps pieces 1..=40 at
+/// `CliffSet + piece - 1`, and this pass varies the same signed window.
+pub(in crate::map::rmg) const CLIFF_SET_TILES: i32 = 40;
+
 /// Original `0x005A17F0`: visit current cells in native order, then vary a
 /// repeated neighboring cliff template south before east.
 pub(in crate::map::rmg) fn run(
@@ -29,7 +33,7 @@ pub(in crate::map::rmg) fn run(
         let tile = grid.cell_native(x, y).tile;
         // Original 5A1819..5A182F is a signed 40-tile window, without a
         // separate absent-base guard. The theater owner supplies its base.
-        if tile < cliff_base || tile >= cliff_base.wrapping_add(40) {
+        if tile < cliff_base || tile >= cliff_base.wrapping_add(CLIFF_SET_TILES) {
             continue;
         }
 
@@ -59,11 +63,18 @@ pub(in crate::map::rmg) fn run(
             // Original 5A1886..5A18C7 / 5A193B..5A197A recovers the
             // NEIGHBOR's anchor using the CURRENT OLD tile's width. It does
             // not use the replacement's dimensions or the current subtile.
-            let width = blocks
+            // VERA: a generation whose cliff TMP is missing or unreadable is
+            // refused before it starts (`TheaterTileBlocks::missing_cliff_tile`).
+            // Blocks from elsewhere still lack a template here: that cliff
+            // keeps its tile, as a missing replacement block stamps nothing
+            // (`stamp_iso_block`).
+            let Some(width) = blocks
                 .block(old_tile)
-                .expect("cliff restamp requires the current tile's TMP block")
-                .width;
-            assert!(width > 0, "cliff restamp requires a positive TMP width");
+                .map(|block| block.width)
+                .filter(|&width| width > 0)
+            else {
+                continue;
+            };
             let sub_tile = i32::from(grid.ref_cell(neighbor).sub_tile);
             let (nx, ny) = grid.ref_coord(neighbor);
             let origin = (
@@ -102,8 +113,42 @@ fn select_variant(tile: i32, cliff_base: i32, rng: &mut RmgRng) -> i32 {
 
 #[cfg(all(test, tests_map))]
 mod tests {
+    use super::*;
+    use crate::map::rmg::phases::shore::TileBlock;
+
     #[test]
     fn registered_variant_selection_matches_original_values_and_cursors() {
         super::super::cliff_native_tests::compare_variants(super::select_variant);
+    }
+
+    /// A theater whose cliff TMP did not load has no block for the tile: the
+    /// cliff keeps its tile instead of stopping the generator.
+    #[test]
+    fn a_cliff_without_its_template_block_keeps_its_tile() {
+        struct NoBlocks;
+        impl TileBlocks for NoBlocks {
+            fn block(&self, _tile: i32) -> Option<&TileBlock> {
+                None
+            }
+        }
+        const CLIFF_BASE: i32 = 100;
+        // Offset 28 always varies to 29, without a draw.
+        let tile = CLIFF_BASE + 28;
+        let mut grid = RmgGrid::new(16, 4, 8);
+        let mut scratch = RmgScratch::new(16, 4, 8);
+        for ((x, y), sub_tile) in [((3, 3), 1), ((4, 3), 0)] {
+            let cell = grid.get_mut(x, y).unwrap();
+            cell.tile = tile;
+            cell.sub_tile = sub_tile;
+        }
+        run(
+            &mut grid,
+            &mut scratch,
+            &NoBlocks,
+            &mut RmgRng::new(1),
+            CLIFF_BASE,
+        );
+        assert_eq!(grid.get(3, 3).unwrap().tile, tile);
+        assert_eq!(grid.get(4, 3).unwrap().tile, tile);
     }
 }

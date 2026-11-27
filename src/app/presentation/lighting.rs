@@ -69,6 +69,8 @@ pub(crate) fn body_extra_light(
                 let height = air_movement::queried_flight_height(entity, Some(cells));
                 if entity.on_bridge() {
                     height >= 0
+                } else if let Some(deck) = ground_pose::corrected_deck_z(cells.terrain(), current) {
+                    ground_pose::object_world_z_leptons(entity, Some(cells.terrain())) >= deck
                 } else {
                     height >= crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS
                 }
@@ -268,7 +270,6 @@ pub(crate) fn anim_palette_light(
 
 /// `Drawing::RGB_To_Int` (YRpp `Drawing::Color16bit`): the 16-bit RGB565 word
 /// `(B >> 3) | ((G >> 2) << 5) | ((R >> 3) << 11)`.
-#[cfg(feature = "phobos")]
 fn rgb565_word([red, green, blue]: [u8; 3]) -> u16 {
     (u16::from(blue) >> 3) | ((u16::from(green) >> 2) << 5) | ((u16::from(red) >> 3) << 11)
 }
@@ -436,7 +437,9 @@ pub(crate) fn attach_effect_tint(
 }
 
 /// The custom tint `TechnoExt::UpdateTintValues` aggregates from every owner:
-/// Phobos shields and AttachEffects today.
+/// Phobos shields and AttachEffects, the simulation module's tint for every
+/// viewer, then client decorations on this screen (appendices 7.2 and 7.10). Each owner ORs in its RGB565
+/// word and adds its intensity, as one more AttachEffect would.
 pub(crate) fn custom_tint(
     entity: &crate::app::presentation::frame::ObjectRecord,
     simulation: &Simulation,
@@ -444,13 +447,21 @@ pub(crate) fn custom_tint(
 ) -> (u16, i32) {
     let base = shield_tint(entity, simulation, rules);
     #[cfg(feature = "phobos")]
-    {
+    let base = {
         let (effect_word, effect_intensity) = attach_effect_tint(entity, simulation, rules);
         (base.0 | effect_word, base.1 + effect_intensity)
-    }
-    #[cfg(not(feature = "phobos"))]
-    {
-        base
+    };
+    let base = with_module_tint(base, entity.module_tint());
+    with_module_tint(base, entity.local_look().tint)
+}
+
+/// `tint` with a module's tint folded in: its colour's word ORed (black
+/// adds nothing) and its intensity added in thousandths, as Phobos scales
+/// `Tint.Intensity`.
+fn with_module_tint((word, intensity): (u16, i32), module: Option<([u8; 3], f64)>) -> (u16, i32) {
+    match module {
+        None => (word, intensity),
+        Some((color, extra)) => (word | rgb565_word(color), intensity + (extra * 1000.0) as i32),
     }
 }
 
@@ -883,8 +894,9 @@ pub(crate) struct MatchLighting {
     /// Replica of the simulation's radiation light sites, kept like `buildings`.
     radiation: BTreeMap<(u16, u16), PointLight>,
     profile: CellRelightProfile,
-    /// Replica of the scenario lighting state (`ScenarioSession::lighting`) as
-    /// last applied, kept like `buildings`.
+    /// The scenario lighting state (`ScenarioSession::lighting`) as the last
+    /// global relight or [`Self::refresh`] applied it. Writes that refresh no
+    /// cell ([`Self::after_pass`]) leave it behind the simulation's.
     scenario: Option<ScenarioLightingState>,
     detail_level: u32,
     /// Free Anim+FC copies, independent of cell refreshes and depth+100.
@@ -1141,18 +1153,33 @@ impl MatchLighting {
         assert!(update.commit_into(&mut self.grid));
     }
 
-    /// Reconcile explicit tool/fixture mutations and the detail option. Normal
-    /// production frames first replay their ordered events via apply_events.
+    /// A pass's work after its frame's ordered events ([`Self::apply_events`]),
+    /// which alone relight cells: retire disposed anims' copies and follow
+    /// the detail option. A scenario write that refreshes no cell natively
+    /// (Execute71/72 at `0x006DF250`/`0x006DF271`, Execute73 at
+    /// `0x006DF292`, the nuke flash going off at `0x0053A738`) publishes no
+    /// event, so cells keep the scalars their last relight gave them.
+    pub(crate) fn after_pass(
+        &mut self,
+        terrain: &ResolvedTerrainGrid,
+        sim: &Simulation,
+        detail_level: u32,
+    ) {
+        self.retire_disposed_anims(sim);
+        self.set_detail_level(terrain, sim, detail_level);
+    }
+
+    /// Install, load and tool/fixture mutations: re-derive the sources and
+    /// the scenario lighting from the simulation, relight what differs, then
+    /// follow the detail option. Match frames never call this
+    /// ([`Self::after_pass`]).
     pub(crate) fn refresh(
         &mut self,
         terrain: &ResolvedTerrainGrid,
         sim: &Simulation,
         detail_level: u32,
     ) {
-        // Retire only at physical disposal, never merely UnInit, detach or
-        // loss of Logic/Display membership. Save uses the same store check.
-        self.anim_intensities
-            .retain(|id, _| sim.anim(*id).is_some());
+        self.retire_disposed_anims(sim);
         let (buildings, radiation) = source_maps(sim);
         let mut events = Vec::new();
         for id in self
@@ -1210,10 +1237,27 @@ impl MatchLighting {
             });
         }
         self.apply_events(terrain, &events);
+        self.set_detail_level(terrain, sim, detail_level);
+    }
+
+    /// Retire an anim's Anim+FC copy only at its physical disposal, never
+    /// merely UnInit, detach or loss of Logic/Display membership. Save uses
+    /// the same store check.
+    fn retire_disposed_anims(&mut self, sim: &Simulation) {
+        self.anim_intensities
+            .retain(|id, _| sim.anim(*id).is_some());
+    }
+
+    /// The detail option: Display4AE450 ->545000 destroys only Cell Converts.
+    /// The synchronous native iterator resample preserves ColorSchemes and
+    /// every already copied Anim+FC.
+    pub(crate) fn set_detail_level(
+        &mut self,
+        terrain: &ResolvedTerrainGrid,
+        sim: &Simulation,
+        detail_level: u32,
+    ) {
         if self.detail_level != detail_level.min(2) {
-            // Display4AE450 ->545000 destroys only Cell Converts. The
-            // synchronous native iterator resample preserves ColorSchemes
-            // and every already copied Anim+FC.
             self.detail_level = detail_level.min(2);
             self.grid.reset_cell_converts(sim.palette_constructor_rgb());
             let mut dirty = self.global_cells.iter().copied().collect();

@@ -13,6 +13,7 @@
 //! when the starts phase asks. Native comparisons:
 //! `tools/rmg_oracle/start_zones.{py,json}`.
 
+use crate::map::playfield::PlayfieldBounds;
 use crate::map::resolved_terrain::{
     cliff_back_normal_reclass_applies, is_behind_cliff, overlay_reduced_zone_type,
     recalc_zone_type_for_wheel_block,
@@ -96,40 +97,15 @@ impl ZoneKind {
 /// Geometry inputs to the classifier and frame tests.
 #[derive(Debug, Clone, Copy)]
 pub struct ZoneParams<'a> {
-    /// The playfield/view frame base width (the map's padded width).
-    pub map_w: i32,
-    /// Local (playable) rect `{x, y, w, h}`; generated maps use
-    /// `(2, 5, gen_w, gen_h)`.
-    pub local_rect: [i32; 4],
+    /// The playfield: the padded `Size` width and the LocalSize, which
+    /// generated maps set to `(2, 5, gen_w, gen_h)`.
+    pub playfield: PlayfieldBounds,
     /// Per-land-type "Wheel speed <= 1%" flags from the rules terrain data.
     pub wheel_impassable: [bool; LAND_TYPES],
     /// Low byte of `[General] CliffBackImpassability=`.
     pub cliff_back_impassability: u8,
     /// [`OverlayZoneFacts`] by overlay id.
     pub overlays: &'a [OverlayZoneFacts],
-}
-
-/// The diamond-frame containment test shared by the playfield and
-/// view-region checks: anti-diagonal band plus off-axis bounds against a
-/// rect, with an isometric height correction (a sloped cell in the upper
-/// half counts one level higher).
-pub fn diamond_frame_contains(
-    map_w: i32,
-    rect: [i32; 4],
-    x: i32,
-    y: i32,
-    level: u8,
-    sloped: bool,
-) -> bool {
-    let s = x + y;
-    let mut lvl = i32::from(level as i8);
-    if sloped && s < map_w + 4 + rect[1] * 2 + lvl {
-        lvl += 1;
-    }
-    s > map_w + rect[1] * 2 + lvl
-        && s <= map_w + 2 + (rect[3] + rect[1]) * 2 + lvl
-        && (x - y) < (rect[2] + rect[0]) * 2 - map_w
-        && (y - x) < map_w - rect[0] * 2
 }
 
 /// One zone record: class, level, base zone id (0 = unzoned).
@@ -151,7 +127,10 @@ pub struct ZoneField {
     /// The base zone `RebuildZoneConnectivity @ 0x0056C510` returns: the
     /// strictly largest component, the first (lowest id) on ties. Only the
     /// native comparisons read it.
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "only the native comparisons read it")
+    )]
     largest: u16,
     /// Derived zone of the largest base component (first wins ties).
     pub reference: u16,
@@ -305,14 +284,11 @@ fn classify(grid: &RmgGrid, blocks: &dyn TileBlocks, params: &ZoneParams, x: i32
         Some(cell) => *cell,
         None => return CLASS_OUTSIDE,
     };
-    let outside = !diamond_frame_contains(
-        params.map_w,
-        params.local_rect,
-        x,
-        y,
-        cell.level,
-        cell.slope != 0,
-    );
+    // `MapClass::IsCellInPlayfield @ 0x00578460` with checkLevel (0x00483C90).
+    let in_playfield =
+        params
+            .playfield
+            .contains_height_aware_packed(x, y, cell.level as i8, cell.slope);
     let overlay = usize::try_from(cell.overlay)
         .ok()
         .and_then(|id| params.overlays.get(id));
@@ -333,7 +309,7 @@ fn classify(grid: &RmgGrid, blocks: &dyn TileBlocks, params: &ZoneParams, x: i32
         .copied()
         .unwrap_or(false);
     recalc_zone_type_for_wheel_block(
-        outside,
+        !in_playfield,
         overlay.and_then(|facts| facts.zone_type),
         land,
         wheel_blocked,
@@ -635,8 +611,7 @@ mod tests {
             grid.get_mut(x, y).unwrap().tile = 0;
         }
         let params = ZoneParams {
-            map_w,
-            local_rect: [2, 5, gen_w, gen_h],
+            playfield: PlayfieldBounds::from_normalized_local_size(map_w, 2, 5, gen_w, gen_h),
             wheel_impassable: wheel(),
             cliff_back_impassability: 2,
             overlays: &[],
@@ -648,14 +623,9 @@ mod tests {
         grid.native_cells()
             .filter(|&(x, y)| {
                 let cell = grid.get(x, y).unwrap();
-                diamond_frame_contains(
-                    params.map_w,
-                    params.local_rect,
-                    x,
-                    y,
-                    cell.level,
-                    cell.slope != 0,
-                )
+                params
+                    .playfield
+                    .contains_height_aware_packed(x, y, cell.level as i8, cell.slope)
             })
             .collect()
     }

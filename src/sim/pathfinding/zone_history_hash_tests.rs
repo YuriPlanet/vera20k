@@ -107,7 +107,7 @@ fn fingerprint_tracks_original_edge_order_and_native_threat_seed() {
     graph.levels_mut()[0].push_edge(1, ZoneEdgeRecord::new(2, 0));
     graph.levels_mut()[0].push_edge(1, ZoneEdgeRecord::new(3, 1));
     let mut reversed = graph.clone();
-    reversed.levels_mut()[0].clear_edges(1);
+    reversed.levels_mut()[0].take_edges(1);
     reversed.levels_mut()[0].push_edge(1, ZoneEdgeRecord::new(3, 1));
     reversed.levels_mut()[0].push_edge(1, ZoneEdgeRecord::new(2, 0));
     let mut a = zones.clone();

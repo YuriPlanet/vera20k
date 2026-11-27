@@ -88,7 +88,7 @@ fn original_cannon_launch_motion_and_live_bridge_draw_form_one_production_chain(
             gravity: kind.gravity(),
         }),
         rules.general.gravity,
-        launch::fireat_launch_distance(origin, target),
+        launch::fireat_launch_distance(origin, target, false),
     );
     assert_eq!(
         i64::from(launch_speed),
@@ -270,17 +270,17 @@ fn original_cannon_launch_motion_and_live_bridge_draw_form_one_production_chain(
         terrain.shared_cell_dummy().stamp_coord(123, -44);
         let state_before = sim.state_hash();
         let dummy_before = terrain.shared_cell_dummy().snapshot();
-        let (ground, structural) =
+        let (ground, deck) =
             floor_probe(terrain, projectile.position().x, projectile.position().y).unwrap();
         assert_eq!(
-            structural,
+            deck.is_some(),
             flags & 0x100 != 0,
             "tick {tick} live structural flag"
         );
         let actual = geometry(
             projectile.position(),
             ground,
-            structural,
+            deck,
             projectile.on_bridge(),
             kind.shadow,
         );

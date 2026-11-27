@@ -147,7 +147,7 @@ pub(crate) fn tick_terrain_object_ai(
     stable_id: u64,
     rules: &RuleSet,
     overlay_registry: Option<&OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> Result<(), RuntimeOverlayError> {
     let live = rules.ares_form()
         && sim
@@ -176,7 +176,7 @@ fn tick_terrain_animation(
     stable_id: u64,
     rules: &RuleSet,
     overlay_registry: Option<&OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> Result<(), RuntimeOverlayError> {
     let Some(cell) = sim
         .terrain_objects
@@ -561,14 +561,14 @@ pub fn seed_terrain_spawner_animation(
 
     let mut seeded = 0usize;
     for (stable_id, type_ref) in candidates {
-        let name = interner.resolve(type_ref).to_string();
-        let Some(t) = rules.terrain_object_type_case_insensitive(&name) else {
+        let name = interner.resolve(type_ref);
+        let Some(t) = rules.terrain_object_type_case_insensitive(name) else {
             continue;
         };
         if !t.is_animated {
             continue;
         }
-        let frame_count = rules.terrain_spawner_frame_count(&name).unwrap_or(0);
+        let frame_count = rules.terrain_spawner_frame_count(name).unwrap_or(0);
         terrain_objects.seed_animation(
             stable_id,
             TerrainAnimationState::new(
@@ -724,11 +724,11 @@ mod tests {
             let rules = RuleSet::from_ini(&ini).expect("spawn world rules");
             let registry = OverlayTypeRegistry::from_ini(&ini, None);
             let mut sim = crate::sim::world::Simulation::new();
-            sim.overlay_grid = Some(OverlayGrid::new(32, 32));
+            *sim.overlay_grid = Some(OverlayGrid::new(32, 32));
             sim.install_resolved_terrain_for_new_map(resolved_grid(32, 32));
-            sim.ore_growth_config =
+            *sim.ore_growth_config =
                 crate::sim::ore_growth::OreGrowthConfig::for_test(true, true, false);
-            sim.ore_growth_state = crate::sim::ore_growth::OreGrowthState::new(32, 32);
+            *sim.ore_growth_state = crate::sim::ore_growth::OreGrowthState::new(32, 32);
             sim.ore_growth_state
                 .reset_native_tiberium_classes(rules.tiberium_types.len(), 0);
             Self {
@@ -761,7 +761,7 @@ mod tests {
             self.sim
                 .session
                 .set_binary_frame_for_test(self.binary_frame);
-            std::mem::swap(&mut self.sim.scenario_rng, rng);
+            std::mem::swap(&mut *self.sim.scenario_rng, rng);
             for (&cell, state) in spawners {
                 let id = self
                     .sim
@@ -774,12 +774,12 @@ mod tests {
                     id,
                     &self.rules,
                     Some(&self.registry),
-                    FrameEffects::default(),
+                    &mut FrameEffects::default(),
                 )
                 .unwrap();
                 *state = self.sim.terrain_objects.animations()[&id].clone();
             }
-            std::mem::swap(&mut self.sim.scenario_rng, rng);
+            std::mem::swap(&mut *self.sim.scenario_rng, rng);
             self.binary_frame += 1;
         }
 
@@ -887,7 +887,7 @@ mod tests {
         sim.resolve_type_handles(&rules);
         let template = resolved_grid(8, 8);
         sim.install_resolved_terrain_for_new_map(template.clone());
-        sim.overlay_grid = Some(OverlayGrid::new(8, 8));
+        *sim.overlay_grid = Some(OverlayGrid::new(8, 8));
         let objects: Vec<_> = names
             .iter()
             .map(|name| TerrainObject {
@@ -959,7 +959,7 @@ mod tests {
             stages(&sim),
             [("TIBTRE01".into(), 2), ("TIBTRE02".into(), 1)]
         );
-        sim.scenario_rng = SimRng::new(0);
+        *sim.scenario_rng = SimRng::new(0);
         let bytes = GameSnapshot::save_validated(
             &sim,
             1,
@@ -1025,7 +1025,7 @@ mod tests {
         );
         // Controlled inherited UnInit, not a claim that stock immune drills
         // can be killed by a weapon. Expiry bypasses the non-head middle ID.
-        sim.uninit_with_context(middle, UninitContext::new(&rules, Some(&registry)));
+        sim.uninit_with_context(middle, UninitContext::new(&rules));
         assert_eq!(
             sim.terrain_objects.members_at((2, 2)).collect::<Vec<_>>(),
             [head, older]
@@ -1077,14 +1077,14 @@ mod tests {
             "common late drain removes only the retired instance"
         );
         let retained_stage = sim.terrain_objects.animations()[&older].clone();
-        sim.uninit_with_context(head, UninitContext::new(&rules, Some(&registry)));
+        sim.uninit_with_context(head, UninitContext::new(&rules));
         assert_eq!(sim.terrain_objects.id_at((2, 2)), Some(older));
         assert!(sim.terrain_objects.spawning_cells().contains(&(2, 2)));
         assert_eq!(sim.terrain_objects.animations()[&older], retained_stage);
         assert!(sim.terrain_objects.get(older).unwrap().in_logic_vector());
         assert!(sim.substrate.display.layer_of(older).is_some());
         assert_eq!(count(&mut sim), 1);
-        sim.uninit_with_context(older, UninitContext::new(&rules, Some(&registry)));
+        sim.uninit_with_context(older, UninitContext::new(&rules));
         assert_eq!(sim.terrain_objects.id_at((2, 2)), None);
         assert!(sim.terrain_objects.spawning_cells().is_empty());
         assert_eq!(count(&mut sim), 0);
@@ -1123,7 +1123,7 @@ mod tests {
         sim.resolve_type_handles(&rules);
         let template = resolved_grid(8, 8);
         sim.install_resolved_terrain_for_new_map(template.clone());
-        sim.overlay_grid = Some(OverlayGrid::new(8, 8));
+        *sim.overlay_grid = Some(OverlayGrid::new(8, 8));
         let objects = [
             TerrainObject {
                 rx: 2,
@@ -1156,7 +1156,7 @@ mod tests {
                 he,
                 true,
                 (crate::sim::combat::RAD_NO_ATTACKER, None, he_ref),
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
             if id == immune {
                 assert_eq!(sim.terrain_objects.get(id).unwrap().health(), 200);
@@ -1185,10 +1185,10 @@ mod tests {
         assert_eq!((anim.draw_flags(), anim.z_adjust()), (0x2600, -15));
         assert!(sim.sound_events.iter().any(|event| matches!(event,
             SimSoundEvent::AnimationStarted { anim_id: id, sound_id, .. }
-                if *id == anim_id && sound_id == "EXPLOSION12"
+                if *id == anim_id && sound_id.name_in(&rules) == "EXPLOSION12"
         )));
         assert!(!sim.terrain_objects.get(doomed).unwrap().is_live());
-        sim.scenario_rng = SimRng::new(0); // Native load resets this stream.
+        *sim.scenario_rng = SimRng::new(0); // Native load resets this stream.
         let saved = GameSnapshot::save_validated(
             &sim,
             1,
@@ -1238,7 +1238,7 @@ mod tests {
             warhead,
             true,
             (crate::sim::combat::RAD_NO_ATTACKER, None, warhead_ref),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         for &id in &ids {
             let tree = sim.terrain_objects.get(id).unwrap();
@@ -1256,7 +1256,7 @@ mod tests {
             warhead,
             true,
             (crate::sim::combat::RAD_NO_ATTACKER, None, warhead_ref),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(sim.terrain_objects.id_at((2, 2)), None);
         assert_eq!(sim.substrate.raw_cell_occupation.ground_bits(2, 2), 0);
@@ -1312,11 +1312,11 @@ mod tests {
             .set_map_height_for_test(template.height());
         // This fixture starts at the real Terrain constructor phase; the
         // normal app launch captures exercise the complete Scenario prefix.
-        sim.native_unique_ids =
+        *sim.native_unique_ids =
             Some(crate::sim::native_identity::NativeUniqueIdCursor::for_synthetic_simulation());
         sim.intern_rule_type_ids(&rules);
         sim.resolve_type_handles(&rules);
-        sim.overlay_grid = Some(OverlayGrid::new(template.width(), template.height()));
+        *sim.overlay_grid = Some(OverlayGrid::new(template.width(), template.height()));
         sim.install_resolved_terrain_for_new_map(template.clone());
         Some((sim, rules, registry, template))
     }
@@ -1334,7 +1334,7 @@ mod tests {
             return;
         };
         let ore = registry.id_for_name("TIB01").unwrap();
-        sim.overlay_grid = Some(OverlayGrid::from_overlay_entries(
+        *sim.overlay_grid = Some(OverlayGrid::from_overlay_entries(
             &[
                 OverlayEntry {
                     rx: 2,
@@ -1416,7 +1416,7 @@ mod tests {
             origin,
             None,
             0,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let records: Vec<_> = collected
             .receivers
@@ -1439,7 +1439,7 @@ mod tests {
             &rules,
             Some(&registry),
             &collected.receivers,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
         let health = sim.terrain_objects.get(id).unwrap().health();
         assert!(health > 0 && health < sim.terrain_objects.get(id).unwrap().max_health());
@@ -1450,7 +1450,7 @@ mod tests {
             Some(&registry),
             secondary,
             false,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
         assert!(sim.terrain_objects.get(id).unwrap().health() < health);
         let impact = sim.terrain_objects.get(id).unwrap().world_coord();
@@ -1463,7 +1463,7 @@ mod tests {
             he,
             true,
             origin,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
         for cell in cells {
             assert_eq!(sim.terrain_objects.id_at(cell), None);
@@ -1478,7 +1478,7 @@ mod tests {
             0
         );
         assert!(sim.substrate.pending_delete.contains_object(&id));
-        sim.process_pending_delete_with(&rules, Some(&registry), FrameEffects::default(), 1, true);
+        sim.process_pending_delete_with(&rules, &mut FrameEffects::default(), 1, true);
         assert!(sim.terrain_objects.get(id).is_none());
     }
 
@@ -1551,7 +1551,7 @@ mod tests {
                 .terrain_object_occupation
                 .is_some()
         );
-        restored.uninit_with_context(newer, UninitContext::new(&rules, Some(&registry)));
+        restored.uninit_with_context(newer, UninitContext::new(&rules));
         // RemoveContent47EAF0 clears shared Next only when found: the first
         // recipient keeps older, the later heads receive the now-null Next.
         assert_eq!(restored.terrain_objects.id_at((1, 1)), Some(older));
@@ -1560,7 +1560,7 @@ mod tests {
         }
         assert_eq!(restored.terrain_objects.id_at((3, 3)), Some(older));
         assert!(restored.terrain_objects.get(older).unwrap().is_live());
-        restored.process_pending_delete_with(&rules, Some(&registry), Default::default(), 1, true);
+        restored.process_pending_delete_with(&rules, &mut Default::default(), 1, true);
         assert!(restored.terrain_objects.get(newer).is_none());
         // Keep the exposed older object live; later native destruction of a
         // foreign direct head is a separate dangling-pointer boundary.
@@ -1640,7 +1640,7 @@ mod tests {
             0
         );
         assert!(sim.rebuild_dynamic_navigation(&rules));
-        sim.uninit_with_context(id, UninitContext::new(&rules, Some(&registry)));
+        sim.uninit_with_context(id, UninitContext::new(&rules));
         assert!(sim.terrain_objects.cell_index().is_empty());
         assert_eq!(
             sim.substrate
@@ -1708,10 +1708,10 @@ mod tests {
         // `test_default` interns both owner and type through the shared test
         // interner. Snapshot it only after constructing the entity so those
         // handles resolve through the Simulation that will execute the order.
-        sim.interner = crate::sim::intern::test_interner();
+        *sim.interner = crate::sim::intern::test_interner();
 
         sim.set_input_delay_ticks(0);
-        sim.resolved_terrain = Some(resolved_grid(64, 64));
+        *sim.resolved_terrain = Some(resolved_grid(64, 64));
         sim.substrate.entities.insert(attacker);
         assert!(matches!(
             sim.reveal(attacker_id),
@@ -1944,8 +1944,8 @@ mod tests {
             sim.intern_rule_type_ids(&rules);
             sim.resolve_type_handles(&rules);
             sim.install_resolved_terrain_for_new_map(template.clone());
-            sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(4, 4));
-            sim.native_unique_ids = Some(
+            *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(4, 4));
+            *sim.native_unique_ids = Some(
                 crate::sim::native_identity::build_noncampaign_fresh_id_prefix(
                     0, 0, 0, 0, 0, 0, 1, 1,
                 )
@@ -2026,7 +2026,7 @@ mod tests {
                 warhead,
                 true,
                 (crate::sim::combat::RAD_NO_ATTACKER, None, warhead_ref),
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
             assert_eq!(
                 restored.substrate.raw_cell_occupation.ground_bits(2, 2),
@@ -2070,7 +2070,7 @@ mod tests {
         // Resize565C10 never allocates cell0 in a legal authored map.
         grid.test_set_native_allocated_cells(&[(2, 2)]);
         sim.install_resolved_terrain_for_new_map(grid.clone());
-        sim.overlay_grid = Some(OverlayGrid::from_overlay_entries(
+        *sim.overlay_grid = Some(OverlayGrid::from_overlay_entries(
             &[OverlayEntry {
                 rx: 0,
                 ry: 0,
@@ -2081,7 +2081,7 @@ mod tests {
             4,
         ));
         sim.substrate.raw_cell_occupation.mark_ground(0, 0, 0xE0);
-        sim.native_unique_ids = Some(
+        *sim.native_unique_ids = Some(
             crate::sim::native_identity::build_noncampaign_fresh_id_prefix(0, 0, 0, 0, 0, 0, 1, 1)
                 .into_cursor(),
         );
@@ -2156,7 +2156,7 @@ mod tests {
         assert!(initializing.rebuild_dynamic_navigation(&rules));
         let path = initializing.path_grid_snapshot().unwrap();
         initializing.with_object_placement_scope(|sim| {
-            sim.uninit_with_context(id, UninitContext::with_rules(&rules));
+            sim.uninit_with_context(id, UninitContext::new(&rules));
         });
         assert!(initializing.dirty_cells.radar().is_empty());
         assert!(std::sync::Arc::ptr_eq(
@@ -2171,7 +2171,7 @@ mod tests {
             .unwrap()
             .native_cell_identity((9, 9));
         let path = restored.path_grid_snapshot().unwrap();
-        restored.uninit_with_context(id, UninitContext::with_rules(&rules));
+        restored.uninit_with_context(id, UninitContext::new(&rules));
         assert!(std::sync::Arc::ptr_eq(
             &path,
             &restored.path_grid_snapshot().unwrap()
@@ -2210,7 +2210,7 @@ mod tests {
         );
         restored.dirty_cells.clear_radar_for_test();
         let path = restored.path_grid_snapshot().unwrap();
-        restored.process_pending_delete_with(&rules, Some(&registry), Default::default(), 1, true);
+        restored.process_pending_delete_with(&rules, &mut Default::default(), 1, true);
         assert!(std::sync::Arc::ptr_eq(
             &path,
             &restored.path_grid_snapshot().unwrap()
@@ -2248,10 +2248,10 @@ mod tests {
         sim.session_mut_for_test().set_map_height_for_test(4);
         // This phase fixture deliberately omits the full Scenario prefix;
         // the headless regression exercises it through actual retail loading.
-        sim.native_unique_ids = Some(NativeUniqueIdCursor::for_synthetic_simulation());
+        *sim.native_unique_ids = Some(NativeUniqueIdCursor::for_synthetic_simulation());
         let grid = resolved_grid(4, 4);
         sim.install_resolved_terrain_for_new_map(grid.clone());
-        sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(4, 4));
+        *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(4, 4));
         let americans = sim.interner.intern("Americans");
         sim.houses
             .register(crate::sim::house_state::HouseState::new(
@@ -2326,7 +2326,7 @@ mod tests {
 
         // Fresh MapPickUp56884C sees the null list and cannot unmark the
         // older Cell member. TerrainLimbo's independent suffix still runs.
-        sim.uninit_with_context(unknown_id, UninitContext::with_rules(&rules));
+        sim.uninit_with_context(unknown_id, UninitContext::new(&rules));
         assert_eq!(
             sim.substrate.raw_cell_occupation.ground_bits(2, 2) & 0x1C,
             known_raw_bits
@@ -2360,19 +2360,13 @@ mod tests {
                 .native_unique_id(),
             native_id
         );
-        restored.uninit_with_context(unknown_id, UninitContext::with_rules(&loaded_rules));
+        restored.uninit_with_context(unknown_id, UninitContext::new(&loaded_rules));
         assert_eq!(
             restored.substrate.raw_cell_occupation.ground_bits(2, 2) & 0x1C,
             0
         );
         assert_eq!(restored.terrain_objects.id_at((2, 2)), Some(known_id));
-        restored.process_pending_delete_with(
-            &loaded_rules,
-            Some(&overlays),
-            Default::default(),
-            1,
-            true,
-        );
+        restored.process_pending_delete_with(&loaded_rules, &mut Default::default(), 1, true);
         assert!(restored.terrain_objects.get(unknown_id).is_none());
         assert!(restored.terrain_objects.get(known_id).unwrap().is_live());
         assert_eq!(
@@ -2411,8 +2405,8 @@ mod tests {
         let rules = RuleSet::from_ini(&ini).expect("authored Terrain rules");
         let overlays = OverlayTypeRegistry::from_ini(&ini, None);
         let mut sim = Simulation::new();
-        sim.resolved_terrain = Some(resolved_grid(4, 4));
-        sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::from_overlay_entries(
+        *sim.resolved_terrain = Some(resolved_grid(4, 4));
+        *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::from_overlay_entries(
             &[OverlayEntry {
                 rx: 2,
                 ry: 2,
@@ -2422,7 +2416,7 @@ mod tests {
             4,
             4,
         ));
-        sim.native_unique_ids = Some(
+        *sim.native_unique_ids = Some(
             crate::sim::native_identity::build_noncampaign_fresh_id_prefix(0, 0, 0, 0, 0, 0, 1, 1)
                 .into_cursor(),
         );

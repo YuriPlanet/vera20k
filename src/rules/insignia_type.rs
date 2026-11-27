@@ -13,11 +13,8 @@
 //! `.shp` suffix rule, and presentation resolves them once per match.
 
 use crate::rules::ini_parser::IniFile;
-#[cfg(feature = "phobos")]
 use crate::rules::ini_parser::IniSection;
-#[cfg(feature = "phobos")]
 use crate::rules::ini_value::parse_ares_int;
-#[cfg(feature = "phobos")]
 use crate::rules::ini_value::truncate_native_bytes;
 
 /// `Enumerable` stores `Name[32]` with `_TRUNCATE`.
@@ -25,7 +22,6 @@ use crate::rules::ini_value::truncate_native_bytes;
 const NAME_PAYLOAD_BYTES: usize = 0x1F;
 
 /// `Promotable<T>` rank order: Rookie, Veteran, Elite.
-#[cfg(feature = "phobos")]
 pub(crate) const RANKS: [&str; 3] = ["Rookie", "Veteran", "Elite"];
 
 /// Phobos `InsigniaTypeClass`: one retained `[InsigniaTypes]` entry.
@@ -93,7 +89,12 @@ impl InsigniaTypeCatalog {
                 continue;
             };
             let entry = &mut self.types[index];
-            read_insignia_images(section, &mut entry.images, "Insignia");
+            read_insignia_images(
+                section,
+                &mut entry.images,
+                "Insignia",
+                normalize_insignia_image,
+            );
             entry.frames = read_insignia_frames(section, entry.frames, "InsigniaFrame");
         }
     }
@@ -208,7 +209,7 @@ impl InsigniaVariant {
         frame_base: &str,
         list_base: &str,
     ) {
-        read_insignia_images(raw, &mut self.images, image_base);
+        read_insignia_images(raw, &mut self.images, image_base, normalize_insignia_image);
         self.frames = read_insignia_frames(raw, self.frames, frame_base);
         self.frame_lists = raw.read_int_fields::<3>(list_base, 2048, self.frame_lists);
     }
@@ -221,6 +222,13 @@ impl InsigniaVariant {
         self.frame_lists = [-1, -1, -1];
     }
 }
+
+/// VERA's bound on the passenger counts that get their own insignia variant.
+/// Phobos reads one per count up to `Passengers=` with no upper bound, so a
+/// value near `i32::MAX` exhausts memory there. A transport holding more
+/// passengers draws its base insignia. Far above any mod's transport.
+#[cfg(feature = "phobos")]
+const PASSENGER_INSIGNIA_LIMIT: i32 = 1024;
 
 /// Phobos `TechnoTypeExt`'s insignia block, accumulated pass by pass like
 /// `TechnoTypeExt::LoadFromINIFile`: a later layer resolves `InsigniaType`
@@ -295,7 +303,9 @@ impl PhobosInsignia {
         }
         self.passengers_capacity = raw.read_int("Passengers", self.passengers_capacity);
         if self.passengers_capacity > 0 {
-            let count = self.passengers_capacity as usize + 1;
+            // Phobos sizes the vector by the raw `Passengers + 1`
+            // (`TechnoTypeExt::LoadFromINIFile`); the clamp is VERA's.
+            let count = self.passengers_capacity.min(PASSENGER_INSIGNIA_LIMIT) as usize + 1;
             self.passengers.resize(count, InsigniaVariant::default());
             for slot in 0..count {
                 match type_name(&format!("InsigniaType.Passengers{slot}")) {
@@ -380,36 +390,36 @@ impl InsigniaSelection {
     }
 }
 
-/// Phobos `Promotable<SHPStruct*>::Read` with the base flag `base` (`%s` is
-/// the rank): the common key applies to all three ranks, then each
-/// `.Rookie`/`.Veteran`/`.Elite` key to one. The rank reader assigns its
-/// pointed SHP only when the file loads, so each applied name is appended and
-/// presentation falls back newest-to-oldest. A name without a `.shp` suffix
-/// gains one, as the Phobos SHP reader does; a literal `none` is an ordinary
-/// file name (`none.shp`) there.
-#[cfg(feature = "phobos")]
+/// `Promotable<SHPStruct*>::Read` with the base flag `base` (`%s` is the
+/// rank), in Phobos and in Ares (`0x1003F930`, which strips the format's
+/// trailing `.%s` for the common key): the common key applies to all three
+/// ranks, then each `.Rookie`/`.Veteran`/`.Elite` key to one. The rank reader
+/// assigns its pointed SHP only when the file loads, so each applied name is
+/// appended and presentation falls back newest-to-oldest. `file` is the
+/// mod's SHP file-name rule ([`normalize_insignia_image`],
+/// [`ares_insignia_image`]); a literal `none` is an ordinary file name.
 pub(crate) fn read_insignia_images(
     section: &IniSection,
     current: &mut [Vec<String>; 3],
     base: &str,
+    file: fn(&str) -> String,
 ) {
     if let Some(all) = section.read_name(base, 2048) {
-        let name = normalize_insignia_image(all);
+        let name = file(all);
         for history in current.iter_mut() {
             history.push(name.clone());
         }
     }
     for (slot, rank) in RANKS.iter().enumerate() {
         if let Some(value) = section.read_name(&format!("{base}.{rank}"), 2048) {
-            current[slot].push(normalize_insignia_image(value));
+            current[slot].push(file(value));
         }
     }
 }
 
-/// Phobos `Promotable<int>::Read`: the common key's successful parse sets all
-/// three ranks, then the rank keys replace one; a rejected value keeps its
-/// slot.
-#[cfg(feature = "phobos")]
+/// `Promotable<int>::Read` (Phobos; Ares `0x1003F750`): the common key's
+/// successful parse sets all three ranks, then the rank keys replace one; a
+/// rejected value keeps its slot.
 pub(crate) fn read_insignia_frames(
     section: &IniSection,
     mut current: [i32; 3],
@@ -437,11 +447,52 @@ pub(crate) fn normalize_insignia_image(name: &str) -> String {
     }
 }
 
-#[cfg(feature = "phobos")]
+/// Ares 3.0's SHP name rule (`read<SHPStruct*>`, Ares.dll `0x10040640`):
+/// `_snprintf(buf, 0x100, "%s.shp", value)`, whatever the value ends with.
+pub(crate) fn ares_insignia_image(name: &str) -> String {
+    truncate_native_bytes(&format!("{name}.shp"), 0xFF).to_owned()
+}
+
 fn read_int_key(section: &IniSection, key: &str) -> Option<i32> {
     section.read_name(key, 2048).and_then(parse_ares_int)
+}
+
+/// Ares `TechnoTypeExt`'s insignia, read on every reached pass (Ares.dll
+/// `0x1003E355..0x1003E380` and `0x1003E6D5`): `Promotable<SHPStruct*>
+/// Insignia` (`Insignia.%s`, ext+0xD4), `Promotable<int> InsigniaFrame`
+/// (`InsigniaFrame.%s`, ext+0xE0, -1 = the rank's default frame) and
+/// `Insignia.ShowEnemy` (ext+0xEC, unset inherits `[General]
+/// EnemyInsignia`). Ares's own draw (hook `0x0070A990`) reads them only
+/// without Phobos, whose `DrawInsignia` replaces it.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct AresInsignia {
+    pub images: [Vec<String>; 3],
+    pub frames: [i32; 3],
+    pub show_enemy: Option<bool>,
+}
+
+impl Default for AresInsignia {
+    fn default() -> Self {
+        Self {
+            images: Default::default(),
+            frames: [-1, -1, -1],
+            show_enemy: None,
+        }
+    }
+}
+
+impl AresInsignia {
+    pub(crate) fn apply_pass(&mut self, raw: &IniSection) {
+        read_insignia_images(raw, &mut self.images, "Insignia", ares_insignia_image);
+        self.frames = read_insignia_frames(raw, self.frames, "InsigniaFrame");
+        self.show_enemy = raw.read_ares_nullable_bool("Insignia.ShowEnemy", self.show_enemy);
+    }
 }
 
 #[cfg(all(test, tests_rules_a_n, feature = "phobos"))]
 #[path = "insignia_type_tests.rs"]
 mod tests;
+
+#[cfg(all(test, tests_rules_a_n))]
+#[path = "ares_insignia_tests.rs"]
+mod ares_tests;

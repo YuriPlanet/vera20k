@@ -62,6 +62,7 @@ impl MegaMission {
         target: Option<TargetKind>,
         have_attack_move_target: bool,
     ) -> Self {
+        crate::sim::game_entity::NameNote::fixture();
         Self {
             attack_move,
             destination,
@@ -134,7 +135,7 @@ impl Simulation {
         self.substrate
             .entities
             .get(id)
-            .map(|entity| entity.mega_mission)
+            .map(|entity| entity.seldom.mega_mission)
             .unwrap_or_default()
     }
 
@@ -199,7 +200,10 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get_mut(id) else {
             return mission;
         };
-        let mega = &mut entity.mega_mission;
+        // MegaDestination and MegaTarget are names the pointer-expiry index
+        // reads.
+        let _ = entity.note_names();
+        let mega = &mut entity.seldom.mega_mission;
         mega.have_attack_move_target = false;
         mega.attack_move = true;
         if destination.is_some() {
@@ -223,36 +227,29 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(entity) = self.substrate.entities.get_mut(id) else {
             return false;
         };
-        entity.mega_mission.have_attack_move_target = false;
+        entity.seldom.mega_mission.have_attack_move_target = false;
         let MegaMission {
             destination,
             target,
             ..
-        } = entity.mega_mission;
+        } = entity.seldom.mega_mission;
         if let Some(destination) = destination {
             self.foot_queue_mission_now(id, MissionType::Move, rules);
-            if let Err(cause) = self.assign_destination_represented(
-                id,
-                Some(destination.into()),
-                rules,
-                registry,
-                effects,
-            ) {
+            if let Err(cause) =
+                self.assign_destination_represented(id, Some(destination.into()), rules, effects)
+            {
                 log::debug!("attack-move {id} resumes to {destination:?}: {cause}");
             }
             return true;
         }
         if let Some(target) = target {
             self.foot_queue_mission_now(id, MissionType::Attack, rules);
-            if let Err(cause) =
-                self.assign_target_represented(id, Some(target), rules, registry, effects)
-            {
+            if let Err(cause) = self.assign_target_represented(id, Some(target), rules, effects) {
                 log::debug!("attack-move {id} resumes on {target:?}: {cause}");
             }
             return true;
@@ -271,22 +268,21 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(entity) = self.substrate.entities.get_mut(id) else {
             return false;
         };
-        if !entity.mega_mission.attack_move {
+        if !entity.seldom.mega_mission.attack_move {
             return false;
         }
-        if entity.mega_mission.have_attack_move_target {
-            entity.mega_mission.have_attack_move_target = false;
+        if entity.seldom.mega_mission.have_attack_move_target {
+            entity.seldom.mega_mission.have_attack_move_target = false;
         } else if entity.mission.effective().known() != Some(MissionType::Guard) {
             self.substrate.foot_clear_all_tarcom(id);
             return false;
         }
-        self.foot_continue_mega_mission(id, rules, registry, effects)
+        self.foot_continue_mega_mission(id, rules, effects)
     }
 
     /// `FootClass::Arrival_Target_Handler @ 0x004DF3A0` (vt+0x4CC), which the
@@ -305,7 +301,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        ctx: ObjectAiCtx<'_>,
+        ctx: &mut ObjectAiCtx<'_>,
     ) {
         let Some(ArrivalStep::Scan {
             drop_tarcom,
@@ -314,13 +310,14 @@ impl Simulation {
         else {
             return;
         };
+        // Wasm module `TargetChanged` after each bare write; the scan's own
+        // write goes through the class setter, which raises it.
         if drop_tarcom {
-            self.substrate
-                .entities
-                .get_mut(id)
-                .unwrap()
-                .attack_target
-                .set(None);
+            let before = self.module_target_before(id);
+            let entity = self.substrate.entities.get_mut(id).unwrap();
+            let note = entity.note_names();
+            entity.attack_target.set(None, note);
+            self.raise_module_target_changed(rules, &mut ctx.effects, id, before);
         }
         let found = crate::sim::world::retaliate_and_scan(
             self,
@@ -331,17 +328,20 @@ impl Simulation {
             None,
         );
         if !found {
+            let before = self.module_target_before(id);
             if let Some(target) = fallback
                 && let Some(entity) = self.substrate.entities.get_mut(id)
             {
                 // `0x004DF4A5`.
-                entity.attack_target.set(target);
+                let note = entity.note_names();
+                entity.attack_target.set(target, note);
             }
+            self.raise_module_target_changed(rules, &mut ctx.effects, id, before);
             return;
         }
         self.foot_queue_mission_now(id, MissionType::Attack, rules);
         if let Some(entity) = self.substrate.entities.get_mut(id) {
-            entity.mega_mission.have_attack_move_target = true;
+            entity.seldom.mega_mission.have_attack_move_target = true;
         }
     }
 
@@ -354,7 +354,7 @@ impl Simulation {
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     ) -> Option<ArrivalStep> {
         let entity = self.substrate.entities.get(id)?;
-        let mega = entity.mega_mission;
+        let mega = entity.seldom.mega_mission;
         let tarcom = entity.attack_target.target();
         let in_reach = |target| self.foot_in_auxiliary_search_range(id, target, rules, registry);
         Some(if mega.destination.is_some() {
@@ -408,7 +408,7 @@ impl Simulation {
         if crate::sim::world::weapon_at_index(self, rules, id, 1)
             .is_some_and(|weapon| weapon.never_use)
         {
-            return crate::sim::world::can_fire_at(self, rules, id, target, 1, registry);
+            return crate::sim::world::can_fire_at(self, rules, id, target, 1);
         }
         self.techno_can_fire_at_target(id, target, rules, registry)
     }
@@ -419,7 +419,7 @@ impl crate::sim::world::ObjectSubstrate {
     /// NONE, no MegaDestination or MegaTarget, HaveAttackMoveTarget clear.
     pub(crate) fn foot_clear_all_tarcom(&mut self, id: u64) {
         if let Some(entity) = self.entities.get_mut(id) {
-            entity.mega_mission = MegaMission::default();
+            entity.seldom.mega_mission = MegaMission::default();
         }
     }
 }

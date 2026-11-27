@@ -4,6 +4,7 @@
 use super::{FrameEffects, Simulation, TickLane, UninitContext};
 use crate::map::map_file::MapFile;
 use crate::rules::ini_parser::IniFile;
+use crate::rules::rule_policy::RulePolicy;
 use crate::rules::ruleset::RuleSet;
 use crate::rules::team_ai_ini::TeamAiIniRegistry;
 use crate::sim::command::{Command, CommandEnvelope};
@@ -25,7 +26,7 @@ fn arena(rules: &RuleSet) -> Simulation {
     // Clear ground, Houses and non-short-game policy are scene priors. Units,
     // FOLLOWS, object Tag and Event13/Action14 all use production readers.
     crate::sim::arena_fixture::flat_arena(&mut sim, rules);
-    sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
+    *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
     sim.session.set_game_mode(ScenarioGameMode::Skirmish);
     sim.session.game_options_mut_for_test().short_game = false;
     for (index, name) in ["Americans", "Russians"].into_iter().enumerate() {
@@ -99,7 +100,11 @@ fn authored_follows_peer_changes_house_with_only_head_tagged() {
          [Actions]\nTRANSFER=1,14,0,{country},0,0,0,0,A\n\
          [Tags]\nTRANSFER_TAG=0,Transfer linked units,TRANSFER\n"
     ));
-    let teams = TeamAiIniRegistry::from_sources(&IniFile::empty(), &map.ini, true);
+    let teams = TeamAiIniRegistry::from_sources(
+        &IniFile::empty(),
+        &map.ini,
+        RulePolicy::stock_multiplayer(),
+    );
     sim.initialize_trigger_definitions(&map, &teams, None, None, None);
     assert_eq!(sim.spawn_from_map(&map.entities, Some(rules)), 3);
     sim.classify_map_triggers(rules);
@@ -116,7 +121,7 @@ fn authored_follows_peer_changes_house_with_only_head_tagged() {
     sim.advance_triggers(
         rules,
         Some(rules.overlay_registry()),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert_eq!(sim.entities().get(head).unwrap().owner(), target);
     assert_eq!(
@@ -151,10 +156,9 @@ fn authored_follows_peer_changes_house_with_only_head_tagged() {
             .advance_app_frame(
                 commands,
                 rules,
-                Some(rules.overlay_registry()),
                 67,
                 TickLane::Ordinary,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap();
         assert!(output.tick.frame_committed);
@@ -213,19 +217,15 @@ fn uninit_clears_incoming_unit_link_but_preserves_orphan_follower_byte_after_res
 
     // UnitPointerExpired7446E0 clears its pointer after inherited forwards;
     // neither it nor the deleting destructor resets the surviving tail byte.
-    sim.uninit_with_context(
-        middle,
-        UninitContext::new(rules, Some(rules.overlay_registry())),
-    );
+    sim.uninit_with_context(middle, UninitContext::new(rules));
     assert_eq!(sim.entities().get(head).unwrap().unit_follower(), None);
     assert!(sim.entities().get(tail).unwrap().is_unit_follower());
     sim.advance_app_frame(
         &[],
         rules,
-        Some(rules.overlay_registry()),
         67,
         TickLane::Ordinary,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
     .unwrap();
     assert!(
@@ -277,10 +277,9 @@ fn a_follower_cycle_does_not_stop_the_frame() {
         sim.advance_app_frame(
             commands,
             rules,
-            Some(rules.overlay_registry()),
             67,
             TickLane::Ordinary,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap();
         routed |= sim.entities().get(head).unwrap().navigation.nav_com()

@@ -81,7 +81,7 @@ fn append_construction_options(
     if sim.session.current_house() != Some(building.owner())
         || building.lifecycle.in_limbo()
         || disabled
-        || !building.discovery.discovered_by_current_house()
+        || !building.seldom.discovery.discovered_by_current_house()
         || !building.building_online()
     {
         return;
@@ -359,7 +359,7 @@ pub(crate) fn factory_category_for_building(object: &ObjectType) -> Option<Produ
 
 /// Check if a structure is a production factory for the given category.
 ///
-/// Uses the data-driven Factory= key from rules.ini via RuleSet.factory_map.
+/// Uses the BuildingType's `Factory=` (`ObjectType::factory_type`).
 /// A building with `Factory=InfantryType` produces infantry, `Factory=UnitType`
 /// produces vehicles, etc. Buildings without Factory= are never factories.
 pub(super) fn is_production_factory(
@@ -446,8 +446,9 @@ pub fn building_base_foundation_cells(
     cells.into_iter().collect()
 }
 
-/// Cells that block static grid movement, given the base foundation and whether
-/// the building has a bib (`Bib=yes` in rules.ini).
+/// Cells that block static grid movement for a building at `origin` with
+/// `foundation`, and whether the building has a bib (`Bib=yes` in rules.ini),
+/// in the foundation's cell-offset order.
 ///
 /// For non-bib buildings, this is just the base foundation. For `Bib=yes`
 /// buildings, the east-edge column of the foundation is excluded: those cells
@@ -455,8 +456,8 @@ pub fn building_base_foundation_cells(
 /// relaxation in `Can_Enter_Cell` (probes the east neighbor; if it isn't part
 /// of the same building, the building stops blocking the cell).
 ///
-/// "East edge" = any cell in `base_foundation` whose east neighbor `(x+1, y)`
-/// is outside the base foundation.
+/// "East edge" = any base foundation cell whose east neighbor `(x+1, y)` is
+/// outside the base foundation (or past the last cell column).
 ///
 /// `NumberImpassableRows` is deliberately not applied here. That field is a
 /// live `UnitClass::Can_Enter_Cell` object-list skip (`0x0073F57C..5A2` radio
@@ -464,19 +465,24 @@ pub fn building_base_foundation_cells(
 /// the Unit Find_Path search reaches through `Simulation::foot_can_enter`; it
 /// is not static terrain data.
 pub fn building_movement_blocking_cells(
-    base_foundation: &[(u16, u16)],
+    origin: (u16, u16),
+    foundation: &crate::rules::foundation::Foundation,
     has_bib: bool,
-) -> Vec<(u16, u16)> {
-    use std::collections::BTreeSet;
-    if !has_bib {
-        return base_foundation.to_vec();
-    }
-    let set: BTreeSet<(u16, u16)> = base_foundation.iter().copied().collect();
-    base_foundation
-        .iter()
-        .copied()
-        .filter(|&(x, y)| x.checked_add(1).is_some_and(|nx| set.contains(&(nx, y))))
-        .collect()
+) -> impl Iterator<Item = (u16, u16)> + '_ {
+    let (origin_rx, origin_ry) = origin;
+    crate::sim::crew_survival::foundation_cells(origin_rx, origin_ry, foundation).filter(
+        move |&(x, y)| {
+            !has_bib
+                || x.checked_add(1).is_some_and(|east| {
+                    let dx = i32::from(east) - i32::from(origin_rx);
+                    let dy = i32::from(y) - i32::from(origin_ry);
+                    i16::try_from(dx)
+                        .ok()
+                        .zip(i16::try_from(dy).ok())
+                        .is_some_and(|offset| foundation.contains_cell_offset(offset))
+                })
+        },
+    )
 }
 
 #[cfg(all(test, tests_sim_production))]
@@ -486,8 +492,8 @@ mod footprint_tests {
     #[test]
     fn movement_blocking_with_bib_drops_east_edge_rectangle() {
         // Plain 4x3 with bib → east column (x = 13) drops.
-        let footprint = building_base_foundation_cells(10, 20, &"4x3".into());
-        let blocking = building_movement_blocking_cells(&footprint, true);
+        let blocking: Vec<_> =
+            building_movement_blocking_cells((10, 20), &"4x3".into(), true).collect();
         // 12 base cells - 3 east-edge column (13, 20), (13, 21), (13, 22) = 9.
         assert_eq!(blocking.len(), 9);
         assert!(!blocking.contains(&(13, 20)));
@@ -499,10 +505,51 @@ mod footprint_tests {
 
     #[test]
     fn static_movement_blocking_keeps_number_rows_out_of_the_grid() {
-        let footprint = building_base_foundation_cells(10, 20, &"4x3".into());
-        let blocking = building_movement_blocking_cells(&footprint, false);
+        let blocking: Vec<_> =
+            building_movement_blocking_cells((10, 20), &"4x3".into(), false).collect();
         assert_eq!(blocking.len(), 12);
         assert!(blocking.contains(&(12, 21)));
         assert!(blocking.contains(&(13, 21)));
+    }
+
+    /// Every retail building's blocking cells, read through the production
+    /// reader, are the cells of the set-based rule the walk replaced: the
+    /// in-range foundation cells, less with a bib those whose east neighbour
+    /// is not one of them. Also at the last cell column and row.
+    #[test]
+    fn retail_blocking_cells_match_the_set_rule() {
+        use std::collections::BTreeSet;
+        let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules() else {
+            return;
+        };
+        let mut bibs = 0;
+        for id in &rules.building_ids {
+            let object = rules.object(id).expect("listed building");
+            bibs += usize::from(object.bib);
+            for origin in [(10, 20), (u16::MAX - 1, u16::MAX - 1)] {
+                let base: BTreeSet<(u16, u16)> = object
+                    .foundation
+                    .cell_offsets()
+                    .filter_map(|(dx, dy)| {
+                        let x = u16::try_from(i32::from(origin.0) + i32::from(dx)).ok()?;
+                        let y = u16::try_from(i32::from(origin.1) + i32::from(dy)).ok()?;
+                        Some((x, y))
+                    })
+                    .collect();
+                let expected: Vec<_> = base
+                    .iter()
+                    .copied()
+                    .filter(|&(x, y)| {
+                        !object.bib || x.checked_add(1).is_some_and(|nx| base.contains(&(nx, y)))
+                    })
+                    .collect();
+                let mut walked: Vec<_> =
+                    building_movement_blocking_cells(origin, &object.foundation, object.bib)
+                        .collect();
+                walked.sort_unstable();
+                assert_eq!(walked, expected, "{id} at {origin:?}");
+            }
+        }
+        assert!(bibs > 0, "retail rules list bib buildings");
     }
 }

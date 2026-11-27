@@ -17,13 +17,28 @@ fn setup_control_at_row(
     use crate::ui::multiplayer_setup::{NEXT_ROWS, PREVIOUS_ROWS, VISIBLE_SETUP_ROWS};
     let pages = crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT / VISIBLE_SETUP_ROWS + 1;
     for _ in 0..pages {
-        if setup::view(state).context("setup view")?.first_row == 0 {
+        if setup::view(
+            &state.renderer,
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets,
+        )
+        .context("setup view")?
+        .first_row
+            == 0
+        {
             break;
         }
         setup_button(state, PREVIOUS_ROWS)?;
     }
     for _ in 0..pages {
-        let view = setup::view(state).context("setup view")?;
+        let view = setup::view(
+            &state.renderer,
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets,
+        )
+        .context("setup view")?;
         if let Some(combo) = view.combos.iter().find(|combo| {
             combo.row as usize == row
                 && combo.visible
@@ -50,7 +65,6 @@ mod latency;
 mod mass;
 mod online;
 mod profile;
-mod setup_crash;
 
 const HOST_NAME: &str = "LiveHost";
 const GUEST_NAME: &str = "LiveGuest";
@@ -195,9 +209,8 @@ struct AiActivity {
 }
 
 impl AiActivity {
-    fn snapshot(&self, state: &AppState) -> Result<Value> {
-        let runtime = state
-            .match_state
+    fn snapshot(&self, match_state: &MatchState) -> Result<Value> {
+        let runtime = match_state
             .sim_runtime
             .runtime()
             .context("AI diagnostic simulation")?;
@@ -227,7 +240,7 @@ impl AiActivity {
             "iq_production":runtime.resources.rules.general.iq_production,
             "game_mode_nonzero":sim.session().game_mode_nonzero(),"credits":house.economy().credits(),
             "is_defeated":house.is_defeated(),
-            "bases":state.match_state.session.network_setup().map(|launch|launch.options.bases),
+            "bases":match_state.session.network_setup().map(|launch|launch.options.bases),
             "strategy_timer":house.strategy_timer(),
             "activation":saved_house.get("ai_activation"),"base_center":house.base_center(),
             "alternate_base_center":house.alternate_base_center(),
@@ -236,9 +249,8 @@ impl AiActivity {
         )
     }
 
-    fn observe(&mut self, state: &AppState) -> Result<()> {
-        let launch = state
-            .match_state
+    fn observe(&mut self, match_state: &MatchState) -> Result<()> {
+        let launch = match_state
             .session
             .network_setup()
             .context("AI launch roster")?;
@@ -255,8 +267,7 @@ impl AiActivity {
             ai.len() == 1 && ai[0].source_human_index().is_none(),
             "AI acquired a human source"
         );
-        let sim = &state
-            .match_state
+        let sim = &match_state
             .sim_runtime
             .runtime()
             .context("AI live simulation")?
@@ -363,6 +374,8 @@ pub(super) struct LiveLanCapture {
     startup: Option<Value>,
     /// Read-only proof retained before the setup protocol is dropped for loading.
     map_admission: Option<Value>,
+    /// The visible choices before this round reads its map's Rules.
+    setup_catalog: Option<Value>,
     actions: Vec<Value>,
     actor: Option<u64>,
     actor_last_seen: Option<Value>,
@@ -382,7 +395,6 @@ pub(super) struct LiveLanCapture {
     latency: Option<latency::LatencyCapture>,
     ai: Option<AiActivity>,
     failure: Option<failure::FailureCapture>,
-    setup_crash: Option<setup_crash::SetupCrashCapture>,
 }
 
 impl LiveLanCapture {
@@ -402,10 +414,6 @@ impl LiveLanCapture {
         target: LanTarget,
         config: crate::app::diagnostics::shell_capture::LiveOnlineConfig,
     ) -> Self {
-        let startup_failure = config
-            .startup_host_loss
-            .as_ref()
-            .map(|_| failure::FailureCapture::startup(config.clone()));
         let frames = config.frames;
         let players = config.players;
         let simple = config.simple_input;
@@ -413,9 +421,6 @@ impl LiveLanCapture {
         let latency = config.latency;
         let ai = config.ai.is_some();
         let mut capture = Self::new_config(target, None, Some(online::LiveRoundFlow::new(config)));
-        if let Some(failure) = startup_failure {
-            capture.failure = Some(failure);
-        }
         capture.frame_budget = Some(frames);
         capture.expected_players = players;
         capture.ai = ai.then(AiActivity::default);
@@ -436,15 +441,10 @@ impl LiveLanCapture {
         config: Option<LiveLanConfig>,
         rounds: Option<online::LiveRoundFlow>,
     ) -> Self {
-        let setup_crash = config
-            .as_ref()
-            .and_then(|config| config.setup_crash)
-            .map(setup_crash::SetupCrashCapture::new);
         Self {
             target,
             config,
             rounds,
-            setup_crash,
             frame_budget: None,
             expected_players: 2,
             phase: Phase::Main,
@@ -453,6 +453,7 @@ impl LiveLanCapture {
             simulation_hashes: Vec::new(),
             startup: None,
             map_admission: None,
+            setup_catalog: None,
             actions: Vec::new(),
             actor: None,
             actor_last_seen: None,
@@ -544,7 +545,13 @@ impl LiveLanCapture {
     }
 
     fn select_country(&mut self, state: &mut AppState) -> Result<()> {
-        if self.battle.is_none() || self.country_selected {
+        if (self.battle.is_none()
+            && self
+                .config
+                .as_ref()
+                .is_none_or(|config| config.isolation_seed.is_none()))
+            || self.country_selected
+        {
             return Ok(());
         }
         let country = state
@@ -561,6 +568,22 @@ impl LiveLanCapture {
             .context("local setup row")?;
         let control = setup_control_at_row(state, SetupColumn::Country, usize::from(row))?
             .context("visible local country row")?;
+        if self.isolation_start().is_some() {
+            let view = setup::view(
+                &state.renderer,
+                &state.frontend,
+                &state.match_state,
+                &state.process_assets,
+            )
+            .context("isolation setup choices")?;
+            let choices = &view.combo(control).context("local Country combo")?.choices;
+            self.setup_catalog = Some(json!({
+                "countries":choices.iter().filter(|choice| choice.value >= 0)
+                    .map(|choice| json!({"value":choice.value,"text":choice.text}))
+                    .collect::<Vec<_>>(),
+                "colors":crate::app::state::lobby_colors(&state.frontend, &state.match_state),
+            }));
+        }
         setup::apply_action(
             state,
             SetupAction::Select {
@@ -568,15 +591,32 @@ impl LiveLanCapture {
                 value: i32::try_from(country)?,
             },
         );
+        if let Some(color) = self.isolation_start() {
+            let control = setup_control_at_row(state, SetupColumn::Color, usize::from(row))?
+                .context("visible local Color combo")?;
+            setup::apply_action(
+                state,
+                SetupAction::Select {
+                    control,
+                    value: i32::from(color),
+                },
+            );
+        }
         self.country_selected = true;
         Ok(())
+    }
+
+    fn isolation_start(&self) -> Option<u8> {
+        self.config
+            .as_ref()
+            .and_then(|config| config.isolation_seed)
+            .map(|_| u8::from(!self.host()))
     }
 
     /// Initial joined setup has neither host metadata nor a canonical roster.
     /// Wait for that admission, including the intended player capacity, before
     /// treating the local combo's available waypoints as authoritative.
-    fn start_selection_admitted(&self, state: &AppState) -> bool {
-        let session = &state.match_state.session;
+    fn start_selection_admitted(&self, session: &MatchSession) -> bool {
         (session.host() || session.network_start_seed().is_some())
             && session
                 .network_map_metadata()
@@ -591,16 +631,12 @@ impl LiveLanCapture {
             })
     }
 
-    fn start_matches(&self, state: &AppState, start: Option<u8>) -> bool {
+    fn start_matches(&self, session: &MatchSession, start: Option<u8>) -> bool {
         start.is_none_or(|start| {
-            state
-                .match_state
-                .session
-                .network_setup()
-                .is_some_and(|launch| {
-                    launch.local_player().slot.start_position
-                        == crate::skirmish_launch::LaunchStartPosition::Position(start)
-                })
+            session.network_setup().is_some_and(|launch| {
+                launch.local_player().slot.start_position
+                    == crate::skirmish_launch::LaunchStartPosition::Position(start)
+            })
         })
     }
 
@@ -608,13 +644,22 @@ impl LiveLanCapture {
     /// and plays again.
     fn waits_for_spectator(&self) -> bool {
         self.target == LanTarget::LiveHost
+            && self
+                .config
+                .as_ref()
+                .is_none_or(|config| config.isolation_seed.is_none())
     }
 
     /// In setup the guest picks Observer in its Side list: VERA's room
-    /// moves it to the open spectator row. Then it picks a side, and the
-    /// room seats it again.
+    /// moves it to the open spectator row. Then it picks a side, or in a room
+    /// with teams presses a team's Join, and the room seats it again.
     fn switch_sides(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
-        if self.target != LanTarget::LiveGuest {
+        if self.target != LanTarget::LiveGuest
+            || self
+                .config
+                .as_ref()
+                .is_some_and(|config| config.isolation_seed.is_some())
+        {
             return Ok(());
         }
         let Some(local) = state
@@ -639,7 +684,13 @@ impl LiveLanCapture {
         }
         let control = setup_control_at_row(state, SetupColumn::Country, usize::from(row))?
             .context("visible local Side list")?;
-        let view = setup::view(state).context("Side list view")?;
+        let view = setup::view(
+            &state.renderer,
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets,
+        )
+        .context("Side list view")?;
         let value = view
             .combo(control)
             .context("local Side list")?
@@ -649,6 +700,29 @@ impl LiveLanCapture {
             .find(|value| (*value == -3) != local.is_observer())
             .filter(|_| view.enabled(control));
         let Some(value) = value else {
+            // A spectator's Side list in a room with teams offers only
+            // Observer; it plays again through a team header's Join.
+            let join = view.headers.iter().position(|header| {
+                header.as_ref().is_some_and(|header| {
+                    matches!(
+                        header.group,
+                        crate::ui::multiplayer_setup::SetupGroup::Team(_)
+                            | crate::ui::multiplayer_setup::SetupGroup::Players
+                    ) && header.join.is_some()
+                        && header.join_enabled
+                })
+            });
+            if local.is_observer()
+                && let Some(page_row) = join
+            {
+                let control = crate::ui::multiplayer_setup::team_join(page_row);
+                setup::apply_action(state, SetupAction::Join { control });
+                self.sides += 1;
+                self.event(
+                    frame,
+                    &format!("guest watches from row {row}; presses Join"),
+                );
+            }
             return Ok(());
         };
         setup::apply_action(state, SetupAction::Select { control, value });
@@ -668,21 +742,23 @@ impl LiveLanCapture {
     /// has made its choices. The host's Start also waits for the choices this
     /// run makes: battle runs pick Americans for every player, and a run that
     /// fixes starts gives every process its own `--online-start`.
-    fn choices_made(&self, state: &AppState, fixed_starts: bool) -> bool {
-        state
-            .match_state
-            .session
-            .network_setup()
-            .is_some_and(|launch| {
-                launch.humans.iter().all(|human| {
-                    (self.battle.is_none() || !human.slot.country_random)
-                        && (!fixed_starts
-                            || matches!(
-                                human.slot.start_position,
-                                crate::skirmish_launch::LaunchStartPosition::Position(_)
-                            ))
-                })
+    fn choices_made(&self, session: &MatchSession, fixed_starts: bool) -> bool {
+        session.network_setup().is_some_and(|launch| {
+            launch.humans.iter().all(|human| {
+                (self.battle.is_none() || !human.slot.country_random)
+                    && (self.isolation_start().is_none()
+                        || (!human.slot.country_random
+                            && human.slot.country
+                                == crate::skirmish_launch::LaunchCountry::America
+                            && !human.slot.color_random
+                            && Some(human.slot.color_index) == human.raw_slot_index))
+                    && (!fixed_starts
+                        || matches!(
+                            human.slot.start_position,
+                            crate::skirmish_launch::LaunchStartPosition::Position(_)
+                        ))
             })
+        })
     }
 
     /// Select an authored waypoint through the local human's visible Start
@@ -692,7 +768,9 @@ impl LiveLanCapture {
         let Some(start) = start else {
             return Ok(false);
         };
-        if self.start_matches(state, Some(start)) || !self.start_selection_admitted(state) {
+        if self.start_matches(&state.match_state.session, Some(start))
+            || !self.start_selection_admitted(&state.match_state.session)
+        {
             return Ok(false);
         }
         let row = state
@@ -703,7 +781,13 @@ impl LiveLanCapture {
             .context("local start-choice row")?;
         let control = setup_control_at_row(state, SetupColumn::Start, usize::from(row))?
             .context("visible local Start combo")?;
-        let view = setup::view(state).context("start-choice view")?;
+        let view = setup::view(
+            &state.renderer,
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets,
+        )
+        .context("start-choice view")?;
         let combo = view.combo(control).context("local Start combo")?;
         ensure!(
             view.enabled(control)
@@ -739,9 +823,6 @@ impl LiveLanCapture {
     }
 
     pub(super) fn ready(&self) -> bool {
-        if let Some(crash) = &self.setup_crash {
-            return crash.ready();
-        }
         self.rounds
             .as_ref()
             .map_or(self.phase == Phase::Finished, online::LiveRoundFlow::ready)
@@ -760,7 +841,7 @@ impl LiveLanCapture {
                 .is_some_and(cooperative::CooperativeRun::flags_win)
     }
 
-    pub(super) fn owns_simulation_steps(&self, state: &AppState) -> bool {
+    pub(super) fn owns_simulation_steps(&self, sim_runtime: &SimHost) -> bool {
         // Keep the final observed frame stable during GPU readback. Ordinary
         // App frame pacing and NetworkCommandBoundary own every earlier step,
         // except the co-op win frame's hold.
@@ -768,7 +849,7 @@ impl LiveLanCapture {
             || self
                 .cooperative
                 .as_ref()
-                .is_some_and(|run| run.holds_simulation(state))
+                .is_some_and(|run| run.holds_simulation(sim_runtime))
     }
 
     pub(super) fn after_present(
@@ -778,7 +859,7 @@ impl LiveLanCapture {
         frame: u32,
     ) -> Result<()> {
         if let Some(latency) = self.latency.as_mut() {
-            latency.observe_setup(state);
+            latency.observe_setup(&state.match_state);
         }
         ensure!(
             state.frontend.main_menu_shell_error.is_none(),
@@ -790,12 +871,8 @@ impl LiveLanCapture {
             .failure
             .as_ref()
             .is_some_and(|failure| failure.expects_checksum());
-        let expected_startup = self
-            .failure
-            .as_ref()
-            .is_some_and(|failure| failure.is_startup() && failure.armed());
         ensure!(
-            state.match_state.network_failure.is_none() || expected_checksum || expected_startup,
+            state.match_state.network_failure.is_none() || expected_checksum,
             "unexpected network failure modal during live capture"
         );
         if let Some(runtime) = state.match_state.sim_runtime.runtime() {
@@ -805,16 +882,13 @@ impl LiveLanCapture {
                 runtime.simulation.pending_network_failure()
             );
             ensure!(
-                runtime.simulation.pending_network_interruption().is_none()
-                    || (expected_startup
-                        && runtime.simulation.pending_network_interruption()
-                            == Some(crate::sim::world::NetworkInterruption::ConnectionFailed)),
+                runtime.simulation.pending_network_interruption().is_none(),
                 "live LAN interrupted: {:?}",
                 runtime.simulation.pending_network_interruption()
             );
         }
         if rendered == PresentedShell::NetworkSetup {
-            self.observe_map_admission(state)?;
+            self.observe_map_admission(&state.frontend, &state.match_state.session)?;
         }
         if let Some(mut rounds) = self.rounds.take() {
             let controls = rounds.controls(self);
@@ -826,16 +900,6 @@ impl LiveLanCapture {
             self.rounds = Some(rounds);
             if controls {
                 return result;
-            }
-        }
-        if let Some(mut crash) = self.setup_crash.take() {
-            // This pre-GO checkpoint holds ordinary Accept/Start/kick inputs,
-            // while the same LAN poll/map/lease owners continue normally. In
-            // particular, its wait cannot hit the generic1000-frame join guard.
-            let result = crash.after_present(self, state, rendered, frame);
-            self.setup_crash = Some(crash);
-            if result? {
-                return Ok(());
             }
         }
         if !self.guest_watched
@@ -892,14 +956,20 @@ impl LiveLanCapture {
             Phase::Main
                 if rendered == PresentedShell::MainMenu
                     && steady_main_menu_capture_ready_for(
-                        MainMenuCaptureSnapshot::from_state(state),
+                        MainMenuCaptureSnapshot::from_state(
+                            &state.platform,
+                            &state.renderer,
+                            &state.frontend,
+                            &state.match_state,
+                            &state.persistence,
+                        ),
                         self.latency.is_some(),
                     )? =>
             {
                 // Hidden-window transcript captures suppress physical LAN.
                 // Live captures install the real owner before normal Network
                 // input opens the shell; it retains sockets through gameplay.
-                LanCapture::isolated_root(state)?;
+                LanCapture::isolated_root(&state.process_assets)?;
                 ensure!(
                     state.match_state.lan_service.is_none(),
                     "LAN transport was already installed"
@@ -907,9 +977,7 @@ impl LiveLanCapture {
                 let config = self.config.as_ref().expect("LAN transport configuration");
                 let mut service = match config.transport {
                     LiveLanTransport::ProductionBroadcast => {
-                        crate::app::lan_service::LanService::open(
-                            crate::app::match_runtime::frame_pacer::wall_clock_bucket(),
-                        )?
+                        crate::app::lan_service::LanService::open()?
                     }
                     LiveLanTransport::Explicit { bind, peer } => {
                         let alternate = std::net::SocketAddrV4::new(*bind.ip(), bind.port() + 2);
@@ -934,16 +1002,28 @@ impl LiveLanCapture {
                 );
                 self.phase = Phase::Lobby;
             }
-            Phase::Lobby if rendered == PresentedShell::LanLobby && lobby_settled(state) => {
+            Phase::Lobby
+                if rendered == PresentedShell::LanLobby && lobby_settled(&state.frontend) =>
+            {
                 let name = if self.host() { HOST_NAME } else { GUEST_NAME };
-                lobby_click(state, lobby::layout(state).name);
+                lobby_click(
+                    state,
+                    lobby::layout(&state.renderer.gpu)
+                        .rect(crate::ui::lan_shell::NAME)
+                        .unwrap_or_default(),
+                );
                 lobby::key_press(state, Some(KeyCode::Home), None);
                 for _ in 0..32 {
                     lobby::key_press(state, Some(KeyCode::Delete), None);
                 }
                 lobby::key_press(state, None, Some(name));
-                if state.frontend.lan.as_ref().context("BB")?.lobby.observer {
-                    lobby_click(state, lobby::layout(state).observer_toggle);
+                if state.frontend.multiplayer_shell_runtime.lan_observer() {
+                    lobby_click(
+                        state,
+                        lobby::layout(&state.renderer.gpu)
+                            .rect(crate::ui::lan_shell::OBSERVER_TOGGLE)
+                            .unwrap_or_default(),
+                    );
                 }
                 self.event(frame, "BB name entered through normal input");
                 if self.host() {
@@ -953,7 +1033,9 @@ impl LiveLanCapture {
                     self.phase = Phase::Discover;
                 }
             }
-            Phase::Discover if rendered == PresentedShell::LanLobby && lobby_settled(state) => {
+            Phase::Discover
+                if rendered == PresentedShell::LanLobby && lobby_settled(&state.frontend) =>
+            {
                 let found = state
                     .frontend
                     .lan
@@ -966,15 +1048,19 @@ impl LiveLanCapture {
                 if let Some(index) = found {
                     // Index0 is BB's synthetic no-game row. Drive its normal
                     // selection handler, which emits the real query packet.
-                    let layout = lobby::layout(state);
+                    let layout = lobby::layout(&state.renderer.gpu);
                     let lobby_state = &state.frontend.lan.as_ref().context("BB")?.lobby;
-                    let geometry = lobby_state.game_list.geometry(
-                        layout.games,
-                        lobby_state.game_count(),
-                        layout.page.scale,
+                    let top = lobby::list_top(
+                        &state.frontend.shell_controller,
+                        crate::ui::lan_shell::GAMES,
                     );
-                    let (x, y) =
-                        list_row_point(geometry, index + 1, lobby_state.game_list.top_index);
+                    let geometry = vera20k_gui::shell::list::ShellListGeometry::new(
+                        layout.rect(crate::ui::lan_shell::GAMES).unwrap_or_default(),
+                        lobby_state.game_count(),
+                        top,
+                        vera20k_gui::shell::list::ListMetrics::scaled(layout.page.scale),
+                    );
+                    let (x, y) = list_row_point(geometry, index + 1, top);
                     lobby_click(state, RectPx::new(x, y, 2, 2));
                     lobby_button(state, crate::ui::lan_shell::JOIN)?;
                     self.event(frame, "discovered host selected; real Join request");
@@ -996,7 +1082,9 @@ impl LiveLanCapture {
                         rounds.prepare_host_map(self, state, rendered, frame, selected.as_deref());
                     self.rounds = Some(rounds);
                     result?
-                } else if rendered == PresentedShell::NetworkSetup && setup_settled(state, true) {
+                } else if rendered == PresentedShell::NetworkSetup
+                    && setup_settled(&state.frontend, true)
+                {
                     self.prepare_host_setup(
                         state,
                         selected.as_deref(),
@@ -1017,8 +1105,12 @@ impl LiveLanCapture {
                 }
             }
             Phase::HostReady
-                if rendered == PresentedShell::NetworkSetup && setup_settled(state, true) =>
+                if rendered == PresentedShell::NetworkSetup
+                    && setup_settled(&state.frontend, true) =>
             {
+                if self.select_start(state, self.isolation_start())? {
+                    return Ok(());
+                }
                 let session = &state.match_state.session;
                 if let Some(launch) = session.network_setup()
                     && launch.humans.len() == 2
@@ -1030,7 +1122,8 @@ impl LiveLanCapture {
                         session.network_player_ready(index)
                             && session.network_map_status(index) == Some(1)
                     })
-                    && self.choices_made(state, false)
+                    && self
+                        .choices_made(&state.match_state.session, self.isolation_start().is_some())
                     && (!self.waits_for_spectator()
                         || self.guest_watched
                             && launch.humans.iter().all(|human| !human.is_observer()))
@@ -1041,12 +1134,14 @@ impl LiveLanCapture {
                 }
             }
             Phase::GuestSetup
-                if rendered == PresentedShell::NetworkSetup && setup_settled(state, false) =>
+                if rendered == PresentedShell::NetworkSetup
+                    && setup_settled(&state.frontend, false) =>
             {
                 // The guest's game accepts the received options and map by
                 // itself, and again after each host change, so the run stays
                 // in editable setup until the host starts.
                 self.select_country(state)?;
+                self.select_start(state, self.isolation_start())?;
                 self.switch_sides(state, frame)?;
             }
             Phase::Loading | Phase::GuestSetup if state.frontend.screen == GameScreen::InGame => {
@@ -1054,9 +1149,9 @@ impl LiveLanCapture {
                     state.match_state.live_network.is_some(),
                     "loaded LAN match has no real command transport"
                 );
-                self.startup = Some(startup_receipt(state)?);
+                self.startup = Some(startup_receipt(&state.frontend.wol, &state.match_state)?);
                 if let Some(run) = self.cooperative.as_mut() {
-                    run.match_loaded(state);
+                    run.match_loaded(&state.match_state.session);
                 }
                 self.event(
                     frame,
@@ -1079,8 +1174,11 @@ impl LiveLanCapture {
         Ok(())
     }
 
-    fn observe_map_admission(&mut self, state: &AppState) -> Result<()> {
-        let session = &state.match_state.session;
+    fn observe_map_admission(
+        &mut self,
+        frontend: &FrontendState,
+        session: &MatchSession,
+    ) -> Result<()> {
         let Some(launch) = session.network_setup() else {
             return Ok(());
         };
@@ -1102,8 +1200,7 @@ impl LiveLanCapture {
         {
             return Ok(());
         }
-        let protocol = state
-            .frontend
+        let protocol = frontend
             .network_setup_protocol
             .as_ref()
             .context("verified setup protocol")?;
@@ -1112,8 +1209,7 @@ impl LiveLanCapture {
             if session.network_random_map_preview().is_none() {
                 return Ok(());
             }
-            let text = state
-                .frontend
+            let text = frontend
                 .multiplayer_shell_runtime
                 .start_staging()
                 .to_w_text();
@@ -1122,7 +1218,7 @@ impl LiveLanCapture {
                 metadata.player_capacity,
             )?;
             Some(
-                json!({"text":text,"digest":crate::app::shell_network_setup::maps::staging_digest(state),
+                json!({"text":text,"digest":crate::app::shell_network_setup::maps::staging_digest(&frontend.multiplayer_shell_runtime, session),
                 "count":checked.count,"width":checked.width,"height":checked.height}),
             )
         } else {
@@ -1147,6 +1243,13 @@ impl LiveLanCapture {
         mode_id: Option<i32>,
         ai: Option<crate::skirmish_launch::AiDifficulty>,
     ) -> Result<()> {
+        if let Some(seed) = self
+            .config
+            .as_ref()
+            .and_then(|config| config.isolation_seed)
+        {
+            state.match_state.session.set_network_start_seed(seed)?;
+        }
         let mode = state
             .frontend
             .skirmish_modes
@@ -1172,7 +1275,15 @@ impl LiveLanCapture {
                     && crate::map::skirmish_scenarios::is_valid_map(map, mode, false)
             })
             .context("retail network map with enough starts")?;
-        setup::commit_map_selection(state, mode_id, map_index, None)?;
+        setup::commit_map_selection(
+            state.platform.game_config.as_ref(),
+            &mut state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            mode_id,
+            map_index,
+            None,
+        )?;
         self.select_country(state)?;
         self.open_human_rows(state, ai)
     }
@@ -1211,14 +1322,18 @@ impl LiveLanCapture {
             let Some(control) = setup_control_at_row(state, SetupColumn::Player, row)? else {
                 continue;
             };
-            if setup::view(state)
-                .and_then(|view| view.combo(control).cloned())
-                .is_some_and(|combo| {
-                    combo.visible
-                        && combo.enabled
-                        && combo.choices.iter().any(|choice| choice.value == 2)
-                })
-            {
+            if setup::view(
+                &state.renderer,
+                &state.frontend,
+                &state.match_state,
+                &state.process_assets,
+            )
+            .and_then(|view| view.combo(control).cloned())
+            .is_some_and(|combo| {
+                combo.visible
+                    && combo.enabled
+                    && combo.choices.iter().any(|choice| choice.value == 2)
+            }) {
                 setup::apply_action(state, SetupAction::Select { control, value: 2 });
             }
         }
@@ -1246,7 +1361,10 @@ impl LiveLanCapture {
     ) -> Result<()> {
         if let Some(failure) = self.failure.as_mut().filter(|failure| failure.armed()) {
             if failure.step(state, frame, &mut self.route)? {
-                MoviesCapture::restore_neutral_pointer(state);
+                MoviesCapture::restore_neutral_pointer(
+                    &state.renderer.gpu,
+                    &mut state.match_state.input,
+                );
                 self.phase = Phase::Finished;
             }
             return Ok(());
@@ -1255,6 +1373,14 @@ impl LiveLanCapture {
             state.frontend.screen == GameScreen::InGame,
             "live LAN match left gameplay before completion"
         );
+        // Observe the frame this render admitted before another pass can
+        // admit the next one. A lent runtime publishes no entities.
+        if self.battle.is_some() && state.match_state.sim_runtime.is_lent() {
+            if !state.match_state.sim_runtime.pass_may_run(true) {
+                return Ok(());
+            }
+            crate::app::match_runtime::sim_tick::finish_threaded_frame(state);
+        }
         if self.battle.is_none() && self.mass.is_none() && self.latency.is_none() {
             let simulation = &state
                 .match_state
@@ -1267,7 +1393,10 @@ impl LiveLanCapture {
             if simulation.pending_network_wait() {
                 return Ok(());
             }
-            self.observe_simple_input_applications(state, simulation.session().binary_frame())?;
+            self.observe_simple_input_applications(
+                &mut state.match_state.match_diagnostics,
+                simulation.session().binary_frame(),
+            )?;
         }
         let simulation = &state
             .match_state
@@ -1277,10 +1406,14 @@ impl LiveLanCapture {
             .simulation;
         let committed = simulation.session().binary_frame();
         if let Some(ai) = self.ai.as_mut() {
-            ai.observe(state)?;
+            ai.observe(&state.match_state)?;
         }
+        // While a tick holds the world on the simulation thread, `runtime()`
+        // is the presentation copy, which holds no objects
+        // (`Simulation::presentation_copy`): look again once it is home.
         if self.battle.is_none()
             && let Some(actor) = self.actor
+            && !state.match_state.sim_runtime.is_lent()
         {
             let entity = simulation
                 .entities()
@@ -1329,8 +1462,10 @@ impl LiveLanCapture {
             );
         }
         if committed >= required_frames && self.simulation_hashes.is_empty() {
-            self.simulation_hashes =
-                recorded_simulation_hashes(state, Some(u64::from(required_frames)))?;
+            self.simulation_hashes = recorded_simulation_hashes(
+                &state.match_state.match_diagnostics,
+                Some(u64::from(required_frames)),
+            )?;
         }
         let live = state
             .match_state
@@ -1355,7 +1490,10 @@ impl LiveLanCapture {
         }
         if let Some(latency) = self.latency.as_mut() {
             if latency.step(state, required_frames)? {
-                MoviesCapture::restore_neutral_pointer(state);
+                MoviesCapture::restore_neutral_pointer(
+                    &state.renderer.gpu,
+                    &mut state.match_state.input,
+                );
                 self.phase = Phase::Finished;
             }
             return Ok(());
@@ -1382,7 +1520,10 @@ impl LiveLanCapture {
                         .match_state
                         .match_diagnostics
                         .end_command_observation();
-                    MoviesCapture::restore_neutral_pointer(state);
+                    MoviesCapture::restore_neutral_pointer(
+                        &state.renderer.gpu,
+                        &mut state.match_state.input,
+                    );
                     self.phase = Phase::Finished;
                 }
             }
@@ -1399,7 +1540,7 @@ impl LiveLanCapture {
             let battle = self.battle.as_mut().expect("battle target");
             battle.step(state, committed, host, &mut self.actions)?;
             if committed >= required_frames {
-                let missing = battle.missing(state)?;
+                let missing = battle.missing(&state.match_state.sim_runtime)?;
                 ensure!(
                     missing.is_empty(),
                     "Battle opening incomplete: {}; missing {}",
@@ -1418,7 +1559,10 @@ impl LiveLanCapture {
                         .iter()
                         .all(|peer| peer.frame() >= required_frames as i32)
                 {
-                    MoviesCapture::restore_neutral_pointer(state);
+                    MoviesCapture::restore_neutral_pointer(
+                        &state.renderer.gpu,
+                        &mut state.match_state.input,
+                    );
                     self.phase = Phase::Finished;
                 }
             }
@@ -1460,7 +1604,7 @@ impl LiveLanCapture {
                 ensure!(
                     ai.activity.is_some(),
                     "AI House had no observed factory progress or new live entity; snapshot={}",
-                    ai.snapshot(state)?
+                    ai.snapshot(&state.match_state)?
                 );
             }
             ensure!(
@@ -1482,9 +1626,19 @@ impl LiveLanCapture {
                     && entity.navigation.nav_queue().is_empty(),
                 "Stop did not retain a stable position through the final frames"
             );
-            MoviesCapture::restore_neutral_pointer(state);
+            // Full actor/path reads above require the authoritative runtime.
+            // Ending observation just after Stop would allow threaded ticks
+            // and expose the renderer's entity-free copy to the next sample.
+            state
+                .match_state
+                .match_diagnostics
+                .end_command_observation();
+            MoviesCapture::restore_neutral_pointer(
+                &state.renderer.gpu,
+                &mut state.match_state.input,
+            );
             if let Some(failure) = self.failure.as_mut() {
-                failure.arm(state)?;
+                failure.arm(&state.frontend, &state.match_state, &state.process_assets)?;
                 self.event(
                     frame,
                     if self.target.desync_failure() {
@@ -1522,14 +1676,10 @@ impl LiveLanCapture {
 
     fn observe_simple_input_applications(
         &mut self,
-        state: &mut AppState,
+        match_diagnostics: &mut MatchDiagnosticsState,
         frame: u32,
     ) -> Result<()> {
-        for execution in state
-            .match_state
-            .match_diagnostics
-            .take_command_observations()?
-        {
+        for execution in match_diagnostics.take_command_observations()? {
             self.observe_simple_input_application(frame, execution)?;
         }
         if self.ai.is_some() {
@@ -1544,12 +1694,6 @@ impl LiveLanCapture {
                     action["input"]
                 );
             }
-        }
-        if self.stopped && self.simple_inputs_applied() {
-            state
-                .match_state
-                .match_diagnostics
-                .end_command_observation();
         }
         Ok(())
     }
@@ -1661,63 +1805,51 @@ impl LiveLanCapture {
             .map(|failure| format!("online latency measurement incomplete in {failure}"))
     }
 
-    pub(super) fn receipt(&self, state: &AppState) -> Result<Value> {
-        if let Some(crash) = &self.setup_crash {
-            return crash.receipt();
-        }
+    pub(super) fn receipt(
+        &self,
+        frontend: &FrontendState,
+        match_state: &MatchState,
+    ) -> Result<Value> {
         if let Some(run) = &self.cooperative {
             if let Some(online) = &self.rounds {
                 return Ok(json!({"target":format!("{:?}",self.target),
                     "service_boundary":"two independent App processes; normal WOL UI, deployed HTTPS lobby, authenticated UDP relay; ordinary frame boundary",
                     "scope":"online Cooperative: C0 campaign in the room's options, the first stage won on both, BC6 Continue, the kept room on the next stage and its loading over the relay; bounded runtime validation, not native parity",
                     "process_id":std::process::id(),"startup":self.startup,
-                    "online":online.cooperative_receipt(),"cooperative":run.receipt(state)?}));
+                    "online":online.cooperative_receipt(),"cooperative":run.receipt(&frontend.screen, &match_state.sim_runtime)?}));
             }
             return Ok(json!({"target":format!("{:?}",self.target),
                 "service_boundary":"two independent App processes; real UDP/global/private queues; ordinary frame boundary",
                 "scope":"LAN Cooperative: C0 campaign, B6 Observe by both, BC6 records and the retried mission's loading over real UDP; bounded runtime validation, not native parity",
                 "process_id":std::process::id(),"startup":self.startup,"route":self.route,
-                "cooperative":run.receipt(state)?}));
+                "cooperative":run.receipt(&frontend.screen, &match_state.sim_runtime)?}));
         }
         if let Some(online) = &self.rounds {
-            return online.receipt(state);
+            return online.receipt(&match_state.live_network);
         }
-        self.round_receipt(state)
+        self.round_receipt(frontend, match_state)
     }
 
-    fn round_receipt(&self, state: &AppState) -> Result<Value> {
+    fn round_receipt(&self, frontend: &FrontendState, match_state: &MatchState) -> Result<Value> {
         ensure!(self.ready(), "live LAN capture has not finished");
-        self.observed_receipt(state)
+        self.observed_receipt(frontend, match_state)
     }
 
-    fn observed_receipt(&self, state: &AppState) -> Result<Value> {
-        self.observed_receipt_through(state, None)
-    }
-
-    fn observed_receipt_through(&self, state: &AppState, through: Option<u32>) -> Result<Value> {
-        let checksums = if let Some(frame) = through {
-            self.checksums
-                .get(..frame as usize)
-                .context("uncommitted checkpoint prefix")?
-        } else {
-            &self.checksums
-        };
-        let hashes = if let Some(frame) = through {
-            recorded_simulation_hashes(state, Some(u64::from(frame)))?
-        } else {
-            self.simulation_hashes.clone()
-        };
+    fn observed_receipt(
+        &self,
+        frontend: &FrontendState,
+        match_state: &MatchState,
+    ) -> Result<Value> {
         ensure!(
-            !hashes.is_empty(),
+            !self.simulation_hashes.is_empty(),
             "live capture has no recorded simulation hashes"
         );
-        let sim = &state
-            .match_state
+        let sim = &match_state
             .sim_runtime
             .runtime()
             .context("simulation")?
             .simulation;
-        let live = state.match_state.live_network.as_ref();
+        let live = match_state.live_network.as_ref();
         ensure!(
             live.is_some()
                 || self
@@ -1729,23 +1861,29 @@ impl LiveLanCapture {
         let mut receipt = json!({"target":format!("{:?}",self.target),"service_boundary":if self.ai.is_some() {"one App process; real HTTPS/UDP relay; ordinary frame boundary"} else if self.target.online() {"independent App processes; real HTTPS/UDP relay; ordinary frame boundary"} else {"two independent App processes; real UDP/global/private queues; ordinary frame boundary"},
             "scope":if self.target.desync_failure() { "real300-frame CRC and strong-hash prefix followed by external scoped FRAMEINFO corruption, actual checksum CE Stop and ordinary LAN lobby cleanup" } else if self.failure.is_some() { "shared 300-frame prefix followed by real peer disappearance and ordinary wait recovery or Quit; bounded runtime validation, not whole-match/native parity" } else if self.target.online() {"observed production match before real outcome; tactical commands and simulation checksums"} else if self.battle.is_some() { "Battle opening, paid GI rally/combat, paid GAPILE repair and sale with an unfinished Infantry queue, natural crew, refunds and cleanup, then former-foundation Move; bounded runtime validation, not whole-match/native parity" } else { "300 native frames and local Move/Stop; bounded runtime validation, not whole-match/native parity" },
             "process_id":std::process::id(),
-            "loading_progress":crate::app::diagnostics::shell_capture::loading_runtime::progress_receipt(state)?,
             "participant_count":self.startup.as_ref().and_then(|startup|startup["sources"].as_array()).map_or(self.expected_players,Vec::len),
             "configured_participant_count":self.expected_players,"active_participant_count":live.map(|live|live.peers().len()+1),"cpu_count":usize::from(self.ai.is_some()),
             "active_mobile_count":sim.entities().values_sorted().filter(|entity|entity.is_alive() && !entity.in_limbo() && matches!(entity.category(),crate::map::entities::EntityCategory::Infantry | crate::map::entities::EntityCategory::Unit)).count(),
-            "required_frames":through.unwrap_or(self.required_frames()),"battle":self.battle.as_ref().map(|battle| battle.receipt(state)).transpose()?,
+            "required_frames":self.required_frames(),"battle":self.battle.as_ref().map(|battle| battle.receipt(frontend, match_state)).transpose()?,
             "failure":self.failure.as_ref().map(|failure| failure.receipt()),"mass_input":self.mass.as_ref().map(mass::MassInput::receipt),
             "ai_activity":self.ai.as_ref().map(AiActivity::receipt).transpose()?,
             "solo_ai_input_bound_native_frames":self.ai.as_ref().map(|_| SOLO_AI_INPUT_BOUND_FRAMES),
             "production_broadcast":self.config.as_ref().map(|config|matches!(config.transport,LiveLanTransport::ProductionBroadcast)),
             "bind":self.config.as_ref().and_then(|config|config.transport.explicit_endpoints()).map(|(bind,_)|bind.to_string()),"peer":self.config.as_ref().and_then(|config|config.transport.explicit_endpoints()).map(|(_,peer)|peer.to_string()),"startup":self.startup,"map_admission":self.map_admission,
-            "native_checksums":checksums,"simulation_hashes":hashes,
+            "native_checksums":self.checksums,"simulation_hashes":self.simulation_hashes,
             "simulation_hash_interval":crate::sim::replay::PLAY_HASH_INTERVAL.get(),
             "actions":self.actions,"actor_last_seen":self.actor_last_seen,"observed_movement":self.observed_movement,"stopped_position":self.stop_observation.position(),"stop_settled_at_frame":self.stop_observation.settled.as_ref().map(|(frame,_)|frame),"route":self.route,
             "final_native_frame":sim.session().binary_frame(),"checksum_failure":format!("{:?}",sim.pending_network_failure()),
             "sent_commands":live.map(|live| live.sent_commands()),"peers":live.map(|live| live.peers().iter().map(|peer| json!({"house":peer.house_id(),"frame":peer.frame(),"advertised_commands":peer.advertised_commands(),"received_commands":peer.received_commands()})).collect::<Vec<_>>()),
             "mobile_objects":sim.entities().values_sorted().filter(|entity| matches!(entity.category(), crate::map::entities::EntityCategory::Infantry | crate::map::entities::EntityCategory::Unit)).map(|entity| json!({"id":entity.stable_id(),"owner":sim.interner().resolve(entity.owner()),"position":entity.position,"alive":entity.is_alive()})).collect::<Vec<_>>() });
         receipt["latency"] = json!(self.latency.as_ref().map(latency::LatencyCapture::receipt));
+        receipt["setup_catalog"] = json!(self.setup_catalog);
+        receipt["gameplay_rules"] = json!(match_state.sim_runtime.runtime().map(|runtime| {
+            let rules = &runtime.resources.rules;
+            json!({"tiberium_types":rules.tiberium_types.len(),
+                "countries":rules.cooperative_country_candidates().map(|(id,_)|id).collect::<Vec<_>>(),
+                "colors":rules.skirmish_colors()})
+        }));
         Ok(receipt)
     }
 }
@@ -1756,30 +1894,33 @@ fn click_main_menu(
     state: &mut AppState,
     control: crate::ui::main_menu_shell::MainMenuControlId,
 ) -> Result<()> {
-    let layout = crate::app::frontend::shell_layout::main_menu_layout(state);
+    let layout = crate::app::frontend::shell_layout::main_menu_layout(&state.renderer.gpu);
     let rect = layout
         .buttons
         .iter()
         .find(|button| button.id == control)
         .context("rendered multiplayer main-menu button")?
         .rect;
-    set_window_pointer_to_rect_center(state, rect);
-    App::handle_main_menu_shell_mouse_move(state);
-    App::handle_main_menu_shell_mouse_down(state);
-    App::handle_main_menu_shell_mouse_up(state);
-    MoviesCapture::restore_neutral_pointer(state);
+    set_window_pointer_to_rect_center(
+        &state.renderer,
+        &state.frontend.screen,
+        &mut state.match_state.input,
+        rect,
+    );
+    App::handle_main_menu_shell_mouse(state, None);
+    App::handle_main_menu_shell_mouse(state, Some(true));
+    App::handle_main_menu_shell_mouse(state, Some(false));
+    MoviesCapture::restore_neutral_pointer(&state.renderer.gpu, &mut state.match_state.input);
     Ok(())
 }
 
 /// Read committed observations from the one diagnostic replay owner. This
 /// capture neither computes another hash nor admits command journals as state.
 fn recorded_simulation_hashes(
-    state: &AppState,
+    match_diagnostics: &MatchDiagnosticsState,
     through_tick: Option<u64>,
 ) -> Result<Vec<(u64, u64)>> {
-    let replay = state
-        .match_state
-        .match_diagnostics
+    let replay = match_diagnostics
         .replay_log
         .as_ref()
         .context("running match diagnostic replay")?;
@@ -1793,9 +1934,8 @@ fn recorded_simulation_hashes(
     Ok(hashes)
 }
 
-fn terminal_simulation_receipt(state: &AppState) -> Result<Value> {
-    let sim = &state
-        .match_state
+fn terminal_simulation_receipt(match_state: &MatchState) -> Result<Value> {
+    let sim = &match_state
         .sim_runtime
         .runtime()
         .context("terminal simulation")?
@@ -1804,7 +1944,7 @@ fn terminal_simulation_receipt(state: &AppState) -> Result<Value> {
         sim.terminal_score_snapshot().is_some(),
         "multiplayer result has no terminal score snapshot"
     );
-    let hashes = recorded_simulation_hashes(state, None)?;
+    let hashes = recorded_simulation_hashes(&match_state.match_diagnostics, None)?;
     let (tick, hash) = hashes.last().copied().context("terminal replay hash")?;
     ensure!(
         tick == sim.session().tick(),
@@ -1813,16 +1953,12 @@ fn terminal_simulation_receipt(state: &AppState) -> Result<Value> {
     Ok(
         json!({"tick":tick,"native_frame":sim.session().binary_frame(),
         "hash":hash,"recorded_hashes":hashes,"score_finalized":true,
-        "state_hash_owners":sim.state_hash_owners()}),
+        "state_hash_owners":sim.state_hash_owners().to_vec()}),
     )
 }
 
-fn local_owner(state: &AppState) -> Result<String> {
-    let launch = state
-        .match_state
-        .session
-        .network_setup()
-        .context("network setup")?;
+fn local_owner(session: &MatchSession) -> Result<String> {
+    let launch = session.network_setup().context("network setup")?;
     crate::sim::scenario_bootstrap::normalized_launch_slots(launch)
         .into_iter()
         .find(|slot| slot.is_controlled_by(launch.local_player_index))
@@ -1830,17 +1966,26 @@ fn local_owner(state: &AppState) -> Result<String> {
         .context("local normalized House")
 }
 
-fn startup_receipt(state: &AppState) -> Result<Value> {
-    let launch = state
-        .match_state
-        .session
-        .network_setup()
-        .context("network setup")?;
-    let sim = &state
-        .match_state
+/// Source membership is the frozen launch; House IDs come only from the
+/// constructed world, never a previous resident runtime.
+fn startup_receipt(wol: &Option<WolVisit>, match_state: &MatchState) -> Result<Value> {
+    let session = &match_state.session;
+    let launch = session.network_setup().context("network setup")?;
+    let sim = &match_state
         .sim_runtime
         .runtime()
         .context("simulation")?
         .simulation;
-    crate::app::diagnostics::shell_capture::network_startup_receipt(state, launch, Some(sim))
+    Ok(json!({
+        "match_id":crate::app::shell_wol::online_match_id(wol.as_ref()),
+        "seed":session.network_start_seed(),
+        "map":launch.selected_map_file,
+        "max_ahead":session.network_max_ahead_frames(),
+        "local_source":launch.local_player_index,
+        "sources":launch.humans.iter().enumerate().map(|(source,human)|json!({
+            "source":source,"name":human.name,"raw_row":human.raw_slot_index,"slot":human.slot,
+            "house":crate::app::match_runtime::network_match::source_house(session,sim,source),
+            "endpoint":session.network_endpoint(source).map(|address|address.to_string())
+        })).collect::<Vec<_>>()
+    }))
 }

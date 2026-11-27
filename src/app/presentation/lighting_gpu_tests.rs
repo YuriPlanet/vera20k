@@ -99,6 +99,7 @@ fn stock_lamp_loaded_by_scenario_changes_actual_terrain_pixels() {
         origin_y: 0.0,
         bridge_middle_tiles: None,
         deformation_tiles: Vec::new(),
+        ice_tiles: Vec::new(),
     };
     let mut lighting = MatchLighting::default();
     lighting.install(
@@ -148,7 +149,7 @@ fn stock_lamp_loaded_by_scenario_changes_actual_terrain_pixels() {
         crate::sim::combat::FatalLifecycleStage::BeforeBuildingDestruction,
         id,
         crate::map::entities::EntityCategory::Structure,
-        crate::sim::world::UninitContext::with_rules(rules),
+        crate::sim::world::UninitContext::new(rules),
     );
     let events = scenario
         .runtime

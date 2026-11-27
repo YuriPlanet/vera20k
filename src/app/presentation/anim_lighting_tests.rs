@@ -56,14 +56,14 @@ fn cell_anim() -> (
     }));
     sim.set_playfield_size_height_for_test(Some(20));
     sim.install_resolved_terrain_for_new_map(terrain.clone());
-    sim.install_overlay_grid_for_load(crate::sim::overlay_grid::OverlayGrid::new(40, 40));
+    *sim.overlay_grid_mut_for_test() = Some(crate::sim::overlay_grid::OverlayGrid::new(40, 40));
     assert_eq!(
         crate::sim::crates::place_scenario_start_crates(
             &mut sim,
             &rules,
             &registry,
             1,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap()
         .visible,
@@ -186,11 +186,14 @@ fn save_projects_pending_anim_reads_without_consuming_live_history() {
         None,
         None,
         None,
-    );
-    let mut loaded = GameSnapshot::load_validated(&bytes, 1, 2, sim.session().map_name()).unwrap();
+    )
+    .unwrap();
+    let mut snapshot =
+        GameSnapshot::load_validated(&bytes, 1, 2, sim.session().map_name()).unwrap();
+    let anim_intensities = std::mem::take(&mut snapshot.anim_intensities);
+    let mut loaded = snapshot.into_simulation_for_test();
     lights.apply_events(&terrain, &sim.take_lighting_events());
     loaded
-        .sim
         .session_mut_for_test()
         .lighting_mut()
         .set_current_ambient_for_test(20);
@@ -198,7 +201,7 @@ fn save_projects_pending_anim_reads_without_consuming_live_history() {
         CellLightGrid::new(),
         LightingConfig::default(),
         2,
-        Some((&terrain, &loaded.sim)),
+        Some((&terrain, &loaded)),
         None,
     );
     assert!(
@@ -209,7 +212,7 @@ fn save_projects_pending_anim_reads_without_consuming_live_history() {
         lights.grid().cell_light_at(cell).unwrap().top_scalar,
         expected
     );
-    lights.restore_anim_intensities(loaded.anim_intensities);
+    lights.restore_anim_intensities(anim_intensities);
     assert_eq!(lights.anim_intensities()[&id], expected);
     lights.refresh(&terrain, &Simulation::new(), 2);
     assert!(

@@ -7,6 +7,7 @@ every build, so a mod can select it:
 ```ini
 [DIGGER]                                              ; rulesmd.ini VehicleType
 Locomotor={4A582743-9839-11D1-B709-00A024DDAFD1}      ; Tunnel (Phobos alias: Tunnel)
+MovementZone=Subterannean
 ROT=8                                                 ; dig-in/dig-out time is 64/ROT frames
 
 [General]
@@ -16,6 +17,9 @@ TunnelSpeed=1        ; scales the sink and rise speed, divides the dig-in time (
 DigSound=...         ; played as the unit digs in and out (retail: the nuke siren)
 Dig=...              ; anim spawned as it digs in and out (retail: unset)
 ```
+
+In VERA20K, `MovementZone=Subterranean` is an alias for the retail spelling
+`MovementZone=Subterannean`.
 
 Theater INIs gate where a unit may surface with `[TileSetNNNN]
 AllowBurrowing=` (default yes).
@@ -83,7 +87,9 @@ origin.
   `In_Which_Layer 0x0072A1A0`), the visual character (`sim/game_entity.rs`,
   `0x007291D0`), FIRE_MOVING (`sim/combat/fire_error_world.rs`,
   `0x0072A1C0`), the surfacing NavQueue arm (`sim/movement/track_path.rs`,
-  `0x007422F7`) and the war-factory exit (`0x0044DEDD`).
+  `0x007422F7`), the war-factory exit (`0x0044DEDD`) and an all-Tunnel
+  reinforcement team arriving underground (`sim/team_script_vm/reinforcements.rs`,
+  `0x0065E2D3..0x0065E404`).
 - Ares: `rules/ares_techno_type.rs` reads the four keys;
   `sim/movement/tunnel_process.rs` plays them (`PlayDigEffects`, Ares.dll
   `0x100443E0`, from hooks `0x728EF0`, `0x7292CF`, `0x7297C4`, `0x7299A9`)
@@ -93,8 +99,7 @@ origin.
 
 ## Not covered
 
-- Reinforcements that arrive underground (`0x0065E010`, an all-Tunnel team)
-  and a Tunnel infantryman's move orders.
+- A Tunnel infantryman's move orders.
 - `Draw_Matrix 0x00729B40`'s Idle arm multiplies the cell's slope matrix
   (`0x007559B0`) into the facing; VERA draws an Idle Tunnel unit level on a
   ramp. The new Drive's `Force_New_Slope` (`0x00742BE3`).

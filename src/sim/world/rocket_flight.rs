@@ -11,7 +11,6 @@
 use super::Simulation;
 use super::lifecycle::UninitContext;
 use crate::map::resolved_terrain::NativeCellQuery;
-use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::anim_class::AnimWorldCoord;
 use crate::sim::components::DriveCoord;
@@ -28,7 +27,6 @@ use crate::util::retail_trig::TrigTable;
 struct RocketProcessHost<'a> {
     sim: &'a mut Simulation,
     rules: &'a RuleSet,
-    registry: Option<&'a OverlayTypeRegistry>,
     trig: &'a TrigTable,
     id: u64,
     frame: u32,
@@ -70,8 +68,12 @@ impl RocketHost for RocketProcessHost<'_> {
     fn trig(&self) -> &TrigTable {
         self.trig
     }
+    fn vera_only_map(&self) -> bool {
+        self.sim.session.map_exceeds_original_size()
+    }
     fn spawn_owner_is_elite(&self) -> bool {
         self.owner()
+            .seldom
             .spawn_owner_id
             .owner()
             .and_then(|spawner| self.sim.substrate.entities.get(spawner))
@@ -88,8 +90,8 @@ impl RocketHost for RocketProcessHost<'_> {
             self.id,
             DriveCoord { x, y, z },
             self.rules,
-            self.registry,
-            self.frame_effects,
+            Some(self.rules.overlay_registry()),
+            &mut self.frame_effects,
         );
     }
     fn height(&self) -> i32 {
@@ -100,29 +102,40 @@ impl RocketHost for RocketProcessHost<'_> {
     }
     fn type_speed(&self) -> i32 {
         let owner = self.owner();
-        self.sim
+        let speed = self
+            .sim
             .interner
             .object_type(owner.type_ref(), self.rules)
             .map_or(0, |object| {
                 crate::util::fixed_math::ra2_speed_to_leptons_per_frame(object.speed)
-            })
+            });
+        // VERA: a Wasm module `SpeedMultiplier` scales the type speed
+        // (`ext_modules::modifiers`); none leaves the native value.
+        owner.module_scaled_speed(speed)
     }
     fn in_bounds(&self, cell: (i16, i16)) -> bool {
         self.sim.map_cell_in_bounds(cell)
     }
     fn mark(&mut self, put: bool) {
         if put {
-            self.sim
-                .foot_mark_put(self.id, self.rules, self.registry, self.frame_effects);
+            self.sim.foot_mark_put(
+                self.id,
+                self.rules,
+                Some(self.rules.overlay_registry()),
+                &mut self.frame_effects,
+            );
         } else {
-            self.sim
-                .foot_mark_remove(self.id, self.rules, self.registry, self.frame_effects);
+            self.sim.foot_mark_remove(
+                self.id,
+                self.rules,
+                Some(self.rules.overlay_registry()),
+                &mut self.frame_effects,
+            );
         }
     }
     fn submit_display(&mut self) {
         Simulation::submit_entity_display(
             &self.sim.interner,
-            &self.sim.terrain_objects,
             &mut self.sim.substrate,
             &self.sim.resolved_terrain,
             self.id,
@@ -179,14 +192,14 @@ impl RocketHost for RocketProcessHost<'_> {
             .sim
             .interner
             .object_type(owner.type_ref(), self.rules)
-            .and_then(|object| object.aux_sound1.clone())
+            .and_then(|object| object.aux_sound1.as_deref())
         else {
             return;
         };
-        let event = super::SimSoundEvent::voc_at(sound, &owner.position);
+        let event = super::SimSoundEvent::voc_at(self.rules.sound_name(sound), &owner.position);
         self.sim.sound_events.emit(event);
     }
-    fn structural_bridge_floor(&self) -> Option<i32> {
+    fn structural_bridge_floor_and_deck(&self) -> Option<(i32, i32)> {
         let terrain = self.sim.resolved_terrain.as_ref()?;
         let cells = NativeCellQuery::canonical(terrain);
         let [x, y, _] = self.location();
@@ -194,7 +207,10 @@ impl RocketHost for RocketProcessHost<'_> {
         if cells.flags(cell) & crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL == 0 {
             return None;
         }
-        crate::sim::cell_kernel::native_cell_own_coords(cell, &cells).map(|(_, _, z)| z as i32)
+        let (_, _, z) = crate::sim::cell_kernel::native_cell_own_coords(cell, &cells)?;
+        let ground = z as i32;
+        let deck = crate::sim::movement::ground_pose::deck_surface_z(&cells, cell, ground);
+        Some((ground, deck))
     }
     fn explosion(&mut self, damage: i32, warhead: &str, coord: [i32; 3]) {
         let Some(warhead) = self.warhead(warhead) else {
@@ -232,13 +248,13 @@ impl RocketHost for RocketProcessHost<'_> {
         self.bridge_state_changed |= crate::sim::combat::world_receiver::apply_area_damage(
             self.sim,
             self.rules,
-            self.registry,
+            Some(self.rules.overlay_registry()),
             ProjectileCoord::new(coord[0], coord[1], coord[2]),
             damage,
             warhead_type,
             true,
             (self.id, None, warhead_ref),
-            self.frame_effects,
+            &mut self.frame_effects,
         )
         .bridge_state_changed;
     }
@@ -285,22 +301,18 @@ impl RocketHost for RocketProcessHost<'_> {
         };
         self.bridge_state_changed |= self.sim.commit_logic_projectile_detonations(
             self.rules,
-            self.registry,
+            Some(self.rules.overlay_registry()),
             &[detonation],
-            self.frame_effects,
+            &mut self.frame_effects,
         );
         // UnInit (vtable +0xF8) of the never-Fired Bullet.
-        self.sim.destroy_unfired_projectile(
-            bullet_id,
-            self.rules,
-            self.registry,
-            self.frame_effects,
-        );
+        self.sim
+            .destroy_unfired_projectile(bullet_id, self.rules, &mut self.frame_effects);
     }
     fn uninit(&mut self) {
         self.sim.uninit_with_context(
             self.id,
-            UninitContext::new(self.rules, self.registry).with_effects(self.frame_effects),
+            UninitContext::new(self.rules).with_effects(&mut self.frame_effects),
         );
     }
 }
@@ -343,12 +355,16 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> RocketProcessOutcome {
         let Some(entity) = self.substrate.entities.get(id) else {
             return RocketProcessOutcome::default();
         };
+        // A working copy, as Jumpjet keeps one: the host's callbacks run
+        // through the whole simulation and read the installed instance
+        // (motion queries, the collision and cell-neighbour paths) while the
+        // flight steps, so it must not be taken out. The copy is written back
+        // unless a callback removed the owner or replaced its locomotor.
         let Some(mut rocket) = entity
             .locomotor
             .as_ref()
@@ -365,12 +381,11 @@ impl Simulation {
         let mut host = RocketProcessHost {
             sim: self,
             rules,
-            registry,
             trig,
             id,
             frame,
             bridge_state_changed: false,
-            frame_effects,
+            frame_effects: frame_effects.reborrow(),
         };
         rocket_movement::process(&mut rocket, block, cmisl, &ext, &mut host);
         let outcome = RocketProcessOutcome {
@@ -423,7 +438,7 @@ pub(super) mod retail_tests {
                 (i32::from(y) - 3..=i32::from(y) + 3).all(|y| {
                     crate::sim::cell_rect::cell_is_in_playfield_height_aware(
                         (x, y),
-                        sim.playfield_bounds,
+                        *sim.playfield_bounds,
                         Some(terrain),
                     )
                 })
@@ -681,7 +696,7 @@ pub(super) mod retail_tests {
             assert!(
                 !crate::sim::cell_rect::cell_is_in_playfield_height_aware(
                     (i32::from(*rx), i32::from(*ry)),
-                    sim.playfield_bounds,
+                    *sim.playfield_bounds,
                     sim.resolved_terrain.as_ref(),
                 ),
                 "the edge cell lies past the playfield: {moves:?}"
@@ -721,7 +736,7 @@ pub(super) mod retail_tests {
             sim.map_cell_in_bounds((x as i16, y as i16))
                 && crate::sim::cell_rect::cell_is_in_playfield_height_aware(
                     (x, y),
-                    sim.playfield_bounds,
+                    *sim.playfield_bounds,
                     Some(terrain),
                 )
         };
@@ -1191,8 +1206,7 @@ pub(super) mod retail_tests {
             v3,
             Some(crate::sim::combat::TargetKind::Entity(target)),
             rules,
-            None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect("the V3 takes the tank as its target");
         let now = sim.session.binary_frame();

@@ -13,8 +13,14 @@ use crate::sim::world::{FrameEffects, Simulation};
 /// passive so its Strategy does not send a base-less house hunting, and
 /// `Americans` a human one.
 pub(super) fn scene() -> Option<(Simulation, RuleSet, PathGrid)> {
+    scene_with_size(40)
+}
+
+/// [`scene`] on a `size` x `size` arena, for refinery scans that need VERA's
+/// extended random-map distances.
+pub(super) fn scene_with_size(size: u16) -> Option<(Simulation, RuleSet, PathGrid)> {
     let rules = crate::rules::retail_ini_fixture::retail_battle_rules()?.rules;
-    let mut sim = crate::sim::arena_fixture::rival_arena_with_size(&rules, 0x0073_681D, 40);
+    let mut sim = crate::sim::arena_fixture::rival_arena_with_size(&rules, 0x0073_681D, size);
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
     sim.session
@@ -72,7 +78,7 @@ fn miner_at(
 }
 
 fn nudge(sim: &mut Simulation, rules: &RuleSet, id: u64) {
-    unit_ai_nudge_off_refinery_pad(sim, id, rules, None, FrameEffects::default());
+    unit_ai_nudge_off_refinery_pad(sim, id, rules, &mut FrameEffects::default());
 }
 
 fn moving(sim: &Simulation, id: u64) -> bool {
@@ -98,7 +104,7 @@ fn a_stuck_computer_miner_drives_off_its_refinery_pad() {
         RadioMessage::Hello,
         RadioPayload::default(),
         &rules,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert_eq!(hello, RadioResponse::Roger);
     assert_eq!(
@@ -106,6 +112,7 @@ fn a_stuck_computer_miner_drives_off_its_refinery_pad() {
             .entities
             .get(miner)
             .unwrap()
+            .seldom
             .radio_contacts
             .slot(0),
         Some(refinery)
@@ -119,7 +126,7 @@ fn a_stuck_computer_miner_drives_off_its_refinery_pad() {
 
     let unit = sim.substrate.entities.get(miner).unwrap();
     assert!(
-        unit.radio_contacts.is_empty(),
+        unit.seldom.radio_contacts.is_empty(),
         "OVER_OUT breaks the contact"
     );
     assert!(moving(&sim, miner));
@@ -172,8 +179,7 @@ fn a_moving_miner_on_the_pad_is_left_alone() {
         miner,
         Some(NavTargetRef::cell(30, 20)),
         &rules,
-        None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert_eq!(
         crate::sim::movement::motion_query::is_moving(sim.substrate.entities.get(miner).unwrap()),

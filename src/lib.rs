@@ -10,7 +10,14 @@
 //! them.
 // A focused test build leaves out the other test groups, and with them the
 // callers of test-only helpers outside the group (tools/README.md, "Test groups").
-#![cfg_attr(test_focus, allow(dead_code, unused_imports))]
+#![cfg_attr(
+    test_focus,
+    allow(
+        dead_code,
+        unused_imports,
+        reason = "a focused test build compiles only its group's tests"
+    )
+)]
 
 #[cfg(all(target_arch = "wasm32", target_os = "unknown", not(feature = "wasm")))]
 compile_error!("browser builds require --features wasm");
@@ -26,12 +33,8 @@ const _: () = assert!(
     cfg!(feature = "phobos") == rules::PHOBOS_ENABLED,
     "enable Phobos through the vera20k package's phobos feature"
 );
-// The same boundary for the NPatch placeholder.
-const _: () = assert!(
-    cfg!(feature = "npatch") == rules::NPATCH_ENABLED,
-    "enable NPatch through the vera20k package's npatch feature"
-);
-// The same boundary for VERA20K's own VeraX extension capability.
+// VERA20K's own VeraX capability; NPatch needs no boundary, every build
+// carries its switch.
 const _: () = assert!(
     cfg!(feature = "verax") == rules::VERAX_ENABLED,
     "enable VeraX through the vera20k package's verax feature"

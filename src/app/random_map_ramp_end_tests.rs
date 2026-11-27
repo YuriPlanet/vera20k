@@ -156,7 +156,7 @@ fn generated_connector_uses_native_slope_piece_tileset() {
 
     let mut before_islands = None;
     let mut introduced_ends = Vec::new();
-    let generated = generate_map_observed(
+    let run = generate_map_observed(
         &options,
         &prepared.settings,
         &prepared.resolved_inputs,
@@ -206,6 +206,7 @@ fn generated_connector_uses_native_slope_piece_tileset() {
             _ => {}
         },
     );
+    let generated = run.map();
     assert!(before_islands.is_some(), "ordinary Regions observation");
     assert!(!introduced_ends.is_empty(), "ordinary Islands observation");
     // Continue through real emit and the existing preview consumer. No map
@@ -281,6 +282,7 @@ fn generated_connector_uses_native_slope_piece_tileset() {
         Some(seed_name),
         None,
         crate::app::match_runtime::session::SessionMode::Skirmish,
+        crate::rules::retail_sources::AiFile::GameFolder,
         false,
         None,
         &mut SilentProgress,
@@ -360,7 +362,7 @@ fn generated_raised_ridge_materializes_native_cliff_faces() {
     }
     let mut ordinary_steps = 0;
     let mut materialized = Vec::new();
-    let generated = generate_map_observed(
+    let run = generate_map_observed(
         &options,
         &prepared.settings,
         &prepared.resolved_inputs,
@@ -406,7 +408,7 @@ fn generated_raised_ridge_materializes_native_cliff_faces() {
         "native type3/4 gate598D6E/598D7B/598D82 runs cliff materialization after connectors; ordinary raised ground must acquire physical CliffSet faces"
     );
     assert!(
-        generated.map_file.cells.iter().any(|cell| {
+        run.map().map_file.cells.iter().any(|cell| {
             materialized.iter().any(|face| {
                 (cell.rx, cell.ry, cell.tile_index, cell.sub_tile, cell.z)
                     == (face.rx, face.ry, face.tile_index, face.sub_tile, face.z)

@@ -1,5 +1,6 @@
 //! A computer house's Harrier team running its retail AIMD script.
 
+use crate::rules::rule_policy::RulePolicy;
 use crate::sim::combat::TargetKind;
 use crate::sim::mission::MissionType;
 use crate::sim::movement::air_movement;
@@ -49,7 +50,8 @@ fn retail_harrier_team_strikes_the_enemy_miner_and_goes_home() {
         crate::map::source::load_map_ini_by_name_or_path_with_assets(&retail, "Death.mmx", &assets)
             .unwrap()
             .ini;
-    let ai = TeamAiIniRegistry::load_retail(&assets, &map, true).unwrap();
+    let ai =
+        TeamAiIniRegistry::load_retail(&assets, &map, RulePolicy::stock_multiplayer()).unwrap();
     let trigger = ai
         .ai_triggers
         .iter()
@@ -200,7 +202,12 @@ fn retail_harrier_team_strikes_the_enemy_miner_and_goes_home() {
             .into_iter()
             .collect();
         let output = runtime
-            .advance_frame(&commands, 22, TickLane::Ordinary, FrameEffects::default())
+            .advance_frame(
+                &commands,
+                22,
+                TickLane::Ordinary,
+                &mut FrameEffects::default(),
+            )
             .unwrap();
         assert!(
             !output.outcome_waiting,
@@ -215,11 +222,12 @@ fn retail_harrier_team_strikes_the_enemy_miner_and_goes_home() {
             {
                 let dock = entity.ammo().unwrap().dock().expect("product's dock");
                 assert_eq!(dock, producer, "first exit retains its actual factory");
-                assert!(entity.radio_contacts.contains(producer));
+                assert!(entity.seldom.radio_contacts.contains(producer));
                 assert!(
                     sim.entities()
                         .get(producer)
                         .unwrap()
+                        .seldom
                         .radio_contacts
                         .contains(id)
                 );
@@ -278,8 +286,8 @@ fn retail_harrier_team_strikes_the_enemy_miner_and_goes_home() {
                 .dock()
                 .and_then(|dock| sim.entities().get(dock))
                 .is_some_and(|dock| {
-                    entity.radio_contacts.contains(dock.stable_id())
-                        && dock.radio_contacts.contains(harrier)
+                    entity.seldom.radio_contacts.contains(dock.stable_id())
+                        && dock.seldom.radio_contacts.contains(harrier)
                         && dock.owner() == owners[0]
                         && sim
                             .object_type(dock.type_ref(), &runtime.resources.rules)
@@ -351,7 +359,7 @@ fn retail_harrier_team_strikes_the_enemy_miner_and_goes_home() {
             loaded
                 .restore_map_authority_after_snapshot_load(
                     rules,
-                    &runtime.resources.overlay_registry,
+                    runtime.resources.rules.overlay_registry(),
                     None,
                 )
                 .unwrap();
@@ -361,7 +369,8 @@ fn retail_harrier_team_strikes_the_enemy_miner_and_goes_home() {
             let live_dummy = sim.effective_shared_cell_dummy();
             live_dummy.adopt_prepared_load_state(&loaded.effective_shared_cell_dummy());
             loaded.bind_shared_cell_dummy(live_dummy);
-            loaded.install_fresh_process_main(sim.main_rng());
+            // No app process cell here: the install writes a stand-in nothing reads.
+            loaded.install_fresh_process_main(&crate::sim::rng::MainRng::new(0));
             loaded.publish_scenario_started();
             runtime.replace_simulation(loaded);
             snapshot_product = Some(held_id);

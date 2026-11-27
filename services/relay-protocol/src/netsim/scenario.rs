@@ -36,7 +36,7 @@ pub struct Scenario {
     /// Commands per minute per player, Poisson.
     #[serde(default)]
     pub apm: f64,
-    /// Plaintext bytes one command adds to its batch (e2e-plan §1.2).
+    /// Plaintext bytes one command adds to its batch.
     #[serde(default = "default_command_bytes")]
     pub command_bytes: usize,
     #[serde(default)]
@@ -147,7 +147,7 @@ fn default_duration_ms() -> u64 {
     60_000
 }
 /// A move command's records, the batch without the version byte and
-/// FRAME_INFO header (bandwidth-compaction spec §2: "指令本体 约 19").
+/// FRAME_INFO header (bandwidth-compaction spec §4, appendix A: 19 B).
 fn default_command_bytes() -> usize {
     19
 }
@@ -295,8 +295,8 @@ impl Scenario {
         if !(2..=30).contains(&scenario.players) {
             return Err("players must be 2..=30".into());
         }
-        if !crate::paced_rates(scenario.tick_hz).contains(&scenario.tick_hz) {
-            return Err("tick_hz must be 90, 60, 45, 30, 20, 15, 12 or 10".into());
+        if !crate::FRAME_RATES.contains(&scenario.tick_hz) {
+            return Err(format!("tick_hz must be one of {:?}", crate::FRAME_RATES));
         }
         if scenario.command_bytes == 0 || scenario.command_bytes > crate::ORDERING_BATCH_CAPACITY {
             return Err("command_bytes must be 1..=512".into());

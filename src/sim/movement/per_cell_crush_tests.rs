@@ -76,7 +76,7 @@ fn retail_crush_releases_captives_before_destroyed_tag_changes_house() {
     rules.bind_effect_assets(&assets, "TEM", "TEMPERATE");
     let mut sim = crate::sim::world::Simulation::with_seed(0x7418E5);
     crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
-    sim.fog = crate::sim::vision::FogState::new(32, 32);
+    *sim.fog = crate::sim::vision::FogState::new(32, 32);
     sim.set_input_delay_ticks(0);
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
@@ -121,6 +121,7 @@ fn retail_crush_releases_captives_before_destroyed_tag_changes_house() {
             .entities
             .get(captive)
             .unwrap()
+            .seldom
             .mind_control
             .controller()
             == Some(controller)
@@ -130,7 +131,7 @@ fn retail_crush_releases_captives_before_destroyed_tag_changes_house() {
     }
     let captured = sim.substrate.entities.get(captive).unwrap();
     assert_eq!(
-        captured.mind_control.controller(),
+        captured.seldom.mind_control.controller(),
         Some(controller),
         "ordinary weapon captures; controller={:?}, captive={:?}",
         sim.substrate.entities.get(controller).map(|entity| (
@@ -247,7 +248,7 @@ fn retail_crush_releases_captives_before_destroyed_tag_changes_house() {
                 "the controlled animation was released"
             );
             let released = sim.substrate.entities.get(captive).unwrap();
-            assert_eq!(released.mind_control.controller(), None);
+            assert_eq!(released.seldom.mind_control.controller(), None);
             assert_eq!(
                 released.owner(),
                 controller_owner,
@@ -300,7 +301,7 @@ fn a_battle_fortress_crushing_a_tank_plays_its_death_explosion() {
     let centre = position_world_coord(&position);
     position.put_world_xy([centre.x + 40, centre.y - 24]);
     sim.substrate.entities.get_mut(tank).unwrap().position = position;
-    sim.substrate.occupancy = OccupancyGrid::rebuild(&sim.substrate.entities);
+    *sim.substrate.occupancy = OccupancyGrid::rebuild(&sim.substrate.entities);
     let location = position_world_coord(&position);
     let object = rules.object("MTNK").unwrap();
     let mut replay = sim.scenario_rng.clone();
@@ -313,7 +314,7 @@ fn a_battle_fortress_crushing_a_tank_plays_its_death_explosion() {
         PerCellReason::Arrival,
         &rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
     .unwrap();
     assert!(
@@ -376,13 +377,13 @@ fn ares_crush_damage_hurts_the_crusher() {
         let centre = position_world_coord(&position);
         position.put_world_xy([centre.x + 16, centre.y]);
         sim.substrate.entities.get_mut(spike).unwrap().position = position;
-        sim.substrate.occupancy = OccupancyGrid::rebuild(&sim.substrate.entities);
+        *sim.substrate.occupancy = OccupancyGrid::rebuild(&sim.substrate.entities);
         sim.per_cell_process(
             tank,
             PerCellReason::Arrival,
             &rules,
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap();
         let crushed = sim

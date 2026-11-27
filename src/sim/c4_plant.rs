@@ -85,6 +85,7 @@ use crate::rules::ruleset::RuleSet;
 use crate::rules::terrain_rules::LandType;
 use crate::sim::combat::TargetKind;
 use crate::sim::components::{DriveCoord, NavTargetRef};
+use crate::sim::game_entity::NameNote;
 use crate::sim::houses::Houses;
 use crate::sim::intern::StringInterner;
 use crate::sim::mission::authority::LiveReadyInputProvider;
@@ -161,7 +162,7 @@ impl C4Detonation {
 
     /// The C4 arm's write (`0x0051A5A7..0x0051A608`): the fuse starts at
     /// `frame` with the planter as C4AppliedBy.
-    pub(crate) fn plant(&mut self, frame: i32, fuse: i32, planter: u64) {
+    pub(crate) fn plant(&mut self, frame: i32, fuse: i32, planter: u64, _: NameNote) {
         self.pending = Some(PendingC4Detonation::new(
             CdTimer::started(frame, fuse),
             Some(planter),
@@ -242,6 +243,7 @@ impl C4Detonation {
     /// Install a fixture's latch.
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_for_test(&mut self, pending: Option<PendingC4Detonation>) {
+        NameNote::fixture();
         self.pending = pending;
     }
 }
@@ -292,7 +294,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<C4Arrival, FrameAdvanceError> {
         let Some(infantry) = self.substrate.entities.get(id) else {
             return Ok(C4Arrival::default());
@@ -331,7 +333,7 @@ impl Simulation {
         // 0x0051A507..0x0051A51C: the building's Tag hears event 1 with the
         // planter as actor on every arrival, before the refusals below.
         // Synchronous actions may change either object; both are reloaded.
-        let context = UninitContext::new(rules, registry).with_effects(effects);
+        let context = UninitContext::new(rules).with_effects(effects);
         self.dispatch_object_tag_event(building, 1, Some(id), None, context);
         let frame = self.session.binary_frame();
         let Some(target) = self.substrate.entities.get(building) else {
@@ -361,10 +363,11 @@ impl Simulation {
             let (flash, fuse) = (rules.c4_flash_frames(), rules.c4_delay_frames());
             self.substrate.flash_building(building, flash, frame);
             if let Some(target) = self.substrate.entities.get_mut(building) {
+                let note = target.note_names();
                 target
                     .building
                     .pending_c4_detonation
-                    .plant(frame as i32, fuse, id);
+                    .plant(frame as i32, fuse, id, note);
             }
         }
         if let Some(infantry) = self.substrate.entities.get_mut(id) {
@@ -407,8 +410,7 @@ impl Simulation {
         id: u64,
         building: u64,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let frame = self.session.binary_frame();
         let Some(target) = self.substrate.entities.get(building) else {
@@ -428,12 +430,13 @@ impl Simulation {
             let fuse = rules.c4_delay_frames();
             self.substrate.flash_building(building, fuse / 2, frame);
             if let Some(target) = self.substrate.entities.get_mut(building) {
+                let note = target.note_names();
                 target
                     .building
                     .pending_c4_detonation
-                    .plant(frame as i32, fuse, id);
+                    .plant(frame as i32, fuse, id, note);
             }
-            let context = UninitContext::new(rules, registry).with_effects(effects);
+            let context = UninitContext::new(rules).with_effects(effects);
             self.dispatch_object_tag_event(building, 1, Some(id), None, context);
             return true;
         }
@@ -490,7 +493,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<C4Arrival, FrameAdvanceError> {
         let frame_error = |sim: &Simulation, cause: String| {
             FrameAdvanceError::new(sim.session.tick(), sim.session.binary_frame(), id, cause)
@@ -595,7 +598,7 @@ impl Simulation {
         at: DriveCoord,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(warhead) = rules.warhead(&rules.bridge_warheads.c4_name) else {
             return false;
@@ -674,7 +677,7 @@ impl Simulation {
             TargetKind::Entity(building),
             None,
         );
-        let burst_index = planter.weapon_burst.index();
+        let burst_index = planter.seldom.weapon_burst.index();
         let live = planter.live_particles();
         let rof = crate::sim::combat::world_fire::snapshot_get_rof(
             scenario_rng,
@@ -689,7 +692,7 @@ impl Simulation {
         );
         let frame = session.binary_frame() as i32;
         if let Some(planter) = substrate.entities.get_mut(id) {
-            planter.rearm_timer.start(frame, rof);
+            planter.seldom.rearm_timer.start(frame, rof);
         }
     }
 }

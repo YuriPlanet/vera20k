@@ -8,6 +8,17 @@
 //! ## Dependency rules
 //! - Part of assets/ — depends only on assets::mix_archive and assets::shp_file.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable
+    )
+)]
+
 use crate::assets::mix_archive::MixArchive;
 use crate::assets::shp_file::ShpFile;
 

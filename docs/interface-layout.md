@@ -9,9 +9,6 @@ text of your own. Without the file the game looks exactly as the original does.
 A player can also [drag the parts in the game](#a-players-own-layout) and keep where
 they put them, on top of any mod's layout.
 
-The keys on this page keep their meaning in later versions, so a layout you write now
-keeps working.
-
 ## Where the file goes
 
 Put `veraui.ini` in your [mod's folder](modding.md#the-mods-folder), next to its other
@@ -26,6 +23,13 @@ archive, which a match does compare like every other file in a mod's folder.
 An older VERA20k doesn't read the file, or skips the keys it doesn't know and tells
 the player. If your mod needs its layout, say so with `Needs=` in the mod's
 [`mod.ini`](modding.md#modini).
+
+Every layout starts from the original interface, which is itself a `veraui.ini`
+built into the game: [`src/ui/veraui_default.ini`](../src/ui/veraui_default.ini). It
+lists every part of the match screen with its kind, place, pictures and commands. Its
+`GDI` layout is the allied interface, its `Nod` layout the one the Soviets and Yuri use,
+written as what it changes on `GDI`. Each value there is the original one, which your
+file writes over.
 
 [`docs/examples/veraui.ini`](examples/veraui.ini) is a sample you can copy. It has
 three layouts, all with the original pictures:
@@ -48,13 +52,37 @@ GDI=Mine
 [Mine.Radar]
 Y=52
 
-[Mine.Tabs]
-X=20
-Step=32
+[Mine.Repair]
+X=33
 ```
 
-This moves the Allied radar 4 pixels down and spaces the Allied tabs like the Soviet
-ones. Everything else stays as it was.
+This moves the Allied radar 4 pixels down and the Repair button to where the Soviets
+have it. Everything else stays as it was.
+
+## Updating an older layout
+
+The game reads existing files without converting them. If your mod or hand-edited
+player file uses the older keys, update the sections under its existing layout name.
+The examples here use `Mine`.
+
+| In the older file | What to write now |
+| --- | --- |
+| `[Mine] Version=1` | Remove `Version`. To require a game version for your mod, use `Needs=` in `mod.ini`. |
+| `[Mine] Parts=Field,Side` | Move `Parts=Field,Side` to `[Mine.Screen]` to keep the command bar hidden. |
+| `[Mine.Radar] MapX`, `MapY`, `MapWidth`, `MapHeight` | Move those values to `X`, `Y`, `Width`, `Height` in `[Mine.Minimap]`. Keep the radar frame's own `X` and `Y` in `[Mine.Radar]`. |
+| `[Mine.Tabs] Step` | Keep the tab group's `X` and `Y`. Set `X` in `Mine.Buildings`, `Mine.Defenses`, `Mine.Infantry` and `Mine.Vehicles` to 0, one step, two steps and three steps. For `Step=-29` those values are `0`, `-29`, `-58` and `-87`. |
+| `[Mine.Cameos] ScrollX`, `ScrollY`, `ScrollStep` | In `[Mine.ScrollDown]` set `X` to `ScrollX`. In `[Mine.ScrollUp]` set `X` to `ScrollX + ScrollStep`. Set both buttons' `Y` to `ScrollY`. The old defaults were `ScrollX=39`, `ScrollY=7` and a step of 46 for Allied positions or 45 for Soviet and Yuri positions. |
+| `[Mine.Field] Parts` | Include `Tooltip` in an explicit list. For the former `Parts=None`, use `Parts=Tooltip`. |
+| An added button with `Label=Stop` | Use `Label=GUI:Stop` to show the translated word. A literal `Stop` with no matching string-table entry displays as `MISSING:'Stop'`. |
+
+If you wrote `Type` on the original parts, you can omit it and inherit their types.
+If a part you added has the same name as a new built-in part, such as `Minimap` or
+`Vehicles`, rename it in both its section and its parent's `Parts` list.
+
+Positions saved by the old **Edit Layout** command are already `X` and `Y` under
+the part's name, for example `[OwnGDI.Radar]`. They still apply when the layout and
+part keep their names. If a mod renames either, update that section in your player
+file or drag the part again and save.
 
 ## Which side gets which layout
 
@@ -76,21 +104,139 @@ Default=Plain
 
 ## A layout
 
-A layout starts as the original interface of the side that uses it. You write only what
-you change.
-
-Each part you change gets a section named after the layout and the part, with a dot
-between them: `[Mine.Radar]`.
-
-The layout's own section, `[Mine]`, holds two keys:
+A layout is a tree of parts. Each part has a section named after the layout and the
+part, with a dot between them: `[Mine.Radar]`. Its keys are the part's properties:
 
 | Key | Meaning |
 | --- | --- |
-| `Version=1` | The version of this format the layout was written for. Leave it at 1, or leave it out. |
-| `Parts=Field,Side,Bar` | The big parts of the screen. See [The screen](#the-screen). |
+| `Type` | The kind of part. It decides which other keys the part has |
+| `Parts` | The parts inside it, in the order they are drawn |
+| `X`, `Y` | Where it sits in the part it is inside |
+| `Art`, `Frames`, `Palette`, `Color` | Its pictures and colours. See [Pictures and colours](#pictures-and-colours) |
+
+A layout starts as the original interface of the side that uses it. You write only what
+you change: a key you write replaces that one key of the part, and every other key stays.
 
 All numbers are pixels of the original sidebar, which is 168 wide. The Sidebar size
 option in the game makes the whole interface bigger, your layout included.
+
+### Starting from another layout or part
+
+The layout's own section, `[Mine]`, holds one key, `Base=`: the layout it starts from.
+
+```ini
+[Layouts]
+GDI=Left
+Nod=LeftLow
+
+[Left.Side]
+Hold=Left
+
+[Left.Bar]
+Hold=Top
+
+[LeftLow]
+Base=Left
+
+[LeftLow.Radar]
+Y=60
+```
+
+`LeftLow` is `Left` with the radar 12 pixels lower. A layout without `Base=` starts
+from the original interface of the side that uses it: `GDI` for the Allies, `Nod` for
+the Soviets and Yuri. You can name those two as a `Base=` too.
+
+A part can have `Base=` as well: the name of another part of the layout. Every key the
+part doesn't write comes from that part. The original's tabs and buttons use it, so
+`Options` is `Diplomacy` with its own place, picture and command.
+
+### A side's own pictures
+
+A key with `@` and a side's pictures after its name holds for that side alone:
+`Art@Yuri=radary.shp` is the radar frame for Yuri. The three are `Allied`, `Soviet` and
+`Yuri`; a key without `@` holds for every side that has no line of its own.
+
+### Pictures and colours
+
+An original part draws the SHP files its picture keys name. `Art=` is the part's own
+picture. The build pictures have four more: `RowArt=` behind each row, `EmptyRowArt=`
+behind a row with nothing to build, `EndArt=` under the last row and `FootArt=` under
+that. Write a key to draw your own file instead:
+
+```ini
+[Layouts]
+Default=Mine
+
+[Mine.Repair]
+Art=myrepair.shp
+
+[Mine.Radar]
+Art@Soviet=myradar.shp
+Palette@Soviet=myradar.pal
+```
+
+- The file can be loose in the game or mod folder, or in a MIX.
+- A picture is drawn with the sidebar's palette (`sidebar.pal`). A part with
+  `Palette=` is drawn with that palette, as the radar is.
+- `Frames=` names the frames the part uses, in order. The original repair button has
+  `Idle,On,Disabled,Flash,FlashOn`: your file needs those five. A frame the file
+  lacks draws frame 0 or nothing.
+- A file the game can't find leaves the original picture. The game's log names it.
+- A key the built-in file writes for one side holds for that side over yours without
+  `@`. The radar is `Art@Yuri=radary.shp` for Yuri, so write `Art@Yuri=` to change
+  Yuri's radar.
+- Each side's sidebar has the pictures of its side's layout. They are loaded with the
+  match from the mod's file: a player's own file can't change them.
+
+Colours have names. The built-in file names the side's text colour:
+
+```ini
+[Colors]
+SideText=164,210,255
+SideText@Soviet=255,255,0
+SideText@Yuri=255,255,0
+```
+
+A `[Colors]` section in your file changes these and adds your own names. A colour is
+`r,g,b` or `r,g,b,a`, each from 0 to 255, and `@` with a side holds for that side alone.
+A part's colour key names a colour, or writes `r,g,b` itself:
+
+| Part | Key | What it colours |
+| --- | --- | --- |
+| `Money` | `Color` | The money, the frame of the map picture and the text added over the battlefield |
+| `Cameos` | `LabelColor` | The build pictures' labels and the frame of the one under the mouse, and the buttons and text added to the sidebar |
+
+Both are `SideText` in the built-in file, so changing `SideText` changes both:
+
+```ini
+[Colors]
+SideText@Soviet=255,96,64
+
+[Mine.Cameos]
+LabelColor=255,255,255
+```
+
+### Buttons and the money
+
+An original button can give another command: `Command=` on `Diplomacy`, `Options`,
+`Repair`, `Sell`, `ScrollDown` or `ScrollUp` takes any name of
+[Commands](#commands). A click then gives that command instead of the button's own;
+its picture and the way it shows pressed or on stay as they are.
+
+```ini
+[Mine.Repair]
+Command=StopObject
+```
+
+The money number can show another value and stand elsewhere on its plate:
+
+| Key | Meaning | Original |
+| --- | --- | --- |
+| `Value` | What it shows: one of [Values](#values) | `Credits`. An observer's shows how long the match has run |
+| `Align` | `Left`, `Center` or `Right` on the plate | `Center` |
+
+Both keys take `@` and a side, like the pictures. A command or a value the game
+doesn't have keeps the original.
 
 ## The screen
 
@@ -123,10 +269,11 @@ Hold=Left
 Hold=Top
 ```
 
-A screen without the command bar leaves it out of the layout's `Parts=`:
+The screen itself is the part `Screen`. A screen without the command bar leaves it out
+of `Screen`'s `Parts=`:
 
 ```ini
-[Mine]
+[Mine.Screen]
 Parts=Field,Side
 ```
 
@@ -178,12 +325,15 @@ the part it is inside. When you move a part, the parts inside it move with it.
 | `Top` | The strip behind the two top buttons (`top.shp`) | `Side` | 0, 16 | 0, 16 |
 | `Diplomacy` | The diplomacy button (`diplobtn.shp`) | `Top` | 11, 4 | 14, 5 |
 | `Options` | The options button (`optbtn.shp`) | `Top` | 83, 4 | 86, 5 |
-| `Radar` | The radar and its frame (`radar.shp`) | `Side` | 0, 48 | 0, 48 |
+| `Radar` | The radar's frame (`radar.shp`) | `Side` | 0, 48 | 0, 48 |
+| `Minimap` | The map picture inside the frame | `Radar` | 16, 1 | 16, 1 |
 | `Middle` | The panel behind Repair, Sell and the tabs (`side1.shp`) | `Side` | 0, 158 | 0, 158 |
 | `Repair` | The repair button (`repair.shp`) | `Middle` | 20, 8 | 33, 7 |
 | `Sell` | The sell button (`sell.shp`) | `Middle` | 84, 8 | 85, 7 |
-| `Tabs` | The four tab buttons. `X`, `Y` place the first one | `Middle` | 26, 39 | 20, 39 |
-| `Cameos` | The build pictures, the rows behind them (`side2.shp`), the piece under them (`side3.shp`) and the two scroll buttons | `Side` | 0, 227 | 0, 227 |
+| `Tabs` | The four tab buttons | `Middle` | 26, 39 | 20, 39 |
+| `Buildings`, `Defenses`, `Infantry`, `Vehicles` | One tab button each (`tab00.shp` to `tab03.shp`) | `Tabs` | 0, 29, 58, 87 across, 0 down | 0, 32, 64, 96 across, 0 down |
+| `Cameos` | The build pictures, the rows behind them (`side2.shp`) and the piece under them (`side3.shp`) | `Side` | 0, 227 | 0, 227 |
+| `ScrollDown`, `ScrollUp` | The two scroll buttons (`r-dn.shp`, `r-up.shp`), measured from the bottom of the last row | `Cameos` | 39, 7 and 85, 7 | 39, 7 and 84, 7 |
 | `Power` | The power bar. It is as tall as the rows of build pictures | `Side` | 5, 227 | 0, 227 |
 
 `Side` is the sidebar itself.
@@ -192,16 +342,31 @@ Some parts have more keys:
 
 | Part | Key | Meaning | Allied | Soviet, Yuri |
 | --- | --- | --- | --- | --- |
-| `Radar` | `MapX`, `MapY` | Where the map picture sits inside the radar frame | 16, 1 | 19, 2 |
-| `Radar` | `MapWidth`, `MapHeight` | The size of the map picture | 140, 108 | 140, 108 |
-| `Tabs` | `Step` | From the left edge of one tab to the left edge of the next. A number below zero runs the tabs from right to left | 29 | 32 |
+| `Minimap` | `Width`, `Height` | The size of the map picture | 140, 108 | 140, 108 |
 | `Cameos` | `Columns` | How many build pictures are in a row. 1 to 8 | 2 | 2 |
+| `Cameos` | `CellWidth`, `CellHeight` | The size of one build picture | 60, 48 | 60, 48 |
 | `Cameos` | `CellX`, `CellY` | Where the first build picture sits, measured from the part's top-left corner | 22, 1 | 22, 1 |
 | `Cameos` | `ColumnWidth` | From the left edge of one column to the left edge of the next | 63 | 64 |
 | `Cameos` | `RowHeight` | From the top of one row to the top of the next. It also decides how many rows fit in the sidebar. 16 or more | 50 | 50 |
 | `Cameos` | `Footer` | The height kept free under the last row, for the scroll buttons | 33 | 25 |
-| `Cameos` | `ScrollX`, `ScrollY` | Where the scroll-down button sits: from the part's left edge, and down from the bottom of the last row | 39, 7 | 39, 7 |
-| `Cameos` | `ScrollStep` | From the left edge of the scroll-down button to the left edge of the scroll-up button | 46 | 45 |
+| `Power` | `Step` | The height of one piece of the bar | 3 | 3 |
+
+Each tab and each scroll button sits where its own `X` and `Y` say. This runs the tabs
+from right to left:
+
+```ini
+[Mine.Buildings]
+X=87
+
+[Mine.Defenses]
+X=58
+
+[Mine.Infantry]
+X=29
+
+[Mine.Vehicles]
+X=0
+```
 
 Sizes that come from your pictures:
 
@@ -293,11 +458,11 @@ X=180
 
 `Powers` has no box. Its `X` and `Y` move the column right and down from its own place.
 
-The battlefield's `Parts=` says which of the four it has:
+The battlefield's `Parts=` says which of the four it has, and the tooltips:
 
 ```ini
 [Mine.Field]
-Parts=Messages,Timers,Banner,Powers
+Parts=Messages,Timers,Banner,Powers,Tooltip
 ```
 
 A piece that isn't in the list isn't drawn. The game still plays its sounds, and the
@@ -305,8 +470,8 @@ chat keys still work.
 
 ### Tooltips
 
-`Tooltip` is the small box of text at the cursor. It belongs to the whole screen, so it
-is in no `Parts=` list and can't be left out.
+`Tooltip` is the small box of text at the cursor. It is in the battlefield's `Parts=`
+list but can't be left out yet.
 
 | Key | Meaning | Original |
 | --- | --- | --- |
@@ -322,8 +487,10 @@ Y=8
 
 ## Adding buttons and text
 
-A layout can add parts of its own, of two kinds: a button that gives a command when it
-is clicked, and a text that shows a value.
+A layout can add parts of its own: a button that gives a command when it is clicked, a
+text that shows a value or a label, a picture, a bar and a list. The last few are for a
+mod's or a map's interface module (`ui.wasm`), which finds a part by its name and changes it while
+the match runs; see [Parts for interface modules](#parts-for-interface-modules).
 
 Give the new part a name, put the name in the `Parts=` of `Side` or of `Field`, and
 give it a section with `Type=`:
@@ -335,12 +502,12 @@ Parts=Credits,Top,Radar,Middle,Cameos,Power,StopAll
 [Mine.StopAll]
 Type=Button
 Command=StopObject
-Label=Stop
+Label=GUI:Stop
 X=10
 Y=300
 
 [Mine.Field]
-Parts=Messages,Timers,Banner,Powers,Clock
+Parts=Messages,Timers,Banner,Powers,Tooltip,Clock
 
 [Mine.Clock]
 Type=Text
@@ -355,11 +522,11 @@ the battlefield.
 
 | Key | Meaning |
 | --- | --- |
-| `Type` | `Button` or `Text`. `Row`, `Column` and `CameoGrid` are below |
-| `Command` | For a button: what a click does. See [Commands](#commands) |
-| `Label` | For a button without a picture: the words on it. The name of a line in the game's string table shows that line's text. Without `Label` the button shows its command's name |
-| `Art` | For a button: its picture, an SHP file like `mybutton.shp`. Frame 0 is the button and frame 1 the button held down. It uses the sidebar's palette (`sidebar.pal`), as the command bar's buttons do |
-| `Value` | For a text: what it shows. See [Values](#values) |
+| `Type` | `Button` or `Text`. `Row`, `Column` and `CameoGrid` are below, `Image`, `Bar` and `List` in [Parts for interface modules](#parts-for-interface-modules) |
+| `Command` | For a button: what a click does. See [Commands](#commands). A button with a `Label` or an `Art` may leave it out: a click then only tells the interface modules |
+| `Label` | For a button without a picture: the words on it. For a text, in place of `Value`: words that stay as written until a module changes them. It is the name of a line in the game's string table, like `GUI:Stop`, and shows that line's text; a name the table doesn't have shows as `MISSING:'name'`, as everywhere else in the game (and the name itself while no table is loaded). Without `Label` the button's label is its command's name, looked up the same way |
+| `Art` | For a button: its picture, an SHP file like `mybutton.shp`. Frame 0 is the button and frame 1 the button held down. It uses the sidebar's palette (`sidebar.pal`), as the command bar's buttons do. In a map's `[VeraUI]` and on a client module's button, the `Label` is drawn over the picture, and the picture dims while the button is disabled and brightens under the mouse |
+| `Value` | For a text: what it shows. See [Values](#values). A text needs `Value` or `Label` |
 | `Hold` | The corner or edge of `Side` or `Field` the part is measured from: the nine words of [On the battlefield](#on-the-battlefield). `TopLeft` if you leave it out |
 | `X`, `Y` | How far in from there the part sits |
 | `Width`, `Height` | The part's size. Left out, it is as big as its words or its picture. A picture is never stretched |
@@ -381,7 +548,7 @@ they need no `X` and `Y` of their own:
 
 ```ini
 [Mine.Field]
-Parts=Messages,Timers,Banner,Powers,Orders
+Parts=Messages,Timers,Banner,Powers,Tooltip,Orders
 
 [Mine.Orders]
 Type=Row
@@ -403,7 +570,7 @@ Art=button06.shp
 [Mine.Spread]
 Type=Button
 Command=ScatterObject
-Label=Scatter
+Label=TXT_SCATTER
 ```
 
 This puts three buttons side by side, in the middle of the battlefield's bottom edge.
@@ -422,7 +589,7 @@ This puts three buttons side by side, in the middle of the battlefield's bottom 
 - A row or column can't hold another row or column yet.
 
 With a row you can build a command bar of your own. Leave the original out with
-`Parts=Field,Side` on the layout, and use the bar's own pictures: `button00.shp` to
+`Parts=Field,Side` on `Screen`, and use the bar's own pictures: `button00.shp` to
 `button10.shp` are `Team01`, `Team02`, `Team03`, `TypeSelect`, `Deploy`, `AttackMove`,
 `Guard`, `Beacon`, `Stop`, `PlanningMode` and `Cheer`.
 
@@ -456,9 +623,106 @@ Y=1
 - The mouse wheel over the grid scrolls it, one row a notch. It has no scroll buttons.
 - It goes in `Side` only, and it has no background of its own: the pictures draw over
   whatever is there.
-- Its pictures are spaced as `[Cameos]` says (`ColumnWidth`, `RowHeight`).
+- Its pictures are as big and spaced as `Cameos` says (`CellWidth`, `CellHeight`,
+  `ColumnWidth`, `RowHeight`).
 - To show all four tabs at once, add a grid for each. You can then leave `Cameos` out
   of `Side` and `Tabs` out of `Middle`.
+
+### Parts for interface modules
+
+A mod's or a map's interface module (`ui.wasm`) finds a part by the name in its section
+after the layout's (`Buy` for `[Mine.Buy]`) and changes it while the match runs: shows
+or hides it, changes its words or its picture, fills a bar, writes a list. These parts
+are made for that:
+
+```ini
+[Mine.Field]
+Parts=Messages,Timers,Banner,Powers,Tooltip,Buy,Status,Charge,Log,Logo
+
+[Mine.Buy]
+Type=Button
+Label=GUI:Buy
+X=10
+Y=40
+
+[Mine.Status]
+Type=Text
+Label=Ready
+
+[Mine.Charge]
+Type=Bar
+Width=120
+Height=8
+Y=20
+
+[Mine.Log]
+Type=List
+Width=200
+Height=60
+Y=60
+
+[Mine.Logo]
+Type=Image
+Art=mylogo.shp
+Hold=TopRight
+```
+
+| `Type` | What it is |
+| --- | --- |
+| `Button` without `Command` | A button that does nothing itself: a click only tells the modules. It needs a `Label` or an `Art` |
+| `Text` with `Label` | Words that stay as written until a module changes them |
+| `Image` | A picture, `Art=` (frame 0), at its own size |
+| `Bar` | A bar a module fills, framed in the side's text colour. Empty until a module fills it; 100 by 8 pixels unless you give it a size |
+| `List` | Lines a module writes, one under another. Empty until a module writes them |
+
+- Without a module these parts just sit there: a button without a command does
+  nothing, a bar stays empty and a list shows nothing.
+- A layout's button tells the modules when it is clicked unless a module turns that
+  off (its `Clickable` starts at 1); a click on it never reaches the map.
+- Rows and columns may hold them, as they hold buttons and texts.
+- How a module finds and changes these parts: the
+  [client module tutorial](wasm-modules/rust-ui-tutorial.md) and the
+  [Rust SDK reference](wasm-modules/rust-sdk.md#nodes).
+
+### A map's own parts
+
+A map can add parts of its own, for its own interface module, in the map file itself:
+`[VeraUI]` with `Parts=` listing the map's top-level parts, and a `[VeraUI.<part>]`
+section for each, with the keys of an added part above:
+
+```ini
+[VeraUI]
+Parts=Shop,Score
+
+[VeraUI.Shop]
+Type=Row
+Hold=Bottom
+Y=8
+Gap=4
+Parts=Buy,Sell
+
+[VeraUI.Buy]
+Type=Button
+Label=Buy
+
+[VeraUI.Sell]
+Type=Button
+Label=Sell
+
+[VeraUI.Score]
+Type=Text
+Value=Kills
+Hold=TopRight
+X=6
+Y=6
+```
+
+- A map's parts are the same for every side. They only add parts: a map cannot move or
+  change the mod's or the original interface.
+- They sit over the whole screen, in screen pixels, drawn above the match interface;
+  the sidebar's `Side` is not theirs. A `CameoGrid` is not one of them.
+- A player's own layout does not move them.
+- A mod whose `rulesmd.ini` says `[VeraWasm] MapUI=no` leaves them out.
 
 ### Commands
 
@@ -504,8 +768,8 @@ A player can move the parts in a match without writing a file.
 - Pressing the key again, or Esc, ends without saving: everything goes back to how it
   was when you started.
 
-What can be dragged: the sidebar's `Credits`, `Top`, `Radar`, `Middle`, `Cameos` and
-`Power`; the `Messages`, `Timers` and `Banner` on the battlefield, each by a small
+What can be dragged: every part of the sidebar that draws, from its panels to its
+buttons, tabs, scroll buttons and the map picture; the `Messages`, `Timers` and `Banner` on the battlefield, each by a small
 handle where it sits; and every button, text, row, column and grid of build pictures a
 layout added.
 
@@ -529,22 +793,23 @@ mod's, so you can also write it by hand, with any key on this page.
 
 ## Not yet
 
-These keys belong to the format, but this version can't change them. You can leave them
-out or write the original value. Any other value is skipped, and the game tells you.
+The built-in file writes these keys for every original part, but this version can't
+change them yet. You can leave them out or write the original value. Any other value is
+skipped, and the game tells you.
 
-| Key | What it is for | Original value |
-| --- | --- | --- |
-| `Type` on an original part, or a new part of an original kind | The kind of part: `Battlefield`, `Panel`, `Radar`, `Tabs` or `PowerBar`. A layout can only add a `Button`, a `Text`, a `Row`, a `Column` or a `CameoGrid` | The part's own kind |
-| `Hold` | The edge or corner of its parent a part is measured from, for the sidebar's own parts and `Field` | `TopLeft`. `Top` for `Money` |
-| `Width`, `Height` | A part's size, for the sidebar's own parts, `Bar` and `Field`. `Rest` means what is left | `Width=Rest` and `Height=32` for `Bar`, `Rest` for both on `Field`, `Height=Rest` for `Cameos` |
-| `Art` on an original part | The pictures an original part draws | None yet: replace the picture files instead |
-| `CellWidth`, `CellHeight` | The size of one build picture | 60, 48 |
-| `Command`, `Value` on an original part | A new command for an original button, or a new value for the money number | The part's own |
+| Key | What it is for |
+| --- | --- |
+| `Type` on an original part | The kind of part: `Screen`, `Battlefield`, `Box`, `Tooltip`, `Panel`, `Image`, `Text`, `Button`, `Tab`, `Radar`, `Minimap`, `CameoGrid`, `PowerBar` or `CommandBar`. A layout can only add a `Button`, a `Text`, a `Row`, a `Column`, a `CameoGrid`, an `Image`, a `Bar` or a `List` |
+| `Parts` on `Radar`, `Tabs`, `Cameos`, `Power` and `Bar` | The parts inside them: the map picture, the four tabs and the two scroll buttons stay where they are |
+| `Hold`, `Width`, `Height` | A part's edge and size, for the sidebar's own parts and `Field`. `Rest` means what is left |
+| `Font`, and `Align` on an added text | The font a text is drawn in, and where its words sit in its box |
+| `Frames`, `Palette`, `Color` on an added part | An added button's picture always takes frames 0 and 1 in the sidebar's palette; the added parts' colours are set as in [Pictures and colours](#pictures-and-colours) |
+| `Tab` on an original tab | Another strip for a tab button |
 
 The three big parts hold on to their edges: they have no `X` or `Y`. The command bar
 can't stand on the left or the right, and its buttons can't be changed here yet. A
-layout can add [buttons, text, rows, columns and grids of build
-pictures](#adding-buttons-and-text) but no other kind of part yet, and a section that
+layout can add [buttons, text, rows, columns, grids of build pictures, pictures, bars
+and lists](#adding-buttons-and-text) but no other kind of part yet, and a section that
 is neither an original part nor one of those is skipped.
 
 ## If you make a mistake
@@ -557,9 +822,10 @@ A mistake in the file never stops the game.
 | A value that isn't a whole number | Skips it and keeps the original |
 | A number that is far too big or too small | Uses the nearest number it allows |
 | A `Parts=` list with a name that is no part, or a part held somewhere else | Skips that name and keeps the rest of the list |
-| A button with a `Command=` the game doesn't have, or a text with a `Value=` it doesn't show | Leaves that part out |
+| A button with a `Command=` the game doesn't have or with no `Command=`, `Label=` or `Art=`, a text with a `Value=` it doesn't show or with neither `Value=` nor `Label=`, or a picture without `Art=` | Leaves that part out |
 | A layout named in `[Layouts]` that the file doesn't have | Keeps the original interface for that side |
-| A `Version=` newer than the game knows | Keeps the original interface for that side |
+| A `Base=` that names nothing, or `Base=` lines that go round in a loop | Starts from the original interface of the side instead |
+| `@` and a word that is not `Allied`, `Soviet` or `Yuri` | Skips that key |
 
 When a match starts, a message names the first line that was skipped. All of them are
 in `logs/ra2.log` in the [VERA20k folder](modding.md#the-vera20k-folder): search for

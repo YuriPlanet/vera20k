@@ -219,6 +219,31 @@ def _inspect_cached(store: Path, binary: Path, revision: str, preserved, counter
     return refs
 
 
+def _prune_inspections(directory: Path) -> int:
+    """Remove the inspection record of each executable that no longer exists.
+
+    A record answers only for its executable's current identity, so once the
+    file is gone no pass reads it again; without this the store keeps one
+    record for every executable ever built. An unreadable record stays: the
+    read that reaches it decides.
+    """
+    removed = 0
+    for entry in os.scandir(directory):
+        if not entry.name.endswith('.json') or not entry.is_file(follow_symlinks=False):
+            continue
+        try:
+            binary = json.loads(Path(entry.path).read_text()).get('binary')
+        except (OSError, ValueError, AttributeError):
+            continue
+        if isinstance(binary, str) and os.path.isabs(binary) and not os.path.exists(binary):
+            try:
+                os.unlink(entry.path)
+            except OSError:
+                continue  # Gone already, or the next pass removes it.
+            removed += 1
+    return removed
+
+
 def _directory_identity(path: Path) -> tuple:
     _plain(path)
     info = path.stat()
@@ -361,8 +386,9 @@ def _abandoned_roots(root: Path, store: Path) -> set[Path]:
 def _abandoned_output(cache: Path, path: Path) -> bool:
     """Cargo's own output in an abandoned cache: profile trees and root files.
 
-    A `--target` build keeps one tree per profile in <triple>, beside a CACHEDIR.TAG.
-    The profile can be one the runner has no name for (tools/wasm/build.py builds
+    A host build keeps one tree per profile in the cache root; a `--target` build
+    keeps them in <triple>, beside a CACHEDIR.TAG. The profile can be one the runner
+    has no name for (tools/scale_bench.py builds `shipping`, tools/wasm/build.py
     `wasm`), so such a tree is known by Cargo's .fingerprint directory, which a
     stopped pass leaves behind: only a finished pass removes directories. Host trees
     alone were reclaimed until four removed worktrees' wasm32 output, 8.3 GB that no
@@ -373,8 +399,9 @@ def _abandoned_output(cache: Path, path: Path) -> bool:
     if (len(parts) > 1 and parts[0] in HOST_PROFILES) or parts in (
             ('.rustc_info.json',), ('.future-incompat-report.json',), ('CACHEDIR.TAG',)):
         return True
-    return parts[1:] == ('CACHEDIR.TAG',) or (
-        len(parts) > 2 and (cache / parts[0] / parts[1] / '.fingerprint').is_dir())
+    return parts[1:] == ('CACHEDIR.TAG',) or any(
+        len(parts) > depth and cache.joinpath(*parts[:depth], '.fingerprint').is_dir()
+        for depth in (1, 2))
 
 
 def _inputs(root: Path, store: Path, *, preserved_checks=None, profiles=None, notes=None, uses=None):
@@ -686,7 +713,7 @@ def _checkout_running(store: Path, namespace: str) -> bool:
     return False
 
 
-def _superseded(store: Path, roots, profiles, inventory, links, executables) -> set[Path]:
+def _superseded(store: Path, roots, profiles, inventory, links, executables) -> tuple[set[Path], set[str]]:
     """Cache executables an equally named newer one in its deps directory replaced.
 
     Cargo keeps every test and bin executable whose hash changed with features,
@@ -696,6 +723,11 @@ def _superseded(store: Path, roots, profiles, inventory, links, executables) -> 
     newest of each name stays, as does any executable of a checkout whose run
     holds its lock: that run may execute its own recorded tests after Cargo.
     Windows executables and their PDBs stay unless a later change pairs them.
+
+    The second value names the checkouts whose held lock alone kept an otherwise
+    reclaimable executable alive. Releasing such a lock makes that executable
+    reclaimable, so a pass that found nothing removable because of it names them,
+    and a later pass does not trust its receipt once they are free.
     """
     names = {}
     deps = {profile / 'deps' for profile in profiles}
@@ -705,15 +737,19 @@ def _superseded(store: Path, roots, profiles, inventory, links, executables) -> 
             names.setdefault((path.parent, match[1]), []).append(path)
     running = {}
     superseded = set()
+    locked = set()
     for paths in names.values():
         paths.sort(key=lambda path: (inventory[path].st_mtime_ns, path.name))
         for path in paths[:-1]:
             namespace = next(cache.name for cache in roots if path.is_relative_to(cache))
             if namespace not in running:
                 running[namespace] = _checkout_running(store, namespace)
-            if inventory[path].st_nlink == 1 and links.eligible(path) and not running[namespace]:
-                superseded.add(path)
-    return superseded
+            if inventory[path].st_nlink == 1 and links.eligible(path):
+                if running[namespace]:
+                    locked.add(namespace)
+                else:
+                    superseded.add(path)
+    return superseded, locked
 
 
 def _profile_uses(roots, profiles, uses: dict) -> dict:
@@ -845,8 +881,14 @@ def trim_locked(root: Path, store: Path, policy: CachePolicy, *, dry_run=False) 
                 if magic in MACH | {b'\x7fELF'} or magic[:2] == b'MZ':
                     binaries.add(path)
             links = _CacheLinks(inventory, increments)
-            superseded = _superseded(store, roots, profiles, inventory, links, binaries - published)
+            superseded, lock_protected = _superseded(
+                store, roots, profiles, inventory, links, binaries - published)
             receipt['superseded_executables'] = sorted(map(str, superseded))
+            # The checkouts whose held lock alone kept an otherwise reclaimable
+            # executable alive. Releasing one makes that executable reclaimable,
+            # so a later pass must not read this receipt as evidence that no
+            # file was removable.
+            receipt['lock_protected_namespaces'] = sorted(lock_protected)
             protected = binaries - superseded
             needed = {}  # Objects only superseded executables name, and those executables.
             # Immutable validation inputs first: an already broken label can
@@ -1094,6 +1136,8 @@ def trim_locked(root: Path, store: Path, policy: CachePolicy, *, dry_run=False) 
                 'incremental_bytes': max(0, projected_incremental - policy.incremental_bytes),
                 'free_bytes': {key: max(0, policy.min_free_bytes - count)
                                for key, count in (projected_free if dry_run else receipt['free_after']).items()}}
+        if not dry_run:
+            receipt['removed_inspection_records'] = _prune_inspections(store / 'inspections')
     except (OSError, ValueError, subprocess.SubprocessError, UnicodeError) as error:
         receipt['state'] = 'partial' if receipt['removed_files'] else 'blocked'
         receipt['errors'].append(str(error))
@@ -1196,6 +1240,10 @@ def _futile_pass(root: Path, store: Path, policy: CachePolicy, volumes) -> Path 
     changed since. The interval bounds trust in the digest, as for the budgets. A
     short reserve takes working sets the budgets leave, so while it is short only a
     pass that found it short counts.
+
+    A receipt written before the locks were recorded proves nothing about them,
+    and a checkout whose lock has since been released holds executables a new
+    pass can reclaim: neither is evidence that nothing is removable now.
     """
     if (last := _last_applied_pass(store)) is None:
         return None
@@ -1207,6 +1255,14 @@ def _futile_pass(root: Path, store: Path, policy: CachePolicy, volumes) -> Path 
     if (receipt.get('state') != 'trimmed' or receipt.get('errors') != []
             or receipt.get('removable_groups') != 0 or (short and receipt.get('reserve_short') is not True)
             or not 0 <= time.time() - finished < AUTOMATIC_INTERVAL_SECONDS):
+        return None
+    protected = receipt.get('lock_protected_namespaces')
+    if not isinstance(protected, list):
+        return None
+    try:
+        if any(not _checkout_running(store, namespace) for namespace in protected):
+            return None
+    except (OSError, ValueError):
         return None
     try:
         return path if receipt.get('cache_state') == _cache_state(root, store) else None

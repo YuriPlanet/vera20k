@@ -331,17 +331,23 @@ pub(crate) fn include_identity(name: &str) -> String {
 /// compatible, clamped at both ends. Includes bound their physical reads at the
 /// loader; inheritance instead repeats a parent once per child.
 fn inherited_text_budget(ini: &IniFile) -> usize {
-    let authored: usize = ini
-        .sections
-        .iter()
-        .map(|section| {
-            section
-                .key_order
-                .iter()
-                .map(|key| key.len() + section.entries[key].len())
-                .sum::<usize>()
-        })
-        .sum();
+    copied_text_budget(
+        ini.sections
+            .iter()
+            .map(|section| {
+                section
+                    .key_order
+                    .iter()
+                    .map(|key| key.len() + section.entries[key].len())
+                    .sum::<usize>()
+            })
+            .sum(),
+    )
+}
+
+/// The text copies may add to a document of `authored` bytes. `$Inherits`
+/// and Ares `[Child]:[Base]` sections share this VERA policy.
+pub(super) fn copied_text_budget(authored: usize) -> usize {
     authored
         .saturating_mul(MAX_INHERITED_TEXT_RATIO)
         .clamp(MIN_INHERITED_TEXT_BYTES, MAX_INHERITED_TEXT_BYTES)
@@ -692,23 +698,30 @@ fn inherit(
     if !traversal.enter(name, Reference::Inheritance)? {
         return Ok(false);
     }
-    let parents = ini
-        .section(name)
-        .and_then(|section| section.read_list(INHERITS, usize::MAX))
+    let Some(index) = ini.section_position(name) else {
+        // No section, so no `$Inherits` to expand.
+        completed.insert(name.to_owned());
+        traversal.exit();
+        return Ok(true);
+    };
+    let parents = ini.sections[index]
+        .read_list(INHERITS, usize::MAX)
         .unwrap_or_default()
         .into_iter()
         .map(|name| name.trim().to_owned())
         .collect::<Vec<_>>();
     let mut success = true;
     for parent in parents {
-        if ini.section(&parent).is_none() {
+        // Expansion only sets keys, so section positions stay valid across
+        // the recursion below.
+        let Some(parent_index) = ini.section_position(&parent) else {
             traversal.report(
                 DiagnosticKind::InheritanceParentMissing,
                 Some(&parent),
                 format!("Parent section '{parent}' is missing"),
             )?;
             continue;
-        }
+        };
         if !inherit(ini, &parent, completed, traversal)? {
             success = false;
             continue;
@@ -719,26 +732,25 @@ fn inherit(
         // Charge the copy before making it: a parent shared by many children
         // repeats this text once per child. Only keys the child does not author
         // are copied, and directive keys never are.
-        let index = ini.section_position(name).unwrap();
-        let (keys, copied) = {
-            let parent = ini.section(&parent).unwrap();
+        let (entries, copied) = {
+            let parent = &ini.sections[parent_index];
             let child = &ini.sections[index];
-            let mut keys = Vec::new();
+            let mut entries = Vec::new();
             let mut copied = 0;
             for key in &parent.key_order {
                 if matches!(key.as_str(), INHERITS | PHOBOS | ARES) || child.is_present(key) {
                     continue;
                 }
-                copied += key.len() + parent.entries[key].len();
-                keys.push(key.clone());
+                let value = &parent.entries[key];
+                copied += key.len() + value.len();
+                entries.push((key.clone(), value.clone()));
             }
-            (keys, copied)
+            (entries, copied)
         };
         traversal.reserve_inherited_text(copied)?;
-        let parent = ini.section(&parent).unwrap().clone();
         let child = &mut ini.sections[index];
-        for key in keys {
-            child.set(&key, &parent.entries[&key]);
+        for (key, value) in entries {
+            child.set(&key, &value);
         }
     }
     if success {

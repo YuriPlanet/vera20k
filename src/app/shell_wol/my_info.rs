@@ -3,17 +3,30 @@
 //! The model is [`crate::ui::wol_my_info`]; `wolinfoMD.ini` goes through
 //! [`super::persona`].
 
-use crate::util::time::Instant;
+use vera20k_gui::NodeId;
 
 use super::WolPage;
+use super::leaf::{self, Pointer};
 use super::service::{self, WolServiceRequest};
-use crate::app::frontend::{shell_layout, shell_transition::ShellExitThen};
+use crate::app::audio_runtime::AppAudioRuntime;
+use crate::app::frontend::shell_layout;
+use crate::app::frontend::state::FrontendState;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::options_profile::RetailOptionsProfile;
 use crate::app::persistence::wol_profile::WolPersona;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
+use crate::app::shell_main_menu::ClientStep;
+use crate::app::shell_wol::WolVisit;
 use crate::app::{App, AppState};
-use crate::ui::main_menu_dialogs::options::LauncherCue;
-use crate::ui::shell::combobox::ComboPress;
+use crate::audio::sfx::SfxPlayer;
+use crate::render::gpu::GpuContext;
+use crate::ui::shell::controller::DialogController;
+use crate::ui::shell::page::PageEvent;
 use crate::ui::skirmish_shell::{SkirmishComboItem, SkirmishCountryChoice};
 use crate::ui::wol_my_info::*;
+use crate::util::config::GameConfig;
+use winit::window::Window;
 
 fn view(persona: &WolPersona) -> MyInfoPersona {
     MyInfoPersona {
@@ -27,28 +40,36 @@ fn view(persona: &WolPersona) -> MyInfoPersona {
 
 /// `0x799080`'s AutoLogin check against the current `[0xB73E40]`
 /// (`0x00799AF3`, `0x00799279`).
-fn auto_login_names(state: &AppState) -> bool {
-    let auto_login = super::persona::info_file(state)
+fn auto_login_names(frontend: &FrontendState, game_config: Option<&GameConfig>) -> bool {
+    let auto_login = super::persona::info_file(frontend.wol.as_ref(), game_config)
         .map(|file| file.auto_login())
         .unwrap_or_default();
-    state.frontend.wol_account.auto_login_names(&auto_login)
+    frontend.wol_account.auto_login_names(&auto_login)
 }
 
 /// `0x4E3A00`'s rows: `GUI:RandomEx` (-2), then the multiplayer countries
 /// by their item data.
-fn country_rows(state: &AppState) -> Vec<MyInfoRow> {
-    let items = state
-        .rules()
+fn country_rows(
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+) -> Vec<MyInfoRow> {
+    let items = crate::app::state::active_rules(frontend, match_state)
         .map(crate::ui::skirmish_shell::country_choices)
         .unwrap_or_default();
     items
         .into_iter()
         .map(|item| match item {
             SkirmishComboItem::Country(SkirmishCountryChoice::Country(country)) => MyInfoRow::text(
-                crate::app::frontend::skirmish_shell_render::combo_item_label(state, item),
+                crate::app::frontend::skirmish_shell_render::combo_item_label(
+                    frontend,
+                    match_state,
+                    process_assets,
+                    item,
+                ),
                 crate::app::frontend::skirmish_shell_render::side_item_data_for_country(country),
             ),
-            _ => MyInfoRow::text(service::resolve(state, "GUI:RandomEx"), -2),
+            _ => MyInfoRow::text(process_assets.csf_text("GUI:RandomEx"), -2),
         })
         .collect()
 }
@@ -56,36 +77,62 @@ fn country_rows(state: &AppState) -> Vec<MyInfoRow> {
 /// `0x4E43C0` releases every colour, so `0x4E45A0` lists
 /// `GUI:RandomAsSymbols` (-2) and every swatch: gamemd's eight, then VERA's
 /// extra lobby colours.
-fn color_rows(state: &AppState) -> Vec<MyInfoRow> {
-    crate::ui::skirmish_shell::available_color_choices(state.lobby_colors(), None, [])
-        .into_iter()
-        .map(|item| match item {
-            SkirmishComboItem::Color(index) => MyInfoRow {
-                text: String::new(),
-                data: index as i32,
-                swatch: Some(index),
-            },
-            _ => MyInfoRow::text(
-                crate::app::frontend::skirmish_shell_render::combo_item_label(state, item),
-                -2,
+fn color_rows(
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+) -> Vec<MyInfoRow> {
+    crate::ui::skirmish_shell::available_color_choices(
+        crate::app::state::lobby_colors(frontend, match_state),
+        None,
+        [],
+    )
+    .into_iter()
+    .map(|item| match item {
+        SkirmishComboItem::Color(index) => MyInfoRow {
+            text: String::new(),
+            data: index as i32,
+            swatch: Some(index),
+        },
+        _ => MyInfoRow::text(
+            crate::app::frontend::skirmish_shell_render::combo_item_label(
+                frontend,
+                match_state,
+                process_assets,
+                item,
             ),
-        })
-        .collect()
+            -2,
+        ),
+    })
+    .collect()
 }
 
 /// The driver past `0x797640` (`0x00799E47..0x00799E70`): the art, then
 /// `0x114`. Its locale combo asks the service for the count (API+0xD0).
 /// The ladder requests (`0x00799DAD..0x00799E47`) need the ladder service
 /// `[0xAC1170]`; none is modelled, so none is sent.
-pub(super) fn open(state: &mut AppState) {
-    let nickname = state.frontend.wol_account.nickname.clone();
-    let persona = super::persona::load(state, &nickname);
-    let texts = super::persona::profile_texts(state, &nickname, &persona);
-    let auto_login = auto_login_names(state);
-    let default_text = service::resolve(state, DEFAULT_KEY);
-    let countries = country_rows(state);
-    let colors = color_rows(state);
-    let Some(visit) = state.frontend.wol.as_mut() else {
+pub(super) fn open(
+    frontend: &mut FrontendState,
+    game_config: Option<&GameConfig>,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    options_profile: &RetailOptionsProfile,
+) {
+    let nickname = frontend.wol_account.nickname.clone();
+    let persona = super::persona::load(
+        frontend.wol.as_ref(),
+        game_config,
+        process_assets,
+        &nickname,
+    );
+    let texts = super::persona::profile_texts(process_assets, &nickname, &persona);
+    let auto_login = auto_login_names(frontend, game_config);
+    let default_text = process_assets.csf_text(DEFAULT_KEY);
+    let unknown = process_assets.csf_text(UNKNOWN_STATS_KEY);
+    let countries = country_rows(frontend, match_state, process_assets);
+    let colors = color_rows(frontend, match_state, process_assets);
+    let Some(visit) = frontend.wol.as_ref() else {
         return;
     };
     let nicknames = visit
@@ -112,103 +159,130 @@ pub(super) fn open(state: &mut AppState) {
         countries,
         colors,
     };
-    let page = WolMyInfoPage::open(rows, &nickname, &view(&persona), texts, auto_login);
-    visit.page = WolPage::MyInformation(Box::new(page));
-    visit.requests.push(WolServiceRequest::LocaleCount);
-    open_art(state);
-    let _ = App::ensure_skirmish_shell_chrome(state);
-    state.frontend.shell_controller.reset_to(DIALOG, false);
-    state.platform.window.request_redraw();
+    super::leaf::open_art(frontend, process_assets, renderer, DIALOG);
+    let _ = App::ensure_skirmish_shell_chrome(renderer, frontend, process_assets, options_profile);
+    frontend.shell_controller.reset_to(DIALOG);
+    let Some(root) = sync(&mut frontend.shell_controller, renderer) else {
+        return;
+    };
+    let gui = frontend.shell_controller.gui_mut();
+    let persona = view(&persona);
+    let page = WolMyInfoPage::open(
+        gui, root, rows, &nickname, &persona, texts, auto_login, &unknown,
+    );
+    if let Some(visit) = frontend.wol.as_mut() {
+        visit.page = WolPage::MyInformation(Box::new(page));
+        visit.requests.push(WolServiceRequest::LocaleCount);
+    }
 }
 
 /// API+0xD0's count fills `0x62A` (`0x00798F50`) and selects the persona's
 /// locale.
-pub(super) fn locale_count(state: &mut AppState, count: i32) {
-    let nickname = state.frontend.wol_account.nickname.clone();
-    let persona = super::persona::load(state, &nickname);
+pub(super) fn locale_count(
+    frontend: &mut FrontendState,
+    game_config: Option<&GameConfig>,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    count: i32,
+) {
+    let nickname = frontend.wol_account.nickname.clone();
+    let persona = super::persona::load(
+        frontend.wol.as_ref(),
+        game_config,
+        process_assets,
+        &nickname,
+    );
     let rows = crate::ui::wol_persona::locale_rows((0..count.max(0)).map(|locale| {
         (
             locale,
-            service::resolve(state, &format!("WOL:Locale{locale:02}")),
+            process_assets.csf_text(&format!("WOL:Locale{locale:02}")),
         )
     }));
-    if let Some(page) = page_mut(state) {
-        let combo = &mut page.combos[2];
-        combo.rows = rows
-            .into_iter()
-            .map(|row| MyInfoRow::text(row.text, row.locale))
-            .collect();
-        combo.selected = combo.rows.iter().position(|row| row.data == persona.locale);
-    }
-    state.platform.window.request_redraw();
+    let rows = (rows.into_iter())
+        .map(|row| MyInfoRow::text(row.text, row.locale))
+        .collect();
+    with_page(frontend, renderer, |page, gui, root| {
+        page.fill_locales(gui, root, rows, persona.locale)
+    });
 }
 
-/// `0x0072C9C0`: MnScrnLMyInformation.shp (800 wide only) through its PAL.
-pub(crate) fn open_art(state: &mut AppState) -> bool {
-    if state.frontend.wol_my_info_art.is_some() {
-        return true;
-    }
-    let Some(assets) = state.process_assets.manager() else {
-        return false;
-    };
-    state.frontend.wol_my_info_art = crate::render::main_menu_shell_chrome::build_wol_page_art(
-        &state.renderer.gpu,
-        &state.renderer.batch_renderer,
-        assets,
-        shell_layout::art_key_screen_width(state),
-        ("MnScrnLMyInformation.shp", "MnScrnLMyInformation.PAL"),
-        &[],
-    );
-    state.frontend.wol_my_info_art.is_some()
-}
-
-pub(crate) fn page(state: &AppState) -> Option<&WolMyInfoPage> {
-    match &state.frontend.wol.as_ref()?.page {
+pub(crate) fn page(wol: Option<&WolVisit>) -> Option<&WolMyInfoPage> {
+    match &wol?.page {
         WolPage::MyInformation(page) => Some(page),
         _ => None,
     }
 }
 
-fn page_mut(state: &mut AppState) -> Option<&mut WolMyInfoPage> {
-    match &mut state.frontend.wol.as_mut()?.page {
-        WolPage::MyInformation(page) => Some(page),
+/// Runs `f` on the page and its widgets.
+fn with_page<R>(
+    frontend: &mut FrontendState,
+    renderer: &RendererState,
+    f: impl FnOnce(&mut WolMyInfoPage, &mut vera20k_gui::Gui, NodeId) -> R,
+) -> Option<R> {
+    let root = sync(&mut frontend.shell_controller, renderer)?;
+    match &mut frontend.wol.as_mut()?.page {
+        WolPage::MyInformation(page) => Some(f(page, frontend.shell_controller.gui_mut(), root)),
         _ => None,
     }
 }
 
-pub(super) fn page_open(state: &AppState) -> bool {
-    page(state).is_some()
+/// The page's widgets, for a reader of their state.
+pub(crate) fn root(controller: &DialogController) -> Option<NodeId> {
+    leaf::root(controller, DIALOG)
 }
 
-pub(crate) fn layout(state: &AppState) -> WolMyInfoLayout {
-    let (width, height) = shell_layout::shell_screen_size(state);
-    if shell_layout::fills_window(state) {
-        WolMyInfoLayout::responsive(width as i32, height as i32)
-    } else {
-        WolMyInfoLayout::new(width as i32, height as i32)
-    }
+pub(super) fn page_open(wol: Option<&WolVisit>) -> bool {
+    page(wol).is_some()
 }
 
-/// The status help under the pointer (`0x006040B0`).
-pub(crate) fn status_key(state: &AppState) -> Option<&'static str> {
-    page(state)?.hovered.and_then(tooltip_key)
+pub(crate) fn layout(gpu: &GpuContext) -> WolMyInfoLayout {
+    shell_layout::on(gpu, WolMyInfoLayout::new)
 }
 
-/// Run one control's persona write or account change at once.
-fn apply(state: &mut AppState, action: MyInfoAction) {
-    let nickname = state.frontend.wol_account.nickname.clone();
+/// Builds and places `0x114`'s widgets; the root.
+pub(crate) fn sync(controller: &mut DialogController, renderer: &RendererState) -> Option<NodeId> {
+    let layout = layout(&renderer.gpu);
+    leaf::sync(
+        controller,
+        &renderer.bit_font,
+        DIALOG,
+        layout.page.scale,
+        spec,
+        |id| layout.rect_of(id),
+    )
+}
+
+/// Combo `control`'s open drop list.
+pub(crate) fn drop_down(
+    controller: &DialogController,
+    control: u16,
+) -> Option<vera20k_gui::ComboDropDown> {
+    let gui = controller.gui();
+    gui.combo_drop_down(gui.find_id(leaf::root(controller, DIALOG)?, control.into())?)
+}
+
+/// Run one control's persona write or account change at once; Close's
+/// slide is the returned step.
+#[must_use]
+fn apply(
+    frontend: &mut FrontendState,
+    game_config: Option<&GameConfig>,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    action: MyInfoAction,
+) -> Option<ClientStep> {
+    let nickname = frontend.wol_account.nickname.clone();
     // LoadRecord, the setter, then SaveProfileToINI (dirty only).
-    let write = |state: &mut AppState, set: &dyn Fn(&mut WolPersona)| {
-        let mut record = super::persona::load(state, &nickname);
+    let write = |wol: Option<&WolVisit>, set: &dyn Fn(&mut WolPersona)| {
+        let mut record = super::persona::load(wol, game_config, process_assets, &nickname);
         set(&mut record);
-        super::persona::save(state, &mut record, &nickname);
+        super::persona::save(wol, game_config, process_assets, &mut record, &nickname);
     };
     match action {
         MyInfoAction::Nickname { slot } => {
             // 0x007991C7: the slot's nickname replaces [0xB73E40]; the
             // password is untouched.
-            let name = state
-                .frontend
+            let name = frontend
                 .wol
                 .as_ref()
                 .and_then(|visit| {
@@ -221,33 +295,39 @@ fn apply(state: &mut AppState, action: MyInfoAction) {
                 .unwrap_or_default();
             // 0x00799222: the clear frees the buffer; a stored slot's
             // nickname allocates it again (0x007B48D0).
-            let account = &mut state.frontend.wol_account;
+            let account = &mut frontend.wol_account;
             account.nickname = name.clone();
             account.nickname_allocated = slot != -1 && !name.is_empty();
-            let persona = super::persona::load(state, &name);
-            let texts = super::persona::profile_texts(state, &name, &persona);
-            let auto_login = auto_login_names(state);
-            if let Some(page) = page_mut(state) {
-                page.nickname_changed(&view(&persona), texts, !name.is_empty(), auto_login);
-            }
+            let persona =
+                super::persona::load(frontend.wol.as_ref(), game_config, process_assets, &name);
+            let texts = super::persona::profile_texts(process_assets, &name, &persona);
+            let auto_login = auto_login_names(frontend, game_config);
+            let persona = view(&persona);
+            with_page(frontend, renderer, |page, gui, root| {
+                page.nickname_changed(gui, root, &persona, texts, !name.is_empty(), auto_login)
+            });
         }
         MyInfoAction::Server(text) => {
-            write(state, &|record| record.set_server(&text));
+            write(frontend.wol.as_ref(), &|record| record.set_server(&text));
         }
         MyInfoAction::Locale(locale) => {
-            write(state, &|record| record.set_locale(locale, 3));
+            write(frontend.wol.as_ref(), &|record| {
+                record.set_locale(locale, 3)
+            });
         }
         MyInfoAction::Country(value) => {
-            write(state, &|record| record.set_country(value));
+            write(frontend.wol.as_ref(), &|record| record.set_country(value));
         }
         MyInfoAction::Color(value) => {
-            write(state, &|record| record.set_color(value));
+            write(frontend.wol.as_ref(), &|record| record.set_color(value));
         }
         MyInfoAction::MatchSameRes(value) => {
-            write(state, &|record| record.set_match_by_res(value));
+            write(frontend.wol.as_ref(), &|record| {
+                record.set_match_by_res(value)
+            });
         }
         MyInfoAction::AutoLogin(checked) => {
-            if let Some(file) = super::persona::info_file(state) {
+            if let Some(file) = super::persona::info_file(frontend.wol.as_ref(), game_config) {
                 if checked {
                     file.set_auto_login(&nickname);
                 } else if file.auto_login().to_ascii_lowercase() == nickname.to_ascii_lowercase() {
@@ -258,7 +338,7 @@ fn apply(state: &mut AppState, action: MyInfoAction) {
         MyInfoAction::Forget { name, slot } => {
             // 0x007996A5..0x0079978E: a lowered match clears AutoLogin, then
             // LastValid; a stored slot is cleared (API+0x94).
-            if let Some(file) = super::persona::info_file(state) {
+            if let Some(file) = super::persona::info_file(frontend.wol.as_ref(), game_config) {
                 let name = name.to_ascii_lowercase();
                 if file.auto_login().to_ascii_lowercase() == name {
                     file.set_auto_login("");
@@ -268,161 +348,130 @@ fn apply(state: &mut AppState, action: MyInfoAction) {
                 }
             }
             if slot != -1 {
-                if let Some(visit) = state.frontend.wol.as_mut() {
+                if let Some(visit) = frontend.wol.as_mut() {
                     visit
                         .credentials
                         .retain(|stored| stored.slot as i32 != slot);
                 }
                 service::request(
-                    state,
+                    frontend.wol.as_mut(),
                     WolServiceRequest::ForgetCredential { slot: slot as u32 },
                 );
             }
             // 0x77A8D0's clear is repainted at once by the default record
             // (0x00778710) through 0x77A9F0 with no name.
-            let default = super::persona::load(state, "");
-            let texts = super::persona::profile_texts(state, "", &default);
-            if let Some(page) = page_mut(state) {
-                page.refresh(&view(&default), texts);
-            }
+            let default =
+                super::persona::load(frontend.wol.as_ref(), game_config, process_assets, "");
+            let texts = super::persona::profile_texts(process_assets, "", &default);
+            let default = view(&default);
+            with_page(frontend, renderer, |page, gui, root| {
+                page.refresh(gui, root, &default, texts)
+            });
         }
         MyInfoAction::Close(control) => {
-            App::leave_shell_dialog(state, ShellExitThen::WolMyInformationClose(control))
+            return Some(ClientStep::Leave(
+                crate::app::frontend::shell_transition::ShellSlideKind::WolMyInformation,
+                Box::new(move |state: &mut AppState| {
+                    let step = crate::app::shell_wol::my_info::commit_close(
+                        &mut state.frontend,
+                        &mut state.audio,
+                        control,
+                    );
+                    if let Some(step) = step {
+                        App::apply_step(state, step);
+                    }
+                }),
+            ));
         }
         // 0x00773E90 needs the registry URL and an HTMLPath; a retail
         // install has neither and it returns.
         MyInfoAction::Browser(_) => {}
     }
+    None
 }
 
 /// `0x114`'s teardown has run (`0x0072CA10` frees the art). Back sets mode
 /// 0 and the welcome runs again. Play Buddy (`0x0079916B`) wrote mode 5
 /// with return mode 6: mode 5's login category is 1, so `WOL_Main` runs the
-/// login flow first (`0x0077B3AA`), then the Buddy List runner.
-pub(crate) fn commit_close(state: &mut AppState, control: u16) {
-    state.frontend.wol_my_info_art = None;
+/// login flow first (`0x0077B3AA`), then the Buddy List runner. The
+/// welcome or the flow is the returned step.
+#[must_use]
+pub(crate) fn commit_close(
+    frontend: &mut FrontendState,
+    audio: &mut AppAudioRuntime,
+    control: u16,
+) -> Option<ClientStep> {
+    super::leaf::free_art(&mut frontend.wol_art, DIALOG);
     if control != PLAY_BUDDY {
-        App::reopen_wol_welcome(state);
-        return;
+        return Some(ClientStep::Now(Box::new(App::reopen_wol_welcome)));
     }
-    let Some(visit) = state.frontend.wol.as_mut() else {
-        return;
-    };
+    let visit = frontend.wol.as_mut()?;
     visit.mode = Some(crate::ui::wol_shell::WolMode::PlayBuddy);
     visit.return_mode = Some(crate::ui::wol_shell::WolMode::MyInformation);
-    visit.status_help = None;
     visit.page = WolPage::Backdrop { wait: None };
-    super::apply_wol_preferences(state);
-    service::begin_flow(state);
+    super::apply_wol_preferences(frontend, audio);
+    Some(ClientStep::Now(Box::new(service::begin_flow)))
 }
 
-pub(super) fn cursor_moved(state: &mut AppState) {
-    let layout = layout(state);
-    let (x, y) = state.match_state.input.cursor_px();
-    let over = layout.control_at(x, y);
-    let Some(page) = page_mut(state) else {
-        return;
-    };
-    page.hovered = over;
-    page.buttons.hovered = over.filter(|id| PAGE.button(*id).is_some());
-    if let Some(popup) = page.popup_geometry(&layout) {
-        page.popup.pointer_moved(popup, x, y);
-    }
-    state.frontend.shell_status_line.repaint();
-    state.platform.window.request_redraw();
+pub(super) fn cursor_moved(
+    frontend: &mut FrontendState,
+    window: &Window,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    sfx_player: &mut Option<SfxPlayer>,
+) {
+    sync(&mut frontend.shell_controller, renderer);
+    leaf::pointer(
+        frontend,
+        window,
+        match_state,
+        process_assets,
+        sfx_player,
+        Pointer::Move,
+    );
 }
 
 pub(super) fn mouse(state: &mut AppState, pressed: bool) {
-    let layout = layout(state);
-    let (x, y) = state.match_state.input.cursor_px();
-    let over = layout.control_at(x, y);
-    let scale = layout.page.scale;
-    let Some(page) = page_mut(state) else {
+    if sync(&mut state.frontend.shell_controller, &state.renderer).is_none() {
         return;
-    };
-    let mut action = None;
-    let mut cue = None;
-    let mut button_sound = false;
-    if !pressed {
-        page.popup.cancel_pointer();
-        let button = over.filter(|id| PAGE.button(*id).is_some());
-        if let Some(control) = page.buttons.release(button) {
-            action = page.activate(control);
-        }
-    } else if let Some(popup) = page.popup_geometry(&layout) {
-        let open = page.popup.control;
-        let press = page.popup.press_list(popup, x, y, Instant::now());
-        if let (ComboPress::Pick(row), Some(control)) = (press, open) {
-            action = page.select(control, row);
-        }
-        cue = press.cue().map(LauncherCue::from);
-    } else {
-        match over {
-            Some(control) if PAGE.button(control).is_some() => {
-                if page.enabled(control) {
-                    page.buttons.press(Some(control));
-                    button_sound = true;
+    }
+    for event in leaf::pointer(
+        &mut state.frontend,
+        &state.platform.window,
+        &state.match_state,
+        &state.process_assets,
+        &mut state.audio.sfx_player,
+        if pressed { Pointer::Down } else { Pointer::Up },
+    ) {
+        // CBN_SELCHANGE, a box's BS_AUTOCHECKBOX flip, a released button.
+        let action = with_page(
+            &mut state.frontend,
+            &state.renderer,
+            |page, gui, root| match event {
+                PageEvent::Picked(id, row) => usize::try_from(row)
+                    .ok()
+                    .and_then(|row| page.select(id, row)),
+                PageEvent::Toggled(id, checked) => WolMyInfoPage::toggle(id, checked),
+                PageEvent::Activated(id) => page.activate(gui, root, id),
+                _ => None,
+            },
+        );
+        match action {
+            Some(Some(action)) => {
+                let step = apply(
+                    &mut state.frontend,
+                    state.platform.game_config.as_ref(),
+                    &state.process_assets,
+                    &state.renderer,
+                    action,
+                );
+                if let Some(step) = step {
+                    App::apply_step(state, step);
                 }
             }
-            Some(control) if COMBOS.contains(&control) => {
-                if page.enabled(control)
-                    && let Some(face) = layout.face(control)
-                {
-                    let selected = page.combo(control).and_then(|combo| combo.selected);
-                    let press = page.popup.press_face(control, face, scale, selected, x, y);
-                    cue = press.cue().map(LauncherCue::from);
-                }
-            }
-            Some(control @ (AUTO_LOGIN | MATCH_SAME_RES)) => {
-                let rect = if control == AUTO_LOGIN {
-                    layout.auto_login
-                } else {
-                    layout.match_same_res
-                };
-                // OwnerDraw_CheckBox 0x006163A0 admits only its icon.
-                if page.enabled(control)
-                    && crate::ui::skirmish_shell::checkbox_icon_rect(rect, scale).contains(x, y)
-                {
-                    action = page.toggle(control);
-                    cue = Some(LauncherCue::Checkbox);
-                }
-            }
-            _ => page.buttons.press(None),
+            Some(None) => {}
+            None => return,
         }
     }
-    if button_sound {
-        App::play_main_menu_button_sound(state);
-    }
-    if let Some(cue) = cue {
-        App::play_launcher_options_cue(state, cue);
-    }
-    if let Some(action) = action {
-        apply(state, action);
-    }
-    state.frontend.shell_status_line.repaint();
-    state.platform.window.request_redraw();
-}
-
-/// The drop list's scrollbar repeats.
-pub(super) fn poll_scroll_repeat(state: &mut AppState) -> Option<Instant> {
-    // Every pass polls: build the layout only while the page is open.
-    if !page_open(state) {
-        return None;
-    }
-    let layout = layout(state);
-    let (x, y) = state.match_state.input.cursor_px();
-    let page = page_mut(state)?;
-    let popup = page.popup_geometry(&layout)?;
-    let moved = page.popup.scroll.poll(
-        popup.scroll_geometry(),
-        &mut page.popup.top_index,
-        x,
-        y,
-        Instant::now(),
-    );
-    let repeat = page.popup.scroll.repeat_at();
-    if moved {
-        state.platform.window.request_redraw();
-    }
-    repeat
 }

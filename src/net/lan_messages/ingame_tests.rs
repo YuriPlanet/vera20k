@@ -1,17 +1,8 @@
 use super::*;
+use crate::test_fixture::unhex;
 
-fn corpus() -> serde_json::Value {
-    serde_json::from_str(crate::test_fixture::text(
-        "tools/storage_oracle/lan_ingame_messages.json",
-    ))
-    .unwrap()
-}
-
-fn unhex(text: &str) -> Vec<u8> {
-    (0..text.len())
-        .step_by(2)
-        .map(|offset| u8::from_str_radix(&text[offset..offset + 2], 16).unwrap())
-        .collect()
+fn corpus() -> &'static serde_json::Value {
+    crate::test_fixture::json("tools/storage_oracle/lan_ingame_messages.json")
 }
 
 #[test]

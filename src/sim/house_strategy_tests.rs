@@ -20,6 +20,7 @@ use crate::sim::combat::Health;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::house_state::HouseStrategyEmergencyState;
 use crate::sim::rng::SimRng;
+use crate::sim::scenario_session::ScenarioGameMode;
 use crate::sim::timer::CdTimer;
 use serde_json::Value;
 
@@ -139,24 +140,66 @@ fn post_map_ai_hate_delays_defer_enemy_selection_across_save_load() {
     let ini = IniFile::from_str("[General]\nAIHateDelays=30,50,70\n");
     let rules = RuleSet::from_ini(&ini).unwrap();
     let overlays = crate::rules::overlay_types::OverlayTypeRegistry::from_ini(&ini, None);
+    let finalize = |sim: &mut Simulation, owner| {
+        sim.houses
+            .get_mut(&owner)
+            .unwrap()
+            .set_base_center_for_test(Some((10, 10)));
+        sim.session.set_binary_frame_for_test(100);
+        sim.finalize_scenario_post_map(crate::sim::scenario_post_map::ScenarioPostMapInput {
+            map_width: 32,
+            map_height: 32,
+            fill_silos: false,
+            rules: &rules,
+            construction_rules: crate::rules::rule_policy::RulePolicy::stock_campaign(),
+            overlay_registry: &overlays,
+            house_roster: &crate::map::houses::HouseRoster::default(),
+            skirmish_session: None,
+            campaign_map: None,
+            stage_home_global: None,
+        })
+        .unwrap();
+    };
+
+    let (mut campaign, campaign_houses) = houses(false, 2);
+    let campaign_owner = campaign_houses[0];
+    finalize(&mut campaign, campaign_owner);
+    assert_eq!(
+        campaign.houses[&campaign_owner]
+            .enemy_search_timer()
+            .duration(),
+        0
+    );
+
+    let (mut custom, custom_houses) = houses(false, 2);
+    let custom_owner = custom_houses[0];
+    let policy = RulePolicy::stock_campaign().with_runs_ai_strategy(true);
+    custom
+        .session
+        .install_admission(ScenarioGameMode::Campaign, None, policy);
+    finalize(&mut custom, custom_owner);
+    assert_eq!(
+        custom.houses[&custom_owner].enemy_search_timer().duration(),
+        50
+    );
+    custom.session.set_binary_frame_for_test(150);
+    pick_enemy(
+        &custom.interner,
+        &custom.session,
+        &custom.house_alliances,
+        &mut custom.houses,
+        custom_owner,
+        rules.ares_form(),
+        false,
+    );
+    assert_eq!(
+        custom.houses[&custom_owner].enemy_house(),
+        Some(custom_houses[1])
+    );
+
     let (mut sim, names) = houses(true, 2);
     let owner = names[0];
-    sim.houses
-        .get_mut(&owner)
-        .unwrap()
-        .set_base_center_for_test(Some((10, 10)));
-    sim.session.set_binary_frame_for_test(100);
-    sim.finalize_scenario_post_map(crate::sim::scenario_post_map::ScenarioPostMapInput {
-        map_width: 32,
-        map_height: 32,
-        fill_silos: false,
-        rules: &rules,
-        overlay_registry: &overlays,
-        house_roster: &crate::map::houses::HouseRoster::default(),
-        skirmish_session: None,
-        campaign_map: None,
-    })
-    .unwrap();
+    finalize(&mut sim, owner);
     sim.session.set_binary_frame_for_test(149);
     pick_enemy(
         &sim.interner,
@@ -171,7 +214,7 @@ fn post_map_ai_hate_delays_defer_enemy_selection_across_save_load() {
 
     // Native scenario restore reseeds this stream; keep the hash comparison
     // focused on retained state rather than that independent load effect.
-    sim.scenario_rng = SimRng::new(0);
+    *sim.scenario_rng = SimRng::new(0);
     let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "hate-delay", 0);
     let mut restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
         .unwrap()
@@ -188,6 +231,35 @@ fn post_map_ai_hate_delays_defer_enemy_selection_across_save_load() {
         false,
     );
     assert_eq!(restored.houses[&owner].enemy_house(), Some(names[1]));
+}
+
+/// An observer's House is defeated from its first House pass (it holds
+/// nothing), so an AI that watches it come first in House order never takes
+/// it for its enemy (`0x004FD538`'s defeated test).
+#[test]
+fn an_ai_never_picks_a_defeated_observer_for_its_enemy() {
+    let rules = RuleSet::from_ini(&IniFile::from_str("")).unwrap();
+    let (mut sim, names) = houses(true, 3);
+    let (observer, ai, player) = (names[0], names[1], names[2]);
+    sim.houses
+        .get_mut(&observer)
+        .unwrap()
+        .set_is_defeated_for_test(true);
+    sim.houses
+        .get_mut(&ai)
+        .unwrap()
+        .set_base_center_for_test(Some((10, 10)));
+    sim.session.set_binary_frame_for_test(100);
+    pick_enemy(
+        &sim.interner,
+        &sim.session,
+        &sim.house_alliances,
+        &mut sim.houses,
+        ai,
+        rules.ares_form(),
+        false,
+    );
+    assert_eq!(sim.houses[&ai].enemy_house(), Some(player));
 }
 
 #[test]
@@ -208,7 +280,7 @@ fn the_strategy_timer_and_its_gates_match_native() {
         spawn_building(&mut sim, owner, "FACTORY", 1000, false);
         sim.session
             .set_binary_frame_for_test(int(&row["frame"]) as u32);
-        sim.scenario_rng = SimRng::answering(1, 7, int(&row["answer"]) - 105);
+        *sim.scenario_rng = SimRng::answering(1, 7, int(&row["answer"]) - 105);
         let mut expected = sim.scenario_rng.clone();
         if flag(&row["called"]) {
             expected.next_range_i32_inclusive(1, 7);
@@ -219,7 +291,7 @@ fn the_strategy_timer_and_its_gates_match_native() {
             &rules,
             owner,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
 
         let timer = sim.houses[&owner].strategy_timer();
@@ -313,14 +385,16 @@ fn the_strategy_matches_native() {
             }
         }
         let house = sim.houses.get_mut(&owner).unwrap();
-        house.tracking_mut().set_buildings_for_test(counted);
+        house
+            .tracking_mut_for_test()
+            .set_buildings_for_test(counted);
         // The rows answer Check_Build_Need with `need`. A refinery and a
         // gatherer make VERA's answer 0, as for -1, which the urgency loop
         // never matches; without them it is 1, and Manage_Build_Queue,
         // whose rows only record the call, finds no economy type in these
         // rules to rebuild.
         if !(1..=4).contains(&int(&row["need"])) {
-            house.tracking_mut().set_economy_for_test(1, 1, 0);
+            house.tracking_mut_for_test().set_economy_for_test(1, 1, 0);
         }
         sim.session
             .set_binary_frame_for_test(int(&row["frame"]) as u32);
@@ -331,7 +405,7 @@ fn the_strategy_matches_native() {
             [0x218, 1, 7],
             "{label}"
         );
-        sim.scenario_rng = SimRng::answering(1, 7, int(&draws[0][4]));
+        *sim.scenario_rng = SimRng::answering(1, 7, int(&draws[0][4]));
         let mut expected = sim.scenario_rng.clone();
         expected.next_range_i32_inclusive(1, 7);
 
@@ -344,7 +418,7 @@ fn the_strategy_matches_native() {
             &rules,
             owner,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let tried = AI_FIRE_LOG
             .take()
@@ -431,7 +505,7 @@ fn the_fire_sale_matches_native() {
             .collect();
         let house = sim.houses.get_mut(&owner).unwrap();
         house
-            .tracking_mut()
+            .tracking_mut_for_test()
             .set_buildings_for_test(int(&row["current"]));
 
         fire_sale(
@@ -439,7 +513,7 @@ fn the_fire_sale_matches_native() {
             &rules,
             owner,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
 
         let sold: Vec<i32> = (0..slots.len())
@@ -537,7 +611,7 @@ fn all_to_hunt_matches_native() {
                 .lifecycle
                 .set_in_limbo_for_test(flag(&techno["limbo"]));
             if flag(&techno["permanent"]) {
-                entity.mind_control =
+                entity.seldom.mind_control =
                     crate::sim::capture_manager::MindControlLink::permanent_for_test();
             }
             slots.push((slot as i32, id, health));
@@ -548,7 +622,7 @@ fn all_to_hunt_matches_native() {
             &rules,
             owner,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
 
         let hunting: Vec<i32> = slots
@@ -659,7 +733,7 @@ fn gsi_04_05_update_anger_nodes_wraps_and_selects_first_positive_eligible_peer()
         owner,
         first,
         0,
-        true,
+        RulePolicy::stock_multiplayer(),
         false,
         false,
     );
@@ -677,7 +751,7 @@ fn gsi_04_05_update_anger_nodes_wraps_and_selects_first_positive_eligible_peer()
         owner,
         missing,
         5,
-        true,
+        RulePolicy::stock_multiplayer(),
         false,
         false,
     );
@@ -705,7 +779,7 @@ fn gsi_04_05_update_anger_nodes_wraps_and_selects_first_positive_eligible_peer()
         owner,
         first,
         1,
-        true,
+        RulePolicy::stock_multiplayer(),
         false,
         false,
     );
@@ -719,7 +793,7 @@ fn gsi_04_05_update_anger_nodes_wraps_and_selects_first_positive_eligible_peer()
         owner,
         unregistered,
         5,
-        true,
+        RulePolicy::stock_multiplayer(),
         false,
         false,
     );
@@ -737,7 +811,7 @@ fn gsi_04_05_update_anger_nodes_wraps_and_selects_first_positive_eligible_peer()
         owner,
         owner,
         5,
-        true,
+        RulePolicy::stock_multiplayer(),
         false,
         false,
     );
@@ -771,7 +845,7 @@ fn ares_passive_peer_takes_no_anger_outside_a_campaign() {
         owner,
         passive,
         9,
-        true,
+        RulePolicy::stock_multiplayer(),
         true,
         false,
     );
@@ -784,7 +858,7 @@ fn ares_passive_peer_takes_no_anger_outside_a_campaign() {
         owner,
         passive,
         9,
-        false,
+        RulePolicy::stock_campaign(),
         true,
         false,
     );
@@ -818,7 +892,7 @@ fn gsi_04_05_sparse_zero_updates_preserve_representation_and_rescan() {
         owner,
         first,
         0,
-        true,
+        RulePolicy::stock_multiplayer(),
         false,
         false,
     );
@@ -841,7 +915,7 @@ fn gsi_04_05_sparse_zero_updates_preserve_representation_and_rescan() {
         owner,
         first,
         -5,
-        true,
+        RulePolicy::stock_multiplayer(),
         false,
         false,
     );
@@ -934,10 +1008,10 @@ fn last_legs_fixture(general: &str) -> (Simulation, RuleSet, InternedId, u64) {
     let owner = names[0];
     let plain = spawn_building(&mut sim, owner, "PLAIN", 1000, false);
     let house = sim.houses.get_mut(&owner).unwrap();
-    house.tracking_mut().set_buildings_for_test(1);
+    house.tracking_mut_for_test().set_buildings_for_test(1);
     // A destination and a gatherer make Check_Build_Need answer 0, so only
     // the no-factory block acts.
-    house.tracking_mut().set_economy_for_test(1, 1, 0);
+    house.tracking_mut_for_test().set_economy_for_test(1, 1, 0);
     house.economy_mut().set_credits_for_test(1000);
     sim.session.set_binary_frame_for_test(1000);
     (sim, rules, owner, plain)
@@ -949,7 +1023,7 @@ fn last_legs_pass(sim: &mut Simulation, rules: &RuleSet, owner: InternedId) {
         rules,
         owner,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
 }
 
@@ -1097,7 +1171,7 @@ fn ai_nearest_enemy_breaks_equal_anger_by_distance_and_keeps_higher_anger() {
             owner,
             peer,
             delta,
-            true,
+            sim.session.rule_policy(),
             false,
             nearest,
         );

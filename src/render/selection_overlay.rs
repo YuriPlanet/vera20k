@@ -76,8 +76,7 @@ pub struct SelectionOverlay {
     /// Phobos then draws that display with the game font.
     #[cfg(feature = "phobos")]
     digital_shapes: Vec<Option<CenteredShapeStrip>>,
-    /// Phobos custom insignia SHPs keyed by their normalized file name.
-    #[cfg(feature = "phobos")]
+    /// Ares/Phobos custom insignia SHPs keyed by their normalized file name.
     insignia_shapes: std::collections::HashMap<String, CenteredShapeStrip>,
     /// Ares `IvanBomb.Image` SHPs keyed by their file name, MOUSEPAL like
     /// the BOMBCURS.SHP they replace; a name that did not load is absent.
@@ -201,9 +200,17 @@ impl CenteredShapeStrip {
         shp_name: &str,
         pal_name: &str,
     ) -> Option<Self> {
-        let shp = ShpFile::from_bytes(&assets.get(shp_name)?).ok()?;
-        let palette = Palette::from_bytes(&assets.get(pal_name)?).ok()?;
-        let strip = Self::from_shp_on_device(device, queue, batch, &shp, &palette)?;
+        use crate::render::shell_ui_style_assets::{decode_ui_shp, ui_art_candidates};
+        let palette = ui_art_candidates(assets, pal_name)
+            .find_map(|asset| Palette::from_bytes(asset.bytes).ok())?;
+        let strip = ui_art_candidates(assets, shp_name).find_map(|asset| {
+            let shp = if assets.mod_selected() {
+                decode_ui_shp(asset.bytes).ok()?
+            } else {
+                ShpFile::from_bytes(asset.bytes).ok()?
+            };
+            Self::from_shp_on_device(device, queue, batch, &shp, &palette)
+        })?;
         log::info!(
             "{shp_name} strip in {pal_name}: {}x{}, {} frames",
             strip.atlas_w,
@@ -235,6 +242,9 @@ impl CenteredShapeStrip {
             .max()
             .unwrap_or(0)
             .max(1);
+        if atlas_w.max(atlas_h) > device.limits().max_texture_dimension_2d {
+            return None;
+        }
         let mut rgba = vec![0u8; (atlas_w * atlas_h * 4) as usize];
         // Preserve the original indices for the shared Convert palette
         // resolver. Raw-color icon consumers keep their default PaletteLight;
@@ -527,7 +537,6 @@ impl SelectionOverlay {
             pips,
             #[cfg(feature = "phobos")]
             digital_shapes: Vec::new(),
-            #[cfg(feature = "phobos")]
             insignia_shapes: std::collections::HashMap::new(),
             ares_bomb_images: std::collections::HashMap::new(),
         }
@@ -599,19 +608,21 @@ impl SelectionOverlay {
             .iter()
             .map(|entry| {
                 let shape = entry.shape.as_deref()?;
+                let palette = digital_display_palette(assets, entry.palette_name());
+                if palette != entry.palette_name() {
+                    log::warn!(
+                        "Phobos DigitalDisplay {}: cannot load {}; drawing {shape} in {palette}",
+                        entry.name,
+                        entry.palette_name()
+                    );
+                }
                 let strip = CenteredShapeStrip::from_assets_on_device(
-                    device,
-                    queue,
-                    batch,
-                    assets,
-                    shape,
-                    entry.palette_name(),
+                    device, queue, batch, assets, shape, palette,
                 );
                 if strip.is_none() {
                     log::warn!(
-                        "Phobos DigitalDisplay {}: cannot load {shape} / {}; using text",
-                        entry.name,
-                        entry.palette_name()
+                        "Phobos DigitalDisplay {}: cannot load {shape} / {palette}; using text",
+                        entry.name
                     );
                 }
                 strip
@@ -626,9 +637,9 @@ impl SelectionOverlay {
     }
 
     /// Load every TechnoType/`[InsigniaTypes]` insignia SHP once per match.
-    /// Phobos loads each `Promotable<SHPStruct*>` through the SHP reader with
-    /// `PALETTE.PAL` and retains the pointer for the match.
-    #[cfg(feature = "phobos")]
+    /// Ares and Phobos load each `Promotable<SHPStruct*>` through the SHP
+    /// reader, draw it with `PALETTE.PAL` (Ares 1004E1FD's 0x87F6C4) and
+    /// retain the pointer for the match.
     pub(crate) fn load_insignia_shapes(
         &mut self,
         device: &wgpu::Device,
@@ -638,6 +649,7 @@ impl SelectionOverlay {
         rules: &crate::rules::ruleset::RuleSet,
     ) {
         let mut names = std::collections::BTreeSet::new();
+        #[cfg(feature = "phobos")]
         for object in rules.all_objects() {
             let insignia = &object.phobos_insignia;
             for variant in std::iter::once(&insignia.base)
@@ -647,8 +659,15 @@ impl SelectionOverlay {
                 names.extend(variant.images.iter().flatten().cloned());
             }
         }
+        #[cfg(feature = "phobos")]
         for entry in rules.insignia_types().entries() {
             names.extend(entry.images.iter().flatten().cloned());
+        }
+        // Ares's own draw runs only without Phobos's DrawInsignia, and its
+        // keys are read only the Ares way.
+        #[cfg(not(feature = "phobos"))]
+        for object in rules.all_objects().filter(|_| rules.ares_form()) {
+            names.extend(object.ares_insignia.images.iter().flatten().cloned());
         }
         for name in names {
             let strip = CenteredShapeStrip::from_assets_on_device(
@@ -660,7 +679,7 @@ impl SelectionOverlay {
                 "palette.pal",
             );
             if strip.is_none() {
-                log::warn!("Phobos insignia: cannot load {name}");
+                log::warn!("insignia: cannot load {name}");
             }
             if let Some(strip) = strip {
                 self.insignia_shapes.insert(name, strip);
@@ -669,7 +688,6 @@ impl SelectionOverlay {
     }
 
     /// One custom insignia SHP by normalized file name, when loaded.
-    #[cfg(feature = "phobos")]
     pub(crate) fn insignia_shape(&self, name: &str) -> Option<&CenteredShapeStrip> {
         self.insignia_shapes.get(name)
     }
@@ -898,9 +916,42 @@ fn generate_diamond_cell(color: [u8; 4]) -> Vec<u8> {
     rgba
 }
 
+/// The palette a `[DigitalDisplayTypes]` Shape draws in. Phobos
+/// `CustomPalette::LoadFromINI` (`src/Utilities/Constructs.cpp:42-61`) keeps no
+/// Convert when the named `Palette=` file does not load, and
+/// `DigitalDisplayTypeClass` draws through
+/// `Palette.GetOrDefaultConvert(FileSystem::PALETTE_PAL)`
+/// (`src/New/Type/DigitalDisplayTypeClass.cpp:262, 275`), so the Shape still
+/// draws, in `PALETTE.PAL`. Residual: the reader's `~~~` theater suffix
+/// (`ApplyTheaterSuffixToString`) is not applied to the name.
+#[cfg(feature = "phobos")]
+fn digital_display_palette<'a>(assets: &AssetManager, name: &'a str) -> &'a str {
+    use crate::render::shell_ui_style_assets::ui_art_candidates;
+    if ui_art_candidates(assets, name).any(|asset| Palette::from_bytes(asset.bytes).is_ok()) {
+        name
+    } else {
+        "palette.pal"
+    }
+}
+
 #[cfg(all(test, tests_render_s_z))]
 mod tests {
     use super::*;
+
+    #[cfg(feature = "phobos")]
+    #[test]
+    fn a_digital_display_palette_that_does_not_load_draws_in_palette_pal() {
+        let root = crate::map::source::test_support::TestDirectory::new("digital-display-palette");
+        root.write("palette.pal", &[0; 768]);
+        root.write("digits.pal", &[0; 768]);
+        let assets = AssetManager::from_loose_root_for_test(root.path());
+        // A mod may name a palette that none of its archives ship.
+        assert_eq!(
+            digital_display_palette(&assets, "interior.pal"),
+            "palette.pal"
+        );
+        assert_eq!(digital_display_palette(&assets, "digits.pal"), "digits.pal");
+    }
 
     fn grid(cells: &[(u16, u16, bool)]) -> BuildingPlacementPreview {
         BuildingPlacementPreview {

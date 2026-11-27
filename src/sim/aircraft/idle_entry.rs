@@ -65,7 +65,6 @@
 //! (`0x0041B9E0`), gates TechnoClass::Enter_Idle_Mode's planning-path
 //! arrival (`0x00709A6B` -> `0x006385C0`).
 
-use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::components::NavTargetRef;
 use crate::sim::mission::{MissionId, MissionType};
@@ -340,10 +339,9 @@ pub(crate) fn enter_idle_mode_for(
     sim: &mut Simulation,
     id: u64,
     rules: &RuleSet,
-    registry: Option<&OverlayTypeRegistry>,
-    frame_effects: FrameEffects<'_>,
-) {
-    enter_idle_mode_with(sim, id, rules, registry, frame_effects, true);
+    frame_effects: &mut FrameEffects<'_>,
+) -> bool {
+    enter_idle_mode_with(sim, id, rules, frame_effects, true)
 }
 
 /// Mission_Attack state 10's Enter_Idle_Mode (`0x00418CFA`): the state clears
@@ -356,10 +354,9 @@ pub(crate) fn enter_idle_mode_after_attack(
     sim: &mut Simulation,
     id: u64,
     rules: &RuleSet,
-    registry: Option<&OverlayTypeRegistry>,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) {
-    enter_idle_mode_with(sim, id, rules, registry, frame_effects, false);
+    enter_idle_mode_with(sim, id, rules, frame_effects, false);
 }
 
 /// `planning_arrival` is Aircraft `+0x6D5` for this call.
@@ -367,22 +364,21 @@ fn enter_idle_mode_with(
     sim: &mut Simulation,
     id: u64,
     rules: &RuleSet,
-    registry: Option<&OverlayTypeRegistry>,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
     planning_arrival: bool,
-) {
+) -> bool {
     #[cfg(any(test, feature = "test-support"))]
     if RECORDED_CALLS
         .with(|calls| calls.get().map(|n| calls.set(Some(n + 1))))
         .is_some()
     {
-        return;
+        return false;
     }
     let Some(entity) = sim.substrate.entities.get(id) else {
-        return;
+        return false;
     };
     let Some(object) = sim.entity_object_type(entity, rules) else {
-        return;
+        return false;
     };
     let landing = super::landing_base::landing_base(
         entity,
@@ -400,7 +396,7 @@ fn enter_idle_mode_with(
         airstrike: entity.airstrike_link().is_some(),
         mission_only: entity.is_mission_only(),
         passengers: entity
-            .passenger_role
+            .passenger_role()
             .cargo()
             .is_some_and(|cargo| cargo.count() != 0),
         human: sim.owner_is_human(entity.owner()),
@@ -429,18 +425,16 @@ fn enter_idle_mode_with(
             sim,
             id,
             rules,
-            registry,
-            frame_effects,
+            frame_effects: frame_effects.reborrow(),
             planning_arrival,
         },
-    );
+    )
 }
 
 struct WorldIdle<'a> {
     sim: &'a mut Simulation,
     id: u64,
     rules: &'a RuleSet,
-    registry: Option<&'a OverlayTypeRegistry>,
     frame_effects: FrameEffects<'a>,
     /// Aircraft `+0x6D5` ([`enter_idle_mode_after_attack`]).
     planning_arrival: bool,
@@ -456,8 +450,12 @@ impl WorldIdle<'_> {
     }
 
     fn assign_destination(&mut self, destination: Option<NavTargetRef>) {
-        self.sim
-            .assign_aircraft_destination(self.id, destination, self.rules, self.frame_effects);
+        self.sim.assign_aircraft_destination(
+            self.id,
+            destination,
+            self.rules,
+            &mut self.frame_effects,
+        );
     }
 }
 
@@ -473,12 +471,10 @@ impl IdleHost for WorldIdle<'_> {
     fn restore(&mut self) -> MissionId {
         // As at the expiry receiver (`world/lifecycle.rs`): a refused Restore
         // leaves the override in place and the caller reads that mission.
-        if let Err(error) = self.sim.mission_restore_represented(
-            self.id,
-            self.rules,
-            self.registry,
-            self.frame_effects,
-        ) {
+        if let Err(error) =
+            self.sim
+                .mission_restore_represented(self.id, self.rules, &mut self.frame_effects)
+        {
             log::error!(
                 "idle entry: aircraft {} kept its override: {error}",
                 self.id
@@ -503,28 +499,28 @@ impl IdleHost for WorldIdle<'_> {
         self.sim.foot_enter_idle_base_with(
             self.id,
             self.rules,
-            self.registry,
-            self.frame_effects,
+            Some(self.rules.overlay_registry()),
+            &mut self.frame_effects,
             self.planning_arrival,
         )
     }
 
     fn team(&mut self) -> bool {
-        self.sim.team_script_vm.team_for_member(self.id).is_some()
+        self.sim.team_script_vm.team_of(self.id).is_some()
     }
 
     fn team_entered_map(&mut self) -> bool {
-        let (team, _) = self
+        let team = self
             .sim
             .team_script_vm
-            .team_for_member(self.id)
+            .team_of(self.id)
             .expect("asked of a team member");
         self.sim.team_has_entered_map(team)
     }
 
     fn leave_team(&mut self) {
         self.sim
-            .leave_team(self.id, false, self.rules, self.frame_effects);
+            .leave_team(self.id, false, self.rules, &mut self.frame_effects);
     }
 
     fn target(&mut self) -> bool {
@@ -545,7 +541,7 @@ impl IdleHost for WorldIdle<'_> {
 
     fn clear_target(&mut self) {
         self.sim
-            .assign_target_represented(self.id, None, self.rules, None, FrameEffects::default())
+            .assign_target_represented(self.id, None, self.rules, &mut FrameEffects::default())
             .expect("idle-mode aircraft");
     }
 
@@ -555,7 +551,7 @@ impl IdleHost for WorldIdle<'_> {
 
     fn find_dock(&mut self) -> Option<u64> {
         self.sim
-            .aircraft_find_docking_bay(self.id, self.rules, self.frame_effects)
+            .aircraft_find_docking_bay(self.id, self.rules, &mut self.frame_effects)
     }
 
     fn hello(&mut self, dock: u64) -> bool {
@@ -566,7 +562,7 @@ impl IdleHost for WorldIdle<'_> {
             RadioMessage::Hello,
             RadioPayload::default(),
             self.rules,
-            self.frame_effects,
+            &mut self.frame_effects,
         ) == RadioResponse::Roger
     }
 
@@ -583,11 +579,11 @@ impl IdleHost for WorldIdle<'_> {
 
     fn crash(&mut self) {
         self.sim
-            .foot_crash(self.id, None, self.rules, self.registry, self.frame_effects);
+            .foot_crash(self.id, None, self.rules, &mut self.frame_effects);
     }
 
     fn in_radio_contact(&mut self) -> bool {
-        !self.entity().radio_contacts.is_empty()
+        !self.entity().seldom.radio_contacts.is_empty()
     }
 
     fn queue(&mut self, mission: MissionType) {

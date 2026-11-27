@@ -5,6 +5,7 @@
 //! shell in a second renderer. It waits for the production main-menu dispatcher
 //! to reach one ordinary steady frame, then records the final swapchain bytes.
 
+use crate::app::shell_route::ShellRoute;
 use crate::util::time::{Duration, Instant};
 use std::ffi::OsString;
 use std::fs::{self, OpenOptions};
@@ -15,21 +16,44 @@ use anyhow::{Context, Result, bail, ensure};
 use serde::Serialize;
 
 use crate::app::AppState;
+use crate::app::PlatformState;
+use crate::app::audio_runtime::AppAudioRuntime;
+use crate::app::diagnostics::state::DiagnosticsState;
 use crate::app::frontend::main_menu_shell_render::Ra2tsDialogOwner;
-use crate::app::frontend::shell_transition::{MainMenuEntryPresentToken, ShellSlideKind};
+use crate::app::frontend::shell_transition::ShellFrameWave;
+use crate::app::frontend::shell_transition::ShellSlideKind;
+use crate::app::frontend::state::FrontendState;
+use crate::app::input::state::MatchInputState;
+use crate::app::match_audio::MatchAudioState;
+use crate::app::match_diagnostics::MatchDiagnosticsState;
+use crate::app::match_runtime::session::MatchSession;
+use crate::app::match_runtime::sim_host::SimHost;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
+use crate::app::persistence::SaveRepository;
+use crate::app::presentation::state::MatchPresentationState;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
+use crate::app::scenario_catalog::ScenarioCatalog;
+use crate::app::shell_network_setup::NetworkSetupProtocol;
+use crate::app::shell_wol::WolVisit;
+use crate::audio::sfx::SfxPlayer;
+use crate::net::live_commands::LiveCommandSession;
 use crate::render::frame_readback::PendingTextureReadback;
+use crate::render::gpu::GpuContext;
+use crate::skirmish_modes::SkirmishGameMode;
+use crate::ui::campaign_score_shell::CampaignScorePage;
 use crate::ui::game_screen::GameScreen;
 use crate::ui::main_menu_dialogs::options::Category;
 use crate::ui::main_menu_shell::MainMenuMovieBase;
-use crate::ui::shell::static_reveal::Kind1PaintWindow;
+use crate::ui::multiplayer_setup::MultiplayerSetupState;
+use crate::ui::shell::controller::DialogController;
+use crate::ui::skirmish_shell::SkirmishShellState;
+use crate::util::config::GameConfig;
 
-pub(crate) mod fault_files;
-pub(crate) mod loading_host_loss;
-pub(crate) mod loading_runtime;
 mod movies;
 mod score;
 mod skirmish;
-pub(crate) mod startup_host_loss;
 pub(crate) use skirmish::PresentedShell;
 
 pub(crate) const CAPTURE_FLAG: &str = "--shell-capture";
@@ -38,6 +62,7 @@ const CHECKPOINT_MAIN_MENU_0XE2_ENTRY_SEQUENCE: &str = "main-menu-0xe2-entry-seq
 const CHECKPOINT_SKIRMISH_0X102_STEADY: &str = "skirmish-0x102-steady";
 /// VERA's Game Options box, opened over the settled `0x102` by its button.
 const CHECKPOINT_SKIRMISH_0X102_GAME_OPTIONS: &str = "skirmish-0x102-game-options";
+const CHECKPOINT_SKIRMISH_0X102_SETUPS: &str = "skirmish-0x102-setups";
 const CHECKPOINT_MOVIES_0X101_STEADY: &str = "movies-0x101-steady";
 const CHECKPOINT_MAIN_MENU_0XE2_EXIT_CONFIRM: &str = "main-menu-0xe2-exit-confirm";
 const CHECKPOINT_MOVIE_LIST_0X129_STEADY: &str = "movie-list-0x129-steady";
@@ -97,7 +122,10 @@ const CHECKPOINT_LOAD_SAVED_GAME_0XB7_STEADY: &str = "load-saved-game-0xb7-stead
 const CHECKPOINT_LOAD_SAVED_GAME_0XB7_ENTRY_PREFIX: &str = "load-saved-game-0xb7-entry-tick-";
 const CHECKPOINT_OPTIONS_0XD5_STEADY: &str = "options-0xd5-steady";
 /// A page's column button pressed on the settled `0xD5`: that page showing.
-const OPTIONS_SETTINGS_CHECKPOINTS: [(&str, Category); 6] = [
+const OPTIONS_SETTINGS_CHECKPOINTS: [(&str, Category); 9] = [
+    ("options-0xd5-settings-main", Category::LauncherMain),
+    ("options-0xd5-settings-enhancements", Category::Enhancements),
+    ("options-0xd5-settings-extensions", Category::Extensions),
     ("options-0xd5-settings-display", Category::Display),
     ("options-0xd5-settings-gameplay", Category::Gameplay),
     ("options-0xd5-settings-interface", Category::Interface),
@@ -181,6 +209,27 @@ const CHECKPOINT_SKIRMISH_AFTER_QUIT: &str = "skirmish-after-quit";
 const CHECKPOINT_SKIRMISH_DEFEAT_SCORE: &str = "skirmish-defeat-score";
 const CHECKPOINT_SKIRMISH_DEFEAT_CONTINUE: &str = "skirmish-defeat-continue";
 const CHECKPOINT_SKIRMISH_DIPLOMACY: &str = "skirmish-diplomacy";
+/// A skirmish's in-game menu dialogs, each opened through the ordinary key
+/// and pointer path from the offline menu B5 and captured settled with the
+/// pointer at rest: B5 itself (Escape), its Options column, the Game
+/// Controls page's Sound (B8), B5's Keyboard (A3) and Abort's confirmation
+/// (B6, without the campaign's Restart).
+const SKIRMISH_IN_GAME_MENU_CHECKPOINTS: [(&str, skirmish::InGameMenuTarget); 5] = [
+    ("skirmish-pause-menu", skirmish::InGameMenuTarget::Menu),
+    (
+        "skirmish-pause-options",
+        skirmish::InGameMenuTarget::Options,
+    ),
+    ("skirmish-pause-sound", skirmish::InGameMenuTarget::Sound),
+    (
+        "skirmish-pause-keyboard",
+        skirmish::InGameMenuTarget::Keyboard,
+    ),
+    (
+        "skirmish-abort-confirm",
+        skirmish::InGameMenuTarget::AbortConfirm,
+    ),
+];
 const CHECKPOINT_SCORE_0X108_STEADY: &str = "score-0x108-steady";
 const CHECKPOINT_CAMPAIGN_SCORE_0X103_STEADY: &str = "campaign-score-0x103-steady";
 const CHECKPOINT_CAMPAIGN_SCORE_0X103_ANIMATION_SEQUENCE: &str =
@@ -220,6 +269,8 @@ pub enum ShellCaptureCheckpoint {
     Skirmish0x102Steady,
     /// VERA's Game Options box over `0x102`.
     Skirmish0x102GameOptions,
+    /// VERA's Setups page, opened through its button.
+    Skirmish0x102Setups,
     MoviesPage0x101Steady,
     /// Exit Game on `0xE2`: after the teardown slide, the confirmation over
     /// the empty shell backdrop (state 6).
@@ -272,6 +323,8 @@ pub enum ShellCaptureCheckpoint {
     /// Single Player -> Load Saved Game: `0xB7` settled. Needs a readable
     /// save in the saves directory.
     LoadSavedGame0xB7Steady,
+    /// Load a skirmish save after an aborted match and check both sidebar dialogs.
+    LoadSavedGameSidebarButtons,
     /// Its entry slide held at one tick
     /// (`load-saved-game-0xb7-entry-tick-<N>`).
     LoadSavedGame0xB7Entry(u32),
@@ -365,6 +418,9 @@ pub enum ShellCaptureCheckpoint {
     /// The same, then Continue: the new `0x102`, settled.
     SkirmishDefeatContinue,
     SkirmishDiplomacy,
+    /// An in-game menu dialog over a running skirmish
+    /// ([`SKIRMISH_IN_GAME_MENU_CHECKPOINTS`]).
+    SkirmishInGameMenu(skirmish::InGameMenuTarget),
     /// The score dialog `0x108` with the retail comparison game's values,
     /// settled.
     Score0x108Steady,
@@ -594,6 +650,7 @@ impl ShellCaptureCheckpoint {
             CHECKPOINT_MAIN_MENU_0XE2_ENTRY_SEQUENCE => Ok(Self::MainMenu0xE2EntrySequence),
             CHECKPOINT_SKIRMISH_0X102_STEADY => Ok(Self::Skirmish0x102Steady),
             CHECKPOINT_SKIRMISH_0X102_GAME_OPTIONS => Ok(Self::Skirmish0x102GameOptions),
+            CHECKPOINT_SKIRMISH_0X102_SETUPS => Ok(Self::Skirmish0x102Setups),
             CHECKPOINT_SKIRMISH_0X6B_STEADY => Ok(Self::Skirmish0x6BSteady),
             CHECKPOINT_SKIRMISH_0X105_STEADY => Ok(Self::Skirmish0x105Steady),
             CHECKPOINT_SKIRMISH_0X105_CANCEL_STEADY => Ok(Self::Skirmish0x105CancelSteady),
@@ -767,6 +824,7 @@ impl ShellCaptureCheckpoint {
             )),
             CHECKPOINT_CAMPAIGN_BACK_RETURN => Ok(Self::CampaignBackReturn),
             CHECKPOINT_LOAD_SAVED_GAME_0XB7_STEADY => Ok(Self::LoadSavedGame0xB7Steady),
+            "load-saved-game-sidebar-buttons" => Ok(Self::LoadSavedGameSidebarButtons),
             CHECKPOINT_OPTIONS_0XD5_STEADY => Ok(Self::Options0xD5Steady),
             CHECKPOINT_MAIN_MENU_0XE2_NETWORK_BOUNCE => Ok(Self::MainMenu0xE2NetworkBounce),
             CHECKPOINT_WOL_0X10E_STEADY => Ok(Self::Wol0x10ESteady),
@@ -798,6 +856,12 @@ impl ShellCaptureCheckpoint {
                 {
                     return Ok(Self::Skirmish0x105Hover(index));
                 }
+                if let Some((_, target)) = SKIRMISH_IN_GAME_MENU_CHECKPOINTS
+                    .iter()
+                    .find(|(name, _)| *name == value)
+                {
+                    return Ok(Self::SkirmishInGameMenu(*target));
+                }
                 bail!("unsupported shell-capture checkpoint {value:?}")
             }
         }
@@ -809,6 +873,7 @@ impl ShellCaptureCheckpoint {
             Self::MainMenu0xE2EntrySequence => CHECKPOINT_MAIN_MENU_0XE2_ENTRY_SEQUENCE,
             Self::Skirmish0x102Steady => CHECKPOINT_SKIRMISH_0X102_STEADY,
             Self::Skirmish0x102GameOptions => CHECKPOINT_SKIRMISH_0X102_GAME_OPTIONS,
+            Self::Skirmish0x102Setups => CHECKPOINT_SKIRMISH_0X102_SETUPS,
             Self::MoviesPage0x101Steady => CHECKPOINT_MOVIES_0X101_STEADY,
             Self::MainMenu0xE2ExitConfirm => CHECKPOINT_MAIN_MENU_0XE2_EXIT_CONFIRM,
             Self::MovieList0x129Steady => CHECKPOINT_MOVIE_LIST_0X129_STEADY,
@@ -831,11 +896,17 @@ impl ShellCaptureCheckpoint {
             Self::CampaignLoadingFirst(crate::ui::campaign_shell::CampaignSide::Soviet) => {
                 CHECKPOINT_CAMPAIGN_SOV1_LOADING_FIRST
             }
+            Self::CampaignLoadingFirst(crate::ui::campaign_shell::CampaignSide::BootCamp) => {
+                "campaign-bootcamp-loading-first"
+            }
             Self::CampaignFirstLive(crate::ui::campaign_shell::CampaignSide::Allied) => {
                 CHECKPOINT_CAMPAIGN_ALL1_FIRST_LIVE
             }
             Self::CampaignFirstLive(crate::ui::campaign_shell::CampaignSide::Soviet) => {
                 CHECKPOINT_CAMPAIGN_SOV1_FIRST_LIVE
+            }
+            Self::CampaignFirstLive(crate::ui::campaign_shell::CampaignSide::BootCamp) => {
+                "campaign-bootcamp-first-live"
             }
             Self::CampaignExplicitFirstLive("SOV05UMD.MAP") => "campaign-sov05-first-live-frame",
             Self::CampaignExplicitFirstLive("ALL02UMD.MAP") => "campaign-all02-first-live-frame",
@@ -846,11 +917,17 @@ impl ShellCaptureCheckpoint {
             Self::CampaignInitialSaved(crate::ui::campaign_shell::CampaignSide::Soviet) => {
                 "campaign-sov1-initial-save"
             }
+            Self::CampaignInitialSaved(crate::ui::campaign_shell::CampaignSide::BootCamp) => {
+                "campaign-bootcamp-initial-save"
+            }
             Self::CampaignAbortReturn(crate::ui::campaign_shell::CampaignSide::Allied) => {
                 CHECKPOINT_CAMPAIGN_ALL1_ABORT_RETURN
             }
             Self::CampaignAbortReturn(crate::ui::campaign_shell::CampaignSide::Soviet) => {
                 CHECKPOINT_CAMPAIGN_SOV1_ABORT_RETURN
+            }
+            Self::CampaignAbortReturn(crate::ui::campaign_shell::CampaignSide::BootCamp) => {
+                "campaign-bootcamp-abort-return"
             }
             Self::CampaignRestart(movies::RestartTarget::AbortShown) => {
                 CHECKPOINT_CAMPAIGN_ALL1_ABORT_RESTART_SHOWN
@@ -963,6 +1040,7 @@ impl ShellCaptureCheckpoint {
             }
             Self::CampaignBackReturn => CHECKPOINT_CAMPAIGN_BACK_RETURN,
             Self::LoadSavedGame0xB7Steady => CHECKPOINT_LOAD_SAVED_GAME_0XB7_STEADY,
+            Self::LoadSavedGameSidebarButtons => "load-saved-game-sidebar-buttons",
             Self::LoadSavedGame0xB7Entry(_) => "load-saved-game-0xb7-entry",
             Self::Options0xD5Steady => CHECKPOINT_OPTIONS_0XD5_STEADY,
             Self::OptionsSettings(category) => {
@@ -1026,6 +1104,11 @@ impl ShellCaptureCheckpoint {
             Self::SkirmishDefeatScore => CHECKPOINT_SKIRMISH_DEFEAT_SCORE,
             Self::SkirmishDefeatContinue => CHECKPOINT_SKIRMISH_DEFEAT_CONTINUE,
             Self::SkirmishDiplomacy => CHECKPOINT_SKIRMISH_DIPLOMACY,
+            Self::SkirmishInGameMenu(target) => SKIRMISH_IN_GAME_MENU_CHECKPOINTS
+                .into_iter()
+                .find(|(_, listed)| *listed == target)
+                .map(|(name, _)| name)
+                .expect("every in-game menu target has a checkpoint name"),
             Self::Score0x108Steady => CHECKPOINT_SCORE_0X108_STEADY,
             Self::CampaignScore0x103Steady => CHECKPOINT_CAMPAIGN_SCORE_0X103_STEADY,
             Self::CampaignScore0x103AnimationSequence => {
@@ -1125,11 +1208,17 @@ impl ShellCaptureCheckpoint {
                 target: movies::CampaignStartTarget::Opening(target),
             },
             Self::CampaignBackReturn => movies::MoviesTarget::CampaignBack,
-            Self::LoadSavedGame0xB7Steady => {
-                movies::MoviesTarget::LoadSavedGame0xB7 { entry_tick: None }
-            }
+            Self::LoadSavedGame0xB7Steady => movies::MoviesTarget::LoadSavedGame0xB7 {
+                entry_tick: None,
+                check_sidebar: false,
+            },
             Self::LoadSavedGame0xB7Entry(tick) => movies::MoviesTarget::LoadSavedGame0xB7 {
                 entry_tick: Some(tick),
+                check_sidebar: false,
+            },
+            Self::LoadSavedGameSidebarButtons => movies::MoviesTarget::LoadSavedGame0xB7 {
+                entry_tick: None,
+                check_sidebar: true,
             },
             Self::MainMenu0xE2NetworkBounce => movies::MoviesTarget::NetworkBounce,
             Self::Wol0x10ESteady => movies::MoviesTarget::WolWelcome {
@@ -1167,7 +1256,7 @@ impl ShellCaptureCheckpoint {
             Self::Options0xD5Steady => movies::MoviesTarget::Options0xD5 {
                 entry_tick: None,
                 hover: None,
-                category: Category::Display,
+                category: Category::LauncherMain,
             },
             Self::OptionsSettings(category) => movies::MoviesTarget::Options0xD5 {
                 entry_tick: None,
@@ -1177,7 +1266,7 @@ impl ShellCaptureCheckpoint {
             Self::Options0xD5Entry(tick) => movies::MoviesTarget::Options0xD5 {
                 entry_tick: Some(tick),
                 hover: None,
-                category: Category::Display,
+                category: Category::LauncherMain,
             },
             Self::Options0xD5Hover(index) => {
                 let (_, category, point) = OPTIONS_0XD5_HOVER_CHECKPOINTS[index];
@@ -1235,68 +1324,12 @@ pub(crate) struct LiveOnlineConfig {
     pub simple_input: bool,
     pub latency: bool,
     pub mass_input: bool,
-    /// Public coordinator nonce; only diagnostic Observe input waits for ACK.
-    pub network_checkpoint: Option<String>,
-    /// Public nonce for the later exit/HTTPS-retry/reentry acceptance only.
-    pub exit_checkpoint: Option<String>,
-    /// External owned kill during first loading, followed by a normal two-player rematch.
-    pub loading_host_loss: Option<String>,
-    /// External owned kill after ordinary100, before the original host installs live gameplay.
-    pub startup_host_loss: Option<String>,
     /// Each round queues through the lobby's Quick Match; the matchbot sets
     /// the match up and the configured host must be its host.
     pub quick_match: bool,
-    pub loading_output: Option<PathBuf>,
-    pub loading_cancel: Option<LoadingCancelConfig>,
-    pub observe_loading: bool,
     pub profile_check: bool,
-    pub exit_prefix_output: Option<PathBuf>,
-    /// Nonsecret real-command/checksum prefix, written before external faults.
+    /// Nonsecret real-command/checksum prefix, written before the peer is killed.
     pub failure_prefix_output: Option<PathBuf>,
-}
-
-/// Diagnostic intent only; cancellation still runs the real service owner.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum LoadingCancelKind {
-    Https,
-    Departure,
-}
-impl LoadingCancelKind {
-    pub(crate) fn as_str(self) -> &'static str {
-        match self {
-            Self::Https => "https",
-            Self::Departure => "departure",
-        }
-    }
-}
-#[derive(Debug, Clone)]
-pub(crate) struct LoadingCancelConfig {
-    pub checkpoint_id: String,
-    pub kind: LoadingCancelKind,
-    pub output: PathBuf,
-}
-
-/// The victim is terminated externally by the owned-process runner. This
-/// chooses only the capture checkpoint; the LAN service retains its real lease.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum LanSetupCrash {
-    Host,
-    Guest,
-    MapHost,
-}
-
-impl LanSetupCrash {
-    pub(crate) fn as_str(self) -> &'static str {
-        match self {
-            Self::Host => "host",
-            Self::Guest => "guest",
-            Self::MapHost => "map-host",
-        }
-    }
-
-    pub(crate) fn host(self) -> bool {
-        matches!(self, Self::Host | Self::MapHost)
-    }
 }
 
 /// Only socket routing differs between these diagnostic modes. Production
@@ -1328,10 +1361,13 @@ pub(crate) struct LiveLanConfig {
     pub transport: LiveLanTransport,
     /// Host-only logical catalog name; RandMap.Sed drives the normal generator.
     pub map: Option<String>,
-    /// Optional real pre-GO process-loss checkpoint. It never changes a timer.
-    pub setup_crash: Option<LanSetupCrash>,
+    /// Diagnostic only: repeat one accepted seed across fresh/rematch worlds.
+    /// Also fixes roster choices and omits the unrelated spectator exercise.
+    pub isolation_seed: Option<u32>,
+    /// Host-only history fixture for round one; round two uses `map`.
+    pub prior_map: Option<String>,
     pub profile_check: bool,
-    /// Written before an external LAN proxy/process fault; contains no secrets.
+    /// Written before `lan-fault-proxy` damages a checksum; contains no secrets.
     pub failure_prefix_output: Option<PathBuf>,
 }
 
@@ -1345,10 +1381,12 @@ impl ShellCaptureRequest {
                     && !matches!(
                         target,
                         movies::WolTarget::ModernLobby
+                            | movies::WolTarget::ModernLobbySummary { .. }
                             | movies::WolTarget::ModernCreate
                             | movies::WolTarget::ModernPlayerCard
                             | movies::WolTarget::ModernChangeCountry
                             | movies::WolTarget::ModernRoomOptions
+                            | movies::WolTarget::LobbyVisit
                             | movies::WolTarget::ModernTeams
                             | movies::WolTarget::ModernSpectators
                             | movies::WolTarget::ModernOptions
@@ -1360,12 +1398,15 @@ impl ShellCaptureRequest {
                 provider: crate::app::shell_wol::WolProvider::Unavailable,
                 ..
             }) => true,
-            Some(movies::MoviesTarget::Lan(target)) => !target.live(),
+            Some(movies::MoviesTarget::Lan(target)) => {
+                !target.live() && target != movies::LanTarget::ModernHostLeft
+            }
             _ => false,
         }
     }
 
-    /// Select only the diagnostic visit; never change the saved profile.
+    /// The provider this capture's WOL visit opens with (`prepare_state`);
+    /// none opens it online.
     pub(crate) fn wol_welcome_provider(&self) -> Option<crate::app::shell_wol::WolProvider> {
         match self.checkpoint.movies_target() {
             Some(movies::MoviesTarget::WolWelcome { provider, .. }) => Some(provider),
@@ -1413,13 +1454,6 @@ impl ShellCaptureRequest {
     }
 }
 
-fn public_coordinator_nonce(value: &str) -> bool {
-    value.len() == 32
-        && value
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-}
-
 /// Parse the normal/capture launch boundary without changing ordinary no-arg
 /// startup. Capture mode is deliberately strict so a misspelled automation
 /// command cannot open an interactive window.
@@ -1449,7 +1483,8 @@ where
     let mut lan_bind = None;
     let mut lan_peer = None;
     let mut lan_map = None;
-    let mut lan_setup_crash = None;
+    let mut lan_isolation_seed = None;
+    let mut lan_prior_map = None;
     let mut online_account = None;
     let mut online_host = None;
     let mut online_map = None;
@@ -1462,13 +1497,6 @@ where
     let mut online_quick_match = false;
     let mut online_latency = false;
     let mut online_mass = false;
-    let mut online_network_checkpoint = None;
-    let mut online_exit_checkpoint = None;
-    let mut online_loading_host_loss = None;
-    let mut online_startup_host_loss = None;
-    let mut online_loading_cancel = None;
-    let mut online_loading_cancel_checkpoint = None;
-    let mut observe_loading = false;
     let mut profile_check = false;
     let mut language = None;
 
@@ -1550,15 +1578,19 @@ where
                 next_utf8(&mut args, "value after --lan-map")?,
                 "--lan-map",
             )?,
-            "--lan-setup-crash" => {
-                let victim = match next_utf8(&mut args, "value after --lan-setup-crash")?.as_str() {
-                    "host" => LanSetupCrash::Host,
-                    "guest" => LanSetupCrash::Guest,
-                    "map-host" => LanSetupCrash::MapHost,
-                    _ => bail!("--lan-setup-crash requires host, guest or map-host"),
-                };
-                set_once(&mut lan_setup_crash, victim, "--lan-setup-crash")?;
-            }
+            "--lan-isolation-seed" => set_once(
+                &mut lan_isolation_seed,
+                parse_u32(
+                    next_utf8(&mut args, "value after --lan-isolation-seed")?,
+                    "--lan-isolation-seed",
+                )?,
+                "--lan-isolation-seed",
+            )?,
+            "--lan-prior-map" => set_once(
+                &mut lan_prior_map,
+                next_utf8(&mut args, "value after --lan-prior-map")?,
+                "--lan-prior-map",
+            )?,
             "--online-account" => set_once(
                 &mut online_account,
                 next_utf8(&mut args, "value after --online-account")?,
@@ -1621,39 +1653,6 @@ where
                 ensure!(!online_mass, "duplicate --online-mass-input");
                 online_mass = true;
             }
-            "--online-network-checkpoint" => set_once(
-                &mut online_network_checkpoint,
-                next_utf8(&mut args, "value after --online-network-checkpoint")?,
-                "--online-network-checkpoint",
-            )?,
-            "--online-loading-host-loss" => set_once(
-                &mut online_loading_host_loss,
-                next_utf8(&mut args, "value after --online-loading-host-loss")?,
-                "--online-loading-host-loss",
-            )?,
-            "--online-startup-host-loss" => set_once(
-                &mut online_startup_host_loss,
-                next_utf8(&mut args, "value after --online-startup-host-loss")?,
-                "--online-startup-host-loss",
-            )?,
-            "--online-loading-cancel" => {
-                let kind =
-                    match next_utf8(&mut args, "value after --online-loading-cancel")?.as_str() {
-                        "https" => LoadingCancelKind::Https,
-                        "departure" => LoadingCancelKind::Departure,
-                        _ => bail!("--online-loading-cancel requires https or departure"),
-                    };
-                set_once(&mut online_loading_cancel, kind, "--online-loading-cancel")?;
-            }
-            "--online-loading-cancel-checkpoint" => set_once(
-                &mut online_loading_cancel_checkpoint,
-                next_utf8(&mut args, "value after --online-loading-cancel-checkpoint")?,
-                "--online-loading-cancel-checkpoint",
-            )?,
-            "--online-observe-loading" => {
-                ensure!(!observe_loading, "duplicate --online-observe-loading");
-                observe_loading = true;
-            }
             "--network-profile-check" => {
                 ensure!(!profile_check, "duplicate --network-profile-check");
                 profile_check = true;
@@ -1662,11 +1661,6 @@ where
                 &mut language,
                 next_utf8(&mut args, "value after --language")?,
                 "--language",
-            )?,
-            "--online-exit-checkpoint" => set_once(
-                &mut online_exit_checkpoint,
-                next_utf8(&mut args, "value after --online-exit-checkpoint")?,
-                "--online-exit-checkpoint",
             )?,
             "--online-latency" => {
                 ensure!(!online_latency, "duplicate --online-latency");
@@ -1692,11 +1686,18 @@ where
 
     // The settled main menu also captures in any larger window, to compare
     // its scaled drawing, with the pointer resting at the window's centre.
-    // So does VERA's game room with teams, which spreads over a wider window.
+    // VERA's room, Create Game form, and WOL options also follow the window scale.
     let scaled = (checkpoint == ShellCaptureCheckpoint::MainMenu0xE2Steady
         || matches!(
             checkpoint.movies_target(),
-            Some(movies::MoviesTarget::Wol(movies::WolTarget::ModernTeams))
+            Some(movies::MoviesTarget::Wol(
+                movies::WolTarget::ModernCreate
+                    | movies::WolTarget::ModernTeams
+                    | movies::WolTarget::ModernLobbySummary { .. }
+                    | movies::WolTarget::ModernOptions
+                    | movies::WolTarget::ModernOptionsTranslation
+                    | movies::WolTarget::ModernOptionsTranslationList
+            ))
         ))
         && (width, height) != (EXPECTED_WIDTH, EXPECTED_HEIGHT)
         && width >= 640
@@ -1705,7 +1706,7 @@ where
         (width == EXPECTED_WIDTH && height == EXPECTED_HEIGHT)
             || (online_latency && width == 640 && height == 480)
             || scaled,
-        "checkpoint {} requires exactly {EXPECTED_WIDTH}x{EXPECTED_HEIGHT} (640x480 also allowed for --online-latency, a larger window for the main menu and VERA's room), got {width}x{height}",
+        "checkpoint {} requires exactly {EXPECTED_WIDTH}x{EXPECTED_HEIGHT} (other supported dimensions depend on the checkpoint), got {width}x{height}",
         checkpoint.as_str()
     );
     let neutral = if scaled {
@@ -1736,8 +1737,8 @@ where
             "--lan-production-broadcast requires a normal LAN live host or guest checkpoint"
         );
         ensure!(
-            lan_bind.is_none() && lan_peer.is_none() && lan_setup_crash.is_none(),
-            "--lan-production-broadcast cannot override sockets or combine with a fault checkpoint"
+            lan_bind.is_none() && lan_peer.is_none(),
+            "--lan-production-broadcast cannot override sockets"
         );
     }
     if profile_check {
@@ -1747,13 +1748,8 @@ where
                 ShellCaptureCheckpoint::Lan(
                     movies::LanTarget::OnlineHost | movies::LanTarget::LiveHost
                 )
-            ) && lan_setup_crash.is_none()
-                && online_loading_host_loss.is_none()
-                && online_startup_host_loss.is_none()
-                && online_network_checkpoint.is_none()
-                && online_exit_checkpoint.is_none()
-                && online_loading_cancel.is_none(),
-            "profile check requires a normal host checkpoint without another fault"
+            ),
+            "profile check requires a normal host checkpoint"
         );
         ensure!(
             if online {
@@ -1788,14 +1784,7 @@ where
                     && !online_simple
                     && !online_latency
                     && !online_mass
-                    && !online_quick_match
-                    && !observe_loading
-                    && online_network_checkpoint.is_none()
-                    && online_exit_checkpoint.is_none()
-                    && online_loading_host_loss.is_none()
-                    && online_startup_host_loss.is_none()
-                    && online_loading_cancel.is_none()
-                    && online_loading_cancel_checkpoint.is_none()),
+                    && !online_quick_match),
             "online watch capture requires --online-host and no other online option; the host's match sets everything else"
         );
         let host = online_host.unwrap_or_else(|| account.clone());
@@ -1843,12 +1832,7 @@ where
                     && online_mode_id.is_none()
                     && !online_mass
                     && !online_latency
-                    && !profile_check
-                    && online_network_checkpoint.is_none()
-                    && online_exit_checkpoint.is_none()
-                    && online_loading_host_loss.is_none()
-                    && online_startup_host_loss.is_none()
-                    && online_loading_cancel.is_none()),
+                    && !profile_check),
             "online co-op capture requires two players and no map, start, AI, mode or other diagnostic option; the campaign picks its maps"
         );
         ensure!(
@@ -1857,12 +1841,7 @@ where
                     && !online_failure
                     && !online_mass
                     && online_ai.is_none()
-                    && !profile_check
-                    && online_network_checkpoint.is_none()
-                    && online_exit_checkpoint.is_none()
-                    && online_loading_host_loss.is_none()
-                    && online_startup_host_loss.is_none()
-                    && online_loading_cancel.is_none()),
+                    && !profile_check),
             "--online-latency requires a normal online pair without another diagnostic mode"
         );
         let frames = online_frames.unwrap_or(if online_latency {
@@ -1892,69 +1871,10 @@ where
                     && online_ai.is_some()
                     && frames >= 600
                     && !online_mass
-                    && !profile_check
-                    && online_network_checkpoint.is_none()
-                    && online_exit_checkpoint.is_none()
-                    && online_loading_host_loss.is_none()
-                    && online_startup_host_loss.is_none()
-                    && online_loading_cancel.is_none()
-                    && online_loading_cancel_checkpoint.is_none(),
-                "AI/mode capture requires one online host, explicit AI, at least600 frames and no separate fault/profile/mass case"
+                    && !profile_check,
+                "AI/mode capture requires one online host, explicit AI, at least600 frames and no separate profile/mass case"
             );
         }
-        ensure!(
-            online_network_checkpoint.as_ref().is_none_or(|nonce| {
-                !online_failure
-                    && players == 2
-                    && online_simple
-                    && !online_mass
-                    && frames >= 600
-                    && public_coordinator_nonce(nonce)
-            }),
-            "network checkpoint requires a normal simple online pair, at least600 frames and a32-digit lowercase hex nonce"
-        );
-        ensure!(
-            online_exit_checkpoint.as_ref().is_none_or(|nonce| {
-                !online_failure
-                    && online_network_checkpoint.is_none()
-                    && players == 2
-                    && online_simple
-                    && !online_mass
-                    && public_coordinator_nonce(nonce)
-            }),
-            "exit checkpoint requires a normal simple online pair and a32-digit lowercase hex nonce; other external faults are separate runs"
-        );
-        ensure!(
-            online_loading_host_loss.as_ref().is_none_or(|nonce| {
-                !online_failure
-                    && online_network_checkpoint.is_none()
-                    && online_exit_checkpoint.is_none()
-                    && online_startup_host_loss.is_none()
-                    && online_map.is_none()
-                    && online_start.is_none()
-                    && players == 3
-                    && online_simple
-                    && !online_mass
-                    && frames >= 1024
-                    && public_coordinator_nonce(nonce)
-            }),
-            "loading host loss requires a normal simple three-player online match, at least1024 frames and a32-digit lowercase hex nonce; map/start overrides and other faults are separate runs"
-        );
-        ensure!(
-            online_startup_host_loss.as_ref().is_none_or(|nonce| {
-                !online_failure
-                    && online_loading_host_loss.is_none()
-                    && online_network_checkpoint.is_none()
-                    && online_exit_checkpoint.is_none()
-                    && online_map.is_none()
-                    && online_start.is_none()
-                    && players == 3
-                    && online_simple
-                    && !online_mass
-                    && public_coordinator_nonce(nonce)
-            }),
-            "startup host loss requires a normal simple three-player online match and a32-digit lowercase hex nonce; loading/map/start and other faults are separate runs"
-        );
         ensure!(
             players <= 2 || online_simple || online_mass,
             "more than two players requires --online-simple-input or --online-mass-input"
@@ -1969,12 +1889,7 @@ where
                     && !online_failure
                     && !online_latency
                     && !online_mass
-                    && !profile_check
-                    && online_network_checkpoint.is_none()
-                    && online_exit_checkpoint.is_none()
-                    && online_loading_host_loss.is_none()
-                    && online_startup_host_loss.is_none()
-                    && online_loading_cancel.is_none()),
+                    && !profile_check),
             "--online-quick-match requires a normal online pair; the matchbot sets the match up"
         );
         ensure!(
@@ -1984,49 +1899,6 @@ where
                 || players <= 8,
             "random maps support two to eight players"
         );
-        ensure!(
-            online_loading_cancel.is_some() == online_loading_cancel_checkpoint.is_some(),
-            "loading cancellation requires both kind and checkpoint nonce"
-        );
-        if let Some(nonce) = online_loading_cancel_checkpoint.as_deref() {
-            ensure!(
-                public_coordinator_nonce(nonce)
-                    && players == 2
-                    && online_simple
-                    && !online_mass
-                    && !online_failure
-                    && online_loading_host_loss.is_none()
-                    && online_startup_host_loss.is_none()
-                    && online_network_checkpoint.is_none()
-                    && online_exit_checkpoint.is_none()
-                    && online_map.is_none()
-                    && online_start.is_none()
-                    && !profile_check,
-                "loading cancellation requires a normal simple online pair and32 lowercase hex nonce without another fault/map/start"
-            );
-            for kind in ["ready", "control", "returned"] {
-                ensure!(
-                    !loading_runtime::sidecar(&output_dir, kind).try_exists()?,
-                    "loading cancellation output already exists"
-                );
-            }
-        }
-        if online_loading_host_loss.is_some() {
-            for kind in ["ready", "complete", "killed", "prefix", "removed"] {
-                ensure!(
-                    !loading_host_loss::sidecar(&output_dir, kind).try_exists()?,
-                    "loading fault output already exists"
-                );
-            }
-        }
-        if online_startup_host_loss.is_some() {
-            for kind in ["ready", "install", "prefix", "killed", "failure", "ack"] {
-                ensure!(
-                    !startup_host_loss::sidecar(&output_dir, kind).try_exists()?,
-                    "startup fault output already exists"
-                );
-            }
-        }
         Some(LiveOnlineConfig {
             account,
             host,
@@ -2043,7 +1915,7 @@ where
                 || online_ai.is_some(),
             latency: online_latency,
             mass_input: online_mass,
-            failure_prefix_output: if online_failure || online_network_checkpoint.is_some() {
+            failure_prefix_output: if online_failure {
                 let mut path = output_dir.as_os_str().to_owned();
                 path.push(".prefix.json");
                 let path = PathBuf::from(path);
@@ -2052,31 +1924,7 @@ where
             } else {
                 None
             },
-            network_checkpoint: online_network_checkpoint,
-            exit_prefix_output: if online_exit_checkpoint.is_some() {
-                let mut path = output_dir.as_os_str().to_owned();
-                path.push(".exit.json");
-                let path = PathBuf::from(path);
-                ensure!(!path.exists(), "exit checkpoint output already exists");
-                Some(path)
-            } else {
-                None
-            },
-            loading_cancel: online_loading_cancel.map(|kind| LoadingCancelConfig {
-                checkpoint_id: online_loading_cancel_checkpoint
-                    .expect("validated loading cancel nonce"),
-                kind,
-                output: output_dir.clone(),
-            }),
-            observe_loading,
             profile_check,
-            exit_checkpoint: online_exit_checkpoint,
-            loading_output: online_loading_host_loss
-                .as_ref()
-                .or(online_startup_host_loss.as_ref())
-                .map(|_| output_dir.clone()),
-            loading_host_loss: online_loading_host_loss,
-            startup_host_loss: online_startup_host_loss,
             quick_match: online_quick_match,
         })
     } else {
@@ -2092,13 +1940,6 @@ where
                 && !online_simple
                 && !online_latency
                 && !online_mass
-                && online_network_checkpoint.is_none()
-                && online_exit_checkpoint.is_none()
-                && online_loading_host_loss.is_none()
-                && online_startup_host_loss.is_none()
-                && online_loading_cancel.is_none()
-                && online_loading_cancel_checkpoint.is_none()
-                && !observe_loading
                 && !online_quick_match,
             "online options require an online live checkpoint"
         );
@@ -2142,32 +1983,30 @@ where
             crate::map::source::validate_network_map_name(file)?;
         }
         ensure!(
-            lan_setup_crash.is_none()
+            lan_isolation_seed.is_none()
                 || matches!(
                     checkpoint,
                     ShellCaptureCheckpoint::Lan(
                         movies::LanTarget::LiveHost | movies::LanTarget::LiveGuest
                     )
                 ),
-            "--lan-setup-crash requires a normal LAN live host or guest checkpoint"
+            "--lan-isolation-seed requires a normal live LAN host or guest"
         );
-        ensure!(
-            match lan_setup_crash {
-                Some(LanSetupCrash::MapHost) => match checkpoint {
-                    ShellCaptureCheckpoint::Lan(movies::LanTarget::LiveHost) => lan_map
-                        .as_deref()
-                        .is_some_and(|map| !crate::map::rmg::is_seed_selection(map)),
-                    ShellCaptureCheckpoint::Lan(movies::LanTarget::LiveGuest) => lan_map.is_none(),
-                    _ => false,
-                },
-                Some(_) => lan_map.is_none(),
-                None => true,
-            },
-            "map-host requires an authored host map; resident host/guest crash uses the resident map"
-        );
-        let failure_prefix_output = if lan_setup_crash.is_some()
-            || matches!(checkpoint, ShellCaptureCheckpoint::Lan(target) if target.desync_failure())
-        {
+        if let Some(file) = lan_prior_map.as_deref() {
+            ensure!(
+                lan_isolation_seed.is_some()
+                    && matches!(
+                        checkpoint,
+                        ShellCaptureCheckpoint::Lan(movies::LanTarget::LiveHost)
+                    ),
+                "--lan-prior-map requires a live LAN host with --lan-isolation-seed"
+            );
+            crate::map::source::validate_network_map_name(file)?;
+        }
+        let failure_prefix_output = if matches!(
+            checkpoint,
+            ShellCaptureCheckpoint::Lan(target) if target.desync_failure()
+        ) {
             let mut path = output_dir.as_os_str().to_owned();
             path.push(".prefix.json");
             let path = PathBuf::from(path);
@@ -2179,7 +2018,8 @@ where
         Some(LiveLanConfig {
             transport,
             map: lan_map,
-            setup_crash: lan_setup_crash,
+            isolation_seed: lan_isolation_seed,
+            prior_map: lan_prior_map,
             profile_check,
             failure_prefix_output,
         })
@@ -2189,7 +2029,8 @@ where
                 && lan_bind.is_none()
                 && lan_peer.is_none()
                 && lan_map.is_none()
-                && lan_setup_crash.is_none(),
+                && lan_isolation_seed.is_none()
+                && lan_prior_map.is_none(),
             "LAN socket options require a live LAN checkpoint"
         );
         None
@@ -2301,41 +2142,50 @@ impl MainMenuCaptureSnapshot {
         self
     }
 
-    fn from_state(state: &AppState) -> Self {
-        let movie_identity = state.frontend.main_menu_movie_identity;
+    fn from_state(
+        platform: &PlatformState,
+        renderer: &RendererState,
+        frontend: &FrontendState,
+        match_state: &MatchState,
+        persistence: &PersistenceState,
+    ) -> Self {
+        let movie_identity = frontend.main_menu_movie_identity;
         Self {
-            width: state.renderer.gpu.config.width,
-            height: state.renderer.gpu.config.height,
-            main_menu_screen: state.frontend.screen == GameScreen::MainMenu,
-            shell_failed: state.frontend.main_menu_shell_error.is_some(),
-            single_player_active: state.frontend.shell_route.single_player(),
-            skirmish_active: state.frontend.shell_route.skirmish(),
+            width: renderer.gpu.config.width,
+            height: renderer.gpu.config.height,
+            main_menu_screen: frontend.screen == GameScreen::MainMenu,
+            shell_failed: frontend.main_menu_shell_error.is_some(),
+            single_player_active: frontend.shell_route == ShellRoute::SinglePlayer,
+            skirmish_active: frontend.shell_route == ShellRoute::Skirmish,
             // The legacy skirmish-setup flag was write-dead (never set after
             // startup); the capture snapshot keeps the field as literal false.
             legacy_skirmish_setup_active: false,
-            modal_open: state.main_menu_dialog_open(),
-            quit_active: state.frontend.quit_cascade.is_some(),
-            first_paint_slide_active: state.frontend.shell_first_paint_slide.is_some(),
-            active_slide_is_main_menu: state.frontend.shell_slide_active_shell
+            modal_open: frontend.main_menu_dialog_open(),
+            quit_active: frontend.quit_cascade.is_some(),
+            first_paint_slide_active: frontend.shell_first_paint_slide.is_some(),
+            active_slide_is_main_menu: frontend.shell_slide_active_shell
                 == Some(ShellSlideKind::MainMenu),
-            title_terminal_persistent: state
-                .frontend
-                .main_menu_shell_state
-                .title_reveal
-                .is_terminal_persistent(),
-            movie_loaded: state.frontend.main_menu_movie.is_some(),
+            title_terminal_persistent: frontend.shell_page_title.is_terminal(),
+            movie_loaded: frontend.main_menu_movie.is_some(),
             movie_owner_is_main_menu: movie_identity
                 .is_some_and(|identity| identity.owner() == Ra2tsDialogOwner::MainMenu0xE2),
             movie_base_is_large: movie_identity
                 .is_some_and(|identity| identity.base() == MainMenuMovieBase::Ra2tsL),
             movie_base_matches_layout: movie_identity.is_some_and(|identity| {
                 identity.base()
-                    == crate::app::frontend::shell_layout::main_menu_layout(state).movie_base
+                    == crate::app::frontend::shell_layout::main_menu_layout(&renderer.gpu)
+                        .movie_base
             }),
-            chrome_loaded: state.frontend.main_menu_shell_chrome.is_some(),
-            software_cursor_active: state.use_software_cursor(),
-            cursor_x: state.match_state.input.cursor_x,
-            cursor_y: state.match_state.input.cursor_y,
+            chrome_loaded: frontend.main_menu_shell_chrome.is_some(),
+            software_cursor_active: crate::app::state::use_software_cursor(
+                platform,
+                renderer,
+                frontend,
+                match_state,
+                persistence,
+            ),
+            cursor_x: match_state.input.cursor_x,
+            cursor_y: match_state.input.cursor_y,
         }
     }
 }
@@ -2411,16 +2261,10 @@ fn steady_main_menu_capture_ready_for(
     Ok(true)
 }
 
+/// The entry tick one retained readback shows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct EntrySequenceFrameIdentity {
-    generation: u64,
     tick: u8,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ShellCompletionHandoff {
-    Continue,
-    FinalizeExitReturnBeforeAcquire,
 }
 
 struct PendingSequenceReadback {
@@ -2432,7 +2276,6 @@ struct PendingSequenceReadback {
 #[derive(Default)]
 struct EntrySequenceState {
     expected_next_tick: u8,
-    generation: Option<u64>,
     pending: Vec<PendingSequenceReadback>,
     completion_observed: bool,
 }
@@ -2454,13 +2297,6 @@ impl EntrySequenceState {
             "entry sequence tick {} exceeds terminal tick",
             identity.tick
         );
-        if let Some(generation) = self.generation {
-            ensure!(
-                identity.generation == generation,
-                "entry sequence generation changed from {generation} to {}",
-                identity.generation
-            );
-        }
         Ok(())
     }
 
@@ -2471,7 +2307,6 @@ impl EntrySequenceState {
         submission: wgpu::SubmissionIndex,
     ) -> Result<()> {
         self.validate_next(identity)?;
-        self.generation.get_or_insert(identity.generation);
         self.expected_next_tick = self.expected_next_tick.saturating_add(1);
         self.pending.push(PendingSequenceReadback {
             identity,
@@ -2490,7 +2325,6 @@ pub(crate) struct ShellCaptureSession {
     entry_sequence: Option<EntrySequenceState>,
     skirmish: Option<skirmish::SkirmishCapture>,
     movies: Option<movies::MoviesCapture>,
-    wol_welcome_provider_selected: bool,
     score: Option<score::ScoreCapture>,
     campaign_score: Option<score::CampaignScoreCapture>,
     outcome: Option<std::result::Result<(), String>>,
@@ -2507,6 +2341,9 @@ impl ShellCaptureSession {
             }
             ShellCaptureCheckpoint::Skirmish0x102GameOptions => {
                 Some(skirmish::SkirmishCapture::game_options())
+            }
+            ShellCaptureCheckpoint::Skirmish0x102Setups => {
+                Some(skirmish::SkirmishCapture::setups())
             }
             ShellCaptureCheckpoint::Skirmish0x102BackSlideOut(tick) => {
                 Some(skirmish::SkirmishCapture::slide_out(tick))
@@ -2541,6 +2378,9 @@ impl ShellCaptureSession {
             ShellCaptureCheckpoint::SkirmishDiplomacy => Some(skirmish::SkirmishCapture::loading(
                 skirmish::LoadingTarget::Diplomacy,
             )),
+            ShellCaptureCheckpoint::SkirmishInGameMenu(target) => Some(
+                skirmish::SkirmishCapture::loading(skirmish::LoadingTarget::InGameMenu(target)),
+            ),
             ShellCaptureCheckpoint::Skirmish0x102Entry(tick) => {
                 Some(skirmish::SkirmishCapture::entry(tick))
             }
@@ -2621,7 +2461,6 @@ impl ShellCaptureSession {
             entry_sequence,
             skirmish,
             movies,
-            wol_welcome_provider_selected: false,
             score,
             campaign_score,
             outcome: None,
@@ -2643,21 +2482,13 @@ impl ShellCaptureSession {
         self.outcome.is_some()
     }
 
-    pub(crate) fn completion_handoff(&self) -> ShellCompletionHandoff {
-        if self.is_entry_sequence() {
-            ShellCompletionHandoff::FinalizeExitReturnBeforeAcquire
-        } else {
-            ShellCompletionHandoff::Continue
-        }
-    }
-
     /// First-live observes tick zero; opening captures drive exact steps through
     /// the same production runtime. Abort-return releases this ownership after
     /// its first draw so the ordinary modal/EXIT owners govern remaining frames.
-    pub(crate) fn owns_simulation_steps(&self, state: &AppState) -> bool {
+    pub(crate) fn owns_simulation_steps(&self, screen: &GameScreen, sim_runtime: &SimHost) -> bool {
         self.movies
             .as_ref()
-            .is_some_and(|capture| capture.owns_simulation_steps(state))
+            .is_some_and(|capture| capture.owns_simulation_steps(screen, sim_runtime))
     }
 
     /// The live LAN and online battle observers check every committed frame,
@@ -2668,10 +2499,16 @@ impl ShellCaptureSession {
             .is_some_and(|capture| capture.observes_every_frame())
     }
 
-    pub(crate) fn prepare_state(&mut self, state: &mut AppState) {
-        state.match_state.input.cursor_x = self.request.cursor_x as f32;
-        state.match_state.input.cursor_y = self.request.cursor_y as f32;
-        state.frontend.native_shell_ui = self.request.native_shell_ui();
+    pub(crate) fn prepare_state(
+        &mut self,
+        frontend: &mut FrontendState,
+        match_state: &mut MatchState,
+        process_assets: &mut ProcessAssets,
+    ) {
+        match_state.input.cursor_x = self.request.cursor_x as f32;
+        match_state.input.cursor_y = self.request.cursor_y as f32;
+        frontend.native_shell_ui = self.request.native_shell_ui();
+        frontend.wol_capture_provider = self.request.wol_welcome_provider();
         // As the Language list applies a pick; a language no file provides
         // fails the capture instead of drawing English under its name.
         let language = self
@@ -2679,7 +2516,12 @@ impl ShellCaptureSession {
             .language
             .clone()
             .unwrap_or_else(|| crate::i18n::DEFAULT_LANGUAGE.to_owned());
-        if !state.use_language(&language) {
+        if !crate::app::shell_main_menu::use_language(
+            frontend,
+            match_state,
+            process_assets,
+            &language,
+        ) {
             self.fail(format!(
                 "--language {language}: no language file provides it"
             ));
@@ -2753,20 +2595,41 @@ impl ShellCaptureSession {
         Ok(())
     }
 
-    fn steady_ready(&self, state: &AppState) -> Result<bool> {
+    fn steady_ready(
+        &self,
+        platform: &PlatformState,
+        renderer: &RendererState,
+        frontend: &FrontendState,
+        match_state: &MatchState,
+        process_assets: &ProcessAssets,
+        persistence: &PersistenceState,
+    ) -> Result<bool> {
         if let Some(capture) = &self.movies {
-            return capture.ready(state);
+            return capture.ready(
+                platform,
+                renderer,
+                frontend,
+                match_state,
+                process_assets,
+                persistence,
+            );
         }
         if let Some(capture) = &self.score {
-            return capture.ready(state);
+            return capture.ready(frontend);
         }
         if let Some(capture) = &self.campaign_score {
-            return capture.ready(state);
+            return capture.ready(frontend);
         }
         match &self.skirmish {
-            Some(capture) => capture.ready(state),
+            Some(capture) => capture.ready(platform, renderer, frontend, match_state, persistence),
             None => {
-                let mut snapshot = MainMenuCaptureSnapshot::from_state(state);
+                let mut snapshot = MainMenuCaptureSnapshot::from_state(
+                    platform,
+                    renderer,
+                    frontend,
+                    match_state,
+                    persistence,
+                );
                 let window = (self.request.width, self.request.height);
                 if (snapshot.width, snapshot.height) == window {
                     snapshot = snapshot.scaled_as_reference();
@@ -2790,26 +2653,6 @@ impl ShellCaptureSession {
                 "latency capture surface changed from the requested dimensions"
             );
         }
-        // A native visit opened with the retail welcome (`prepare_state`);
-        // the normal online visit has none and needs no selection.
-        if let Some(visit) = state.frontend.wol.as_mut()
-            && !self.wol_welcome_provider_selected
-            && matches!(visit.page, crate::app::shell_wol::WolPage::Welcome)
-            && let Some(provider) = self.request.wol_welcome_provider()
-        {
-            visit.set_provider(provider);
-            self.wol_welcome_provider_selected = true;
-            // Normal Online entry skips native persona I/O. Only after the
-            // explicit native diagnostic selection may its existing owner
-            // prefill and reopen the welcome.
-            crate::app::shell_wol::persona::enter_wol_main(state);
-            crate::app::App::reopen_wol_welcome(state);
-            // The ordinary reducer rearms the selected page's entry before
-            // any controlled driver reads its controls. Native fixtures are
-            // confined to the capture's separately marked profile.
-            crate::app::frontend::shell_transition::invalidate_main_menu_dialog_instance(state);
-            return Ok(());
-        }
         if let Some(capture) = &mut self.skirmish {
             capture.after_present(state, rendered, self.frames_seen)?;
         }
@@ -2825,7 +2668,15 @@ impl ShellCaptureSession {
         Ok(())
     }
 
-    pub(crate) fn should_capture_current_frame(&mut self, state: &AppState) -> Result<bool> {
+    pub(crate) fn should_capture_current_frame(
+        &mut self,
+        platform: &PlatformState,
+        renderer: &RendererState,
+        frontend: &FrontendState,
+        match_state: &MatchState,
+        process_assets: &ProcessAssets,
+        persistence: &PersistenceState,
+    ) -> Result<bool> {
         ensure!(
             self.outcome.is_none(),
             "shell capture attempted after its outcome was recorded"
@@ -2839,11 +2690,9 @@ impl ShellCaptureSession {
         if self.is_entry_sequence() {
             return Ok(false);
         }
-        if self
-            .campaign_score
-            .as_ref()
-            .is_some_and(score::CampaignScoreCapture::is_animation_sequence)
-        {
+        // The campaign page's stills are selected after its render
+        // ([`Self::should_capture_after_render`]).
+        if self.campaign_score.is_some() {
             return Ok(false);
         }
 
@@ -2851,42 +2700,55 @@ impl ShellCaptureSession {
             !self.readback_started,
             "shell capture attempted more than one readback"
         );
-        let ready = self.steady_ready(state)?;
+        let ready = self.steady_ready(
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            process_assets,
+            persistence,
+        )?;
         if ready {
             self.readback_started = true;
         }
         Ok(ready)
     }
 
-    /// Animation samples are selected after the production renderer has
-    /// polled and drawn its page-local SCRA frame, so the stored index matches
-    /// the final swapchain bytes submitted for readback.
+    /// The campaign page's stills (the animation samples and the steady
+    /// still) are selected after the production renderer has polled and drawn
+    /// its page-local SCRA frame, so the index checked matches the final
+    /// swapchain bytes submitted for readback.
     pub(crate) fn should_capture_after_render(
         &mut self,
-        state: &AppState,
+        gpu: &GpuContext,
+        frontend: &FrontendState,
         rendered: PresentedShell,
     ) -> Result<bool> {
-        let Some(capture) = self
-            .campaign_score
-            .as_mut()
-            .filter(|capture| capture.is_animation_sequence())
-        else {
+        let Some(capture) = self.campaign_score.as_mut() else {
             return Ok(false);
         };
         ensure!(
             !self.readback_started,
-            "campaign animation sequence requested overlapping readbacks"
+            "campaign score capture requested overlapping readbacks"
         );
-        let should_capture =
-            capture.should_capture_animation_frame(state, rendered, self.frames_seen)?;
+        let should_capture = if capture.is_animation_sequence() {
+            capture.should_capture_animation_frame(gpu, frontend, rendered, self.frames_seen)?
+        } else {
+            capture.should_capture_steady_frame(frontend)?
+        };
         self.readback_started = should_capture;
         Ok(should_capture)
     }
 
+    /// The entry tick this frame shows when it is the next one to retain; a
+    /// frame drawn again within the same 30 ms tick is not retained twice.
     pub(crate) fn observe_entry_sequence_after_render(
         &mut self,
-        state: &AppState,
-        token: &MainMenuEntryPresentToken,
+        platform: &PlatformState,
+        renderer: &RendererState,
+        frontend: &FrontendState,
+        match_state: &MatchState,
+        persistence: &PersistenceState,
     ) -> Result<Option<EntrySequenceFrameIdentity>> {
         let Some(sequence) = self.entry_sequence.as_ref() else {
             return Ok(None);
@@ -2904,7 +2766,13 @@ impl ShellCaptureSession {
             self.timeout().as_secs()
         );
 
-        let snapshot = MainMenuCaptureSnapshot::from_state(state);
+        let snapshot = MainMenuCaptureSnapshot::from_state(
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            persistence,
+        );
         ensure!(
             snapshot.width == EXPECTED_WIDTH && snapshot.height == EXPECTED_HEIGHT,
             "entry sequence surface changed from 800x600"
@@ -2941,27 +2809,17 @@ impl ShellCaptureSession {
                 && snapshot.software_cursor_active,
             "entry sequence production shell identity is incomplete"
         );
-        ensure!(
-            matches!(
-                state
-                    .frontend
-                    .main_menu_shell_state
-                    .title_reveal
-                    .paint_window(),
-                Kind1PaintWindow::Hidden
-            ),
-            "entry sequence title became visible"
-        );
-        let frame = crate::app::frontend::shell_transition::current_main_menu_entry_frame(state)
-            .context("entry sequence rendered without a ready frame")?;
+        let tick = frontend
+            .shell_first_paint_slide
+            .as_ref()
+            .context("entry sequence rendered without its wave")?
+            .tick();
         let identity = EntrySequenceFrameIdentity {
-            generation: token.generation(),
-            tick: token.tick(),
+            tick: u8::try_from(tick).context("entry tick fits a u8")?,
         };
-        ensure!(
-            (frame.generation(), frame.tick()) == (identity.generation, identity.tick),
-            "entry sequence token does not match the rendered wave frame"
-        );
+        if identity.tick.checked_add(1) == Some(sequence.expected_next_tick) {
+            return Ok(None);
+        }
         sequence.validate_next(identity)?;
         Ok(Some(identity))
     }
@@ -3011,7 +2869,13 @@ impl ShellCaptureSession {
 
     pub(crate) fn complete(
         &mut self,
-        state: &AppState,
+        platform: &PlatformState,
+        renderer: &RendererState,
+        frontend: &FrontendState,
+        match_state: &MatchState,
+        process_assets: &ProcessAssets,
+        sfx_player: &Option<SfxPlayer>,
+        persistence: &PersistenceState,
         surface_format: wgpu::TextureFormat,
         pixels: &[u8],
     ) -> Result<()> {
@@ -3040,7 +2904,7 @@ impl ShellCaptureSession {
                     .as_mut()
                     .expect("animation sequence has a campaign capture");
                 capture.record_animation_sample(
-                    state,
+                    frontend,
                     self.request.width,
                     self.request.height,
                     pixels,
@@ -3104,7 +2968,14 @@ impl ShellCaptureSession {
             pixels.len()
         );
         ensure!(
-            self.steady_ready(state)?,
+            self.steady_ready(
+                platform,
+                renderer,
+                frontend,
+                match_state,
+                process_assets,
+                persistence,
+            )?,
             "capture state changed before bundle write"
         );
 
@@ -3125,7 +2996,13 @@ impl ShellCaptureSession {
                 surface_format,
                 pixels,
                 self.frames_seen,
-                state,
+                platform,
+                renderer,
+                frontend,
+                match_state,
+                process_assets,
+                sfx_player,
+                persistence,
             )?),
             (None, None, Some(capture), _) => serde_json::to_vec_pretty(&capture.manifest(
                 &self.request,
@@ -3157,9 +3034,6 @@ impl ShellCaptureSession {
         write_new_file(&frame_path, pixels)?;
         let manifest_path = self.request.output_dir().join(MANIFEST_FILE_NAME);
         write_new_file(&manifest_path, &manifest_bytes)?;
-        if let Some(capture) = self.movies.as_mut() {
-            capture.cleanup()?;
-        }
 
         // The bundle keeps every partial observation, but an incomplete
         // measurement must not exit as a successful capture.
@@ -3176,7 +3050,11 @@ impl ShellCaptureSession {
         Ok(())
     }
 
-    pub(crate) fn complete_entry_sequence_after_wave(&mut self, state: &AppState) -> Result<()> {
+    pub(crate) fn complete_entry_sequence_after_wave(
+        &mut self,
+        gpu: &GpuContext,
+        shell_first_paint_slide: &Option<ShellFrameWave>,
+    ) -> Result<()> {
         ensure!(
             self.request.checkpoint == ShellCaptureCheckpoint::MainMenu0xE2EntrySequence,
             "entry-sequence completion used for steady capture"
@@ -3186,7 +3064,7 @@ impl ShellCaptureSession {
             "capture outcome was already recorded"
         );
         ensure!(
-            state.frontend.shell_first_paint_slide.is_none(),
+            shell_first_paint_slide.is_none(),
             "entry sequence completion ran before the wave cleared"
         );
         let started_at = self
@@ -3206,9 +3084,6 @@ impl ShellCaptureSession {
             "entry sequence completed with {} retained readbacks",
             sequence.pending.len()
         );
-        let generation = sequence
-            .generation
-            .context("entry sequence has no generation")?;
         sequence.completion_observed = true;
         let pending = std::mem::take(&mut sequence.pending);
 
@@ -3220,7 +3095,6 @@ impl ShellCaptureSession {
             ensure!(
                 item.identity
                     == (EntrySequenceFrameIdentity {
-                        generation,
                         tick: expected_tick as u8,
                     }),
                 "entry-sequence retained readback identity changed"
@@ -3233,9 +3107,9 @@ impl ShellCaptureSession {
                 !remaining.is_zero(),
                 "entry sequence timeout expired during deferred readback"
             );
-            let pixels =
-                item.readback
-                    .finish(&state.renderer.gpu.device, item.submission, remaining)?;
+            let pixels = item
+                .readback
+                .finish(&gpu.device, item.submission, remaining)?;
             ensure!(
                 pixels.len() as u64 == FRAME_BYTE_LENGTH,
                 "entry-sequence tick {expected_tick} length mismatch: expected \
@@ -3263,8 +3137,7 @@ impl ShellCaptureSession {
                 .join(ENTRY_SEQUENCE_FRAMES_FILE_NAME),
             &payload,
         )?;
-        let manifest =
-            entry_sequence_manifest(&self.request, state.renderer.gpu.config.format, generation);
+        let manifest = entry_sequence_manifest(&self.request, gpu.config.format);
         let mut manifest_bytes =
             serde_json::to_vec_pretty(&manifest).context("serialize entry-sequence manifest")?;
         manifest_bytes.push(b'\n');
@@ -3336,7 +3209,6 @@ fn capture_manifest<'a>(
 fn entry_sequence_manifest(
     request: &ShellCaptureRequest,
     surface_format: wgpu::TextureFormat,
-    generation: u64,
 ) -> EntrySequenceManifest {
     let frames = (0..ENTRY_SEQUENCE_FRAMES)
         .map(|tick| EntrySequenceFrameManifest {
@@ -3370,7 +3242,8 @@ fn entry_sequence_manifest(
             title_hidden_during_frames: true,
         },
         presenter_domain: "final-swapchain-after-rgb565",
-        generation,
+        // One 0xE2 instance per capture.
+        generation: 1,
         completion_observed: true,
         payload: EntrySequencePayloadManifest {
             path: ENTRY_SEQUENCE_FRAMES_FILE_NAME,
@@ -3378,29 +3251,6 @@ fn entry_sequence_manifest(
         },
         frames,
     }
-}
-
-/// One read-only startup projection for normal gameplay and the real loader.
-/// Source membership remains the frozen launch; House IDs come only from the
-/// constructed world supplied by its owner, never a previous resident runtime.
-pub(crate) fn network_startup_receipt(
-    state: &AppState,
-    launch: &crate::skirmish_launch::SkirmishLaunchSession,
-    sim: Option<&crate::sim::world::Simulation>,
-) -> Result<serde_json::Value> {
-    Ok(serde_json::json!({
-        "match_id":crate::app::shell_wol::online_match_id(state),
-        "seed":state.match_state.session.network_start_seed(),
-        "map":launch.selected_map_file,
-        "max_ahead":state.match_state.session.network_max_ahead_frames(),
-        "local_source":launch.local_player_index,
-        "sources":launch.humans.iter().enumerate().map(|(source,human)|serde_json::json!({
-            "source":source,"name":human.name,"raw_row":human.raw_slot_index,"slot":human.slot,
-            "house":sim.and_then(|sim|crate::app::match_runtime::network_match::source_house(
-                &state.match_state.session,sim,source)),
-            "endpoint":state.match_state.session.network_endpoint(source).map(|address|address.to_string())
-        })).collect::<Vec<_>>()
-    }))
 }
 
 fn write_new_file(path: &Path, bytes: &[u8]) -> Result<()> {
@@ -3585,13 +3435,27 @@ mod tests {
                     peer: "127.0.0.1:31010".parse().unwrap(),
                 },
                 map: None,
-                setup_crash: None,
+                isolation_seed: None,
+                prior_map: None,
                 profile_check: false,
                 failure_prefix_output: None,
             })
         );
         values[1] = "lan-live-guest".into();
         assert!(parse_launch_args(values.clone()).is_ok());
+        let mut isolation = values.clone();
+        isolation.extend(args(&["--lan-isolation-seed", "73"]));
+        let AppLaunchMode::ShellCapture(request) = parse_launch_args(isolation.clone()).unwrap()
+        else {
+            panic!("capture");
+        };
+        assert_eq!(request.live_lan.unwrap().isolation_seed, Some(73));
+        isolation.extend(args(&["--lan-prior-map", "history.map"]));
+        assert!(parse_launch_args(isolation.clone()).is_err());
+        isolation[1] = "lan-live-host".into();
+        assert!(parse_launch_args(isolation.clone()).is_ok());
+        isolation[1] = "lan-battle-guest".into();
+        assert!(parse_launch_args(isolation).is_err());
         values[1] = "lan-battle-host".into();
         assert!(parse_launch_args(values.clone()).is_ok());
         values[1] = "lan-battle-guest".into();
@@ -3629,7 +3493,7 @@ mod tests {
     }
 
     #[test]
-    fn production_lan_broadcast_rejects_socket_or_fault_overrides() {
+    fn production_lan_broadcast_rejects_socket_overrides() {
         let output = new_output_path("lan-production-conflict");
         let mut values = valid_args(&output);
         values[1] = "lan-live-host".into();
@@ -3637,7 +3501,6 @@ mod tests {
         for extra in [
             args(&["--lan-bind", "127.0.0.1:31000"]),
             args(&["--lan-peer", "127.0.0.1:31010"]),
-            args(&["--lan-setup-crash", "guest"]),
         ] {
             let mut invalid = values.clone();
             invalid.extend(extra);
@@ -3645,7 +3508,7 @@ mod tests {
                 parse_launch_args(invalid)
                     .unwrap_err()
                     .to_string()
-                    .contains("cannot override sockets or combine with a fault")
+                    .contains("cannot override sockets")
             );
         }
         values.push("--lan-production-broadcast".into());
@@ -3753,69 +3616,6 @@ mod tests {
         );
         values[1] = "lan-live-desync-guest".into();
         assert!(parse_launch_args(values).is_ok());
-    }
-
-    #[test]
-    fn editable_lan_crash_checkpoint_requires_a_real_pair_and_owned_prefix() {
-        let output = new_output_path("lan-setup-crash");
-        let mut values = valid_args(&output);
-        values[1] = "lan-live-host".into();
-        values.extend(args(&[
-            "--lan-bind",
-            "127.0.0.1:31000",
-            "--lan-peer",
-            "127.0.0.1:31010",
-            "--lan-setup-crash",
-            "guest",
-        ]));
-        let AppLaunchMode::ShellCapture(request) = parse_launch_args(values.clone()).unwrap()
-        else {
-            panic!("capture")
-        };
-        let lan = request.live_lan.unwrap();
-        assert_eq!(lan.setup_crash, Some(LanSetupCrash::Guest));
-        assert_eq!(
-            lan.failure_prefix_output,
-            Some(PathBuf::from(format!("{}.prefix.json", output.display())))
-        );
-        values[1] = "lan-live-guest".into();
-        *values.last_mut().unwrap() = "host".into();
-        assert!(parse_launch_args(values.clone()).is_ok());
-        values[1] = "lan-battle-guest".into();
-        assert!(parse_launch_args(values.clone()).is_err());
-        values[1] = "lan-live-guest".into();
-        *values.last_mut().unwrap() = "timeout".into();
-        assert!(parse_launch_args(values).is_err());
-    }
-
-    #[test]
-    fn interrupted_map_host_checkpoint_requires_authored_host_selection() {
-        let output = new_output_path("lan-map-crash");
-        let mut values = valid_args(&output);
-        values[1] = "lan-live-host".into();
-        values.extend(args(&[
-            "--lan-bind",
-            "127.0.0.1:31000",
-            "--lan-peer",
-            "127.0.0.1:31010",
-            "--lan-setup-crash",
-            "map-host",
-        ]));
-        assert!(parse_launch_args(values.clone()).is_err());
-        values[1] = "lan-live-guest".into();
-        assert!(parse_launch_args(values.clone()).is_ok());
-        values[1] = "lan-live-host".into();
-        values.extend(args(&["--lan-map", "transfer.yrm"]));
-        let AppLaunchMode::ShellCapture(request) = parse_launch_args(values.clone()).unwrap()
-        else {
-            panic!("capture");
-        };
-        assert_eq!(
-            request.live_lan.unwrap().setup_crash,
-            Some(LanSetupCrash::MapHost)
-        );
-        *values.last_mut().unwrap() = "RandMap.Sed".into();
-        assert!(parse_launch_args(values).is_err());
     }
 
     #[test]
@@ -4070,150 +3870,6 @@ mod tests {
     }
 
     #[test]
-    fn network_checkpoint_requires_a_normal_pair_and_a_bounded_public_nonce() {
-        let output = new_output_path("online-network-checkpoint");
-        let mut values = valid_args(&output);
-        values[1] = "online-live-host".into();
-        values.extend(args(&[
-            "--online-account",
-            "Host",
-            "--online-simple-input",
-            "--online-frames",
-            "600",
-            "--online-network-checkpoint",
-            "0123456789abcdef0123456789abcdef",
-        ]));
-        let AppLaunchMode::ShellCapture(request) = parse_launch_args(values.clone()).unwrap()
-        else {
-            panic!("capture");
-        };
-        assert_eq!(
-            request.live_online.unwrap().network_checkpoint.as_deref(),
-            Some("0123456789abcdef0123456789abcdef")
-        );
-        let frames = values.iter().position(|value| value == "600").unwrap();
-        values[frames] = "300".into();
-        assert!(parse_launch_args(values.clone()).is_err());
-        values[frames] = "600".into();
-        values[1] = "online-live-timeout-host".into();
-        assert!(parse_launch_args(values).is_err());
-    }
-
-    #[test]
-    fn loading_cancellation_and_progress_are_explicit_normal_online_inputs() {
-        let output = new_output_path("online-loading-cancel");
-        let mut values = valid_args(&output);
-        values[1] = "online-live-host".into();
-        values.extend(args(&[
-            "--online-account",
-            "CaptureHost",
-            "--online-simple-input",
-            "--online-loading-cancel",
-            "https",
-            "--online-loading-cancel-checkpoint",
-            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            "--online-observe-loading",
-        ]));
-        let AppLaunchMode::ShellCapture(request) = parse_launch_args(values.clone()).unwrap()
-        else {
-            panic!("capture")
-        };
-        let config = request.live_online.unwrap();
-        assert!(config.observe_loading);
-        assert_eq!(
-            config.loading_cancel.unwrap().kind,
-            LoadingCancelKind::Https
-        );
-        values.extend(args(&["--online-players", "3"]));
-        assert!(parse_launch_args(values).is_err());
-        let mut wrong = valid_args(&output);
-        wrong[1] = "online-live-host".into();
-        wrong.extend(args(&[
-            "--online-account",
-            "CaptureHost",
-            "--online-simple-input",
-            "--online-loading-cancel",
-            "departure",
-        ]));
-        assert!(parse_launch_args(wrong).is_err());
-    }
-
-    #[test]
-    fn loading_host_loss_requires_the_normal_three_player_input_route() {
-        let output = new_output_path("online-loading-host-loss");
-        let mut values = valid_args(&output);
-        values[1] = "online-live-guest".into();
-        values.extend(args(&[
-            "--online-account",
-            "Guest",
-            "--online-host",
-            "Host",
-            "--online-simple-input",
-            "--online-players",
-            "3",
-            "--online-frames",
-            "1024",
-            "--online-loading-host-loss",
-            "0123456789abcdef0123456789abcdef",
-        ]));
-        let AppLaunchMode::ShellCapture(request) = parse_launch_args(values.clone()).unwrap()
-        else {
-            panic!("capture");
-        };
-        let config = request.live_online.unwrap();
-        assert_eq!(config.players, 3);
-        assert_eq!(config.loading_output, Some(output));
-        assert_eq!(
-            config.loading_host_loss.as_deref(),
-            Some("0123456789abcdef0123456789abcdef")
-        );
-        let count = values.iter().position(|value| value == "3").unwrap();
-        values[count] = "2".into();
-        assert!(parse_launch_args(values.clone()).is_err());
-        values[count] = "3".into();
-        values.extend(args(&["--online-map", "custom.map"]));
-        assert!(parse_launch_args(values).is_err());
-    }
-
-    #[test]
-    fn exit_reentry_checkpoint_uses_a_separate_public_nonce_and_normal_pair() {
-        let output = new_output_path("online-exit-checkpoint");
-        let mut values = valid_args(&output);
-        values[1] = "online-live-guest".into();
-        values.extend(args(&[
-            "--online-account",
-            "Guest",
-            "--online-host",
-            "Host",
-            "--online-simple-input",
-            "--online-exit-checkpoint",
-            "0123456789abcdef0123456789abcdef",
-        ]));
-        let AppLaunchMode::ShellCapture(request) = parse_launch_args(values.clone()).unwrap()
-        else {
-            panic!("capture");
-        };
-        let config = request.live_online.unwrap();
-        assert!(config.failure_prefix_output.is_none());
-        assert!(
-            config
-                .exit_prefix_output
-                .unwrap()
-                .to_string_lossy()
-                .ends_with(".exit.json")
-        );
-        assert_eq!(
-            config.exit_checkpoint.as_deref(),
-            Some("0123456789abcdef0123456789abcdef")
-        );
-        *values.last_mut().unwrap() = "short".into();
-        assert!(parse_launch_args(values.clone()).is_err());
-        *values.last_mut().unwrap() = "0123456789abcdef0123456789abcdef".into();
-        values[1] = "online-live-timeout-host".into();
-        assert!(parse_launch_args(values).is_err());
-    }
-
-    #[test]
     fn scale_capture_uses_explicit_player_and_observation_limits() {
         let output = new_output_path("online-scale");
         let mut values = valid_args(&output);
@@ -4328,6 +3984,27 @@ mod tests {
     }
 
     #[test]
+    fn skirmish_in_game_menu_checkpoints_round_trip_with_the_game_budget() {
+        for (name, target) in SKIRMISH_IN_GAME_MENU_CHECKPOINTS {
+            let checkpoint = ShellCaptureCheckpoint::parse(name).expect("in-game menu checkpoint");
+            assert_eq!(
+                checkpoint,
+                ShellCaptureCheckpoint::SkirmishInGameMenu(target)
+            );
+            assert_eq!(checkpoint.as_str(), name);
+        }
+        let output = new_output_path("skirmish-pause-menu");
+        let mut values = valid_args(&output);
+        values[1] = OsString::from("skirmish-pause-sound");
+        let AppLaunchMode::ShellCapture(request) = parse_launch_args(values).expect("parse") else {
+            panic!("expected capture");
+        };
+        let session = ShellCaptureSession::new(request);
+        assert!(session.skirmish.is_some());
+        assert_eq!(session.timeout(), Duration::from_secs(180));
+    }
+
+    #[test]
     fn options_hover_checkpoints_round_trip_their_names() {
         for (name, ..) in OPTIONS_0XD5_HOVER_CHECKPOINTS {
             let checkpoint = ShellCaptureCheckpoint::parse(name).expect("hover checkpoint");
@@ -4356,9 +4033,8 @@ mod tests {
         let (layout, x, y) = &tooltips;
         assert!(
             layout
-                .checkboxes
-                .iter()
-                .any(|(id, rect)| { *id == LauncherCheckboxId::Tooltips && rect.contains(*x, *y) })
+                .checkbox_rect(LauncherCheckboxId::Tooltips)
+                .is_some_and(|rect| rect.contains(*x, *y))
         );
         for (name, category) in OPTIONS_SETTINGS_CHECKPOINTS {
             let checkpoint = ShellCaptureCheckpoint::parse(name).expect("settings checkpoint");
@@ -5067,7 +4743,6 @@ mod tests {
         let value = serde_json::to_value(entry_sequence_manifest(
             &request,
             wgpu::TextureFormat::Bgra8UnormSrgb,
-            73,
         ))
         .expect("serialize");
         assert_eq!(
@@ -5078,7 +4753,7 @@ mod tests {
             value["presenter_domain"].as_str(),
             Some("final-swapchain-after-rgb565")
         );
-        assert_eq!(value["generation"].as_u64(), Some(73));
+        assert_eq!(value["generation"].as_u64(), Some(1));
         assert_eq!(value["completion_observed"].as_bool(), Some(true));
         // 18 ticks of 800x600 BGRA8 (9 tile rows + 9, `0x006071E0`).
         assert_eq!(value["payload"]["byte_length"].as_u64(), Some(34_560_000));
@@ -5092,57 +4767,16 @@ mod tests {
     }
 
     #[test]
-    fn entry_sequence_ledger_rejects_gap_duplicate_and_generation_change() {
+    fn entry_sequence_ledger_rejects_gap_and_duplicate() {
         let mut sequence = EntrySequenceState::default();
-        let first = EntrySequenceFrameIdentity {
-            generation: 5,
-            tick: 0,
-        };
+        let first = EntrySequenceFrameIdentity { tick: 0 };
         sequence.validate_next(first).expect("first");
-        sequence.generation = Some(5);
         sequence.expected_next_tick = 1;
         assert!(sequence.validate_next(first).is_err());
         assert!(
             sequence
-                .validate_next(EntrySequenceFrameIdentity {
-                    generation: 5,
-                    tick: 2,
-                })
+                .validate_next(EntrySequenceFrameIdentity { tick: 2 })
                 .is_err()
-        );
-        assert!(
-            sequence
-                .validate_next(EntrySequenceFrameIdentity {
-                    generation: 6,
-                    tick: 1,
-                })
-                .is_err()
-        );
-    }
-
-    #[test]
-    fn sequence_completion_handoff_returns_before_another_acquire() {
-        let steady_output = new_output_path("steady-handoff");
-        let AppLaunchMode::ShellCapture(steady) =
-            parse_launch_args(valid_args(&steady_output)).expect("steady")
-        else {
-            panic!("expected steady capture");
-        };
-        assert_eq!(
-            ShellCaptureSession::new(steady).completion_handoff(),
-            ShellCompletionHandoff::Continue
-        );
-
-        let sequence_output = new_output_path("sequence-handoff");
-        let mut values = valid_args(&sequence_output);
-        values[1] = OsString::from(CHECKPOINT_MAIN_MENU_0XE2_ENTRY_SEQUENCE);
-        let AppLaunchMode::ShellCapture(sequence) = parse_launch_args(values).expect("sequence")
-        else {
-            panic!("expected sequence capture");
-        };
-        assert_eq!(
-            ShellCaptureSession::new(sequence).completion_handoff(),
-            ShellCompletionHandoff::FinalizeExitReturnBeforeAcquire
         );
     }
 

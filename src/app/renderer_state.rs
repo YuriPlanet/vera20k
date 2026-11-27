@@ -8,6 +8,7 @@
 use crate::render::batch::BatchRenderer;
 use crate::render::bit_font::BitFont;
 use crate::render::gpu::GpuContext;
+use crate::ui::game_screen::GameScreen;
 
 pub(crate) struct RendererState {
     pub(crate) gpu: GpuContext,
@@ -15,6 +16,9 @@ pub(crate) struct RendererState {
     pub(crate) performance_overlay:
         crate::app::diagnostics::performance_overlay::PerformanceOverlay,
     pub(crate) terrain_draw_renderer: crate::render::terrain_draw::TerrainDrawRenderer,
+    /// Logs each frame's render pass and submission counts while they are
+    /// new or growing, for a player's log of a GPU that cannot keep up.
+    pub(crate) pass_log: crate::app::presentation::render::FramePassLog,
     pub(crate) combat_light_renderer: crate::render::combat_light::CombatLightRenderer,
     /// Process GPU resources for the native final client-pixel shake copy.
     pub(crate) screen_presentation: crate::render::screen_presentation::ScreenPresentationPass,
@@ -49,7 +53,8 @@ pub(crate) struct RendererState {
     pub(crate) outcome_banner_art:
         Option<crate::app::presentation::outcome_banner::OutcomeBannerArt>,
     /// This frame's posed bodies: crash tilts and pitched rockets
-    /// (`render::unit_pose_cache`).
+    /// (`render::unit_pose_cache`). A `RefCell`: the unit and building
+    /// visitors, alive at once over the shared renderer, pose bodies through it.
     pub(crate) vxl_pose_frame_cache:
         std::cell::RefCell<crate::render::unit_pose_cache::VxlPoseFrameCache>,
     /// Previous presented pre-cursor composition, retained for input-time
@@ -57,9 +62,70 @@ pub(crate) struct RendererState {
     pub(crate) retail_screenshot_frame_cache: crate::render::screenshot::PresentedFrameCache,
     /// The finished terrain layer, kept while its inputs hold still.
     pub(crate) terrain_picture: crate::app::presentation::render::terrain_picture::TerrainPicture,
+    /// gamemd's Z-buffer row seed, which lives as long as its Z buffer: one
+    /// per process, until the view's size changes.
+    pub(crate) native_z_seed: crate::render::native_z::ZSeed,
+    /// VERA's HD art pack: `None` until a zoomed frame first wants it,
+    /// then whatever opening the pack gave (`render::hd_art`).
+    pub(crate) hd_art: Option<Option<crate::render::hd_art::HdArt>>,
+    /// VERA's HD art terrain pack, as `hd_art` (`render::hd_terrain`).
+    pub(crate) hd_terrain: Option<Option<crate::render::hd_terrain::HdTerrain>>,
+    /// VERA's HD art voxel pass, made on its first draw (`render::hd_voxel`).
+    pub(crate) hd_voxel: Option<crate::render::hd_voxel::HdVoxelPass>,
+    /// Whether HD art (`render::hd_switch`) has been on in this run: voxels then
+    /// keep making their HD pictures while it is off, so turning it on again
+    /// shows them at once.
+    pub(crate) hd_art_seen: bool,
+    /// Set when a match is still to show its first frame: with HD art on, that
+    /// frame eases the wheel zoom to `render::hd_switch::DEFAULT_ZOOM`. A loaded
+    /// game keeps its saved zoom.
+    pub(crate) hd_art_zoom_pending: bool,
 }
 
 impl RendererState {
+    /// Current projection on `screen`: frontend/result use physical window
+    /// pixels; tactical rendering and pending tactical installation use the
+    /// optional zoom pass. Loading artwork explicitly uses GPU/window
+    /// dimensions in loading::pump.
+    pub(crate) fn render_size(&self, screen: &GameScreen) -> (u32, u32) {
+        render_dimensions(
+            screen,
+            (self.gpu.config.width, self.gpu.config.height),
+            self.upscale_pass
+                .as_ref()
+                .map(|up| (up.src_width(), up.src_height())),
+        )
+    }
+
+    pub(crate) fn render_width(&self, screen: &GameScreen) -> u32 {
+        self.render_size(screen).0
+    }
+
+    pub(crate) fn render_height(&self, screen: &GameScreen) -> u32 {
+        self.render_size(screen).1
+    }
+
+    /// The zoom pass a match frame goes through: the battlefield and the
+    /// active-game shells draw into it at the source size. Loading and the
+    /// menus never zoom.
+    pub(crate) fn match_zoom_pass(
+        &self,
+        screen: &GameScreen,
+    ) -> Option<&crate::render::upscale_pass::UpscalePass> {
+        (*screen == GameScreen::InGame)
+            .then_some(self.upscale_pass.as_ref())
+            .flatten()
+    }
+
+    /// The zoom between the window and the match frame, whose cursor, layout
+    /// and drawing all use source pixels.
+    pub(crate) fn tactical_zoom(
+        &self,
+        screen: &GameScreen,
+    ) -> Option<crate::ui::main_menu_dialogs::options::ZoomGeometry> {
+        self.match_zoom_pass(screen).map(|pass| pass.geometry())
+    }
+
     /// Completed match frame with its chrome, in frame pixels. The software
     /// cursor goes over this frame's copies, so it stays cursor-free.
     pub(crate) fn game_frame_texture(&self) -> &wgpu::Texture {
@@ -91,5 +157,19 @@ impl RendererState {
             },
             source.size(),
         );
+    }
+}
+
+/// Loading uses tactical dimensions only for pending match-resource setup;
+/// its own artwork uses the window directly. Frontend layout and hit testing
+/// must never inherit the match zoom's source size.
+fn render_dimensions(
+    screen: &GameScreen,
+    window: (u32, u32),
+    tactical_source: Option<(u32, u32)>,
+) -> (u32, u32) {
+    match screen {
+        GameScreen::MainMenu | GameScreen::MissionResult { .. } => window,
+        GameScreen::Loading | GameScreen::InGame => tactical_source.unwrap_or(window),
     }
 }

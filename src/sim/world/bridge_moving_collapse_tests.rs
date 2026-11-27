@@ -86,7 +86,7 @@ fn retail_hills_ordinary_move_reserves_a_collapsing_deck_cell() {
                 &commands,
                 crate::headless_scenario::SIM_TICK_MS,
                 TickLane::Ordinary,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap();
         let sim = scene.sim();
@@ -118,7 +118,6 @@ fn retail_hills_ordinary_move_reserves_a_collapsing_deck_cell() {
         let mut drivers = BridgeDamageDrivers::new(
             &mut runtime.simulation,
             &runtime.resources.rules,
-            Some(&runtime.resources.overlay_registry),
             FrameEffects::default(),
         );
         let returned = drivers.apply_damage_to_cell((target.0 as i16, target.1 as i16));
@@ -194,9 +193,12 @@ fn retail_hills_empty_claim_nonmatching_head_and_stale_pending_controls() {
     moving_collapse::apply(
         &mut runtime.simulation,
         &runtime.resources.rules,
-        Some(&runtime.resources.overlay_registry),
-        (76, 75),
-        FrameEffects::default(),
+        Some(runtime.resources.rules.overlay_registry()),
+        PendingBridgeCell {
+            point: (76, 75),
+            corrected_deck_level: None,
+        },
+        &mut FrameEffects::default(),
     );
     assert_eq!(
         runtime.simulation.state_hash(),
@@ -222,7 +224,7 @@ fn retail_hills_empty_claim_nonmatching_head_and_stale_pending_controls() {
             &[command],
             crate::headless_scenario::SIM_TICK_MS,
             TickLane::Ordinary,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap();
     let mut arrived = false;
@@ -255,9 +257,12 @@ fn retail_hills_empty_claim_nonmatching_head_and_stale_pending_controls() {
     moving_collapse::apply(
         &mut runtime.simulation,
         &runtime.resources.rules,
-        Some(&runtime.resources.overlay_registry),
-        (76, 75),
-        FrameEffects::default(),
+        Some(runtime.resources.rules.overlay_registry()),
+        PendingBridgeCell {
+            point: (76, 75),
+            corrected_deck_level: None,
+        },
+        &mut FrameEffects::default(),
     );
     assert_eq!(
         runtime.simulation.state_hash(),
@@ -287,12 +292,15 @@ fn retail_hills_empty_claim_nonmatching_head_and_stale_pending_controls() {
 
     // A native-save pending vector is independent of the next requested cell.
     // Even no-driver587180 clears it before considering these coordinates.
-    runtime.simulation.pending_bridge_collapses.append((76, 75));
-    runtime.simulation.pending_bridge_collapses.append((76, 75));
+    let stale = PendingBridgeCell {
+        point: (76, 75),
+        corrected_deck_level: Some(8),
+    };
+    runtime.simulation.pending_bridge_collapses.append(stale);
+    runtime.simulation.pending_bridge_collapses.append(stale);
     let mut driver = BridgeDamageDrivers::new(
         &mut runtime.simulation,
         &runtime.resources.rules,
-        Some(&runtime.resources.overlay_registry),
         FrameEffects::default(),
     );
     let no_driver = (90, 44);
@@ -425,7 +433,7 @@ fn retail_hills_tanya_charge_collapses_under_an_ordinary_incoming_tank() {
                 &commands,
                 crate::headless_scenario::SIM_TICK_MS,
                 TickLane::Ordinary,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap();
         let sim = scene.sim();
@@ -480,17 +488,35 @@ fn retail_hills_tanya_charge_collapses_under_an_ordinary_incoming_tank() {
 fn pending_bridge_cells_retain_order_duplicates_and_snapshot_state() {
     let mut sim = Simulation::with_seed(0);
     let empty_hash = sim.state_hash();
-    sim.pending_bridge_collapses.append((76, 75));
-    let single_hash = sim.state_hash();
-    assert_ne!(single_hash, empty_hash);
-    sim.pending_bridge_collapses.append((76, 75));
-    sim.pending_bridge_collapses.append((-1, 12));
-    assert_ne!(sim.state_hash(), single_hash);
+    let corrected = PendingBridgeCell {
+        point: (76, 75),
+        corrected_deck_level: Some(8),
+    };
+    let stock = PendingBridgeCell {
+        corrected_deck_level: None,
+        ..corrected
+    };
+    let signed_point = PendingBridgeCell {
+        point: (-1, 12),
+        corrected_deck_level: None,
+    };
+    sim.pending_bridge_collapses.append(stock);
+    let stock_hash = sim.state_hash();
+    sim.pending_bridge_collapses.clear();
+    sim.pending_bridge_collapses.append(corrected);
+    let corrected_hash = sim.state_hash();
+    assert_ne!(
+        corrected_hash, stock_hash,
+        "captured height participates in the hash"
+    );
+    sim.pending_bridge_collapses.append(corrected);
+    sim.pending_bridge_collapses.append(signed_point);
+    assert_ne!(sim.state_hash(), corrected_hash);
     let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "bridge", 0);
     let saved = crate::sim::snapshot::GameSnapshot::load(&bytes).unwrap();
-    assert_eq!(saved.sim.pending_bridge_collapses.at(0), Some((76, 75)));
-    assert_eq!(saved.sim.pending_bridge_collapses.at(1), Some((76, 75)));
-    assert_eq!(saved.sim.pending_bridge_collapses.at(2), Some((-1, 12)));
+    assert_eq!(saved.sim.pending_bridge_collapses.at(0), Some(corrected));
+    assert_eq!(saved.sim.pending_bridge_collapses.at(1), Some(corrected));
+    assert_eq!(saved.sim.pending_bridge_collapses.at(2), Some(signed_point));
     assert_eq!(saved.sim.pending_bridge_collapses.at(3), None);
     sim.pending_bridge_collapses.clear();
     assert_eq!(sim.state_hash(), empty_hash);

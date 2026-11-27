@@ -262,7 +262,7 @@ fn sale_completion_tag_callbacks_match_original_histories() {
                     &rules,
                     None,
                     id,
-                    FrameEffects::default(),
+                    &mut FrameEffects::default(),
                 )
             }))
             .expect_err("both implementations stop before the selected action body");
@@ -280,7 +280,7 @@ fn sale_completion_tag_callbacks_match_original_histories() {
                 id,
                 KillSource::Techno(None),
                 KillCallback::Terminal,
-                UninitContext::with_rules(&rules),
+                UninitContext::new(&rules),
             );
         } else {
             assert!(!crate::sim::production::sell_complete(
@@ -288,7 +288,7 @@ fn sale_completion_tag_callbacks_match_original_histories() {
                 &rules,
                 None,
                 id,
-                FrameEffects::default()
+                &mut FrameEffects::default()
             ));
         }
         assert_eq!(
@@ -434,12 +434,12 @@ fn restore130_after_owner_transfer_matches_native_blocked_and_cleared_cells() {
             &mut Vec::new(),
             &rules,
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         ));
         assert_eq!(initial_techno_state(&sim, &[id]), case["after_transfer"]);
         if case["input"]["clear_foreign_resident"].as_bool().unwrap() {
             let before = sim.scenario_rng.native_state_hex();
-            sim.uninit_with_context(id, UninitContext::with_rules(&rules));
+            sim.uninit_with_context(id, UninitContext::new(&rules));
             assert_eq!(sim.scenario_rng.native_state_hex(), before);
         }
         assert_eq!(case["clear_rng_unchanged"], true);
@@ -459,13 +459,12 @@ fn restore130_after_owner_transfer_matches_native_blocked_and_cleared_cells() {
             .clone();
         // Adopt the measured original boundary, including setup's earlier
         // draws, rather than deriving expected RNG from the Rust setup.
-        sim.scenario_rng = SimRng::from_native_state_hex_for_test(
+        *sim.scenario_rng = SimRng::from_native_state_hex_for_test(
             case["rng_before"]["scenario"].as_str().unwrap(),
         );
-        sim.main_rng =
-            SimRng::from_native_state_hex_for_test(case["rng_before"]["main"].as_str().unwrap())
-                .into();
-        sim.mapgen_rng =
+        *sim.main_rng =
+            SimRng::from_native_state_hex_for_test(case["rng_before"]["main"].as_str().unwrap());
+        *sim.mapgen_rng =
             SimRng::from_native_state_hex_for_test(case["rng_before"]["mapgen"].as_str().unwrap());
         let returned = sim.apply_live_trigger_action(
             &action,
@@ -477,7 +476,7 @@ fn restore130_after_owner_transfer_matches_native_blocked_and_cleared_cells() {
             &mut Vec::new(),
             &rules,
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
         assert_eq!(
             u8::from(returned),

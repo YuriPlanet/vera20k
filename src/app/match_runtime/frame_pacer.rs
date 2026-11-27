@@ -4,7 +4,7 @@
 //! whether one outer event-loop iteration may admit a gameplay frame, while the
 //! scenario elapsed clock supplies the score screen's match duration.
 
-use crate::net::live_commands::SequencedTiming;
+use crate::net::live_commands::{SUSTAIN_PERCENT, SequencedTiming};
 use crate::util::time::{Duration, Instant};
 
 const FRAME_BUCKET_SHIFT: u32 = 4;
@@ -27,11 +27,6 @@ const CADENCE_SLACK_BUCKETS: u32 = 2;
 /// The shortest time an online continuation may leave the picture standing
 /// (`defer_online_render`).
 const MIN_RENDER_STANDING: Duration = Duration::from_millis(50);
-/// An online continuation may leave the picture standing this many recent
-/// draw times, so the simulation may take four fifths of the time between
-/// presents: the share the relay expects a player's tick cost to hold before
-/// it slows the match (services/relay/README.md, Pace).
-const RENDER_STANDING_DRAWS: u32 = 4;
 /// Half the native 256-frame checksum history (`CHECKSUM_HISTORY_LEN`): the
 /// LAN live capture reads that history once per presented frame.
 const MAX_TICKS_BETWEEN_PRESENTS: u32 = 128;
@@ -697,7 +692,7 @@ impl LocalFramePacer {
         now: Instant,
         now_ms: u64,
         game_speed: u8,
-        network_fps: Option<(u16, u32)>,
+        network_fps: Option<u16>,
     ) -> bool {
         self.catch_up_continues(now) && self.should_admit(now_ms, game_speed, network_fps, false)
     }
@@ -761,6 +756,27 @@ impl LocalFramePacer {
         };
         self.debug_speed = speed.clamp(1, MAX_DEBUG_SPEED);
         self.debug_speed
+    }
+
+    /// Whether the pass may run `next_frame` online: the online pacer decides
+    /// ([`Self::online_frame_decision`]) with the inputs
+    /// `sim_tick::online_pacing_inputs` gives. Without them (a held match, or
+    /// no relay timing yet) the committed frontier alone admits the frame, as
+    /// in [`Self::another_online_pass_follows`].
+    pub(crate) fn admits_online_frame(
+        &mut self,
+        now: Instant,
+        next_frame: u32,
+        frontier: u32,
+        inputs: Option<(SequencedTiming, bool)>,
+        resuming: bool,
+    ) -> bool {
+        match inputs {
+            Some((receipt, recovering)) => self
+                .online_frame_decision(now, next_frame, frontier, receipt, resuming, recovering)
+                .admits(),
+            None => Self::admits_canonical_frame(next_frame, frontier),
+        }
     }
 
     pub(crate) fn online_frame_decision(
@@ -888,12 +904,16 @@ impl LocalFramePacer {
         self.render_deferred
     }
 
-    /// How long a continuation may leave the picture standing:
-    /// `RENDER_STANDING_DRAWS` recent draw times, at least
-    /// `MIN_RENDER_STANDING`.
+    /// How long a continuation may leave the picture standing, at least
+    /// `MIN_RENDER_STANDING`: long enough that the simulation may take
+    /// `SUSTAIN_PERCENT` of the time between presents, the share the relay
+    /// expects a player's tick cost to hold before it slows the match, and a
+    /// recent draw time the rest.
     fn online_render_standing(&self) -> Duration {
         self.draw_cost
-            .map_or(MIN_RENDER_STANDING, |cost| cost * RENDER_STANDING_DRAWS)
+            .map_or(MIN_RENDER_STANDING, |cost| {
+                cost * SUSTAIN_PERCENT / (100 - SUSTAIN_PERCENT)
+            })
             .max(MIN_RENDER_STANDING)
     }
 
@@ -941,7 +961,7 @@ impl LocalFramePacer {
     }
 
     /// Read the same interval used by `should_admit`, for diagnostics.
-    pub(crate) fn budget_ms(&self, game_speed: u8, network_fps: Option<(u16, u32)>) -> Option<f32> {
+    pub(crate) fn budget_ms(&self, game_speed: u8, network_fps: Option<u16>) -> Option<f32> {
         pacing_timer(game_speed, network_fps).map(PacingTimer::length_ms)
     }
 
@@ -949,7 +969,7 @@ impl LocalFramePacer {
         &self,
         now_ms: u64,
         game_speed: u8,
-        network_fps: Option<(u16, u32)>,
+        network_fps: Option<u16>,
         paused: bool,
     ) -> bool {
         if paused {
@@ -983,7 +1003,7 @@ impl LocalFramePacer {
         &self,
         now_ms: u64,
         game_speed: u8,
-        network_fps: Option<(u16, u32)>,
+        network_fps: Option<u16>,
     ) -> u64 {
         let Some((timer, start)) =
             pacing_timer(game_speed, network_fps).zip(self.last_frame_start_ms)
@@ -1024,7 +1044,7 @@ impl LocalFramePacer {
         &self,
         now_ms: u64,
         game_speed: u8,
-        network_fps: Option<(u16, u32)>,
+        network_fps: Option<u16>,
     ) -> Option<Duration> {
         let (timer, start) = pacing_timer(game_speed, network_fps).zip(self.last_frame_start_ms)?;
         // Signed: the millisecond word wraps, and a due frame reads negative.
@@ -1040,17 +1060,15 @@ impl LocalFramePacer {
 }
 
 /// The timer Main_Tick arms for the next frame: network FPS arms
-/// milliseconds (`0x0055D55E`, plus the lag delay), offline GameSpeed arms
-/// 16 ms buckets (`0x0055D7BC`). GameSpeed 0 never waits.
+/// milliseconds (`0x0055D55E`), offline GameSpeed arms 16 ms buckets
+/// (`0x0055D7BC`). GameSpeed 0 never waits.
 #[derive(Debug, Clone, Copy)]
 enum PacingTimer {
     Buckets(u32),
     Milliseconds(u32),
     /// VERA's extra preset uses alternating 11/12 ms deadlines. A fixed
     /// 11 ms interval would run at 90.9 ticks/s instead of the requested 90.
-    NinetyHz {
-        delay: u32,
-    },
+    NinetyHz,
 }
 
 impl PacingTimer {
@@ -1067,9 +1085,9 @@ impl PacingTimer {
     fn length(self, start: u32) -> u32 {
         match self {
             Self::Buckets(length) | Self::Milliseconds(length) => length,
-            Self::NinetyHz { delay } => {
+            Self::NinetyHz => {
                 let phase = u64::from(start) * 90 % 1000;
-                ((1000 - phase).div_ceil(90) as u32).saturating_add(delay)
+                (1000 - phase).div_ceil(90) as u32
             }
         }
     }
@@ -1096,22 +1114,22 @@ impl PacingTimer {
         match self {
             Self::Buckets(length) => (length << FRAME_BUCKET_SHIFT) as f32,
             Self::Milliseconds(length) => length as f32,
-            Self::NinetyHz { delay } => 1000.0 / 90.0 + delay as f32,
+            Self::NinetyHz => 1000.0 / 90.0,
         }
     }
 }
 
-fn pacing_timer(game_speed: u8, network_fps: Option<(u16, u32)>) -> Option<PacingTimer> {
-    if let Some((fps, delay)) = network_fps {
+fn pacing_timer(game_speed: u8, network_fps: Option<u16>) -> Option<PacingTimer> {
+    if let Some(fps) = network_fps {
         return Some(if fps == 90 {
-            PacingTimer::NinetyHz { delay }
+            PacingTimer::NinetyHz
         } else {
-            PacingTimer::Milliseconds(network_interval_ms(fps).saturating_add(delay))
+            PacingTimer::Milliseconds(network_interval_ms(fps))
         });
     }
     (game_speed != 0).then(|| {
         if game_speed == crate::sim::game_options::GAME_SPEED_90_TPS {
-            PacingTimer::NinetyHz { delay: 0 }
+            PacingTimer::NinetyHz
         } else {
             PacingTimer::Buckets(u32::from(
                 game_speed.clamp(MIN_TIMED_GAME_SPEED, MAX_TIMED_GAME_SPEED),
@@ -1588,17 +1606,15 @@ mod tests {
     fn network_fps_uses_millisecond_timer_and_resets_for_rematch() {
         let mut pacer = LocalFramePacer::new();
         pacer.record_admitted_frame(17);
-        assert!(!pacer.should_admit(38, 0, Some((45, 0)), false));
-        assert!(pacer.should_admit(39, 6, Some((45, 0)), false));
-        assert_eq!(pacer.budget_ms(0, Some((45, 0))), Some(22.0));
-        assert!(!pacer.should_admit(68, 0, Some((45, 30)), false));
-        assert!(pacer.should_admit(69, 0, Some((45, 30)), false));
-        assert!(!pacer.should_admit(49, 0, Some((0, 0)), false));
-        assert!(pacer.should_admit(50, 0, Some((0, 0)), false));
+        assert!(!pacer.should_admit(38, 0, Some(45), false));
+        assert!(pacer.should_admit(39, 6, Some(45), false));
+        assert_eq!(pacer.budget_ms(0, Some(45)), Some(22.0));
+        assert!(!pacer.should_admit(49, 0, Some(0), false));
+        assert!(pacer.should_admit(50, 0, Some(0), false));
         pacer.record_admitted_frame(u64::from(u32::MAX - 7));
-        assert!(pacer.should_admit(8, 6, Some((60, 0)), false));
+        assert!(pacer.should_admit(8, 6, Some(60), false));
         pacer.reset_for_immediate_frame();
-        assert!(pacer.should_admit(8, 6, Some((30, 0)), false));
+        assert!(pacer.should_admit(8, 6, Some(30), false));
     }
 
     /// Frames admitted over `duration_ms` by one pass per display refresh,
@@ -1607,7 +1623,7 @@ mod tests {
         hz: u64,
         duration_ms: u64,
         game_speed: u8,
-        network_fps: Option<(u16, u32)>,
+        network_fps: Option<u16>,
     ) -> u32 {
         let mut pacer = LocalFramePacer::new();
         let mut frames = 0;
@@ -1629,7 +1645,7 @@ mod tests {
     #[test]
     fn a_60_hz_refresh_keeps_the_native_timer_cadence() {
         // 45 FPS arms 22 ms (55D55E): frames start at 1000 + 22k up to 4000.
-        assert_eq!(frames_at_refresh(60, 3_000, 0, Some((45, 0))), 137);
+        assert_eq!(frames_at_refresh(60, 3_000, 0, Some(45)), 137);
         // GameSpeed 2 waits two buckets (55D7BC): buckets 62, 64, ..., 250.
         assert_eq!(frames_at_refresh(60, 3_000, 2, None), 95);
     }
@@ -1639,14 +1655,14 @@ mod tests {
         // GameSpeed 1 waits one bucket: buckets 62, 63, ..., 250.
         assert_eq!(frames_at_refresh(60, 3_000, 1, None), 189);
         // 60 FPS arms 16 ms: frames start at 1000 + 16k up to 4000.
-        assert_eq!(frames_at_refresh(60, 3_000, 0, Some((60, 0))), 188);
+        assert_eq!(frames_at_refresh(60, 3_000, 0, Some(60)), 188);
     }
 
     #[test]
     fn ninety_ticks_keeps_its_rate_offline_and_on_lan_at_sixty_hz_refresh() {
         let speed = crate::sim::game_options::GAME_SPEED_90_TPS;
         assert_eq!(frames_at_refresh(60, 3_000, speed, None), 271);
-        assert_eq!(frames_at_refresh(60, 3_000, speed, Some((90, 0))), 271);
+        assert_eq!(frames_at_refresh(60, 3_000, speed, Some(90)), 271);
         let mut pacer = LocalFramePacer::new();
         pacer.record_admitted_frame(1_000);
         assert!(!pacer.should_admit(1_011, speed, None, false));
@@ -1662,24 +1678,15 @@ mod tests {
     fn a_frame_late_by_a_whole_interval_restarts_from_now() {
         let mut pacer = LocalFramePacer::new();
         pacer.record_admitted_frame(1_000);
-        assert_eq!(
-            pacer.admitted_frame_start_ms(1_030, 0, Some((45, 0))),
-            1_022
-        );
-        assert_eq!(
-            pacer.admitted_frame_start_ms(1_054, 0, Some((45, 0))),
-            1_054
-        );
+        assert_eq!(pacer.admitted_frame_start_ms(1_030, 0, Some(45)), 1_022);
+        assert_eq!(pacer.admitted_frame_start_ms(1_054, 0, Some(45)), 1_054);
         // A one-bucket interval still forgives one 60 Hz refresh gap.
         assert_eq!(pacer.admitted_frame_start_ms(1_030, 1, None), 1_008);
         assert_eq!(pacer.admitted_frame_start_ms(1_040, 1, None), 1_040);
         assert_eq!(pacer.admitted_frame_start_ms(1_050, 3, None), 1_040);
         assert_eq!(pacer.admitted_frame_start_ms(1_090, 3, None), 1_090);
         pacer.record_admitted_frame(u64::from(u32::MAX - 7));
-        assert_eq!(
-            pacer.admitted_frame_start_ms(20, 0, Some((45, 0))) as u32,
-            14
-        );
+        assert_eq!(pacer.admitted_frame_start_ms(20, 0, Some(45)) as u32, 14);
     }
     #[test]
     fn wall_clock_process_probe() {

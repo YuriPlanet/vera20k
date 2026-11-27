@@ -8,7 +8,7 @@
 //! Native caller/type/draw evidence: tools/spatial_oracle/damage_smoke.md.
 
 use crate::app::presentation::render::draw_plan_lowering::{
-    NativeDisplayOrder, ObjectBodyDraw, ObjectPieceInstance, ObjectTexture, PlannedObjectInstance,
+    NativeDisplayOrder, ObjectBodyDraw, ObjectPieceInstance, ObjectTexture, PlannedObjects,
 };
 use crate::render::batch::SpriteInstance;
 use crate::render::draw_state::DrawState;
@@ -104,7 +104,7 @@ impl ParticleDrawContext {
                     as i32,
                 adjust_for_z_multiplier: crate::util::native_x87::STANDARD_ADJUST_FOR_Z_MULTIPLIER,
                 z_origin_term: logical(y) as i16,
-                z_bottom_term: crate::render::native_z::DEFAULT_Z as i16,
+                z_bottom_term: input.z_seed as i16,
             },
         }
     }
@@ -115,7 +115,7 @@ pub(super) fn build_particle_system_instance(
     input: &DisplayEffectInputs<'_>,
     system: &crate::sim::particles::ParticleSystem,
     context: &ParticleDrawContext,
-    objects: &mut Vec<PlannedObjectInstance>,
+    objects: &mut PlannedObjects,
     order: &NativeDisplayOrder,
 ) {
     let Some(parent) = order.object_draw(system.stable_id(), SpriteEncoding::Plain) else {
@@ -135,9 +135,7 @@ pub(super) fn build_particle_system_instance(
     );
     if let Some(mut record) = record {
         record.coord = crate::sim::projectile::ProjectileCoord::new(coord.x, coord.y, coord.z);
-        let mut planned = PlannedObjectInstance::object(parent, Vec::new());
-        planned.body_draw = Some(ObjectBodyDraw::CombatLight(record));
-        objects.push(planned);
+        objects.object(parent, []).body_draw = Some(ObjectBodyDraw::CombatLight(record));
     }
 }
 
@@ -148,7 +146,7 @@ pub(super) fn build_spotlight_instance(
     id: u64,
     light: crate::sim::world::BuildingSpotlight,
     context: &ParticleDrawContext,
-    objects: &mut Vec<PlannedObjectInstance>,
+    objects: &mut PlannedObjects,
     order: &NativeDisplayOrder,
 ) {
     let Some(parent) = order.object_draw(id, SpriteEncoding::Plain) else {
@@ -190,9 +188,7 @@ pub(super) fn build_spotlight_instance(
             })
         })
         .unwrap_or([None, None]);
-    let mut planned = PlannedObjectInstance::object(parent, Vec::new());
-    planned.body_draw = Some(ObjectBodyDraw::Spotlight { glow, beams });
-    objects.push(planned);
+    objects.object(parent, []).body_draw = Some(ObjectBodyDraw::Spotlight { glow, beams });
 }
 
 /// Particle62CEC0 consumes one retained AIR registration. Its mutable FPS
@@ -203,7 +199,7 @@ pub(super) fn build_particle_instance(
     system: Option<&crate::sim::particles::ParticleSystem>,
     particle: &crate::sim::particles::Particle,
     context: &ParticleDrawContext,
-    objects: &mut Vec<PlannedObjectInstance>,
+    objects: &mut PlannedObjects,
     order: &NativeDisplayOrder,
     observations: &mut Option<Vec<ParticleDrawObservation>>,
 ) {
@@ -271,9 +267,8 @@ pub(super) fn build_particle_instance(
                 )
                 .expect("produced point-particle state has finite native arithmetic")
             {
-                let mut planned = PlannedObjectInstance::object(parent, Vec::new());
-                planned.body_draw = Some(ObjectBodyDraw::Surface(SurfaceDraw::Point(point)));
-                objects.push(planned);
+                objects.object(parent, []).body_draw =
+                    Some(ObjectBodyDraw::Surface(SurfaceDraw::Point(point)));
             }
         }
         return;
@@ -292,7 +287,11 @@ pub(super) fn build_particle_instance(
     else {
         return;
     };
-    if let (Some(rows), Some(system)) = (observations.as_mut(), system) {
+    // The map observation lists the simulation's systems, so it observes
+    // no presentation particle's draw (`ParticleSystemStore::presented_systems`).
+    if let (Some(rows), Some(system)) = (observations.as_mut(), system)
+        && !crate::sim::particles::is_presented_particle_id(system.stable_id())
+    {
         rows.push(ParticleDrawObservation {
             system_id: system.stable_id(),
             particle_id: parent.id,
@@ -317,7 +316,7 @@ pub(super) fn build_particle_instance(
             },
         });
     }
-    objects.push(PlannedObjectInstance::object(parent, vec![piece]));
+    objects.object(parent, [piece]);
 }
 
 /// Particle62CFF9's DrawSHP of one frame at `coord` (screen `point`): global
@@ -325,7 +324,6 @@ pub(super) fn build_particle_instance(
 /// depth `-15 - AdjustForZ` and the vertical Z gradient, with the `flags`
 /// translucency selector. Ares' ExtData::Draw (`10026430`) passes the same for
 /// its smoke records. Returns the piece and its atlas page.
-#[allow(clippy::too_many_arguments)]
 fn particle_shp_piece(
     atlas: &crate::render::sprite_atlas::SpriteAtlas,
     image: &str,
@@ -369,7 +367,8 @@ fn particle_shp_piece(
             palette_light: PaletteLight::plain(53, 1000),
             // 62D01D: this is the depth argument, not a screen-Y lift.
             z_adjust: -15. - lift,
-            z_gradient: ZGradient::Vertical as u32,
+            z_gradient: ZGradient::Vertical as u32
+                | crate::render::native_z::shp_frame_flag(entry.extended),
             ..Default::default()
         },
     };
@@ -397,7 +396,7 @@ const ARES_DRAW_ORDER_BASE: u64 = 1 << 62;
 pub(super) fn build_ares_particle_draws(
     input: &DisplayEffectInputs<'_>,
     context: &ParticleDrawContext,
-    objects: &mut Vec<PlannedObjectInstance>,
+    objects: &mut PlannedObjects,
 ) {
     use crate::render::tactical_compat::{
         PreparedSparkPoint, adjust_for_z, project_spark_point, z_candidate,
@@ -410,8 +409,15 @@ pub(super) fn build_ares_particle_draws(
         return;
     }
     let sim = input.sim;
-    let systems = sim.particle_systems();
-    if systems.is_empty() || input.detail_level == 0 {
+    let store = sim.particle_systems();
+    // A presentation system's records draw as a shared one's do, after them
+    // (`ParticleSystemStore::presented_systems`).
+    let mut systems = store
+        .iter()
+        .map(|(_, system)| system)
+        .chain(store.presented_systems().map(|(_, system)| system))
+        .peekable();
+    if systems.peek().is_none() || input.detail_level == 0 {
         return;
     }
     let enabled = {
@@ -442,7 +448,7 @@ pub(super) fn build_ares_particle_draws(
         sequence += 1;
         parent
     };
-    for (_, system) in systems.iter() {
+    for system in systems {
         let Some(ext) = system.ares() else {
             continue;
         };
@@ -487,12 +493,9 @@ pub(super) fn build_ares_particle_draws(
                 ),
                 rgb: rgb.map(i32::from),
             };
-            let mut planned = PlannedObjectInstance::object(
-                next_parent(BlitPolicy::z_read(SpriteEncoding::Plain)),
-                Vec::new(),
-            );
-            planned.body_draw = Some(ObjectBodyDraw::Surface(SurfaceDraw::Point(point)));
-            objects.push(planned);
+            objects
+                .object(next_parent(BlitPolicy::z_read(SpriteEncoding::Plain)), [])
+                .body_draw = Some(ObjectBodyDraw::Surface(SurfaceDraw::Point(point)));
         }
         let Some(atlas) = input.atlas else {
             continue;
@@ -527,7 +530,7 @@ pub(super) fn build_ares_particle_draws(
                 &mut parent,
                 context.axis,
             ) {
-                objects.push(PlannedObjectInstance::object(parent, vec![piece]));
+                objects.object(parent, [piece]);
             }
         }
     }
@@ -573,7 +576,7 @@ mod tests {
         let rules = crate::rules::ruleset::RuleSet::empty_for_test();
         let mut sim = Simulation::new();
         let id = 7;
-        sim.submit_object_display_for_test(id, DisplayLayer::AIR, Some(rules));
+        sim.submit_object_display_for_test(id, DisplayLayer::AIR);
         let coord = [2560, 2560, 0];
         let light = BuildingSpotlight {
             coord,
@@ -585,7 +588,7 @@ mod tests {
             beam_amount: 0,
         };
         let (x, y) = crate::util::lepton::absolute_leptons_to_screen(coord[0], coord[1], coord[2]);
-        let order = NativeDisplayOrder::from_display(sim.display_layers());
+        let order = NativeDisplayOrder::from_world(&sim, None);
         // `across` is the spotlight's offset from the battlefield's corner.
         let drawn = |across: f32| {
             let mut frame =
@@ -596,7 +599,8 @@ mod tests {
             let lighting = Default::default();
             let house_colors = Default::default();
             let hidden = Default::default();
-            let mut planned = Vec::new();
+            let mut planned =
+                crate::app::presentation::render::draw_plan_lowering::PlannedObjects::default();
             build_display_effect_instances(
                 &DisplayEffectInputs {
                     sim: &sim,
@@ -607,6 +611,7 @@ mod tests {
                     tactical: [100, 0, 800, 600],
                     zoom: 1.0,
                     axis: crate::render::batch::DepthAxis::NONE,
+                    z_seed: crate::render::native_z::DEFAULT_Z,
                     atlas: None,
                     detail: &detail,
                     detail_level: 2,
@@ -622,7 +627,7 @@ mod tests {
                 &order,
                 Default::default(),
             );
-            planned.len()
+            planned.into_owned().len()
         };
         assert_eq!(drawn(800.0 + 360.0), 1);
         assert_eq!(drawn(800.0 + 361.0), 0);

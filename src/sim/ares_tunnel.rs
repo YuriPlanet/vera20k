@@ -180,7 +180,6 @@ impl Simulation {
     /// `TunnelData::CanEnterTunnel @ 100097D0`: `foot` asks `building`
     /// CAN_LOAD (RadioCommand QueryCanEnter) and, on ROGER, enters `house`'s
     /// network of type `tunnel`. Answers whether it went in.
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn ares_can_enter_tunnel(
         &mut self,
         foot: u64,
@@ -189,7 +188,7 @@ impl Simulation {
         tunnel: usize,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         if crate::sim::radio::transmit(
             self,
@@ -215,7 +214,6 @@ impl Simulation {
     ///
     /// RESIDUAL: native clears OnBridge before Limbo; VERA clears it after,
     /// as [`crate::sim::passenger::board_passenger`] does (see there).
-    #[allow(clippy::too_many_arguments)]
     fn ares_enter_tunnel(
         &mut self,
         foot: u64,
@@ -224,7 +222,7 @@ impl Simulation {
         tunnel: usize,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(category) = self.substrate.entities.get_mut(foot).map(|entity| {
             entity.set_archive_target(None);
@@ -239,7 +237,7 @@ impl Simulation {
             .substrate
             .entities
             .get(foot)
-            .and_then(|entity| entity.mind_control.controller())
+            .and_then(|entity| entity.seldom.mind_control.controller())
         {
             self.free_unit(controller, foot, rules, registry, effects);
         }
@@ -247,7 +245,8 @@ impl Simulation {
             let sound = self
                 .object_type(entity.type_ref(), rules)?
                 .enter_transport_sound
-                .clone()?;
+                .as_deref()
+                .map(|name| rules.sound_name(name))?;
             let coords = crate::sim::movement::ground_pose::object_get_coords(
                 entity,
                 self.resolved_terrain.as_ref(),
@@ -264,7 +263,7 @@ impl Simulation {
                 },
             ));
         }
-        let context = UninitContext::new(rules, registry).with_effects(effects);
+        let context = UninitContext::new(rules).with_effects(effects);
         if self.techno_limbo_with_context(foot, context) != ConcealOutcome::Concealed {
             return false;
         }
@@ -324,7 +323,7 @@ impl Simulation {
         &mut self,
         building: u64,
         killer: Option<u64>,
-        context: UninitContext<'_>,
+        mut context: UninitContext<'_>,
     ) {
         let rules = context.rules();
         let Some(tunnel) = self.ares_tunnel_type(building, rules) else {
@@ -345,7 +344,7 @@ impl Simulation {
         }
         while let Some(foot) = self.ares_tunnels.pop(owner, tunnel) {
             self.leave_team(foot, false, rules, context.effects());
-            self.record_kill_and_uninit(foot, killer, context);
+            self.record_kill_and_uninit(foot, killer, context.reborrow());
         }
     }
 
@@ -362,7 +361,7 @@ impl Simulation {
         building: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(tunnel) = self.ares_tunnel_type(building, rules) else {
             return;
@@ -398,7 +397,7 @@ impl Simulation {
                     placement: PlacementEvidence::MarkSucceeded,
                     logic_eligible: true,
                 },
-                UninitContext::new(rules, registry)
+                UninitContext::new(rules)
                     .with_effects(effects)
                     .with_unlimbo_facing(Some(facing)),
             );

@@ -36,14 +36,17 @@
 //! (`CanBeSelectedNow`, `0x006FC041`; a click still selects it), the fire
 //! error (`0x006FC117`, ILLEGAL), the select voice (`0x00708EFD`) and the
 //! voxel draw (`0x0073C143`, half intensity). Deactivate's Power_Off spins a
-//! Hover down (`movement::hover`), and a warp ends the hover of a
+//! Hover down (`movement::hover`) and a moving Fly (`world::fly_orders`),
+//! and a warp ends the hover of a
 //! `PoweredUnit=` type whose house has no powered center (`0x00718864`,
 //! `movement::teleport_chrono`).
 //!
 //! Ledger: Deactivate draws twice from the Scenario stream through Hover's
 //! Power_Off when its Is_Powered holds (`0x00516C70`: the powered byte,
 //! which a working tank keeps, or any height) and it is neither sleeping
-//! nor entering; an offline Unit draws twice on each of its spark frames. Timers: the
+//! nor entering, and twice through Fly's (`0x004CFD20`) for a moving Fly,
+//! whose second Stop_Moving may draw again (Find_Attack_Cell) and writes a
+//! new destination; an offline Unit draws twice on each of its spark frames. Timers: the
 //! mission and destination timers ResetOrdersToGuard writes. Detaches: none.
 //! `tools/robot_offline_oracle.py` executes Hover's Power_Off and the spark
 //! arm (`powered_unit_tests`).
@@ -63,6 +66,7 @@
 
 use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::RuleSet;
+use crate::sim::entity_store::EntityStore;
 use crate::sim::intern::InternedId;
 use crate::sim::intern::StringInterner;
 use crate::sim::movement::ground_pose::object_location;
@@ -133,7 +137,7 @@ impl Simulation {
         id: u64,
         operational: bool,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(building) = self.substrate.entities.get(id) else {
             return;
@@ -169,7 +173,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(building) = self.substrate.entities.get(id) else {
             return;
@@ -200,7 +204,7 @@ impl Simulation {
         owner: InternedId,
         unit_type: &str,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(house) = self.houses.get_mut(&owner) else {
             return;
@@ -225,7 +229,7 @@ impl Simulation {
         owner: InternedId,
         unit_type: Option<&str>,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(house) = self.houses.get_mut(&owner) else {
             return;
@@ -259,12 +263,12 @@ impl Simulation {
         mut visit: impl FnMut(&mut Self, u64),
     ) -> bool {
         let mut matched = false;
-        for id in self.substrate.entities.keys_sorted().into_iter().rev() {
+        let mut units = EntityStore::descending_ids(|category| category == EntityCategory::Unit);
+        while let Some(id) = units.next(&self.substrate.entities) {
             let Some(entity) = self.substrate.entities.get(id) else {
                 continue;
             };
             if entity.owner() != owner
-                || entity.category() != EntityCategory::Unit
                 || !self
                     .interner
                     .resolve(entity.type_ref())
@@ -302,14 +306,14 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let ares = rules.ares_form();
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
         };
-        if entity.tether.partner().is_some()
-            && let Some(contact) = entity.radio_contacts.slot(0)
+        if entity.seldom.tether.partner().is_some()
+            && let Some(contact) = entity.seldom.radio_contacts.slot(0)
             && self.substrate.occupancy.first_building_on_layer(
                 entity.position.rx(),
                 entity.position.ry(),
@@ -321,16 +325,9 @@ impl Simulation {
         let foot = entity.category().is_foot();
         let was_offline = entity.deactivated.is_offline();
         self.reset_orders_to_guard(id, rules, effects);
-        if let Some(entity) = self.substrate.entities.get_mut(id) {
-            entity.selection.deselect();
-        }
+        self.object_deselect(id);
         if foot {
-            Self::locomotor_power_off(
-                &mut self.scenario_rng,
-                &mut self.substrate,
-                &self.resolved_terrain,
-                id,
-            );
+            self.locomotor_power_off(id, rules, Some(rules.overlay_registry()), effects);
         }
         let quiet = self.ares_activation_sound_mutex(rules);
         Self::latch_deactivated(
@@ -347,11 +344,40 @@ impl Simulation {
             // only on the transition. The parent and its cargo survive.
             self.destroy_spotlight_for_parent(
                 id,
-                crate::sim::world::UninitContext::with_rules(rules).with_effects(effects),
+                crate::sim::world::UninitContext::new(rules).with_effects(effects),
             );
             // Then a Building's factory queues (`10013250`): an offline
             // factory no longer serves its production.
             self.ares_update_factory_queues(id, rules, effects);
+        }
+    }
+
+    /// Both Ares power loss (EnableEMPEffect2 10062980, Select at 10062A92) and the
+    /// first EMP hit (enableEMPEffect 10062B40, Select at 10062C46) save a Building's
+    /// Focus across Deactivate. A previously selected victim receives a full
+    /// TechnoClass::Select with the voice latch off before Focus is restored.
+    pub(crate) fn ares_deactivate_with_reselection(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        effects: &mut FrameEffects<'_>,
+    ) {
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return;
+        };
+        let selected = entity.seldom.selection.is_selected();
+        let focus =
+            (entity.category() == EntityCategory::Structure).then(|| entity.archive_target());
+        self.techno_deactivate(id, rules, effects);
+        if selected {
+            let mut silent = effects.without_selection_voice();
+            let context = crate::sim::world::UninitContext::new(rules).with_effects(&mut silent);
+            self.techno_select(id, context);
+        }
+        if let Some(focus) = focus
+            && let Some(entity) = self.substrate.entities.get_mut(id)
+        {
+            entity.set_archive_target(focus);
         }
     }
 
@@ -369,7 +395,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let (offline, powered, operated) = {
             let Some(actor) = self.substrate.entities.get(id) else {
@@ -437,7 +463,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
@@ -450,8 +476,7 @@ impl Simulation {
         {
             return;
         }
-        if let Err(cause) = self.assign_destination_represented(id, None, rules, registry, effects)
-        {
+        if let Err(cause) = self.assign_destination_represented(id, None, rules, effects) {
             log::warn!("Deactivated unit {id} destination: {cause}");
         }
         if let Err(cause) = self.foot_stop_driver(id, rules, registry, effects) {
@@ -473,7 +498,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let ares = rules.ares_form();
         let Some(foot) = self
@@ -558,12 +583,15 @@ impl Simulation {
             && !quiet
             && let Some(object) = interner.object_type(entity.type_ref(), rules)
             && let Some(sound) = if deactivated {
-                object.deactivate_sound.clone()
+                object.deactivate_sound.as_deref()
             } else {
-                object.activate_sound.clone()
+                object.activate_sound.as_deref()
             }
         {
-            sound_events.emit(SimSoundEvent::voc_at(sound, &entity.position));
+            sound_events.emit(SimSoundEvent::voc_at(
+                rules.sound_name(sound),
+                &entity.position,
+            ));
         }
         substrate
             .entities
@@ -581,7 +609,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;

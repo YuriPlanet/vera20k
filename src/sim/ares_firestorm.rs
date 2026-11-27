@@ -140,7 +140,7 @@ pub(crate) fn firewall_body_frame(entity: &GameEntity, object: &ObjectType) -> O
     (is_firewall_type(object)
         && entity.mission.effective().known()
             != Some(crate::sim::mission::MissionType::Construction))
-    .then_some(entity.ares.ares_firestorm_wall.frame() as i32)
+    .then_some(entity.seldom.ares.ares_firestorm_wall.frame() as i32)
 }
 
 /// `BuildingExt::IsActiveFirestormWall @ 10012770`: while any firestorm is
@@ -233,11 +233,14 @@ impl Simulation {
         active: bool,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         if !self.ares_firestorm.switch(house, active) {
             return;
         }
+        // A copy: UpdateFirewall burns the sections' Foot victims through the
+        // whole simulation, whose deaths (a death weapon, a trigger) can
+        // destroy listed buildings while it is walked.
         let Some(buildings) = self
             .houses
             .get(&house)
@@ -360,7 +363,7 @@ impl Simulation {
         changed_state: bool,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
@@ -379,7 +382,7 @@ impl Simulation {
             let frame = self.session.binary_frame();
             if frame & 7 != 0
                 && entity.building_art.anim_slots()[usize::from(IDLE_ANIM_SLOT)].is_none()
-                && !entity.ares.ares_firestorm_wall.is_straight()
+                && !entity.seldom.ares.ares_firestorm_wall.is_straight()
                 && self.scenario_rng.next_u32() & 0xF == 0
                 && let Some(name) = globals.idle_anim()
             {
@@ -398,8 +401,8 @@ impl Simulation {
             let Some(entity) = self.substrate.entities.get_mut(id) else {
                 return;
             };
-            entity.ares.ares_firestorm_wall.store(flags);
-            let straight = entity.ares.ares_firestorm_wall.is_straight();
+            entity.seldom.ares.ares_firestorm_wall.store(flags);
+            let straight = entity.seldom.ares.ares_firestorm_wall.is_straight();
             let has_anim =
                 entity.building_art.anim_slots()[usize::from(ACTIVE_ANIM_SLOT)].is_some();
             if active && !straight && !has_anim {
@@ -460,7 +463,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         if !self.ares_is_firewall(id, rules) {
             return;
@@ -497,7 +500,7 @@ impl Simulation {
         owner: InternedId,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(entity) = self.substrate.entities.get(id) else {
             return false;
@@ -525,7 +528,7 @@ impl Simulation {
             matches!(
                 entity.category(),
                 EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
-            ) && !entity.passenger_role.in_open_transport()
+            ) && !entity.passenger_role().in_open_transport()
                 && !self
                     .object_type(entity.type_ref(), rules)
                     .is_some_and(|object| object.ignores_firestorm)
@@ -550,7 +553,7 @@ impl Simulation {
         victim: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(entity) = self.substrate.entities.get(victim) else {
             return false;
@@ -627,7 +630,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         if !self.ares_firestorm.any_active() || !self.ares_firestorm_burns(id, rules) {
             return false;
@@ -828,8 +831,8 @@ impl Simulation {
         );
         let at = ProjectileCoord::new(centre.x, centre.y, floor);
         self.ares_immolate_bullet(bullet, at, rules);
-        let retired = self
-            .retire_non_entity_object(bullet, crate::sim::world::UninitContext::with_rules(rules));
+        let retired =
+            self.retire_non_entity_object(bullet, crate::sim::world::UninitContext::new(rules));
         debug_assert!(retired);
         true
     }
@@ -870,7 +873,7 @@ impl Simulation {
         owner: InternedId,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some((object, building_owner)) =
             self.substrate.entities.get(id).and_then(|entity| {
@@ -883,7 +886,6 @@ impl Simulation {
             return;
         }
         let max_distance = object.guard_range.map_or(0, |range| range.to_num::<i32>());
-        let owner_name = self.interner.resolve(owner).to_owned();
         for direction in STRAIGHT_DIRECTIONS {
             let (dx, dy) = crate::util::direction::DIRECTION_DELTAS[direction];
             let length = self.ares_link_length(
@@ -900,14 +902,7 @@ impl Simulation {
                 let rx = (i32::from(cell.0) + dx * distance) as u16;
                 let ry = (i32::from(cell.1) + dy * distance) as u16;
                 let Some(section) = self.construct_object_limbo_at_height(
-                    &object.id,
-                    &owner_name,
-                    rx,
-                    ry,
-                    0,
-                    0,
-                    rules,
-                    effects,
+                    &object.id, owner, rx, ry, 0, 0, rules, effects,
                 ) else {
                     continue;
                 };
@@ -937,7 +932,7 @@ impl Simulation {
                 self.discover_techno(
                     section,
                     owner,
-                    crate::sim::world::UninitContext::new(rules, registry).with_effects(effects),
+                    crate::sim::world::UninitContext::new(rules).with_effects(effects),
                 );
                 if let Some(entity) = self.substrate.entities.get_mut(section) {
                     entity.mission_leaf.set_building_ready_latch(1);

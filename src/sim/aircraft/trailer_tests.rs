@@ -27,7 +27,7 @@ fn retail_trailer_world(trailer: &str, delay: i32) -> Option<(Simulation, RuleSe
         0
     );
     let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 31);
-    sim.install_overlay_grid_for_load(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
+    *sim.overlay_grid_mut_for_test() = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
     sim.session.set_binary_frame_for_test(103);
     let plane = sim
         .spawn_object_at_height("PDPLANE", "Americans", 12, 12, 0, 0, &rules)
@@ -143,14 +143,14 @@ fn trailer_invalid_divisors_stop_before_construction_and_fail_the_frame() {
         )
     };
     let before = constructor_state(&sim);
-    sim.emit_aircraft_trailer(plane, &rules, FrameEffects::default())
+    sim.emit_aircraft_trailer(plane, &rules, &mut FrameEffects::default())
         .expect("null Trailer bypasses division by zero");
     assert_eq!(constructor_state(&sim), before);
 
     let (mut sim, rules, plane) = retail_trailer_world("SMKPUFF", 0).unwrap();
     let before = constructor_state(&sim);
     assert!(
-        sim.emit_aircraft_trailer(plane, &rules, FrameEffects::default())
+        sim.emit_aircraft_trailer(plane, &rules, &mut FrameEffects::default())
             .is_err()
     );
     assert_eq!(constructor_state(&sim), before);
@@ -158,10 +158,9 @@ fn trailer_invalid_divisors_stop_before_construction_and_fail_the_frame() {
         .advance_app_frame(
             &[],
             &rules,
-            None,
             67,
             TickLane::Ordinary,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .expect_err("reached invalid cadence must fail the production frame");
     assert_eq!((error.entity_id, error.binary_frame), (plane, 103));
@@ -172,7 +171,7 @@ fn trailer_invalid_divisors_stop_before_construction_and_fail_the_frame() {
     sim.session.set_binary_frame_for_test(0x8000_0000);
     let before = constructor_state(&sim);
     assert!(
-        sim.emit_aircraft_trailer(plane, &rules, FrameEffects::default())
+        sim.emit_aircraft_trailer(plane, &rules, &mut FrameEffects::default())
             .is_err()
     );
     assert_eq!(constructor_state(&sim), before);

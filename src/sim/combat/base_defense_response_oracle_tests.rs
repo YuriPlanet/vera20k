@@ -144,7 +144,7 @@ fn native_base_response_dispatch_matches_14_represented_original_tails() {
         for label in input["base_defense_team"].as_array().into_iter().flatten() {
             install_supplied_base_defense_team(&mut sim, ids[label.as_str().unwrap()]);
         }
-        sim.scenario_rng = SimRng::new(input["seed"].as_u64().unwrap());
+        *sim.scenario_rng = SimRng::new(input["seed"].as_u64().unwrap());
         assert_eq!(
             sim.scenario_rng.native_state_hex(),
             row["rng_before"],
@@ -189,6 +189,7 @@ fn native_base_response_dispatch_matches_14_represented_original_tails() {
                 .entities
                 .get(ids["attacker"])
                 .unwrap()
+                .seldom
                 .base_defense_response
                 .cooldown,
             CdTimer::from_raw(signed(&cooldown[0]), signed(&cooldown[2])),
@@ -546,7 +547,10 @@ fn native_base_response_live_threat_matches_representable_original_rows() {
         }
         if count > 0 {
             for id in (0..count as u64).rev() {
-                owner.passenger_role.occupants_mut().add(id + 10);
+                owner
+                    .passenger_role_mut_for_test()
+                    .occupants_mut()
+                    .add_for_test(id + 10);
             }
         }
         let mut entities = EntityStore::new();

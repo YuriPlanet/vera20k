@@ -73,11 +73,11 @@ impl UnitChoiceKind {
     }
 
     /// The choice a produced object of `category` fills; none for a building.
-    pub(crate) const fn of(category: ObjectCategory, naval: bool) -> Option<Self> {
+    /// `npatch` splits vehicles into land and naval choices
+    /// ([`RuleSet::npatch`](crate::rules::ruleset::RuleSet::npatch)).
+    pub(crate) const fn of(category: ObjectCategory, naval: bool, npatch: bool) -> Option<Self> {
         match category {
-            ObjectCategory::Vehicle if crate::rules::NPATCH_ENABLED && naval => {
-                Some(Self::NavalUnit)
-            }
+            ObjectCategory::Vehicle if npatch && naval => Some(Self::NavalUnit),
             ObjectCategory::Vehicle => Some(Self::Unit),
             ObjectCategory::Infantry => Some(Self::Infantry),
             ObjectCategory::Aircraft => Some(Self::Aircraft),
@@ -194,7 +194,7 @@ pub(crate) fn choose(
     {
         // NPSE 2.0 C339D0..C33A34 returns from the harvester branch even
         // for the other channel's type: no team fallback or chooser RNG.
-        Some(index) => (!crate::rules::NPATCH_ENABLED
+        Some(index) => (!rules.npatch()
             || rules
                 .type_array_at(ObjectCategory::Vehicle, index)
                 .is_some_and(|ty| ty.naval == (kind == UnitChoiceKind::NavalUnit)))
@@ -245,7 +245,7 @@ fn harvester_choice(sim: &Simulation, rules: &RuleSet, owner: InternedId) -> Opt
             current_iq: house.current_iq(),
             iq_harvester: rules.general.iq_harvester,
             no_ore: house.harvester_no_ore(),
-            human: house.is_controlled_by_human(sim.session.game_mode_nonzero()),
+            human: house.is_controlled_by_human(sim.session.rule_policy()),
             tech_level: house.tech_level(),
         },
         rules.ares_form(),
@@ -351,7 +351,7 @@ fn candidates(
             // NPSE 2.0 C33B30 filters needed vehicle types before their
             // recruitment, CanBuild, cost and random-choice consumers.
             .filter(|&index| {
-                !crate::rules::NPATCH_ENABLED
+                !rules.npatch()
                     || category != ObjectCategory::Vehicle
                     || rules
                         .type_array_at(category, index)
@@ -476,12 +476,9 @@ fn is_recruitable(
     entity.owner() == owner
         && entity.is_active()
         && !entity.lifecycle.in_limbo()
-        && sim
-            .team_script_vm
-            .team_for_member(entity.stable_id())
-            .is_none()
+        && sim.team_script_vm.team_of(entity.stable_id()).is_none()
         && crate::sim::mission::control::mission_recruitable(rules, entity.mission.effective())
-        && entity.base_defense_response.recruitable_a()
+        && entity.seldom.base_defense_response.recruitable_a()
 }
 
 /// The choice among `candidates` (`0x004FED6E..0x004FEECB`), with `draw` as

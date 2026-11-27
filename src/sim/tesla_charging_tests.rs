@@ -31,6 +31,7 @@ impl Fixture {
             .entities
             .get_mut(coil)
             .unwrap()
+            .seldom
             .discovery
             .set_discovered_by_current_house_for_test(true);
         let troopers = std::array::from_fn(|i| {
@@ -55,8 +56,7 @@ impl Fixture {
                 source,
                 target.map(TargetKind::Entity),
                 &self.rules,
-                None,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap();
     }
@@ -141,7 +141,7 @@ impl Fixture {
             &mut self.sim,
             source,
             &self.rules,
-            ObjectAiCtx::default(),
+            &mut ObjectAiCtx::default(),
         )
         .unwrap();
     }
@@ -176,7 +176,7 @@ fn retail_electric_assault_enables_the_coils_overpowered_weapon() {
     );
     assert!(
         f.sim
-            .object_ai_visit_one(f.coil, Some(&f.rules), ObjectAiCtx::default())
+            .object_ai_visit_one(f.coil, Some(&f.rules), &mut ObjectAiCtx::default())
     );
     let coil = f.sim.substrate.entities.get(f.coil).unwrap();
     let object = f.rules.object("TESLA").unwrap();
@@ -211,7 +211,7 @@ fn impact_refreshes_order_without_damage_or_rearm_and_class_refusals_claim_it() 
         .unwrap()
         .health
         .current();
-    let rearm = f.sim.substrate.entities.get(a).unwrap().rearm_timer;
+    let rearm = f.sim.substrate.entities.get(a).unwrap().seldom.rearm_timer;
     for source in [a, b, c, a] {
         f.hit(source, f.coil);
     }
@@ -237,7 +237,10 @@ fn impact_refreshes_order_without_damage_or_rearm_and_class_refusals_claim_it() 
         .substrate
         .electric_assault_detonation(a, Some(f.coil), f.rules.ares());
     assert_eq!(f.sim.scenario_rng.logical_state(), rng);
-    assert_eq!(f.sim.substrate.entities.get(a).unwrap().rearm_timer, rearm);
+    assert_eq!(
+        f.sim.substrate.entities.get(a).unwrap().seldom.rearm_timer,
+        rearm
+    );
 
     let tank = f
         .sim
@@ -378,7 +381,7 @@ fn retarget_waits_for_building_turn_and_both_expiry_controls_remove_indexed_char
             f.sim.uninit_with_rules(a, &f.rules);
         } else {
             f.sim
-                .detach_all_pointer_expired(a, &f.rules, None, FrameEffects::default());
+                .detach_all_pointer_expired(a, &f.rules, &mut FrameEffects::default());
         }
         assert!(f.charge().chargers().is_empty());
         assert!(f.charge().is_overpowered(), "expiry does not write +661");
@@ -441,6 +444,7 @@ fn snapshot_preserves_order_intent_and_stale_latch_then_rejects_invalid_referenc
         .entities
         .get_mut(f.troopers[0])
         .unwrap()
+        .seldom
         .tesla_charger
         .active = true;
     let bytes = GameSnapshot::save(&f.sim, 0, 0, "Tesla", 0);
@@ -462,6 +466,7 @@ fn snapshot_preserves_order_intent_and_stale_latch_then_rejects_invalid_referenc
             .entities
             .get(f.troopers[0])
             .unwrap()
+            .seldom
             .tesla_charger
             .is_active()
     );
@@ -546,6 +551,7 @@ fn hash_distinguishes_charger_order_weapon_latch_and_foot_intent() {
         .entities
         .get_mut(f.troopers[0])
         .unwrap()
+        .seldom
         .tesla_charger
         .active = true;
     assert_ne!(latch, f.sim.state_hash());
@@ -574,7 +580,7 @@ fn adjacency_uses_native_direction_order_and_same_owner_not_alliance() {
         .insert("Russians".into());
     assert!(
         f.sim
-            .acquire_adjacent_tesla_coil(foot, &f.rules, None, FrameEffects::default())
+            .acquire_adjacent_tesla_coil(foot, &f.rules, &mut FrameEffects::default())
     );
     assert_eq!(
         f.sim
@@ -592,6 +598,7 @@ fn adjacency_uses_native_direction_order_and_same_owner_not_alliance() {
             .entities
             .get(foot)
             .unwrap()
+            .seldom
             .tesla_charger
             .is_active()
     );
@@ -613,7 +620,7 @@ fn adjacency_uses_native_direction_order_and_same_owner_not_alliance() {
     f.assign(foot, None);
     assert!(
         f.sim
-            .acquire_adjacent_tesla_coil(foot, &f.rules, None, FrameEffects::default())
+            .acquire_adjacent_tesla_coil(foot, &f.rules, &mut FrameEffects::default())
     );
     assert_eq!(
         f.sim
@@ -633,7 +640,7 @@ fn infantry_same_target_clears_intent_but_deployment_refusal_preserves_it() {
     let a = f.troopers[0];
     assert!(
         f.sim
-            .acquire_adjacent_tesla_coil(a, &f.rules, None, FrameEffects::default())
+            .acquire_adjacent_tesla_coil(a, &f.rules, &mut FrameEffects::default())
     );
     f.assign(a, Some(f.coil));
     assert!(
@@ -642,6 +649,7 @@ fn infantry_same_target_clears_intent_but_deployment_refusal_preserves_it() {
             .entities
             .get(a)
             .unwrap()
+            .seldom
             .tesla_charger
             .is_active()
     );
@@ -650,6 +658,7 @@ fn infantry_same_target_clears_intent_but_deployment_refusal_preserves_it() {
         .entities
         .get_mut(a)
         .unwrap()
+        .seldom
         .tesla_charger
         .active = true;
     f.sim
@@ -667,6 +676,7 @@ fn infantry_same_target_clears_intent_but_deployment_refusal_preserves_it() {
             .entities
             .get(a)
             .unwrap()
+            .seldom
             .tesla_charger
             .is_active()
     );
@@ -684,6 +694,7 @@ fn guard_and_area_guard_queue_charging_before_their_normal_cadence() {
             .entities
             .get_mut(source)
             .unwrap()
+            .seldom
             .rearm_timer
             .start(now as i32, 7);
         let rng = f.sim.scenario_rng.logical_state();
@@ -693,7 +704,7 @@ fn guard_and_area_guard_queue_charging_before_their_normal_cadence() {
             actor.attack_target.target(),
             Some(TargetKind::Entity(f.coil))
         );
-        assert!(actor.tesla_charger.is_active());
+        assert!(actor.seldom.tesla_charger.is_active());
         assert_eq!(
             actor.mission.queued(),
             MissionId::from_known(MissionType::Attack)
@@ -725,7 +736,7 @@ fn charging_attack_keeps_its_coil_until_a_direct_enemy_scan_succeeds() {
     let source = f.troopers[0];
     assert!(
         f.sim
-            .acquire_adjacent_tesla_coil(source, &f.rules, None, FrameEffects::default())
+            .acquire_adjacent_tesla_coil(source, &f.rules, &mut FrameEffects::default())
     );
     let passive = f.sim.substrate.entities.get(source).unwrap().passive_scan;
     f.dispatch(source, MissionType::Attack);
@@ -745,6 +756,7 @@ fn charging_attack_keeps_its_coil_until_a_direct_enemy_scan_succeeds() {
             .entities
             .get(source)
             .unwrap()
+            .seldom
             .tesla_charger
             .is_active()
     );
@@ -767,7 +779,7 @@ fn charging_attack_keeps_its_coil_until_a_direct_enemy_scan_succeeds() {
         source.attack_target.target(),
         Some(TargetKind::Entity(enemy))
     );
-    assert!(!source.tesla_charger.is_active());
+    assert!(!source.seldom.tesla_charger.is_active());
     assert_eq!(
         source.passive_scan.timer(),
         passive.timer(),
@@ -787,7 +799,7 @@ fn freezing_a_retail_charger_clears_its_intent_before_release() {
     f.sim.fog.reveal_all_for_owner(owner);
     assert!(
         f.sim
-            .acquire_adjacent_tesla_coil(source, &f.rules, None, FrameEffects::default(),)
+            .acquire_adjacent_tesla_coil(source, &f.rules, &mut FrameEffects::default())
     );
     f.hit(source, f.coil);
     crate::sim::world::Simulation::update_tesla_charge(
@@ -799,17 +811,22 @@ fn freezing_a_retail_charger_clears_its_intent_before_release() {
     );
     assert!(f.charge().is_overpowered());
     f.assign(cleg, Some(source));
-    f.sim
-        .temporal_initiate_warp(cleg, Some(source), &f.rules, None, FrameEffects::default());
+    f.sim.temporal_initiate_warp(
+        cleg,
+        Some(source),
+        &f.rules,
+        None,
+        &mut FrameEffects::default(),
+    );
     assert!(
         f.sim
-            .temporal_ai_prologue(source, &f.rules, ObjectAiCtx::default(), &mut false,)
+            .temporal_ai_prologue(source, &f.rules, &mut ObjectAiCtx::default(), &mut false,)
     );
     let actor = f.sim.substrate.entities.get(source).unwrap();
     assert!(actor.attack_target.target().is_none());
     // Infantry51BBEF calls its concrete +3C8 setter, whose reached tail
     // clears +68E at51B33F before the frozen object returns from AI.
-    assert!(!actor.tesla_charger.is_active());
+    assert!(!actor.seldom.tesla_charger.is_active());
     crate::sim::world::Simulation::update_tesla_charge(
         &f.sim.interner,
         &mut f.sim.substrate,
@@ -857,7 +874,7 @@ fn retail_fireat_charges_low_power_coil_and_pruning_disables_it_again() {
             },
             &f.rules,
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
     }
     assert_eq!(

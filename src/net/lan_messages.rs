@@ -7,8 +7,15 @@
 //! fields. Session validation, endpoint ownership and roster changes stay with
 //! the app; the actual source address is global-envelope metadata, not payload.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(clippy::unwrap_used, clippy::panic, clippy::unreachable)
+)]
+
 use crate::sim::multiplayer_checksum::RetailChecksumAccumulator;
 use crate::util::native_string::{narrow_utf16_c_string, widen_bytes};
+use setup::LanOptionsFields;
 
 pub const LAN_MESSAGE_LEN: usize = 455;
 const NAME_OFFSET: usize = 0x04;
@@ -53,7 +60,6 @@ pub enum LanMessageKind {
     Departure,
     Go,
     ReadyToGo,
-    Roster,
     Options,
     PlayerChoices,
     StartPrompt,
@@ -61,6 +67,28 @@ pub enum LanMessageKind {
 }
 
 impl LanMessageKind {
+    const KNOWN: [Self; 19] = [
+        Self::Discovery,
+        Self::Advertisement,
+        Self::GameQuery,
+        Self::ParticipantDetails,
+        Self::Presence,
+        Self::Keepalive,
+        Self::JoinRequest,
+        Self::JoinAccepted,
+        Self::JoinDenied,
+        Self::JoinConfirm,
+        Self::JoinConfirmed,
+        Self::CancelJoin,
+        Self::JoinCanceled,
+        Self::Departure,
+        Self::Go,
+        Self::ReadyToGo,
+        Self::Options,
+        Self::PlayerChoices,
+        Self::StartPrompt,
+    ];
+
     pub const fn raw(self) -> u32 {
         match self {
             Self::Discovery => 0,
@@ -79,7 +107,6 @@ impl LanMessageKind {
             Self::Departure => 10,
             Self::Go => 0x0b,
             Self::ReadyToGo => 0x13,
-            Self::Roster => 0x16,
             Self::Options => 0x17,
             Self::PlayerChoices => 0x18,
             Self::StartPrompt => 0x28,
@@ -171,6 +198,46 @@ pub struct LanAcceptance {
     pub observer_row: i32,
 }
 
+/// What [`LanMessage::payload`] reads: one variant per [`LanMessageKind`],
+/// holding the fields that kind's producer writes. Kinds without fields of
+/// their own (beyond the name and the VERA session proof) carry nothing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LanPayload<'a> {
+    Discovery,
+    /// Bit 0 is the game's open flag.
+    Advertisement {
+        flags: u32,
+    },
+    GameQuery,
+    ParticipantDetails(LanParticipantDetails),
+    Presence {
+        country: i32,
+        color: i32,
+    },
+    Keepalive,
+    JoinRequest(LanJoinRequest),
+    JoinAccepted(LanAcceptance),
+    JoinDenied {
+        reason: u32,
+    },
+    JoinConfirm,
+    JoinConfirmed(LanAcceptance),
+    CancelJoin,
+    JoinCanceled,
+    Departure,
+    Go {
+        max_ahead: i32,
+    },
+    ReadyToGo,
+    Options(LanOptionsFields<'a>),
+    /// The narrow `R...` choices text, up to its NUL.
+    PlayerChoices {
+        text: &'a [u8],
+    },
+    StartPrompt,
+    Unknown(u32),
+}
+
 /// VERA admission scope shared by LAN setup, map resources, loading and the
 /// direct gameplay transport. LanService alone creates/adopts this identity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -254,29 +321,11 @@ impl LanMessage {
     }
 
     pub fn kind(&self) -> LanMessageKind {
-        match self.u32(0) {
-            0 => LanMessageKind::Discovery,
-            1 => LanMessageKind::Advertisement,
-            2 => LanMessageKind::GameQuery,
-            3 => LanMessageKind::ParticipantDetails,
-            4 => LanMessageKind::Presence,
-            5 => LanMessageKind::Keepalive,
-            6 => LanMessageKind::JoinRequest,
-            7 => LanMessageKind::JoinAccepted,
-            8 => LanMessageKind::JoinDenied,
-            0x564a_0001 => LanMessageKind::JoinConfirm,
-            0x564a_0002 => LanMessageKind::JoinConfirmed,
-            0x564a_0003 => LanMessageKind::CancelJoin,
-            0x564a_0004 => LanMessageKind::JoinCanceled,
-            10 => LanMessageKind::Departure,
-            0x0b => LanMessageKind::Go,
-            0x13 => LanMessageKind::ReadyToGo,
-            0x16 => LanMessageKind::Roster,
-            0x17 => LanMessageKind::Options,
-            0x18 => LanMessageKind::PlayerChoices,
-            0x28 => LanMessageKind::StartPrompt,
-            raw => LanMessageKind::Unknown(raw),
-        }
+        let raw = self.u32(0);
+        LanMessageKind::KNOWN
+            .into_iter()
+            .find(|kind| kind.raw() == raw)
+            .unwrap_or(LanMessageKind::Unknown(raw))
     }
 
     pub fn name_bytes(&self) -> &[u8] {
@@ -287,70 +336,79 @@ impl LanMessage {
         widen_bytes(self.name_bytes())
     }
 
-    pub fn serial_bytes(&self) -> &[u8] {
-        c_string(&self.bytes[SERIAL_OFFSET..SERIAL_OFFSET + SERIAL_LEN])
-    }
-
-    pub fn advertisement_flags(&self) -> Option<u32> {
-        (self.kind() == LanMessageKind::Advertisement).then(|| self.u32(COUNTRY_OFFSET))
-    }
-
-    pub fn presence_fields(&self) -> Option<(i32, i32)> {
-        (self.kind() == LanMessageKind::Presence).then(|| self.country_color())
-    }
-
-    pub fn participant_fields(&self) -> Option<LanParticipantDetails> {
-        (self.kind() == LanMessageKind::ParticipantDetails).then(|| {
-            let (country, color) = self.country_color();
-            LanParticipantDetails {
-                country,
-                color,
-                game_name_hash: self.u32(0x37),
-                field_0x53: self.u32(0x53),
-                field_0x57: self.u32(0x57),
+    /// The message's kind together with the fields that kind carries, read
+    /// once, so a handler matches on one value instead of testing the kind and
+    /// then asking for its fields.
+    pub fn payload(&self) -> LanPayload<'_> {
+        match self.kind() {
+            LanMessageKind::Discovery => LanPayload::Discovery,
+            LanMessageKind::Advertisement => LanPayload::Advertisement {
+                flags: self.u32(COUNTRY_OFFSET),
+            },
+            LanMessageKind::GameQuery => LanPayload::GameQuery,
+            LanMessageKind::ParticipantDetails => {
+                let (country, color) = self.country_color();
+                LanPayload::ParticipantDetails(LanParticipantDetails {
+                    country,
+                    color,
+                    game_name_hash: self.u32(0x37),
+                    field_0x53: self.u32(0x53),
+                    field_0x57: self.u32(0x57),
+                })
             }
-        })
-    }
-
-    pub fn join_fields(&self) -> Option<LanJoinRequest> {
-        (self.kind() == LanMessageKind::JoinRequest).then(|| {
-            let (country, color) = self.country_color();
-            LanJoinRequest {
-                country,
-                color,
-                version: LanVersionInterval {
-                    minimum: self.u32(0x3b),
-                    maximum: self.u32(0x3f),
-                },
-                compatibility: LanCompatibility {
-                    field_0x43: self.u32(0x43),
-                    field_0x47: self.u32(0x47),
-                    field_0x4b: self.u32(0x4b),
-                    field_0x4f: self.u32(0x4f),
-                },
-                observer_request: self.u32(0x57),
+            LanMessageKind::Presence => {
+                let (country, color) = self.country_color();
+                LanPayload::Presence { country, color }
             }
-        })
-    }
-
-    pub fn acceptance_fields(&self) -> Option<LanAcceptance> {
-        matches!(
-            self.kind(),
-            LanMessageKind::JoinAccepted | LanMessageKind::JoinConfirmed
-        )
-        .then(|| {
-            let (country, color) = self.country_color();
-            LanAcceptance {
-                country,
-                color,
-                assigned_row: self.u32(0x53) as i32,
-                observer_row: self.u32(0x57) as i32,
+            LanMessageKind::Keepalive => LanPayload::Keepalive,
+            LanMessageKind::JoinRequest => {
+                let (country, color) = self.country_color();
+                LanPayload::JoinRequest(LanJoinRequest {
+                    country,
+                    color,
+                    version: LanVersionInterval {
+                        minimum: self.u32(0x3b),
+                        maximum: self.u32(0x3f),
+                    },
+                    compatibility: LanCompatibility {
+                        field_0x43: self.u32(0x43),
+                        field_0x47: self.u32(0x47),
+                        field_0x4b: self.u32(0x4b),
+                        field_0x4f: self.u32(0x4f),
+                    },
+                    observer_request: self.u32(0x57),
+                })
             }
-        })
+            LanMessageKind::JoinAccepted => LanPayload::JoinAccepted(self.acceptance()),
+            LanMessageKind::JoinDenied => LanPayload::JoinDenied {
+                reason: self.u32(COUNTRY_OFFSET),
+            },
+            LanMessageKind::JoinConfirm => LanPayload::JoinConfirm,
+            LanMessageKind::JoinConfirmed => LanPayload::JoinConfirmed(self.acceptance()),
+            LanMessageKind::CancelJoin => LanPayload::CancelJoin,
+            LanMessageKind::JoinCanceled => LanPayload::JoinCanceled,
+            LanMessageKind::Departure => LanPayload::Departure,
+            LanMessageKind::Go => LanPayload::Go {
+                max_ahead: self.setup_go_max_ahead(),
+            },
+            LanMessageKind::ReadyToGo => LanPayload::ReadyToGo,
+            LanMessageKind::Options => LanPayload::Options(self.setup_options_fields()),
+            LanMessageKind::PlayerChoices => LanPayload::PlayerChoices {
+                text: self.setup_body_text(),
+            },
+            LanMessageKind::StartPrompt => LanPayload::StartPrompt,
+            LanMessageKind::Unknown(raw) => LanPayload::Unknown(raw),
+        }
     }
 
-    pub fn denial_reason(&self) -> Option<u32> {
-        (self.kind() == LanMessageKind::JoinDenied).then(|| self.u32(COUNTRY_OFFSET))
+    fn acceptance(&self) -> LanAcceptance {
+        let (country, color) = self.country_color();
+        LanAcceptance {
+            country,
+            color,
+            assigned_row: self.u32(0x53) as i32,
+            observer_row: self.u32(0x57) as i32,
+        }
     }
 
     pub fn named(kind: LanNamedMessage, name: &str) -> Result<Self, LanMessageError> {

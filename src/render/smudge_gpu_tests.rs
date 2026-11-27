@@ -313,7 +313,8 @@ fn retail_crater11_matches_original_cell_raster() {
                 camera.camera_pos[1],
                 size[0] as f32,
                 size[1] as f32,
-            );
+            )
+            .instances;
             assert_eq!(instances.len(), 1, "flat uniform composite emits once");
             let output = read_raster(&gpu, &mut batch, &atlas, &instances, row, format, size);
             assert_native_color_and_depth(&output, row, format, size);
@@ -407,6 +408,7 @@ fn retail_crater11_matches_original_cell_raster() {
                         size[0] as f32,
                         size[1] as f32,
                     )
+                    .instances
                 };
             let instances = build(&retained, &custom);
             assert_eq!(instances.len(), 1, "decoded {width}x{height} source");
@@ -500,7 +502,7 @@ fn retail_paid_destruction_and_replacement_reach_smudge_rendering() {
                 &commands,
                 crate::app::types::SIM_TICK_MS,
                 TickLane::Ordinary,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap();
     };
@@ -570,7 +572,7 @@ fn retail_paid_destruction_and_replacement_reach_smudge_rendering() {
                 "GAPOWR",
                 rx,
                 ry,
-                Some(&scene.runtime.resources.overlay_registry),
+                Some(scene.runtime.resources.rules.overlay_registry()),
             ) else {
                 continue;
             };
@@ -665,7 +667,7 @@ fn retail_paid_destruction_and_replacement_reach_smudge_rendering() {
         &theater.tiberium_palette,
         theater.extension,
         "TEMPERATE",
-        &scene.runtime.resources.overlay_registry,
+        scene.runtime.resources.rules.overlay_registry(),
         rules,
         Some(&rules.smudge_types),
         &[],
@@ -708,6 +710,7 @@ fn retail_paid_destruction_and_replacement_reach_smudge_rendering() {
             size[0] as f32,
             size[1] as f32,
         )
+        .instances
     };
     let hash = scene.sim().state_hash();
     let before = read_raster(

@@ -35,6 +35,7 @@ use crate::rules::house_colors::HouseColorRamps;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::intern::InternedId;
 use crate::sim::vision::FogState;
+use crate::sim::world::ControlProjection;
 use std::collections::HashMap;
 
 use super::compose::{RadarCompositor, RadarStore, RadarVisibility};
@@ -432,11 +433,10 @@ impl MinimapRenderer {
         fog: &FogState,
         alliances: &crate::sim::house_diplomacy::HouseAlliances,
         full_visibility: bool,
-        game_mode_nonzero: bool,
+        control: ControlProjection<'_>,
         rules: Option<&RuleSet>,
         interner: Option<&crate::sim::intern::StringInterner>,
         overlay_grid: Option<&crate::sim::overlay_grid::OverlayGrid>,
-        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         overlay_radar_colors: &HashMap<(u8, u8), [u8; 3]>,
         resolved_terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
         beacons: Option<(
@@ -477,7 +477,7 @@ impl MinimapRenderer {
                 native_terrain: &mut self.native_radar_terrain,
                 playfield: self.playfield_bounds,
             },
-            CurrentRadarCellAuthority::new(resolved_terrain, overlay_grid, overlay_registry, rules),
+            CurrentRadarCellAuthority::new(resolved_terrain, overlay_grid, rules),
             self.structural_bridge_radar_color,
             overlay_radar_colors,
             self.radar_terrain_backlog.cells(),
@@ -516,12 +516,11 @@ impl MinimapRenderer {
                 }
                 let update = build_radar_object_update(
                     entity,
-                    houses,
                     local_owner,
                     fog,
                     alliances,
                     full_visibility,
-                    game_mode_nonzero,
+                    &control,
                     rules,
                     interner,
                     projection,
@@ -539,12 +538,11 @@ impl MinimapRenderer {
             };
             let update = build_radar_object_update(
                 entity,
-                houses,
                 local_owner,
                 fog,
                 alliances,
                 full_visibility,
-                game_mode_nonzero,
+                &control,
                 rules,
                 interner,
                 projection,
@@ -585,7 +583,7 @@ impl MinimapRenderer {
                 fog,
                 alliances,
                 full_visibility,
-                game_mode_nonzero,
+                &control,
                 rules,
                 interner,
                 pixel_cell,

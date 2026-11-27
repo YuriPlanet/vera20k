@@ -360,6 +360,7 @@ fn draw_status_prefix<'a>(
         wrench,
         power_off,
         rank,
+        rank_insignia,
         background,
         shield_background,
         fills,
@@ -382,7 +383,13 @@ fn draw_status_prefix<'a>(
     if let (Some(index), Some(shape)) = (power_off, overlay.power_off()) {
         batch.draw_passthrough_range(pass, shape.texture(), buffer, *index, 1);
     }
-    if let (Some(index), Some(shape)) = (rank, overlay.pips()) {
+    // A custom insignia rank was cut from its own SHP; binding the PIPS strip
+    // would stretch that whole strip over the insignia's quad.
+    let rank_shape = match rank_insignia {
+        Some(name) => overlay.insignia_shape(name),
+        None => overlay.pips(),
+    };
+    if let (Some(index), Some(shape)) = (rank, rank_shape) {
         batch.draw_passthrough_range(pass, shape.texture(), buffer, *index, rank_count);
     }
     draw_health_bar(
@@ -466,8 +473,8 @@ fn draw_status_group<'a>(
         group_text.clone(),
         batch.surface_camera_bind_group(),
     );
-    // Phobos DigitalDisplay: each entry's backing then glyphs in list order,
-    // using the same GAME.FNT material.
+    // Phobos DigitalDisplay, then VERA's Convenience Help rows: each entry's
+    // backing then glyphs in list order, using the same GAME.FNT material.
     for (rectangles, text) in digital_text {
         draw_status_text_material(
             pass,
@@ -574,6 +581,7 @@ fn rank_run_end(runs: &[ObjectExtrasRun], start: usize) -> usize {
         wrench: None,
         power_off: None,
         rank: Some(first),
+        rank_insignia: first_insignia,
         background: None,
         shield_background: None,
         fills,
@@ -600,6 +608,7 @@ fn rank_run_end(runs: &[ObjectExtrasRun], start: usize) -> usize {
         wrench: None,
         power_off: None,
         rank: Some(index),
+        rank_insignia,
         background: None,
         shield_background: None,
         fills,
@@ -616,6 +625,7 @@ fn rank_run_end(runs: &[ObjectExtrasRun], start: usize) -> usize {
             || !group_rectangles.is_empty()
             || !group_text.is_empty()
             || *index != *first + (end - start) as u32
+            || rank_insignia != first_insignia
         {
             break;
         }
@@ -623,3 +633,7 @@ fn rank_run_end(runs: &[ObjectExtrasRun], start: usize) -> usize {
     }
     end
 }
+
+#[cfg(all(test, tests_app_presentation_render))]
+#[path = "object_extras_tests.rs"]
+mod tests;

@@ -70,6 +70,52 @@ pub struct UrbanCatalog {
     /// Countryside and Landmark Extras (`embellish`). Empty for Ares' lists.
     pub farms: Vec<UrbanStructure>,
     pub landmarks: Vec<UrbanStructure>,
+    /// VERA extension: the combat buildings the Derelicts slider stands
+    /// neutral and unpowered (`Derelicts=` in `RMGMD.INI [Extras]`).
+    pub derelicts: Vec<UrbanStructure>,
+    /// VERA extension: foot units for the extra-Civilians, Animals and Neutral
+    /// Defenders sliders. Infantry and vehicles are kept apart so each emitted
+    /// object gets the right `EntityCategory` (a foot's category is not in its
+    /// type name). Names only; every one is a type the Rules define.
+    pub civilians: SpawnFoots,
+    pub animals: SpawnFoots,
+    pub wild: SpawnFoots,
+}
+
+/// The two foot registries a spawn slider draws from, kept apart because the
+/// map entity needs the category the Rules registry already decided.
+///
+/// The `water_` lists hold the units that can stand only on water
+/// (`SpeedType=Float`/`FloatBeach` or `MovementZone=Water`): the Bront and
+/// the navy. They go on the map's water, never on its ground, so a slider
+/// fills the sea as well as the land.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SpawnFoots {
+    pub infantry: Vec<String>,
+    pub vehicles: Vec<String>,
+    pub water_infantry: Vec<String>,
+    pub water_vehicles: Vec<String>,
+}
+
+impl SpawnFoots {
+    pub fn is_empty(&self) -> bool {
+        self.infantry.is_empty()
+            && self.vehicles.is_empty()
+            && self.water_infantry.is_empty()
+            && self.water_vehicles.is_empty()
+    }
+
+    pub fn len(&self) -> usize {
+        self.infantry.len()
+            + self.vehicles.len()
+            + self.water_infantry.len()
+            + self.water_vehicles.len()
+    }
+
+    /// How many of the lists stand on water.
+    pub fn water_len(&self) -> usize {
+        self.water_infantry.len() + self.water_vehicles.len()
+    }
 }
 
 /// What the app supplies for an urban run.
@@ -88,6 +134,9 @@ pub struct UrbanObject {
     pub cell: (i16, i16),
     /// The `Put` facing: zero for buildings, `0..=7 << 5` for foots.
     pub facing: u8,
+    /// VERA extension: a derelict combat building placed unpowered. The
+    /// build post-pass reads it to clear `structure_online` and lower health.
+    pub derelict: bool,
 }
 
 /// Scalars the urban pass reads.
@@ -104,6 +153,13 @@ pub struct UrbanArgs {
     /// much open land the districts cover (see [`fill_plan`]). `None` keeps
     /// the native target from `urban_presence`.
     pub vera_fill: Option<i32>,
+    /// VERA extension: the Civilians slider (0..100). One slider, one category:
+    /// every civilian in a generated map answers to it — both the extra ones
+    /// scattered over open ground and the foot traffic inside urban districts.
+    /// That consistency is the point; no civilian source should hide behind a
+    /// different switch. At 0 the district keeps its roads, buildings and
+    /// plazas but stands no foot.
+    pub civilian_amount: i32,
 }
 
 /// Everything the pass borrows.
@@ -222,7 +278,13 @@ pub fn run(ctx: &mut UrbanCtx<'_>, args: &UrbanArgs, out: &mut UrbanOutput<'_>) 
             if let Some(cells) = grow_area(ctx, seed, size, compact) {
                 place_paved_roads(ctx, &cells);
                 let buildings = place_structures(ctx, &cells, out, share);
-                place_foots(ctx, &cells, out);
+                // Consistency: the Civilians slider is the single switch for
+                // this category. District foot traffic is a civilian too, so
+                // at 0 it goes the way of the open-ground extras — roads,
+                // buildings and plazas still stand, only the people are gone.
+                if args.civilian_amount > 0 {
+                    place_foots(ctx, &cells, out);
+                }
                 place_plazas(ctx, &cells);
                 if args.vera_fill.is_some() {
                     decorate_streets(ctx, &cells, out, buildings);
@@ -966,6 +1028,7 @@ fn record(
         category,
         cell: (cell.0 as i16, cell.1 as i16),
         facing,
+        derelict: false,
     });
 }
 
@@ -1103,6 +1166,7 @@ mod tests {
                 map_h,
                 stride,
                 vera_fill: None,
+                civilian_amount: 50,
             },
             playfield: PlayfieldBounds::from_normalized_local_size(map_w, 2, 5, gen_w, gen_h),
         }
@@ -1143,7 +1207,12 @@ mod tests {
     }
 
     fn run_once(seed: u16) -> Run {
+        run_once_with_civilians(seed, 50)
+    }
+
+    fn run_once_with_civilians(seed: u16, civilian_amount: i32) -> Run {
         let mut w = world();
+        w.args.civilian_amount = civilian_amount;
         let identity = ids();
         let blocks = blocks();
         let rock = RecalcRock::snapshot(&w.grid, &blocks, 2);
@@ -1250,6 +1319,40 @@ mod tests {
             }
         }
         assert_eq!(emitted, first.objects.len());
+    }
+
+    /// The Civilians slider is the single switch for every civilian, including
+    /// a district's own foot traffic. At 0 the roads, buildings and plazas
+    /// still stand, but no foot does — same switch that stops the extra
+    /// civilians scattered over open ground. The result stays deterministic.
+    #[test]
+    fn zero_civilians_drop_district_foots_while_keeping_the_district() {
+        let with = run_once_with_civilians(4242, 50);
+        let without = run_once_with_civilians(4242, 0);
+        let repeat = run_once_with_civilians(4242, 0);
+        assert_eq!(without.objects, repeat.objects, "civilians off is deterministic");
+        assert_eq!(without.tiles, repeat.tiles);
+        assert_eq!(without.next_mapgen, repeat.next_mapgen);
+
+        let is_foot = |object: &UrbanObject| {
+            matches!(object.category, EntityCategory::Infantry | EntityCategory::Unit)
+        };
+        assert!(with.objects.iter().any(is_foot), "civilians on: feet stand");
+        assert!(
+            without.objects.iter().all(|object| !is_foot(object)),
+            "civilians off: no foot may stand"
+        );
+
+        let structures = without
+            .objects
+            .iter()
+            .filter(|object| object.category == EntityCategory::Structure)
+            .count();
+        assert!(structures > 0, "buildings still stand with civilians off");
+        let count = |tile: i32| without.tiles.iter().filter(|&&t| t == tile).count();
+        assert!(count(PAVE) > 100, "the district is still paved");
+        assert!(count(ROADS) > 0, "the roads are still laid");
+        assert!(count(MISC_PAVE) > 0, "the plazas are still laid");
     }
 
     /// Run `check` over a context on `w` with an empty catalog.

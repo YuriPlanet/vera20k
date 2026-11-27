@@ -10,8 +10,8 @@ use crate::rules::locomotor_type::MovementZone;
 use crate::sim::movement::locomotor::MovementLayer;
 #[path = "path_finishing.rs"]
 mod path_finishing;
+use crate::sim::pathfinding::SearchMarkerOverlay;
 use crate::sim::pathfinding::zone_search;
-use crate::sim::pathfinding::{LayeredPath, SearchMarkerOverlay};
 
 use super::PathfindingContext;
 
@@ -19,6 +19,9 @@ use super::PathfindingContext;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum MovePathFailure {
     MissingGrid,
+    /// A malformed retained direction or tube index that 429780 would read
+    /// beyond the represented direction table or tube registry.
+    UnrepresentedPrefix,
     Search(zone_search::PathSearchFailure),
 }
 
@@ -42,7 +45,7 @@ pub(super) fn find_move_path(
     urgency: u8,
     allow_zone_hierarchy: bool,
     foot_entry: &dyn crate::sim::pathfinding::SearchFootEntry,
-) -> Result<LayeredPath, MovePathFailure> {
+) -> Result<Vec<i32>, MovePathFailure> {
     let _area = crate::sim::frame_profile::area(crate::sim::frame_profile::phase::PATHFINDING);
     let facts = crate::sim::pathfinding::MoverSearchFacts {
         urgency,
@@ -72,7 +75,7 @@ pub(super) fn find_move_path(
         goal,
         path.len(),
     );
-    // The whole route: Find_Path's copy (`FootPathQueue::install`) owns the
+    // The whole route: Find_Path's copy (`FootPathQueue::install_directions`) owns the
     // window.
     path_finishing::finish(path, ctx, grid, foot_entry, marker_overlay).map_err(|cause| {
         MovePathFailure::Search(zone_search::PathSearchFailure::CellEntryUnavailable(cause))
@@ -84,6 +87,65 @@ mod tests {
     use super::*;
 
     use crate::sim::pathfinding::{PathGrid, SearchEntryQuery, SearchFootEntry};
+
+    #[test]
+    fn finished_directions_can_cross_the_represented_grid_border() {
+        // Reproduce the supplied descriptor chain of the native 0x42A406 tail.
+        // The A* may expand only NE, SE, N. The finishing Unit admits its
+        // queries, including the Dummy at (32, 9), as in the native run.
+        struct BorderEntry;
+        impl SearchFootEntry for BorderEntry {
+            fn classify(&self, query: SearchEntryQuery) -> Result<u8, String> {
+                let allowed = match query.from {
+                    Some((29, 11)) => query.direction == 1,
+                    Some((30, 10)) => query.direction == 3,
+                    Some((31, 11)) => query.direction == 0,
+                    None => true,
+                    _ => false,
+                };
+                Ok(if allowed { 0 } else { 7 })
+            }
+
+            fn is_passive_unit(&self) -> bool {
+                true // do not end the search at the first refused approach to the goal
+            }
+
+            fn finishing_threat_coefficient(
+                &self,
+            ) -> Result<crate::util::native_x87::NativeF64Bits, String> {
+                Ok(crate::util::native_x87::NativeF64Bits::POSITIVE_ZERO)
+            }
+
+            fn finishing_house_threat(&self, _: (i16, i16)) -> Result<i32, String> {
+                Ok(0)
+            }
+        }
+
+        let terrain = crate::map::resolved_terrain::test_flat_ground_grid(32);
+        let grid = PathGrid::from_resolved_terrain(&terrain);
+        let path = find_move_path(
+            PathfindingContext {
+                path_grid: Some(&grid),
+                zone_grid: None,
+                resolved_terrain: Some(&terrain),
+                playfield_bounds: None,
+                blocker_neighbor_counts: None,
+            },
+            (29, 11),
+            MovementLayer::Ground,
+            (31, 10),
+            MovementZone::Normal,
+            Some(MovementZone::Normal),
+            None,
+            0,
+            true,
+            &BorderEntry,
+        )
+        .expect("the finished route reaches the Foot");
+        let mut queue = crate::sim::components::FootPathQueue::default();
+        queue.install_directions(&path, false);
+        assert_eq!(queue.remaining_directions(), &[2, 1, 1]);
+    }
 
     #[test]
     fn gsi_04_12_layered_failure_does_not_retry_flat_ground_path() {
@@ -131,7 +193,7 @@ mod tests {
             &DeckStepRefused,
         )
         .expect("fixture must prove a ground-plane search could succeed");
-        assert_eq!(ground.0.last().copied(), Some((2, 0)));
+        assert_eq!(ground, [2, 2]);
 
         let deck = find_move_path(
             PathfindingContext {

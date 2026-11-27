@@ -21,7 +21,7 @@ fn hit(sim: &mut Simulation, rules: &RuleSet, target: u64) {
                 arg6: false,
             },
         ),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
 }
 
@@ -82,7 +82,7 @@ fn retail_destroyed_shipyard_leaves_power_before_its_marked_body_retires() {
                 0,
                 0,
                 &rules,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap();
         assert!(
@@ -94,7 +94,7 @@ fn retail_destroyed_shipyard_leaves_power_before_its_marked_body_retires() {
                 0,
                 PlacementEvidence::EvaluateMark,
                 &rules,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .is_some()
         );
@@ -116,7 +116,7 @@ fn retail_destroyed_shipyard_leaves_power_before_its_marked_body_retires() {
         sample(&mut sim, id);
     }
     let owner = sim.entities().get(yard).unwrap().owner();
-    sim.assess_house_derived_state(owner, &rules, FrameEffects::default());
+    sim.assess_house_derived_state(owner, &rules, &mut FrameEffects::default());
     let output = sim.power_states[&owner].total_output();
     assert!(
         (25..50).contains(&output),
@@ -152,17 +152,17 @@ fn retail_destroyed_shipyard_leaves_power_before_its_marked_body_retires() {
     hit(&mut sim, &rules, peer);
     sample(&mut sim, peer);
     assert!(sim.power_states[&owner].power_recheck_for_test());
-    sim.assess_house_derived_state(owner, &rules, FrameEffects::default());
+    sim.assess_house_derived_state(owner, &rules, &mut FrameEffects::default());
     assert_eq!(sim.power_states[&owner].total_output(), output);
     assert_eq!(sim.power_states[&owner].total_drain(), 25);
     assert!(!sim.power_states[&owner].low_power());
     // The next actual Building visit still owns the retained body's cleanup.
-    sim.object_ai_visit_one_with_effects(yard, &rules, super::ObjectAiCtx::default());
+    sim.object_ai_visit_one_with_effects(yard, &rules, &mut super::ObjectAiCtx::default());
     assert!(
         sim.entities()
             .get(yard)
             .is_none_or(|entity| entity.lifecycle.in_limbo())
     );
-    sim.assess_house_derived_state(owner, &rules, FrameEffects::default());
+    sim.assess_house_derived_state(owner, &rules, &mut FrameEffects::default());
     assert_eq!(sim.power_states[&owner].total_drain(), 25);
 }

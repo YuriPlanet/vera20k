@@ -13,7 +13,7 @@ use crate::util::retail_trig::TrigTable;
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub(super) struct GrappleState {
     /// +44, cleared synchronously by the dedicated Anim expiry callback.
-    /// Only [`GrappleState::begin`] stores an Anim here.
+    /// Only [`FootParasite::begin_grapple`] stores an Anim here.
     anim: Option<u64>,
     /// +48: entry0, initial animation1, roll2/3, impact4.
     phase: i32,
@@ -28,15 +28,23 @@ impl GrappleState {
     pub(super) fn anim(&self) -> Option<u64> {
         self.anim
     }
+}
 
+impl FootParasite {
     /// UpdateSquidGrapple6297F0's entry phase publishes its Anim at +44
     /// (none when the type is absent) and starts phase 1, through
-    /// [`EntityStore::write_held_anim`](crate::sim::entity_store::EntityStore::write_held_anim).
-    fn begin(&mut self, anim: Option<u64>, _: crate::sim::entity_store::AnimHolderAuthority) {
-        self.anim = anim;
-        self.phase = 1;
-        self.stage = 0;
-        self.delay = 0;
+    /// [`EntityStore::begin_parasite_grapple`](crate::sim::entity_store::EntityStore::begin_parasite_grapple).
+    pub(in crate::sim) fn begin_grapple(
+        &mut self,
+        anim: Option<u64>,
+        _: crate::sim::entity_store::AnimHolderAuthority,
+    ) -> Option<()> {
+        let grapple = &mut self.class_mut()?.grapple;
+        grapple.anim = anim;
+        grapple.phase = 1;
+        grapple.stage = 0;
+        grapple.delay = 0;
+        Some(())
     }
 }
 
@@ -153,7 +161,7 @@ impl Simulation {
         victim: u64,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(source) = self.substrate.entities.get(owner) else {
             return;
@@ -229,14 +237,7 @@ impl Simulation {
                 };
                 self.substrate
                     .entities
-                    .write_held_anim(owner, |entity, authority| {
-                        entity
-                            .parasite
-                            .class_mut()
-                            .unwrap()
-                            .grapple
-                            .begin(anim, authority)
-                    })
+                    .begin_parasite_grapple(owner, anim)
                     .unwrap();
                 Self::advance_grapple_stage(&self.session, &mut self.substrate, owner, victim);
             }
@@ -467,7 +468,7 @@ impl Simulation {
         owner: u64,
         victim: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(source) = self.substrate.entities.get(owner) else {
             return;

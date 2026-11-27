@@ -10,17 +10,24 @@ use crate::sim::bridge_state::ramp_repair::{Family, HutCells};
 use crate::sim::world::FrameEffects;
 use std::hash::{Hash, Hasher};
 
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, serde::Serialize, serde::Deserialize)]
+pub(super) struct PendingBridgeCell {
+    pub(super) point: CellCoord,
+    /// VERA's live deck level before a destructive bridge callback, when corrected.
+    pub(super) corrected_deck_level: Option<i16>,
+}
+
 /// Map+D4's ordered packed-cell vector, independent of optional bridge geometry.
 /// Native5650E3/5651EB initializes it empty; MouseSave5BE8E1..927 and
 /// MouseLoad5BE598..61E retain the count and every coordinate, including duplicates.
 /// Source: original587180..58740E and47DDD5..47DE2B (gamemd).
 #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub(in crate::sim::world) struct PendingBridgeCells {
-    cells: Vec<(i16, i16)>,
+    cells: Vec<PendingBridgeCell>,
 }
 
 impl PendingBridgeCells {
-    pub(in crate::sim::world) fn append(&mut self, cell: (i16, i16)) {
+    pub(super) fn append(&mut self, cell: PendingBridgeCell) {
         // Native skips this append on allocation failure, then continues debris.
         if self.cells.try_reserve(1).is_ok() {
             self.cells.push(cell);
@@ -33,7 +40,7 @@ impl PendingBridgeCells {
         self.cells.clear();
     }
 
-    fn at(&self, index: usize) -> Option<(i16, i16)> {
+    fn at(&self, index: usize) -> Option<PendingBridgeCell> {
         self.cells.get(index).copied()
     }
 
@@ -100,6 +107,7 @@ impl CellReader for LiveCells<'_> {
             tile: terrain.native_cell_tile_index(cell),
             overlay: overlay.filter(|value| *value != 0xff).map_or(-1, i32::from),
             level: terrain.native_cell_ground_fields(cell).0,
+            fixed_deck_z: crate::sim::movement::ground_pose::corrected_deck_z(terrain, cell),
         }
     }
 
@@ -135,7 +143,6 @@ impl CellReader for LiveCells<'_> {
 pub(crate) struct BridgeDamageDrivers<'a> {
     pub(super) sim: &'a mut Simulation,
     pub(super) rules: &'a RuleSet,
-    registry: Option<&'a crate::rules::overlay_types::OverlayTypeRegistry>,
     /// A driver collapsed a span.
     pub(super) collapsed: bool,
     frame_effects: FrameEffects<'a>,
@@ -145,13 +152,11 @@ impl<'a> BridgeDamageDrivers<'a> {
     pub(crate) fn new(
         sim: &'a mut Simulation,
         rules: &'a RuleSet,
-        registry: Option<&'a crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: FrameEffects<'a>,
     ) -> Self {
         Self {
             sim,
             rules,
-            registry,
             collapsed: false,
             frame_effects,
         }
@@ -175,13 +180,13 @@ impl<'a> BridgeDamageDrivers<'a> {
         //587394 reloads the data and5873D4 reloads the live count after each
         //receiver: nested calls can clear this vector; callbacks can append.
         let mut index = 0;
-        while let Some(point) = self.sim.pending_bridge_collapses.at(index) {
+        while let Some(collapse) = self.sim.pending_bridge_collapses.at(index) {
             moving_collapse::apply(
                 self.sim,
                 self.rules,
-                self.registry,
-                point,
-                self.frame_effects,
+                Some(self.rules.overlay_registry()),
+                collapse,
+                &mut self.frame_effects,
             );
             index += 1;
         }
@@ -208,19 +213,17 @@ impl<'a> BridgeDamageDrivers<'a> {
             live_publication::run_state_machine(
                 self.sim,
                 self.rules,
-                self.registry,
                 input,
                 family,
-                self.frame_effects,
+                &mut self.frame_effects,
             )
         } else {
             live_publication::damage_ordinary(
                 self.sim,
                 self.rules,
-                self.registry,
                 input,
                 family,
-                self.frame_effects,
+                &mut self.frame_effects,
             )
             .unwrap_or_else(|error| {
                 panic!("ordinary {family:?} bridge publication at {input:?}: {error}")
@@ -291,8 +294,7 @@ impl DamageHost for LiveDamage<'_> {
             rx as u16,
             ry as u16,
             rules,
-            self.drivers.registry,
-            self.drivers.frame_effects,
+            &mut self.drivers.frame_effects,
         );
     }
 
@@ -312,8 +314,7 @@ pub(super) fn run(
     events: &[BridgeDamageEvent],
     strength: i32,
     rules: &RuleSet,
-    registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) -> bool {
     if sim.resolved_terrain.is_none() || sim.bridge_state.is_none() {
         return false;
@@ -326,7 +327,7 @@ pub(super) fn run(
             .unwrap()
             .native_cell_identity((event.rx as i16, event.ry as i16));
         let mut host = LiveDamage {
-            drivers: BridgeDamageDrivers::new(sim, rules, registry, frame_effects),
+            drivers: BridgeDamageDrivers::new(sim, rules, frame_effects.reborrow()),
             event,
             strength,
         };

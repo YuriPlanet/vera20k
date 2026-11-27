@@ -33,9 +33,15 @@ pub(crate) fn registered_commands() -> &'static [CommandMetadata] {
     static ALL: OnceLock<Vec<CommandMetadata>> = OnceLock::new();
     ALL.get_or_init(|| {
         let mut all = RETAIL_COMMANDS.to_vec();
+        // Ares' CommandClassCallback_Register (hook 0x533058, Ares.dll
+        // 10002A80) registers its commands where gamemd allocates UnitTab's.
+        let unit_tab = all
+            .iter()
+            .position(|row| row.command == HotkeyCommand::UnitTab)
+            .unwrap_or(all.len());
+        all.splice(unit_tab..unit_tab, ARES_COMMANDS);
         all.extend_from_slice(&CAMERA_COMMANDS);
         all.extend_from_slice(&SHORTCUT_COMMANDS);
-        #[cfg(feature = "verax")]
         all.extend_from_slice(&VERA_COMMANDS);
         #[cfg(feature = "phobos")]
         all.extend_from_slice(&PHOBOS_COMMANDS);
@@ -103,7 +109,7 @@ const CAMERA_COMMANDS: [CommandMetadata; 4] = [
 /// (`hotkeys::VERA_DEFAULT_KEYS`). Each name is the Options page's label for
 /// the same setting, but Thread Stats', Ferry's, Relation Colours' and the two
 /// Formation commands', which have none; each category literal is [`VERA_CATEGORY_KEY`].
-const SHORTCUT_COMMANDS: [CommandMetadata; 11] = [
+const SHORTCUT_COMMANDS: [CommandMetadata; 15] = [
     command!(
         HotkeyCommand::PerformanceStats,
         "PerformanceStats",
@@ -153,6 +159,14 @@ const SHORTCUT_COMMANDS: [CommandMetadata; 11] = [
         None
     ),
     command!(
+        HotkeyCommand::SuperweaponTimers,
+        "SuperweaponTimers",
+        "VERA:SuperweaponBuildingTimers",
+        "VERA:HotkeyCategory",
+        "VERA:SuperweaponBuildingTimersHelp",
+        None
+    ),
+    command!(
         HotkeyCommand::FormationLine,
         "FormationLine",
         "VERA:FormationLine",
@@ -190,6 +204,30 @@ const SHORTCUT_COMMANDS: [CommandMetadata; 11] = [
         "VERA:RelationColors",
         "VERA:HotkeyCategory",
         "VERA:RelationColorsDesc",
+        None
+    ),
+    command!(
+        HotkeyCommand::TeamColours,
+        "TeamColours",
+        "VERA:TeamColours",
+        "VERA:HotkeyCategory",
+        "VERA:TeamColoursDesc",
+        None
+    ),
+    command!(
+        HotkeyCommand::ConvenienceHelp,
+        "ConvenienceHelp",
+        "VERA:ConvenienceHelp",
+        "VERA:HotkeyCategory",
+        "VERA:ConvenienceHelpHelp",
+        None
+    ),
+    command!(
+        HotkeyCommand::ToggleHdArt,
+        "ToggleHdArt",
+        "VERA:ToggleHdArt",
+        "VERA:HotkeyCategory",
+        "VERA:ToggleHdArtDesc",
         None
     ),
 ];
@@ -893,9 +931,8 @@ const RETAIL_COMMANDS: [CommandMetadata; 87] = [
     ),
 ];
 
-/// VeraX's own commands, registered after every retail one. The CSF has no
+/// VERA's own commands, registered after every retail one. The CSF has no
 /// entries, so their names come from VERA's language files.
-#[cfg(feature = "verax")]
 const VERA_COMMANDS: [CommandMetadata; 1] = [command!(
     HotkeyCommand::AutoLoad,
     "AutoLoad",
@@ -905,6 +942,33 @@ const VERA_COMMANDS: [CommandMetadata; 1] = [command!(
     "VERA:AutoLoadDesc",
     None
 )];
+
+/// Ares 3.0's player commands, in `Ares::RegisterCommands` order
+/// (`src/Ares.Commands.cpp`). The keyboard page lists them while Ares plays
+/// (`app::input::keyboard::open`).
+const ARES_COMMANDS: [CommandMetadata; 2] = [
+    command!(
+        HotkeyCommand::FpsCounter,
+        "FPSCounter",
+        "TXT_FPS_COUNTER",
+        "TXT_DEVELOPMENT",
+        "TXT_FPS_COUNTER_DESC",
+        None
+    ),
+    command!(
+        HotkeyCommand::TogglePower,
+        "TogglePower",
+        "TXT_TOGGLE_POWER",
+        "TXT_INTERFACE",
+        "TXT_TOGGLE_POWER_DESC",
+        None
+    ),
+];
+
+/// Whether `command` is one of Ares' (`ARES_COMMANDS`).
+pub(crate) fn is_ares_command(command: HotkeyCommand) -> bool {
+    ARES_COMMANDS.iter().any(|row| row.command == command)
+}
 
 /// Phobos `FireTacticalSW1..10` and `Toggle Super Weapon Sidebar`.
 /// `FireTacticalSW.ini` reads the CSF keys `TXT_FIRE_TACTICAL_SW_XX[_DESC]`.

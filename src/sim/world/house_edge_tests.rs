@@ -87,7 +87,7 @@ fn a_deployed_yard_takes_the_edge_nearest_its_foundation_centre() {
         .unwrap();
     assert_eq!(edge(&sim, "Americans"), NORTH);
 
-    assert!(sim.deploy_mcv(mcv, rules, None, FrameEffects::default()));
+    assert!(sim.deploy_mcv(mcv, rules, None, &mut FrameEffects::default()));
 
     let yard = sim
         .substrate
@@ -163,7 +163,7 @@ fn a_captured_yard_moves_only_a_yardless_captors_edge() {
         americans,
         rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert!(sim.production.is_primary_factory(american_yard));
     assert!(!sim.production.is_primary_factory(russian_yard));
@@ -175,7 +175,7 @@ fn a_captured_yard_moves_only_a_yardless_captors_edge() {
         russians,
         rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert!(sim.production.is_primary_factory(american_yard));
     assert_eq!(edge(&sim, "Russians"), WEST);
@@ -232,12 +232,12 @@ fn the_house_walk_falls_back_to_the_last_yard_then_the_first_building() {
     sim.determine_house_edge(owner, south, rules);
     assert_eq!(edge(&sim, "Americans"), SOUTH);
 
-    sim.techno_limbo_with_rules(north, rules, None);
-    sim.techno_limbo_with_rules(south, rules, None);
+    sim.techno_limbo_with_rules(north, rules);
+    sim.techno_limbo_with_rules(south, rules);
     sim.determine_house_edge(owner, south, rules);
     assert_eq!(edge(&sim, "Americans"), EAST);
 
-    sim.techno_limbo_with_rules(plant, rules, None);
+    sim.techno_limbo_with_rules(plant, rules);
     sim.determine_house_edge(owner, south, rules);
     assert_eq!(edge(&sim, "Americans"), EAST);
 }

@@ -7,11 +7,10 @@
 use super::PathfindingContext;
 use crate::map::cell_index::NativeCellIdentity;
 use crate::map::resolved_terrain::NativeCellQuery;
-use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::pathfinding::path_smooth::{self, PathFinishingContext};
 use crate::sim::pathfinding::{
-    LayeredPath, LayeredPathStep, PathGrid, SearchEntryCandidate, SearchEntryQuery,
-    SearchFootEntry, SearchMarkerOverlay,
+    LayeredPathStep, PathGrid, SearchEntryCandidate, SearchEntryQuery, SearchFootEntry,
+    SearchMarkerOverlay,
 };
 use crate::util::native_x87::NativeF64Bits;
 
@@ -61,6 +60,15 @@ impl PathFinishingContext for Finishing<'_> {
                 .cell(x as u16, y as u16)
                 .map_or(0, |cell| i32::from(cell.signed_level())),
         }
+    }
+    fn fixed_deck_level(&self, cell: Cell) -> Option<i32> {
+        let Cell::Native(cell) = cell else {
+            return None;
+        };
+        self.context
+            .resolved_terrain?
+            .corrected_high_bridge_deck_at(cell)
+            .map(i32::from)
     }
     fn flags(&self, cell: Cell) -> u32 {
         let coord = self.coord(cell);
@@ -119,12 +127,11 @@ pub(super) fn finish(
     grid: &PathGrid,
     foot: &dyn SearchFootEntry,
     markers: Option<&SearchMarkerOverlay>,
-) -> Result<LayeredPath, String> {
+) -> Result<Vec<i32>, String> {
     if path.is_empty() {
-        return Ok((Vec::new(), Vec::new()));
+        return Ok(Vec::new());
     }
-    let prepared_markers = foot.prepared_search_markers();
-    let markers = prepared_markers.as_deref().or(markers);
+    let markers = foot.prepared_search_markers().or(markers);
     let start = (path[0].rx as i16, path[0].ry as i16);
     let ctx = Finishing {
         cells: context.resolved_terrain.map(NativeCellQuery::canonical),
@@ -133,60 +140,24 @@ pub(super) fn finish(
         foot,
         markers,
     };
-    let mut directions = Vec::with_capacity(path.len() - 1);
-    for pair in path.windows(2) {
-        let from = (pair[0].rx as i16, pair[0].ry as i16);
-        let to = (pair[1].rx as i16, pair[1].ry as i16);
-        let delta = (to.0.wrapping_sub(from.0), to.1.wrapping_sub(from.1));
-        let direction = crate::util::direction::DIRECTION_DELTAS
-            .iter()
-            .position(|&(x, y)| delta == (x as i16, y as i16))
-            .map(|dir| dir as i32);
-        directions.push(
-            direction
-                .or_else(|| (ctx.tube_exit(ctx.get_cell(from)) == Some(to)).then_some(8))
-                .ok_or("reconstructed path has neither compass nor Tube edge")?,
-        );
-    }
-    let heights: Vec<i32> = path
-        .iter()
-        .take(directions.len())
-        .map(|step| i32::from(step.path_height()))
-        .collect();
-    path_smooth::finish_path(start, &mut directions, &heights, &ctx)?;
-    let mut coord = start;
-    let mut coords = vec![(path[0].rx, path[0].ry)];
-    let mut layers = vec![path[0].layer];
-    let mut height = path[0].path_height();
-    for direction in directions {
-        let from = coord;
-        coord = if direction == 8 {
-            ctx.tube_exit(ctx.get_cell(from)).unwrap_or((0, 0))
-        } else {
-            let (dx, dy) = crate::util::direction::DIRECTION_DELTAS[direction as usize];
-            (
-                from.0.wrapping_add(dx as i16),
-                from.1.wrapping_add(dy as i16),
-            )
-        };
-        let from_cell = grid.cell(from.0 as u16, from.1 as u16);
-        let to_cell = grid
-            .cell(coord.0 as u16, coord.1 as u16)
-            .ok_or("finished path left represented PathGrid")?;
-        // Layers are the movement adapter's projection, not a second path
-        // authority. Reuse the original descriptor-height construction owner
-        // after finishing rewrites coordinates; do not carry stale old layers.
-        height = crate::sim::pathfinding::compute_node_height(height, from_cell, to_cell);
-        coords.push((coord.0 as u16, coord.1 as u16));
-        layers.push(
-            if to_cell.has_structural_bridge() && height == to_cell.signed_level() + 4 {
-                MovementLayer::Bridge
-            } else {
-                MovementLayer::Ground
-            },
-        );
-    }
-    Ok((coords, layers))
+    // AStar reconstruction (0x0042AA90) reads adjacent descriptors' cells.
+    // Each edge is a compass step or a nonadjacent Tube jump (0x0042AB76).
+    let mut directions = path
+        .windows(2)
+        .map(|pair| {
+            let from = (pair[0].rx as i16, pair[0].ry as i16);
+            i32::from(crate::sim::components::direction_from_step(
+                from,
+                (pair[1].rx, pair[1].ry),
+            ))
+        })
+        .collect::<Vec<_>>();
+    // The outgoing-node heights are the steps' own, one per direction.
+    let heights = &path[..directions.len()];
+    path_smooth::finish_path(start, &mut directions, heights, &ctx)?;
+    // AStar_main_loop (0x0042A432) returns these words directly. Smoothing
+    // can admit the native Dummy beyond the edge of VERA's PathGrid.
+    Ok(directions)
 }
 
 #[cfg(all(test, tests_sim_movement))]

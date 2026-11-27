@@ -18,7 +18,7 @@ use super::helpers::{
 use crate::app::presentation::render::draw_plan_lowering::{ObjectPieceInstance, ObjectTexture};
 use crate::render::batch::{DepthAxis, SpriteInstance};
 use crate::render::draw_state::DrawState;
-use crate::render::native_z::{ZGradient, pack_z_gradient};
+use crate::render::native_z::{ZGradient, pack_z_gradient, shp_frame_flag};
 use crate::render::palette_light::PaletteLight;
 use crate::render::sprite_atlas::{ShpSpriteEntry, ShpSpriteKey, SpriteAtlas, tiled_anim_key};
 use crate::render::tactical_draw_plan::RenderZPolicy;
@@ -103,10 +103,12 @@ fn depth_policy(flags: u32) -> RenderZPolicy {
     }
 }
 
+/// Appends the pieces one Anim's draw makes to `pieces`, in draw order.
 pub(super) fn anim_draw_pieces(
     atlas: &SpriteAtlas,
     input: AnimDrawInput<'_>,
-) -> Vec<ObjectPieceInstance> {
+    pieces: &mut impl Extend<ObjectPieceInstance>,
+) {
     // Tiled423636 precedes the Flat and ordinary arms; a Bouncer or IsMeteor
     // body takes them like any other, after its HasBounce ground shadow.
     let tiled = input.config.is_some_and(|config| config.tiled);
@@ -126,7 +128,6 @@ pub(super) fn anim_draw_pieces(
         body.uv_size = entry.uv_size;
         body.source_palette = entry.source_palette;
     }
-    let mut pieces = Vec::with_capacity(3);
     let visible = |instance: &SpriteInstance| {
         in_view(
             instance.position[0],
@@ -144,7 +145,7 @@ pub(super) fn anim_draw_pieces(
     if let Some(shadow) =
         bounce_ground_shadow(&input, entry, body).filter(|shadow| visible(&shadow.instance))
     {
-        pieces.push(shadow);
+        pieces.extend([shadow]);
     }
     if tiled {
         if let Some(entry) = entry {
@@ -158,7 +159,7 @@ pub(super) fn anim_draw_pieces(
                     .filter(|tile| visible(&tile.instance)),
             );
         }
-        return pieces;
+        return;
     }
 
     // Keep the existing body's alpha/palette path. Its selected flags are
@@ -172,36 +173,36 @@ pub(super) fn anim_draw_pieces(
             ZGradient::Vertical
         },
         false,
-    );
+    ) | shp_frame_flag(entry.is_none_or(|entry| entry.extended));
     if flat {
         // Flat423798 subtracts3; the ordinary body subtracts2 at423803.
         body.z_adjust -= 1.0;
         body.depth = apply_shape_z_adjust(body.depth, -1, input.axis.world_height);
     }
     if let Some(entry) = entry.filter(|_| visible(&body)) {
-        pieces.push(ObjectPieceInstance {
+        pieces.extend([ObjectPieceInstance {
             target: ObjectTexture::ShpPage(entry.page as usize),
             render_z: input.legacy_policy,
             instance: body,
-        });
+        }]);
     }
 
     // Flat returns after its one draw. Ordinary42382C then tests Shadow372
     // even when the preceding body call had empty bounds and stored nothing.
     // It adds signed SHP header+6 / 2 to the already selected body frame.
     let Some(config) = input.config.filter(|config| !flat && config.shadow) else {
-        return pieces;
+        return;
     };
     let Some(raw_count) = config.raw_shp_frame_count else {
-        return pieces;
+        return;
     };
     let Ok(frame) = u16::try_from(i32::from(input.key.frame).wrapping_add(raw_count / 2)) else {
-        return pieces;
+        return;
     };
     let mut key = input.key.clone();
     key.frame = frame;
     let Some(entry) = atlas.get(&key) else {
-        return pieces;
+        return;
     };
     let flags = (input.flags & !6) | 0x601;
     let mut shadow = input.body;
@@ -235,13 +236,12 @@ pub(super) fn anim_draw_pieces(
     shadow.z_gradient = pack_z_gradient(ZGradient::Flat, false);
     shadow.zshape_origin = [0.0; 2];
     if visible(&shadow) {
-        pieces.push(ObjectPieceInstance {
+        pieces.extend([ObjectPieceInstance {
             target: ObjectTexture::SpriteAtlasEdit(entry.page as usize, TerrainPiece::Shadow),
             render_z: depth_policy(flags),
             instance: shadow,
-        });
+        }]);
     }
-    pieces
 }
 
 /// DrawIt423358..4233E9: the body's frame (ESP+2C) through the body's Convert
@@ -318,7 +318,7 @@ fn tiled_column(
     tile.tint = [1.0; 3];
     tile.alpha = 1.0;
     tile.draw_state = DrawState::from_native_selector(0, (input.flags & 6) as u8);
-    tile.z_gradient = pack_z_gradient(ZGradient::Vertical, false);
+    tile.z_gradient = pack_z_gradient(ZGradient::Vertical, false) | shp_frame_flag(entry.extended);
     let mut tiles = Vec::new();
     for k in 0.. {
         // The row and Z term relative to the ordinary body's.

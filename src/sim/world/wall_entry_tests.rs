@@ -102,25 +102,20 @@ fn map_wall(sim: &mut Simulation, overlay: u8, data: u8) {
 }
 
 /// The class `Can_Enter_Cell` code of mover `id` for the wall cell (16, 15).
-fn entry(
-    sim: &Simulation,
-    rules: &RuleSet,
-    registry: &crate::rules::overlay_types::OverlayTypeRegistry,
-    id: u64,
-) -> Result<u8, String> {
+fn entry(sim: &Simulation, rules: &RuleSet, id: u64) -> Result<u8, String> {
     let cell = sim
         .resolved_terrain
         .as_ref()
         .unwrap()
         .native_cell_identity((16, 15));
-    sim.foot_can_enter(id, cell, InfantryEntryArgs::REPAIR, rules, Some(registry))
+    sim.foot_can_enter(id, cell, InfantryEntryArgs::REPAIR, rules)
 }
 
 #[test]
 fn a_wall_built_in_play_refuses_a_mover_that_cannot_shoot_it() {
     let (mut sim, rules, registry) = wall_fixture();
     for id in [ENGINEER, TRUCK] {
-        assert_eq!(entry(&sim, &rules, &registry, id), Ok(0));
+        assert_eq!(entry(&sim, &rules, id), Ok(0));
     }
     assert!(
         sim.spawn_object_at_height_with_overlay_registry(
@@ -137,7 +132,7 @@ fn a_wall_built_in_play_refuses_a_mover_that_cannot_shoot_it() {
     );
     // Unarmed: Infantry `0x0051C1EB`, Unit `0x0073F48F`.
     for id in [ENGINEER, TRUCK] {
-        assert_eq!(entry(&sim, &rules, &registry, id), Ok(7), "{id}");
+        assert_eq!(entry(&sim, &rules, id), Ok(7), "{id}");
     }
 }
 
@@ -146,7 +141,7 @@ fn a_map_wall_destroyed_in_play_admits_movers_again() {
     let (mut sim, rules, registry) = wall_fixture();
     map_wall(&mut sim, 2, 0);
     for id in [ENGINEER, TRUCK] {
-        assert_eq!(entry(&sim, &rules, &registry, id), Ok(7), "{id}");
+        assert_eq!(entry(&sim, &rules, id), Ok(7), "{id}");
     }
     let destroyed = damage_wall_overlay_with_terrain(
         sim.overlay_grid.as_mut().unwrap(),
@@ -159,17 +154,17 @@ fn a_map_wall_destroyed_in_play_admits_movers_again() {
     );
     assert_eq!(destroyed.destroyed_cells, vec![(16, 15)]);
     for id in [ENGINEER, TRUCK] {
-        assert_eq!(entry(&sim, &rules, &registry, id), Ok(0), "{id}");
+        assert_eq!(entry(&sim, &rules, id), Ok(0), "{id}");
     }
 }
 
 #[test]
 fn a_mover_that_can_shoot_a_wall_prices_it_by_its_owner() {
-    let (mut sim, rules, registry) = wall_fixture();
+    let (mut sim, rules, _) = wall_fixture();
     map_wall(&mut sim, 2, 0);
     // Unowned: `Is_Ally_ByIndex` (`0x004F9A10`) rejects index -1.
     for id in [WALLI, WALLV] {
-        assert_eq!(entry(&sim, &rules, &registry, id), Ok(5), "{id}");
+        assert_eq!(entry(&sim, &rules, id), Ok(5), "{id}");
     }
     let owner = sim.intern("Americans");
     sim.overlay_grid
@@ -177,7 +172,7 @@ fn a_mover_that_can_shoot_a_wall_prices_it_by_its_owner() {
         .unwrap()
         .set_wall_owner(16, 15, owner);
     for id in [WALLI, WALLV] {
-        assert_eq!(entry(&sim, &rules, &registry, id), Ok(4), "{id}");
+        assert_eq!(entry(&sim, &rules, id), Ok(4), "{id}");
     }
     // A house that names the mover's House an ally: only the mover's own
     // Allies bits count.
@@ -191,48 +186,48 @@ fn a_mover_that_can_shoot_a_wall_prices_it_by_its_owner() {
         .or_default()
         .insert("AMERICANS".into());
     for id in [WALLI, WALLV] {
-        assert_eq!(entry(&sim, &rules, &registry, id), Ok(5), "{id}");
+        assert_eq!(entry(&sim, &rules, id), Ok(5), "{id}");
     }
     sim.house_alliances_mut_for_test()
         .entry("AMERICANS".into())
         .or_default()
         .insert("RUSSIANS".into());
     for id in [WALLI, WALLV] {
-        assert_eq!(entry(&sim, &rules, &registry, id), Ok(4), "{id}");
+        assert_eq!(entry(&sim, &rules, id), Ok(4), "{id}");
     }
 }
 
 #[test]
 fn only_a_unit_takes_the_wood_route_against_a_wooden_wall() {
-    let (mut sim, rules, registry) = wall_fixture();
+    let (mut sim, rules, _) = wall_fixture();
     map_wall(&mut sim, 3, 0);
     // Unit `0x0073F4B3..0x0073F4C4`: `Wood=` against `Armor=wood`.
-    assert_eq!(entry(&sim, &rules, &registry, WOODV), Ok(5));
+    assert_eq!(entry(&sim, &rules, WOODV), Ok(5));
     // Infantry asks `0x00772AC0`, which tests `Wall=` alone.
-    assert_eq!(entry(&sim, &rules, &registry, WOODI), Ok(7));
+    assert_eq!(entry(&sim, &rules, WOODI), Ok(7));
     map_wall(&mut sim, 2, 0);
-    assert_eq!(entry(&sim, &rules, &registry, WOODV), Ok(7));
+    assert_eq!(entry(&sim, &rules, WOODV), Ok(7));
 }
 
 #[test]
 fn infantry_ignores_a_wall_at_its_last_damage_stage() {
-    let (mut sim, rules, registry) = wall_fixture();
+    let (mut sim, rules, _) = wall_fixture();
     // Damage stage 3 of `DamageLevels=3` (`0x0051C1C9..0x0051C1DC`).
     map_wall(&mut sim, 2, 0x30);
     for id in [WALLI, ENGINEER] {
-        assert_eq!(entry(&sim, &rules, &registry, id), Ok(0), "{id}");
+        assert_eq!(entry(&sim, &rules, id), Ok(0), "{id}");
     }
     // The Unit arm has no such test.
-    assert_eq!(entry(&sim, &rules, &registry, WALLV), Ok(5));
+    assert_eq!(entry(&sim, &rules, WALLV), Ok(5));
     map_wall(&mut sim, 2, 0x20);
-    assert_eq!(entry(&sim, &rules, &registry, ENGINEER), Ok(7));
+    assert_eq!(entry(&sim, &rules, ENGINEER), Ok(7));
 }
 
 #[test]
 fn the_land_row_refuses_after_the_wall_arm() {
-    let (mut sim, rules, registry) = wall_fixture();
+    let (mut sim, rules, _) = wall_fixture();
     map_wall(&mut sim, 2, 0);
-    assert_eq!(entry(&sim, &rules, &registry, WALLI), Ok(5));
+    assert_eq!(entry(&sim, &rules, WALLI), Ok(5));
     // The arm accumulates 5, then the ground row read after the object list
     // (Infantry `0x0051C750`) refuses whatever it accumulated.
     sim.resolved_terrain
@@ -242,7 +237,7 @@ fn the_land_row_refuses_after_the_wall_arm() {
         .unwrap()
         .speed_costs
         .foot = Some(crate::rules::terrain_rules::test_speed_percent(0));
-    assert_eq!(entry(&sim, &rules, &registry, WALLI), Ok(7));
+    assert_eq!(entry(&sim, &rules, WALLI), Ok(7));
 }
 
 /// Ordinary authored CAFNCB and MTNK/AP, without spawned actors, supplied
@@ -341,7 +336,7 @@ fn assert_retail_wall_fire_profile(
     let tank = scene.sim().entities().get(attacker_id).unwrap();
     assert_eq!(scene.sim().resolve(tank.type_ref()), "MTNK");
     assert_eq!(tank.owner(), owner);
-    let registry = &scene.runtime.resources.overlay_registry;
+    let registry = scene.runtime.resources.rules.overlay_registry();
     let wall = registry.id_for_name(wall_name).unwrap();
     let flags = registry.flags(wall).unwrap();
     let native_type = native["cases"][0]["input"]["wall_types"]
@@ -465,7 +460,7 @@ fn assert_retail_wall_fire_profile(
                 &due,
                 22, // Normal client interval; the headless convenience tick is 66ms.
                 TickLane::Ordinary,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap();
         assert!(output.tick.frame_committed);
@@ -599,9 +594,9 @@ fn retail_unit_per_cell_removes_authored_fence_before_returning() {
     }
     impl crate::sim::world::SoundBoundary for CueBoundary {
         fn consume(
-            &self,
+            &mut self,
             sim: &Simulation,
-            _: &RuleSet,
+            rules: &RuleSet,
             events: &[crate::sim::world::SimSoundEvent],
         ) {
             for event in &events[self.delivered.get()..] {
@@ -610,7 +605,7 @@ fn retail_unit_per_cell_removes_authored_fence_before_returning() {
                 } = event
                 {
                     assert_eq!((*rx, *ry), (43, 82));
-                    assert_eq!(sound_id, "WallCrushBlack");
+                    assert_eq!(sound_id.name_in(rules), "WallCrushBlack");
                     assert!(
                         sim.overlay_grid
                             .as_ref()
@@ -638,7 +633,7 @@ fn retail_unit_per_cell_removes_authored_fence_before_returning() {
             self.delivered.get()
         }
     }
-    let cue = CueBoundary {
+    let mut cue = CueBoundary {
         delivered: std::cell::Cell::new(0),
         crushed: std::cell::Cell::new(0),
     };
@@ -667,7 +662,7 @@ fn retail_unit_per_cell_removes_authored_fence_before_returning() {
     )
     .unwrap();
     let rules = &scene.runtime.resources.rules;
-    let registry = &scene.runtime.resources.overlay_registry;
+    let registry = scene.runtime.resources.rules.overlay_registry();
     let sim = &mut scene.runtime.simulation;
     let id = 1376;
     let at = (43, 82);
@@ -686,7 +681,13 @@ fn retail_unit_per_cell_removes_authored_fence_before_returning() {
         );
         crate::sim::movement::target_cell_coord(at.0, at.1, Some(&cells))
     };
-    sim.foot_set_location_marked(id, position, rules, Some(registry), FrameEffects::default());
+    sim.foot_set_location_marked(
+        id,
+        position,
+        rules,
+        Some(registry),
+        &mut FrameEffects::default(),
+    );
     assert_eq!(
         sim.overlay_grid
             .as_ref()
@@ -700,7 +701,7 @@ fn retail_unit_per_cell_removes_authored_fence_before_returning() {
         crate::sim::movement::PerCellReason::Arrival,
         rules,
         Some(registry),
-        FrameEffects::for_sound(&cue),
+        &mut FrameEffects::for_sound(&mut cue),
     )
     .unwrap();
     assert_eq!(
@@ -887,7 +888,7 @@ fn assert_retail_wall_history(native_path: &'static str, wall_name: &str, direct
         )
         .unwrap();
         let rules = &scene.runtime.resources.rules;
-        let registry = &scene.runtime.resources.overlay_registry;
+        let registry = scene.runtime.resources.rules.overlay_registry();
         if let Some(gdi) = case["input"].get("gdi_type_inputs") {
             let final_types = &gdi["layers"]
                 .as_array()
@@ -1019,14 +1020,14 @@ fn assert_retail_wall_history(native_path: &'static str, wall_name: &str, direct
         );
         // Original native controls reseed all three streams after setup. These
         // explicit component inputs do not claim native whole-load RNG parity.
-        sim.process_pending_delete_with(rules, Some(registry), FrameEffects::default(), 0, true);
+        sim.process_pending_delete_with(rules, &mut FrameEffects::default(), 0, true);
         for expected in case["initial_patch"].as_array().unwrap() {
             assert_cell(sim, expected, &neighbor_domain);
         }
         let seed = case["input"]["seed"].as_u64().unwrap();
-        sim.scenario_rng = SimRng::new(seed);
-        sim.main_rng = SimRng::new(seed).into();
-        sim.mapgen_rng = SimRng::new(seed);
+        *sim.scenario_rng = SimRng::new(seed);
+        *sim.main_rng = SimRng::new(seed);
+        *sim.mapgen_rng = SimRng::new(seed);
         assert_eq!(rng(sim), case["initial"]["rng"]);
         if case.get("construction").is_none() {
             sim.dirty_cells.take_radar();
@@ -1075,7 +1076,7 @@ fn assert_retail_wall_history(native_path: &'static str, wall_name: &str, direct
                         warhead,
                         true,
                         (crate::sim::combat::RAD_NO_ATTACKER, None, ap),
-                        FrameEffects::default(),
+                        &mut FrameEffects::default(),
                     );
                 }
             });
@@ -1219,13 +1220,7 @@ fn assert_retail_wall_history(native_path: &'static str, wall_name: &str, direct
                 &sim.dirty_cells.tactical_for_test()[tactical_start..],
                 expected_tactical
             );
-            sim.process_pending_delete_with(
-                rules,
-                Some(registry),
-                FrameEffects::default(),
-                0,
-                true,
-            );
+            sim.process_pending_delete_with(rules, &mut FrameEffects::default(), 0, true);
             assert_eq!(rng(sim), step["after"]["rng"]);
             assert_eq!(
                 json!(sim.substrate.pending_delete.len()),
@@ -1290,7 +1285,7 @@ fn retail_mtnk_move_crushes_fences_through_per_cell_with_body_rocking() {
                 },
                 22,
                 TickLane::Ordinary,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap();
         let sim = scene.sim();
@@ -1317,7 +1312,7 @@ fn retail_mtnk_move_crushes_fences_through_per_cell_with_body_rocking() {
             .filter(|event| {
                 matches!(event,
                     crate::sim::world::SimSoundEvent::WallCrushed { sound_id, .. }
-                        if sound_id == "WallCrushBlack"
+                        if sound_id.name_in(&scene.runtime.resources.rules) == "WallCrushBlack"
                 )
             })
             .count();

@@ -43,7 +43,7 @@ pub const fn clamp_game_speed(speed: i32) -> u8 {
 ///
 /// Set once at game start except for the synchronized offline game-speed
 /// transition admitted by [`GameOptions::apply_in_game_speed`].
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 pub struct GameOptions {
     // --- Runtime-checked by gameplay systems ---
     /// Defeat when all buildings lost (vs all objects lost). Rules+0x14B6.
@@ -186,6 +186,23 @@ impl RoomBans {
 }
 
 impl GameOptions {
+    /// Full_Init686BA2 clears FogOfWar before Read_SpecialFlags6B8E69..6B8E89
+    /// reads the map key. A multiplayer launch installs its option instead
+    /// (0x00686BE3..0x00686C0E).
+    pub(super) fn install_campaign_startup(
+        &mut self,
+        launch_options: Option<&Self>,
+        authored_fog_of_war: Option<bool>,
+    ) {
+        if let Some(launch_options) = launch_options {
+            *self = launch_options.clone();
+        } else {
+            // Main_Tick55D767..55D796 uses two 16-ms buckets for a campaign.
+            self.game_speed = 2;
+        }
+        self.fog_of_war = authored_fog_of_war.unwrap_or(false);
+    }
+
     /// Apply one offline in-game Options speed transition.
     ///
     /// `OptionsClass::ApplyFromInGameDialog @ 0x004E1DE0` maps the 0..=6
@@ -214,7 +231,7 @@ impl GameOptions {
     /// `(value << 3) / (speed + 1)` (`0x005FB2FC..0x005FB301`, signed IDIV).
     ///
     /// For native presets the pacer admits one sim tick per `stored_speed * 16 ms` bucket
-    /// (`app::types::tps_for_game_speed`), the same clock native's
+    /// (`app::match_runtime::frame_pacer`), the same clock native's
     /// `FrameTimer` runs on, so dividing a frame count by `speed + 1` here
     /// reproduces native wall-clock cadence at every stored index.
     pub fn speed_normalize(&self, value: i32) -> i32 {

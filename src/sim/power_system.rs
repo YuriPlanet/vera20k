@@ -423,6 +423,17 @@ impl PowerState {
         (self.total_output, self.total_drain)
     }
 
+    /// YRpp's inline `HouseClass::HasLowPower`, `PowerOutput < PowerDrain &&
+    /// PowerDrain`, which Ares compiles into each of its callers: the degrade
+    /// (`HouseClass_Update_DamageDelay @ 100247A0`), the computer's power
+    /// balancing (`UpdateTogglePower @ 100228A0`) and a spy's superweapon
+    /// grant (`InfiltratedBy @ 10012000`). It reads the live totals, not the
+    /// retained [`Self::is_low_power`] flag.
+    pub(crate) fn has_low_power(&self) -> bool {
+        let (output, drain) = self.effective_totals();
+        output < drain && drain != 0
+    }
+
     pub fn low_power(&self) -> bool {
         #[cfg(feature = "debug-tools")]
         if self.debug_full_power {
@@ -536,12 +547,6 @@ pub(crate) fn native_power_ratio(output: i32, drain: i32) -> MaskedX87Value {
     }
 }
 
-/// BuildingType46108A stores NEG(Power) as a signed dword for negative
-/// authored values. MIN remains negative and must not pass the positive-drain gate.
-pub(crate) fn native_building_power_drain(power: i32) -> i32 {
-    if power < 0 { power.wrapping_neg() } else { 0 }
-}
-
 /// BuildingClass::GetPowerDrain44E880: both immediate House registration
 /// and the later assessment read this same live contribution. Health does
 /// not scale drain; a nonzero upgrade count admits all three type slots.
@@ -556,7 +561,7 @@ pub(crate) fn building_power_drain(
     let Some(object) = interner.object_type(entity.type_ref(), rules) else {
         return 0;
     };
-    let mut drain = native_building_power_drain(object.power);
+    let mut drain = object.power_drain();
     if entity.building.gap_generator.supercharged() {
         drain = drain.wrapping_add(object.extra_power.drain());
     }
@@ -564,7 +569,7 @@ pub(crate) fn building_power_drain(
     if upgrades.count() != 0 {
         for type_ref in upgrades.types().iter().flatten() {
             if let Some(upgrade) = interner.object_type(*type_ref, rules) {
-                drain = drain.wrapping_add(native_building_power_drain(upgrade.power));
+                drain = drain.wrapping_add(upgrade.power_drain());
             }
         }
     }
@@ -585,7 +590,7 @@ pub(crate) struct OperationalFacts {
     pub emp_remaining: i32,
     pub health: i32,
     /// Type `+0x1573` Powered and `+0xEE4` drain (the negated negative
-    /// `Power=`, [`native_building_power_drain`]).
+    /// `Power=`, [`crate::rules::object_type::ObjectType::power_drain`]).
     pub powered: bool,
     pub power_drain: i32,
     /// Type `+0x1574` PoweredSpecial; the owner's blackout timer
@@ -690,7 +695,7 @@ fn enhanced_power(
 #[cfg(feature = "phobos")]
 fn power_plant_enhancer_distance(enhancer: &GameEntity, plant: &GameEntity) -> i32 {
     use crate::sim::movement::ground_pose::object_center_xy;
-    let (width, height) = plant.type_facts.foundation().dimensions();
+    let (width, height) = plant.seldom.type_facts.foundation().dimensions();
     crate::util::native_x87::object_planar_distance(
         object_center_xy(enhancer),
         object_center_xy(plant),
@@ -787,7 +792,7 @@ fn recalculate_power_for_owner(
         };
         if entity.lifecycle.in_limbo()
             || !entity.lifecycle.cell_marked()
-            || (require_discovery && !entity.discovery.discovered_by_current_house())
+            || (require_discovery && !entity.seldom.discovery.discovered_by_current_house())
         {
             continue;
         }
@@ -820,7 +825,7 @@ fn recalculate_power_for_owner(
         let mut output_contribution: i32 = obj.power.max(0);
         let extra_output = obj.extra_power.output();
         if obj.absorbs_passengers() && extra_output > 0 {
-            let occupants = entity.passenger_role.cargo().map_or(0, |c| c.count()) as i32;
+            let occupants = entity.passenger_role().cargo().map_or(0, |c| c.count()) as i32;
             if occupants > 0 {
                 output_contribution =
                     output_contribution.wrapping_add(extra_output.wrapping_mul(occupants));
@@ -1101,7 +1106,7 @@ fn radar_provider_available(
             // already puts a dead building in limbo.
             || entity.death.is_dying()
             || !entity.building_online()
-            || (require_discovery && !entity.discovery.discovered_by_current_house())
+            || (require_discovery && !entity.seldom.discovery.discovered_by_current_house())
             || entity.mission.current().known() == Some(crate::sim::mission::MissionType::Selling)
             || entity.mission.queued().known() == Some(crate::sim::mission::MissionType::Selling)
             || !interner
@@ -1114,7 +1119,7 @@ fn radar_provider_available(
         // jammed or EMPed (+504 > 0) radar to the next one; a remaining
         // nonzero counter still ends the scan as508F12 does.
         if ares {
-            if entity.ares.radar_jam.is_jammed() || entity.emp_remaining() > 0 {
+            if entity.seldom.ares.radar_jam.is_jammed() || entity.emp_remaining() > 0 {
                 continue;
             }
             if entity.emp_remaining() != 0 {
@@ -1180,7 +1185,7 @@ pub fn is_building_powered(
         return true;
     };
     //4555D0 gates the ratio read on strictly positive native Type+EE4.
-    if native_building_power_drain(obj.power) <= 0 {
+    if obj.power_drain() <= 0 {
         return true;
     }
     // Non-Powered buildings are never deactivated.
@@ -1502,7 +1507,9 @@ BuildSpeed=0.02
             let mut cargo = crate::sim::passenger::PassengerCargo::new(occupants, 0.0);
             cargo.set_passengers_for_test((0..occupants).map(|i| 100 + u64::from(i)).collect());
             cargo.set_passenger_sizes_for_test(vec![1.0; occupants as usize]);
-            building.passenger_role = crate::sim::passenger::PassengerRole::transport(cargo);
+            building.set_passenger_role_for_test(crate::sim::passenger::PassengerRole::transport(
+                cargo,
+            ));
             store.insert(building);
             // Supply existing aggregate output with a signed-HP Power=1 source.
             store.insert(make_building(2, "PRIOR", "Owner", value("prior_output")));

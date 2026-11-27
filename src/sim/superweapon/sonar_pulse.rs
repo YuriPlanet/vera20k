@@ -38,10 +38,7 @@ pub(super) fn launch(
     };
     let launch = metadata.launch();
     let targeting = metadata.targeting();
-    let range = match launch.range() {
-        (width, height) if width < 0.0 && height < 0 => (10.0, -1),
-        range => range,
-    };
+    let range = launch.range_or_radius(10);
     let technos: Vec<u64> = if range.0 < 0.0 {
         let entities = &sim.substrate.entities;
         (0..entities.techno_registry_len())
@@ -67,8 +64,9 @@ pub(super) fn launch(
             object.cloaking_stages(rules.general.cloaking_stages)
         });
         let entity = sim.substrate.entities.get_mut(id).unwrap();
-        let left = entity.ares.sonar_timer.remaining(frame);
+        let left = entity.seldom.ares.sonar_timer.remaining(frame);
         entity
+            .seldom
             .ares
             .sonar_timer
             .start(frame, left.max(launch.sonar_delay()));

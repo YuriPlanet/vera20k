@@ -164,15 +164,14 @@ mod tests {
         let id = sim
             .spawn_object("GTNK", "Americans", 10, 10, 0, &rules)
             .unwrap();
-        sim.substrate.entities.get_mut(id).unwrap().gattling =
-            GattlingState::from_fields(0, 7, false);
+        sim.entity_mut_for_test(id).unwrap().gattling = GattlingState::from_fields(0, 7, false);
         sim.unit_fire_update_tail(
             id,
             UnitFireOutcome::Code(FireError::Rearm),
             &rules,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
-        let state = sim.substrate.entities.get(id).unwrap().gattling;
+        let state = sim.entities().get(id).unwrap().gattling;
         assert_eq!((state.stage(), state.value()), (1, 8));
     }
 

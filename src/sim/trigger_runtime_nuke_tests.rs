@@ -40,7 +40,7 @@ fn run(sim: &mut Simulation, rules: &RuleSet, entry: crate::map::actions::Action
         &mut Vec::new(),
         rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
 }
 

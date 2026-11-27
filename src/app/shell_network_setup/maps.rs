@@ -2,10 +2,17 @@
 //! Transports supply physical bytes; source/catalog/session remain authoritative
 //! for decoding, effective rules, map identity and retained loading sources.
 
-use crate::app::AppState;
+use crate::app::PlatformState;
+use crate::app::frontend::skirmish_session::MultiplayerShellRuntime;
+use crate::app::frontend::state::FrontendState;
+use crate::app::match_runtime::session::{MatchSession, NetworkMapMetadata};
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
+use crate::app::shell_network_setup::NetworkSetupProtocol;
 use crate::map::source::{
     LoadedMapIni, LoadedMapSource, LoadedTransferAsset, TransferContent, TransferResource,
 };
+use crate::util::config::GameConfig;
 use anyhow::{Result, anyhow, ensure};
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
@@ -33,14 +40,17 @@ pub(crate) fn checked_staging(
     capacity: i32,
 ) -> Result<crate::map::preview::ScenarioStartStaging> {
     ensure!(
-        text.len() <= MAX_STAGING_TEXT,
+        text.len() <= MAX_STAGING_TEXT
+            && text.bytes().filter(|&byte| byte == b',').count()
+                <= 4 + 4 * crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT,
         "generated start staging is too large"
     );
     let staging = crate::map::preview::ScenarioStartStaging::parse_w_text(text)
         .ok_or_else(|| anyhow!("generated start staging is missing"))?;
     ensure!(
         staging.to_w_text() == text
-            && (2..=crate::map::preview::START_STAGING_SLOTS as i32).contains(&staging.count)
+            && (2..=crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT as i32)
+                .contains(&staging.count)
             && staging.count == capacity
             && staging.width > 0
             && staging.height > 0
@@ -52,38 +62,67 @@ pub(crate) fn checked_staging(
     Ok(staging)
 }
 
-pub(crate) fn host_generated_manifest(state: &AppState) -> Result<Option<GeneratedMapManifest>> {
-    let Some(launch) = state.match_state.session.network_setup() else {
-        return Ok(None);
-    };
-    if !launch
-        .selected_map_file
-        .as_deref()
-        .is_some_and(|file| file.eq_ignore_ascii_case("RandMap.Sed"))
-    {
+/// Whether the room's map is a generated seed, whose transfer is the seed
+/// and a [`GeneratedMapManifest`]. LAN and online decide it by the loader's
+/// rule; gamemd's own `RandMap.Sed` name checks keep their name.
+pub(crate) fn generated_selection(session: &MatchSession) -> bool {
+    session
+        .network_setup()
+        .and_then(|launch| launch.selected_map_file.as_deref())
+        .is_some_and(crate::map::rmg::is_seed_selection)
+}
+
+/// A host's map name a room takes: a valid logical name, and no seed but
+/// `RandMap.Sed`, the only seed the catalog lists and the one name the
+/// guest's start staging (`AcceptedRmgStartStaging::from_retained_staging`)
+/// and map admission (`0x005E5500`) take. Any other seed would pass setup as
+/// a [`generated_selection`] and fail only at load.
+pub(crate) fn validate_room_map_name(file: &str) -> Result<()> {
+    crate::map::source::validate_network_map_name(file)?;
+    ensure!(
+        !crate::map::rmg::is_seed_selection(file)
+            || file.eq_ignore_ascii_case(crate::map::skirmish_scenarios::RANDMAP_SED),
+        "a room's random map is not {}",
+        crate::map::skirmish_scenarios::RANDMAP_SED
+    );
+    Ok(())
+}
+
+/// The selected map's byte length, once its identity is one a transfer can
+/// carry.
+pub(crate) fn transfer_length(metadata: &NetworkMapMetadata) -> Result<usize> {
+    let total = usize::try_from(metadata.byte_length)?;
+    ensure!(
+        crate::map::source::valid_source_sha256(&metadata.source_sha256)
+            && crate::map::source::valid_source_sha256(&metadata.effective_digest)
+            && total > 0
+            && total <= TransferResource::Map.limit(),
+        "invalid map transfer identity"
+    );
+    Ok(total)
+}
+
+pub(crate) fn host_generated_manifest(
+    game_config: Option<&GameConfig>,
+    runtime: &MultiplayerShellRuntime,
+    session: &MatchSession,
+) -> Result<Option<GeneratedMapManifest>> {
+    if !generated_selection(session) {
         return Ok(None);
     }
-    let capacity = state
-        .match_state
-        .session
+    let capacity = session
         .network_map_metadata()
         .ok_or_else(|| anyhow!("seed metadata missing"))?
         .player_capacity;
-    let text = state
-        .frontend
-        .multiplayer_shell_runtime
-        .start_staging()
-        .to_w_text();
+    let text = runtime.start_staging().to_w_text();
     checked_staging(&text, capacity)?;
-    let root = &state
-        .platform
-        .game_config
-        .as_ref()
+    let root = &game_config
         .ok_or_else(|| anyhow!("no asset directory"))?
         .paths
         .ra2_dir;
     let source = crate::map::source::transfer_file_source(
-        &crate::map::source::random_map_dir(root).join("RandMap.img"),
+        &crate::map::source::random_map_dir(root)
+            .join(crate::map::skirmish_scenarios::RANDMAP_PREVIEW),
         TransferResource::Preview,
     )?;
     let (length, digest) = source.physical_identity().expect("physical preview");
@@ -97,24 +136,17 @@ pub(crate) fn host_generated_manifest(state: &AppState) -> Result<Option<Generat
 }
 
 pub(crate) fn accept_generated_manifest(
-    state: &mut AppState,
+    runtime: &mut MultiplayerShellRuntime,
+    session: &mut MatchSession,
     previous: Option<&GeneratedMapManifest>,
     generated: Option<&GeneratedMapManifest>,
 ) -> Result<()> {
-    let seed = state
-        .match_state
-        .session
-        .network_setup()
-        .and_then(|s| s.selected_map_file.as_deref())
-        .is_some_and(|s| s.eq_ignore_ascii_case("RandMap.Sed"));
     ensure!(
-        seed == generated.is_some(),
+        generated_selection(session) == generated.is_some(),
         "generated map manifest does not match selected map"
     );
     if let Some(manifest) = generated {
-        let capacity = state
-            .match_state
-            .session
+        let capacity = session
             .network_map_metadata()
             .ok_or_else(|| anyhow!("seed metadata missing"))?
             .player_capacity;
@@ -126,43 +158,271 @@ pub(crate) fn accept_generated_manifest(
             "invalid generated preview identity"
         );
         // Existing Scenario+11C0 owner, also read by commit_start's staging token.
-        state
-            .frontend
-            .multiplayer_shell_runtime
-            .stage_generated_starts(staging);
+        runtime.stage_generated_starts(staging);
     }
     if previous != generated {
-        state.match_state.session.clear_network_random_map_preview();
+        session.clear_network_random_map_preview();
     }
     Ok(())
 }
 
-pub(crate) fn staging_digest(state: &AppState) -> String {
-    if state
-        .match_state
-        .session
-        .network_setup()
-        .and_then(|s| s.selected_map_file.as_deref())
-        .is_some_and(|s| s.eq_ignore_ascii_case("RandMap.Sed"))
-    {
-        crate::util::sha256::sha256_hex(
-            state
-                .frontend
-                .multiplayer_shell_runtime
-                .start_staging()
-                .to_w_text()
-                .as_bytes(),
-        )
+pub(crate) fn staging_digest(runtime: &MultiplayerShellRuntime, session: &MatchSession) -> String {
+    if generated_selection(session) {
+        crate::util::sha256::sha256_hex(runtime.start_staging().to_w_text().as_bytes())
     } else {
         String::new()
     }
+}
+
+pub(crate) fn local_transfer_source(
+    game_config: Option<&GameConfig>,
+    frontend: &mut FrontendState,
+    session: &MatchSession,
+    process_assets: &ProcessAssets,
+    resource: TransferResource,
+) -> Result<Option<LoadedMapSource>> {
+    let config = game_config.ok_or_else(|| anyhow!("no asset directory"))?;
+    if resource == TransferResource::Preview {
+        return if session.host() {
+            Ok(Some(crate::map::source::transfer_file_source(
+                &crate::map::source::random_map_dir(&config.paths.ra2_dir)
+                    .join(crate::map::skirmish_scenarios::RANDMAP_PREVIEW),
+                resource,
+            )?))
+        } else {
+            Ok(None)
+        };
+    }
+    let assets = process_assets
+        .manager()
+        .ok_or_else(|| anyhow!("assets missing"))?;
+    let file = session
+        .network_setup()
+        .and_then(|setup| setup.selected_map_file.as_deref())
+        .ok_or_else(|| anyhow!("selected map missing"))?;
+    let metadata = session
+        .network_map_metadata()
+        .ok_or_else(|| anyhow!("map metadata missing"))?;
+    let ares = process_assets.reads_ares_way();
+    let loaded = frontend.scenario_catalog.verify_network_map_input(
+        file,
+        metadata,
+        &config.paths.ra2_dir,
+        assets,
+        ares,
+    );
+    if resource == TransferResource::Map {
+        if let Some(loaded) = &loaded {
+            install_authored_preview(&mut frontend.network_setup_protocol, loaded)?;
+        }
+    }
+    Ok(loaded.map(|loaded| loaded.source))
+}
+
+pub(crate) fn accept_transfer_asset(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    session: &mut MatchSession,
+    process_assets: &ProcessAssets,
+    loaded: LoadedTransferAsset,
+    resource: TransferResource,
+    generated: Option<&GeneratedMapManifest>,
+) -> Result<()> {
+    match loaded.content {
+        TransferContent::Preview(image) => {
+            ensure!(
+                resource == TransferResource::Preview,
+                "preview received as scenario"
+            );
+            let manifest = generated.ok_or_else(|| anyhow!("preview has no generated manifest"))?;
+            ensure!(
+                loaded.source.physical_identity()
+                    == Some((
+                        manifest.preview.byte_length,
+                        manifest.preview.source_sha256.as_str()
+                    )),
+                "preview differs from the selected generated map"
+            );
+            let digest = session
+                .network_map_metadata()
+                .ok_or_else(|| anyhow!("seed selection ended"))?
+                .source_sha256
+                .clone();
+            super::accept_network_random_map_preview(
+                &mut frontend.network_setup_protocol,
+                session,
+                &digest,
+                loaded.source,
+                image,
+            )?;
+        }
+        TransferContent::Scenario(ini) => {
+            ensure!(
+                resource != TransferResource::Preview,
+                "scenario received as preview"
+            );
+            let assets = process_assets
+                .manager()
+                .ok_or_else(|| anyhow!("assets missing"))?;
+            let file = session
+                .network_setup()
+                .and_then(|setup| setup.selected_map_file.as_deref())
+                .ok_or_else(|| anyhow!("selected map missing"))?;
+            ensure!(
+                (resource == TransferResource::Seed) == crate::map::rmg::is_seed_selection(file),
+                "scenario resource differs from selected map kind"
+            );
+            let loaded = crate::map::source::resolve_network_map_ini(
+                LoadedMapIni {
+                    source: loaded.source,
+                    ini,
+                },
+                assets,
+                resource == TransferResource::Seed,
+                file,
+            )?;
+            let ares = process_assets.reads_ares_way();
+            let expected = session
+                .network_map_metadata()
+                .ok_or_else(|| anyhow!("map selection ended"))?;
+            let seed = resource == TransferResource::Seed;
+            let verified = |ares| {
+                crate::app::scenario_catalog::ScenarioCatalog::verify_transferred_network_map(
+                    &loaded, expected, seed, ares,
+                )
+            };
+            // A seed that verifies only with the other answer is the host's
+            // file read by a game whose Ares answer differs. It is accepted,
+            // so the rules agreement, which covers that answer, refuses the
+            // game and its text names the Ares setting
+            // (`agreement::rules_differ_text`).
+            ensure!(
+                verified(ares) || (seed && verified(!ares)),
+                "downloaded map differs"
+            );
+            let effective = expected.effective_digest.clone();
+            let keep = (resource == TransferResource::Map && !expected.official)
+                .then(|| (file.to_owned(), expected.source_sha256.clone()));
+            if resource == TransferResource::Map {
+                install_authored_preview(&mut frontend.network_setup_protocol, &loaded)?;
+            }
+            if let Some((file, digest)) = keep {
+                keep_for_choose_map(
+                    platform,
+                    renderer,
+                    frontend,
+                    process_assets,
+                    &file,
+                    &loaded.source,
+                    &digest,
+                );
+            }
+            session.accept_verified_network_map_source(loaded.source, effective)?;
+        }
+    }
+    Ok(())
+}
+
+/// A received custom map stays for later: it is saved into VERA's maps folder
+/// and listed in Choose Map, so the player can host it. Best effort; the room
+/// never waits on it, and a file the player already has is left alone.
+fn keep_for_choose_map(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    process_assets: &ProcessAssets,
+    host_file: &str,
+    source: &crate::map::source::LoadedMapSource,
+    digest: &str,
+) {
+    let crate::map::source::LoadedMapSource::Loose { path, .. } = source else {
+        return;
+    };
+    let kept = crate::util::file_system::read(path)
+        .map_err(anyhow::Error::from)
+        .and_then(|bytes| {
+            ensure!(
+                crate::util::sha256::sha256_hex(&bytes) == digest,
+                "received map changed"
+            );
+            crate::app::map_library::keep_map(
+                platform,
+                renderer,
+                frontend,
+                process_assets,
+                host_file,
+                &bytes,
+            )
+        });
+    match kept {
+        Ok(path) => log::info!("Kept the received map {host_file} as {}", path.display()),
+        Err(error) => log::warn!("Could not keep the received map {host_file}: {error:#}"),
+    }
+}
+
+/// A transferred authored map keeps derived marker bounds with its received
+/// preview, without adding a chooser record. Header metadata uses its existing
+/// reader; maps without a Header reuse the loading compositor's sole cell and
+/// playfield projection over the admitted MapFile.
+fn install_authored_preview(
+    protocol: &mut Option<NetworkSetupProtocol>,
+    loaded: &LoadedMapIni,
+) -> Result<()> {
+    let bounds = authored_preview_bounds(loaded)?;
+    match crate::map::preview::decode_preview_image_from_ini(&loaded.ini) {
+        Ok(Some(image)) => super::service::install_received_preview_image(protocol, image)?,
+        Ok(None) => {}
+        Err(error) => log::warn!("Received map preview did not decode: {error}"),
+    }
+    if let Some(protocol) = protocol.as_mut() {
+        protocol.accept_preview_bounds(bounds);
+    }
+    Ok(())
+}
+
+fn authored_preview_bounds(
+    loaded: &LoadedMapIni,
+) -> Result<Option<crate::map::preview::PreviewSourceBounds>> {
+    if let Some(bounds) =
+        crate::map::scenario_menu::preview_source_bounds_from_verified_source(&loaded.ini)
+    {
+        return Ok(Some(bounds));
+    }
+    let map = crate::map::map_file::MapFile::from_ini(loaded.ini.clone())?;
+    let Some(bounds) = crate::app::loading::composition::projected_playfield_bounds(&map) else {
+        return Ok(None);
+    };
+    if bounds.extent_x <= 0 || bounds.extent_y <= 0 {
+        return Ok(None);
+    }
+    let capacity = crate::map::waypoints::skirmish_player_capacity(&loaded.ini);
+    let starts =
+        crate::map::waypoints::multiplayer_start_waypoints_for_capacity(&map.waypoints, capacity);
+    let start_points = starts
+        .into_iter()
+        .map(|waypoint| {
+            let point = crate::app::loading::composition::project_waypoint(waypoint);
+            crate::map::preview::PreviewStartPoint {
+                x: point.x,
+                y: point.y,
+            }
+        })
+        .collect();
+    Ok(Some(crate::map::preview::PreviewSourceBounds {
+        origin_x: bounds.min_x,
+        origin_y: bounds.min_y,
+        width: bounds.extent_x as u32,
+        height: bounds.extent_y as u32,
+        start_points,
+    }))
 }
 
 #[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
     #[test]
-    fn verified_prefetch_preserves_local_preview_and_retires_legacy_waits() {
+    fn verified_prefetch_preserves_local_preview() {
         let dialog = crate::ui::multiplayer_setup::SetupDialog {
             host: false,
             flavor: crate::ui::multiplayer_setup::SetupFlavor::Lan,
@@ -171,27 +431,12 @@ mod tests {
         let mut local = super::super::NetworkSetupProtocol::new(dialog, false);
         local.local_map_verified = true;
         local.transfer_progress = Some((0, 100));
-        local.awaiting_preview_file = true;
-        local.preview_offer = Some(super::super::PreviewOffer {
-            guests: vec!["Guest".into()],
-            acknowledged: Vec::new(),
-            preview: crate::map::preview::DecodedPreview {
-                width: 1,
-                height: 1,
-                rgba: vec![0, 0, 0, 255],
-            },
-            deadline: std::time::Instant::now(),
-        });
         local.accept_verified_map_source();
         assert!(
             local.local_preview(),
             "local catalog preview was incorrectly replaced by an absent received preview"
         );
-        assert!(
-            local.transfer_progress.is_none()
-                && !local.awaiting_preview_file
-                && local.preview_offer.is_none()
-        );
+        assert!(local.transfer_progress.is_none());
         let mut received = super::super::NetworkSetupProtocol::new(dialog, false);
         received.accept_verified_map_source();
         assert!(
@@ -278,269 +523,55 @@ mod tests {
         );
     }
 
+    /// VERA: a room's seed of any name is a generated map, as the loader and
+    /// the rules agreement read it, so LAN and online transfer it alike.
     #[test]
-    fn generated_staging_requires_canonical_complete_seed_capacity() {
-        let mut stage = crate::map::preview::ScenarioStartStaging {
-            width: 80,
-            height: 80,
-            count: 2,
-            ..Default::default()
-        };
-        stage.cells[0] = (20, 24);
-        stage.cells[1] = (42, 46);
-        assert!(checked_staging(&stage.to_w_text(), 2).is_ok());
-        assert!(checked_staging(&stage.to_w_text(), 3).is_err());
-        stage.cells[1] = (0, 0);
-        assert!(checked_staging(&stage.to_w_text(), 2).is_err());
+    fn every_seed_name_is_a_generated_selection() {
+        use crate::app::match_runtime::session::NetworkReturnContext;
+        let fixture = crate::test_fixture::json("tools/map_observation.command-bar.example.json");
+        for (file, generated) in [
+            ("RandMap.Sed", true),
+            ("Saved.sed", true),
+            ("Authored.map", false),
+        ] {
+            let mut launch: crate::skirmish_launch::SkirmishLaunchSession =
+                serde_json::from_value(fixture["launch"].clone()).unwrap();
+            launch.selected_map_file = Some(file.into());
+            let mut session = MatchSession::default();
+            session.enter_network(NetworkReturnContext::Wol);
+            session
+                .accept_network_setup(launch, true, None, false)
+                .unwrap();
+            assert_eq!(generated_selection(&session), generated, "{file}");
+        }
     }
 
-    /// VERA: a room takes a generated map for thirty players, whose record
-    /// runs past the native 37 numbers and 512 characters.
+    /// A seed other than `RandMap.Sed` would pass setup as generated and
+    /// fail only at load, without the guest's start staging.
     #[test]
-    fn generated_staging_takes_thirty_starts() {
-        let mut stage = crate::map::preview::ScenarioStartStaging {
-            width: 9_999,
-            height: 9_999,
-            start_x: -9_999,
-            start_y: -9_999,
-            count: 30,
-            ..Default::default()
-        };
-        for slot in 0..30 {
-            stage.pairs[slot] = (-99_999, -99_999);
-            stage.cells[slot] = (-9_999, -9_999);
-        }
-        let text = stage.to_w_text();
-        assert!(text.len() > 512);
-        assert!(checked_staging(&text, 30).is_ok());
-        assert!(checked_staging(&text, 29).is_err());
+    fn a_room_takes_no_seed_but_randmap_sed() {
+        assert!(validate_room_map_name("randmap.sed").is_ok());
+        assert!(validate_room_map_name("Authored.map").is_ok());
+        assert!(validate_room_map_name("Saved.sed").is_err());
     }
-}
 
-pub(crate) fn local_transfer_source(
-    state: &mut AppState,
-    resource: TransferResource,
-) -> Result<Option<LoadedMapSource>> {
-    let config = state
-        .platform
-        .game_config
-        .as_ref()
-        .ok_or_else(|| anyhow!("no asset directory"))?;
-    if resource == TransferResource::Preview {
-        return if state.match_state.session.host() {
-            Ok(Some(crate::map::source::transfer_file_source(
-                &crate::map::source::random_map_dir(&config.paths.ra2_dir).join("RandMap.img"),
-                resource,
-            )?))
-        } else {
-            Ok(None)
-        };
-    }
-    let assets = state
-        .process_assets
-        .manager()
-        .ok_or_else(|| anyhow!("assets missing"))?;
-    let file = state
-        .match_state
-        .session
-        .network_setup()
-        .and_then(|setup| setup.selected_map_file.as_deref())
-        .ok_or_else(|| anyhow!("selected map missing"))?;
-    let metadata = state
-        .match_state
-        .session
-        .network_map_metadata()
-        .ok_or_else(|| anyhow!("map metadata missing"))?;
-    let ares = state.process_assets.reads_ares_way();
-    let loaded = state.frontend.scenario_catalog.verify_network_map_input(
-        file,
-        metadata,
-        &config.paths.ra2_dir,
-        assets,
-        ares,
-    );
-    if resource == TransferResource::Map {
-        if let Some(loaded) = &loaded {
-            install_authored_preview(state, loaded)?;
+    /// A room takes only a seed's complete canonical record, which for a
+    /// generated map for thirty (VERA) runs past the native 37 numbers and
+    /// 512 characters. The lobby checks the record with its own copy of
+    /// these rules, and its tests read the same cases.
+    #[test]
+    fn generated_staging_gives_the_shared_cases_their_answers() {
+        let cases = &crate::test_fixture::json("tests/fixtures/lobby/start_staging.json")["cases"];
+        for case in cases.as_array().unwrap() {
+            let text = case["start_staging"].as_str().unwrap();
+            let capacity = case["capacity"].as_i64().unwrap() as i32;
+            let accepted = checked_staging(text, capacity).is_ok();
+            assert_eq!(
+                Some(accepted),
+                case["accepted"].as_bool(),
+                "{}",
+                case["case"]
+            );
         }
     }
-    Ok(loaded.map(|loaded| loaded.source))
-}
-
-pub(crate) fn accept_transfer_asset(
-    state: &mut AppState,
-    loaded: LoadedTransferAsset,
-    resource: TransferResource,
-    generated: Option<&GeneratedMapManifest>,
-) -> Result<()> {
-    match loaded.content {
-        TransferContent::Preview(image) => {
-            ensure!(
-                resource == TransferResource::Preview,
-                "preview received as scenario"
-            );
-            let manifest = generated.ok_or_else(|| anyhow!("preview has no generated manifest"))?;
-            ensure!(
-                loaded.source.physical_identity()
-                    == Some((
-                        manifest.preview.byte_length,
-                        manifest.preview.source_sha256.as_str()
-                    )),
-                "preview differs from the selected generated map"
-            );
-            let digest = state
-                .match_state
-                .session
-                .network_map_metadata()
-                .ok_or_else(|| anyhow!("seed selection ended"))?
-                .source_sha256
-                .clone();
-            super::accept_network_random_map_preview(state, &digest, loaded.source, image)?;
-        }
-        TransferContent::Scenario(ini) => {
-            ensure!(
-                resource != TransferResource::Preview,
-                "scenario received as preview"
-            );
-            let assets = state
-                .process_assets
-                .manager()
-                .ok_or_else(|| anyhow!("assets missing"))?;
-            let file = state
-                .match_state
-                .session
-                .network_setup()
-                .and_then(|setup| setup.selected_map_file.as_deref())
-                .ok_or_else(|| anyhow!("selected map missing"))?;
-            ensure!(
-                (resource == TransferResource::Seed) == crate::map::rmg::is_seed_selection(file),
-                "scenario resource differs from selected map kind"
-            );
-            let loaded = crate::map::source::resolve_network_map_ini(
-                LoadedMapIni {
-                    source: loaded.source,
-                    ini,
-                },
-                assets,
-                resource == TransferResource::Seed,
-                file,
-            )?;
-            let ares = state.process_assets.reads_ares_way();
-            let expected = state
-                .match_state
-                .session
-                .network_map_metadata()
-                .ok_or_else(|| anyhow!("map selection ended"))?;
-            let seed = resource == TransferResource::Seed;
-            let verified = |ares| {
-                crate::app::scenario_catalog::ScenarioCatalog::verify_transferred_network_map(
-                    &loaded, expected, seed, ares,
-                )
-            };
-            // A seed that verifies only with the other answer is the host's
-            // file read by a game whose Ares answer differs. It is accepted,
-            // so the rules agreement, which covers that answer, refuses the
-            // game and its text names the Ares setting
-            // (`agreement::rules_differ_text`).
-            ensure!(
-                verified(ares) || (seed && verified(!ares)),
-                "downloaded map differs"
-            );
-            let effective = expected.effective_digest.clone();
-            let keep = (resource == TransferResource::Map && !expected.official)
-                .then(|| (file.to_owned(), expected.source_sha256.clone()));
-            if resource == TransferResource::Map {
-                install_authored_preview(state, &loaded)?;
-            }
-            if let Some((file, digest)) = keep {
-                keep_for_choose_map(state, &file, &loaded.source, &digest);
-            }
-            state
-                .match_state
-                .session
-                .accept_verified_network_map_source(loaded.source, effective)?;
-        }
-    }
-    Ok(())
-}
-
-/// A received custom map stays for later: it is saved into VERA's maps folder
-/// and listed in Choose Map, so the player can host it. Best effort; the room
-/// never waits on it, and a file the player already has is left alone.
-fn keep_for_choose_map(
-    state: &mut AppState,
-    host_file: &str,
-    source: &crate::map::source::LoadedMapSource,
-    digest: &str,
-) {
-    let crate::map::source::LoadedMapSource::Loose { path, .. } = source else {
-        return;
-    };
-    let kept = crate::util::file_system::read(path)
-        .map_err(anyhow::Error::from)
-        .and_then(|bytes| {
-            ensure!(
-                crate::util::sha256::sha256_hex(&bytes) == digest,
-                "received map changed"
-            );
-            crate::app::map_library::keep_map(state, host_file, &bytes)
-        });
-    match kept {
-        Ok(path) => log::info!("Kept the received map {host_file} as {}", path.display()),
-        Err(error) => log::warn!("Could not keep the received map {host_file}: {error:#}"),
-    }
-}
-
-/// A transferred authored map keeps derived marker bounds with its received
-/// preview, without adding a chooser record. Header metadata uses its existing
-/// reader; maps without a Header reuse the loading compositor's sole cell and
-/// playfield projection over the admitted MapFile.
-fn install_authored_preview(state: &mut AppState, loaded: &LoadedMapIni) -> Result<()> {
-    let bounds = authored_preview_bounds(loaded)?;
-    match crate::map::preview::decode_preview_image_from_ini(&loaded.ini) {
-        Ok(Some(image)) => super::service::install_received_preview_image(state, image)?,
-        Ok(None) => {}
-        Err(error) => log::warn!("Received map preview did not decode: {error}"),
-    }
-    if let Some(protocol) = state.frontend.network_setup_protocol.as_mut() {
-        protocol.accept_preview_bounds(bounds);
-    }
-    Ok(())
-}
-
-fn authored_preview_bounds(
-    loaded: &LoadedMapIni,
-) -> Result<Option<crate::map::preview::PreviewSourceBounds>> {
-    if let Some(bounds) =
-        crate::map::scenario_menu::preview_source_bounds_from_verified_source(&loaded.ini)
-    {
-        return Ok(Some(bounds));
-    }
-    let map = crate::map::map_file::MapFile::from_ini(loaded.ini.clone())?;
-    let Some(bounds) = crate::app::loading::composition::projected_playfield_bounds(&map) else {
-        return Ok(None);
-    };
-    if bounds.extent_x <= 0 || bounds.extent_y <= 0 {
-        return Ok(None);
-    }
-    let capacity = crate::map::waypoints::skirmish_player_capacity(&loaded.ini);
-    let starts =
-        crate::map::waypoints::multiplayer_start_waypoints_for_capacity(&map.waypoints, capacity);
-    let start_points = starts
-        .into_iter()
-        .map(|waypoint| {
-            let point = crate::app::loading::composition::project_waypoint(waypoint);
-            crate::map::preview::PreviewStartPoint {
-                x: point.x,
-                y: point.y,
-            }
-        })
-        .collect();
-    Ok(Some(crate::map::preview::PreviewSourceBounds {
-        origin_x: bounds.min_x,
-        origin_y: bounds.min_y,
-        width: bounds.extent_x as u32,
-        height: bounds.extent_y as u32,
-        start_points,
-    }))
 }

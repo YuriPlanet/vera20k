@@ -6,7 +6,7 @@ use crate::map::entities::EntityCategory;
 use crate::rules::object_type::{ObjectCategory, ObjectType};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::intern::{InternedId, StringInterner};
-use crate::sim::world::{Simulation, UninitContext};
+use crate::sim::world::{FrameEffects, Simulation, UninitContext};
 use std::collections::BTreeMap;
 
 /// Mutable BuildingType normal animation names changed by Unlimbo44099B.
@@ -151,7 +151,7 @@ mod tests {
                 upgrade,
                 host,
                 &rules,
-                UninitContext::with_rules(&rules),
+                UninitContext::new(&rules),
             ));
             let actual = sim.substrate.entities.get(host).unwrap();
             assert_eq!(actual.building_upgrades().count(), count);
@@ -182,12 +182,7 @@ mod tests {
                 row["name"]
             );
             assert_eq!(
-                sim.try_install_building_upgrade(
-                    upgrade,
-                    host,
-                    &rules,
-                    UninitContext::with_rules(&rules)
-                ),
+                sim.try_install_building_upgrade(upgrade, host, &rules, UninitContext::new(&rules)),
                 row["install"]["admitted"] == true,
                 "{}",
                 row["name"]
@@ -245,7 +240,7 @@ mod tests {
                     row["initial_count"].as_i64().unwrap() as i8,
                     types,
                 );
-            sim.power_down_building_upgrade(host, &rules);
+            sim.power_down_building_upgrade(host, &rules, &mut Default::default());
             let actual = sim
                 .substrate
                 .entities
@@ -327,7 +322,7 @@ mod tests {
                     .anim_slots_mut_for_test()[slot] = Some(anim);
                 sentinels.push((slot, anim));
             }
-            sim.power_down_building_upgrade(host, &rules);
+            sim.power_down_building_upgrade(host, &rules, &mut Default::default());
             let actual = sim.entities().get(host).unwrap();
             assert_eq!(
                 i64::from(actual.building_upgrades().count()),
@@ -555,10 +550,18 @@ impl Simulation {
         if let Some(host) = self.substrate.entities.get_mut(host_id) {
             host.commit_building_upgrade_type(type_id);
         }
-        // Ares4409F4 ->10014490/100144CD uses the installed host's retained
-        // Country, after the new upgrade pointer has been committed.
+        // Ares 0x004409F4 -> 10014490, after the new upgrade pointer is
+        // committed: the upgrade's own cash timer, then
+        // UpdateFactoryOwnersPlans (100449D0) of the upgrade being put (ESI),
+        // with its own type and retained Country, not the host's.
         if rules.ares_form() {
-            self.grant_factory_plans(host_id, rules);
+            crate::sim::credit_income::ares_produce_cash_on_put(
+                &self.session,
+                &mut self.substrate,
+                host_id,
+                upgrade.produce_cash_delay,
+            );
+            self.grant_factory_plans(temporary_id, rules);
         }
         crate::sim::superweapon::grant_provided_supers(self, rules, owner);
         self.houses.request_house_tech_tree_recheck(owner);
@@ -622,6 +625,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
+        effects: &mut FrameEffects<'_>,
     ) -> Option<InternedId> {
         let entity = self.substrate.entities.get(id)?;
         let slot = usize::try_from(i32::from(entity.building_upgrades().count()) - 1).ok()?;
@@ -644,7 +648,7 @@ impl Simulation {
         }
         if refresh_supers {
             let owner = self.substrate.entities.get(id)?.owner();
-            crate::sim::superweapon::update_owned_supers(self, rules, owner);
+            crate::sim::superweapon::update_owned_supers(self, rules, owner, effects);
         }
         removed
     }

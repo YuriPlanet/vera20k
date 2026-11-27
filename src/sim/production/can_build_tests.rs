@@ -247,11 +247,11 @@ fn sim_for(row: &Value, rules: &RuleSet) -> (Simulation, InternedId) {
                 0,
                 0,
                 rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .expect("the supplied factory object constructs");
         assert_eq!(
-            sim.production.factories_mut().link_active_entity(
+            sim.production.edit_factories().link_active_entity(
                 crate::sim::production::factory::FactoryHolder::House(holder, kind),
                 entity,
                 0, // This supplied factory prior starts with zero debt.
@@ -293,7 +293,6 @@ fn sim_for(row: &Value, rules: &RuleSet) -> (Simulation, InternedId) {
     // The row's counters are the house's whole count, its factories'
     // objects included.
     let mut tracking = HouseTracking::default();
-    tracking.add_airport_docks(house["docks"].as_i64().map_or(0, |docks| docks as i32));
     for (key, active) in [("owned", false), ("active", true)] {
         for counter in row[key].as_array().into_iter().flatten() {
             let type_id = sim.interner.get(counter[1].as_str().unwrap()).unwrap();
@@ -306,10 +305,9 @@ fn sim_for(row: &Value, rules: &RuleSet) -> (Simulation, InternedId) {
             }
         }
     }
-    sim.houses
-        .get_mut(&owner)
-        .unwrap()
-        .set_tracking_for_test(tracking);
+    let state = sim.houses.get_mut(&owner).unwrap();
+    state.set_tracking_for_test(tracking);
+    state.add_airport_docks(house["docks"].as_i64().map_or(0, |docks| docks as i32));
     (sim, owner)
 }
 
@@ -501,6 +499,47 @@ fn check_build_limit_matches_the_original() {
     }
 }
 
+#[test]
+fn double_owned_opens_a_foreign_factory_only_outside_campaign() {
+    use crate::sim::scenario_session::ScenarioGameMode;
+
+    let patch =
+        IniFile::from_str("[E1]\nOwner=Russians\nDoubleOwned=yes\n[GAPILE]\nOwner=Americans\n");
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_with_map_patch(&patch)
+    else {
+        return;
+    };
+    let rules = retail.rules;
+    let product = rules.object("E1").unwrap();
+    let building = rules.object("GAPILE").unwrap();
+    assert!(product.double_owned);
+    assert!(!building.double_owned);
+    assert_eq!(product.owner_mask(&rules) & building.owner_mask(&rules), 0);
+
+    let mut sim = Simulation::new();
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    let owner = sim.interner.intern("Self");
+    let factory = 1;
+    crate::sim::production::tests::spawn_structure(
+        &mut sim, &rules, factory, "Self", "GAPILE", 20, 20,
+    );
+    let query = |sim: &Simulation| find_factory(sim, &rules, owner, product, false, false, false);
+
+    sim.session.set_game_mode(ScenarioGameMode::Campaign);
+    assert_eq!(query(&sim), None);
+    let mode = ScenarioGameMode::Skirmish;
+    sim.session.set_game_mode(mode);
+    assert_eq!(query(&sim), Some(factory));
+    sim.install_session_admission(
+        mode,
+        None,
+        mode.stock_rule_policy(None)
+            .with_double_owned(crate::rules::rule_policy::DoubleOwnedPolicy::OwnerMask),
+    );
+    assert_eq!(query(&sim), None);
+}
+
 /// House4F78E4..4F7925 consults its captured labs before TechLevel,
 /// country and ordinary prerequisites, then still asks the build limit.
 /// The declared SecretInfantry override isolates this gate from the separate
@@ -540,13 +579,13 @@ fn captured_secret_lab_grants_before_normal_tech_admission_and_retracts_on_loss(
         can_build(&sim, &rules, owner, product, false, true),
         CanBuild::No
     );
-    sim.change_owner_with_rules(lab, owner, &rules, None, Default::default());
+    sim.change_owner_with_rules(lab, owner, &rules, None, &mut Default::default());
     assert_eq!(
         can_build(&sim, &rules, owner, product, false, true),
         CanBuild::Yes,
         "captured lab grant bypasses TechLevel=-1 and the unmet ordinary prerequisite"
     );
-    sim.change_owner_with_rules(lab, other, &rules, None, Default::default());
+    sim.change_owner_with_rules(lab, other, &rules, None, &mut Default::default());
     assert_eq!(
         can_build(&sim, &rules, owner, product, false, true),
         CanBuild::No
@@ -603,7 +642,7 @@ fn retail_slave_miner_meets_proc_and_docks_limit_harriers() {
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     let on_map = |sim: &mut Simulation, house, category, name: &str, count| {
         let type_id = sim.interner.get(name).unwrap();
-        let tracking = sim.houses.get_mut(&house).unwrap().tracking_mut();
+        let tracking = sim.houses.get_mut(&house).unwrap().tracking_mut_for_test();
         tracking.set_active_for_test(category, type_id, count);
         tracking.set_owned_for_test(category, type_id, count);
     };
@@ -637,7 +676,7 @@ fn retail_slave_miner_meets_proc_and_docks_limit_harriers() {
 
     let americans = sim.interner.intern("Americans");
     let mut house = HouseState::new(americans, 0, None, true, 0, 10);
-    house.tracking_mut().add_airport_docks(4);
+    house.add_airport_docks(4);
     sim.houses.register(house);
     let orca = rules.object("ORCA").unwrap();
     assert!(orca.airport_bound);

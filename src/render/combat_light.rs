@@ -114,7 +114,7 @@ impl CombatLightRenderer {
                     _pad: 0.0,
 
                     native_z_origin_y: 0.0,
-                    _native_z_pad: 0.0,
+                    native_z_pan: 0.0,
                 }),
             ),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
@@ -181,10 +181,14 @@ impl CombatLightRenderer {
         );
         let source =
             super::webgl::camera_source(device, shader_source(super::gpu::webgl_fallback(device)));
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Combat Light Exact RGB565 Shader"),
-            source: wgpu::ShaderSource::Wgsl(source.into()),
-        });
+        // Its per-pixel loop replays at most `PASS_LIGHTS` earlier lights.
+        let shader = super::gpu::bounded_loop_module(
+            device,
+            wgpu::ShaderModuleDescriptor {
+                label: Some("Combat Light Exact RGB565 Shader"),
+                source: wgpu::ShaderSource::Wgsl(source.into()),
+            },
+        );
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Combat Light Exact RGB565 Pipeline Layout"),
             bind_group_layouts: &[
@@ -334,7 +338,7 @@ impl CombatLightRenderer {
             _pad: 0.0,
 
             native_z_origin_y: 0.0,
-            _native_z_pad: 0.0,
+            native_z_pan: 0.0,
         };
         queue.write_buffer(&self.camera_buffer, 0, bytemuck::bytes_of(&camera));
         self.prepared_indices.clear();

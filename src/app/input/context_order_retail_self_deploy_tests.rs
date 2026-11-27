@@ -46,6 +46,7 @@ fn self_click(
             OrderModifier::Normal,
             false,
             planning,
+            &mut Default::default(),
         ),
         self_click_command(sim, rules, None, owner, &[id], Some(&hover), planning),
     )
@@ -65,8 +66,7 @@ fn ares_deactivated_mcv_selects_itself_instead_of_deploying() {
     let mcv = sim
         .spawn_object("AMCV", "Americans", 12, 12, 0, rules)
         .expect("mcv");
-    sim.entities_mut_for_test()
-        .get_mut(mcv)
+    sim.entity_mut_for_test(mcv)
         .unwrap()
         .deactivated
         .set_for_test(true);
@@ -189,8 +189,7 @@ fn a_bunkered_unit_offers_deploy_over_itself() {
         (CursorFeedbackKind::NoDeploy, None)
     );
     for id in [tank, ifv] {
-        sim.entities_mut_for_test()
-            .get_mut(id)
+        sim.entity_mut_for_test(id)
             .unwrap()
             .bunker
             .set_bunker_link_for_test(crate::sim::docking::bunker_link::BunkerLink::Installed(
@@ -238,8 +237,7 @@ fn a_no_manual_unload_transport_has_no_self_action() {
         self_click(&sim, rules, ifv, HoverTargetKind::FriendlyUnit, false),
         tank_click
     );
-    sim.entities_mut_for_test()
-        .get_mut(ifv)
+    sim.entity_mut_for_test(ifv)
         .unwrap()
         .bunker
         .set_bunker_link_for_test(crate::sim::docking::bunker_link::BunkerLink::Installed(

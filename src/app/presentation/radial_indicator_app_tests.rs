@@ -488,8 +488,7 @@ fn targeting_a_missing_cell_cannot_change_the_simulation_dummy() {
         .unwrap();
     // A retained dummy target makes the dummy coordinate part of lockstep
     // state. This supplied prior isolates rendering from target acquisition.
-    sim.entities_mut_for_test()
-        .get_mut(tank)
+    sim.entity_mut_for_test(tank)
         .unwrap()
         .set_archive_target(Some(crate::sim::combat::TargetKind::Cell(
             u16::MAX,
@@ -555,10 +554,9 @@ fn advance(sim: &mut Simulation, rules: &RuleSet) {
     sim.advance_app_frame(
         &[],
         rules,
-        None,
         33,
         TickLane::Ordinary,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
     .unwrap();
 }
@@ -991,12 +989,50 @@ fn placement_enhancer_rings_need_membership_range_and_the_current_player() {
     let mut sim = state(&rules);
     insert_enhancer(&mut sim, "ENH", "Americans", (16, 16), false);
     assert!(placement_query(&sim, &rules, "GAPOWR", (18, 16), true).is_empty());
-    sim.entities_mut_for_test()
-        .get_mut(1)
+    sim.entity_mut_for_test(1)
         .unwrap()
         .set_building_online_for_test(true);
     assert_eq!(
         placement_query(&sim, &rules, "GAPOWR", (18, 16), true).len(),
         1
     );
+}
+
+/// Ares draws a ring for the player's selected non-Buildings too (hook
+/// 0x0041BE80): the weapon's range in whole cells, or RadialIndicatorRadius.
+/// Without Ares, and for another player's unit, there is none.
+#[test]
+fn ares_rings_a_selected_unit_with_a_radial_indicator() {
+    let patch = crate::rules::ini_parser::IniFile::from_str(
+        "[HTNK]\nHasRadialIndicator=yes\n[MTNK]\nHasRadialIndicator=yes\nRadialIndicatorRadius=9\n",
+    );
+    let rings = |ares: bool| {
+        let _ares = crate::rules::ares_switch::read_ares_way(ares);
+        let retail = crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch(
+            "XMP03T4.MAP",
+            &patch,
+        )?;
+        let rules = &retail.rules;
+        let mut sim = state(rules);
+        let mut spawn = |kind: &str, owner: &str, x: u16| {
+            sim.spawn_object(kind, owner, x, 12, 0, rules).unwrap()
+        };
+        let ids = [
+            spawn("HTNK", "Americans", 12),
+            spawn("MTNK", "Americans", 16),
+            spawn("HTNK", "British", 20),
+        ];
+        // HTNK's retail Primary.
+        let cells = rules.weapon("120mm").unwrap().range_leptons >> 8;
+        let radii: Vec<f32> = query(&sim, rules, &ids, 0)
+            .iter()
+            .map(|draw| draw.radius)
+            .collect();
+        Some((radii, cells as f32))
+    };
+    let Some((radii, cells)) = rings(true) else {
+        return;
+    };
+    assert_eq!(radii, [cells, 9.0]);
+    assert_eq!(rings(false).unwrap().0, [] as [f32; 0]);
 }

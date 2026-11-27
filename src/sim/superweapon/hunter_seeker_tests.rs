@@ -2,8 +2,11 @@
 use super::*;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
+use crate::rules::rule_policy::RulePolicy;
 use crate::rules::superweapon_type::SuperWeaponKind;
 use crate::sim::combat::TargetKind;
+use crate::sim::house_state::HouseState;
+use crate::sim::scenario_session::ScenarioGameMode;
 
 fn scene() -> (RuleSet, Simulation, InternedId, InternedId) {
     scene_with_late_rules("[IGNORED]\nHunterSeeker.Ignore=?invalid\n")
@@ -89,7 +92,7 @@ fn hunter_seeker_launch_uses_side_and_global_fallbacks_and_normal_lifecycle() {
         sw_type,
         (0, 0),
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
         false
     ));
     assert_eq!(
@@ -109,7 +112,7 @@ fn hunter_seeker_launch_uses_side_and_global_fallbacks_and_normal_lifecycle() {
         sw_type,
         (0, 0),
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
         false
     ));
     assert_eq!(sim.houses[&owner].economy().available_money(), 50);
@@ -176,7 +179,7 @@ fn hunter_seeker_seeds_from_the_foundation_centre_and_guards_with_harvesters() {
         sw_type,
         (0, 0),
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
         false
     ));
     let harvester = sim
@@ -224,7 +227,7 @@ fn hunter_seeker_acquisition_filters_ignored_types_and_does_not_redraw_held_targ
     let target = sim
         .spawn_object("TARGET", "Russians", 16, 16, 0, &rules)
         .unwrap();
-    assert!(sim.acquire_hunter_seeker_target(hunter, &rules, None, FrameEffects::default()));
+    assert!(sim.acquire_hunter_seeker_target(hunter, &rules, &mut FrameEffects::default()));
     assert_eq!(
         sim.substrate
             .entities
@@ -235,8 +238,63 @@ fn hunter_seeker_acquisition_filters_ignored_types_and_does_not_redraw_held_targ
         Some(TargetKind::Entity(target))
     );
     let rng = sim.scenario_rng.logical_state();
-    assert!(!sim.acquire_hunter_seeker_target(hunter, &rules, None, FrameEffects::default()));
+    assert!(!sim.acquire_hunter_seeker_target(hunter, &rules, &mut FrameEffects::default()));
     assert_eq!(sim.scenario_rng.logical_state(), rng);
+}
+
+#[test]
+fn computer_hunter_seeker_designated_enemy_rule_controls_the_candidate_pool() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let unrestricted_ai =
+        RulePolicy::stock_multiplayer().with_uses_directed_hunter_seeker_targeting(false);
+    for (mode, policy, acquires) in [
+        (
+            ScenarioGameMode::Campaign,
+            RulePolicy::stock_campaign(),
+            true,
+        ),
+        (
+            ScenarioGameMode::Skirmish,
+            RulePolicy::stock_multiplayer(),
+            false,
+        ),
+        (ScenarioGameMode::Skirmish, unrestricted_ai, true),
+    ] {
+        let (rules, mut sim, owner, sw_type) = scene();
+        sim.session.install_admission(mode, None, policy);
+        let enemy = sim.interner.get("Russians").unwrap();
+        let other = sim.interner.intern("Other");
+        sim.houses
+            .register(HouseState::new(other, 2, None, false, 0, 10));
+        let house = sim.houses.get_mut(&owner).unwrap();
+        house.set_is_human_for_test(false);
+        house.assign_enemy(Some(enemy));
+        let hunter = sim
+            .spawn_object("FLYER", "Americans", 8, 8, 0, &rules)
+            .unwrap();
+        sim.substrate
+            .entities
+            .get_mut(hunter)
+            .unwrap()
+            .set_ares_super_weapon(crate::sim::hunter_seeker::AttachedSuper { owner, sw_type });
+        let target = sim
+            .spawn_object("TARGET", "Other", 16, 16, 0, &rules)
+            .unwrap();
+        assert_eq!(
+            sim.acquire_hunter_seeker_target(hunter, &rules, &mut FrameEffects::default()),
+            acquires,
+            "{mode:?}"
+        );
+        assert_eq!(
+            sim.substrate
+                .entities
+                .get(hunter)
+                .unwrap()
+                .attack_target
+                .target(),
+            acquires.then_some(TargetKind::Entity(target))
+        );
+    }
 }
 
 #[test]
@@ -257,7 +315,7 @@ fn hunter_seeker_is_not_admitted_without_ares() {
         sw_type,
         (0, 0),
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
         false
     ));
     assert_eq!(sim.state_hash(), before);

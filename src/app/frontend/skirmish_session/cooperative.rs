@@ -850,6 +850,7 @@ pub(crate) fn prepare_ai(
             break;
         }
         opponents.push(SkirmishAiSlot {
+            driver_policy: None,
             raw_slot_index: row as u8,
             country: LaunchCountry::America,
             country_random: true,
@@ -858,28 +859,10 @@ pub(crate) fn prepare_ai(
             start_position: LaunchStartPosition::Auto,
             team: LaunchTeam::None,
             difficulty,
-            driver_policy: None,
         });
     }
     effect.opponents = Some(opponents);
     Ok(effect)
-}
-
-/// Mode+64/5C2710's retained C1 payload. Round-major order is also the native
-/// draw order; a pair is [country index, color index]. This cache is generated
-/// once after69B8C0 and replaced by a decoded C1 on guests. It does not replace
-/// MatchSession's current resolved participant choices.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub(crate) struct CooperativeRoundAssignments {
-    rounds: Vec<[[i32; 2]; 8]>,
-}
-impl CooperativeRoundAssignments {
-    pub(crate) fn rounds(&self) -> &[[[i32; 2]; 8]] {
-        &self.rounds
-    }
-    pub(crate) fn accept(&mut self, rounds: Vec<[[i32; 2]; 8]>) {
-        self.rounds = rounds;
-    }
 }
 
 /// What a Cooperative mode slot reads besides its own state: the session's
@@ -965,7 +948,6 @@ fn bind_two_nodes(record: &mut CooperativeProgressRecord, nodes: &[&str]) {
 pub struct CooperativeProgressState {
     active: Option<CooperativeProgressRecord>,
     reserves: Vec<Option<CooperativeProgressRecord>>,
-    round_assignments: CooperativeRoundAssignments,
     /// `+0x33C`: the campaign the setup screen's countries come from. It
     /// follows the active record only where a slot copies it.
     campaign: i32,
@@ -985,7 +967,6 @@ impl Default for CooperativeProgressState {
         Self {
             active: None,
             reserves: Vec::new(),
-            round_assignments: CooperativeRoundAssignments::default(),
             campaign: 0,
             refresh_pending: true,
             reserve_taken: 0,
@@ -1482,14 +1463,16 @@ impl CooperativeProgressState {
     /// Original5C2710: generate every campaign round using the CURRENT
     /// stage's country callbacks, including all8 slots even when fewer are
     /// active. Human colors come from already-resolved source-order nodes.
+    /// The rounds are C1's payload, round-major in draw order; a pair is
+    /// [country index, color index].
     pub(crate) fn prepare_round_assignments(
-        &mut self,
+        &self,
         registry: &CooperativeRegistry,
         campaign_index: usize,
         roster: &[CooperativeCountryRosterEntry],
         human_colors: &[i32],
         rng: &mut SimRng,
-    ) -> Result<(), CooperativeError> {
+    ) -> Result<Vec<[[i32; 2]; 8]>, CooperativeError> {
         if human_colors.len() > 8 {
             return Err(CooperativeError::TooManyHumans(human_colors.len()));
         }
@@ -1500,10 +1483,10 @@ impl CooperativeProgressState {
                     index: campaign_index,
                     count: registry.campaigns.len(),
                 })?;
-        self.round_assignments.rounds.clear();
         let progress = self.active.clone().unwrap_or_default();
-        let rounds = (campaign.stages.len() as i8).max(0) as usize;
-        for _ in 0..rounds {
+        let count = (campaign.stages.len() as i8).max(0) as usize;
+        let mut rounds = Vec::with_capacity(count);
+        for _ in 0..count {
             let mut colors = [-2; 8];
             colors[..human_colors.len()].copy_from_slice(human_colors);
             let mut round = [[-1; 2]; 8];
@@ -1529,18 +1512,9 @@ impl CooperativeProgressState {
                 };
                 round[row] = [country, color];
             }
-            self.round_assignments.rounds.push(round);
+            rounds.push(round);
         }
-        Ok(())
-    }
-
-    pub(crate) fn round_assignments(&self) -> &CooperativeRoundAssignments {
-        &self.round_assignments
-    }
-
-    /// Native+74/5C2A60 applies decoded service values without random draws.
-    pub(crate) fn accept_round_assignments(&mut self, rounds: Vec<[[i32; 2]; 8]>) {
-        self.round_assignments.accept(rounds);
+        Ok(rounds)
     }
 
     /// MPCooperative5C1D80 Start validation binds exactly two humans only
@@ -1808,9 +1782,8 @@ mod tests {
                     &mut rng,
                 )
             });
-            result.unwrap();
             assert_eq!(
-                serde_json::to_value(owner.round_assignments().rounds()).unwrap(),
+                serde_json::to_value(result.unwrap()).unwrap(),
                 case["rounds"],
                 "{} rounds",
                 case["name"]
@@ -1836,11 +1809,6 @@ mod tests {
                 "{} raw draw order",
                 case["name"]
             );
-            let before = rng.native_state_hex();
-            let rounds = owner.round_assignments().rounds().to_vec();
-            owner.accept_round_assignments(rounds.clone());
-            assert_eq!(owner.round_assignments().rounds(), rounds);
-            assert_eq!(rng.native_state_hex(), before, "decoded C1 does not draw");
         }
     }
 
@@ -1860,6 +1828,7 @@ mod tests {
         .unwrap();
         for case in corpus["preparation"].as_array().unwrap() {
             let existing = vec![SkirmishAiSlot {
+                driver_policy: None,
                 raw_slot_index: 5,
                 country: LaunchCountry::Yuri,
                 country_random: false,
@@ -1868,7 +1837,6 @@ mod tests {
                 start_position: LaunchStartPosition::Position(1),
                 team: LaunchTeam::Team(2),
                 difficulty: AiDifficulty::Hard,
-                driver_policy: None,
             }];
             let progress = CooperativeProgressRecord {
                 valid: true,
@@ -2821,6 +2789,7 @@ mod tests {
         assert_eq!(house_type_text(0x1194, &roster), "<Player @ Z>");
         assert_eq!(house_type_text(0x1195, &roster), "<Player @ AA>");
         assert_eq!(house_type_text(0x1198, &roster), "<Player @ AD>");
-        assert_eq!(house_type_text(0x1199, &roster), "<none>");
+        // One past the 120-slot offline Skirmish roster is no player selector.
+        assert_eq!(house_type_text(0x117B + 120, &roster), "<none>");
     }
 }

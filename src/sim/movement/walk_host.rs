@@ -21,7 +21,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<(), String> {
         let Some(actor) = self.substrate.entities.get(id) else {
             return Ok(());
@@ -30,11 +30,13 @@ impl Simulation {
         {
             return Ok(());
         }
-        let Some(loco) = actor
-            .locomotor
-            .as_ref()
-            .filter(|l| l.active_kind() == crate::rules::locomotor_type::LocomotorKind::Walk)
-        else {
+        let Some(loco) = actor.locomotor.as_ref().filter(|l| {
+            matches!(
+                l.active_kind(),
+                crate::rules::locomotor_type::LocomotorKind::Walk
+                    | crate::rules::locomotor_type::LocomotorKind::Mech
+            )
+        }) else {
             return Ok(());
         };
         let destination = loco.walk_destination();
@@ -42,15 +44,21 @@ impl Simulation {
             // Foot+4C may supply a retained head or Tube exit after PerCell;
             // the physical XYZ alone is not the navigation coordinate owner.
             let current = self.foot_navigation_coordinate(id)?;
-            (current.x / 256) as i16 == (destination.x / 256) as i16
-                && (current.y / 256) as i16 == (destination.y / 256) as i16
+            let position =
+                if loco.active_kind() == crate::rules::locomotor_type::LocomotorKind::Mech {
+                    // 5B12FF tests the physical cell before the Foot's navigation Z.
+                    ground_pose::position_world_coord(&actor.position)
+                } else {
+                    current
+                };
+            super::foot_path::coord_cell(position) == super::foot_path::coord_cell(destination)
                 && current.z.wrapping_sub(destination.z).wrapping_abs()
                     < 2 * crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS
         } else {
             true
         };
         if arrived {
-            self.assign_null_destination(id, rules, None, effects);
+            self.assign_null_destination(id, rules, Some(rules.overlay_registry()), effects);
             if let Some(actor) = self.substrate.entities.get_mut(id) {
                 //75BF38 invokes Foot4D3710(0.0), independently of setter admission.
                 actor
@@ -73,7 +81,7 @@ impl Simulation {
         coord: DriveCoord,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(old_cell) = self
             .substrate
@@ -101,6 +109,7 @@ impl Simulation {
         let update = super::movement_bridge::resolve_cell_transition_bridge_state(
             &mut e.position,
             self.path_grid.as_deref(),
+            self.resolved_terrain.as_ref(),
             old_cell,
             cell,
             e.on_bridge.get(),
@@ -119,14 +128,20 @@ impl Simulation {
         );
         // OccupancyGrid is a list projection, not an independent subcell
         // reservation chooser. The current coordinate supplies its slot.
-        e.sub_cell
-            .hold(crate::sim::cell_kernel::infantry_preferred_spot(
-                crate::sim::cell_kernel::CellQueryPoint {
-                    x: coord.x,
-                    y: coord.y,
-                },
-            ));
-        e.navigation.path_runtime_mut().clear_blockage();
+        if e.locomotor
+            .as_ref()
+            .is_some_and(|l| l.active_kind() == crate::rules::locomotor_type::LocomotorKind::Walk)
+        {
+            e.seldom
+                .sub_cell
+                .hold(crate::sim::cell_kernel::infantry_preferred_spot(
+                    crate::sim::cell_kernel::CellQueryPoint {
+                        x: coord.x,
+                        y: coord.y,
+                    },
+                ));
+            e.navigation.path_runtime_mut().clear_blockage();
+        }
         self.foot_mark_put(id, rules, registry, effects);
         //75C1EA: the boundary placement tail clears +68A after Mark(PUT).
         //This is not the post-PerCell dead/limbo/falling exit at75C1F1.
@@ -141,7 +156,7 @@ impl Simulation {
         head: DriveCoord,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<bool, crate::sim::world::FrameAdvanceError> {
         self.foot_mark_remove(id, rules, registry, effects);
         let Some(e) = self.substrate.entities.get_mut(id) else {
@@ -178,8 +193,14 @@ impl Simulation {
         );
         //75BE11 clears only the paid-step latch before head retirement/PerCell.
         e.navigation.path_runtime_mut().clear_blockage();
-        let (sub_x, sub_y) = (e.position.sub_x(), e.position.sub_y());
-        e.sub_cell.hold_offset(sub_x, sub_y);
+        let mech = e
+            .locomotor
+            .as_ref()
+            .is_some_and(|l| l.active_kind() == crate::rules::locomotor_type::LocomotorKind::Mech);
+        if !mech {
+            let (sub_x, sub_y) = (e.position.sub_x(), e.position.sub_y());
+            e.seldom.sub_cell.hold_offset(sub_x, sub_y);
+        }
         //75BE18: FindSubCellDest(null) retires the head, clearing its raw
         //bits and marking the Foot's own.
         self.walk_find_sub_cell_dest(id, None, rules, registry, effects)
@@ -199,6 +220,20 @@ impl Simulation {
             e.foot_speed
                 .set_speed_fraction(crate::util::fixed_math::SIM_ZERO);
         }
+        // Mech 5B12A1..5B136C enables Unit raw occupation and settles
+        // navigation before Per_Cell_Process. Walk settles after the callback.
+        if mech {
+            if let Some(actor) = self.substrate.entities.get_mut(id) {
+                actor.foot_occupation_enabled.resume();
+            }
+            self.finish_walk_navigation(id, rules, effects)
+                .map_err(|cause| crate::sim::world::FrameAdvanceError {
+                    tick: self.session.tick(),
+                    binary_frame: self.session.binary_frame(),
+                    entity_id: id,
+                    cause,
+                })?;
+        }
         //75BE3C: Per_Cell_Process(2); 75BE42..75BE69 then leaves at 75C1F1
         //for a dead, limboed or falling owner.
         let changed = self.per_cell_process(
@@ -211,13 +246,17 @@ impl Simulation {
         if !self.track_survives(id) {
             return Ok(changed);
         }
-        self.finish_walk_navigation(id, rules, effects)
-            .map_err(|cause| crate::sim::world::FrameAdvanceError {
-                tick: self.session.tick(),
-                binary_frame: self.session.binary_frame(),
-                entity_id: id,
-                cause,
-            })?;
+        if mech {
+            self.mech_crush_ahead(id, rules);
+        } else {
+            self.finish_walk_navigation(id, rules, effects)
+                .map_err(|cause| crate::sim::world::FrameAdvanceError {
+                    tick: self.session.tick(),
+                    binary_frame: self.session.binary_frame(),
+                    entity_id: id,
+                    cause,
+                })?;
+        }
         self.foot_mark_put(id, rules, registry, effects);
         //75BF77 follows the final Mark(PUT). The earlier post-PerCell exits
         //jump to75C1F1 and must retain the byte on a surviving object.

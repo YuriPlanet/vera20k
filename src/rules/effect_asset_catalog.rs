@@ -268,10 +268,9 @@ pub fn anim_class_roots(rules: &RuleSet) -> Vec<String> {
         }
         // Ares `InfDeathAnim=` replaces the death-table arm with a literal
         // AnimClass built at the victim's cell, so it is an ordinary
-        // construction root and needs the same physical bounds. Nothing else
-        // names these animations: Mental Omega's GBION warheads set only
-        // `InfDeathAnim` (`FREEZE`, `MELTDIEE`, `PLASMDIE`) with no `InfDeath=`,
-        // and without this root the constructor refuses with
+        // construction root and needs the same physical bounds. A warhead may
+        // set only `InfDeathAnim`, with no `InfDeath=`, so nothing else names
+        // the animation, and without this root the constructor refuses with
         // `animation type [X] has no bound SHP frame count` and the kill plays
         // no death animation at all.
         if ares_way
@@ -406,7 +405,7 @@ pub fn anim_class_roots(rules: &RuleSet) -> Vec<String> {
     }
     // NPSE ObjectClass::Paradrop C2F939..C2F94D substitutes Rules+400
     // for non-infantry. It needs the same physical bounds as Parachute.
-    if crate::rules::NPATCH_ENABLED
+    if rules.npatch()
         && let Some(name) = rules.general.vehicle_parachute.as_deref()
     {
         insert(name);
@@ -777,16 +776,18 @@ mod tests {
             RuleSet::from_processed_rules(&processed).expect("project the processed rules");
         rules.install_art_data(ArtRegistry::from_ini(&art));
 
-        let capability = crate::rules::NPATCH_ENABLED;
+        assert!(
+            rules.npatch(),
+            "the fixture's VehicleParachute key turns NPatch on"
+        );
         assert_eq!(
             rules.general.vehicle_parachute.as_deref(),
-            capability.then_some("VEHCHUTE"),
-            "only the extension reader publishes the pointer"
+            Some("VEHCHUTE"),
+            "the extension reader publishes the pointer"
         );
         let roots = anim_class_roots(&rules);
-        assert_eq!(
+        assert!(
             roots.iter().any(|root| root == "VEHCHUTE"),
-            capability,
             "the canopy's art root follows the extension pointer"
         );
         rules.bind_anim_class_assets(&roots, &assets, "TEM", "TEMPERATE");
@@ -795,13 +796,10 @@ mod tests {
                 .art()
                 .anim_runtime_config("VEHCHUTE")
                 .and_then(|config| config.raw_shp_frame_count),
-            capability.then_some(6),
+            Some(6),
             "the bound canopy carries the SHP's physical frame bounds"
         );
-        assert_eq!(
-            rules.art().scheduler_anim_types().contains("VEHCHUTE"),
-            capability
-        );
+        assert!(rules.art().scheduler_anim_types().contains("VEHCHUTE"));
     }
 
     #[test]
@@ -833,7 +831,7 @@ mod tests {
         rules.install_art_fixture(ArtRegistry::from_ini(&art));
         rules.bind_anim_frame_count_for_test("TYPECHUTE", 6);
         let mut sim = crate::sim::world::Simulation::new();
-        sim.substrate.entities.insert(
+        sim.entities_mut_for_test().insert(
             crate::sim::game_entity::GameEntity::test_default_of_category(
                 1,
                 "E1",
@@ -843,7 +841,7 @@ mod tests {
                 crate::map::entities::EntityCategory::Infantry,
             ),
         );
-        sim.interner = crate::sim::intern::test_interner();
+        *sim.interner = crate::sim::intern::test_interner();
         let anim = sim.attach_parachute_anim(&rules, 1).unwrap();
         assert_eq!(
             sim.interner.resolve(sim.anim(anim).unwrap().type_id()),
@@ -901,8 +899,7 @@ mod tests {
         );
 
         let mut sim = Simulation::new();
-        sim.substrate
-            .entities
+        sim.entities_mut_for_test()
             .insert(GameEntity::test_default_of_category(
                 1,
                 "E1",
@@ -911,7 +908,7 @@ mod tests {
                 11,
                 crate::map::entities::EntityCategory::Infantry,
             ));
-        sim.interner = crate::sim::intern::test_interner();
+        *sim.interner = crate::sim::intern::test_interner();
         let owner = sim.entities().get(1).unwrap().owner();
         sim.houses
             .register(crate::sim::house_state::HouseState::new(
@@ -924,7 +921,7 @@ mod tests {
             ));
         let attach = |sim: &mut Simulation, rules: &RuleSet| {
             let anim = sim.attach_parachute_anim(rules, 1).unwrap();
-            Simulation::wind_down_parachute_anim(&mut sim.substrate, 1);
+            Simulation::wind_down_parachute_anim(sim.substrate_mut_for_test(), 1);
             assert_eq!(sim.anim(anim).unwrap().owner_entity(), Some(1));
             assert_eq!(sim.anim(anim).unwrap().runtime().loop_remaining, 0);
             sim.interner

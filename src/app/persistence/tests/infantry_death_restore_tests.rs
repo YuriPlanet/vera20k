@@ -50,15 +50,13 @@ fn infantry_fatal_frame_exit_preserves_delivered_cleanup_through_load() {
         victim
     ));
     saved.clear_lifecycle_test_events_for_test();
-    let registry = OverlayTypeRegistry::empty();
     let output = saved
         .advance_app_frame(
             &[CommandEnvelope::new(owner, 1, Command::ExitMatch)],
             &rules,
-            Some(&registry),
             67,
             TickLane::Ordinary,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect("fixture frame must complete");
     assert!(!output.tick.frame_committed);
@@ -66,7 +64,7 @@ fn infantry_fatal_frame_exit_preserves_delivered_cleanup_through_load() {
     assert!(
         object.death.is_dying() && object.lifecycle.in_limbo() && !object.lifecycle.object_alive()
     );
-    assert!(!object.in_logic_vector.is_member());
+    assert!(!object.seldom.in_logic_vector.is_member());
     assert!(!saved.occupancy().contains_entity(2, 1, victim));
     assert_eq!(
         saved
@@ -100,7 +98,7 @@ fn infantry_fatal_frame_exit_preserves_delivered_cleanup_through_load() {
             .sound_events
             .iter()
             .filter(|event| matches!(event,
-        SimSoundEvent::AnimationStarted { sound_id, .. } if sound_id == "DEATHREPORT"))
+        SimSoundEvent::AnimationStarted { sound_id, .. } if sound_id.name_in(&rules) == "DEATHREPORT"))
             .count(),
         1
     );
@@ -115,7 +113,6 @@ fn infantry_fatal_frame_exit_preserves_delivered_cleanup_through_load() {
         Some(LOAD_FIXTURE_MAP_HASH),
         Some(&rules),
         Some(&terrain),
-        Some(&registry),
     )
     .unwrap()
     .simulation;
@@ -126,10 +123,9 @@ fn infantry_fatal_frame_exit_preserves_delivered_cleanup_through_load() {
         .advance_app_frame(
             &[],
             &rules,
-            Some(&registry),
             67,
             TickLane::Ordinary,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect("fixture frame must complete");
     // Exit requests are transient: production load resumes the match and the
@@ -139,7 +135,7 @@ fn infantry_fatal_frame_exit_preserves_delivered_cleanup_through_load() {
     assert!(!restored.pending_delete().contains_object(&victim));
     assert_eq!(death_ids(&restored), effects);
     assert!(!next.sound_events.iter().any(|event| matches!(event,
-        SimSoundEvent::AnimationStarted { sound_id, .. } if sound_id == "DEATHREPORT")));
+        SimSoundEvent::AnimationStarted { sound_id, .. } if sound_id.name_in(&rules) == "DEATHREPORT")));
 }
 
 /// A corpse saved mid-sequence keeps its action and Stage through the load
@@ -168,8 +164,7 @@ fn infantry_prepared_load_preserves_death_sequence_progress_and_cleanup_visit() 
             .spawn_object_at_height("E1", "Americans", 1, 1, 0, 0, &rules)
             .unwrap();
         saved
-            .entities_mut_for_test()
-            .get_mut(victim)
+            .entity_mut_for_test(victim)
             .unwrap()
             .health
             .set_for_test(0);
@@ -177,7 +172,7 @@ fn infantry_prepared_load_preserves_death_sequence_progress_and_cleanup_visit() 
             victim,
             sequence,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         // DoAction starts the native one-frame countdown at frame0.
         // Its frame0 Logic visit holds; frame1 performs the first step.
@@ -195,14 +190,12 @@ fn infantry_prepared_load_preserves_death_sequence_progress_and_cleanup_visit() 
         *saved.scenario_rng_mut_for_test() = crate::sim::rng::SimRng::new(0);
         saved.reset_planning_after_player_load_for_test();
         let bytes = snapshot_bytes(&saved, &rules);
-        let registry = OverlayTypeRegistry::empty();
         let mut restored = PreparedLoad::prepare_candidate(
             &bytes,
             Some(&saved),
             Some(LOAD_FIXTURE_MAP_HASH),
             Some(&rules),
             Some(&terrain),
-            Some(&registry),
         )
         .expect("actual validate/deserialize/restore/rebuild preparation")
         .simulation;

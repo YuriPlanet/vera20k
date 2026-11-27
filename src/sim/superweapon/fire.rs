@@ -55,9 +55,11 @@ impl Simulation {
         sw_type_id: InternedId,
         cell: (u16, u16),
         overlays: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
-        if rules.ares_form() && rules.super_weapon_uses_ai_targeting(self.interner.resolve(sw_type_id)) {
+        if rules.ares_form()
+            && rules.super_weapon_uses_ai_targeting(self.interner.resolve(sw_type_id))
+        {
             let launched = super::ai_fire::fire_extension_automatic(
                 self, rules, owner, sw_type_id, overlays, effects, true,
             );
@@ -87,7 +89,7 @@ impl Simulation {
         sw_type_id: InternedId,
         cell: (u16, u16),
         overlay_registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
         automatic: bool,
     ) -> bool {
         self.fire_super_weapon_selected(
@@ -113,7 +115,7 @@ impl Simulation {
         sw_type_id: InternedId,
         cell: (u16, u16),
         overlay_registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
         target_source: super::SuperWeaponTargetSource,
         selection: Option<super::PaidSuperWeaponSelection>,
     ) -> bool {
@@ -388,7 +390,7 @@ fn click_fire(
     sw: &SuperWeaponType,
     cell: (u16, u16),
     overlay_registry: Option<&OverlayTypeRegistry>,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
     payment: Option<(InternedId, &SuperWeaponType)>,
     selecting_paid_source: bool,
 ) -> bool {
@@ -399,7 +401,7 @@ fn click_fire(
         let Some(house) = sim.houses.get(&owner) else {
             return false;
         };
-        let human = house.is_controlled_by_human(sim.session.game_mode_nonzero());
+        let human = house.is_controlled_by_human(sim.session.rule_policy());
         // Ares ClickFire10035130 drops the computer's FirestormActive branch:
         // every House toggles with the type's GetChargeToDrainRatio.
         let toggles = ares || human;
@@ -422,15 +424,7 @@ fn click_fire(
         };
         // 10035130's draining arm calls SWTypeExt::Deactivate after the timer.
         if was_draining && !called_launch {
-            super::deactivate_ares_handler(
-                sim,
-                rules,
-                owner,
-                sw_type_id,
-                sw,
-                human,
-                frame_effects.with_overlay_registry(overlay_registry),
-            );
+            super::deactivate_ares_handler(sim, rules, owner, sw_type_id, sw, human, frame_effects);
         }
         if called_launch {
             let effect_launched = launch(
@@ -443,6 +437,16 @@ fn click_fire(
                 overlay_registry,
                 frame_effects,
             );
+            // Wasm module `SuperWeaponLaunched` (RFC 0001 appendix 4.3).
+            if effect_launched {
+                sim.raise_module_super_weapon_launched(
+                    rules,
+                    frame_effects,
+                    owner,
+                    sw_type_id,
+                    cell,
+                );
+            }
             // Launch reaches the common SWTypeExt::Launch10032ED0 for a new
             // type here too. Its money step never settles: Fire_SW refuses a
             // charge-drain type with Money.Amount before this click.
@@ -498,6 +502,11 @@ fn click_fire(
         overlay_registry,
         frame_effects,
     );
+    // Wasm module `SuperWeaponLaunched` (RFC 0001 appendix 4.3), after
+    // SuperClass::Launch (`0x006CC390`).
+    if effect_launched {
+        sim.raise_module_super_weapon_launched(rules, frame_effects, owner, sw_type_id, cell);
+    }
     // Installed Ares SWTypeExt::Launch10032ED0 calls Activate first and only
     // reaches money10032FDF after success. In particular a HunterSeeker with
     // no usable launch building still spends its charge, but never its fee.
@@ -606,16 +615,21 @@ fn launch(
     sw: &SuperWeaponType,
     (rx, ry): (u16, u16),
     overlay_registry: Option<&OverlayTypeRegistry>,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) -> bool {
     use super::paradrop::ParaDropKind;
     let ares = rules.ares_form();
+    let launch_kind = if ares {
+        sw.kind.ares_handler_kind()
+    } else {
+        sw.kind
+    };
     // Hook 6CC390 (100355C0) -> SWTypeExt::Activate (10032020): a
     // redirected Type's handler Activate runs first; an accepted one ends
     // Launch through the common tail, a refused one falls through to the
     // stock case, which then reports no Ares activation.
-    let redirect_refused = if ares && sw.kind.is_ares_redirect() {
-        let activated = match sw.kind {
+    let redirect_refused = if ares && launch_kind.is_ares_redirect() {
+        let activated = match launch_kind {
             SuperWeaponKind::ChronoSphere => {
                 super::chronosphere::ares_launch_source(
                     sim,
@@ -638,6 +652,10 @@ fn launch(
             ),
             SuperWeaponKind::MultiMissile => {
                 super::nuke::ares_launch(sim, rules, owner, sw_type_id, sw, (rx, ry))
+            }
+            SuperWeaponKind::PsychicReveal => {
+                super::psychic_reveal::ares_launch(sim, rules, owner, sw_type_id, sw, (rx, ry));
+                true
             }
             SuperWeaponKind::PsychicDominator => {
                 super::psychic_dominator::ares_launch(sim, rules, owner, sw_type_id, sw, (rx, ry));
@@ -696,14 +714,14 @@ fn launch(
     // (ForceShield6CD072..6CD077; case4 starts6CC4B2 with radar production).
     // Drain ClickFire can reach Launch after Reset retained state1 but cleared
     // rawReady. Keep the earlier timer transition while skipping case effects.
-    let native_kind = sw.kind.native_index();
+    let native_kind = launch_kind.native_index();
     if (0..12).contains(&native_kind)
         && native_kind != 4
         && !super::is_charged(sim, owner, sw_type_id)
     {
         return false;
     }
-    match sw.kind {
+    match launch_kind {
         // Launch6CC3A3..6CC3AC: the constructor's -1 exits without case
         // effects. ClickFire's ordinary/one-time finish still runs afterwards.
         SuperWeaponKind::NoEffect => {}
@@ -846,6 +864,11 @@ fn launch(
         SuperWeaponKind::SpyPlane => {
             super::spy_plane::launch(sim, rules, owner, sw_type_id, (rx, ry), frame_effects);
         }
+        // VERA's Tiberian Sun type: Firestorm 2.0 SuperClass::Place case 3
+        // (0x60BE21), in every game, Ares or not.
+        SuperWeaponKind::IonCannon => {
+            super::ion_cannon::launch(sim, owner, sw_type_id, (rx, ry));
+        }
         SuperWeaponKind::GenericWarhead => {
             let activated = super::generic_warhead::launch(
                 sim,
@@ -891,7 +914,7 @@ fn launch(
             let is_player = sim
                 .houses
                 .get(&owner)
-                .is_some_and(|house| house.is_controlled_by_human(sim.session.game_mode_nonzero()));
+                .is_some_and(|house| house.is_controlled_by_human(sim.session.rule_policy()));
             super::firewall::activate(
                 sim,
                 rules,

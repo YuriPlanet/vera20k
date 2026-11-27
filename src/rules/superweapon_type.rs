@@ -81,6 +81,13 @@ pub enum SuperWeaponKind {
     /// `DropPod.Types` units around the cell in drop pods
     /// (`sim::superweapon::drop_pod`).
     DropPod,
+    /// Tiberian Sun `Type=IonCannon` (docs/ts-ion-cannon.md), a VERA feature:
+    /// Firestorm 2.0's name list (0x70FED4, index 3) holds it and gamemd's
+    /// does not. Retail RULESMD.INI keeps Tiberian Sun's `[IonCannonSpecial]`
+    /// with this Type but lists it in no `[SuperWeaponTypes]`, so only a mod
+    /// or map that lists such a type plays it. One ion blast at the cell
+    /// (`sim::superweapon::ion_cannon`).
+    IonCannon,
     /// Constructor Type=-1: no recognized name has replaced it. Launch's
     /// unsigned guard6CC3AC returns without a case; ordinary ClickFire still
     /// consumes readiness or its one-time grant. This is not an extension.
@@ -115,6 +122,15 @@ impl AresSuperWeaponFlags {
 }
 
 impl SuperWeaponKind {
+    /// SW_Protect::HandlesType (Ares.dll 0x10074B40) also claims the
+    /// original Iron Curtain. Keep the stored kind for stock play and indices.
+    pub const fn ares_handler_kind(self) -> Self {
+        match self {
+            Self::IronCurtain => Self::Protect,
+            other => other,
+        }
+    }
+
     /// The implemented NewSWType Activate owners, which only a game read the
     /// Ares way uses: the new types and the stock Types whose redirect is
     /// ported.
@@ -126,19 +142,22 @@ impl SuperWeaponKind {
     /// 1006CFB0 asks each type's HandlesType): SW_ChronoSphere (1006EF00),
     /// SW_ChronoWarp (100700A0), SW_NuclearMissile (10073350),
     /// SW_GeneticMutator (10072080), SW_PsychicDominator (10070980),
-    /// SW_SpyPlane (100757F0), SW_LightningStorm (10072C30), SW_ParaDrop
-    /// (10073DA0: ParaDrop and AmerParaDrop). Its handler's
+    /// SW_PsychicReveal (100752E0), SW_SpyPlane (100757F0), SW_LightningStorm (10072C30), SW_ParaDrop
+    /// (10073DA0: ParaDrop and AmerParaDrop), SW_Protect (10074B40: IronCurtain).
+    /// Its handler's
     /// Initialize, LoadFromINI,
     /// Activate and Flags replace the stock reads and Launch case; the other
     /// stock Types keep their stock owners in this port.
     pub(crate) const fn is_ares_redirect(self) -> bool {
         matches!(
             self,
-            Self::ChronoSphere
+            Self::IronCurtain
+                | Self::ChronoSphere
                 | Self::ChronoWarp
                 | Self::MultiMissile
                 | Self::GeneticConverter
                 | Self::PsychicDominator
+                | Self::PsychicReveal
                 | Self::SpyPlane
                 | Self::LightningStorm
                 | Self::ParaDrop
@@ -207,6 +226,8 @@ impl SuperWeaponKind {
             Self::EMPulse => 0x106,
             Self::Firestorm => 0x107,
             Self::DropPod => 0x108,
+            // VERA's tag, past gamemd's twelve slots and the Ares tags.
+            Self::IonCannon => 0x201,
             Self::GenericWarhead => -1,
             Self::NoEffect => -1,
         }
@@ -240,6 +261,10 @@ impl SuperWeaponKind {
             "firestorm" if ares => Some(Self::Firestorm),
             // SW_DropPod::GetTypeString 1006D7C0.
             "droppod" if ares => Some(Self::DropPod),
+            // Firestorm 2.0 SuperWeaponTypeClass::Read_INI 0x60D215..0x60D280
+            // reads Type= the same way (ReadString 0x28, a case-insensitive
+            // compare). No gamemd, Ares or Phobos Type has this name.
+            "ioncannon" => Some(Self::IonCannon),
             _ => None,
         }
     }
@@ -363,6 +388,13 @@ impl AresSuperWeaponEva {
                 "EVA_DropPodActivated",
                 "EVA_DropPodDetected",
             ],
+            // SW_PsychicReveal::Initialize100752F0 names only the ready line.
+            Some(kind) if kind.eq_ignore_ascii_case("PsychicReveal") => {
+                self.ready = eva
+                    .entry("EVA_PsychicRevealReady")
+                    .map(|entry| entry.name.clone());
+                return;
+            }
             // SW_SpyPlane::Initialize10075800 and SW_ParaDrop's (10073DC0)
             // name only the ready line.
             Some(kind)
@@ -755,9 +787,10 @@ pub struct SuperWeaponType {
     pub ai_defend_against: bool,
     /// When true, suspension doesn't auto-resume on power restore.
     pub manual_control: bool,
-    /// Phobos `SW.ShowCameo=`, read by `SWTypeExt` for the superweapon
-    /// sidebar's `AddButton` gate. Not the ordinary right-sidebar cameo.
-    #[cfg(feature = "phobos")]
+    /// `SW.ShowCameo=`. Phobos's `SWTypeExt` gates its superweapon sidebar's
+    /// `AddButton` with it; Ares keeps an `SW.AutoFire=yes` type's cameo off
+    /// the ordinary right-sidebar strip
+    /// ([`crate::sim::superweapon::SuperWeaponView::ares_show_cameo`]).
     pub sw_show_cameo: bool,
     /// Phobos `SuperWeaponSidebar.Allow=`. Unset falls back to
     /// `[AudioVisual] SuperWeaponSidebar.AllowByDefault`.
@@ -779,6 +812,25 @@ pub struct SuperWeaponType {
     pub generic_warhead: Option<GenericWarheadSettings>,
     /// Pointer bindings retained by the ordered Ares reader.
     pub hunter_seeker: Option<crate::rules::hunter_seeker::HunterSeekerSettings>,
+}
+
+/// Ares ReadRange10033698..100336F8. A single authored value has height 0,
+/// whereas an absent key leaves the previous range in place.
+fn read_ares_sw_range(section: &IniSection) -> Option<(f32, i32)> {
+    let tokens = section.read_list("SW.Range", 0x800)?;
+    let width = crate::rules::ini_value::parse_leading_f64(tokens.first()?) as f32;
+    let height = tokens
+        .get(1)
+        .map_or(0, |token| crate::rules::ini_value::crt_atoi(token));
+    Some((width, height))
+}
+
+fn sw_range_or_radius(range: (f32, i32), default_radius: i32) -> (f32, i32) {
+    if range.0 < 0.0 && range.1 < 0 {
+        (default_radius as f32, -1)
+    } else {
+        range
+    }
 }
 
 impl SuperWeaponType {
@@ -826,6 +878,16 @@ impl SuperWeaponType {
     /// The Ares types and reads apply only when the Rules are read the Ares
     /// way.
     pub fn from_ini_section(id: &str, section: &IniSection) -> Self {
+        // A standalone section has no earlier ranges or CombatDamage layer.
+        Self::from_ini_section_with_range(id, section, None, 3)
+    }
+
+    pub(crate) fn from_ini_section_with_range(
+        id: &str,
+        section: &IniSection,
+        processed_range: Option<(f32, i32)>,
+        psychic_reveal_radius: i32,
+    ) -> Self {
         let ares_way = crate::rules::ares_switch::ares_way();
         // Native reads Range and LineMultiplier before Type. The constructor
         // owns the zero defaults; keep the same current-value defaults here.
@@ -879,7 +941,13 @@ impl SuperWeaponType {
             // InitializeConstants supplies an Attack cursor. Stock ReadAction
             // keeps its 0x20-byte ReadString (`0x00474EE0`), which a stock-way
             // read uses for every Type.
-            action: match kind {
+            action: match kind.ares_handler_kind() {
+                // Firestorm 2.0 ReadAction 0x44AB90 (called at 0x60D1F6) knows
+                // the IonCannon action (its table 0x6CCC70, index 37), which
+                // gamemd's lacks; this type reads it beside gamemd's names.
+                SuperWeaponKind::IonCannon => section
+                    .read_action_name_with("Action", Some("IonCannon"))
+                    .map(str::to_string),
                 _ if !ares_way => section.read_action_name("Action").map(str::to_string),
                 SuperWeaponKind::GenericWarhead => Some("Attack".to_string()),
                 // SW_HunterSeeker::Initialize clears Action (10072A16) after
@@ -894,16 +962,21 @@ impl SuperWeaponType {
                 // SW_Protect::Initialize10074B60 installs the custom action
                 // and SW_Cursor=IronCurtain; VERA names that cursor by action.
                 SuperWeaponKind::Protect => Some("IronCurtain".to_string()),
-                // SW_SonarPulse::LoadFromINI10075710: no action for a whole-map
-                // pulse (a read SW.Range below zero), else the custom action
-                // with the constructor's Attack cursor.
-                SuperWeaponKind::SonarPulse => {
-                    crate::rules::ares_switch::ares_read(|| section.read_list("SW.Range", 0x800))
-                        .and_then(|tokens| tokens.first().copied())
-                        .is_none_or(|width| {
-                            crate::rules::ini_value::parse_leading_f64(width) as f32 >= 0.0
+                // Both LoadFromINI handlers overwrite Action (10075360, 10075710).
+                // The ordered rules reader supplies the retained range and
+                // CombatDamage radius; a standalone section reads its own range.
+                SuperWeaponKind::SonarPulse | SuperWeaponKind::PsychicReveal => {
+                    let range = processed_range
+                        .or_else(|| {
+                            crate::rules::ares_switch::ares_read(|| read_ares_sw_range(section))
                         })
-                        .then(|| "Attack".to_string())
+                        .unwrap_or((-1.0, -1));
+                    let (cursor, fallback) = if kind == SuperWeaponKind::SonarPulse {
+                        ("Attack", 10)
+                    } else {
+                        ("PsychicReveal", psychic_reveal_radius.min(10))
+                    };
+                    (!(sw_range_or_radius(range, fallback).0 < 0.0)).then(|| cursor.to_owned())
                 }
                 // SW_EMPulse::LoadFromINI10071510 writes Action every pass:
                 // none for `EMPulse.TargetSelf`, else the custom action with
@@ -932,6 +1005,11 @@ impl SuperWeaponType {
                 SuperWeaponKind::GeneticConverter => Some("GeneticConverter".to_string()),
                 // SW_PsychicDominator::Initialize10070990: its cursor.
                 SuperWeaponKind::PsychicDominator => Some("PsychicDominator".to_string()),
+                // Ares SWTypeExt::LoadFromRulesFile (0x1003332A) arms both redirects;
+                // SW_ParaDrop::Initialize (0x10073F52) sets their ParaDrop cursor.
+                SuperWeaponKind::ParaDrop | SuperWeaponKind::AmerParaDrop => {
+                    Some("ParaDrop".to_string())
+                }
                 // SW_SpyPlane::Initialize10075800: the SpyPlane cursor.
                 SuperWeaponKind::SpyPlane => Some("SpyPlane".to_string()),
                 // SW_LightningStorm::Initialize10072C50: SW_Cursor 0x32.
@@ -1002,7 +1080,6 @@ impl SuperWeaponType {
             flash_sidebar_tab_frames: section.read_int("FlashSidebarTabFrames", -1),
             ai_defend_against: section.read_bool("AIDefendAgainst", false),
             manual_control: section.read_bool("ManualControl", false),
-            #[cfg(feature = "phobos")]
             sw_show_cameo: section.read_bool("SW.ShowCameo", true),
             #[cfg(feature = "phobos")]
             sw_sidebar_allow: section.read_bool_value("SuperWeaponSidebar.Allow"),
@@ -1054,11 +1131,10 @@ pub enum DeliveryOwner {
 }
 
 /// UnitDelivery settings. No setting changes stock superweapon behavior.
+/// Its delay is the common `SW.Deferment` read (`AresSuperWeaponLaunch`).
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct UnitDeliveryRules {
     pub types: Vec<DeliveryType>,
-    /// Effective frame delay; the Ares negative sentinel is normalized to 20.
-    pub deferment: i32,
     pub owner: DeliveryOwner,
     pub base_normal: bool,
     pub activation_sound: Option<String>,
@@ -1068,7 +1144,6 @@ impl Default for UnitDeliveryRules {
     fn default() -> Self {
         Self {
             types: Vec::new(),
-            deferment: 20,
             owner: DeliveryOwner::Invoker,
             base_normal: true,
             activation_sound: None,
@@ -1224,7 +1299,9 @@ pub(crate) struct AresSuperWeaponLaunch {
     #[serde(default)]
     mutate: AresMutateRules,
     /// `SW.Deferment` (Nullable<int> +0x254), read by every type; the
-    /// Dominator's state machine waits it out (Activate 100707C0).
+    /// Dominator's state machine waits it out (Activate 100707C0), and
+    /// UnitDelivery's (Activate 10075920) waits 20 frames when it is unset
+    /// or negative.
     #[serde(default)]
     deferment: Option<i32>,
     /// SW_PsychicDominator's fields (Initialize 10070990, LoadFromINI 10070A40).
@@ -1341,6 +1418,14 @@ impl AresParaDropPlane {
     }
 }
 
+/// VERA's bound on a `ParaDrop*.Count=` and on `SpyPlane.Count=`. Ares
+/// resizes the plane list by the raw value (`SW_ParaDrop::LoadFromINI`'s
+/// GetParadropPlane, no upper bound), so a value near `i32::MAX` exhausts
+/// memory there, and a Spy Plane launch flies its planes one at a time.
+/// Outside data never stops the game: the count clamps here, far above any
+/// flight a mod sends.
+const PARADROP_PLANE_LIMIT: i32 = 1024;
+
 impl AresParaDropRules {
     /// The planes kept for `owner`, if LoadFromINI inserted its list.
     pub(crate) fn planes(&self, owner: &AresParaDropOwner) -> Option<&[AresParaDropPlane]> {
@@ -1393,7 +1478,8 @@ impl AresParaDropRules {
     /// many as its Side's). Each goes through GetParadropPlane (100739E0):
     /// `.Count` (ReadInteger, default the list's size, or the count above
     /// for a new list) resizes the list, a negative count to none, and each
-    /// plane is parsed in place ([`AresParaDropPlane::read`]). Keys are
+    /// plane is parsed in place ([`AresParaDropPlane::read`]); VERA clamps the
+    /// count at [`PARADROP_PLANE_LIMIT`]. Keys are
     /// composed in 0x40-byte buffers, which 25-byte type IDs cannot fill.
     pub(crate) fn read_pass(
         &mut self,
@@ -1407,8 +1493,11 @@ impl AresParaDropRules {
         let mut read = |owner, base: &str, new_count: usize| {
             let (planes, inserted) = self.try_emplace(owner);
             let current = if inserted { new_count } else { planes.len() };
-            let count = section.read_int(&format!("{base}.Count"), current as i32);
-            planes.resize(count.max(0) as usize, AresParaDropPlane::default());
+            let current = i32::try_from(current).unwrap_or(PARADROP_PLANE_LIMIT);
+            let count = section
+                .read_int(&format!("{base}.Count"), current)
+                .clamp(0, PARADROP_PLANE_LIMIT);
+            planes.resize(count as usize, AresParaDropPlane::default());
             for (index, plane) in planes.iter_mut().enumerate() {
                 plane.read(section, base, index, &aircraft, &types);
             }
@@ -1672,6 +1761,20 @@ pub(crate) struct AresLightningRules {
     pub(crate) radar_outage_affects: crate::rules::superweapon_targeting::HouseMask,
 }
 
+/// VERA's bound on `Lightning.ScatterCount=`: the tries a scattered cloud
+/// makes for a free cell, each a random draw, so a value near `i32::MAX`
+/// hangs the tick while every candidate is refused. Ares reads it with no
+/// upper bound (LoadFromINI10072CF0); its default is 1. Every value below
+/// the bound draws as before.
+const LIGHTNING_SCATTER_COUNT_LIMIT: i32 = 1024;
+
+/// VERA's bound on `Lightning.DebrisMin=` and `Lightning.DebrisMax=`: a
+/// striking bolt draws its debris count between them and spawns one anim per
+/// piece, so a value near `i32::MAX` hangs the tick. Ares reads them with no
+/// upper bound (LoadFromINI10072CF0); its defaults are 2 and 4. Every pair
+/// below the bound draws as before.
+const LIGHTNING_DEBRIS_LIMIT: i32 = 256;
+
 impl Default for AresLightningRules {
     fn default() -> Self {
         Self {
@@ -1716,13 +1819,19 @@ impl AresLightningRules {
         self.hit_delay = section.read_ares_nullable_int("Lightning.HitDelay", self.hit_delay);
         self.scatter_delay =
             section.read_ares_nullable_int("Lightning.ScatterDelay", self.scatter_delay);
-        self.scatter_count = section.read_ares_int("Lightning.ScatterCount", self.scatter_count);
+        self.scatter_count = section
+            .read_ares_int("Lightning.ScatterCount", self.scatter_count)
+            .min(LIGHTNING_SCATTER_COUNT_LIMIT);
         self.separation = section.read_ares_nullable_int("Lightning.Separation", self.separation);
         self.print_text = section.read_ares_nullable_bool("Lightning.PrintText", self.print_text);
         self.ignore_lightning_rod =
             section.read_ares_bool("Lightning.IgnoreLightningRod", self.ignore_lightning_rod);
-        self.debris_min = section.read_ares_int("Lightning.DebrisMin", self.debris_min);
-        self.debris_max = section.read_ares_int("Lightning.DebrisMax", self.debris_max);
+        self.debris_min = section
+            .read_ares_int("Lightning.DebrisMin", self.debris_min)
+            .min(LIGHTNING_DEBRIS_LIMIT);
+        self.debris_max = section
+            .read_ares_int("Lightning.DebrisMax", self.debris_max)
+            .min(LIGHTNING_DEBRIS_LIMIT);
         self.cloud_height = section.read_ares_int("Lightning.CloudHeight", self.cloud_height);
         if reads.bolt_explosion.is_some() {
             self.bolt_explosion = reads.bolt_explosion;
@@ -2079,6 +2188,9 @@ impl AresSuperWeaponLaunch {
     ) {
         let _ares = crate::rules::ares_switch::ares_reads();
         let is = |name: &str| kind.is_some_and(|kind| kind.eq_ignore_ascii_case(name));
+        if initialized && is("PsychicReveal") {
+            self.radar_event = false; // SW_PsychicReveal::Initialize100752FA.
+        }
         if initialized && is("SonarPulse") {
             // SW_SonarPulse::Initialize100756D0.
             self.radar_event = false;
@@ -2132,13 +2244,7 @@ impl AresSuperWeaponLaunch {
         self.radar_event = section.read_ares_bool("SW.CreateRadarEvent", self.radar_event);
         // 10033698..100336F8: ReadString(0x800); a first ','-strtok token
         // stores atof as binary32 and Height 0, a second token atoi.
-        if let Some(tokens) = section.read_list("SW.Range", 0x800)
-            && let Some(first) = tokens.first()
-        {
-            let width = crate::rules::ini_value::parse_leading_f64(first) as f32;
-            let height = tokens
-                .get(1)
-                .map_or(0, |token| crate::rules::ini_value::crt_atoi(token));
+        if let Some((width, height)) = read_ares_sw_range(section) {
             self.range = (width.to_bits(), height);
         }
         // 1003371E..10033780, after SW.Range.
@@ -2193,7 +2299,11 @@ impl AresSuperWeaponLaunch {
         } else if is("SpyPlane") {
             // 10075880: Count, Type, Mission. An unknown mission keeps it.
             let spy_plane = &mut self.spy_plane;
-            spy_plane.count = section.read_ares_int("SpyPlane.Count", spy_plane.count);
+            // Each plane flies one at a time from the launch loop, so the
+            // count stops at the paradrop plane bound.
+            spy_plane.count = section
+                .read_ares_int("SpyPlane.Count", spy_plane.count)
+                .min(PARADROP_PLANE_LIMIT);
             if let Some(plane) = reads.spy_plane_type {
                 spy_plane.plane = plane;
             }
@@ -2335,6 +2445,14 @@ impl AresSuperWeaponLaunch {
     /// negative.
     pub(crate) fn range(&self) -> (f32, i32) {
         (f32::from_bits(self.range.0), self.range.1)
+    }
+
+    /// SWRange's empty sentinel has both fields negative. Ares PsychicReveal
+    /// GetRange (10075250) substitutes min(PsychicRevealRadius, 10);
+    /// SonarPulse (10075680) substitutes 10. A lone authored -1 has Height
+    /// zero, so it requests the whole map.
+    pub(crate) fn range_or_radius(&self, default_radius: i32) -> (f32, i32) {
+        sw_range_or_radius(self.range(), default_radius)
     }
 
     pub(crate) fn protect_duration(&self) -> Option<i32> {
@@ -2529,6 +2647,63 @@ impl PhobosSuperWeaponAvailability {
 #[cfg(all(test, tests_rules_o_z))]
 mod tests {
     use super::*;
+
+    /// `ParaDrop.Count=` and its Side and Country variants clamp at VERA's
+    /// plane bound instead of sizing the list by the raw value.
+    #[test]
+    fn paradrop_counts_clamp_at_the_plane_limit() {
+        use crate::rules::ini_parser::IniFile;
+        let ini = IniFile::from_str(
+            "[Drop]\nParaDrop.Count=1000000\nParaDrop.Soviet.Count=-5\n\
+             ParaDrop.Russians.Count=1000000\n",
+        );
+        let mut paradrop = AresParaDropRules::default();
+        paradrop.read_pass(
+            ini.section_or_empty("Drop"),
+            &["Soviet".to_owned()],
+            &[("Russians".to_owned(), 0)],
+            |_| None,
+            |_| None,
+        );
+        let count = |owner| paradrop.planes(&owner).map(<[_]>::len);
+        let limit = Some(PARADROP_PLANE_LIMIT as usize);
+        assert_eq!(count(AresParaDropOwner::Default), limit);
+        assert_eq!(count(AresParaDropOwner::Side(0)), Some(0));
+        assert_eq!(
+            count(AresParaDropOwner::Country("Russians".to_owned())),
+            limit
+        );
+    }
+
+    #[test]
+    fn huge_lightning_counts_clamp_at_their_limits() {
+        use crate::rules::ini_parser::IniFile;
+        let ini = IniFile::from_str(
+            "[Storm]\nLightning.ScatterCount=2147483647\n\
+             Lightning.DebrisMin=2147483647\nLightning.DebrisMax=2147483647\n",
+        );
+        let mut lightning = AresLightningRules::default();
+        lightning.read_pass(ini.section_or_empty("Storm"), AresLightningReads::default());
+        assert_eq!(lightning.scatter_count, LIGHTNING_SCATTER_COUNT_LIMIT);
+        assert_eq!(
+            (lightning.debris_min, lightning.debris_max),
+            (LIGHTNING_DEBRIS_LIMIT, LIGHTNING_DEBRIS_LIMIT)
+        );
+    }
+
+    #[test]
+    fn a_huge_spy_plane_count_clamps_at_the_plane_limit() {
+        use crate::rules::ini_parser::IniFile;
+        let ini = IniFile::from_str("[Spy]\nSpyPlane.Count=2147483647\n");
+        let mut launch = AresSuperWeaponLaunch::default();
+        launch.read_pass(
+            ini.section_or_empty("Spy"),
+            Some("SpyPlane"),
+            true,
+            AresHandlerReads::default(),
+        );
+        assert_eq!(launch.spy_plane().count, PARADROP_PLANE_LIMIT);
+    }
 
     #[test]
     fn ares_superweapon_eva_uses_fixed_catalog_defaults_and_ordered_retention() {
@@ -2840,6 +3015,28 @@ Type=BogusType
         let default_sw =
             SuperWeaponType::from_ini_section("Default", defaults.section("Default").unwrap());
         assert_eq!(default_sw.generic_warhead.as_ref().unwrap().damage, 0);
+    }
+
+    /// The Ares PsychicReveal handler (LoadFromINI `0x10075360`) writes the
+    /// custom action whatever `Action=` says, so a reveal with
+    /// `Action=Custom` and `SW.Range=12` asks for a target; a negative
+    /// `SW.Range` is a whole-map reveal with none.
+    #[test]
+    fn ares_psychic_reveal_targets_unless_its_range_is_the_whole_map() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
+        let ini = IniFile::from_str(
+            "[CombatDamage]\nPsychicRevealRadius=2\n[SuperWeaponTypes]\n0=ScanSpecial\n1=Plain\n2=Whole\n3=DefaultRange\n\
+             [ScanSpecial]\nType=PsychicReveal\nAction=Custom\nSW.Range=12\n\
+             [Plain]\nType=PsychicReveal\nAction=None\n\
+             [Whole]\nType=PsychicReveal\nAction=PsychicReveal\nSW.Range=-1\n\
+             [DefaultRange]\nType=PsychicReveal\nSW.Range=-1,-1\n",
+        );
+        let rules = crate::rules::ruleset::RuleSet::from_ini(&ini).unwrap();
+        let action = |id| rules.super_weapon(id).unwrap().action.as_deref();
+        assert_eq!(action("ScanSpecial"), Some("PsychicReveal"));
+        assert_eq!(action("Plain"), Some("PsychicReveal"));
+        assert_eq!(action("Whole"), None);
+        assert_eq!(action("DefaultRange"), Some("PsychicReveal"));
     }
 
     #[test]
