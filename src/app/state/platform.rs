@@ -54,6 +54,11 @@ pub(crate) struct PlatformState {
     pub(crate) held_modifier_keys: crate::app::input::hotkeys::HeldModifierKeys,
     /// The input method's state for the chat edits (`app::input::ime`).
     pub(crate) ime: crate::app::input::ime::ImeState,
+    /// Whether the shell shows the LAN chat's send key and the narrower chat
+    /// edit beside it. On everywhere by default: a desktop player can also
+    /// send with the key, and the LAN room's layout already asks for it. A
+    /// platform layer may turn it off, or tune it to its input devices.
+    pub(crate) touch_send: bool,
     /// Whether this application currently owns the foreground.
     ///
     /// gamemd tracks the same edge-triggered byte from `WM_ACTIVATEAPP` and
@@ -165,6 +170,7 @@ impl PlatformState {
             live_modifiers: winit::keyboard::ModifiersState::empty(),
             held_modifier_keys: Default::default(),
             ime: Default::default(),
+            touch_send: true,
             window_active: true,
             pause_on_focus_loss,
             window_hidden: false,
