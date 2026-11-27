@@ -290,7 +290,10 @@ pub(crate) fn ime_chat_rect(
         .multiplayer_setup
         .as_ref()
         .filter(|ui| routed && !ui.game_options && ui.map_offer.is_none())
-        .map(|_| page_layout(&renderer.gpu, frontend, match_state).chat)
+        .map(|_| {
+            let dialog = crate::app::shell_network_setup::dialog(frontend, match_state);
+            page_layout(&renderer.gpu, frontend, match_state).chat_text(dialog)
+        })
 }
 
 pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Option<&str>) {
@@ -621,7 +624,7 @@ pub(crate) fn cursor_moved(state: &mut AppState) {
         );
         return;
     }
-    let Some((view, _layout)) = synced(
+    let Some((view, layout)) = synced(
         &state.renderer,
         &mut state.frontend,
         &state.match_state,
@@ -637,11 +640,11 @@ pub(crate) fn cursor_moved(state: &mut AppState) {
     if !held {
         // VERA's send key has no control id, so it answers its own hint here:
         // the emote button's, whose tile it borrows (`STT:EmoteButton`).
-        let send_help = (!view.dialog.wol()
-            && _layout.chat_send().is_some_and(|key| {
-                x >= key.x && x < key.x + key.w && y >= key.y && y < key.y + key.h
-            }))
-        .then(|| state.process_assets.csf_text("STT:EmoteButton"));
+        let send_help = layout
+            .with_touch_send(state.platform.touch_send)
+            .chat_send(view.dialog)
+            .is_some_and(|key| key.contains(x, y))
+            .then(|| state.process_assets.csf_text("STT:EmoteButton"));
         let help = send_help.unwrap_or_else(|| {
             hovered_help(
                 &state.frontend,
@@ -691,8 +694,13 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
         return;
     };
     let (x, y) = state.match_state.input.cursor_px();
-    // VERA's send key: a platform without Enter sends from the chat box.
-    if pressed && layout.chat_send().is_some_and(|key| key.contains(x, y)) {
+    // The LAN send button submits the chat edit through its Enter handler.
+    let layout = layout.with_touch_send(state.platform.touch_send);
+    if pressed
+        && layout
+            .chat_send(view.dialog)
+            .is_some_and(|key| key.contains(x, y))
+    {
         key_press(state, Some(winit::keyboard::KeyCode::Enter), None);
         return;
     }

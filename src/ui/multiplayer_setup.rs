@@ -1320,7 +1320,7 @@ pub(crate) struct MultiplayerSetupLayout {
     pub(crate) page: MenuPageLayout,
     /// Whether VERA's send key sits beside the room's chat edit, narrowing
     /// that edit. Off keeps the native room layout.
-    pub(crate) touch_send: bool,
+    touch_send: bool,
     /// VERA's roster ([`SetupDialog::modern`]): plain rows in one column,
     /// placed by [`Self::arrange_roster`].
     pub(crate) roster: bool,
@@ -1498,10 +1498,14 @@ impl MultiplayerSetupLayout {
         self
     }
 
-    /// The chat edit's rect: narrowed beside VERA's send key on a touch
-    /// platform, the native place otherwise.
-    pub(crate) fn chat_text(&self) -> RectPx {
-        if self.touch_send {
+    /// The online room already has an emote button beside its chat edit.
+    fn shows_chat_send(&self, dialog: SetupDialog) -> bool {
+        self.touch_send && !dialog.wol()
+    }
+
+    /// The chat edit leaves room for the LAN send button when it is shown.
+    pub(crate) fn chat_text(&self, dialog: SetupDialog) -> RectPx {
+        if self.shows_chat_send(dialog) {
             crate::ui::shell::geom::room_chat_text_rect(self.chat, self.chat_log, self.page.scale)
         } else {
             self.chat
@@ -1509,8 +1513,8 @@ impl MultiplayerSetupLayout {
     }
 
     /// VERA's send key beside the chat edit, when this platform shows it.
-    pub(crate) fn chat_send(&self) -> Option<RectPx> {
-        self.touch_send.then(|| {
+    pub(crate) fn chat_send(&self, dialog: SetupDialog) -> Option<RectPx> {
+        self.shows_chat_send(dialog).then(|| {
             crate::ui::shell::geom::room_chat_send_rect(self.chat, self.chat_log, self.page.scale)
         })
     }
@@ -2401,7 +2405,7 @@ pub(crate) fn sync(
             // VERA's chat edit answers with its own rect: narrowed beside a
             // touch platform's send key, the native place otherwise.
             if dialog == page && id == CHAT {
-                return Some(layout.chat_text());
+                return Some(layout.chat_text(view.dialog));
             }
             Some(rect)
         });
@@ -2823,21 +2827,28 @@ mod tests {
     /// native room keeps the edit and shows no key.
     #[test]
     fn touch_send_narrows_the_room_chat_edit_for_its_key() {
-        let native = MultiplayerSetupLayout::new(
-            dialog(true, SetupFlavor::Lan, false),
-            800,
-            600,
-            false,
-        )
-        .with_touch_send(false);
+        let lan = dialog(true, SetupFlavor::Lan, false);
+        let native = MultiplayerSetupLayout::new(lan, 800, 600, false).with_touch_send(false);
         let touch = native.clone().with_touch_send(true);
-        let native_chat = native.chat_text();
-        let touch_chat = touch.chat_text();
-        let send = touch.chat_send().unwrap();
-        assert!(native.chat_send().is_none());
+        let native_chat = native.chat_text(lan);
+        let touch_chat = touch.chat_text(lan);
+        let send = touch.chat_send(lan).unwrap();
+        assert!(native.chat_send(lan).is_none());
         assert_eq!(native_chat, native.chat);
         assert!(touch_chat.w < native_chat.w, "the edit leaves the key room");
-        assert!(send.x >= touch_chat.x + touch_chat.w, "the key follows the edit");
+        assert!(
+            send.x >= touch_chat.x + touch_chat.w,
+            "the key follows the edit"
+        );
+    }
+
+    #[test]
+    fn online_room_keeps_the_emote_button_beside_its_chat_edit() {
+        let online = dialog(false, SetupFlavor::Wol, true);
+        let layout = MultiplayerSetupLayout::new(online, 800, 600, false).with_touch_send(true);
+        assert!(layout.emote.is_some());
+        assert!(layout.chat_send(online).is_none());
+        assert_eq!(layout.chat_text(online), layout.chat);
     }
 
     /// The room's widgets in a fresh shell controller.
