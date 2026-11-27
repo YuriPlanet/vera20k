@@ -47,6 +47,9 @@ Kommst du nicht weiter? Schau auf der [Hilfeseite](https://vera20k.org/de/help) 
 - Performance
 - Wegfindung
 - UI/UX
+- Zufallskartengenerator
+
+Schon nach ein paar guten PRs kannst du als gleichberechtigtes Mitglied ins Admin-Team kommen.
 
 Mitwirkende können Verantwortung für Bereiche der Engine übernehmen und haben dabei viel
 Spielraum für Änderungen, die VERA20K voranbringen.

@@ -46,6 +46,9 @@ Fastnat? Läs [hjälpsidan](https://vera20k.org/sv/help).
 - Prestanda
 - Vägval för enheter
 - UI/UX
+- Slumpkartgenerator
+
+Redan efter några bra PR:er kan du gå med i administratörsgruppen på samma villkor som de andra.
 
 Medverkande kan ta ansvar för delar av motorn, med stor frihet att göra ändringar som driver
 VERA20K framåt.

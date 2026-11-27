@@ -47,6 +47,9 @@ palabra sobre su rumbo.
 - Rendimiento
 - Búsqueda de rutas
 - UI/UX
+- Generador de mapas aleatorios
+
+Con solo unos pocos PR de calidad, puedes unirte al equipo de administración en igualdad de condiciones.
 
 Los colaboradores pueden hacerse cargo de áreas del motor, con amplia libertad para introducir
 cambios que hagan avanzar VERA20K.

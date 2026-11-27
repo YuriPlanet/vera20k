@@ -46,6 +46,9 @@ Stuck? See the [help page](https://vera20k.org/help).
 - Performance
 - Pathfinding
 - UI/UX
+- Random map generator
+
+After just a few good PRs, you can join the admin team as an equal.
 
 Contributors can take responsibility for engine areas, with broad freedom to make changes that
 move VERA20K forward.
