@@ -341,7 +341,10 @@ impl ShellMessageBox {
             target_os = "linux",
             target_os = "android"
         ))]
-        return matches!(self.purpose, ShellMessageBoxPurpose::ModImport(_));
+        return matches!(
+            self.purpose,
+            ShellMessageBoxPurpose::ModImport(_) | ShellMessageBoxPurpose::ModAddChoice(_)
+        );
         #[cfg(not(any(
             windows,
             target_os = "macos",
@@ -412,6 +415,15 @@ pub(crate) enum ShellMessageBoxPurpose {
         target_os = "android"
     ))]
     ModImport(Box<crate::app::shell_mod_import::Dialog>),
+    /// The Mods page's Add Mod while a mod is selected: a new mod, or parts
+    /// for the selected one, through the same picker (`app::shell_mods`).
+    #[cfg(any(
+        windows,
+        target_os = "macos",
+        target_os = "linux",
+        target_os = "android"
+    ))]
+    ModAddChoice(String),
     /// The Mods page's Check Files (`App::check_picked_mod`).
     ModFiles(ModFilesBox),
     /// The Mods page's New Mod made this folder: Open Folder shows it, Close

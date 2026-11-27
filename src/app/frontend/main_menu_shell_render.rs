@@ -857,7 +857,9 @@ fn build_shell_message_box_overlay(
             target_os = "linux",
             target_os = "android"
         ))]
-        ShellMessageBoxPurpose::ModImport(_) => atlas.ra2_dialog_background,
+        ShellMessageBoxPurpose::ModImport(_) | ShellMessageBoxPurpose::ModAddChoice(_) => {
+            atlas.ra2_dialog_background
+        }
         ShellMessageBoxPurpose::Notice
         | ShellMessageBoxPurpose::ModRestart(_)
         | ShellMessageBoxPurpose::ModFiles(_) => atlas.ra2_dialog_background,

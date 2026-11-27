@@ -1827,6 +1827,30 @@ impl App {
                 *dialog,
                 answer,
             ),
+            #[cfg(any(
+                windows,
+                target_os = "macos",
+                target_os = "linux",
+                target_os = "android"
+            ))]
+            Purpose::ModAddChoice(folder) => match answer {
+                0 => Self::open_add_mod(
+                    &state.platform.window,
+                    &state.renderer,
+                    &mut state.frontend,
+                    &state.process_assets,
+                    &state.persistence.options_profile,
+                ),
+                2 => Self::open_append_import(
+                    &state.platform.window,
+                    &state.renderer,
+                    &mut state.frontend,
+                    &state.process_assets,
+                    &state.persistence.options_profile,
+                    folder,
+                ),
+                _ => {}
+            },
         }
     }
 
