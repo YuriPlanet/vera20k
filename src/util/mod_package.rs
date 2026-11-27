@@ -780,6 +780,16 @@ mod native {
         }
 
         impl PreparedModImport {
+            /// Moves the staged parts into an installed mod's folder: later
+            /// parts overwrite same-name files there, while `mod.ini` and the
+            /// folder's stable id stay the mod's own. Returns the file count.
+            pub fn merge_into(self, target: &Path) -> io::Result<usize> {
+                if !target.is_dir() {
+                    return Err(invalid("that mod's folder is gone"));
+                }
+                merge_tree(self.staged.path(), target)
+            }
+
             pub fn install(self) -> io::Result<String> {
                 let mods_dir = self
                     .staged
@@ -827,6 +837,86 @@ mod native {
                     io::ErrorKind::AlreadyExists,
                     "every mod folder name is taken",
                 ))
+            }
+        }
+
+        /// Moves every file under `from` into `into`, keeping `mod.ini` and
+        /// `.vera20k-mod-id` when `into` already has them. Names match as
+        /// Windows does: `MAPS01.MIX` replaces `maps01.mix` in place rather
+        /// than sitting beside it, since a mod authored on Windows expects one
+        /// file per name.
+        fn merge_tree(from: &Path, into: &Path) -> io::Result<usize> {
+            let mut merged = 0;
+            for entry in fs::read_dir(from)? {
+                let entry = entry?;
+                let name = entry.file_name();
+                let source = entry.path();
+                let destination = match existing_name(into, &name) {
+                    Some(existing) => existing,
+                    None => into.join(&name),
+                };
+                if source.is_dir() {
+                    if destination.exists() && !destination.is_dir() {
+                        fs::remove_file(&destination)?;
+                    }
+                    fs::create_dir_all(&destination)?;
+                    merged += merge_tree(&source, &destination)?;
+                    continue;
+                }
+                if destination.exists() && (name == "mod.ini" || name == ".vera20k-mod-id") {
+                    continue;
+                }
+                if destination.exists() {
+                    fs::remove_file(&destination)?;
+                }
+                fs::rename(&source, &destination)?;
+                merged += 1;
+            }
+            Ok(merged)
+        }
+
+        /// `dir`'s entry whose name equals `name` ignoring ASCII case.
+        fn existing_name(dir: &Path, name: &std::ffi::OsStr) -> Option<PathBuf> {
+            let wanted = name.to_string_lossy();
+            fs::read_dir(dir)
+                .ok()?
+                .flatten()
+                .map(|entry| entry.path())
+                .find(|path| {
+                    path.file_name()
+                        .is_some_and(|found| found.to_string_lossy().eq_ignore_ascii_case(&wanted))
+                })
+        }
+
+        /// Merging keeps a mod's own identity files and matches names as
+        /// Windows does, so `MAPS01.MIX` replaces `maps01.mix` in place.
+        #[cfg(all(test, tests_util))]
+        mod merge_tests {
+            use super::*;
+
+            #[test]
+            fn merge_tree_overwrites_by_name_and_keeps_the_mods_own_files() {
+                let root = std::env::temp_dir().join(format!(
+                    "vera20k-merge-{}-{:?}",
+                    std::process::id(),
+                    std::thread::current().id()
+                ));
+                let staged = root.join("staged");
+                let target = root.join("target");
+                fs::create_dir_all(&staged).unwrap();
+                fs::create_dir_all(&target).unwrap();
+                fs::write(staged.join("MAPS01.MIX"), b"new").unwrap();
+                fs::write(target.join("maps01.mix"), b"old").unwrap();
+                fs::write(target.join("mod.ini"), b"mine").unwrap();
+                fs::write(target.join(".vera20k-mod-id"), b"id").unwrap();
+
+                let merged = merge_tree(&staged, &target).unwrap();
+
+                assert_eq!(merged, 1);
+                assert_eq!(fs::read(target.join("maps01.mix")).unwrap(), b"new");
+                assert_eq!(fs::read(target.join("mod.ini")).unwrap(), b"mine");
+                assert_eq!(fs::read(target.join(".vera20k-mod-id")).unwrap(), b"id");
+                let _ = fs::remove_dir_all(&root);
             }
         }
 
