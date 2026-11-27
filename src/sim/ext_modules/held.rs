@@ -78,6 +78,12 @@ impl ActionHeld {
     }
 
 
+    /// A held animation lives in engine memory across module callbacks. Bound
+    /// the total, including attachments waiting for their owner to reappear.
+    pub(super) fn can_hold_anim(&self) -> bool {
+        self.anims.len() < 65_536
+    }
+
     /// After `AttachAnim` attached `anim` to `object`: kept for `frames`
     /// frames from `frame`, or until `DetachAnim` when `frames` is negative.
     pub(super) fn hold_anim(

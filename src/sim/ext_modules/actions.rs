@@ -1071,6 +1071,9 @@ impl Run<'_, '_, '_, '_> {
             return status(Status::Refused);
         };
         let held = frames != 0;
+        if held && !self.sim.ext_modules.held.can_hold_anim() {
+            return status(Status::Refused);
+        }
         let anim = if held && super::held::held_anim_hidden(target) {
             None
         } else {

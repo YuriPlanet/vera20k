@@ -928,7 +928,7 @@ Ares 动作（未启用 Ares 时为 `Unsupported`）：
 | 1000 | `FireWeapon` | 对象（射手） | `id` 武器，为 −1 时用 `value` 武器槽位（默认 0 主武器）；瞄准 `cell`，否则 `other`，否则当前目标，都没有为 `Gone` | 开火；当前无法开火为 `Refused` | native | v1 |
 | 1001 | `LaunchSuperWeapon` | `House` | `id` 超级武器类型，`cell`（必需，缺少为非法参数） | 发射该所属方的超级武器 | native | v1 |
 | 1002 | `SpawnAnim` | 格子 | `id` 动画 | 创建动画 | native | v1 |
-| 1003 | `AttachAnim` | 对象 | `id` 动画，`value2` 帧数（0 播一遍；正数循环这么多帧；负数直到 `DetachAnim`） | 把动画附着在对象上（同小队脚本动作 51）。保持的动画像 Phobos AttachEffect 的动画一样循环，跟着对象走；对象在运输工具里或完全隐身时拿掉，出来后再挂上；对象离开游戏时一起消失 | native | preview |
+| 1003 | `AttachAnim` | 对象 | `id` 动画，`value2` 帧数（0 播一遍；正数循环这么多帧；负数直到 `DetachAnim`） | 把动画附着在对象上（同小队脚本动作 51）。保持的动画像 Phobos AttachEffect 的动画一样循环，跟着对象走；对象在运输工具里或完全隐身时拿掉，出来后再挂上；对象离开游戏时一起消失。一场对局最多可保持 65,536 个动画，达到上限后新的保持请求返回 `Refused` | native | preview |
 | 1004 | `Remove` | 对象 | — | 移除：不死亡、无幸存者、不计击杀 | none | v1 |
 | 1005 | `Kill` | 对象 | `other` 来源（可选） | 经伤害流程击杀，伤害为当前生命、无视防御（有死亡动画和幸存者，击杀记给来源） | native | v1 |
 | 1006 | `Damage` | 对象 | `id` 弹头，`value` 伤害；`other` 来源（可选） | 经弹头和护甲造成伤害，计击杀和经验 | native | v1 |
