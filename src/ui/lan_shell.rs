@@ -765,13 +765,11 @@ impl LanLobbyLayout {
     pub(crate) fn chat_send(&self) -> Option<RectPx> {
         let chat = self.chat_row()?;
         let log = self.rect(CHAT_LOG)?;
-        Some(
-            crate::app::frontend::skirmish_shell_render::room_chat_send_rect(
-                chat,
-                log,
-                self.page.scale,
-            ),
-        )
+        Some(crate::ui::shell::geom::room_chat_send_rect(
+            chat,
+            log,
+            self.page.scale,
+        ))
     }
 
     /// Android: the chat edit's rect, the room's width and row position.
@@ -779,13 +777,11 @@ impl LanLobbyLayout {
     pub(crate) fn chat_text(&self) -> Option<RectPx> {
         let chat = self.chat_row()?;
         let log = self.rect(CHAT_LOG)?;
-        Some(
-            crate::app::frontend::skirmish_shell_render::room_chat_text_rect(
-                chat,
-                log,
-                self.page.scale,
-            ),
-        )
+        Some(crate::ui::shell::geom::room_chat_text_rect(
+            chat,
+            log,
+            self.page.scale,
+        ))
     }
 }
 

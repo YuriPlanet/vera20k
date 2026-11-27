@@ -35,7 +35,7 @@ mod in_game_shell;
 pub use in_game_shell::InGameShellArt;
 #[path = "sidebar_chrome_layout_art.rs"]
 mod layout_art;
-pub use layout_art::LayoutArt;
+pub use layout_art::{LayoutArt, NamedPictures, PictureSource};
 #[path = "sidebar_chrome_observer.rs"]
 mod observer_art;
 pub use observer_art::ObserverArt;

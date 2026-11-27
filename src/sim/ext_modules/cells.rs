@@ -12,7 +12,7 @@
 //! | `IonStormActive` | `lightning_storm::raging` (LightningStorm::IsActive `0x0053A100`) |
 //! | `Zone.<MovementZone>` | `ZoneGrid::get_zone_id_native` (MapClass::GetZoneID `0x0056D230`, bridge check off): the connected area the pathfinder's zone precheck compares; `Unsupported` before the zones are built |
 //! | `Obstructed` | a building in the cell's ground list (`OccupancyGrid::first_building_on_layer`, Look_up_building_in_cell `0x0047C520`), or an overlay RecalcZoneType (`0x00483C80`) makes Wall or Impassable (`overlay_reduced_zone_type`: walls, rocks, wheel speed 0) |
-//! | `AutomationAllowed` | 0: the room switch "Allow automation" comes with phase 2 (client modules) |
+//! | `AutomationAllowed` | the room switch "Allow automation" (`ExtModules::automation_allowed`, from `PersonalRules::automation_allowed`), 0 by default |
 //!
 //! Residuals:
 //! - `CellTag` reads 0 for a cell without a tag; a tagged cell answers
@@ -28,7 +28,7 @@
 
 use vera20k_wasm_ext::{Area, FindPage, Invalid, NAME_OVERLAY, NAME_TECHNO_TYPE, Query, Status};
 
-use super::{Host, Ref, View, cell_ref, decode_ref, techno_type, type_ref};
+use super::{Reader, Ref, View, cell_ref, decode_ref, techno_type, type_ref};
 use crate::map::resolved_terrain::{overlay_reduced_zone_type, zone_class};
 use crate::rules::locomotor_type::{MovementZone, SpeedType};
 use crate::rules::object_type::ObjectCategory;
@@ -69,7 +69,7 @@ fn passable_speed_type(name: &str) -> Option<SpeedType> {
     })
 }
 
-impl Host<'_, '_> {
+impl Reader<'_> {
     /// A cell's property (appendix 7.6), viewpoint properties for `view`.
     /// A cell outside the map is `NotFound`.
     pub(super) fn cell_property(&self, x: u16, y: u16, name: &str, view: View) -> (i64, Status) {
@@ -206,9 +206,8 @@ impl Host<'_, '_> {
             "IonStormActive" => {
                 i64::from(crate::sim::superweapon::lightning_storm::raging(self.sim))
             }
-            // The room switch "Allow automation" (RFC 0001 6i) arrives with
-            // client modules; until then no room allows automation.
-            "AutomationAllowed" => 0,
+            // The room switch "Allow automation" (RFC 0001 6i, 10).
+            "AutomationAllowed" => i64::from(self.sim.ext_modules.automation_allowed),
             _ => return (0, Status::Unsupported),
         };
         (value, Status::Ok)
@@ -279,7 +278,10 @@ impl Host<'_, '_> {
                 let (Ok(rx), Ok(ry)) = (u16::try_from(x), u16::try_from(y)) else {
                     continue;
                 };
-                if terrain.cell(rx, ry).is_none() {
+                // Off the map, or (for a client) a cell it cannot see.
+                if terrain.cell(rx, ry).is_none()
+                    || self.gate.is_some_and(|gate| !gate.lists(cell_ref(rx, ry)))
+                {
                     if !page.skip(key) {
                         break 'rows;
                     }

@@ -857,6 +857,29 @@ impl Simulation {
         self.encode_int_event(command_owner, crate::sim::command::ALLY_OPCODE, house_index)
     }
 
+    /// VERA extension: a Wasm client module's message (RFC 0001 section
+    /// 10) from `command_owner`'s sender, for the simulation module of
+    /// `source` (0 mod, 1 map). `None` for a house this process does not
+    /// send for, an unknown source or a message over
+    /// [`crate::sim::command::MODULE_MESSAGE_BYTES`].
+    pub fn encode_module_message_record(
+        &self,
+        command_owner: InternedId,
+        source: u8,
+        data: &[u8],
+    ) -> Option<CommandRecord> {
+        if !self.houses.contains_key(&command_owner) {
+            return None;
+        }
+        crate::sim::command::ModuleMessageRecord {
+            house_id: self.command_sender(command_owner)?,
+            frame: self.session.binary_frame() as i32,
+            source,
+            data: data.to_vec(),
+        }
+        .encode()
+    }
+
     /// `EventClass(house, type, value)` (`0x004C6720`): a header event
     /// whose payload is one unmodified signed dword.
     fn encode_int_event(
@@ -1233,6 +1256,16 @@ impl Simulation {
 
         if record.opcode() == crate::sim::command::DESTRUCT_OPCODE {
             return envelope(Command::Destruct);
+        }
+
+        // VERA 0x34: a Wasm client module's message; its sender is the
+        // header's (RFC 0001 section 10).
+        if record.opcode() == crate::sim::command::VERA_MODULE_MESSAGE_OPCODE {
+            let typed = crate::sim::command::ModuleMessageRecord::decode(record)?;
+            return envelope(Command::ModuleMessage {
+                source: typed.source,
+                data: typed.data,
+            });
         }
 
         // Native opcode 0x0D (EventClass::Execute type-13 @ 0x004C794B): the

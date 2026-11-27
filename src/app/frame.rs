@@ -1317,6 +1317,10 @@ impl App {
             // presented before Won was cleared or later House flags changed.
             return Ok(FrameRenderOutcome::Unavailable);
         }
+        // Client extension modules (`ui.wasm`): their events and render call
+        // follow the frame's service, so the picture judged below shows what
+        // they changed and their console lines join this frame's messages.
+        crate::app::ui_modules::render_frame(state);
         // Native polls timed pause before Logic, then Manage55DDA5 afterwards.
         // Retain that admission: Action110 can enter a new hold during Logic.
         // Exact-step diagnostics already advanced their admitted frame above.

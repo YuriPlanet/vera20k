@@ -59,8 +59,9 @@ tick. `python -m tools.run_test_map battle` plays the same battle in small
 
 ## What is timed
 
-Both programs are built with the `shipping` profile, as released games are
-(`cargo build --profile shipping`; the game with `--no-default-features`).
+The benchmark builds both programs with the `shipping` profile and the game with
+`--no-default-features`. The release workflow also applies a gameplay profile
+collected on each installer’s target to its final game binary.
 
 - **The simulation tick.** `sim-bench --scenario battle` plays 3,000 frames at
   the client's 22 ms step and times each `SimRuntime` frame. The first 300

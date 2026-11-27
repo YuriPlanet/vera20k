@@ -62,13 +62,21 @@ the processed rules' NPatch key reads; its saves convert with no web and the
 switch off, as those matches played. The `30e9a0f38` writer's layout
 `0xF215BF3A` predates the Wasm extension modules, Phobos ArtImageSwap and the
 NPatch reads; its saves convert with no module, no swapped image and the
-switch off. Four later writers each stored part of these: the `a33fcac81`
-writer's layout `0xE18EA373` holds the modules, main's writer from #5205,
-layout `0x8C73B1B3`, the swap, the `2e39b88dd` writer's layout `0xB65C0664`
-both, and the `2e67ebaa8` writer's layout `0xE5279FB2` only the NPatch reads.
-Each converts with its missing parts empty; without the reads, the switch
-stays off, as those matches played. No frozen save holds `0x8C73B1B3`. The
-`fb29ff473` writer covers direct loading of the current layout `0xBA51A42C`.
+switch off. Later writers each stored part of the current layout: the
+`a33fcac81` writer's layout `0xE18EA373` holds the modules, main's writer from
+#5205, layout `0x8C73B1B3`, the swap, the `2e39b88dd` writer's layout
+`0xB65C0664` the modules and the swap, the `2e67ebaa8` writer's layout
+`0xE5279FB2` only the NPatch reads, the `fb29ff473` writer's layout
+`0xBA51A42C` all three without the modules' control points, and the
+`d17e45e42` writer's layout `0x919AB3CD` the modules with their control points.
+Each converts with its missing parts empty: no projectile path, push or
+immunity modifier, no swapped image, and without the reads the switch stays
+off, as those matches played. No frozen save holds `0x8C73B1B3`. The
+`b268ba798` writer's layout `0xC66CE753` holds everything but the client
+modules' state of the current layout `0x9909B4E7` (RFC 0001 section 10: the
+messages waiting for `on_message` and the room's `AutomationAllowed`); its
+saves convert with no message waiting and automation not allowed. The
+`0b918d053` writer covers direct loading of the current layout.
 
 Run the menu and compatibility tests with this command.
 

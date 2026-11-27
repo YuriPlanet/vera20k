@@ -1,0 +1,13 @@
+# RFC 0001 section 10's round trip: a client module's button sends a
+# message, the simulation module checks it, creates a tank and sets a house
+# variable, and the client module reads the variable to hide the button.
+# `cargo build --release` builds both modules for wasm32 (.cargo/config.toml).
+[workspace]
+members = ["rules", "ui"]
+resolver = "3"
+
+[profile.release]
+opt-level = "s"
+lto = true
+panic = "abort"
+strip = true

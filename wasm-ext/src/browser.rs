@@ -16,14 +16,14 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use js_sys::{BigInt, Function, Object, Reflect, Uint8Array, WebAssembly};
+use js_sys::{Array, BigInt, Function, Object, Reflect, Uint8Array, WebAssembly};
 use wasm_bindgen::closure::Closure;
 use wasm_bindgen::{JsCast, JsValue};
 
-use crate::SIM_IMPORT_MODULE;
+use crate::client_host::{self, for_each_client_import};
 use crate::host::{self, Ctx, Guest, for_each_import};
 use crate::instrument::METER;
-use crate::module::{Runtime, TrapKind};
+use crate::module::{Arg, Runtime, TrapKind, World};
 
 /// What the module and its imports share.
 struct Inner {
@@ -126,25 +126,38 @@ impl Guest for Cx<'_> {
     }
 }
 
-/// The `vera:sim@1.0` import object, each import a closure over `inner`.
-fn imports(inner: &Rc<RefCell<Inner>>) -> Result<Object, JsValue> {
-    let sim = Object::new();
+/// `world`'s import object (`vera:sim@1.0` or `vera:client@1.0`), each
+/// import a closure over `inner`.
+fn imports(inner: &Rc<RefCell<Inner>>, world: World) -> Result<Object, JsValue> {
+    let functions = Object::new();
+    // The simulation list names [`host`] functions, the client list its
+    // module.
     macro_rules! wrap {
         ($name:literal, $f:ident($($a:ident: $t:ty),*) -> $r:ty) => {
+            wrap!(host, $name, $f($($a: $t),*) -> $r);
+        };
+        ($m:ident, $name:literal, $f:ident($($a:ident: $t:ty),*) -> $r:ty) => {
             let shared = Rc::clone(inner);
             let closure = Closure::<dyn FnMut($($t),*) -> Result<$r, JsValue>>::new(
                 move |$($a: $t),*| -> Result<$r, JsValue> {
                     let mut inner = shared.borrow_mut();
-                    host::$f(&mut Cx(&mut inner), $($a),*)
+                    $m::$f(&mut Cx(&mut inner), $($a),*)
                         .map_err(|host::Stop| JsValue::from_str("stopped by a host call"))
                 },
             );
-            Reflect::set(&sim, &$name.into(), &closure.into_js_value())?;
+            Reflect::set(&functions, &$name.into(), &closure.into_js_value())?;
         };
     }
-    for_each_import!(wrap);
+    match world {
+        World::Sim => {
+            for_each_import!(wrap);
+        }
+        World::Client => {
+            for_each_client_import!(wrap);
+        }
+    }
     let imports = Object::new();
-    Reflect::set(&imports, &SIM_IMPORT_MODULE.into(), &sim)?;
+    Reflect::set(&imports, &world.import_module().into(), &functions)?;
     Ok(imports)
 }
 
@@ -206,7 +219,7 @@ impl Browser {
 }
 
 impl Runtime for Browser {
-    fn instantiate(bytes: &[u8], ctx: Ctx) -> Result<Self, String> {
+    fn instantiate(bytes: &[u8], ctx: Ctx, world: World) -> Result<Self, String> {
         let module = WebAssembly::Module::new(&Uint8Array::from(bytes).into())
             .map_err(|e| describe(&e))?;
         let inner = Rc::new(RefCell::new(Inner {
@@ -214,7 +227,7 @@ impl Runtime for Browser {
             memory: None,
             meter: None,
         }));
-        let imports = imports(&inner).map_err(|e| describe(&e))?;
+        let imports = imports(&inner, world).map_err(|e| describe(&e))?;
         // The load checks rejected `start` sections, so no module code runs.
         let instance =
             WebAssembly::Instance::new(&module, &imports).map_err(|e| describe(&e))?;
@@ -232,17 +245,24 @@ impl Runtime for Browser {
         f(&mut self.inner.borrow_mut().ctx)
     }
 
-    fn call(&mut self, name: &str, args: &[i32]) -> Result<(), TrapKind> {
+    fn call(&mut self, name: &str, args: &[Arg]) -> Result<(), TrapKind> {
         let function: Function = self
             .export(name)
             .and_then(|f| f.dyn_into().ok())
             .ok_or(TrapKind::Other)?;
-        let result = match *args {
-            [] => function.call0(&JsValue::NULL),
-            [a, b] => function.call2(&JsValue::NULL, &a.into(), &b.into()),
-            _ => return Err(TrapKind::Other),
-        };
-        result.map(|_| ()).map_err(|e| trap_kind(&e))
+        // `i64` parameters take BigInts, `i32` and `f32` Numbers.
+        let values: Array = args
+            .iter()
+            .map(|arg| match *arg {
+                Arg::I32(v) => JsValue::from(v),
+                Arg::I64(v) => BigInt::from(v).into(),
+                Arg::F32(v) => JsValue::from(f64::from(v)),
+            })
+            .collect();
+        function
+            .apply(&JsValue::NULL, &values)
+            .map(|_| ())
+            .map_err(|e| trap_kind(&e))
     }
 
     fn memory_len(&self) -> usize {

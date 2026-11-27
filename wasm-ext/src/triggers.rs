@@ -58,6 +58,16 @@ pub const EVENT_INI_KEY: i32 = 1042;
 /// `OrderRefused` (RFC 0001 6i): an order refused in the command step.
 pub const EVENT_ORDER_REFUSED: i32 = 1043;
 
+/// Delivered events RFC 0001 0.0.22 added to appendix 4.3, numbered on from
+/// 1044 with the decision-only events of the same version
+/// ([`crate::decide`]).
+pub const EVENT_MISSION_CHANGED: i32 = 1048;
+pub const EVENT_DEPLOYED: i32 = 1051;
+pub const EVENT_PROMOTED: i32 = 1052;
+pub const EVENT_EXPERIENCE_GAINED: i32 = 1053;
+pub const EVENT_CLOAKED: i32 = 1054;
+pub const EVENT_DECLOAKED: i32 = 1055;
+
 /// The stock event kinds (appendix 4.1).
 pub const STOCK_EVENTS: std::ops::RangeInclusive<i32> = 0..=61;
 

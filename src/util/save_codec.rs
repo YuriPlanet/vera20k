@@ -697,9 +697,9 @@ impl<'de> de::SeqAccess<'de> for HistoricalFields<'_, 'de, '_> {
             && lacks(previous.layout.absent_fields, self.name, field)
         {
             // The widest absent field is the Wasm modules' saved state
-            // (`SavedExtModules`, 89 bytes of empty lengths and a None tag).
+            // (`SavedExtModules`, 130 bytes of empty lengths, a None tag and a false).
             // Each field is decoded independently.
-            const ZEROS: [u8; 128] = [0; 128];
+            const ZEROS: [u8; 256] = [0; 256];
             let mut zeros = Deserializer {
                 input: &ZEROS,
                 previous: None,

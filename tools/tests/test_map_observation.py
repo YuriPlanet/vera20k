@@ -776,6 +776,21 @@ class MapObservationTests(unittest.TestCase):
             bar['thumb'][phase]['dispatch'] = None
         self.assertEqual(observation._command_bar_gesture(bar, 'Thumb', 'thumb', (8, 8)), 5)
 
+    def test_gui_thumb_dispatch_records_whether_the_control_fired(self):
+        self.thumb_profile()
+        bar = self.gesture_receipts[0]['command_bar']
+        press = bar['thumb']['press']
+        release = bar['thumb']['release']
+        press['dispatch'] = {'fired': False, 'right': False}
+        release['dispatch'] = {'fired': True, 'right': False}
+        report = self.run_capture()
+        self.assertEqual(report['status'], 'VALID', report['errors'])
+        for invalid in ({'fired': 1, 'right': False}, {'fired': False, 'right': True},
+                        {'fired': True}, {'fired': True, 'right': False, 'key_after': 0}):
+            with self.subTest(dispatch=invalid), self.assertRaises(ValidationError):
+                release['dispatch'] = invalid
+                observation._command_bar_gesture(bar, 'Thumb', 'thumb', (8, 8))
+
     def test_locked_thumb_refusal_retains_physical_edges_without_stale_dispatch(self):
         self.thumb_profile(locked=True)
         report = self.run_capture()

@@ -335,7 +335,8 @@ impl Simulation {
             | Command::SetGameSpeed { .. }
             | Command::OpenOptions
             | Command::SetLatencyFudge { .. }
-            | Command::Cheer => CommandSubject::Primary(PrimaryHouse),
+            | Command::Cheer
+            | Command::ModuleMessage { .. } => CommandSubject::Primary(PrimaryHouse),
             Command::SellBuilding { entity_id }
             | Command::ToggleRepair { entity_id }
             | Command::SetBuildingOnLine { entity_id, .. }

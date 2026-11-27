@@ -57,9 +57,65 @@ pub(crate) fn post_trigger_message(
     persistence: &PersistenceState,
     csf_key: &str,
 ) {
-    let Some(runtime) = match_state.sim_runtime.runtime() else {
+    let Some((rgb, timeout)) = trigger_message_style(match_state) else {
         return;
     };
+    post_localized_message(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        sfx_player,
+        persistence,
+        &crate::ui::messages::MessagePost {
+            prefix: None,
+            text: csf_key,
+            rgb,
+            timeout_ms: timeout,
+            silent: false,
+        },
+    );
+}
+
+/// A client module's `ShowMessage` (RFC 0001 appendix 5.4): the CSF entry
+/// `text` names, or else `text` itself (the rule of the node `Label`,
+/// appendix 7.10), as a trigger message row; `rgb` replaces the trigger
+/// message's colour.
+pub(crate) fn post_module_message(state: &mut crate::app::AppState, text: &str, rgb: Option<[f32; 3]>) {
+    let Some((side_rgb, timeout)) = trigger_message_style(&state.match_state) else {
+        return;
+    };
+    let resolved = state
+        .process_assets
+        .csf
+        .as_ref()
+        .and_then(|csf| csf.get(text))
+        .unwrap_or(text)
+        .to_owned();
+    post_resolved_message(
+        &state.platform,
+        &state.renderer,
+        &state.diag,
+        &state.frontend,
+        &mut state.match_state,
+        &state.process_assets,
+        &mut state.audio.sfx_player,
+        &state.persistence,
+        &crate::ui::messages::MessagePost {
+            prefix: None,
+            text: &resolved,
+            rgb: rgb.unwrap_or(side_rgb),
+            timeout_ms: timeout,
+            silent: false,
+        },
+    );
+}
+
+/// TAction11's row style: the scenario side's colour and MessageDelay.
+fn trigger_message_style(match_state: &MatchState) -> Option<([f32; 3], Option<u64>)> {
+    let runtime = match_state.sim_runtime.runtime()?;
     // The selected campaign opening keeps its startup player/country. The
     // existing House owner supplies that side; a later scenario-side change
     // independent of the current House remains a separate retained-field gap.
@@ -86,23 +142,7 @@ pub(crate) fn post_trigger_message(
         trigger_message_rgb(&rules.color_schemes, side, rules.skirmish_colors())
     };
     let timeout = message_delay_timeout_ms(rules.general.message_delay_minutes);
-    post_localized_message(
-        platform,
-        renderer,
-        diag,
-        frontend,
-        match_state,
-        process_assets,
-        sfx_player,
-        persistence,
-        &crate::ui::messages::MessagePost {
-            prefix: None,
-            text: csf_key,
-            rgb,
-            timeout_ms: timeout,
-            silent: false,
-        },
-    );
+    Some((rgb, timeout))
 }
 
 fn message_delay_buckets(delay: crate::util::native_x87::NativeF64Bits) -> i32 {

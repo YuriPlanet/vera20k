@@ -2,7 +2,6 @@
 use crate::app::audio_runtime::AppAudioRuntime;
 use crate::app::frontend::state::FrontendState;
 use crate::app::input::hotkeys::{self, BindingAssignmentError, catalog::registered_commands};
-use crate::app::input::state::MatchInputState;
 #[cfg(any(
     all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"),
     target_os = "android"
@@ -86,6 +85,17 @@ pub(crate) fn in_game_key_edge(
     }
     let is_escape = matches!(edge.logical, Key::Named(NamedKey::Escape));
     let locked = crate::app::input::campaign_input::is_locked(&state.match_state);
+    // Esc dismisses a client module's node before the game's own Escape
+    // (RFC 0001 section 10, `Dismiss`).
+    if is_escape
+        && edge.state.is_pressed()
+        && !edge.repeat
+        && !locked
+        && !paused_at_event
+        && crate::app::ui_modules::key_escape(state)
+    {
+        return;
+    }
     let binding_key = hotkeys::binding_logical_key(edge.logical, edge.unmodified, edge.location);
     let mut resolution = state.match_state.input.hotkey_bindings.resolve_event(
         binding_key,
@@ -163,6 +173,17 @@ pub(crate) fn in_game_key_edge(
         if edge.state.is_pressed() && !edge.repeat && !consumed {
             crate::app::input::dispatch::handle_hotkey_pressed(state, resolution, edge.physical);
         }
+    }
+    // A key no game hotkey holds goes to the client modules' hotkeys: game
+    // hotkeys win (RFC 0001 section 10).
+    if edge.state.is_pressed()
+        && !edge.repeat
+        && !locked
+        && !paused_at_event
+        && resolution == hotkeys::HotkeyResolution::Unhandled
+    {
+        let modifiers = state.match_state.input.hotkey_modifiers;
+        crate::app::ui_modules::key_unused(state, binding_key, edge.location, modifiers);
     }
     // Paused capture changes no held-key state, even on the closing Escape.
     if paused_at_event {
@@ -429,7 +450,7 @@ pub(crate) fn refresh_title(frontend: &mut FrontendState, process_assets: &Proce
 }
 fn reload(
     platform: &PlatformState,
-    input: &mut MatchInputState,
+    match_state: &mut MatchState,
     process_assets: &ProcessAssets,
     reset: bool,
 ) {
@@ -439,11 +460,12 @@ fn reload(
     let archive = process_assets
         .manager()
         .and_then(|a| a.get_archive_ref("KEYBOARDMD.INI"));
-    input.hotkey_bindings = if reset {
+    match_state.input.hotkey_bindings = if reset {
         crate::app::persistence::keyboard::reset(config.paths.settings_dir(), archive)
     } else {
         crate::app::persistence::keyboard::reload(config.paths.settings_dir(), archive)
     };
+    crate::app::ui_modules::rebind_game_keys(match_state);
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum KeyboardExit {
@@ -540,7 +562,7 @@ pub(crate) fn commit_close(
         }
     } else if exit.binding_action() == BindingExit::Reload {
         // IDCANCEL5FB6D4 reloads CURRENT disk, including a preceding Reset All.
-        reload(platform, &mut match_state.input, process_assets, false);
+        reload(platform, match_state, process_assets, false);
     }
     if !exit.recreate_parent(dialog.parent) {
         return;
@@ -576,7 +598,7 @@ fn activate(state: &mut AppState, id: KeyboardButton) {
         KeyboardButton::ResetAll => {
             reload(
                 &state.platform,
-                &mut state.match_state.input,
+                &mut state.match_state,
                 &state.process_assets,
                 true,
             );
@@ -606,6 +628,8 @@ fn activate(state: &mut AppState, id: KeyboardButton) {
             // Parent466→465 refreshes current shortcut and clears the capture.
             dialog.captured = 0;
             dialog.current_owner_visible = false;
+            // Module hotkeys yield to the new binding (RFC 0001 section 10).
+            crate::app::ui_modules::rebind_game_keys(&mut state.match_state);
         }
     }
 }

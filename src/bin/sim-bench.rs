@@ -98,7 +98,9 @@
 //!
 //! `--presentation-frame` brings the copy of the world without its objects
 //! up to date after every frame, as the client's simulation host does for
-//! drawing (docs/sim-thread.md), and counts it in the frame's time.
+//! drawing (docs/sim-thread.md), and counts it in the frame's time. The
+//! `presentation_copy_mean_ms` line reports the copy's own mean over the
+//! measured window, so two builds' copies compare in one run.
 //!
 //! Idle objects sleep as in a real match (`sim::world::idle_sleep`), and
 //! steady objects' AI visits are counted (`sim::world::steady_ai`):
@@ -223,6 +225,7 @@ struct Args {
     presentation_frame: bool,
     threads: Option<usize>,
     battle_units: usize,
+    skirmish_replay: Option<PathBuf>,
     isolation_report: Option<PathBuf>,
     prior_maps: Vec<String>,
     isolation_mode: Option<ScenarioGameMode>,
@@ -275,6 +278,7 @@ fn parse_args_from(mut argv: impl Iterator<Item = String>) -> Result<Args, Strin
         presentation_frame: false,
         threads: None,
         battle_units: BATTLE_UNITS,
+        skirmish_replay: None,
         isolation_report: None,
         prior_maps: Vec::new(),
         isolation_mode: None,
@@ -332,6 +336,7 @@ fn parse_args_from(mut argv: impl Iterator<Item = String>) -> Result<Args, Strin
             "--frame-profile" => args.frame_profile = true,
             "--lan" => args.lan = true,
             "--watchers" => args.watchers = number(value()?)? as usize,
+            "--record-skirmish-replay" => args.skirmish_replay = Some(PathBuf::from(value()?)),
             "--frame-hashes" => args.frame_hashes = Some(PathBuf::from(value()?)),
             "--client-timing" => args.client_timing = true,
             "--serial-scans" => args.serial_scans = true,
@@ -393,6 +398,16 @@ fn parse_args_from(mut argv: impl Iterator<Item = String>) -> Result<Args, Strin
             || args.isolation_humans != 1)
     {
         return Err("state-isolation options need --state-isolation-report".into());
+    }
+    if args.skirmish_replay.is_some()
+        && (args.scenario != ScenarioKind::Skirmish
+            || args.isolation_report.is_some()
+            || args.lan
+            || args.ticks.is_none())
+    {
+        return Err(
+            "--record-skirmish-replay needs --scenario skirmish and --ticks, offline".into(),
+        );
     }
     Ok(args)
 }
@@ -748,6 +763,8 @@ struct Bench<'a> {
     /// `--presentation-frame`: whether each frame keeps a copy of the world.
     keep_frame: bool,
     frame: Option<SimRuntime>,
+    /// Time spent inside `--presentation-frame`'s copy, one per frame.
+    copy_times: Vec<Duration>,
     paths: PathTotals,
     /// `--watchers`: the match's defeats and decision, reported as they happen.
     watch: Option<Watch>,
@@ -884,9 +901,11 @@ impl Frames for Bench<'_> {
             // world without its objects, with the local player's fog, replaces
             // the previous tick's copy, inside the frame's time. The objects'
             // draw records are the client's and are not counted here.
+            let started = Instant::now();
             let viewer = self.runtime.simulation.session().current_house();
             let reuse = self.frame.take().map(|frame| frame.simulation);
             self.frame = Some(self.runtime.presentation_copy(viewer, reuse));
+            self.copy_times.push(started.elapsed());
         }
         Ok(checksum)
     }
@@ -1094,17 +1113,22 @@ fn main() -> Result<(), String> {
                  [--hash-every N] [--frame-hash-every 15] [--csv <path>] [--serial-paths] [--serial-scans] \
                  [--shared-stream] [--frame-profile] [--lan] [--watchers N (skirmish)] [--frame-hashes <path>] \
                  [--client-timing] [--threads N] [--battle-units 20000 (battle)] \
+                 [--record-skirmish-replay <new.json> (skirmish, --ticks)] \
                  [--state-isolation-report <new.json> --prior-map <map> \
                  --isolation-mode lan|wol --isolation-humans 1|2]"
             );
             std::process::exit(2);
         }
     };
+    match args.threads {
+        Some(threads) => use_worker_threads(threads)?,
+        #[cfg(not(target_arch = "wasm32"))]
+        None => vera20k_core::sim::parallel::start_worker_pool(),
+        #[cfg(target_arch = "wasm32")]
+        None => {}
+    }
     if args.isolation_report.is_some() {
         return sim_bench_isolation::run(&args);
-    }
-    if let Some(threads) = args.threads {
-        use_worker_threads(threads)?;
     }
     let computers = match args.scenario {
         ScenarioKind::March => 0,
@@ -1112,6 +1136,29 @@ fn main() -> Result<(), String> {
             seated_computers(&args)?
         }
     };
+    if let Some(output) = &args.skirmish_replay {
+        // The verifier reconstructs the ordinary frame-zero world. Record before
+        // the benchmark changes the local House or any simulation settings.
+        let launch = battle_session(&args.map, &sim_bench_match::COMPUTER_ROSTER[..computers]);
+        let mut scene =
+            headless_scenario::load_session(&args.ra2_dir, &args.map, args.seed, launch.clone())?;
+        let frames = args
+            .ticks
+            .and_then(|n| u32::try_from(n.get()).ok())
+            .ok_or("replay frame count is out of range")?;
+        let replay = vera20k_core::sim::replay::ReplayRunner::record_authored_match(
+            &mut scene,
+            vera20k_core::sim::replay::ReplayLaunchInput::Slots(&launch),
+            frames,
+        )
+        .map_err(|error| error.to_string())?;
+        let mut bytes = Vec::new();
+        replay
+            .write_json(&mut bytes)
+            .map_err(|error| error.to_string())?;
+        return vera20k_core::util::file_system::write_new(output, &bytes)
+            .map_err(|error| format!("write replay {}: {error}", output.display()));
+    }
     let load_started = Instant::now();
     let mut scenario = match args.scenario {
         ScenarioKind::March => headless_scenario::load(&args.ra2_dir, &args.map, args.seed)?,
@@ -1246,13 +1293,14 @@ fn main() -> Result<(), String> {
     #[cfg(feature = "telemetry")]
     runtime.simulation.set_frame_profiling(args.frame_profile);
     // A failed frame still reports the frames before it, then fails the run.
-    let (measured, frames, paths) = {
+    let (measured, frames, paths, copy) = {
         let mut bench = Bench {
             runtime: &mut *runtime,
             plan: &mut plan,
             tick_ms,
             keep_frame: args.presentation_frame,
             frame: None,
+            copy_times: Vec::new(),
             paths: PathTotals::default(),
             watch: (args.watchers > 0).then(Watch::default),
         };
@@ -1263,7 +1311,7 @@ fn main() -> Result<(), String> {
             args.hash_every,
             args.frame_hashes.is_some(),
         );
-        (measured, frames, bench.paths)
+        (measured, frames, bench.paths, bench.copy_times)
     };
     let live_at_end = runtime.simulation.entities().len();
     let csv_written = args.csv.as_ref().map_or(Ok(()), |path| {
@@ -1274,6 +1322,15 @@ fn main() -> Result<(), String> {
             .map_err(|error| format!("{}: {error}", path.display()))
     });
     report(&mut std::io::stdout().lock(), &measured, warmup).map_err(|error| error.to_string())?;
+    let steady_copy: Vec<Duration> = copy.iter().skip(warmup as usize).copied().collect();
+    if !steady_copy.is_empty() {
+        let total: Duration = steady_copy.iter().sum();
+        println!(
+            "presentation_copy_mean_ms={:.3} frames={}",
+            total.as_secs_f64() * 1000.0 / steady_copy.len() as f64,
+            steady_copy.len()
+        );
+    }
     if paths.passes > 0 {
         println!(
             "path_batch passes={} waiting={} answered={} left_out={} left_out_passes={} \
@@ -1322,11 +1379,11 @@ fn main() -> Result<(), String> {
     Ok(())
 }
 
-/// Give the worker pool `threads` threads. It must run before anything uses
-/// the pool.
+/// Give the game's worker pool `threads` threads. It must run before anything
+/// uses the pool.
 #[cfg(not(target_arch = "wasm32"))]
 fn use_worker_threads(threads: usize) -> Result<(), String> {
-    rayon::ThreadPoolBuilder::new()
+    vera20k_core::sim::parallel::worker_pool()
         .num_threads(threads)
         .build_global()
         .map_err(|error| format!("--threads: {error}"))

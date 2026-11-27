@@ -85,12 +85,10 @@ pub(crate) use hotkey_dispatch::{
 };
 pub(crate) use selection::{
     CommittedSelection, KeyModifiers, is_alt_held, is_ctrl_held, is_shift_held,
-    reconcile_selection_order_after_sim, selected_in_order, selected_stable_ids_in_order,
-    selection_order_for_world,
+    queue_selection_snapshot_command, reconcile_selection_order_after_sim, selected_in_order,
+    selected_stable_ids_in_order, selection_order_for_world,
 };
-use selection::{
-    apply_selection_action_line_policy, apply_selection_mutation, queue_selection_snapshot_command,
-};
+use selection::{apply_selection_action_line_policy, apply_selection_mutation};
 #[cfg(all(test, tests_app_input_d_z))]
 use selection::{
     apply_selection_action_line_policy_at_frame, insert_selected_id_by_role, logic_selects,
@@ -281,6 +279,12 @@ fn handle_mouse_input_inner(state: &mut AppState, button: MouseButton, btn_state
     // ScrollHandleMouse6930A0 refuses ordinary pointer messages while the
     // Scenario input lock is active; capture cancellation already ran in46.
     if crate::app::input::campaign_input::is_locked(&state.match_state) {
+        return;
+    }
+    // Client module nodes lie over the match: a press on a clickable one, a
+    // press that dismisses one, or a map click a module captures never
+    // reaches the chrome or the battlefield (RFC 0001 section 10).
+    if crate::app::ui_modules::pointer_button(state, button, pressed) {
         return;
     }
     // The stock tactical handler has no middle-button case. VERA's optional
@@ -1734,6 +1738,8 @@ pub(crate) fn handle_cursor_moved_in_game(state: &mut AppState) {
         }
         return;
     }
+    // Client module nodes follow the pointer (`Hover`) before the game does.
+    crate::app::ui_modules::pointer_moved(state);
     // Minimap: gamemd re-centers only on press edges and ignores held motion
     // (decompile 0x006539D0: `param_1 & 0x22` early-out). While a minimap press
     // is held we do NOT follow the cursor — but still swallow the move so it

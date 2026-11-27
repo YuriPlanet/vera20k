@@ -178,15 +178,16 @@ impl Simulation {
         self.destroy_spotlight_for_parent(id, UninitContext::new(rules).with_effects(effects));
         self.construct_spotlight(id, rules);
         let frame = self.session.binary_frame();
+        // Conversion writes both native FacingClass rates, even on Infantry;
+        // the constructor's special Infantry ROT127 does not run here. The
+        // body's goes through a module `ROTMultiplier`.
+        self.set_body_rot(id, destination.turret_rot);
         let Some(actor) = self.substrate.entities.get_mut(id) else {
             return false;
         };
         if let Some(ammo) = actor.ammo_mut() {
             ammo.change_type_capacity(destination.ammo);
         }
-        // Conversion writes both native FacingClass rates, even on Infantry;
-        // the constructor's special Infantry ROT127 does not run here.
-        actor.body_facing.set_rot(destination.turret_rot);
         // 10043839 writes +0x3B4 unconditionally, but only a turreted Unit or
         // an Aircraft reads its Secondary. Keep construction's rule so a
         // turretless destination aims its body, not a phantom turret.

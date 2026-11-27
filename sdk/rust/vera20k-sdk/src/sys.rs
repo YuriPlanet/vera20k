@@ -1,6 +1,9 @@
-//! The raw `vera:sim@1.0` imports and fixed layouts (RFC 0001 appendix,
-//! "Fixed layouts" and 1.1). Every import returns its status and writes a
-//! value through a trailing out pointer; `frame` alone returns its value.
+//! The raw `vera:sim@1.0` and `vera:client@1.0` imports and fixed layouts
+//! (RFC 0001 appendix, "Fixed layouts", 1.1 and 2.1). Every import returns
+//! its status and writes a value through a trailing out pointer; `frame` and
+//! `client_frame` alone return their value. A simulation module calls only
+//! the first block, a client module only the second: the engine refuses a
+//! module importing the other world's functions.
 //!
 //! A module imports only what it calls: the linker drops unused imports, so
 //! declaring all of them here costs nothing.
@@ -76,6 +79,85 @@ unsafe extern "C" {
         key: i32,
         out: *mut i32,
     ) -> i32;
+}
+
+#[link(wasm_import_module = "vera:client@1.0")]
+unsafe extern "C" {
+    pub fn client_frame() -> i32;
+    pub fn client_random(lo: i32, hi: i32, out: *mut i32) -> i32;
+    pub fn client_log(ptr: *const u8, len: i32);
+    pub fn client_has_kind(table: i32, id: i32) -> i32;
+    pub fn client_lookup(kind: i32, ptr: *const u8, len: i32, out: *mut i32) -> i32;
+    pub fn client_name_of(kind: i32, id: i32, out: *mut u8, cap: i32, len_out: *mut i32) -> i32;
+    pub fn client_get(reference: i64, prop: i32, out: *mut i64) -> i32;
+    pub fn client_get_many(
+        refs: *const i64,
+        n: i32,
+        props: *const i32,
+        m: i32,
+        out: *mut i64,
+        count_out: *mut i32,
+    ) -> i32;
+    pub fn client_find(
+        query: *const u8,
+        len: i32,
+        out: *mut i64,
+        cap: i32,
+        res: *mut FindResult,
+    ) -> i32;
+    pub fn client_var_get(scope: i64, var: i32, out: *mut i64) -> i32;
+    pub fn client_set(reference: i64, prop: i32, value: i64) -> i32;
+    pub fn client_set_bytes(reference: i64, prop: i32, ptr: *const u8, len: i32) -> i32;
+    pub fn client_node_create(
+        kind: i32,
+        parent: i64,
+        props: *const PropValue,
+        len: i32,
+        out: *mut i64,
+    ) -> i32;
+    pub fn client_node_remove(node: i64) -> i32;
+    pub fn client_node_find(ptr: *const u8, len: i32, out: *mut i64) -> i32;
+    pub fn client_action(kind: i32, target: i64, params: *const ActionParams, len: i32) -> i32;
+    pub fn client_send_order(ptr: *const u8, len: i32) -> i32;
+    pub fn client_send_message(ptr: *const u8, len: i32) -> i32;
+    pub fn client_storage_read(
+        key: *const u8,
+        key_len: i32,
+        out: *mut u8,
+        cap: i32,
+        len_out: *mut i32,
+    ) -> i32;
+    pub fn client_storage_write(
+        key: *const u8,
+        key_len: i32,
+        data: *const u8,
+        data_len: i32,
+    ) -> i32;
+}
+
+/// `ClientEventRecord`, 32 bytes, read in place in `client_on_events`.
+#[repr(C)]
+#[derive(Clone, Copy, Default, Debug)]
+pub struct ClientEventRecord {
+    pub kind: i32,
+    /// `Notify`: the sending module's source, 0 mod, 1 map.
+    pub source: i32,
+    pub reference: i64,
+    pub id: i32,
+    pub value: i32,
+    /// `Notify`: its bytes; `SimEvent`: one `EventRecord`; both in the
+    /// delivery area.
+    pub data: i32,
+    pub data_len: i32,
+}
+
+/// `PropValue`, 16 bytes: an initial property of `client_node_create`.
+#[repr(C)]
+#[derive(Clone, Copy, Default, Debug)]
+pub struct PropValue {
+    pub prop: i32,
+    pub reserved: i32,
+    pub value: i64,
 }
 
 /// `ActionParams`, 72 bytes.
@@ -214,7 +296,99 @@ pub struct DecideRecord {
     pub previous_len: i32,
 }
 
+/// `ProjectileSpec`, 48 bytes: one entry of a `Fire` shot plan.
+#[repr(C)]
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
+pub struct ProjectileSpec {
+    /// Projectile type ID.
+    pub projectile_type: i32,
+    /// Weapon ID giving damage and warhead; −1 for the shot's own weapon.
+    pub weapon: i32,
+    /// Object or cell reference; 0 for the shot's target.
+    pub target: i64,
+    /// Initial `Data0` (bytes 0..7) and `Data1` (8..15).
+    pub data: [u8; 16],
+    /// Bit 0: `origin` is absolute, otherwise an offset from the native
+    /// launch position.
+    pub flags: i32,
+    /// x, y, z in leptons.
+    pub origin: [i32; 3],
+}
+
+/// `PathSpec`'s 32-byte header; `point_count` points of three `i64`
+/// leptons follow it.
+#[repr(C)]
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
+pub struct PathSpecHeader {
+    /// `PathKind`.
+    pub kind: i32,
+    pub point_count: i32,
+    /// Leptons per frame, 16 fraction bits; 0 for the projectile's speed.
+    pub speed: i64,
+    pub param: [i64; 2],
+}
+
+/// `ProjectileStep`, 56 bytes: `ProjectileFrame`'s result.
+#[repr(C)]
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
+pub struct ProjectileStep {
+    /// Bit 0 detonate, 1 set velocity, 2 set position, 3 set module data.
+    pub flags: i32,
+    pub reserved: i32,
+    /// Leptons per frame, 16 fraction bits.
+    pub velocity: [i32; 3],
+    pub reserved2: i32,
+    /// Leptons.
+    pub position: [i32; 3],
+    pub reserved3: i32,
+    pub data: [u8; 16],
+}
+
+/// `MissionStepResult`, 24 bytes: `MissionStep`'s result. It comes holding
+/// the mission body's outcome (or the previous link's answer).
+#[repr(C)]
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
+pub struct MissionStepResult {
+    /// Object or cell reference, 0 for none.
+    pub target: i64,
+    /// Object or cell reference, 0 for none.
+    pub destination: i64,
+    /// `Mission` number to queue, −1 for none.
+    pub mission: i32,
+    /// Frames until the mission body runs again (at least 1).
+    pub delay: i32,
+}
+
+/// `MoveStep`, 16 bytes: `MoveFrame`'s result.
+#[repr(C)]
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
+pub struct MoveStep {
+    /// Bit 0 take the frame and move by `displacement`, 1 turn to
+    /// `facing`, 2 stop the native movement.
+    pub flags: i32,
+    /// Body facing 0..255.
+    pub facing: i32,
+    /// x, y in leptons, each at most 2,048 either way.
+    pub displacement: [i32; 2],
+}
+
+/// `PathCell`, 8 bytes: one cell of a `PathFound` route.
+#[repr(C)]
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
+pub struct PathCell {
+    pub x: i32,
+    pub y: i32,
+}
+
 const _: () = {
+    assert!(size_of::<MissionStepResult>() == 24);
+    assert!(size_of::<MoveStep>() == 16);
+    assert!(size_of::<PathCell>() == 8);
+    assert!(size_of::<ProjectileSpec>() == 48);
+    assert!(core::mem::offset_of!(ProjectileSpec, flags) == 32);
+    assert!(size_of::<PathSpecHeader>() == 32);
+    assert!(size_of::<ProjectileStep>() == 56);
+    assert!(core::mem::offset_of!(ProjectileStep, data) == 40);
     assert!(size_of::<ActionParams>() == 72);
     assert!(size_of::<Clause>() == 16);
     assert!(size_of::<Query>() == 64);
@@ -224,6 +398,9 @@ const _: () = {
     assert!(size_of::<ActionDef>() == 80);
     assert!(size_of::<EventRecord>() == 120);
     assert!(size_of::<DecideRecord>() == 160);
+    assert!(size_of::<ClientEventRecord>() == 32);
+    assert!(core::mem::offset_of!(ClientEventRecord, data) == 24);
+    assert!(size_of::<PropValue>() == 16);
     // The offsets the engine writes (RFC 0001 appendix, fixed layouts).
     assert!(core::mem::offset_of!(EventRecord, args) == 108);
     assert!(core::mem::offset_of!(EventRecord, target) == 112);

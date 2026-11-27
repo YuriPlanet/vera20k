@@ -190,7 +190,10 @@ pub struct GameEntity {
     /// Readers sample `current(frame)` (`FacingClass::Current @ 0x004C93D0`),
     /// writers turn it (`Set @ 0x004C9220`) or snap it (`Set_Current @
     /// 0x004C9300`). Its rate is written once, by the class constructor
-    /// ([`Self::set_body_facing_rot`]). The image's only other `+0x39C` write
+    /// ([`Self::set_body_facing_rot`]); Ares' conversion and Carryall drop
+    /// rewrite it through `Simulation::set_body_rot`, and a Wasm module
+    /// `ROTMultiplier` rescales it when its modifiers change
+    /// (`ext_modules::modifiers`). The image's only other `+0x39C` write
     /// is AircraftClass::AI's Carryall copy (`0x00415146..0x00415184`, the
     /// carrier's `+0x3A0` over its cargo's `+0x388` and `+0x3A0`), gated on
     /// AircraftType `+0xDFC` (`Carryall=`, read at `0x0041CCA2`). Retail sets
@@ -3137,6 +3140,15 @@ impl GameEntity {
             .building_body
             .as_ref()
             .is_some_and(|body| body.state() == 0)
+    }
+
+    /// Native Building+534 is Active (2), Begin_Mode's working body mode
+    /// (`building_construction::BuildingBodyMode::Active`).
+    pub fn in_active_bstate(&self) -> bool {
+        self.building
+            .building_body
+            .as_ref()
+            .is_some_and(|body| body.state() == 2)
     }
 
     /// Whether [`Self::sample_building_health_for_power`] changes the sample.

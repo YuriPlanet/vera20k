@@ -1,0 +1,11 @@
+{
+  "//": "Type-checking settings for modules: AssemblyScript's types (i32, i64, f32, StaticArray, ...) without lib.dom, whose Node collides with the client SDK's Node. `vera20k build` compiles; `tsc --noEmit` only checks.",
+  "extends": "assemblyscript/std/assembly.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "strict": true,
+    "noImplicitAny": true,
+    "experimentalDecorators": true,
+    "skipLibCheck": true
+  }
+}

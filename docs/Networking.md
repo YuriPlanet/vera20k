@@ -29,6 +29,12 @@ password or delete it ([Accounts](lobby-protocol.md#accounts)). Players then cre
 or join a game. A host can select Easy, Normal or Hard AI from an open player slot in
 Battle or Free For All.
 
+In a desktop online room, **Choose Map → Online Maps** lets the host browse the
+same categories as the website. A map may appear in several categories, including
+after the host downloads it. A public, optional [category feed](lobby-protocol.md#map-library)
+only filters the host's picker. Mixed rooms, releases without category support and
+rollbacks use the existing room map selection and transfer messages.
+
 The HTTPS service supplies match-specific relay credentials before the same loading
 and command handoff. Both paths transfer selected authored maps or generated
 seed/preview data and verify build, rules and effective-map agreement before start.
@@ -715,6 +721,13 @@ travels with the agreed map. Module state participates in the match checksum.
 The source-derived build identity refuses a mixed room before simulation.
 Peers on the same earlier build use its earlier behavior after a rollback.
 
+A client module (`ui.wasm`) can send up to 96 bytes to its simulation module
+through the ordinary player command stream. LAN, the relay and replays carry
+the same record. The simulation checks the sender and message limits on each
+peer. The host's `automation_allowed` launch setting defaults to off and enters the room's
+rules digest when enabled. The build check runs before peers exchange module
+messages, including after a rollback.
+
 In VERA Online game rooms, the lobby sends rank badges as part of the join. The
 newcomer sees the room's badges, and everyone already there sees the newcomer's badge
 as their name appears. Released clients use the same ladder messages. After a lobby
@@ -1290,7 +1303,8 @@ command stream above is an intentional adaptation.
   which LAN packets and online batches carry alike, are laid out in
   `sim::command`: 0x30 paid superweapon, 0x31 bunker eject (still decoded so older
   recordings play; no input sends it), 0x32 producer cycle, and 0x33 explicit
-  target-House economic order. The 0x33 body is a native House slot byte, an
+  target-House economic order. Record 0x34 carries a client module message with
+  a source byte, a length byte and a 96-byte data field. The 0x33 body is a native House slot byte, an
   inner economic opcode byte, and 21 bytes of inner payload with zero padding.
   The event header still authenticates the issuing source. The simulation
   requires FullControl over the target. Ordinary production, placement and

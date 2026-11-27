@@ -52,6 +52,10 @@ pub(crate) fn reset_scenario_exit_runtime(
     match_state.match_presentation.outcome_banner_presentation = Default::default();
     match_state.network_failure = None;
     match_state.frame_stopped = false;
+    // A new world or a restored save starts without the outgoing match's
+    // client modules or their nodes (`ui_modules::install` builds the
+    // incoming one's).
+    crate::app::ui_modules::drop_modules(match_state);
     crate::app::lan_service::return_transport(frontend, match_state);
     audio.restore_sound_master();
 }

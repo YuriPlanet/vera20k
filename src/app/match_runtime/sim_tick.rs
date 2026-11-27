@@ -1744,6 +1744,11 @@ fn after_frame(
     persistence: &PersistenceState,
     frame_committed: bool,
 ) {
+    // What the frame sent client modules waits for the next render frame
+    // (`ui_modules`); taken first, before a draw captures the frame again.
+    if frame_committed {
+        crate::app::ui_modules::collect_sim_outbox(match_state);
+    }
     #[cfg(feature = "telemetry-dashboard")]
     if frame_committed && diag.telemetry_active() {
         match_state.telemetry_tick_rate.record(Instant::now());

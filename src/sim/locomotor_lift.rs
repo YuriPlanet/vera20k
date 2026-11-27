@@ -883,6 +883,8 @@ impl Simulation {
                     &mut self.sound_events,
                 );
             }
+            // Wasm module `Crushed` on the victim, before its kill.
+            self.raise_module_crushed(rules, effects, victim, id);
             let mut context = UninitContext::new(rules).with_effects(effects);
             if !self.record_manipulated_kill(victim, id, context.reborrow()) {
                 self.record_the_kill(

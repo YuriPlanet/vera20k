@@ -70,7 +70,7 @@ fn snapshot_layout() -> u32 {
 fn traced_on_a_game_stack() -> u32 {
     std::thread::Builder::new()
         .name("snapshot layout".into())
-        .stack_size(8 << 20)
+        .stack_size(crate::util::GAME_STACK_BYTES)
         .spawn(traced_snapshot_layout)
         .ok()
         .and_then(|trace| trace.join().ok())
@@ -403,6 +403,8 @@ pub enum SnapshotError {
     MissingScenarioResources,
     #[error("save has no retained local view")]
     MissingLocalView,
+    #[error("invalid saved module projectile path")]
+    InvalidModuleProjectilePath,
     #[error("snapshot contains an invalid simulation random number cursor")]
     InvalidRandomCursor,
     #[error("snapshot map continuation does not match the saved scenario rules and authority")]
@@ -1109,6 +1111,11 @@ impl GameSnapshot {
     /// The checks a decoded snapshot passes before anything reads it, in
     /// place: a snapshot is large, and a load passes it on by value once.
     fn validate_admitted(snapshot: &mut GameSnapshot) -> Result<(), SnapshotError> {
+        // Layout tracing deserializes synthetic fields. Validate the actual path
+        // only when admitting a current or converted player save.
+        if !snapshot.sim.ext_modules.valid_saved_projectile_paths() {
+            return Err(SnapshotError::InvalidModuleProjectilePath);
+        }
         if snapshot.tick != snapshot.sim.session.tick() {
             return Err(SnapshotError::TickMetadataMismatch {
                 header_tick: snapshot.tick,

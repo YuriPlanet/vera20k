@@ -747,6 +747,8 @@ fn choose_map_rows(
             let chosen = modal.mode_rows().get(row)?;
             return Some(if chosen.id == crate::ui::skirmish_shell::ONLINE_MAPS_ROW {
                 tr("VERA:OnlineMaps")
+            } else if let Some(key) = chosen.online_category_label() {
+                format!("  {}", tr(key))
             } else if chosen.id == crate::ui::skirmish_shell::RANDOM_MAPS_ROW {
                 tr("VERA:RandomMaps")
             } else if chosen.id == crate::ui::skirmish_shell::FAVORITES_ROW {

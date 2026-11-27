@@ -628,9 +628,8 @@ fn sequenced_agreement_mismatch_names_itself_in_the_match_report() {
 /// rate under what it ran, not to the Game Speed row below it: both clients
 /// read the marker and pace at it, and the slow one catches up.
 ///
-/// A step lowers the rate by at most a quarter, so 30 reaches 18 in two
-/// steps (30, 23, 18), and the slow client then drains what it fell behind by
-/// in the first one at the three frames a second it has to spare.
+/// Report the tick cost through the same boundary as the app. The slow
+/// client has plenty of time to simulate each tick, but it gets fewer wakes.
 #[test]
 fn continuous_pacing_slows_both_clients_to_a_whole_rate() {
     use crate::net::live_commands::MatchSpeedChange;
@@ -638,35 +637,61 @@ fn continuous_pacing_slows_both_clients_to_a_whole_rate() {
 
     let (mut worlds, rules, _, boundaries, mut relay) =
         sequenced_pair_paced(0, None, CertificatePacing::Continuous);
+    let tick_cost = std::time::Duration::from_millis(10);
+    // Start measuring with a sample available on both peers. This case
+    // exercises pacing for a running game with measured tick costs.
+    for boundary in &boundaries {
+        boundary.live.borrow_mut().record_tick_cost(tick_cost);
+    }
     let mut now_ms = 16_000;
     let mut changes = [Vec::new(), Vec::new()];
+    let mut saw_intermediate_rate = [false; 2];
     for step in 0..2400 {
         now_ms += 16;
         service_pair(&mut worlds, &boundaries, now_ms);
         relay.pass(now_ms, |_| true);
         for (index, (world, boundary)) in worlds.iter_mut().zip(&boundaries).enumerate() {
-            if index == 0 || step % 3 == 0 {
-                production_frame(world, &rules, boundary);
+            if (index == 0 || step % 3 == 0)
+                && production_frame(world, &rules, boundary)
+                    .tick
+                    .frame_committed
+            {
+                boundary.live.borrow_mut().record_tick_cost(tick_cost);
             }
         }
-        for (seen, boundary) in changes.iter_mut().zip(&boundaries) {
-            seen.extend(boundary.live.borrow_mut().take_speed_changes());
+        for (index, boundary) in boundaries.iter().enumerate() {
+            let mut live = boundary.live.borrow_mut();
+            changes[index].extend(live.take_speed_changes());
+            if let Some(rate) = live.relay_frames_per_second() {
+                saw_intermediate_rate[index] |= (16..20).contains(&rate);
+            }
         }
     }
-    // 21 a second: nine tenths of it, where rows went to 15.
-    for (seen, boundary) in changes.iter().zip(&boundaries) {
-        let rate = boundary.live.borrow().relay_frames_per_second().unwrap();
-        assert!((16..=20).contains(&rate), "paced at {rate}");
-        assert!(
-            (1..=2).contains(&seen.len())
-                && seen.iter().all(|change| *change == MatchSpeedChange::SlowedBy(1)),
-            "speed changes {seen:?}"
-        );
-    }
+    // Roughly 21 frames per second is available. After draining the backlog,
+    // the relay can probe higher, so check the intermediate rate it used
+    // and the rate both clients accepted after catch-up.
+    assert_eq!(saw_intermediate_rate, [true, true]);
+    let [host, guest] = boundaries.as_slice() else {
+        unreachable!();
+    };
+    let rate = host.live.borrow().relay_frames_per_second().unwrap();
+    assert!((16..=21).contains(&rate), "paced at {rate}");
+    assert_eq!(guest.live.borrow().relay_frames_per_second(), Some(rate));
+    assert_eq!(changes[0], changes[1]);
+    assert!(
+        !changes[0].is_empty()
+            && changes[0]
+                .iter()
+                .all(|change| *change == MatchSpeedChange::SlowedBy(1)),
+        "speed changes {changes:?}"
+    );
     let [fast, slow] = worlds
         .each_ref()
         .map(|world| world.session().binary_frame());
-    assert!(fast - slow <= 2, "the slow client is {} frames behind", fast - slow);
+    assert!(
+        fast.abs_diff(slow) <= 2,
+        "clients ended at frames {fast} and {slow}"
+    );
 }
 
 /// A client that runs fewer frames than the relay seals slows the match to a

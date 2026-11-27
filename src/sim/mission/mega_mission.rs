@@ -310,10 +310,14 @@ impl Simulation {
         else {
             return;
         };
+        // Wasm module `TargetChanged` after each bare write; the scan's own
+        // write goes through the class setter, which raises it.
         if drop_tarcom {
+            let before = self.module_target_before(id);
             let entity = self.substrate.entities.get_mut(id).unwrap();
             let note = entity.note_names();
             entity.attack_target.set(None, note);
+            self.raise_module_target_changed(rules, &mut ctx.effects, id, before);
         }
         let found = crate::sim::world::retaliate_and_scan(
             self,
@@ -324,6 +328,7 @@ impl Simulation {
             None,
         );
         if !found {
+            let before = self.module_target_before(id);
             if let Some(target) = fallback
                 && let Some(entity) = self.substrate.entities.get_mut(id)
             {
@@ -331,6 +336,7 @@ impl Simulation {
                 let note = entity.note_names();
                 entity.attack_target.set(target, note);
             }
+            self.raise_module_target_changed(rules, &mut ctx.effects, id, before);
             return;
         }
         self.foot_queue_mission_now(id, MissionType::Attack, rules);

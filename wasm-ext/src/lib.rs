@@ -5,13 +5,14 @@
 //! covers `frame`, `random`, `log`, `has_kind`, `lookup`, `name_of`, `get`,
 //! `get_many`, `set`, `modify`, `unmodify`, `var_get`, `var_set`, `find`,
 //! `action`, the four `trigger_*` imports, `rules_get`, `rules_set` and
-//! `order` and `ini_register`, calls `on_rules`, delivers `on_events` batches ([`triggers`]),
-//! asks `on_decide` for decisions ([`decide`]) and
-//! reads the `vera.vars`, `vera.actions` and `vera.delivery` sections
-//! ([`sections`]); the other `vera:sim` imports and the client world come
-//! later. Desktop builds run modules with Wasmtime, the browser build with
-//! the browser's own WebAssembly engine, both after the same load-time
-//! rewrite.
+//! `order`, `ini_register` and `send_notify`, calls `on_rules`, delivers
+//! `on_events` batches ([`triggers`]) and client messages (`on_message`,
+//! RFC 0001 section 10), asks `on_decide` for decisions ([`decide`]) and
+//! reads the `vera.vars`, `vera.actions`, `vera.notify` and `vera.delivery`
+//! sections ([`sections`]). A client module (`ui.wasm`, [`ClientModuleOn`])
+//! runs under `vera:client@1.0` and reaches the game through [`ClientHost`]
+//! ([`client`]). Desktop builds run modules with Wasmtime, WASI tools with wasmi,
+//! and the browser with its WebAssembly engine, all after the same rewrite.
 //!
 //! ABI deviation from RFC 0.0.14: an import that returns a value and a status
 //! takes a trailing `out` pointer for the value and returns the status. Stable
@@ -21,6 +22,8 @@
 //! value directly. See [`IMPORTS`].
 
 mod action_kinds;
+mod client_host;
+mod client_module;
 mod host;
 mod instrument;
 mod module;
@@ -32,7 +35,7 @@ mod browser;
 pub use module::{MAX_BATCH, SimModuleOn};
 
 pub mod sections;
-pub use sections::{VarDecl, VarScope, Visibility};
+pub use sections::{VarDecl, VarScope, Visibility, notify_id};
 
 pub use action_kinds::{
     ATOMIC_ACTIONS, FIRST_ATOMIC_ACTION, STOCK_ACTIONS, action_kind_id, action_kind_name,
@@ -42,10 +45,10 @@ mod event_kinds;
 pub use event_kinds::{DELIVERED_EVENTS, FIRST_DELIVERED_EVENT, STOCK_EVENTS, event_kind_id};
 
 /// A simulation module on this platform's runtime: Wasmtime on the
-/// desktop, the browser's own WebAssembly engine in the browser. Both run
-/// the same rewritten bytes ([`instrument`]) and give identical results.
+/// desktop, wasmi on WASI, and the browser's own WebAssembly engine in the
+/// browser. All run the same rewritten bytes ([`instrument`]) and give identical results.
 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-pub type SimModule = SimModuleOn<native::Wasmtime>;
+pub type SimModule = SimModuleOn<native::Embedded>;
 #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
 pub type SimModule = SimModuleOn<browser::Browser>;
 
@@ -54,6 +57,17 @@ pub mod triggers;
 pub use triggers::{EventRecord, TriggerDef};
 
 pub mod decide;
+
+pub mod client;
+
+pub use client::{ClientEvent, ClientEventRecord, ClientHost, NodeInit, Source};
+pub use client_module::ClientModuleOn;
+
+/// A client module on this platform's runtime, as [`SimModule`] is.
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+pub type ClientModule = ClientModuleOn<native::Embedded>;
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+pub type ClientModule = ClientModuleOn<browser::Browser>;
 
 pub use decide::DecideRecord;
 
@@ -105,6 +119,7 @@ pub const IMPORTS: &[(&str, &str)] = &[
         "rules_set",
         "(sec: ptr, sec_len: i32, key: ptr, key_len: i32, val: ptr, val_len: i32) -> status",
     ),
+    ("send_notify", "(to: i64, id: i32, ptr, len: i32) -> status"),
     ("order", "(house: i64, ptr, len: i32) -> status"),
     (
         "ini_register",
@@ -151,10 +166,11 @@ pub const ENTRY_COST: u64 = 10;
 pub const SCAN_COST: u64 = 2;
 pub const CLAUSE_COST: u64 = 6;
 /// What a clause on a "derived, high" property (appendix 7: a fire or range
-/// check per candidate) adds to [`CLAUSE_COST`].
+/// check or a nearby search per candidate) adds to [`CLAUSE_COST`].
 pub const HIGH_CLAUSE_COST: u64 = 60;
 /// The "derived, high" properties a host evaluates.
-pub const HIGH_COST_PROPERTIES: &[&str] = &["Engage"];
+pub const HIGH_COST_PROPERTIES: &[&str] =
+    &["Engage", "NearbyEnemyCount", "TargetInRange", "CanFireAtTarget"];
 /// Candidates one `find` examines at most (RFC 15.4); fewer where they
 /// would cost more than half the call's budget.
 pub const MAX_SCAN: u64 = 16_384;
@@ -181,6 +197,12 @@ pub const NAME_STRING: i32 = 18;
 pub const NAME_PROPERTY: i32 = 19;
 /// Answered by the sandbox from [`STOCK_ACTIONS`] and [`ATOMIC_ACTIONS`].
 pub const NAME_ACTION_KIND: i32 = 21;
+/// Notifications (`vera.notify`, RFC 0001 section 10): the sandbox answers
+/// `lookup` and `name_of` from the calling module's own section.
+pub const NAME_NOTIFY: i32 = 16;
+/// Hotkeys a client module registered (`RegisterHotkey`, appendix 5.4):
+/// only `client_lookup` answers it.
+pub const NAME_HOTKEY: i32 = 22;
 /// Registered module events (RFC 0001 section 6h).
 pub const NAME_MODULE_EVENT: i32 = 24;
 pub const NAME_KINDS: i32 = 25;
@@ -195,6 +217,7 @@ pub const TABLE_SCOPE: i32 = 4;
 pub const SCOPE_OBJECTS: i32 = 0;
 pub const SCOPE_HOUSES: i32 = 1;
 pub const SCOPE_CELLS: i32 = 2;
+pub const SCOPE_TYPES: i32 = 3;
 pub const SCOPE_MODIFIERS: i32 = 7;
 pub const SCOPE_SUPER_WEAPONS: i32 = 8;
 pub const SCOPES: i32 = 9;
@@ -275,6 +298,10 @@ pub const PROPERTIES: &[&str] = &[
     "Obstructed",
     // 7.8 global
     "AutomationAllowed",
+    // RFC 0001 0.0.23: 7.2 modifiable properties
+    "ROTMultiplier",
+    // 7.10 client nodes (0.0.25)
+    "Backdrop",
 ];
 
 /// `Domain` (appendix 8.3, enum 25): the bits of a house's `ControlDomains`.
@@ -565,6 +592,21 @@ fn le_i64(bytes: &[u8], at: usize) -> i64 {
     i64::from_le_bytes(b)
 }
 
+/// Largest notification `send_notify` sends (RFC 15.4); a longer one is
+/// `Refused`.
+pub const MAX_NOTIFY_BYTES: usize = 256;
+/// Notifications one module sends per frame (RFC 15.4); past that
+/// `send_notify` answers `Refused`.
+pub const MAX_NOTIFIES_PER_FRAME: u32 = 256;
+/// Largest client message (RFC 15.4, `client_send_message`). It always
+/// fits a valid delivery area, which holds at least one 120-byte record.
+pub const MAX_MESSAGE_BYTES: usize = 96;
+/// Messages one player sends one source per frame, and in any
+/// [`MESSAGE_WINDOW`] frames (RFC 15.4).
+pub const MESSAGES_PER_FRAME: usize = 2;
+pub const MESSAGES_PER_WINDOW: usize = 16;
+pub const MESSAGE_WINDOW: u32 = 15;
+
 /// Bytes in one Wasm memory page.
 pub const PAGE_BYTES: usize = 65_536;
 
@@ -786,6 +828,13 @@ pub trait SimHost {
     fn rules_set(&mut self, _section: &str, _key: &str, _value: &str) -> Result<Status, Invalid> {
         Ok(Status::Unsupported)
     }
+    /// Sends notification `id` (declared in the module's `vera.notify`,
+    /// which the sandbox checks, as is the size limit) with `data` to the
+    /// clients of house `to`'s players, or to the observers when `to` is 0
+    /// (RFC 0001 section 10). `Refused` past the per-frame count.
+    fn send_notify(&mut self, _to: i64, _id: i32, _data: &[u8]) -> Result<Status, Invalid> {
+        Ok(Status::Unsupported)
+    }
     /// Queues `order` for computer house `house` (RFC 6g).
     fn order(&mut self, _house: i64, _order: &Order) -> Result<Status, Invalid> {
         Ok(Status::Unsupported)
@@ -861,6 +910,9 @@ pub enum Export {
     /// imports appendix 1.1 marks `decide` are available; a write stops
     /// the module.
     Decide,
+    /// `on_message(sender: i64, ptr, len)`, called through
+    /// `SimModule::deliver_message` (RFC 0001 section 10, appendix 1.2).
+    Message,
 }
 
 impl Export {
@@ -875,6 +927,7 @@ impl Export {
             Self::Rules => "on_rules",
             Self::Events => "on_events",
             Self::Decide => "on_decide",
+            Self::Message => "on_message",
         }
     }
 }
@@ -923,3 +976,9 @@ mod decide_tests;
 
 #[cfg(test)]
 mod rewrite_tests;
+
+#[cfg(test)]
+mod client_tests;
+
+#[cfg(test)]
+mod message_tests;

@@ -50,21 +50,35 @@ const TS_WEBS: u32 = 0xF215_BF3A;
 // claims, and the trigger runtime the triggers they made. Older worlds ran no
 // module: both convert empty.
 const WASM_MODULES: u32 = 0xE18E_A373;
+// The Wasm modules' control points (RFC 0001 0.0.22, 0.0.23): projectile
+// paths and data words (`Launch`, `ProjectileFrame`), running pushes
+// (`Push`), the `ImmunityFlags` and `ROTMultiplier` stats appended to `Stat`
+// and the native body rates the ROT modifier keeps, without the image swap.
+// Older worlds hold no path, no push and no modifier of the new stats.
+const CONTROL_POINTS: u32 = 0x919A_B3CD;
 // Beside them, main's writer from #5205 stores each object image's Phobos
 // ArtImageSwap name (`ObjectImageState::image_swap`). Older worlds swapped no
 // image, as they played when saved.
 const ART_IMAGE_SWAP: u32 = 0x8C73_B1B3;
 // Main's writer once the modules joined it, with both the modules and the
-// image swap.
+// image swap, without the control points.
 const MODULES_AND_IMAGE_SWAP: u32 = 0xB65C_0664;
 // NPatch's branch writer `2e67ebaa8` stored each processed rules layer's NPatch
 // key reads, which decide `RuleSet::npatch` (`rules::npatch_switch`), beside
 // the webs, without the modules or the image swap. Older worlds ran no NPatch
 // switch: their rules keep every NPatch key dormant, as they played when saved.
 const NPATCH_INPUTS: u32 = 0xE527_9FB2;
-// The current writer stores the modules, the image swap and the NPatch key
-// reads.
+// Main's writer stores the modules, the image swap and the NPatch key reads,
+// without the control points.
 const MODULES_SWAP_AND_NPATCH: u32 = 0xBA51_A42C;
+// The control points' writer stores the control points, the image swap and
+// the NPatch key reads, without the client modules' messages.
+const CONTROL_POINTS_SWAP_AND_NPATCH: u32 = 0xC66C_E753;
+// The current writer adds the client modules' state (RFC 0001 section 10):
+// the client messages waiting for `on_message` with their rate windows, and
+// the room's `AutomationAllowed`. Older worlds hold no message and did not
+// allow automation.
+const CLIENT_MESSAGES: u32 = 0x9909_B4E7;
 
 /// The rules digest a converted save carries: the loader takes the rules the
 /// game has instead of proving the digest the old writer computed, whose
@@ -98,7 +112,7 @@ pub fn supports(header: &GameSnapshotHeader) -> bool {
         && previous_layout(header.layout).is_some()
         && header.compatibility().matches_build()
         && SNAPSHOT_ENVELOPE_VERSION == MIGRATION_ENVELOPE_VERSION
-        && snapshot_layout() == MODULES_SWAP_AND_NPATCH
+        && snapshot_layout() == CLIENT_MESSAGES
 }
 
 fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
@@ -124,10 +138,13 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
     const STRUGGLE: (&str, &[&str]) = ("InfantrySequenceBank", &["struggle"]);
     const EXT_MODULES: (&str, &[&str]) = ("Simulation", &["ext_modules"]);
     const MODULE_TRIGGERS: (&str, &[&str]) = ("TriggerRuntime", &["module"]);
+    const CONTROL_POINT_STATE: (&str, &[&str]) = ("SavedExtModules", &["projectiles", "motions"]);
+    const NATIVE_ROTS: (&str, &[&str]) = ("ModifierStore", &["native_rots"]);
     const IMAGE_SWAP: (&str, &[&str]) = ("ObjectImageState", &["image_swap"]);
     // Worlds older than the NPatch switch stored no key reads either: their
     // rules kept the switch off, which the all-zero empty read list restores.
     const NPATCH_KEYS: (&str, &[&str]) = ("ProcessedRulesLayers", &["npatch_inputs"]);
+    const MESSAGES: (&str, &[&str]) = ("SavedExtModules", &["messages", "automation_allowed"]);
     let absent_fields: &'static [_] = match source {
         V0_3_8_AND_0_3_9 | V0_4_0 => &[
             IMAGE_FLAGS,
@@ -307,10 +324,19 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
             NPATCH_KEYS,
         ],
         TS_WEBS => &[EXT_MODULES, MODULE_TRIGGERS, IMAGE_SWAP, NPATCH_KEYS],
-        WASM_MODULES => &[IMAGE_SWAP, NPATCH_KEYS],
+        WASM_MODULES => &[
+            CONTROL_POINT_STATE,
+            NATIVE_ROTS,
+            IMAGE_SWAP,
+            NPATCH_KEYS,
+            MESSAGES,
+        ],
         ART_IMAGE_SWAP => &[EXT_MODULES, MODULE_TRIGGERS, NPATCH_KEYS],
-        MODULES_AND_IMAGE_SWAP => &[NPATCH_KEYS],
+        MODULES_AND_IMAGE_SWAP => &[CONTROL_POINT_STATE, NATIVE_ROTS, NPATCH_KEYS, MESSAGES],
+        CONTROL_POINTS => &[IMAGE_SWAP, NPATCH_KEYS, MESSAGES],
         NPATCH_INPUTS => &[EXT_MODULES, MODULE_TRIGGERS, IMAGE_SWAP],
+        MODULES_SWAP_AND_NPATCH => &[CONTROL_POINT_STATE, NATIVE_ROTS, MESSAGES],
+        CONTROL_POINTS_SWAP_AND_NPATCH => &[MESSAGES],
         _ => return None,
     };
     Some(save_codec::PreviousLayout {
@@ -326,8 +352,7 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
 /// only its stock Arctic setting and latch. Keep both exactly as saved.
 pub fn migrate(bytes: &mut Vec<u8>) -> Result<(), MigrationError> {
     let target = snapshot_layout();
-    if SNAPSHOT_ENVELOPE_VERSION != MIGRATION_ENVELOPE_VERSION || target != MODULES_SWAP_AND_NPATCH
-    {
+    if SNAPSHOT_ENVELOPE_VERSION != MIGRATION_ENVELOPE_VERSION || target != CLIENT_MESSAGES {
         return Err(MigrationError::UnsupportedTarget(target));
     }
 
@@ -460,7 +485,7 @@ mod tests {
         let error = migrate(&mut bytes).unwrap_err();
         assert_eq!(bytes, original);
         if SNAPSHOT_ENVELOPE_VERSION != MIGRATION_ENVELOPE_VERSION
-            || snapshot_layout() != MODULES_SWAP_AND_NPATCH
+            || snapshot_layout() != CLIENT_MESSAGES
         {
             assert!(matches!(error, MigrationError::UnsupportedTarget(_)));
             return;
@@ -523,6 +548,11 @@ mod tests {
         let after_image = 8 + image.image().len();
         assert_eq!(&bytes[after_image..after_image + 3], &[1, 0, 1]);
         bytes.remove(after_image + 1);
+        // That writer also predates the optional Phobos image name, which
+        // now sits immediately before its retained model slots.
+        let slots_size = save_codec::serialize(&image.model_slots).unwrap().len();
+        let image_swap = bytes.len() - slots_size - 1;
+        assert_eq!(bytes.remove(image_swap), 0); // None
         let mut offsets = Vec::new();
         let (restored, rest) = save_codec::deserialize_previous::<ObjectImageState>(
             &bytes,
@@ -532,7 +562,7 @@ mod tests {
         .unwrap();
         assert_eq!(restored, image);
         assert!(rest.is_empty());
-        assert_eq!(offsets, [(after_image + 1, 1)]);
+        assert_eq!(offsets, [(after_image + 1, 1), (image_swap, 1)]);
     }
 
     #[test]

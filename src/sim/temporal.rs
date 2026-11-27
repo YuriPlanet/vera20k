@@ -364,6 +364,7 @@ impl Simulation {
                     Some(bunker) if entity.category() == EntityCategory::Unit => {
                         // vtable +0x3C8 Assign_Target(bunker) on the firer.
                         let requested = Some(crate::sim::combat::TargetKind::Entity(bunker));
+                        let before = self.module_target_before(firer);
                         let stored = crate::sim::mission::concrete_effects::assign_target_stored(
                             &self.substrate.entities,
                             self.terrain_objects.objects(),
@@ -381,6 +382,8 @@ impl Simulation {
                         {
                             self.assign_target_fire_teardown(firer, rules, registry);
                         }
+                        // Wasm module `TargetChanged` (`ext_modules::control`).
+                        self.raise_module_target_changed(rules, effects, firer, before);
                         Some(bunker)
                     }
                     _ => Some(id),
@@ -628,10 +631,20 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(target) else {
             return false;
         };
-        if !self
-            .object_type(entity.type_ref(), rules)
-            .is_some_and(|object| object.warpable)
-        {
+        // `Warpable=` and Ares' rank `UNWARPABLE` (both refuse before
+        // anything else is written), or a module's `ImmunityFlags` bit 4.
+        let object = self.object_type(entity.type_ref(), rules);
+        let unwarpable = object.is_none_or(|object| {
+            !object.warpable
+                || (rules.ares_form()
+                    && object
+                        .promotion_abilities()
+                        .is_some_and(|abilities| abilities.unwarpable(entity.veterancy.raw())))
+        });
+        if entity.module_immune(
+            crate::sim::ext_modules::modifiers::Immunity::Chrono,
+            unwarpable,
+        ) {
             return false;
         }
         if crate::sim::superweapon::invulnerability::is_invulnerable(
@@ -641,11 +654,7 @@ impl Simulation {
             return false;
         }
         if rules.ares_form() {
-            let unwarpable = self
-                .object_type(entity.type_ref(), rules)
-                .and_then(|object| object.promotion_abilities())
-                .is_some_and(|abilities| abilities.unwarpable(entity.veterancy.raw()));
-            if unwarpable || self.ares_chrono_warps.about_to_chronoshift(target) {
+            if self.ares_chrono_warps.about_to_chronoshift(target) {
                 return false;
             }
             let naval_factory = entity

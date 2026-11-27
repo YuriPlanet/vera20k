@@ -553,6 +553,10 @@ pub struct HostRules {
     /// The host's `[VERA] WasmBudget=`, 0 while unset. Left out while unset.
     #[serde(default, skip_serializing_if = "is_zero_u32")]
     pub wasm_budget: u32,
+    /// The host's room switch "Allow automation" (Wasm client modules,
+    /// RFC 0001 6i). Left out while off.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub automation_allowed: bool,
     /// The host's VERARULES.INI in base64, which games sent until the file
     /// was retired for New Mod. Never sent now; read only so that a room or a
     /// replay from such a game is refused by [`Self::personal_rules`] with a
@@ -567,6 +571,7 @@ impl HostRules {
             && self.superweapon_limit == 0
             && !self.building_production_queue
             && self.wasm_budget == 0
+            && !self.automation_allowed
     }
 
     /// The host's own rules as its room shares them: its Terrain Deformation
@@ -577,6 +582,7 @@ impl HostRules {
             superweapon_limit: own.superweapon_limit(),
             building_production_queue: own.building_production_queue(),
             wasm_budget: own.wasm_budget(),
+            automation_allowed: own.automation_allowed(),
             retired_personal_rules: None,
         }
     }
@@ -592,6 +598,7 @@ impl HostRules {
         rules.set_superweapon_limit(i32::from(self.superweapon_limit));
         rules.set_building_production_queue(self.building_production_queue);
         rules.set_wasm_budget(self.wasm_budget);
+        rules.set_automation_allowed(self.automation_allowed);
         Ok(rules)
     }
 }

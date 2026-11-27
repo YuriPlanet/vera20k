@@ -10,6 +10,15 @@
 //!   79, 80, 83..85, raised for bound objects at the object Tag funnel
 //!   (`dispatch_object_tag_input`, the Tag6E53A0 ingress every native site
 //!   uses); `other` is the raise's source or acting object;
+//! - object events 2 (`SpiedBy`) and 3 (`ThievedBy`), which no native site
+//!   raises on a Tag, raised for module triggers only
+//!   (`raise_module_infiltration_event`): 2 on the building after
+//!   BuildingClass::Infiltrate (`0x004571E0`, the PerCell spy arm
+//!   `0x0051A002`), the spy as `other`; 3 on the vehicle a thief took
+//!   (TryThiefVehicleCapture `0x005203F7..0x0052046D` after ChangeOwner,
+//!   Ares' capture `10045B60` after its Tag events), the thief as `other`,
+//!   before the thief leaves. 3's `value` is the thief's house, which the
+//!   record carries;
 //! - cell events 25 and 26, for cells bound with a cell reference, from the
 //!   foot's per-cell arrival (Foot4D8A70..4D8B66): a bound cell on the
 //!   arrival cell's row (25) or column (26);
@@ -26,7 +35,6 @@
 //!
 //! Stock events module triggers do not take (`Unsupported`):
 //! - 0 is private and never true;
-//! - 2 (spied) and 3 (thieved): no engine site raises them;
 //! - 24, 53, 54 and 59 reach only map CellTags and the Map tag list, whose
 //!   binding a module trigger has no form for;
 //! - 31 (bridge destroyed): its raise knows the cell's native identity, not
@@ -43,16 +51,37 @@
 //!   loop 65E010 or its building exit, Chrono reinforcement 65EC30), the
 //!   building of TActionCreateBuilding 6E4200 (after its Grand_Opening),
 //!   each object HouseClass 50D440/50D320 recreates (stock actions 126 and
-//!   130), and a module's `CreateObject`;
+//!   130), and a module's `CreateObject`; for the building a unit deployed
+//!   into (UnitClass::Deploy `0x007393C0`, before the unit's UnInit) and
+//!   the unit a building undeployed into (Mission_Selling `0x00449CEA`,
+//!   before the building's UnInit), the origin as `other`; for each
+//!   survivor, crewman and pilot placed (SpawnSurvivors `0x00442D90`, a
+//!   sale's crew `0x0044A5F0`, a dying unit's crew `0x007381BC`, Ares'
+//!   pilots `10046540`), the building or vehicle as `other`;
 //! - `TransportEntered` (passenger) and `PassengerAdded` (transport) at the
 //!   end of AddPassenger (`0x00710670`), `value` the passenger's size;
 //!   `TransportExited` and `PassengerRemoved` after a cargo departure placed
 //!   its passenger (CargoClass::RemoveFirstPassenger 0x00473430, then the
-//!   route's Unlimbo);
+//!   route's Unlimbo); in their garrison form (`value2` 1, `value` the
+//!   occupants then inside) when an occupier enters (AddGarrisonOccupant
+//!   `0x00522A18`), is ejected (SellBuilding `0x00457DE0`, after its
+//!   placement bracket) or leaves inside (KillOccupants `0x004585C0`, an
+//!   assault, Ares' fatal occupant hit; before the UnInit);
 //! - `AttackedBy` on the target object after a FireAt that launched its
 //!   bullet (Techno6FDD50), beside the shooter's `Fire`;
 //! - `FatalDamage` after the Strength write that leaves 0 (Object5F5390),
-//!   before Kill and Destroy, which read the live Strength again;
+//!   before Kill and Destroy, which read the live Strength again; and before
+//!   the Record_The_Kill (vt+0xE0) of every death without a damage commit
+//!   (`Simulation::record_the_kill`: crush, Temporal erase, a crash's live
+//!   prefix, passengers and slaves dying inside, Magnetron drops, warp
+//!   sinks), `value` the Strength left, `id` −1. A sale is no death;
+//! - `Crushed` on the victim once a crush is decided, before its kill:
+//!   Crush_Or_Prescatter_Cell (`0x007416A0`) and the Magnetron or Jumpjet
+//!   landing crush (`0x0054CCDE`);
+//! - `Detonated` after a fired projectile's whole detonation
+//!   (`raise_module_detonated`);
+//! - `TargetChanged`, `Deployed`, `Promoted`, `ExperienceGained`, `Cloaked`
+//!   and `Decloaked` at the unit control points (`ext_modules::control`);
 //! - `HouseTransferred` at the end of ChangeOwner (`0x007014A0`), `house`
 //!   the old house, `value` 1 when CaptureManager's Capture (0x00471D40),
 //!   FreeUnit (0x004720D5), PsyDom's permanent capture or Ares' permanent
@@ -80,11 +109,12 @@
 //! Residuals:
 //! - `Birth` is not raised for paradropped reinforcement members (they
 //!   leave their plane later, raising `TransportExited`), spawned aircraft,
-//!   crate units, survivors or the map's own starting objects (placed before
-//!   modules install); `value` (production time) is −1.
-//! - Garrisons raise no passenger events, and cargo that leaves other than
-//!   by a departure (a dying or crashing transport, an uninit) raises no
-//!   `TransportExited`/`PassengerRemoved`.
+//!   crate units or the map's own starting objects (placed before modules
+//!   install); `value` (production time) is −1.
+//! - Cargo that leaves other than by a departure (a dying or crashing
+//!   transport, an uninit) raises no `TransportExited`/`PassengerRemoved`,
+//!   and neither does Ares' trench traverse moving an occupant between
+//!   buildings (`transfer_garrison_head`).
 //! - Stock 19..22 read `value` as the class type index; the `id` form is
 //!   not read. Ares 77 compares the launched type's first 24 bytes with the
 //!   whole name of `id`.
@@ -94,8 +124,9 @@
 //!   object's type when due.
 //! - The other 4.3 events answer `Unsupported`: `HitByWarhead` and
 //!   `HitTarget` (no raise point apart from `TakeDamage` that knows the
-//!   immune hit or the shooter's weapon), `SpawnFire`, `TargetChanged`,
-//!   `ProjectileIncoming`, `Detonated`, `Crushed`,
+//!   immune hit or the shooter's weapon), `SpawnFire`, `MissionChanged`
+//!   (`ext_modules::control`),
+//!   `ProjectileIncoming`,
 //!   `HouseTransfer` (before ChangeOwner, which would have to recheck),
 //!   the modifier events and `ProductionCancelled` (House Abandon 0x004FAA10
 //!   also settles every delivery).
@@ -103,14 +134,18 @@
 use std::collections::BTreeSet;
 
 use vera20k_wasm_ext::triggers::{
-    ACTION_MODULE, EVENT_ATTACKED_BY, EVENT_BIRTH, EVENT_DISTANCE_POLL, EVENT_FATAL_DAMAGE,
-    EVENT_FIRE, EVENT_HOUSE_POWER_POLL, EVENT_HOUSE_TRANSFERRED, EVENT_INI_ENTRY, EVENT_INI_KEY,
-    EVENT_KILLED, EVENT_MODIFIER_COUNT_POLL, EVENT_MODIFIER_EXPIRE, EVENT_MODIFIER_STACKS,
-    EVENT_MODIFIER_START, EVENT_MODULE, EVENT_PASSENGER_ADDED, EVENT_PASSENGER_REMOVED,
-    EVENT_PROPERTY_POLL, EVENT_SUPER_WEAPON_LAUNCHED, EVENT_TAKE_DAMAGE, EVENT_TIMER,
-    EVENT_TRANSPORT_ENTERED, EVENT_TRANSPORT_EXITED, EVENT_VARIABLE_POLL, EventDef,
+    ACTION_MODULE, EVENT_ATTACKED_BY, EVENT_BIRTH, EVENT_CRUSHED, EVENT_DETONATED,
+    EVENT_DISTANCE_POLL, EVENT_FATAL_DAMAGE, EVENT_FIRE, EVENT_HOUSE_POWER_POLL,
+    EVENT_HOUSE_TRANSFERRED, EVENT_INI_ENTRY, EVENT_INI_KEY, EVENT_KILLED,
+    EVENT_MODIFIER_COUNT_POLL, EVENT_MODIFIER_EXPIRE, EVENT_MODIFIER_STACKS, EVENT_MODIFIER_START,
+    EVENT_MODULE, EVENT_PASSENGER_ADDED, EVENT_PASSENGER_REMOVED, EVENT_PROPERTY_POLL,
+    EVENT_SUPER_WEAPON_LAUNCHED, EVENT_TAKE_DAMAGE, EVENT_TIMER, EVENT_TRANSPORT_ENTERED,
+    EVENT_TRANSPORT_EXITED, EVENT_VARIABLE_POLL, EventDef,
 };
-use vera20k_wasm_ext::triggers::{EVENT_COMMANDED, EVENT_ORDER_REFUSED};
+use vera20k_wasm_ext::triggers::{
+    EVENT_CLOAKED, EVENT_COMMANDED, EVENT_DECLOAKED, EVENT_DEPLOYED, EVENT_EXPERIENCE_GAINED,
+    EVENT_ORDER_REFUSED, EVENT_PROMOTED, EVENT_TARGET_CHANGED,
+};
 use vera20k_wasm_ext::{Invalid, Status, VarScope, property_id, property_name};
 
 use super::triggers::variable_scope;
@@ -125,8 +160,16 @@ use crate::sim::world::{FrameEffects, Simulation};
 
 /// New delivered events this engine raises (appendix 4.3, and the INI
 /// module event of RFC 0001 section 6h).
-const DELIVERED: [i32; 19] = [
+const DELIVERED: [i32; 27] = [
     EVENT_TAKE_DAMAGE,
+    EVENT_DETONATED,
+    EVENT_CRUSHED,
+    EVENT_TARGET_CHANGED,
+    EVENT_DEPLOYED,
+    EVENT_PROMOTED,
+    EVENT_EXPERIENCE_GAINED,
+    EVENT_CLOAKED,
+    EVENT_DECLOAKED,
     EVENT_ATTACKED_BY,
     EVENT_FATAL_DAMAGE,
     EVENT_KILLED,
@@ -291,9 +334,30 @@ impl Host<'_, '_> {
             vera20k_wasm_ext::decide::EVENT_PRODUCTION_ALLOWED
             | vera20k_wasm_ext::decide::EVENT_PRODUCTION_QUEUED
             | vera20k_wasm_ext::decide::EVENT_COMMAND_ALLOWED => object,
-            EVENT_FIRE => TriggerScope::Object { weapon: true },
+            // The unit decisions (`decide`, `control`, `unit_ai`) bind to the
+            // object or its type.
+            vera20k_wasm_ext::decide::EVENT_DAMAGE_INCOMING
+            | vera20k_wasm_ext::decide::EVENT_FIRE_ALLOWED
+            | vera20k_wasm_ext::decide::EVENT_RETALIATE
+            | vera20k_wasm_ext::decide::EVENT_DESTINATION_SET
+            | vera20k_wasm_ext::decide::EVENT_CRUSH_ALLOWED
+            | vera20k_wasm_ext::decide::EVENT_HARVEST_CELL
+            | vera20k_wasm_ext::decide::EVENT_DEPLOY_ALLOWED
+            | vera20k_wasm_ext::decide::EVENT_IDLE_MISSION
+            | vera20k_wasm_ext::decide::EVENT_MISSION_STEP
+            // Movement (`motion`, `paths`): the mover or its type.
+            | vera20k_wasm_ext::decide::EVENT_MOVE_FRAME
+            | vera20k_wasm_ext::decide::EVENT_PATH_FOUND
+            | vera20k_wasm_ext::decide::EVENT_APPROACH_POINT => object,
+            // `Fire`, `Launch` and `Detonated` also bind the weapon, warhead
+            // and projectile type; `ProjectileFrame` binds the projectile type.
+            EVENT_FIRE
+            | EVENT_DETONATED
+            | vera20k_wasm_ext::decide::EVENT_LAUNCH
+            | vera20k_wasm_ext::decide::EVENT_PROJECTILE_FRAME => TriggerScope::Object { weapon: true },
             EVENT_TAKE_DAMAGE
             | EVENT_ATTACKED_BY
+            | EVENT_CRUSHED
             | EVENT_FATAL_DAMAGE
             | EVENT_KILLED
             | EVENT_BIRTH
@@ -305,7 +369,13 @@ impl Host<'_, '_> {
             | EVENT_MODIFIER_START
             | EVENT_MODIFIER_EXPIRE
             | EVENT_MODIFIER_STACKS
-            | EVENT_COMMANDED => object,
+            | EVENT_COMMANDED
+            | EVENT_TARGET_CHANGED
+            | EVENT_DEPLOYED
+            | EVENT_PROMOTED
+            | EVENT_EXPERIENCE_GAINED
+            | EVENT_CLOAKED
+            | EVENT_DECLOAKED => object,
             // Appendix 4.4: other properties are refused at creation.
             EVENT_PROPERTY_POLL => match property_name(def.id) {
                 Some("Money") => TriggerScope::Global,
@@ -319,7 +389,9 @@ impl Host<'_, '_> {
             EVENT_MODIFIER_COUNT_POLL => object,
             EVENT_DISTANCE_POLL => match decode_ref(def.value)? {
                 Some(Ref::Cell { .. }) => object,
-                Some(Ref::Waypoint(number)) if self.waypoint_cell(number).is_some() => object,
+                Some(Ref::Waypoint(number)) if self.reader().waypoint_cell(number).is_some() => {
+                    object
+                }
                 Some(Ref::Waypoint(_)) => return Ok(Err(Status::NotFound)),
                 _ => return invalid(format!("{:#x} is not a cell", def.value)),
             },
@@ -372,6 +444,8 @@ impl Host<'_, '_> {
         };
         match def.kind {
             kind if value_names_house(kind) => in_range(0..houses),
+            // `ThievedBy`: the thief's house.
+            3 => in_range(0..houses),
             kind if value_filters_actor_house(kind) && def.value != -1 => in_range(0..houses),
             27 | 28 => in_range(0..50),
             36 | 37 => in_range(0..100),
@@ -457,6 +531,36 @@ impl Simulation {
             ..ModuleEvent::new(kind, subject)
         };
         self.raise_module_event(rules, frame_effects, event);
+    }
+
+    /// Stock 2 (`SpiedBy`) on an infiltrated building or 3 (`ThievedBy`) on
+    /// a stolen vehicle, `actor` the spy or thief: a VERA raise for module
+    /// triggers only, as the native sites raise neither on the object's Tag
+    /// (`dispatch_object_tag_input` would reach map Tags as well).
+    pub(crate) fn raise_module_infiltration_event(
+        &mut self,
+        rules: &RuleSet,
+        frame_effects: &mut FrameEffects<'_>,
+        kind: i32,
+        subject: u64,
+        actor: u64,
+    ) {
+        if !self.trigger_runtime.module_listens(kind) {
+            return;
+        }
+        let stock = StockInput {
+            actor: Some(actor),
+            source: None,
+            ares_source: None,
+        };
+        self.raise_module_stock_object_event(
+            rules,
+            frame_effects,
+            kind,
+            subject,
+            Some(actor),
+            stock,
+        );
     }
 
     /// A global raised stock event (23, 50, Ares 75..77) for every global
@@ -680,8 +784,9 @@ impl Simulation {
     ) -> Option<i64> {
         let house = house.map_or(0, |index| house_ref(index as usize));
         self.with_module_host(rules, source, |host| {
+            let reader = host.reader();
             let get = |reference: i64, name: &str| match property_id(name)
-                .map(|prop| host.read(reference, prop))
+                .map(|prop| reader.read(reference, prop))
             {
                 Some(Ok((value, Status::Ok))) => Some(value),
                 _ => None,
@@ -689,7 +794,7 @@ impl Simulation {
             match def.kind {
                 EVENT_PROPERTY_POLL => {
                     let reference = if holder == 0 { house } else { holder as i64 };
-                    match host.read(reference, def.id) {
+                    match reader.read(reference, def.id) {
                         Ok((value, Status::Ok)) => Some(value),
                         _ => None,
                     }
@@ -709,7 +814,7 @@ impl Simulation {
                 EVENT_DISTANCE_POLL => {
                     let (x, y) = match decode_ref(def.value).ok()?? {
                         Ref::Cell { x, y } => (x, y),
-                        Ref::Waypoint(number) => host.waypoint_cell(number)?,
+                        Ref::Waypoint(number) => reader.waypoint_cell(number)?,
                         _ => return None,
                     };
                     let centre = |cell: u16| i64::from(cell) * 256 + 128;
@@ -726,7 +831,7 @@ impl Simulation {
                         Ok(VarScope::House) => house,
                         _ => 0,
                     };
-                    match host.read_var(scope, def.id) {
+                    match reader.read_var(scope, def.id) {
                         Ok((value, Status::Ok)) => Some(value),
                         _ => None,
                     }
@@ -811,6 +916,36 @@ impl Simulation {
         }
     }
 
+    /// `TransportExited` on `occupant` and `PassengerRemoved` on `building`
+    /// once an occupant left the garrison: ejected onto the map (raised
+    /// after the ejection loop), or removed inside it (KillOccupants, an
+    /// assault, Ares' fatal occupant hit; raised before the UnInit, so the
+    /// occupant is still there to read). `value` the occupants left
+    /// inside, `value2` 1 for a garrison, as on entry.
+    pub(crate) fn raise_module_garrison_left(
+        &mut self,
+        rules: &RuleSet,
+        frame_effects: &mut FrameEffects<'_>,
+        building: u64,
+        occupant: u64,
+        occupants: i32,
+    ) {
+        for (kind, subject, other) in [
+            (EVENT_TRANSPORT_EXITED, occupant, building),
+            (EVENT_PASSENGER_REMOVED, building, occupant),
+        ] {
+            if self.trigger_runtime.module_listens(kind) {
+                let event = ModuleEvent {
+                    other,
+                    value: i64::from(occupants),
+                    value2: 1,
+                    ..ModuleEvent::new(kind, subject)
+                };
+                self.raise_module_event(rules, frame_effects, event);
+            }
+        }
+    }
+
     /// `TransportExited` on `passenger` and `PassengerRemoved` on `carrier`
     /// after a cargo departure placed the passenger; `value` is the size it
     /// occupied, `value2` 0 (a transport, not a garrison).
@@ -836,6 +971,90 @@ impl Simulation {
                 self.raise_module_event(rules, frame_effects, event);
             }
         }
+    }
+
+    /// `Detonated` once a projectile's detonation, its cluster loop
+    /// included, is done (`BulletClass::Detonate` 0x00469020's commit,
+    /// `combat::world_receiver::commit_projectile_detonations_inline`): on
+    /// the source object (0 without one, which only weapon, warhead and
+    /// projectile bindings reach), `other` the source, `id` the warhead,
+    /// `cell` and `x`, `y`, `z` the impact. Only a fired projectile raises
+    /// it (it reached its target, fused, collided, lost its target or ended
+    /// its NUKE wait); a death weapon's or an animation's bare
+    /// `DetonateAtCoord`, a Phobos AttachEffect shot and a crit warhead
+    /// detonation reuse the detonation path without a projectile and raise
+    /// nothing.
+    pub(crate) fn raise_module_detonated(
+        &mut self,
+        rules: &RuleSet,
+        frame_effects: &mut FrameEffects<'_>,
+        detonation: &crate::sim::projectile::ProjectileDetonation,
+    ) {
+        use crate::sim::projectile::ProjectileDetonationReason as Reason;
+        if !self.trigger_runtime.module_listens(EVENT_DETONATED)
+            || !matches!(
+                detonation.reason,
+                Reason::ReachedTarget
+                    | Reason::Fuse
+                    | Reason::Collision
+                    | Reason::TargetExpired
+                    | Reason::AnimEnded
+            )
+        {
+            return;
+        }
+        let payload = &detonation.payload;
+        let index = |found: Option<u32>| found.map_or(-1, |index| index as i32);
+        let warhead = index(rules.warhead_index(self.interner.resolve(payload.warhead)));
+        let projectile_type = index(
+            payload
+                .projectile_type()
+                .and_then(|id| rules.projectile_index(self.interner.resolve(id))),
+        );
+        let weapon = index(
+            payload
+                .installed_weapon()
+                .and_then(|id| rules.weapon_index(self.interner.resolve(id))),
+        );
+        let impact = detonation.impact;
+        let cell = u16::try_from(impact.x.div_euclid(256))
+            .ok()
+            .zip(u16::try_from(impact.y.div_euclid(256)).ok());
+        let event = ModuleEvent {
+            other: detonation.source_id,
+            projectile: detonation.projectile_id,
+            cell,
+            id: warhead,
+            at: Some([impact.x, impact.y, impact.z]),
+            weapon,
+            warhead,
+            projectile_type,
+            ..ModuleEvent::new(EVENT_DETONATED, detonation.source_id)
+        };
+        self.raise_module_event(rules, frame_effects, event);
+    }
+
+    /// `Crushed` on `victim`, `other` its crusher and `x`, `y`, `z` its
+    /// position, once the crush is decided and before the victim's kill is
+    /// recorded (so it is still there to read; `FatalDamage` and `Killed`
+    /// follow): the Unit's Crush_Or_Prescatter_Cell (`0x007416A0`), a
+    /// Magnetron drop's landing crush and a Jumpjet's landing crush.
+    pub(crate) fn raise_module_crushed(
+        &mut self,
+        rules: &RuleSet,
+        frame_effects: &mut FrameEffects<'_>,
+        victim: u64,
+        crusher: u64,
+    ) {
+        if !self.trigger_runtime.module_listens(EVENT_CRUSHED) {
+            return;
+        }
+        let event = ModuleEvent {
+            other: crusher,
+            at_subject: true,
+            ..ModuleEvent::new(EVENT_CRUSHED, victim)
+        };
+        self.raise_module_event(rules, frame_effects, event);
     }
 
     /// `HouseTransferred` on `object` after ChangeOwner moved it from

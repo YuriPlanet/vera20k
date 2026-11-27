@@ -22,7 +22,7 @@ pub(crate) fn defence_divides(damage: i32, divisors: &DefenceDivisors) -> i32 {
 
 /// The same divides without `0x007019D8`'s `< 1 -> 1` floor, which the
 /// Phobos shield hook suppresses for the zero packet it owns.
-fn defence_divides_unfloored(damage: i32, divisors: &DefenceDivisors) -> i32 {
+pub(crate) fn defence_divides_unfloored(damage: i32, divisors: &DefenceDivisors) -> i32 {
     let mut damage = X::ftol_i32_low_masked(X::div(
         X::load_i32(damage),
         X::mul(

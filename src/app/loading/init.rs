@@ -1476,6 +1476,10 @@ pub struct ScenarioLoadInputs {
     /// transition, which knows the scaled sidebar width and the live zoom.
     pub camera_anchor_x: f32,
     pub camera_anchor_y: f32,
+    /// The match's client modules (`ui.wasm`) and the map's `[VeraUI]`
+    /// parts, read with the scenario; built once the world is installed
+    /// (`ui_modules::install`).
+    pub(crate) ui_modules: crate::app::ui_modules::UiModuleSources,
 }
 
 /// Presentation assets produced by loading a map (F11): atlases, chrome,
@@ -1604,14 +1608,16 @@ fn load_scenario_ext_modules(
 ) -> Result<crate::sim::ext_modules::PreparedExtModules> {
     let mod_module = crate::sim::ext_modules::PreparedExtModules::read_mod_file(assets)
         .map_err(anyhow::Error::msg)?;
-    crate::sim::ext_modules::PreparedExtModules::load(
+    let mut modules = crate::sim::ext_modules::PreparedExtModules::load(
         owner.selected_rules_root(),
         mod_module.as_deref(),
         map_ini,
         owner.personal_rules().wasm_budget(),
         mod_ai_seats,
     )
-    .map_err(|e| anyhow::anyhow!("Wasm extension module: {e}"))
+    .map_err(|e| anyhow::anyhow!("Wasm extension module: {e}"))?;
+    modules.set_automation_allowed(owner.personal_rules().automation_allowed());
+    Ok(modules)
 }
 
 /// The shared Rules/AI ordering for ordinary Full_Init and its early .SED arm.
@@ -4296,6 +4302,16 @@ fn load_map_first_step(
                                                                         .progress
                                                                         .milestone(98)?;
 
+                                                                    // The client modules (`ui.wasm`) beside the
+                                                                    // rules modules: the mod's loose one and the
+                                                                    // map's embedded one, read before map_data's
+                                                                    // fields move out below.
+                                                                    let ui_modules =
+                                                                        crate::app::ui_modules::UiModuleSources::read(
+                                                                            services.asset_manager,
+                                                                            &map_data.ini,
+                                                                            &map_source,
+                                                                        );
                                                                     // Move fields out of map_data (last use) instead of cloning.
                                                                     let theater_name =
                                                                         map_data.header.theater;
@@ -4322,6 +4338,7 @@ fn load_map_first_step(
             opening_view_cell,
             camera_anchor_x,
             camera_anchor_y,
+            ui_modules,
         },
         presentation,
         // The app loading job retains the one process-lifetime manager while

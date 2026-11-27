@@ -450,6 +450,7 @@ impl Simulation {
         effects: &mut FrameEffects<'_>,
     ) {
         if !self.mega_mission(owner).is_attack_move() {
+            let before = self.module_target_before(owner);
             if let Some(entity) = self.substrate.entities.get_mut(owner) {
                 if clear_archive {
                     entity.set_archive_target(None);
@@ -460,6 +461,8 @@ impl Simulation {
                     rules.ares_form(),
                 );
             }
+            // Wasm module `TargetChanged` (`ext_modules::control`).
+            self.raise_module_target_changed(rules, effects, owner, before);
             self.assign_null_destination(owner, rules, Some(rules.overlay_registry()), effects);
         }
         crate::sim::world::enter_idle_mode(
@@ -1363,12 +1366,17 @@ impl Simulation {
             .is_some_and(|w| w.sonic);
         if sonic {
             self.parasite_exit_unit(eater, rules, effects);
+            let before = source.and_then(|id| self.module_target_before(id));
             if let Some(source) = source.and_then(|id| self.substrate.entities.get_mut(id)) {
                 crate::sim::mission::concrete_effects::represented_assign_target(
                     source,
                     None,
                     rules.ares_form(),
                 );
+            }
+            // Wasm module `TargetChanged` (`ext_modules::control`).
+            if let Some(source) = source {
+                self.raise_module_target_changed(rules, effects, source, before);
             }
             return;
         }

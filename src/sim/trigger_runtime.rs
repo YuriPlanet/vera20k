@@ -423,6 +423,11 @@ pub struct TriggerRuntime {
     /// ([`Self::detached`]). Debug builds refuse reads of it.
     #[serde(skip)]
     detached: bool,
+    /// Whether event sites also build payloads for client modules' forwarded
+    /// `SimEvent` kinds (`sim::ext_modules::client_outbox`). Presentation
+    /// only: set when modules are installed or restored, never saved.
+    #[serde(skip)]
+    client_forward: bool,
     /// Scratch for one synchronous Spring call tree. Empty between dispatches;
     /// save/restore and checksums keep only the authoritative trigger state.
     #[serde(skip)]
@@ -641,9 +646,21 @@ impl TriggerRuntime {
 
     /// Whether a module trigger listens for event `kind`: the one check an
     /// event site makes before it builds a payload (RFC 0001 section 15).
+    /// With client forwarding on it is also true for the kinds client
+    /// modules receive as `SimEvent`.
     #[inline]
     pub(crate) fn module_listens(&self, kind: i32) -> bool {
-        self.module.listens(kind)
+        self.module.listens(kind) || self.forwards_to_clients(kind)
+    }
+
+    /// Whether an event of `kind` goes to the client outbox.
+    #[inline]
+    pub(crate) fn forwards_to_clients(&self, kind: i32) -> bool {
+        self.client_forward && crate::sim::ext_modules::CLIENT_FORWARDED_EVENTS.contains(&kind)
+    }
+
+    pub(crate) fn set_client_forwarding(&mut self, on: bool) {
+        self.client_forward = on;
     }
 
     /// Whether a module trigger decides event `kind`: the one check a

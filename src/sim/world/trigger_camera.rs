@@ -43,7 +43,7 @@ impl Simulation {
 
     /// [`Self::trigger_waypoint_coord`] for a cell (a Wasm module's cell
     /// target).
-    pub(crate) fn trigger_cell_coord(&self, cell: (i16, i16)) -> Option<[i32; 3]> {
+    pub fn trigger_cell_coord(&self, cell: (i16, i16)) -> Option<[i32; 3]> {
         let [x, y, mut z] = self.trigger_cell_ground_coord(cell)?;
         let cells = NativeCellQuery::canonical(self.resolved_terrain.as_ref()?);
         let first = cells.lookup(cell);

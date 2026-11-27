@@ -17,8 +17,16 @@ wasmparser = "0.245"
 wasm-encoder = { version = "0.245", default-features = false, features = ["std", "wasmparser"] }
 
 # Desktop runs the rewritten module with Wasmtime.
-[target.'cfg(not(all(target_arch = "wasm32", target_os = "unknown")))'.dependencies]
+[target.'cfg(not(any(target_os = "wasi", all(target_arch = "wasm32", target_os = "unknown"))))'.dependencies]
 wasmtime = { version = "51", default-features = false, features = ["cranelift", "runtime", "std"] }
+
+# The hardened macOS game interprets Cranelift's Pulley bytecode.
+[target.'cfg(target_os = "macos")'.dependencies]
+wasmtime = { version = "51", default-features = false, features = ["pulley"] }
+
+# WASI tools run standalone without executable memory or JavaScript bindings.
+[target.'cfg(target_os = "wasi")'.dependencies]
+wasmi = { version = "2.0.3", default-features = false, features = ["stable", "std", "validate", "portable-dispatch"] }
 
 # The browser build runs the same rewritten module with the browser's own
 # WebAssembly engine (RFC 0001 open question 1).

@@ -141,6 +141,7 @@ pub(crate) mod telemetry_capture;
 #[cfg(feature = "telemetry-dashboard")]
 pub(crate) mod telemetry_server;
 pub(crate) mod types;
+pub(crate) mod ui_modules;
 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 pub(crate) mod updater;
 pub(crate) mod web_link;

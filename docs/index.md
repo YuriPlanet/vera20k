@@ -66,7 +66,7 @@ simulation, session and network command owners.
 - [Ferry order](ferry.md): press J and click a drop spot to have a transport carry units there and come back for more.
 - [Formation line](formation-line.md): hold F and drag with the left button to line a group up along a drawn line.
 - [Health-strip modes](health-bars.md): the `[VERA] HealthBars=` client option.
-- [RA2 Mode](ra2-mode.md): tick it in Options to play original Red Alert 2 from the next start.
+- [RA2 Mode](ra2-mode.md): switch between original Red Alert 2 and Yuri’s Revenge.
 - [Lobby player colours](skirmish-colors.md): the thirty colours a lobby lists, and `[SkirmishColors]` for a mod's own.
 - [Interface layout](interface-layout.md): `veraui.ini`, a mod's own places for the sidebar, the command bar and the sidebar's parts.
 - [Computer players pick the nearest enemy](ai-nearest-enemy.md): the `[General] AINearestEnemy=` rules key that stops every computer player in a free-for-all from choosing the human as its enemy.

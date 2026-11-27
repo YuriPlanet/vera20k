@@ -1888,7 +1888,26 @@ impl ApplicationHandler for App {
                 WindowEvent::KeyboardInput { event, .. } => {
                     if let PhysicalKey::Code(code) = event.physical_key {
                         let pressed = event.state.is_pressed();
-                        if replay && code == KeyCode::Escape {
+                        // The modules' hotkeys read Shift/Ctrl/Alt from the
+                        // key edges, as a player's keys do below.
+                        crate::app::input::hotkeys::record_modifier_key(
+                            &mut state.platform.held_modifier_keys,
+                            &mut state.platform.live_modifiers,
+                            &mut state.match_state.input.hotkey_modifiers,
+                            code,
+                            pressed,
+                            false,
+                        );
+                        let in_game = state.frontend.screen == GameScreen::InGame;
+                        if code == KeyCode::Escape
+                            && pressed
+                            && !event.repeat
+                            && in_game
+                            && crate::app::ui_modules::key_escape(state)
+                        {
+                            // Esc dismissed a client module's node before
+                            // the viewer's own Esc (RFC 0001 section 10).
+                        } else if replay && code == KeyCode::Escape {
                             if pressed {
                                 event_loop.exit();
                             }
@@ -1916,6 +1935,23 @@ impl ApplicationHandler for App {
                             } else {
                                 state.match_state.input.keys_held.remove(&code);
                             }
+                        } else if pressed && !event.repeat && in_game {
+                            // A key the viewer does not use goes to the
+                            // client modules' hotkeys, as a player's unused
+                            // key does (`input::keyboard`).
+                            let unmodified = event.key_without_modifiers();
+                            let key = crate::app::input::hotkeys::binding_logical_key(
+                                &event.logical_key,
+                                &unmodified,
+                                event.location,
+                            );
+                            let modifiers = state.match_state.input.hotkey_modifiers;
+                            crate::app::ui_modules::key_unused(
+                                state,
+                                key,
+                                event.location,
+                                modifiers,
+                            );
                         }
                     }
                     return;
@@ -1929,22 +1965,32 @@ impl ApplicationHandler for App {
                         position.x as f32,
                         position.y as f32,
                     );
+                    // Client module nodes take a viewer's pointer too.
+                    if state.frontend.screen == GameScreen::InGame {
+                        crate::app::ui_modules::pointer_moved(state);
+                    }
                     return;
                 }
+                // Client module nodes take a viewer's buttons first; a
+                // replay's do nothing else.
                 WindowEvent::MouseInput {
                     state: button_state,
                     button,
                     ..
-                } if watching => {
-                    crate::app::match_runtime::watching::mouse(
-                        &state.platform,
-                        &mut state.renderer,
-                        &state.frontend,
-                        &mut state.match_state,
-                        &state.persistence,
-                        *button,
-                        button_state.is_pressed(),
-                    );
+                } => {
+                    if !crate::app::ui_modules::pointer_button(state, *button, button_state.is_pressed())
+                        && watching
+                    {
+                        crate::app::match_runtime::watching::mouse(
+                            &state.platform,
+                            &mut state.renderer,
+                            &state.frontend,
+                            &mut state.match_state,
+                            &state.persistence,
+                            *button,
+                            button_state.is_pressed(),
+                        );
+                    }
                     return;
                 }
                 WindowEvent::MouseWheel { delta, .. } => {

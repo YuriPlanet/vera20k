@@ -39,13 +39,16 @@ pub(crate) mod crit;
 #[cfg(all(test, tests_sim_combat_a_c, feature = "phobos"))]
 mod crit_tests;
 pub(crate) mod damage;
+mod damage_incoming;
 pub(crate) mod destruction_effects;
+mod death_plan;
 pub(crate) mod detonation_anim;
 mod effects;
 pub mod electric_bolt;
 pub mod fire_coord;
 pub mod fire_error;
 pub(crate) mod fire_error_world;
+mod fire_plan;
 pub mod gattling;
 pub(crate) mod greatest_threat;
 pub mod in_range;
@@ -183,7 +186,6 @@ use attack_target::{attack_world_z_leptons, cell_center_coords, target_coords};
 use projectile_delivery::{
     ProjectileDelivery, bullet_type, classify_projectile_delivery, projectile_arm_delay,
 };
-#[cfg(feature = "phobos")]
 use receiver_call::resolve_receive_damage_with_input;
 use receiver_call::{
     BuildingReceivePrelude, ResolvedReceiveDamage, apply_building_receive_prelude,

@@ -1422,6 +1422,10 @@ fn upload_to_gpu(
         &state.persistence,
     );
     state.renderer.bit_font.set_raster(frame_raster);
+    // The client modules' panels and the map's overlay (`ui.wasm`, map
+    // `[VeraUI]`): laid out and painted at the frame's pixels, as the
+    // sidebar's text is.
+    crate::app::ui_modules::paint::build(state);
     let [
         message_fill,
         tooltip_fill,
@@ -1622,6 +1626,9 @@ fn upload_to_gpu(
     pool.upload("tooltip_fill", &tooltip_fill);
     pool.upload("tooltip_border", &tooltip_border);
     pool.upload("tooltip_text", &tooltip_text);
+    if let Some(ui) = state.match_state.ui_modules.as_ref() {
+        crate::app::ui_modules::paint::upload(ui, &mut pool);
+    }
     rendered_verdict
 }
 

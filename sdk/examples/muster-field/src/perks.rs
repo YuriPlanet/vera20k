@@ -11,39 +11,10 @@ use crate::content::{self, MERCS};
 use crate::state::{self, COMPANY, Member, Num};
 use crate::world;
 
-pub const PERKS: usize = 10;
-
-const BARRAGE: usize = 0;
-const MEDICS: usize = 1;
-const LAST_STAND: usize = 2;
-const LEDGER: usize = 3;
-const DRILL: usize = 4;
-const PLATES: usize = 5;
-const BARRELS: usize = 6;
-const HORN: usize = 7;
-const GRUDGE: usize = 8;
-const GUNS: usize = 9;
-
-struct Perk {
-    name: &'static str,
-    /// For the first taking and for the next ones.
-    effect: [&'static str; 2],
-    most: i64,
-}
-
-#[rustfmt::skip]
-const TABLE: [Perk; PERKS] = [
-    Perk { name: "开场炮轰", effect: ["敌开战损血15%"; 2], most: 2 },
-    Perk { name: "野战医疗", effect: ["每3秒回血4%"; 2], most: 2 },
-    Perk { name: "背水一战", effect: ["独存回满且翻倍"; 2], most: 1 },
-    Perk { name: "战利账房", effect: ["每场+100杀+15"; 2], most: 2 },
-    Perk { name: "老兵教头", effect: ["低价兵成老兵", "中价兵也成老兵"], most: 2 },
-    Perk { name: "焊接钢板", effect: ["载具护甲+40%"; 2], most: 2 },
-    Perk { name: "加长枪管", effect: ["射程+1格"; 2], most: 2 },
-    Perk { name: "冲锋号角", effect: ["短程前20秒护甲+60%"; 2], most: 2 },
-    Perk { name: "同袍血债", effect: ["每亡一人火力+20%"; 2], most: 2 },
-    Perk { name: "后方炮援", effect: ["每6秒轰最强敌"; 2], most: 2 },
-];
+pub use muster_field_data::perks::PERKS;
+use muster_field_data::perks::{
+    BARRAGE, BARRELS, DRILL, GRUDGE, GUNS, HORN, LAST_STAND, LEDGER, MEDICS, PLATES, TABLE,
+};
 
 const SECOND: i64 = 15;
 /// How long the horn holds: the approach and the first exchange.
@@ -81,14 +52,21 @@ fn taken(perk: usize) -> i64 {
 }
 
 pub fn name(perk: usize) -> &'static str {
-    TABLE.get(perk).map_or("", |entry| entry.name)
+    muster_field_data::perks::name(perk)
 }
 
 /// A few words for the choice line: what taking it now adds.
 pub fn effect(perk: usize) -> &'static str {
-    TABLE
-        .get(perk)
-        .map_or("", |entry| entry.effect[usize::from(taken(perk) > 0)])
+    muster_field_data::perks::effect(perk, taken(perk))
+}
+
+/// How often each supply was taken, for the interface.
+pub fn taken_all() -> [i64; PERKS] {
+    let mut all = [0; PERKS];
+    for (perk, count) in all.iter_mut().enumerate() {
+        *count = taken(perk);
+    }
+    all
 }
 
 /// Up to three different supplies that can still be taken.

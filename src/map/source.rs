@@ -727,6 +727,41 @@ pub fn map_source_identity(
     load_map_input_with_assets(ra2_dir, map_name, assets, None, |input| Ok(input.source))
 }
 
+/// The INI of the map a restored save was played on, read again for what
+/// the save does not carry: the client modules' `ui.wasm`, `[VeraUI]` and
+/// storage key (RFC 0001 section 10). The file is found as the restored
+/// world finds it ([`LoadedMapSource::restored_loose_lookup`], then the
+/// ordinary loose-before-MIX lookup), and counts only when its length and
+/// SHA-256 are the saved ones. `Ok(None)` for a source without authored
+/// bytes (a generated map, a fallback), which embeds nothing.
+pub fn reread_saved_map_ini(
+    source: &LoadedMapSource,
+    ra2_dir: &Path,
+    launch_dir: Option<&Path>,
+    assets: &AssetManager,
+) -> Result<Option<IniFile>> {
+    let Some((length, digest)) = source.physical_identity().filter(|_| source.is_authored()) else {
+        return Ok(None);
+    };
+    let name = match source {
+        LoadedMapSource::Loose { .. } => source
+            .restored_loose_lookup(Some(ra2_dir), launch_dir)
+            .0
+            .ok_or_else(|| anyhow::anyhow!("the saved map path has no file name"))?,
+        LoadedMapSource::Mix { logical_name, .. }
+        | LoadedMapSource::Bundled { logical_name, .. } => logical_name.as_str(),
+        _ => return Ok(None),
+    };
+    load_map_input_with_assets(ra2_dir, name, assets, None, |input| {
+        anyhow::ensure!(
+            input.source.physical_identity() == Some((length, digest)),
+            "the map file {name} is not the one the game was saved on"
+        );
+        decode_metadata_with_assets(input, assets)
+    })
+    .map(|loaded| Some(loaded.ini))
+}
+
 pub fn load_map_ini_by_name_or_path_with_assets(
     ra2_dir: &Path,
     map_name: &str,
@@ -2179,6 +2214,35 @@ mod tests {
                 .section_or_empty("Basic")
                 .read_name("Name", 128),
             Some("Base arena")
+        );
+    }
+
+    #[test]
+    fn a_saved_map_is_read_again_only_when_its_bytes_are_the_saved_ones() {
+        use crate::assets::asset_manager::MediaArchiveMode;
+
+        let base = crate::assets::asset_manager::test_support::audio_test_install("map-reread");
+        let map = [SOURCE_TEST_MAP, b"[VeraUI]\nParts=Score\n"].concat();
+        std::fs::write(base.path().join("Arena.map"), &map).unwrap();
+        let assets = AssetManager::new(base.path(), MediaArchiveMode::STOCK_DIGITAL).unwrap();
+        let saved = map_source_identity(base.path(), "Arena.map", &assets).unwrap();
+
+        let ini = reread_saved_map_ini(&saved, base.path(), None, &assets)
+            .unwrap()
+            .expect("an authored map");
+        assert!(ini.section("VeraUI").is_some());
+
+        std::fs::write(base.path().join("Arena.map"), SOURCE_TEST_MAP).unwrap();
+        assert!(reread_saved_map_ini(&saved, base.path(), None, &assets).is_err());
+
+        let generated = LoadedMapSource::Generated {
+            seed_name: "RandMap.Sed".into(),
+            seed_source: None,
+        };
+        assert!(
+            reread_saved_map_ini(&generated, base.path(), None, &assets)
+                .unwrap()
+                .is_none()
         );
     }
 
