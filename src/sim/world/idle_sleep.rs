@@ -411,7 +411,7 @@ impl Simulation {
             && entity.invulnerability.is_none()
             && entity.airstrike_link().is_none()
             && entity.emp_remaining() == 0
-            && !entity.ai_frozen()
+            && !entity.needs_warp_ai()
             && !entity.temporal.is_warping_someone()
             && entity.bomb.is_none()
             && !entity.constructing_or_selling()
@@ -521,7 +521,6 @@ impl Simulation {
             && entity.ion_blast_lift_pixels() == 0
             && entity.flashing.frames() == 0
             && entity.emp_remaining() == 0
-            && !entity.ai_frozen()
             && !entity.temporal.is_warping_someone()
             && !entity.berserk.is_active()
             && !entity.deactivated.is_offline()
@@ -570,8 +569,7 @@ fn infantry_rests(entity: &crate::sim::game_entity::GameEntity, object: &ObjectT
         && entity.lifecycle.object_alive()
         && !entity.lifecycle.in_limbo()
         && !entity.death.is_dying()
-        && !entity.is_warped_out()
-        && !entity.is_warping_in()
+        && !entity.needs_warp_ai()
         // The tube tests return before the AI counter.
         && entity.active_tube().is_none()
         && entity.drain.is_idle()
