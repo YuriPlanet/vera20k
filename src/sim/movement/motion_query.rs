@@ -89,6 +89,50 @@ pub fn is_moving(entity: &GameEntity) -> Option<bool> {
     }
 }
 
+/// Whether a quiet ground unit's next native Process has no movement writes.
+///
+/// Drive `0x004B066C..0x004B0A69` and Ship `0x0069FD13..0x006A0131` then take
+/// their common tail; Walk `0x0075AEC0..0x0075AF10` takes `0x0075BCE3`.
+/// The caller still performs Drive/Ship's slope sample (`0x004B050B` /
+/// `0x0069FC1B`). No head, destination, queue, turn latch or owed setter may
+/// remain, and the idle speed/scold writes must already be settled.
+pub(crate) fn ground_process_rests(entity: &GameEntity, binary_frame: u32) -> bool {
+    let Some(locomotor) = entity.locomotor.as_ref() else {
+        return false;
+    };
+    if locomotor.piggyback().is_some()
+        || entity.lift.swap_active()
+        || entity.lift.may_end()
+        || entity.navigation.nav_com().is_some()
+        || entity.navigation.destination_setter_owed()
+        || !entity
+            .navigation
+            .path_replay()
+            .remaining_directions()
+            .is_empty()
+        || entity.foot_speed.speed_fraction_is_positive()
+        || entity.navigation.path_runtime().scold_latch_raw() != 0
+        || entity.body_facing.is_rotating(binary_frame)
+    {
+        return false;
+    }
+    match locomotor.active_kind() {
+        LocomotorKind::Drive | LocomotorKind::Ship => {
+            let Some(family) = TrackFamily::from_kind(locomotor.active_kind()) else {
+                return false;
+            };
+            super::track_head::active_track_family(entity).is_none()
+                && locomotor.track_turn_latched(family) == Some(false)
+                && locomotor.track_destination(family).is_none()
+                && locomotor.track_head(family).is_none()
+        }
+        LocomotorKind::Walk | LocomotorKind::Mech => {
+            locomotor.step_head().is_none() && locomotor.walk_destination().is_none()
+        }
+        _ => false,
+    }
+}
+
 /// `Is_Moving_Now` (ILocomotion+0x80) of the active locomotor: Fly
 /// `0x004CCAC0`, Rocket `0x00661F90`, and the readiness families of
 /// [`super::ready_producer::ready_state_for`] (Drive `0x004AFC20`, Ship,

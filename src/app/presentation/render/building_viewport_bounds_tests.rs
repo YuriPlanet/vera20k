@@ -129,6 +129,8 @@ fn retail_rushhr_roof_below_viewport_keeps_its_visible_body() {
     let mut parents = PlannedObjects::default();
     build_shp_instances_from_inputs(
         &ShpInputs {
+            motion: None,
+            diagnostics: None,
             runtime: &scene.runtime,
             frame: &crate::app::presentation::frame::PresentationFrame::capture(
                 &scene.runtime,

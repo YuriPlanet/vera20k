@@ -995,12 +995,6 @@ fn techno_ai_shell(
     // A quiet unit is neither warped nor warping (`world::quiet_units`).
     let temporal_frozen = !sim.quiet(id)
         && sim.temporal_ai_prologue(id, rules, ctx, &mut outcome.bridge_state_changed);
-    // Phobos `ShieldClass::AI_Temporal` pauses recovery during the Temporal
-    // prologue; frozen leaves never reach the normal `ShieldClass::AI` at
-    // `TechnoClass_AI @ 0x6F9E50+0x5`. The shield owner handles that paused
-    // visit or the normal recovery visit after this frame's warp update.
-    #[cfg(feature = "phobos")]
-    crate::sim::shield::tick(sim, id, rules);
     if temporal_frozen {
         return;
     }
@@ -1042,7 +1036,12 @@ fn techno_ai_shell(
     // ApplyMindControlRangeLimit`, after the leaf's own steps and before the
     // common Techno body's estimated-health recover.
     #[cfg(feature = "phobos")]
-    sim.apply_mind_control_range_limit(id, rules, ctx.overlay_registry, &mut ctx.effects);
+    {
+        // OnEarlyUpdate runs UpdateShield first, after the leaf's freeze and
+        // death returns. A thawed object can reach it with an erase head.
+        crate::sim::shield::tick(sim, id, rules);
+        sim.apply_mind_control_range_limit(id, rules, ctx.overlay_registry, &mut ctx.effects);
+    }
     // Techno6F9F6E..9F precedes veterancy promotion, missions and acquisition for every
     // Techno category. object_ai_visit_one excludes the entry-active Tube leaf
     // before this common owner. Actual health and this retained estimate differ.

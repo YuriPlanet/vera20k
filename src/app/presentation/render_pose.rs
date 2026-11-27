@@ -1,5 +1,5 @@
-//! One object's draw transform at the current binary frame, read fresh for
-//! each draw and never retained across draws.
+//! An object's draw transform at a committed simulation frame. Visible moving units
+//! can sample it between ticks through `unit_motion`.
 
 use crate::sim::game_entity::GameEntity;
 

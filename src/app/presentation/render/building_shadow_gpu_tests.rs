@@ -232,14 +232,11 @@ fn assert_retail_embedded_shadow(expected_type: &str, expected_frame_count: u16)
         draw_state: decision.state,
         ..Default::default()
     };
-    let cells = sim
-        .resolved_terrain()
-        .map(crate::map::resolved_terrain::NativeCellQuery::isolated);
     let shadow = embedded_shp_shadow_piece(
         &atlas,
         Some(object),
         record,
-        cells.as_ref(),
+        None,
         &body_key,
         &body_entry,
         body_instance,

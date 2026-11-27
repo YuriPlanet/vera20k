@@ -818,15 +818,6 @@ fn dispatch_retail_hotkey(
             n as u8 + 1,
             crate::app::match_runtime::frame_pacer::wall_clock_ms(),
         ),
-        HotkeyCommand::PageUser => crate::app::input::page_user::execute(
-            platform,
-            renderer,
-            frontend,
-            match_state,
-            process_assets,
-            audio,
-            persistence,
-        ),
         HotkeyCommand::PlaceBeacon => crate::app::input::beacon::execute_command(
             platform,
             renderer,

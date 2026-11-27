@@ -650,10 +650,7 @@ impl WolCapture {
                     received.reply_to
                 );
                 self.event(frame, "page on 0x10E: 0x11E opened");
-                let layout = crate::app::shell_wol::page::received_layout(
-                    &state.renderer,
-                    &state.frontend.screen,
-                );
+                let layout = crate::app::shell_wol::page::received_layout(&state.renderer);
                 match self.target {
                     WolTarget::PageReceivedReply => {
                         welcome_click(state, layout.rect_of(0x540).unwrap_or_default());
@@ -940,10 +937,7 @@ impl WolCapture {
                 if self.target.clan_match() {
                     return self.clan_match(state, frame);
                 }
-                if matches!(
-                    self.target,
-                    WolTarget::IngamePage | WolTarget::IngamePageCancel
-                ) {
+                if self.target == WolTarget::IngamePage {
                     self.ingame_page(state, frame)?;
                     return Ok(());
                 }

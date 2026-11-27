@@ -444,6 +444,9 @@ pub(crate) struct MatchSession {
     /// (`0x004C7F4F`) the event value. FF reads it at init and Resume;
     /// MaxAhead pacing is transport.
     latency_fudge: i32,
+    /// PregameSetup 0x005E74D4 writes process staging A8E960. Campaign map
+    /// reads and player saves change the live Scenario field independently.
+    staged_tiberium: crate::sim::scenario_session::TiberiumFlags,
     /// FF Resume's two event limiters (`0xA8EE40` latency, `0xA8EE30`
     /// speed): function statics that outlive every menu and match.
     pause_event_limiters: PauseEventLimiters,
@@ -511,12 +514,17 @@ impl Default for MatchSession {
             multiplayer_settings_initialized: false,
             lobby_color_count: crate::skirmish_launch::HOUSE_COLOR_COUNT,
             latency_fudge: 0,
+            staged_tiberium: crate::sim::scenario_session::TiberiumFlags::COLD,
             pause_event_limiters: PauseEventLimiters::default(),
         }
     }
 }
 
 impl MatchSession {
+    pub(crate) fn staged_tiberium(&self) -> crate::sim::scenario_session::TiberiumFlags {
+        self.staged_tiberium
+    }
+
     /// SessionClass__ReadMultiPlayerSettings 698161..6981DA consumes a Main
     /// RandomRanged(0,32768) before reading PortPool, even with an explicit
     /// PortPool key. Keep this shared stream effect at its process lifetime.
