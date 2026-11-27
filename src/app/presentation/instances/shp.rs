@@ -343,7 +343,11 @@ pub(crate) fn shp_visitor<'a>(
                 active_disguise
                     .and_then(|state| state.type_id())
                     .map(|id| sim.interner().resolve(id))
-                    .unwrap_or_else(|| sim.interner().resolve(entity.type_ref())),
+                    // VERA: a module's `ImageOverride` image.
+                    .unwrap_or_else(|| {
+                        sim.interner()
+                            .resolve(entity.module_image().unwrap_or(entity.type_ref()))
+                    }),
             )
         };
         if super::helpers::drawn_type_uses_voxel(entity, type_name.as_ref(), sim.interner(), rules)
@@ -620,7 +624,12 @@ pub(crate) fn shp_visitor<'a>(
                 palette_context: *palette,
                 type_id: name.clone(),
                 facing: 0,
-                frame: shp_frame.min(*half),
+                // A door a module holds open shows its last opening frame.
+                frame: if entity.place.structure.and_then(|art| art.module_door) == Some(true) {
+                    half.saturating_sub(1)
+                } else {
+                    shp_frame.min(*half)
+                },
                 house_color: hc,
             },
             None => ShpSpriteKey {
@@ -1768,7 +1777,12 @@ fn factory_unload_art<'a>(
     entity: &crate::app::presentation::frame::ObjectRecord,
     art: &'a crate::rules::art_data::ArtEntry,
 ) -> Option<FactoryUnloadArt<'a>> {
-    if entity.mission.effective().known() != Some(crate::sim::mission::MissionType::Unload) {
+    // VERA: a Wasm module's `DoorOpen` write holds the door drawn open or
+    // shut (`ext_modules::held`), whatever the mission.
+    let held = entity.place.structure.and_then(|art| art.module_door);
+    let unloading =
+        entity.mission.effective().known() == Some(crate::sim::mission::MissionType::Unload);
+    if !held.unwrap_or(unloading) {
         return None;
     }
     // `contact0` is radio slot 0's object.

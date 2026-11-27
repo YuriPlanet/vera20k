@@ -120,7 +120,8 @@ pub(crate) fn render_lan_lobby(
         }
     }
     let now = Instant::now();
-    let layout = crate::app::shell_lan::layout(&renderer.gpu);
+    let layout = crate::app::shell_lan::layout(&renderer.gpu)
+        .with_touch_send(platform.touch_send);
     let scale = layout.page.scale;
     let width = renderer.render_width(&frontend.screen);
     let height = renderer.render_height(&frontend.screen);
@@ -149,15 +150,12 @@ pub(crate) fn render_lan_lobby(
     } else {
         let gui = frontend.shell_controller.gui();
         // VERA's send key answers the emote button's hint, whose tile it borrows.
-        #[cfg(target_os = "android")]
-        let send_help = {
+        let send_help = layout.touch_send && {
             let (px, py) = match_state.input.cursor_px();
             layout.chat_send().is_some_and(|rect| {
                 px >= rect.x && px < rect.x + rect.w && py >= rect.y && py < rect.y + rect.h
             })
         };
-        #[cfg(not(target_os = "android"))]
-        let send_help = false;
         let help = if send_help {
             process_assets.csf_text("STT:EmoteButton")
         } else {
@@ -339,11 +337,9 @@ pub(crate) fn render_lan_lobby(
             &mut overlay,
         );
     }
-    // Android: VERA's send key beside the chat box. The host draws it, so it
-    // has to go with the page's slide: otherwise it hangs over the next menu's
-    // entrance.
-    #[cfg(target_os = "android")]
-    if !leaving && let Some(rect) = layout.chat_send() {
+    // VERA's send key beside the chat box. The host draws it, so it has to go
+    // with the page's slide: otherwise it hangs over the next menu's entrance.
+    if !leaving && layout.touch_send && let Some(rect) = layout.chat_send() {
         super::push_chat_send_key(&mut overlay.controls, atlas, scale, rect);
     }
     in_game_shell::render_shell_frame(

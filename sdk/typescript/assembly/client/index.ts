@@ -12,6 +12,7 @@
 
 export {
   Client, Ui, Node, NodeProps, Camera, Cursor, Local, Hotkey, ClientVar, NotifyName, Storage,
+  StatusTemplates,
 } from "./api";
 export {
   onStart, onRender, onClientEvent,

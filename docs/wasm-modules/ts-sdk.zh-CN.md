@@ -305,7 +305,7 @@ function nextWave(): void {
 | `fireWeapon(shooter, slot, at = NO_HANDLE, cell = 0)` | 立即用 0 或 1 号武器向它的目标、对象 `at` 或地格 `cell` 开火；不能开火时返回 `Refused` | v1 |
 | `launchSuperWeapon(house, kind: TypeRef, at: Ref)` | 发射这一方的超级武器 | v1 |
 | `spawnAnim(at, anim: i32)` | 播放动画（`Rules.anim`） | v1 |
-| `attachAnim(target, anim: i32)` | 在对象上附着播放一次动画 | RFC 里是 later；这里已实现 |
+| `attachAnim(target, anim: i32, frames: i64 = 0)`、`detachAnim(target, anim: i32 = -1)` | 在对象上附着播放一次动画，或让它循环 `frames` 帧（负数：直到 `detachAnim`） | preview |
 | `endFor(house, outcome: Outcome)` | 为某一方结束对局（`Outcome.Win`、`Outcome.Lose`） | v1 |
 | `setScore(house, n)`、`addScore(house, n)` | 分数 | v1 |
 | `log(line)` | `log` 的动作形式 | v1 |

@@ -12,7 +12,7 @@
 //! | 1000 | `FireWeapon` | `Simulation::commit_fire_visit` with `FireVisit::Direct`, the FireAt entry a mission calls once GetFireError (`0x006FC0B0`, range checked) answered Ok, as the deploy fire does; any other answer is `Refused`. Slot `value` 0 or 1, or the slot holding weapon `id`; aim at `cell`, else `other`, else the current target |
 //! | 1001 | `LaunchSuperWeapon` | `Simulation::fire_super_weapon` (HouseClass::Fire_SW `0x004FAE50`), manual target |
 //! | 1002 | `SpawnAnim` | `Simulation::trigger_play_anim_at_cell`, stock action 41's owner (PlayAnimAtWP `0x006E2290`) at a cell; `id` is the AnimType array index stock 41 takes, `house` optional |
-//! | 1003 | `AttachAnim` | `Simulation::spawn_anim_at_world` with the object as owner (SetOwnerObject `0x00424B50`), as team script action 51 (`0x006EF610`) attaches one: delay 0, one pass of the type's loops, draw flags `0x600`, at the object's GetCoords; `id` the AnimType array index |
+//! | 1003 | `AttachAnim` | `Simulation::spawn_anim_at_world` with the object as owner (SetOwnerObject `0x00424B50`), as team script action 51 (`0x006EF610`) attaches one: delay 0, one pass of the type's loops, draw flags `0x600`, at the object's GetCoords; `id` the AnimType array index. `value2` other than 0 holds its loops (`hold_loops`, as a Phobos AttachEffect's animation) for that many frames, or until `DetachAnim` when negative (`held::ActionHeld`) |
 //! | 1004 | `Remove` | `Simulation::uninit_with_context` |
 //! | 1005 | `Kill` | `Simulation::commit_direct_damage_receiver`, damage = health, `C4Warhead=`, defenses ignored (as stock action 32, `0x006E2050`) |
 //! | 1006 | `Damage` | `Simulation::commit_direct_damage_receiver` with the warhead, armor applied |
@@ -42,6 +42,7 @@
 //! | 1042 | `RaiseEvent` | `Simulation::raise_module_event` for an object event, `offer_module_event` to each global trigger for a global one (`ini_names`) |
 //! | 1034 | `Convert` | `Simulation::convert_techno_type` (Ares ConvertToType `0x10043650`); a positive `value2` converts back through it after that many frames (`held::ActionHeld`); ends the object's `Push` |
 //! | 1035 | `Push` | `Simulation::start_module_push`, the forced-motion owner `motion` keeps: `value` leptons toward (negative: away from) `cell` over `value2` frames, each frame a module step at the object's locomotor Process; Units and Infantry on Drive, Ship, Walk, Mech or Hover, not warping |
+//! | 1046 | `DetachAnim` | `Simulation::destroy_anim_with_context` on the animations this origin's `AttachAnim` keeps on the object (`held::ActionHeld`), of AnimType `id` or every one for -1 |
 //! | 1045 | `SetFacing` | `Simulation::module_set_facing`: the active locomotor's Do_Turn (ILocomotion `+0x4C`, `movement::locomotor_do_turn`) toward body facing `value` (0..255) |
 //!
 //! Every other atomic action answers `(0, Unsupported)` and `has_kind`
@@ -64,8 +65,7 @@
 //! Also unsupported: `FireWeapon` with a weapon `id` neither of the
 //! shooter's two slots holds at its rank (FireAt fires its own slots), or a
 //! slot other than 0 and 1;
-//! `AttachAnim` with `value2` other than 0 (an animation ends after its
-//! loops; no owner keeps one for a count of frames); `AddPassenger` into a
+//! `AddPassenger` into a
 //! building (garrisons and absorbers enter through their own arms); and
 //! `ClearMindControl` of the Psychic Dominator's permanent control (no
 //! controller to free it; `Refused`). `FireWeapon` and `AddPassenger` run
@@ -173,9 +173,10 @@ pub const LOG: i32 = 1033;
 pub const CONVERT: i32 = 1034;
 pub const PUSH: i32 = 1035;
 pub const SET_FACING: i32 = 1045;
+pub const DETACH_ANIM: i32 = 1046;
 pub const RAISE_EVENT: i32 = vera20k_wasm_ext::triggers::ACTION_RAISE_EVENT;
 
-const ATOMIC: [i32; 34] = [
+const ATOMIC: [i32; 35] = [
     FIRE_WEAPON,
     LAUNCH_SUPER_WEAPON,
     SPAWN_ANIM,
@@ -209,6 +210,7 @@ const ATOMIC: [i32; 34] = [
     CONVERT,
     PUSH,
     SET_FACING,
+    DETACH_ANIM,
     RAISE_EVENT,
 ];
 
@@ -799,6 +801,22 @@ impl Run<'_, '_, '_, '_> {
             }
             FIRE_WEAPON => self.fire_weapon(target),
             ATTACH_ANIM => self.attach_anim(target),
+            DETACH_ANIM => {
+                let id = self.object(target)?;
+                let anim_type = self.params.id;
+                if anim_type != -1 && self.ctx.rules.anim_type_runtime_key_by_index(anim_type).is_none() {
+                    return invalid(format!("no animation {anim_type}"));
+                }
+                let taken = self
+                    .sim
+                    .ext_modules
+                    .held
+                    .take_anims_of(id, anim_type, self.ctx.source);
+                for anim in taken {
+                    self.sim.destroy_held_anim(anim, self.ctx.rules);
+                }
+                Ok(0)
+            }
             ALLOW_TYPE => {
                 let owner = self.house(target)?;
                 techno_type(self.ctx.rules, self.params.id)?;
@@ -1038,39 +1056,40 @@ impl Run<'_, '_, '_, '_> {
 
     /// AttachAnim: one pass of animation `id` (its array index, as
     /// `SpawnAnim` takes) attached to the object, as team script action 51
-    /// attaches one to each member.
+    /// attaches one to each member. `value2` other than 0 keeps it looping
+    /// for that many frames, or until `DetachAnim` when negative.
     fn attach_anim(&mut self, target: i64) -> Act<i64> {
         let id = self.object(target)?;
         let rules = self.ctx.rules;
         let index = self.params.id;
-        let Some(type_name) = rules.anim_type_runtime_key_by_index(index) else {
+        if rules.anim_type_runtime_key_by_index(index).is_none() {
             return invalid(format!("no animation {index}"));
-        };
-        if self.params.value2 != 0 {
-            // A count of frames or "until removed" (module doc).
-            return status(Status::Unsupported);
         }
-        let placed =
-            self.sim.entities().get(id).is_some_and(|entity| {
-                entity.lifecycle.object_alive() && !entity.lifecycle.in_limbo()
-            });
-        let Some(world) = placed.then(|| self.sim.anim_owner_coords(id)).flatten() else {
+        let frames = self.params.value2;
+        let target = self.sim.entities().get(id).filter(|entity| entity.lifecycle.object_alive());
+        let Some(target) = target else {
             return status(Status::Refused);
         };
-        let type_id = self.sim.interner.intern(&type_name);
-        let (rx, ry, sub_x, sub_y, level) = world.to_cell_sub_z();
-        let descriptor = crate::sim::components::AnimClassSpawnDescriptor {
-            loop_count: 1,
-            draw_flags: 0x600,
-            owner: Some(id),
-            ..crate::sim::components::AnimClassSpawnDescriptor::new(
-                type_id, rx, ry, sub_x, sub_y, level,
-            )
-        };
-        match self.sim.spawn_anim_at_world(rules, descriptor, world) {
-            Ok(_) => Ok(0),
-            Err(_) => status(Status::Refused),
+        let held = frames != 0;
+        if held && !self.sim.ext_modules.held.can_hold_anim() {
+            return status(Status::Refused);
         }
+        let anim = if held && super::held::held_anim_hidden(target) {
+            None
+        } else {
+            let Some(anim) = self.sim.spawn_attached_anim(rules, id, index, held) else {
+                return status(Status::Refused);
+            };
+            Some(anim)
+        };
+        if held {
+            let frame = self.sim.session.binary_frame();
+            self.sim
+                .ext_modules
+                .held
+                .hold_anim(anim, id, index, self.ctx.source, frames, frame);
+        }
+        Ok(0)
     }
 
     /// AddPassenger: the passenger (`other`) boards the transport (the

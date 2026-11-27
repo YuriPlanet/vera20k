@@ -723,12 +723,25 @@ pub(crate) const LABELS: [(u16, &str); 3] = [
 pub(crate) struct LanLobbyLayout {
     pub(crate) page: MenuPageLayout,
     pub(crate) rects: RectTable,
+    /// Whether VERA's send key sits beside the chat edit, and the edit and
+    /// its row move to make room. Off keeps the native BB layout.
+    pub(crate) touch_send: bool,
 }
 
 impl LanLobbyLayout {
     pub(crate) fn new(width: i32, height: i32, scale: ShellScale) -> Self {
         let (page, rects) = layout_data::menu_page(&PAGE, "0xBB", scale, width, height);
-        Self { page, rects }
+        Self {
+            page,
+            rects,
+            touch_send: true,
+        }
+    }
+
+    /// The layout with VERA's touch send key, for a platform without Enter.
+    pub(crate) fn with_touch_send(mut self, on: bool) -> Self {
+        self.touch_send = on;
+        self
     }
 
     /// Control `id`'s window; none for a control BB does not show.
@@ -748,21 +761,25 @@ impl LanLobbyLayout {
         }
     }
 
-    /// Android: the chat row moved down to the room's spacing, beside VERA's
-    /// send key: the gap between the chat log's bottom edge and the input
-    /// row's top edge matches the LAN room's chat area (5 authored px).
-    #[cfg(target_os = "android")]
+    /// The chat row: the native place, or for a touch platform the room's
+    /// spacing beside VERA's send key, with the log's bottom edge to the input
+    /// row's top edge at 5 authored px.
     fn chat_row(&self) -> Option<RectPx> {
         let chat = self.rect(CHAT)?;
+        if !self.touch_send {
+            return Some(chat);
+        }
         let log = self.rect(CHAT_LOG)?;
         let scale = self.page.scale;
         let y = log.y + log.h + (5.0 * scale.factor()).round() as i32;
         Some(RectPx::new(chat.x, y, chat.w, chat.h))
     }
 
-    /// Android: VERA's send key beside the chat box, at the LAN room's slot.
-    #[cfg(target_os = "android")]
+    /// VERA's send key beside the chat box, at the LAN room's slot.
     pub(crate) fn chat_send(&self) -> Option<RectPx> {
+        if !self.touch_send {
+            return None;
+        }
         let chat = self.chat_row()?;
         let log = self.rect(CHAT_LOG)?;
         Some(crate::ui::shell::geom::room_chat_send_rect(
@@ -772,13 +789,17 @@ impl LanLobbyLayout {
         ))
     }
 
-    /// Android: the chat edit's rect, the room's width and row position.
-    #[cfg(target_os = "android")]
+    /// The chat edit's rect: the native one, or the room's width and row
+    /// position beside the send key.
     pub(crate) fn chat_text(&self) -> Option<RectPx> {
-        let chat = self.chat_row()?;
+        let chat = self.rect(CHAT)?;
+        if !self.touch_send {
+            return Some(chat);
+        }
+        let row = self.chat_row()?;
         let log = self.rect(CHAT_LOG)?;
         Some(crate::ui::shell::geom::room_chat_text_rect(
-            chat,
+            row,
             log,
             self.page.scale,
         ))
@@ -791,6 +812,22 @@ mod tests {
 
     fn native() -> serde_json::Value {
         crate::test_fixture::json("tools/storage_oracle/lan_lobby.json").clone()
+    }
+
+    /// A touch platform moves the chat row beside VERA's send key and takes
+    /// the key's width out of the edit; the native layout keeps both places.
+    #[test]
+    fn touch_send_moves_the_lobby_chat_row_and_narrows_its_edit() {
+        let native = LanLobbyLayout::new(800, 600, crate::ui::shell::geom::RETAIL_SCALE)
+            .with_touch_send(false);
+        let touch = native.clone().with_touch_send(true);
+        let native_chat = native.chat_text().unwrap();
+        let touch_chat = touch.chat_text().unwrap();
+        let send = touch.chat_send().unwrap();
+        assert!(native.chat_send().is_none());
+        assert!(touch_chat.w < native_chat.w, "the edit leaves the key room");
+        assert!(touch_chat.y > native_chat.y, "the row takes the room's spacing");
+        assert!(send.x >= touch_chat.x + touch_chat.w, "the key follows the edit");
     }
 
     /// A press selects a player row (`0x0061AA3E`); a roster rebuild

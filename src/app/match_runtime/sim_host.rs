@@ -118,6 +118,11 @@ pub(crate) struct SimHost {
     /// Whether frames capture VERA's Convenience Help status rows
     /// ([`Self::show_status_rows`]); off, the capture skips them.
     status_rows: bool,
+    /// The client modules' local looks of objects ([`Self::set_local_looks`]).
+    local_looks: crate::app::presentation::frame::LocalLooks,
+    /// Whether frames capture the status templates' amounts
+    /// ([`Self::capture_status_amounts`]).
+    status_amounts: bool,
     /// Global B04474 and its comparison timer (`FrameChecksumState`):
     /// process state that launch and load retain, written and compared only
     /// inside a multiplayer tick.
@@ -437,10 +442,12 @@ impl SimHost {
         let runtime = self.runtime.as_ref()?;
         Some(self.frame.get_or_init(|| {
             let started = Instant::now();
-            let frame = Box::new(PresentationFrame::capture(
+            let frame = Box::new(PresentationFrame::capture_with_looks(
                 runtime,
                 &self.sidebar_types,
                 self.status_rows,
+                &self.local_looks,
+                self.status_amounts,
             ));
             let mut costs = self.snapshot_costs.get();
             costs.capture += started.elapsed();
@@ -468,6 +475,31 @@ impl SimHost {
     /// Have frames capture VERA's Convenience Help status rows, or stop.
     /// A home frame captured the other way is dropped, so the next read
     /// captures it; a lent tick's frame stands until the tick comes back.
+    /// Have frames carry the client modules' local looks of objects
+    /// (`ui_modules`, `Decoration`). A home frame captured with others is
+    /// dropped; a lent tick's frame stands until the tick comes back.
+    pub(crate) fn set_local_looks(&mut self, looks: crate::app::presentation::frame::LocalLooks) {
+        if self.local_looks == looks {
+            return;
+        }
+        self.local_looks = looks;
+        if !self.lent {
+            self.forget_frame();
+        }
+    }
+
+    /// Have frames capture the amounts the client modules' status templates
+    /// read (`ui_modules::status`), or stop.
+    pub(crate) fn capture_status_amounts(&mut self, on: bool) {
+        if self.status_amounts == on {
+            return;
+        }
+        self.status_amounts = on;
+        if !self.lent {
+            self.forget_frame();
+        }
+    }
+
     pub(crate) fn show_status_rows(&mut self, on: bool) {
         if self.status_rows == on {
             return;

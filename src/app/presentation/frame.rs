@@ -42,6 +42,12 @@ pub(crate) struct Capture<'a> {
     /// Whether VERA's Convenience Help is on, so the observer's and its
     /// allies' objects capture their status rows (`HudFacts::capture`).
     pub(crate) status_rows: bool,
+    /// The client modules' local looks of objects (`Decoration` `Tint`,
+    /// `HideAnchor`), by object.
+    pub(crate) local_looks: &'a LocalLooks,
+    /// Whether the match has status templates, which read the amounts
+    /// ([`StatusFacts`]).
+    pub(crate) status_amounts: bool,
     /// The capture's isolated query of the live map: a miss stamps its own
     /// dummy, not the simulation's.
     pub(crate) cells: Option<crate::map::resolved_terrain::NativeCellQuery<'a>>,
@@ -64,6 +70,19 @@ impl Capture<'_> {
             .object_type(entity.type_ref(), self.rules())
     }
 }
+
+/// How a client module's `Decoration` changes an object's look on this
+/// screen alone (appendix 7.10 `Tint`, `TintIntensity`, `HideAnchor`).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(crate) struct LocalLook {
+    /// `[R, G, B]` and the intensity (1.0 full) folded into the custom tint.
+    pub(crate) tint: Option<([u8; 3], f64)>,
+    /// The body is not drawn; the object is still selected and clicked.
+    pub(crate) hidden: bool,
+}
+
+/// Every object's [`LocalLook`], by stable id.
+pub(crate) type LocalLooks = std::collections::BTreeMap<u64, LocalLook>;
 
 /// One object's draw record: its state under [`GameEntity`]'s names.
 #[derive(Clone, Debug)]
@@ -148,8 +167,87 @@ pub(crate) struct ObjectRecord {
     pub(crate) seen: Seen,
     /// What its status strip reads (`ui_overlays`).
     pub(crate) hud: crate::app::presentation::ui_overlays::HudFacts,
+    /// What modules change of its look and what their status
+    /// templates read of it; `None` for most objects ([`ModuleFacts`]).
+    module: Option<Box<ModuleFacts>>,
     /// What the scene's other drawers read of it (`frame_scene`).
     pub(crate) scene: crate::app::presentation::frame_scene::SceneFacts,
+}
+
+/// What modules change of an object's look and what their status
+/// templates read of it, kept out of the record of an object they leave
+/// alone: the record is copied for every object each lent tick.
+#[derive(Clone, Debug, Default)]
+struct ModuleFacts {
+    tint: Option<([u8; 3], f64)>,
+    image: Option<InternedId>,
+    local_look: LocalLook,
+    /// Captured only while the match has status templates.
+    status: Option<StatusFacts>,
+}
+
+impl ModuleFacts {
+    fn capture(entity: &GameEntity, at: &Capture<'_>, seen: Seen) -> Option<Box<Self>> {
+        let facts = Self {
+            tint: entity.module_tint(),
+            image: at.sim.ext_module_image(entity.stable_id()).and_then(|name| at.sim.interner().get(name)),
+            local_look: at
+                .local_looks
+                .get(&entity.stable_id())
+                .filter(|_| {
+                    // A tracked object disguised as terrain offers no decoration anchor.
+                    !seen.disguise_hides_house && (!seen.disguised_to_observer
+                        || at.sim.forced_disguise_type(entity.stable_id(), at.rules())
+                            .and_then(|kind| at.sim.interner().object_type(kind, at.rules())).is_some())
+                })
+                .copied()
+                .unwrap_or_default(),
+            status: at.status_amounts.then(|| StatusFacts::capture(entity, at)),
+        };
+        let plain = facts.tint.is_none() && facts.image.is_none()
+            && facts.local_look == LocalLook::default() && facts.status.is_none();
+        (!plain).then(|| Box::new(facts))
+    }
+}
+
+/// The amounts a module status template reads of an object
+/// (`ui_modules::status`): read with the frame, so the templates never read
+/// the live world. Visibility is the templates' to apply when they draw.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct StatusFacts {
+    /// Ammo and `Ammo=`.
+    pub(crate) ammo: Option<(i32, i32)>,
+    /// Passengers (and garrison occupants) and the type's `Passengers=`.
+    pub(crate) passengers: Option<(i32, i32)>,
+    /// The object-scope module variables it holds apart from their
+    /// defaults (`VarStore::object_values`), by variable ID.
+    pub(crate) vars: Option<Box<[(i32, i64)]>>,
+}
+
+impl StatusFacts {
+    fn capture(entity: &GameEntity, at: &Capture<'_>) -> Self {
+        let ammo = entity
+            .ammo()
+            .filter(|ammo| ammo.max() > 0)
+            .map(|ammo| (ammo.current(), ammo.max()));
+        let room = at.object_type(entity).map_or(0, |object| object.passengers);
+        let role = entity.passenger_role();
+        let riders = i32::try_from(role.passenger_count())
+            .unwrap_or(i32::MAX)
+            .saturating_add(role.occupants().count().max(0));
+        let passengers = (room > 0).then_some((riders, room));
+        let vars: Box<[(i32, i64)]> = at
+            .sim
+            .ext_modules()
+            .vars()
+            .object_values(entity.stable_id())
+            .collect();
+        Self {
+            ammo,
+            passengers,
+            vars: (!vars.is_empty()).then_some(vars),
+        }
+    }
 }
 
 /// `GameEntity`'s answers to the queries drawing asks it.
@@ -397,6 +495,9 @@ pub(crate) struct StructureArt {
     pub(crate) current_body_frame: i32,
     /// `gate_open_body_frame` with its art's GateStages, for a gate.
     pub(crate) gate_open_body_frame: Option<i32>,
+    /// How a Wasm module's `DoorOpen` write holds its door drawn
+    /// (`Simulation::ext_module_door`).
+    pub(crate) module_door: Option<bool>,
 }
 
 impl StructureArt {
@@ -426,14 +527,24 @@ impl StructureArt {
                 at.sim.object_tech_level(object),
             ),
             gate_open_body_frame: gate_stages.and_then(|gate_stages| {
-                building_art::gate_open_body_frame(
-                    entity,
-                    gate_stages,
-                    object.strength,
-                    rules.general.condition_yellow,
-                    at.binary_frame,
-                )
+                match at.sim.ext_module_door(entity.stable_id()) {
+                    Some(open) => building_art::gate_held_body_frame(
+                        entity,
+                        gate_stages,
+                        object.strength,
+                        rules.general.condition_yellow,
+                        open,
+                    ),
+                    None => building_art::gate_open_body_frame(
+                        entity,
+                        gate_stages,
+                        object.strength,
+                        rules.general.condition_yellow,
+                        at.binary_frame,
+                    ),
+                }
             }),
+            module_door: at.sim.ext_module_door(entity.stable_id()),
         })
     }
 }
@@ -619,6 +730,7 @@ impl ObjectRecord {
         let place = Place::of(entity, &pose, location.z, at);
         let seen = Seen::of(entity, at);
         let hud = crate::app::presentation::ui_overlays::HudFacts::capture(entity, at, location);
+
         let scene =
             crate::app::presentation::frame_scene::SceneFacts::capture(entity, at, location);
         let tether_draw =
@@ -711,6 +823,7 @@ impl ObjectRecord {
             place,
             seen,
             hud,
+            module: ModuleFacts::capture(entity, at, seen),
             scene,
             pose,
             shp_body_facing: if at.rules().ares() {
@@ -856,6 +969,27 @@ impl ObjectRecord {
     #[cfg(feature = "phobos")]
     pub(crate) fn shield(&self) -> Option<&crate::sim::shield::ShieldState> {
         self.answers.shield.as_ref()
+    }
+
+    /// The simulation module's tint and intensity.
+    pub(crate) fn module_tint(&self) -> Option<([u8; 3], f64)> {
+        self.module.as_ref().and_then(|module| module.tint)
+    }
+
+    /// The type a simulation module draws in place of this object's own.
+    pub(crate) fn module_image(&self) -> Option<InternedId> {
+        self.module.as_ref().and_then(|module| module.image)
+    }
+
+    /// A client module's local look of it.
+    pub(crate) fn local_look(&self) -> LocalLook {
+        self.module.as_ref().map_or_else(LocalLook::default, |module| module.local_look)
+    }
+
+    /// What status templates read of it; `None` in a match without
+    /// templates.
+    pub(crate) fn status(&self) -> Option<&StatusFacts> {
+        self.module.as_ref().and_then(|module| module.status.as_ref())
     }
 
     #[cfg(feature = "phobos")]
@@ -1348,6 +1482,17 @@ impl PresentationFrame {
         sidebar_types: &crate::app::sidebar_projection::SidebarTypes,
         status_rows: bool,
     ) -> Self {
+        Self::capture_with_looks(runtime, sidebar_types, status_rows, &LocalLooks::new(), false)
+    }
+
+    /// [`Self::capture`] with the client modules' local looks of objects.
+    pub(crate) fn capture_with_looks(
+        runtime: &SimRuntime,
+        sidebar_types: &crate::app::sidebar_projection::SidebarTypes,
+        status_rows: bool,
+        local_looks: &LocalLooks,
+        status_amounts: bool,
+    ) -> Self {
         let sim = &runtime.simulation;
         let observer_id = sim.session().current_house();
         let observer = observer_id.map(|id| sim.interner().resolve(id));
@@ -1359,6 +1504,8 @@ impl PresentationFrame {
             observer_id,
             sidebar_types,
             status_rows,
+            local_looks,
+            status_amounts,
             cells: sim
                 .resolved_terrain()
                 .map(crate::map::resolved_terrain::NativeCellQuery::isolated),

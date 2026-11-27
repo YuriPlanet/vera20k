@@ -81,6 +81,8 @@ pub enum Condition {
     Present(SourceId),
     BelowMax(SourceId),
     AtLeast(SourceId, i32),
+    /// The amount is present and its value at most this.
+    AtMost(SourceId, i32),
 }
 
 /// A colour from `percent` full upward. Of two with one percent the first
@@ -203,7 +205,8 @@ impl Entry {
 
 #[derive(Default)]
 pub struct World {
-    /// In registration order; a template's id is its index.
+    /// In registration order. A template's id is its index when it was
+    /// added; a removal moves the later ones.
     templates: Vec<Entry>,
 }
 
@@ -220,6 +223,39 @@ impl World {
         let id = TemplateId(self.templates.len() as u64);
         self.templates.push(Entry { origin, def });
         Ok(id)
+    }
+
+    /// Replaces a named template at the end of registration order. A rejected
+    /// replacement preserves both the old definition and its priority.
+    pub fn replace_template(&mut self, origin: Origin, template: StatusTemplate) -> Result<(), Refused> {
+        let def = normalized(template, origin)?;
+        let previous = self.templates.iter().position(|row| row.origin == origin && row.def.name == def.name);
+        if previous.is_none() && self.templates.len() >= origin.share(MAX_TEMPLATES) {
+            return Err(Refused::Limit);
+        }
+        if let Some(index) = previous {
+            self.templates.remove(index);
+        }
+        self.templates.push(Entry { origin, def });
+        Ok(())
+    }
+
+    /// Removes `origin`'s templates named `name`; whether there was one.
+    /// The others keep their order.
+    pub fn remove(&mut self, origin: Origin, name: &str) -> bool {
+        let before = self.templates.len();
+        self.templates
+            .retain(|row| !(row.origin == origin && row.def.name == name));
+        self.templates.len() != before
+    }
+
+    /// Removes every template of `origin` (its module stopped).
+    pub fn remove_origin(&mut self, origin: Origin) {
+        self.templates.retain(|row| row.origin != origin);
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.templates.is_empty()
     }
 
     /// Appends the templates' commands for `objects`: object order first,
@@ -319,6 +355,7 @@ fn holds(condition: Condition, values: &[Option<Amount>]) -> bool {
         Condition::BelowMax(source) => {
             ratio(values, source).is_some_and(|(value, max)| value < max)
         }
+        Condition::AtMost(source, most) => amount(values, source).is_some_and(|a| a.value <= most),
         Condition::AtLeast(source, least) => {
             amount(values, source).is_some_and(|a| a.value >= least)
         }
@@ -639,7 +676,7 @@ mod tests {
 
     #[test]
     fn conditions() {
-        let cases: [(Condition, &[Option<Amount>], bool); 16] = [
+        let cases: [(Condition, &[Option<Amount>], bool); 19] = [
             (Condition::Present(S0), &some(0, 0), true),
             (Condition::Present(S0), &[None], false),
             (Condition::Present(S0), &[], false),
@@ -656,6 +693,9 @@ mod tests {
             (Condition::AtLeast(S0, i32::MIN), &some(i32::MIN, 0), true),
             (Condition::AtLeast(S0, i32::MAX), &some(i32::MAX, 0), true),
             (Condition::AtLeast(S0, i32::MIN), &[], false),
+            (Condition::AtMost(S0, 3), &some(3, 0), true),
+            (Condition::AtMost(S0, 3), &some(4, 9), false),
+            (Condition::AtMost(S0, i32::MAX), &[], false),
         ];
         for (condition, values, hit) in cases {
             let world = world(StatusTemplate {

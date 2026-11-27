@@ -1,0 +1,7 @@
+{
+  "kind": "rules",
+  "vars": [
+    { "name": "Kills", "scope": "object", "visibility": "public", "initial": 0 },
+    { "name": "Level", "scope": "object", "visibility": "public", "initial": 0 }
+  ]
+}

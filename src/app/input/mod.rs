@@ -2,6 +2,8 @@
 //! command scheduling, camera, cursor, entity picking, sidebar gadget input,
 //! in-game options input, tooltips, and messages.
 
+#[cfg(any(target_os = "android", test))]
+pub mod android_mouse;
 pub(crate) mod autoload;
 pub(crate) mod smart_command;
 pub(crate) mod build_repeat;

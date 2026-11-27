@@ -93,6 +93,11 @@ impl ClientHost for Fake {
             None => (None, Status::NotFound),
         })
     }
+    fn status_template(&mut self, text: &str) -> Result<Status, Invalid> {
+        self.logs.push(text.to_owned());
+        Ok(Status::Ok)
+    }
+
     fn storage_write(&mut self, key: &str, data: &[u8]) -> Result<Status, Invalid> {
         self.storage.retain(|(k, _)| k != key);
         if !data.is_empty() {
@@ -448,4 +453,33 @@ fn the_client_imports_reach_the_host() {
         module.render(&mut host, 0.0, 0.0),
         Err(Fault::Invalid(_))
     ));
+}
+
+const BATTLEFIELD_NODES: &str = r#"
+(module
+  (import "vera:client@1.0" "client_node_create" (func $create (param i32 i64 i32 i32 i32) (result i32)))
+  (import "vera:client@1.0" "client_status" (func $status (param i32 i32) (result i32)))
+  (memory (export "memory") 1)
+  (data (i32.const 100) "Name=Hp")
+  (func (export "client_on_start")
+    ;; A Decoration (8) and a MapMarker (9) at the top level.
+    (i32.store (i32.const 0) (call $create (i32.const 8) (i64.const 0) (i32.const 0) (i32.const 0) (i32.const 16)))
+    (i32.store (i32.const 4) (call $create (i32.const 9) (i64.const 0) (i32.const 0) (i32.const 0) (i32.const 24)))
+    (i32.store (i32.const 8) (call $status (i32.const 100) (i32.const 7))))
+  (func (export "client_on_render") (param f32 f32)))
+"#;
+
+/// The 0.2.0 node kinds `Decoration` and `MapMarker` reach the host, and
+/// `client_status` hands it the template text.
+#[test]
+fn decorations_markers_and_status_templates_reach_the_host() {
+    let mut module = load(BATTLEFIELD_NODES).expect("module loads");
+    let mut host = Fake::default();
+    module.start(&mut host).expect("start runs");
+    assert_eq!(memory_i32(&module, 0), Status::Ok as i32);
+    assert_eq!(memory_i32(&module, 4), Status::Ok as i32);
+    assert_eq!(memory_i32(&module, 8), Status::Ok as i32);
+    let kinds: Vec<i32> = host.created.iter().map(|(kind, _, _)| *kind).collect();
+    assert_eq!(kinds, [8, 9]);
+    assert_eq!(host.logs, ["Name=Hp"]);
 }

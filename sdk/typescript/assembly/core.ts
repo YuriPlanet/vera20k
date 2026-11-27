@@ -1100,10 +1100,20 @@ export namespace Action {
     store<i64>(p, cell, sys.AP_CELL);
     return run(ActionKind.FireWeapon, shooter, p);
   }
-  export function attachAnim(target: Techno, anim: i32): Status {
+  /** Plays animation `anim` attached to `target`: once with `frames` 0,
+   *  looping for `frames` frames, or until `detachAnim` when negative. */
+  export function attachAnim(target: Techno, anim: i32, frames: i64 = 0): Status {
     const p = params();
     store<i32>(p, anim, sys.AP_ID);
+    store<i64>(p, frames, sys.AP_VALUE2);
     return run(ActionKind.AttachAnim, target, p);
+  }
+  /** Removes the animations `attachAnim` with frames kept on `target`:
+   *  those of `anim`, or all with -1. */
+  export function detachAnim(target: Techno, anim: i32 = -1): Status {
+    const p = params();
+    store<i32>(p, anim, sys.AP_ID);
+    return run(ActionKind.DetachAnim, target, p);
   }
   export function allowType(house: House, kind: TypeRef, allow: bool): Status {
     const p = params();

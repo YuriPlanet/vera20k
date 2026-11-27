@@ -3621,8 +3621,12 @@ fn finish_simulation_frame(
     }
 
     // VERA relation colours follow the frame's alliances: an alliance made or
-    // broken recolours that house before the atlas check below.
-    if frame_committed && state.match_state.match_presentation.relation_colors {
+    // broken recolours that house before the atlas check below. Team colours
+    // are fixed for the match, but sharing this refresh keeps one path.
+    if frame_committed
+        && (state.match_state.match_presentation.relation_colors
+            || state.match_state.match_presentation.team_colors)
+    {
         state.match_state.refresh_relation_colors();
     }
     // The atlases are checked against what the tick changed, before its first
@@ -4121,9 +4125,10 @@ pub(crate) fn refresh_entity_atlases(
         return;
     };
     let presentation = &mut match_state.match_presentation;
-    crate::render::unit_atlas::admit_world_models(
+    crate::render::unit_atlas::admit_world_and_image_models(
         &mut presentation.unit_atlas,
         rt.simulation.entities(),
+        rt.simulation.ext_module_images(),
         asset_manager,
         Some(&rt.resources.rules),
         Some(rt.simulation.interner()),

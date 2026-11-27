@@ -151,7 +151,7 @@ In a match
 │   Ctrl+Alt+F Performance Stats, Alt+Enter Full Screen, Ctrl+Alt+L Lock Cursor, Ctrl+Alt+K Show String Keys,
 │   Ctrl+Alt+H Convenience Help,
 │   Ctrl+Alt+T superweapon building timers【[VERA] SuperweaponBuildingTimers; no Options control】,
-│   Alt+A relation colours; /pause and /resume in chat drive the shared pause
+│   Alt+A relation colours, Alt+T team colours; /pause and /resume in chat drive the shared pause
 └─ Result screens
     ├─ Skirmish / multiplayer score, campaign score: Continue only
     ├─ Co-op campaign results: Continue / Quit, chat
