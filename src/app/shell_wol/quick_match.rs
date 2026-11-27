@@ -439,6 +439,9 @@ fn original_game_refusal(
 ) -> Option<&'static str> {
     Some(match original_game_changes(mod_title, assets).first()? {
         OriginalGameChange::Mod(_) => "VERA:QuickMatchNoMod",
+        #[cfg(target_os = "android")]
+        OriginalGameChange::Ra2 => "VERA:QuickMatchRa2ModeAndroid",
+        #[cfg(not(target_os = "android"))]
         OriginalGameChange::Ra2 => "VERA:QuickMatchRa2Mode",
         OriginalGameChange::IniRoots => "VERA:QuickMatchIniProfile",
         OriginalGameChange::Ares(_) => "VERA:QuickMatchAresSetting",
