@@ -41,7 +41,7 @@ palabra sobre su rumbo.
 
 ## Contribuir
 
-**Los PR que más necesitamos ahora**
+**PR que valoramos especialmente en este momento**
 
 - Refactorización
 - Rendimiento
