@@ -1062,28 +1062,11 @@ impl Run<'_, '_, '_, '_> {
         let id = self.object(target)?;
         let rules = self.ctx.rules;
         let index = self.params.id;
-        let Some(type_name) = rules.anim_type_runtime_key_by_index(index) else {
+        if rules.anim_type_runtime_key_by_index(index).is_none() {
             return invalid(format!("no animation {index}"));
-        };
+        }
         let frames = self.params.value2;
-        let placed =
-            self.sim.entities().get(id).is_some_and(|entity| {
-                entity.lifecycle.object_alive() && !entity.lifecycle.in_limbo()
-            });
-        let Some(world) = placed.then(|| self.sim.anim_owner_coords(id)).flatten() else {
-            return status(Status::Refused);
-        };
-        let type_id = self.sim.interner.intern(&type_name);
-        let (rx, ry, sub_x, sub_y, level) = world.to_cell_sub_z();
-        let descriptor = crate::sim::components::AnimClassSpawnDescriptor {
-            loop_count: 1,
-            draw_flags: 0x600,
-            owner: Some(id),
-            ..crate::sim::components::AnimClassSpawnDescriptor::new(
-                type_id, rx, ry, sub_x, sub_y, level,
-            )
-        };
-        let Ok(anim) = self.sim.spawn_anim_at_world(rules, descriptor, world) else {
+        let Some(anim) = self.sim.spawn_attached_anim(rules, id, index) else {
             return status(Status::Refused);
         };
         if frames != 0 {

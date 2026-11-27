@@ -445,8 +445,9 @@ fn the_jumpjet_speed_factor_scales_its_speed() {
 }
 
 /// `AttachAnim` with a frame count keeps its animation looping on the GI
-/// until the module phase of the frame the count runs out; with a negative
-/// count until `DetachAnim` of this origin takes it.
+/// until the module phase of the frame the count runs out, putting back one
+/// the engine destroyed; with a negative count until `DetachAnim` of this
+/// origin takes it.
 #[test]
 fn attach_anim_holds_for_its_frames_or_until_detached() {
     use super::actions::{ATTACH_ANIM, ActionContext, DETACH_ANIM, run_action};
@@ -490,6 +491,19 @@ fn attach_anim_holds_for_its_frames_or_until_detached() {
     };
     let frame = sim.session.binary_frame();
     let held = owned(sim);
+    // One the engine destroyed while its object shows is put back.
+    let first = sim
+        .substrate
+        .anims
+        .iter()
+        .find(|(_, anim)| anim.owner_entity() == Some(gi))
+        .map(|(id, _)| *id)
+        .expect("the kept animation");
+    sim.destroy_anim_with_context(first, rules);
+    assert_eq!(owned(sim), held - 1);
+    sim.session.set_binary_frame_for_test(frame + 1);
+    sim.maintain_ext_module_anims(rules);
+    assert_eq!(owned(sim), held, "put back while the GI shows");
     sim.session.set_binary_frame_for_test(frame + 2);
     sim.maintain_ext_module_anims(rules);
     assert_eq!(owned(sim), held, "kept before its time is up");

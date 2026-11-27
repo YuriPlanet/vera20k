@@ -19,11 +19,13 @@
 //!   the object, as a Phobos AttachEffect keeps its own (`hold_loops`, the
 //!   Ares attached-animation byte 255 at Anim+0x195): a positive count
 //!   until the module phase of the frame it runs out, a negative one until
-//!   `DetachAnim` removes it. The module phase destroys an animation whose
-//!   time is up or whose object left the game or let go of it
-//!   ([`Simulation::maintain_ext_module_anims`]); one the engine destroyed
-//!   (its owner's death) is dropped there too. As every owned animation, it
-//!   follows the object's coordinates, so it shows where the object shows.
+//!   `DetachAnim` removes it. Each module phase keeps exactly the wanted
+//!   animations alive, as Phobos' AttachEffect `CreateAnim`/`KillAnim` do
+//!   ([`Simulation::maintain_ext_module_anims`]): it destroys one whose time
+//!   is up or whose object left the game, takes one off while its object is
+//!   in limbo (a transport) or fully cloaked, so it gives no hidden object
+//!   away, and puts it back once the object shows again or the engine
+//!   destroyed it. It follows the object's coordinates.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -49,9 +51,9 @@ pub(crate) struct ActionHeld {
     conversions: BTreeMap<u64, Reversion>,
     /// (house array index, TechnoType ID) pairs a module forbade.
     forbidden: BTreeSet<(u32, u32)>,
-    /// The animations `AttachAnim` keeps, by animation ID.
+    /// The animations `AttachAnim` keeps, in attach order.
     #[serde(default)]
-    anims: BTreeMap<AnimId, HeldAnim>,
+    anims: Vec<HeldAnim>,
 }
 
 /// An animation a module keeps on an object.
@@ -64,12 +66,17 @@ struct HeldAnim {
     origin: super::ModuleSource,
     /// The frame whose module phase destroys it; `None` until `DetachAnim`.
     until: Option<u32>,
+    /// The live animation; `None` while its object is hidden.
+    anim: Option<AnimId>,
 }
 
 impl ActionHeld {
     pub(super) fn is_empty(&self) -> bool {
-        self.conversions.is_empty() && self.forbidden.is_empty() && self.anims.is_empty()
+        self.conversions.is_empty()
+            && self.forbidden.is_empty()
+            && self.anims.is_empty()
     }
+
 
     /// After `AttachAnim` attached `anim` to `object`: kept for `frames`
     /// frames from `frame`, or until `DetachAnim` when `frames` is negative.
@@ -84,38 +91,33 @@ impl ActionHeld {
     ) {
         let until = (frames >= 0)
             .then(|| frame.saturating_add(u32::try_from(frames).unwrap_or(u32::MAX)));
-        self.anims.insert(
-            anim,
-            HeldAnim {
-                object,
-                anim_type,
-                origin,
-                until,
-            },
-        );
+        self.anims.push(HeldAnim {
+            object,
+            anim_type,
+            origin,
+            until,
+            anim: Some(anim),
+        });
     }
 
     /// `DetachAnim`: takes the animations `origin` keeps on `object`, those
-    /// of AnimType `anim_type` only unless it is -1.
+    /// of AnimType `anim_type` only unless it is -1; the live ones' IDs.
     pub(super) fn take_anims_of(
         &mut self,
         object: u64,
         anim_type: i32,
         origin: super::ModuleSource,
     ) -> Vec<AnimId> {
-        let taken: Vec<AnimId> = self
-            .anims
-            .iter()
-            .filter(|(_, held)| {
-                held.object == object
-                    && held.origin == origin
-                    && (anim_type == -1 || held.anim_type == anim_type)
-            })
-            .map(|(anim, _)| *anim)
-            .collect();
-        for anim in &taken {
-            self.anims.remove(anim);
-        }
+        let mut taken = Vec::new();
+        self.anims.retain(|held| {
+            let take = held.object == object
+                && held.origin == origin
+                && (anim_type == -1 || held.anim_type == anim_type);
+            if take {
+                taken.extend(held.anim);
+            }
+            !take
+        });
         taken
     }
 
@@ -171,33 +173,77 @@ impl ActionHeld {
 }
 
 impl Simulation {
-    /// The module phase's kept animations: each whose time is up, whose
-    /// object left the game or no longer owns it is destroyed and dropped,
-    /// in animation order; one the engine already destroyed is dropped.
+    /// The module phase's kept animations, in attach order: one whose time
+    /// is up or whose object left the game is destroyed and dropped; one
+    /// whose object is in limbo or fully cloaked is destroyed and kept; one
+    /// that is gone or no longer the object's while it shows is made again.
     pub(super) fn maintain_ext_module_anims(&mut self, rules: &RuleSet) {
         if self.ext_modules.held.anims.is_empty() {
             return;
         }
         let frame = self.session.binary_frame();
-        let done: Vec<AnimId> = self
-            .ext_modules
-            .held
-            .anims
-            .iter()
-            .filter(|(anim, held)| {
-                held.until.is_some_and(|until| until <= frame)
-                    || self
-                        .substrate
-                        .anims
-                        .get(**anim)
-                        .is_none_or(|live| live.owner_entity() != Some(held.object))
-            })
-            .map(|(anim, _)| *anim)
-            .collect();
-        for anim in done {
-            self.ext_modules.held.anims.remove(&anim);
-            self.destroy_held_anim(anim, rules);
-        }
+        let mut held = std::mem::take(&mut self.ext_modules.held.anims);
+        held.retain_mut(|kept| {
+            let entity = self.substrate.entities.get(kept.object);
+            let gone = kept.until.is_some_and(|until| until <= frame)
+                || entity.is_none_or(|entity| !entity.lifecycle.object_alive());
+            let hidden = entity.is_some_and(|entity| {
+                entity.lifecycle.in_limbo()
+                    || entity.cloak.as_ref().is_some_and(|cloak| cloak.is_fully_cloaked())
+            });
+            let live = kept.anim.filter(|&anim| {
+                self.substrate
+                    .anims
+                    .get(anim)
+                    .is_some_and(|live| live.owner_entity() == Some(kept.object))
+            });
+            if gone || hidden {
+                if let Some(anim) = live {
+                    self.destroy_anim_with_context(anim, rules);
+                }
+                kept.anim = None;
+                return !gone;
+            }
+            if live.is_none() {
+                kept.anim = self.spawn_attached_anim(rules, kept.object, kept.anim_type);
+                if let Some(anim) = kept.anim
+                    && let Some(live) = self.substrate.anims.get_mut(anim)
+                {
+                    live.hold_loops();
+                }
+            }
+            true
+        });
+        self.ext_modules.held.anims = held;
+    }
+
+    /// One pass of AnimType `anim_type` (its array index) attached to
+    /// `object` as team script action 51 (`0x006EF610`) attaches one: delay
+    /// 0, the type's loops, draw flags `0x600`, at the object's GetCoords.
+    /// `None` for an object not on the map or an animation that does not
+    /// construct.
+    pub(super) fn spawn_attached_anim(
+        &mut self,
+        rules: &RuleSet,
+        object: u64,
+        anim_type: i32,
+    ) -> Option<AnimId> {
+        let type_name = rules.anim_type_runtime_key_by_index(anim_type)?;
+        let placed = self.substrate.entities.get(object).is_some_and(|entity| {
+            entity.lifecycle.object_alive() && !entity.lifecycle.in_limbo()
+        });
+        let world = placed.then(|| self.anim_owner_coords(object)).flatten()?;
+        let type_id = self.interner.intern(&type_name);
+        let (rx, ry, sub_x, sub_y, level) = world.to_cell_sub_z();
+        let descriptor = crate::sim::components::AnimClassSpawnDescriptor {
+            loop_count: 1,
+            draw_flags: 0x600,
+            owner: Some(object),
+            ..crate::sim::components::AnimClassSpawnDescriptor::new(
+                type_id, rx, ry, sub_x, sub_y, level,
+            )
+        };
+        self.spawn_anim_at_world(rules, descriptor, world).ok()
     }
 
     /// Destroys a module-kept animation the engine has not destroyed yet.

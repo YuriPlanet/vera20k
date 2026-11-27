@@ -723,9 +723,11 @@ read; a map whose file changed since a save loses its `[VeraUI]` parts on restor
   viewer. Tests `ext_modules_control_tests.rs`
   (`tint_modifiers_compose_into_the_module_tint`) and `lighting_tint_tests.rs`.
 - `AttachAnim` with `value2` and `DetachAnim` (1046, preview): `ext_modules/held.rs`
-  keeps the looping animation (`hold_loops`) by animation ID with its object, origin
-  and end frame; the module phase destroys it when its time is up, its object left
-  the game or let it go (`maintain_ext_module_anims`). Saved and hashed with the
+  keeps each looping animation (`hold_loops`) with its object, origin and end frame;
+  the module phase keeps exactly the wanted ones alive (`maintain_ext_module_anims`):
+  destroyed when the time is up or the object left the game, taken off while the
+  object is in a transport or fully cloaked, put back after or when the engine
+  destroyed it. Saved and hashed with the
   other held state. SDK `attach_anim_for`/`detach_anim`, `attachAnim(.., frames)`/
   `detachAnim`. Test `attach_anim_holds_for_its_frames_or_until_detached`.
 
