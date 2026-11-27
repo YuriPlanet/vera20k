@@ -23,6 +23,8 @@ use std::path::PathBuf;
 
 use bytemuck::{Pod, Zeroable};
 
+use super::atlas_growth::ShelfCursor;
+
 /// HD pixels per side of the page.
 const PAGE: u32 = 4096;
 
@@ -166,7 +168,9 @@ pub(crate) struct HdTerrain {
     /// `prepare` calls so far (two a frame: tiles, then overlays), for
     /// [`Tile::Ready`]'s `used`.
     calls: u64,
-    shelf: [u32; 3],
+    shelf: ShelfCursor,
+    /// A full visible set can refuse several pictures in the same pass.
+    repacked_this_pass: bool,
     gpu: Option<Gpu>,
 }
 
@@ -182,7 +186,8 @@ impl HdTerrain {
             waiting: HashMap::new(),
             loader: super::hd_loader::HdLoader::new("HD terrain reader"),
             calls: 0,
-            shelf: [0, 0, 0],
+            shelf: Self::empty_shelf(),
+            repacked_this_pass: false,
             gpu: None,
         })
     }
@@ -198,6 +203,7 @@ impl HdTerrain {
         lookup: HdLookup<'_>,
         pieces: &[HdTerrainPiece],
     ) -> Vec<HdTerrainDraw> {
+        self.repacked_this_pass = false;
         self.ensure_gpu(device);
         self.calls += 1;
         let mut uploaded = 0;
@@ -298,13 +304,12 @@ impl HdTerrain {
             self.tiles.insert(hash, Tile::Missing);
             return 0;
         };
-        let origin = match self.place(w, h) {
-            Some(origin) => Some(origin),
-            None => {
-                self.repack(device, queue);
-                self.place(w, h)
-            }
-        };
+        let mut origin = self.shelf.place(w, h);
+        if origin.is_none() && !self.repacked_this_pass {
+            self.repacked_this_pass = true;
+            self.repack(device, queue);
+            origin = self.shelf.place(w, h);
+        }
         let Some(origin) = origin else {
             self.tiles.insert(hash, Tile::NoRoom { at: self.calls });
             return 0;
@@ -322,22 +327,9 @@ impl HdTerrain {
         art.len()
     }
 
-    /// Shelf placement in the page, two pixels apart.
-    fn place(&mut self, w: u32, h: u32) -> Option<[u32; 2]> {
+    fn empty_shelf() -> ShelfCursor {
         let page = PAGE / super::hd_switch::page_shrink();
-        let [x, y, row] = &mut self.shelf;
-        if *x + w > page {
-            *y += *row + 2;
-            *x = 0;
-            *row = 0;
-        }
-        if *y + h > page {
-            return None;
-        }
-        let origin = [*x, *y];
-        *x += w + 2;
-        *row = (*row).max(h);
-        Some(origin)
+        ShelfCursor::with_padding(page, page, 2)
     }
 
     /// The page is full: copy the pictures drawn in the last frame or so
@@ -362,13 +354,13 @@ impl HdTerrain {
         self.tiles
             .retain(|_, tile| !matches!(tile, Tile::Ready { used, .. } if *used < keep_from));
         let page = page_texture(device);
-        self.shelf = [0, 0, 0];
+        self.shelf = Self::empty_shelf();
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("HD terrain repack"),
         });
         let mut kept = 0;
         for (hash, old, [w, h], used) in keep {
-            let Some(origin) = self.place(w, h) else {
+            let Some(origin) = self.shelf.place(w, h) else {
                 self.tiles.remove(&hash);
                 continue;
             };

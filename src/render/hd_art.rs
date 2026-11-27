@@ -22,6 +22,8 @@ use std::path::{Path, PathBuf};
 
 use bytemuck::{Pod, Zeroable};
 
+use super::atlas_growth::ShelfCursor;
+
 use super::sprite_atlas::{ShpSpriteKey, SpriteAtlas};
 
 /// Native pixels per side of the index page; the HD page is twice that.
@@ -202,7 +204,9 @@ pub(crate) struct HdArt {
     loader: super::hd_loader::HdLoader,
     /// Frames prepared so far, for [`Art::Ready`]'s `used`.
     frame: u64,
-    shelf: [u32; 3],
+    shelf: ShelfCursor,
+    /// A full visible set can refuse several pictures in the same pass.
+    repacked_this_pass: bool,
     gpu: Option<Gpu>,
 }
 
@@ -225,7 +229,8 @@ impl HdArt {
             waiting: HashMap::new(),
             loader: super::hd_loader::HdLoader::new("HD art reader"),
             frame: 0,
-            shelf: [0, 0, 0],
+            shelf: Self::empty_shelf(),
+            repacked_this_pass: false,
             gpu: None,
         })
     }
@@ -248,6 +253,7 @@ impl HdArt {
         atlas: &SpriteAtlas,
         pieces: &[HdArtPiece],
     ) {
+        self.repacked_this_pass = false;
         self.ensure_gpu(device, queue);
         self.frame += 1;
         if self.atlas != atlas.instance() {
@@ -393,13 +399,12 @@ impl HdArt {
             return 0;
         };
         let (width, height) = (waiting.width, waiting.height);
-        let rect = match self.place(width, height) {
-            Some(rect) => Some(rect),
-            None => {
-                self.repack(device, queue);
-                self.place(width, height)
-            }
-        };
+        let mut rect = self.place(width, height);
+        if rect.is_none() && !self.repacked_this_pass {
+            self.repacked_this_pass = true;
+            self.repack(device, queue);
+            rect = self.place(width, height);
+        }
         let Some(rect) = rect else {
             self.frames.insert(hash, Art::NoRoom { at: self.frame });
             return 0;
@@ -450,7 +455,7 @@ impl HdArt {
         self.frames
             .retain(|_, art| !matches!(art, Art::Ready { used, .. } if *used < keep_from));
         let (indices, art) = page_textures(device);
-        self.shelf = [0, 0, 0];
+        self.shelf = Self::empty_shelf();
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("HD art repack"),
         });
@@ -473,22 +478,14 @@ impl HdArt {
         log::info!("HD art page full; kept the {kept} frames shown last");
     }
 
-    /// Shelf placement in the native index page, one pixel apart.
-    fn place(&mut self, width: u32, height: u32) -> Option<[u32; 4]> {
+    fn empty_shelf() -> ShelfCursor {
         let page = PAGE / super::hd_switch::page_shrink();
-        let [x, y, row] = &mut self.shelf;
-        if *x + width > page {
-            *y += *row + 1;
-            *x = 0;
-            *row = 0;
-        }
-        if *y + height > page {
-            return None;
-        }
-        let rect = [*x, *y, width, height];
-        *x += width + 1;
-        *row = (*row).max(height);
-        Some(rect)
+        ShelfCursor::new(page, page)
+    }
+
+    fn place(&mut self, width: u32, height: u32) -> Option<[u32; 4]> {
+        let [x, y] = self.shelf.place(width, height)?;
+        Some([x, y, width, height])
     }
 
     fn upload_rows(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, atlas: &SpriteAtlas) {

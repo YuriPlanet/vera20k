@@ -89,18 +89,16 @@ palette indices, so a frame finds its art whatever type, theater or mod draws
 it. `VERA20K_HD_DUMP=<folder>` writes `<hash>.idx` (u16 width, u16 height,
 indices) for every such frame on screen the pack lacks; an offline
 upscaler turns those into pack files.
-Only frames on screen are read from the pack, into one 2048x2048 page
-(4096x4096 for the art). Reader threads (`render::hd_loader`) open and
-decode the pictures, so a screen of new buildings never stalls a frame; a
-frame draws native until its picture is up, a few frames later. A full page
-copies the frames shown in the last two frames to a fresh page and lets the
-rest go, so nothing on screen blinks back to native and nothing is read
-again. A map's new atlas clears what was keyed by the old atlas's positions
-and palette rows (`SpriteAtlas::instance`); the pictures, keyed by hash,
-stay. A capture reads every picture at once, since it shows one frame;
-`VERA20K_HD_PAGE_SHRINK=<n>` fills only 1/n of each page's side, so a
-capture reaches a full page. Frames without art stay native; voxels have their own
-path (below). Every frame of the SHP sprite atlas takes part: buildings,
+Desktop reader threads (`render::hd_loader`) open and decode pictures as
+their frames appear on screen. Frames draw with native art until their HD
+pictures reach the GPU. The 2048x2048 index page and its 4096x4096 art page
+can repack once per pass, copying recently visible pictures that fit. Evicted
+pictures are read again when needed. A new map's sprite atlas clears cached
+atlas positions and palette rows. Pictures keyed by hash can stay across maps.
+Single-frame captures read visible pictures synchronously.
+`VERA20K_HD_PAGE_SHRINK=<n>` limits each usable page dimension to 1/n of
+its size so a capture can exercise repacking. Voxels have their own path
+(below). Every frame of the SHP sprite atlas takes part: buildings,
 their animations and bibs, infantry, and the effects (explosions, fire,
 smoke, debris, muzzle flashes, SHP projectiles and particles). Translucent
 effect pixels mostly fail the colour test and keep their native look.
