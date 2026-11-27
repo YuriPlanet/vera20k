@@ -764,12 +764,17 @@ impl StatusTemplates {
         check(unsafe { sys::client_status(template.as_ptr(), template.len() as i32) })
     }
 
-    /// Removes this module's template `name`.
+    /// Removes this module's template `name` (at most 64 bytes;
+    /// `Err(Refused)` for a longer one).
     pub fn remove(name: &str) -> Result<()> {
-        let mut text = String::with_capacity(name.len() + 5);
-        text.push_str("Name=");
-        text.push_str(name);
-        Self::set(&text)
+        const PREFIX: &[u8] = b"Name=";
+        let mut text = [0u8; PREFIX.len() + 64];
+        let Some(end) = PREFIX.len().checked_add(name.len()).filter(|&end| end <= text.len()) else {
+            return Err(Status::Refused);
+        };
+        text[..PREFIX.len()].copy_from_slice(PREFIX);
+        text[PREFIX.len()..end].copy_from_slice(name.as_bytes());
+        check(unsafe { sys::client_status(text.as_ptr(), end as i32) })
     }
 }
 
