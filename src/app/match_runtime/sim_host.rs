@@ -71,6 +71,8 @@ pub(crate) enum SimWrite {
 pub(crate) struct SimHost {
     /// `None` while uninstalled or lent.
     runtime: Option<SimRuntime>,
+    /// Plain IonBlast records from the last world while no world is installed.
+    dominator_ripples: crate::sim::world::RetainedDominatorRipples,
     /// Whether the runtime is on the simulation thread.
     lent: bool,
     /// The last job's result, once the runtime is back.
@@ -554,16 +556,12 @@ impl SimHost {
     }
 
     /// Install `runtime` in place of any current one.
-    pub(crate) fn install(&mut self, runtime: Option<SimRuntime>) {
-        // A job's result belongs to the world it ran on.
-        self.reclaim(true);
-        self.report_early_returns();
-        self.job_result = None;
-        self.lend_cost = None;
+    pub(crate) fn install(&mut self, mut runtime: Option<SimRuntime>) {
+        drop(self.take_runtime());
+        if let Some(incoming) = &mut runtime {
+            self.dominator_ripples.resume_in(&mut incoming.simulation);
+        }
         self.runtime = runtime;
-        self.forget_frame();
-        self.sidebar_types = SidebarTypes::default();
-        self.spare = None;
         // The first copy of the world is a whole one, tens of milliseconds
         // at 20,000 objects. Taken while the scenario loads, the first lent
         // tick only brings it up to date.
@@ -575,7 +573,7 @@ impl SimHost {
         }
     }
 
-    /// Remove and return the installed runtime.
+    /// Remove the installed runtime, retaining the process's Dominator ripples.
     pub(crate) fn take_runtime(&mut self) -> Option<SimRuntime> {
         self.reclaim(true);
         self.report_early_returns();
@@ -584,7 +582,9 @@ impl SimHost {
         self.forget_frame();
         self.sidebar_types = SidebarTypes::default();
         self.spare = None;
-        self.runtime.take()
+        let mut runtime = self.runtime.take()?;
+        self.dominator_ripples.take_from(&mut runtime.simulation);
+        Some(runtime)
     }
 }
 
@@ -868,6 +868,57 @@ mod tests {
     use super::*;
     use crate::sim::command_queue::{ChecksumMismatch, FrameInfo, FrameInfoCompareGate};
     use crate::sim::world::Simulation;
+
+    fn strike_dominator(runtime: &mut SimRuntime, cell: (i16, i16)) {
+        *runtime.simulation.psychic_dominator_mut_for_test() =
+            crate::sim::superweapon::psychic_dominator::PsychicDominatorState::for_test(
+                2, cell, None, None,
+            );
+        runtime.advance_frame_for_tooling(&[], 67).unwrap();
+    }
+
+    #[test]
+    fn player_load_keeps_the_live_workers_dominator_ripples_at_their_current_ages() {
+        use crate::sim::snapshot::GameSnapshot;
+        let mut outgoing = SimRuntime::from_simulation(Simulation::new());
+        strike_dominator(&mut outgoing, (3, 4));
+        let bytes = GameSnapshot::save(&outgoing.simulation, 0, 0, "", 0);
+        let saved = GameSnapshot::load(&bytes)
+            .unwrap()
+            .into_simulation_for_test();
+        assert_eq!(saved.ion_blasts().count(), 0);
+        let mut host = SimHost::default();
+        host.install(Some(outgoing));
+        assert!(host.lend(Box::new(|runtime| {
+            strike_dominator(runtime, (5, 6));
+            Box::new(())
+        })));
+        host.install(Some(SimRuntime::from_simulation(saved)));
+        let world = &host.runtime().unwrap().simulation;
+        assert_eq!(
+            world.ion_blasts().collect::<Vec<_>>(),
+            [([896, 1152, 0], 2), ([1408, 1664, 0], 1)]
+        );
+    }
+
+    #[test]
+    fn scenario_restart_keeps_dominator_ripples_through_an_empty_shell() {
+        let mut outgoing = SimRuntime::from_simulation(Simulation::new());
+        strike_dominator(&mut outgoing, (3, 4));
+        let mut host = SimHost::default();
+        host.install(Some(outgoing));
+        drop(host.take_runtime());
+        host.install(None);
+        let mut incoming = SimRuntime::from_simulation(Simulation::new());
+        strike_dominator(&mut incoming, (7, 8));
+        host.install(Some(incoming));
+        let live = host.write_sim(SimWrite::Tick).unwrap();
+        live.advance_frame_for_tooling(&[], 67).unwrap();
+        assert_eq!(
+            live.simulation.ion_blasts().collect::<Vec<_>>(),
+            [([896, 1152, 0], 2), ([1920, 2176, 0], 2)]
+        );
+    }
 
     #[cfg(not(target_arch = "wasm32"))]
     #[test]
