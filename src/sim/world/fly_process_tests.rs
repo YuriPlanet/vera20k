@@ -555,6 +555,28 @@ fn configured_emp_spins_then_reactivates_a_grounded_aircraft_with_ares_off() {
     assert_eq!(locomotor.fly_runtime().unwrap().active_power_spin(), None);
 }
 
+/// UpdateFlightMotion 0x004CD7A4 skips Guard-to-Move while the aircraft falls.
+#[test]
+fn falling_guard_keeps_its_mission_with_a_destination() {
+    let (mut sim, rules) = fixture(&serde_json::json!({
+        "z": 8, "mission": 5, "nav_com": true, "moving": false,
+    }));
+    let aircraft = sim.substrate.entities.get_mut(AIRCRAFT).unwrap();
+    aircraft.locomotor.as_mut().unwrap().power_off();
+    sim.fly_process(
+        AIRCRAFT,
+        &rules,
+        Some(rules.overlay_registry()),
+        &mut Default::default(),
+    );
+    let aircraft = sim.substrate.entities.get(AIRCRAFT).unwrap();
+    assert_eq!(aircraft.mission.queued(), MissionId::NONE);
+    assert_eq!(
+        ground_pose::object_location(aircraft, sim.resolved_terrain.as_ref()).z,
+        5,
+    );
+}
+
 /// The P1 lift flag bypasses immediate EMP destruction. When Fly is active,
 /// original 0x4CD6BE adds three per visit and 0x4CD8A9 dispatches living C4.
 #[test]

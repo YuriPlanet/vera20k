@@ -286,17 +286,13 @@ impl Simulation {
     pub(super) fn fly_crash_fall(
         &mut self,
         id: u64,
+        dead: bool,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: &mut FrameEffects<'_>,
     ) -> Option<AirMovementTickStats> {
         let terrain = self.resolved_terrain.as_ref();
         let entity = self.substrate.entities.get(id)?;
-        let locomotor = entity.locomotor.as_ref()?;
-        let dead = entity.health.current() == 0;
-        if (locomotor.is_powered() && !dead) || current_fly_height(entity, terrain) == 0 {
-            return None;
-        }
         let location = crate::sim::movement::ground_pose::object_location(entity, terrain);
         // `0x004CD70C..0x004CD736`: the cell of the unchanged XY, divided
         // toward zero.

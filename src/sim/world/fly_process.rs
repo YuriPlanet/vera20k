@@ -289,13 +289,20 @@ impl Simulation {
         {
             state.prepare_process(mission);
         }
-        if let Some(impact) = self.fly_crash_fall(id, rules, registry, frame_effects) {
-            return Some(impact);
+        let locomotor = entity.locomotor.as_ref()?;
+        let dead = entity.health.current() == 0;
+        if (dead || !locomotor.is_powered())
+            && air_movement::current_fly_height(entity, self.resolved_terrain.as_ref()) != 0
+        {
+            if let Some(impact) = self.fly_crash_fall(id, dead, rules, registry, frame_effects) {
+                return Some(impact);
+            }
+            // A Fly still above ground jumps straight to Is_Moving at 0x004CDA08.
+        } else {
+            // Ares 3.0p1 HunterSeeker_UpdateTarget hooks 0x004CD9C8.
+            self.ares_hunter_seeker_update_target(id, rules);
+            self.substrate.fly_guard_to_move(id);
         }
-        // Ares 3.0 FlyLocomotionClass_sub_4CD600_HunterSeeker_UpdateTarget
-        // (P1 0x1004E700, hook 0x4CD9C8).
-        self.ares_hunter_seeker_update_target(id, rules);
-        self.substrate.fly_guard_to_move(id);
         let entity = self.substrate.entities.get(id)?;
         if crate::sim::movement::motion_query::is_moving(entity) != Some(true) {
             return None;
