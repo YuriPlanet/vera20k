@@ -7,7 +7,7 @@ use super::diagnostics::state::DiagnosticsState;
 use super::frontend::state::FrontendState;
 use super::input::precedence::{ModalPage, ScreenPage};
 use super::loading::transitions;
-use super::match_runtime::frame_pacer::LocalFramePacer;
+use super::match_runtime::frame_pacer::{LocalFramePacer, MotionInterval};
 use super::match_runtime::redraw_gate::ProbeVerdict;
 use super::match_runtime::state::MatchState;
 use super::persistence::PersistenceState;
@@ -56,6 +56,43 @@ pub(super) enum FramePass {
     /// Service the match, then draw only if the presented picture no longer
     /// stands (`match_runtime::redraw_gate`).
     Probe,
+}
+
+/// The picture still visible while a worker owns the next tick uses its own
+/// committed interval. Exact captures and frozen or partial worlds draw the
+/// captured pose straight away.
+fn tank_draw_clock(
+    platform: &PlatformState,
+    match_state: &MatchState,
+    enabled: bool,
+    exact: bool,
+) -> (u32, Option<MotionInterval>) {
+    let Some(runtime) = match_state.sim_runtime.runtime() else {
+        return (0, None);
+    };
+    let sim = &runtime.simulation;
+    let frame = sim.session().binary_frame();
+    let interval = if enabled
+        && !exact
+        && !match_state.paused()
+        && !sim.session().scenario_paused()
+        && !match_state.frame_stopped
+        && !sim.pending_network_wait()
+        && sim.pending_network_failure().is_none()
+        && match_state.scenario_exit.is_none()
+        && match_state.scenario_outcome.is_none()
+        && !match_state
+            .live_network
+            .as_ref()
+            .is_some_and(|live| live.restoring_match())
+        && (!match_state.match_diagnostics.is_replay_playback()
+            || match_state.match_diagnostics.playback_can_advance())
+    {
+        platform.frame_pacer.motion_interval(frame)
+    } else {
+        None
+    };
+    (frame, interval)
 }
 
 /// The composition's full-height battlefield/command-bar region. Native
@@ -1359,7 +1396,20 @@ impl App {
         // still follows exactly one match service. The picture is judged by
         // the clock before the draw (`redraw_gate::PictureClock`).
         let picture_clock = crate::app::match_runtime::redraw_gate::PictureClock::now();
+        let (tank_frame, tank_clock) = tank_draw_clock(
+            &state.platform,
+            &state.match_state,
+            state.persistence.options_profile.render_interpolation,
+            focus_frozen || shell_capture.is_some() || hidden_run.is_some(),
+        );
         let verdict = (pass == FramePass::Probe).then(|| {
+            let phase = tank_clock.map(|span| span.fraction(picture_clock.at));
+            let repeat_fits = tank_clock.is_some_and(|span| {
+                span.repeat_fits(
+                    state.platform.redraw_gate.picture_interval(),
+                    state.platform.frame_pacer.draw_work(),
+                )
+            });
             state.platform.redraw_gate.probe_verdict(
                 crate::app::match_runtime::redraw_gate::still_frame(
                     &state.platform,
@@ -1373,6 +1423,14 @@ impl App {
                     picture_clock,
                 ),
                 picture_clock.at,
+                // If a tick stalls, land on its confirmed endpoint even
+                // when intervening redraws exceeded the work budget.
+                (repeat_fits || phase.unwrap_or(1.) == 1.)
+                    && state
+                        .match_state
+                        .match_presentation
+                        .tank_motion
+                        .needs_redraw(tank_frame, phase),
             )
         });
         let unchanged = verdict == Some(ProbeVerdict::Stands);
@@ -1384,7 +1442,7 @@ impl App {
                 return Ok(FrameRenderOutcome::Unchanged);
             }
             Some(ProbeVerdict::DrawWaits) => return Ok(FrameRenderOutcome::Unchanged),
-            Some(ProbeVerdict::Draw) | None => {}
+            Some(ProbeVerdict::Draw | ProbeVerdict::DrawMotion) | None => {}
         }
         // Judged after the service: a frame that arrived or came due while
         // it ran may still go before this draw.
@@ -1921,6 +1979,13 @@ impl App {
                 );
             }
             GameScreen::InGame => {
+                // Sample after acquiring the surface: VSync may have waited
+                // nearly a refresh since the probe judged the picture.
+                state.match_state.match_presentation.tank_motion.begin_draw(
+                    tank_frame,
+                    tank_clock.map(|span| span.fraction(Instant::now())),
+                    state.match_state.input.zoom_level,
+                );
                 //53B460 copies the already-composed surface, before this
                 //frame's world replaces it. The effect owns the retained copy.
                 let chrono_tactical = crate::app::input::camera::tactical_viewport_px(
@@ -1957,7 +2022,9 @@ impl App {
                 // online, ThrottleFrame also draws while it waits
                 // (`tactical_composite`). Captures and the actor observer
                 // record every draw's composite.
-                let cadence = if shell_capture.is_some()
+                let cadence = if verdict == Some(ProbeVerdict::DrawMotion) {
+                    crate::app::presentation::tactical_composite::CompositeCadence::PerMainTick
+                } else if shell_capture.is_some()
                     || hidden_run.is_some()
                     || state.match_state.live_network.is_some()
                     || state
@@ -2338,6 +2405,35 @@ impl App {
         if let Some(render_output) = &game_render_output
             && screen_page == ScreenPage::Battlefield
         {
+            state
+                .match_state
+                .match_presentation
+                .tank_motion
+                .commit_presented();
+            if let Some(cost) = &mut state.frontend.external_progress.frame_cost {
+                cost.battlefield_presented(
+                    presented_at,
+                    state
+                        .match_state
+                        .match_presentation
+                        .tank_motion
+                        .intermediate_tanks(),
+                    || {
+                        let frame = state.match_state.sim_runtime.frame()?;
+                        Some(
+                            frame
+                                .objects()
+                                .filter(|object| {
+                                    object.category()
+                                        != crate::map::entities::EntityCategory::Structure
+                                        && object.is_object_alive()
+                                        && !object.in_limbo()
+                                })
+                                .count(),
+                        )
+                    },
+                );
+            }
             state
                 .match_state
                 .match_presentation

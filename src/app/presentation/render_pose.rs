@@ -1,5 +1,5 @@
-//! One object's draw transform at the current binary frame, read fresh for
-//! each draw and never retained across draws.
+//! An object's draw transform at a committed simulation frame. Visible Drive
+//! vehicles can sample its position and facings between ticks in `tank_motion`.
 
 use crate::sim::game_entity::GameEntity;
 

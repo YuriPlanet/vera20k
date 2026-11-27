@@ -366,6 +366,7 @@ fn queue_context_order(
                     crate::app::input::entity_pick::PresentedWorld {
                         sim,
                         rules: Some(&resources.rules),
+                        tank_motion: Some(&match_state.match_presentation.tank_motion),
                         translucent_viewer,
                     },
                     world_x,

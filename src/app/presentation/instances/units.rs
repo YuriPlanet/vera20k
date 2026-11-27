@@ -645,10 +645,29 @@ pub(crate) fn unit_visitor<'a>(
                 let (aircraft_shadow, shadow_render_pose) =
                     aircraft_draw_sample(&match_state.sim_runtime, entity)
                         .map_or((None, None), |sample| (sample.shadow, Some(sample.pose)));
+                let motion = &match_state.match_presentation.tank_motion;
+                let sample = (carried.is_none() && band == EntityDrawBand::Ground)
+                    .then(|| motion.sample(entity))
+                    .flatten()
+                    .filter(|_| {
+                        super::helpers::cell_visibility_for_local_owner(
+                            local_owner_id,
+                            Some(sim.fog()),
+                            entity.position.rx(),
+                            entity.position.ry(),
+                            ignore_visibility,
+                            terrain,
+                        ) == super::helpers::CellVisibilityState::Visible
+                    });
+                let render_pose = sample.map_or_else(
+                    || shadow_render_pose.unwrap_or(entity.pose),
+                    |sample| motion.pose(sample, entity.pose),
+                );
                 // A carried cargo is drawn at its Carryall's point, not culled by
                 // its own.
                 let anchor = unit_draw_anchor(
                     entity,
+                    render_pose.screen,
                     admission,
                     [cam_x, cam_y, sw, sh],
                     aircraft_shadow.as_ref().map(|pose| pose.anchor),
@@ -658,8 +677,9 @@ pub(crate) fn unit_visitor<'a>(
                     (None, Some([sx, _sy])) => sx,
                     (None, None) => return None,
                 };
-                let render_pose = shadow_render_pose.unwrap_or(entity.pose);
                 let sy = render_pose.screen[1] - render_pose.visual_lift;
+                let depth_height =
+                    sample.map(|s| motion.depth_height(s, entity.place.world_z_leptons_off_map));
                 // Common visibility, passenger, limbo, and DrawState admission is shared below.
                 let pos = &entity.position;
                 let mut observer = entity.seen.observer;
@@ -970,6 +990,7 @@ pub(crate) fn unit_visitor<'a>(
                     // Turret unit: emit body, turret, and barrel as separate sprites.
                     emit_turret_unit_sprites(
                         no_shadow,
+                        depth_height,
                         atlas,
                         drawer,
                         model.turret_offset,
@@ -1045,7 +1066,7 @@ pub(crate) fn unit_visitor<'a>(
                             &match_state.sim_runtime,
                             entity,
                             true,
-                            None,
+                            depth_height,
                         ) as f32;
                         let native_shadow = !matches!(texture_source, UnitTextureSource::Pose(_))
                             && prepare_unit_shadow(
@@ -1185,7 +1206,14 @@ pub(crate) fn unit_visitor<'a>(
                         match_state,
                         entity,
                         &overlay,
-                        harvest_arm_screen_position(entity, sim.session().binary_frame()),
+                        {
+                            let arm =
+                                harvest_arm_screen_position(entity, sim.session().binary_frame());
+                            (
+                                arm.0 + render_pose.screen[0] - entity.pose.screen[0],
+                                arm.1 + render_pose.screen[1] - entity.pose.screen[1],
+                            )
+                        },
                         pos.z(),
                         tint,
                         palette_light.brightness(),
@@ -1201,6 +1229,7 @@ pub(crate) fn unit_visitor<'a>(
 
                 Some(DrawnBody {
                     render_pose,
+                    sample,
                     body_point: aircraft_body_anchor(
                         sim,
                         entity,
@@ -1247,6 +1276,27 @@ pub(crate) fn unit_visitor<'a>(
                     crate::render::tactical_draw_plan::SpriteEncoding::Voxel,
                 );
                 if let Some(parent) = parent {
+                    if let Some(sample) = drawn.sample
+                        && pieces.iter().any(|p| {
+                            let instance = &p.instance;
+                            in_view(
+                                instance.position[0],
+                                instance.position[1],
+                                instance.size[0],
+                                instance.size[1],
+                                admission.corner[0],
+                                admission.corner[1],
+                                admission.size[0],
+                                admission.size[1],
+                                0.0,
+                            )
+                        })
+                    {
+                        match_state
+                            .match_presentation
+                            .tank_motion
+                            .drawn(entity.stable_id(), sample);
+                    }
                     // Opt-in app measurement of an actually admitted draw-plan object.
                     match_state.match_diagnostics.record_actor_draw(
                         sim,
@@ -1260,6 +1310,7 @@ pub(crate) fn unit_visitor<'a>(
                     if let Some(rules) = crate::app::state::active_rules(frontend, match_state) {
                         planned.tail_draws =
                             crate::app::presentation::target_lines::target_laser_draws(
+                                Some(&match_state.match_presentation.tank_motion),
                                 entity,
                                 sim,
                                 rules,
@@ -1335,6 +1386,7 @@ struct CarriedDraw {
 /// cargo it carries.
 struct DrawnBody {
     render_pose: crate::app::presentation::render_pose::RenderPose,
+    sample: Option<crate::app::presentation::tank_motion::TankSample>,
     /// The body point after the Fly Draw_Point ([`aircraft_body_anchor`]).
     body_point: [f32; 2],
     band: EntityDrawBand,
@@ -2632,11 +2684,11 @@ fn push_unit_sprite(
 /// render view `[x, y, width, height]` in world pixels, or its shadow's.
 fn unit_draw_anchor(
     entity: &crate::app::presentation::frame::ObjectRecord,
+    [x, y]: [f32; 2],
     admission: super::helpers::TacticalAdmission,
     render_view: [f32; 4],
     shadow_anchor: Option<[f32; 2]>,
 ) -> Option<[f32; 2]> {
-    let (x, y) = crate::render::locomotor_visual::screen_position(entity);
     // Unit draw admission precedes stateful +3CA capture. A smaller visual
     // cull delays that first capture and changes later visible clipping.
     let admitted = if entity.category() == EntityCategory::Unit {
@@ -2786,6 +2838,7 @@ fn composite_draw_state(
 /// sits on its correct pivot point on the hull.
 fn emit_turret_unit_sprites(
     no_shadow: bool,
+    depth_height: Option<i32>,
     atlas: &crate::render::unit_atlas::UnitAtlas,
     drawer: VoxelDrawer,
     art_offset: i32,
@@ -2820,7 +2873,8 @@ fn emit_turret_unit_sprites(
 ) {
     let slope_type = stable_slope_for_key(slope_state);
     let voxel_adjust =
-        super::foot_depth::unit_z_adjust(&match_state.sim_runtime, entity, true, None) as f32;
+        super::foot_depth::unit_z_adjust(&match_state.sim_runtime, entity, true, depth_height)
+            as f32;
     let body_key = UnitSpriteKey {
         type_id: type_id.into(),
         turret_index: 0,

@@ -631,7 +631,10 @@ playback with camera controls and Escape to close.
 `vera20k --replay-verify <replay.json> --ra2-dir <retail-directory>` reconstructs the
 accepted launch and replays the production frame transaction without connecting
 to the lobby. Startup version, rules, map bytes, seed and initial state must
-match. Playback checks the recorded state hashes. Keep a Multiplayer Campaign
+match. Playback checks the recorded state hashes.
+On desktop, `VERA20K_REPLAY_ACTOR=<stable object ID>` logs a visible voxel unit's
+drawn and committed screen positions with the time of each frame hand-off. The
+ordinary playback cadence is used, including for frames between logic ticks. Keep a Multiplayer Campaign
 map at its recorded logical path under `campaigns/<series>/`. When names
 collide, the loader chooses an installed copy by the recorded digest. For
 recordings with a bare map filename, the launcher can use an exact SHA-256

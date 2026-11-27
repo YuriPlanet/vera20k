@@ -148,6 +148,13 @@ storage with the world the simulation thread ticks:
   world copy (the Foot draw depth) are computed when an object is drawn.
   `SimHost::frame` captures it from the home world on its first read after a
   write, and `SimHost::lend` before a tick leaves.
+  The default display option **Smooth tank movement** (`[VERA] RenderInterpolation`)
+  keeps a pair of poses for visible Drive vehicles with voxel bodies. The
+  renderer samples their position and facing between consecutive committed
+  ticks when the picture budget allows. This delays their movement by about
+  one tick. Picking uses the most recently presented position. Newly visible
+  vehicles, warps, bridge layer changes and firing ticks draw at their committed
+  pose. A late tick holds its last known position.
 - **The world copy** (`SimRuntime::presentation_copy`): the world without
   its objects. It leaves out the objects (its entity store is
   `EntityStore::detached`, which panics on a read in debug builds, so a

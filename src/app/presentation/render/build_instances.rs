@@ -484,6 +484,7 @@ pub(super) fn build_world_instances(
             let local_owner = crate::app::input::commands::preferred_local_owner_name(match_state)
                 .and_then(|name| runtime.simulation.interner().get(&name));
             instances::DisplayEffectInputs {
+                tank_motion: Some(&presentation.tank_motion),
                 sim: &runtime.simulation,
                 frame,
                 rules: &runtime.resources.rules,
@@ -737,6 +738,12 @@ pub(super) fn build_world_instances(
                     }
                 }
                 status.hide_families(hidden_native);
+                status.shift_owner(
+                    match_state
+                        .match_presentation
+                        .tank_motion
+                        .offset(entity.stable_id()),
+                );
                 status
             });
         }
@@ -764,7 +771,11 @@ pub(super) fn build_world_instances(
             planned_objects.retain(|parent| {
                 let id = parent.parent.id;
                 if let Some(entity) = frame.object(id) {
-                    return !concealed(entity);
+                    if concealed(entity) {
+                        match_state.match_presentation.tank_motion.conceal(id);
+                        return false;
+                    }
+                    return true;
                 }
                 // Particles owned by an object follow it out of the fog.
                 if let Some(place) = members.particle_place(id) {
@@ -826,6 +837,13 @@ pub(super) fn build_world_instances(
         persistence,
         &building_body_opportunities,
     );
+    if let Some(rt) = match_state.sim_runtime.presentation() {
+        display_order.apply_tank_motion(
+            &mut planned_objects,
+            &match_state.match_presentation.tank_motion,
+            &rt.simulation,
+        );
+    }
     let mut object_layers = super::draw_plan_lowering::lower_object_instances(planned_objects);
     let mut fogged_objects = instances::build_fogged_instances(
         platform,
@@ -891,6 +909,7 @@ pub(super) fn build_world_instances(
             let sim = &runtime.simulation;
             let local_owner = crate::app::input::commands::preferred_local_owner_name(match_state);
             let view = crate::app::ui_modules::field::FieldView {
+                tank_motion: &match_state.match_presentation.tank_motion,
                 sim,
                 frame,
                 rules: crate::app::state::active_rules(frontend, match_state),
@@ -1386,6 +1405,7 @@ pub(super) fn build_ui_instances(
     );
     target_line.extend(ferry_lines::build_paths(match_state, view, wall_ms));
     let action_lines = crate::app::presentation::target_lines::build_target_line_strokes(
+        Some(&match_state.match_presentation.tank_motion),
         &match_state.match_presentation.target_lines,
         match_state.input.planning.active(),
         match_state
