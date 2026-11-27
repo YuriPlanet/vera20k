@@ -179,8 +179,9 @@ impl EnemyTeamPalette {
 }
 
 /// The rank each enemy team draws at, 0 first: the teams present, lowest team
-/// first, without the local player's own team. Launch teams never change, so
-/// a team keeps its rank (and its colour) for the whole match.
+/// first, without the local player's own team. Launch teams never change, but
+/// which of them count as hostile does, so a team's rank moves when another
+/// team leaves the hostile side.
 pub fn enemy_team_ranks(
     teams: impl IntoIterator<Item = u8>,
     local_team: Option<u8>,

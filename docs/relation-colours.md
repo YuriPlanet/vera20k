@@ -30,13 +30,14 @@ turning one on turns the other off.
 - **Alliances.** Under Relation Colours a house you ally with during the match
   turns green, and one whose alliance ends turns red. Team Colours decides
   blue and green the same way, and takes the teams themselves from the launch
-  session, which never changes: an enemy team keeps its colour even after a
-  mid-match alliance moves a house out of it.
+  session, which never changes. It ranks the hostile teams present, so a team
+  that leaves the hostile side stops taking a colour: once every house of a
+  team is yours, the hostile teams below it move up a colour.
 - **Observers** have no side of their own, so neither key changes anything for
-  them. A free-for-all with Teams off has no teams to group by, so Team
-  Colours shows the same blue, green and red as Relation Colours. A player the
-  lobby left off every team still sees the teams around them and keeps the
-  blue of their own side.
+  them. An enemy the lobby left off every team — every enemy, in a free-for-all
+  with Teams off — has no team to group by, so it takes a warm colour of its
+  own, drawn from its name so it stays put from frame to frame. A player the lobby left off every
+  team still sees the teams around them and keeps the blue of their own side.
 
 ## What they are and are not
 
@@ -61,6 +62,6 @@ and leaves Ctrl+Alt+T (Super Weapon Building Timers) alone.
 functions there are `relation_house_colors` and `team_house_colors`. The three
 relation colours are the `RELATION_*` entries in `src/rules/house_colors.rs`;
 the enemy-team palette is `src/rules/team_colors.rs`, computed from
-`[Colors]`/`[SkirmishColors]` at rules load into `RuleSet::enemy_team_colors`
+`[Colors]`/`[SkirmishColors]` at rules load into `RuleSet::enemy_team_palette`
 and uploaded with the match's other ramp rows
 (`app::loading::init_helpers::voxel_palette_demand`).
