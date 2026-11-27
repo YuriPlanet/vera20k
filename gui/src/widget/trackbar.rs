@@ -11,7 +11,6 @@
 //! trackbar hits in).
 
 use super::Ctx;
-
 use crate::gui::UiEvent;
 use crate::node::{Node, NodeId, Prop, Value};
 use crate::shell::geom::ShellScale;
@@ -43,9 +42,7 @@ pub(crate) fn press(ctx: &mut Ctx<'_>, node: NodeId, x: i32, y: i32) -> Option<b
     let range = range(n);
     let value = n.int_prop(Prop::Pos, range.min);
     let rect = n.rect();
-    // Android has no mouse: a finger anywhere on the track (or above its
-    // admitted strip) drags the thumb continuously; a press beside it still
-    // jumps once first.
+    // On Android the area above the thumb also admits a drag.
     let touch = cfg!(target_os = "android");
     match range.press_in(value, x, y, rect, scale_of(ctx, n)) {
         TrackbarPress::Miss => None,
@@ -94,11 +91,15 @@ fn move_to(ctx: &mut Ctx<'_>, node: NodeId, to: i32) {
 }
 
 /// The wheel over the trackbar: one step a notch, positive lines up the range.
+#[cfg(target_os = "android")]
 pub(crate) fn wheel(ctx: &mut Ctx<'_>, node: NodeId, lines: i32) -> bool {
     let Ok(n) = ctx.tree.node(node) else {
         return false;
     };
     let range = range(n);
+    if range.max <= range.min {
+        return false;
+    }
     let pos = n.int_prop(Prop::Pos, range.min);
     let step = range.step.max(1).saturating_mul(lines);
     let to = (pos.saturating_add(step)).clamp(range.min, range.max);
@@ -106,5 +107,6 @@ pub(crate) fn wheel(ctx: &mut Ctx<'_>, node: NodeId, lines: i32) -> bool {
         return false;
     }
     move_to(ctx, node, to);
+    release(ctx, node);
     true
 }

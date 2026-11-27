@@ -1584,69 +1584,34 @@ impl App {
     }
 }
 
+/// Camera displacement in screen pixels. The normal camera clamp runs per frame.
+#[cfg(not(target_os = "linux"))]
+fn pan_touch_camera(input: &mut MatchInputState, dx: f32, dy: f32) {
+    let zoom = input.zoom_level.max(0.01);
+    let position = (input.camera_x + dx / zoom, input.camera_y + dy / zoom);
+    crate::app::input::camera::set_camera_position(input, position);
+}
+
 /// Android: turns the activity's queued pointing-device events into window events.
 #[cfg(target_os = "android")]
 fn pump_android_pointer(app: &mut App, event_loop: &ActiveEventLoop) {
-    let Some(window_id) = app.state.as_ref().map(|state| state.platform.window.id()) else {
-        return;
-    };
-    let in_game = app
-        .state
-        .as_ref()
-        .is_some_and(|state| state.frontend.screen == GameScreen::InGame);
-    let pan = crate::app::input::android_mouse::take_pan();
-    if in_game
-        && let Some((dx, dy)) = pan
-        && let Some(state) = app.state.as_mut()
-    {
-        // A touchpad's two-finger drag pans like the touchscreen's: the map
-        // follows the fingers, so the camera moves against them.
-        let zoom = state.match_state.input.zoom_level.max(0.01);
-        let (x, y) = (
-            state.match_state.input.camera_x,
-            state.match_state.input.camera_y,
-        );
-        crate::app::input::camera::set_camera_position(
-            &mut state.match_state.input,
-            (x + dx / zoom, y + dy / zoom),
-        );
-    }
-    if !in_game {
-        let steps = crate::app::input::android_mouse::take_scroll_steps();
-        if !steps.is_empty()
-            && let Some(state) = app.state.as_mut()
-        {
-            for (x, y, lines) in steps {
-                let (x, y) = (x.round() as i32, y.round() as i32);
-                state
-                    .frontend
-                    .shell_controller
-                    .on_input(vera20k_gui::InputEvent::PointerMove { x, y });
-                state
-                    .frontend
-                    .shell_controller
-                    .on_input(vera20k_gui::InputEvent::Wheel { lines, x, y });
-            }
-            state.platform.window.request_redraw();
+    let window_id = app.state.as_ref().map(|state| state.platform.window.id())
+        .or_else(|| app.pending_initialization.as_ref().map(|job| job.window_id()));
+    let Some(window_id) = window_id else { return };
+    let mut translated = Vec::new();
+    for event in crate::app::input::android_mouse::take() {
+        let in_game = app.state.as_ref().is_some_and(|state| {
+            state.frontend.screen == GameScreen::InGame && !state.match_state.paused()
+        });
+        app.android_pointer.translate(event, in_game, &mut translated);
+        for event in translated.drain(..) {
+            app.window_event(event_loop, window_id, event);
         }
-    }
-    let events = crate::app::input::android_mouse::drain_events();
-    if events.is_empty() {
-        return;
-    }
-    for event in events {
-        if in_game && matches!(event, winit::event::WindowEvent::MouseWheel { .. }) {
-            continue;
-        }
-        app.window_event(event_loop, window_id, event);
-    }
-    if let Some(state) = app.state.as_ref() {
-        state.platform.window.request_redraw();
     }
 }
 
 impl ApplicationHandler for App {
-    fn new_events(&mut self, event_loop: &ActiveEventLoop, _cause: winit::event::StartCause) {
+    fn new_events(&mut self, _event_loop: &ActiveEventLoop, _cause: winit::event::StartCause) {
         if let Some(job) = self.pending_initialization.as_mut() {
             job.admit_event_loop_turn();
         }
@@ -1655,7 +1620,7 @@ impl ApplicationHandler for App {
         // They arrive before this loop turn's redraw, so the engine's pointer is
         // not a frame behind the system one.
         #[cfg(target_os = "android")]
-        pump_android_pointer(self, event_loop);
+        pump_android_pointer(self, _event_loop);
     }
 
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
@@ -1740,6 +1705,8 @@ impl ApplicationHandler for App {
             // this callback returns. A startup continuation owns its GPU in a
             // closure, so drop it too and restart initialization on resume.
             // https://docs.rs/winit/0.30.13/winit/application/trait.ApplicationHandler.html#method.suspended
+            self.android_pointer = Default::default();
+            let _ = crate::app::input::android_mouse::take();
             self.pending_initialization = None;
             if let Some(state) = self.state.as_mut() {
                 state.renderer.gpu.suspend_surface();
@@ -1834,6 +1801,20 @@ impl ApplicationHandler for App {
         // the parked touch cursor, not the hardware pointer.
         let from_touch = self.dispatching_touch;
 
+        #[cfg(target_os = "android")]
+        if let WindowEvent::PanGesture { delta, .. } = &event {
+            if !shell_capture_active && !hidden_run_active
+                && let Some(state) = self.state.as_mut()
+                && state.frontend.screen == GameScreen::InGame
+                && !state.match_state.paused()
+                && state.persistence.pending_load.is_none()
+            {
+                pan_touch_camera(&mut state.match_state.input, -delta.x, -delta.y);
+                state.platform.window.request_redraw();
+            }
+            return;
+        }
+
         // Touchscreens have no OS cursor, so each contact is re-issued as the
         // mouse events its gesture means; `input::touch` owns that mapping and
         // carries the per-platform gate. Capture sessions stay input-sealed:
@@ -1909,18 +1890,7 @@ impl ApplicationHandler for App {
                 if let Some((dx, dy)) = output.pan
                     && in_game
                 {
-                    // Screen pixels to world pixels; the camera moves against
-                    // the fingers so the map follows them. The per-frame camera
-                    // clamp keeps an overshoot from leaving the playable area.
-                    let zoom = state.match_state.input.zoom_level.max(0.01);
-                    let (x, y) = (
-                        state.match_state.input.camera_x,
-                        state.match_state.input.camera_y,
-                    );
-                    crate::app::input::camera::set_camera_position(
-                        &mut state.match_state.input,
-                        (x + dx / zoom, y + dy / zoom),
-                    );
+                    pan_touch_camera(&mut state.match_state.input, dx, dy);
                 }
                 self.dispatching_touch = true;
                 for event in output.events.into_iter().flatten() {
@@ -2354,6 +2324,10 @@ impl ApplicationHandler for App {
                 state.match_state.input.reset_window_cursor_motion();
             }
             WindowEvent::Focused(active) => {
+                #[cfg(target_os = "android")]
+                if !active {
+                    self.android_pointer = Default::default();
+                }
                 state.match_state.input.reset_window_cursor_motion();
                 // The OS drops the cursor clip on alt-tab, so re-apply the
                 // player's confinement choice whenever the window returns.

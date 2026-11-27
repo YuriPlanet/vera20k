@@ -216,6 +216,8 @@ pub(crate) fn cancel_scroll(tree: &mut Tree, node: NodeId) {
         && let WidgetState::List(state) = &mut n.state
     {
         state.scroll.cancel();
+        state.touch_drag = None;
+        state.pending_row = None;
     }
 }
 
@@ -274,8 +276,7 @@ pub(crate) fn press(ctx: &mut Ctx<'_>, node: NodeId, x: i32, y: i32) -> Capture 
                 });
             }
         }
-        // Android has no scrollbar to grab: a finger drag over the rows scrolls
-        // them, and the release still ends like the scrollbar's.
+        // Let a drag over the rows scroll the list on Android.
         if cfg!(target_os = "android") {
             s.touch_drag = Some((y, s.top));
             return Capture::Yes;
@@ -284,9 +285,14 @@ pub(crate) fn press(ctx: &mut Ctx<'_>, node: NodeId, x: i32, y: i32) -> Capture 
     })
     .unwrap_or(Capture::No);
     // LBS_MULTIPLESEL: the press toggles its row's selection.
-    if let Some(row) = toggled
-        && let Ok(n) = ctx.tree.node_mut(node)
-    {
+    if let Some(row) = toggled {
+        toggle_row(ctx.tree, node, row);
+    }
+    capture
+}
+
+fn toggle_row(tree: &mut Tree, node: NodeId, row: usize) {
+    if let Ok(n) = tree.node_mut(node) {
         let mut rows = selected_rows(n);
         match rows.iter().position(|known| *known == row) {
             Some(at) => {
@@ -297,7 +303,6 @@ pub(crate) fn press(ctx: &mut Ctx<'_>, node: NodeId, x: i32, y: i32) -> Capture 
         let rows = rows.iter().map(usize::to_string).collect();
         n.props.insert(Prop::SelectedRows, Value::Items(rows));
     }
-    capture
 }
 
 /// A `MultiSelect` list's selected rows, in the order they were selected.
@@ -314,13 +319,14 @@ pub(crate) fn drag(ctx: &mut Ctx<'_>, node: NodeId, x: i32, y: i32) {
         s.pointer = (x, y);
         let geometry = s.geometry(rect, metrics);
         if let Some((start_y, start_top)) = s.touch_drag {
-            if (start_y - y).abs() > 3 {
+            let distance = i64::from(start_y) - i64::from(y);
+            if distance.abs() > 3 {
                 s.pending_row = None;
+                s.last_press = None;
             }
-            let row_h = metrics.row_h.max(1);
-            let rows = (start_y - y + row_h / 2) / row_h;
-            let max_top = geometry.max_top as i64;
-            let top = (start_top as i64 + i64::from(rows)).clamp(0, max_top) as usize;
+            let row_h = i64::from(metrics.row_h.max(1));
+            let rows = (distance + distance.signum() * (row_h / 2)) / row_h;
+            let top = (start_top as i64 + rows).clamp(0, geometry.max_top as i64) as usize;
             s.top = top;
             return;
         }
@@ -337,7 +343,7 @@ pub(crate) fn release(ctx: &mut Ctx<'_>, node: NodeId, _x: i32, _y: i32) {
     let pending = with_list(ctx, node, |s, _, _, events| {
         s.touch_drag = None;
         s.scroll.cancel();
-        let row = s.pending_row.take()?;
+        let row = s.pending_row.take().filter(|row| *row < s.rows)?;
         if !multi {
             s.selected = Some(row);
         }
@@ -348,18 +354,8 @@ pub(crate) fn release(ctx: &mut Ctx<'_>, node: NodeId, _x: i32, _y: i32) {
         Some(row)
     })
     .flatten();
-    if let (Some(row), true) = (pending, multi)
-        && let Ok(n) = ctx.tree.node_mut(node)
-    {
-        let mut rows = selected_rows(n);
-        match rows.iter().position(|known| *known == row) {
-            Some(at) => {
-                rows.remove(at);
-            }
-            None => rows.push(row),
-        }
-        let rows = rows.iter().map(usize::to_string).collect();
-        n.props.insert(Prop::SelectedRows, Value::Items(rows));
+    if let Some(row) = pending.filter(|_| multi) {
+        toggle_row(ctx.tree, node, row);
     }
 }
 

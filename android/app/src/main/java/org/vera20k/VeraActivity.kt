@@ -387,19 +387,6 @@ class VeraActivity : GameActivity() {
         startActivityForResult(intent, REQUEST_PICK_FOLDER)
     }
 
-    /**
-     * Ends the process with the task.
-     *
-     * winit builds one event loop per process, so this activity cannot serve a
-     * second task: a relaunch inside a surviving process calls `android_main`
-     * again and exits on the spot, which the player sees as a splash flash and
-     * a crash. A task can also lose its activity without the player swiping it —
-     * applying the new launcher icon disables the alias that hosted it — so the
-     * process follows its activity and the next tap is a cold start.
-     *
-     * Every configuration change is listed in `configChanges`, so reaching here
-     * means the activity is really going away.
-     */
     /** Whether the event came from a hardware mouse or a touchpad. */
     private fun isHardwarePointer(event: MotionEvent): Boolean {
         val source = event.source
@@ -424,8 +411,7 @@ class VeraActivity : GameActivity() {
             event.getAxisValue(MotionEvent.AXIS_VSCROLL),
             event.getAxisValue(MotionEvent.AXIS_HSCROLL),
             event.getAxisValue(MotionEvent.AXIS_SCROLL),
-            event.pointerCount,
-            event.actionIndex,
+            event.eventTime,
             event.getToolType(0),
         )
     }
@@ -456,11 +442,23 @@ class VeraActivity : GameActivity() {
         vscroll: Float,
         hscroll: Float,
         scroll: Float,
-        pointerCount: Int,
-        actionIndex: Int,
+        eventTime: Long,
         tool: Int,
     )
 
+    /**
+     * Ends the process with the task.
+     *
+     * winit builds one event loop per process, so this activity cannot serve a
+     * second task: a relaunch inside a surviving process calls `android_main`
+     * again and exits on the spot, which the player sees as a splash flash and
+     * a crash. A task can also lose its activity without the player swiping it —
+     * applying the new launcher icon disables the alias that hosted it — so the
+     * process follows its activity and the next tap is a cold start.
+     *
+     * Every configuration change is listed in `configChanges`, so reaching here
+     * means the activity is really going away.
+     */
     override fun onDestroy() {
         super.onDestroy()
         if (isFinishing) {
