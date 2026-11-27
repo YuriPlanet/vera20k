@@ -164,7 +164,7 @@ impl SpatialListener {
     /// by exactly 1.0 is exact in IEEE-754).
     ///
     /// VERA-internal, gamemd equivalent UNCHECKED: the `max(EPSILON)` floor.
-    /// `zoom_level` is clamped to `MIN_ZOOM` 0.25 in `app::input::camera`, so
+    /// `zoom_level` is clamped to `MIN_ZOOM` 0.5 in `app::input::camera`, so
     /// nothing in the app can reach it; it only stops a hand-built listener
     /// from dividing by zero. Same guard the visible-bounds code already uses
     /// (`presentation::instances::helpers`).

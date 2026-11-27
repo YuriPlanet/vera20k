@@ -632,7 +632,9 @@ pub(crate) fn build_display_effect_instances(
         // it is not a reason to choose the compatibility material.
         let instance_scheme = remap_color.is_some()
             && !anim.use_cell_drawer()
-            && entry.is_some_and(|entry| entry.source_palette != 0);
+            && entry.is_some_and(|entry| {
+                crate::render::sprite_atlas::source_palette_indexed(entry.source_palette)
+            });
         let tint = if is_parachute || instance_scheme {
             [1.0; 3]
         } else {
@@ -1980,6 +1982,7 @@ mod tests {
                 shp: "ruin.shp".into(),
                 body_frame: 3,
                 shadow_frame: 7,
+                picture: None,
             },
         );
         let mut interner = crate::sim::intern::StringInterner::new();

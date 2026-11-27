@@ -1,14 +1,17 @@
-//! VERA's HD art switch: the original picture, or the HD art over the
-//! wheel-zoomed world.
+//! VERA's HD art switch: the original picture, or the HD art pack while the
+//! camera zooms in.
 //!
 //! VERA-only presentation extension, `[VERA] HdArt=` (off by default), the
 //! Options page's HD art list and the HD art key (Page Up), which flip the same
-//! setting. On, every wheel zoom draws buildings, infantry, effects,
-//! terrain, overlays and voxels from the 2x HD art pack, resampled below 200%
-//! (`render::hd_art`, `hd_terrain`, `hd_voxel`), and the smooth sidebar its
-//! HD pictures (`render::sidebar_smoothing`). Off, nothing is encoded and the
-//! picture is the original, byte for byte. Nothing here reaches `sim/`, the
-//! network, a save or a replay, so clients may differ without a desync.
+//! setting. On, every zoom above 1 draws buildings, infantry, effects,
+//! terrain and overlays from the 2x HD art pack, sampled by the ordinary
+//! world blitters at the level the zoom needs (`render::hd_art`,
+//! `hd_terrain`; `docs/zoom-one-pass.md`), and the smooth sidebar its HD
+//! pictures (`render::sidebar_smoothing`). Voxels show their 2x pictures at
+//! any zoom above 1 whatever the switch (`vxl_raster::VxlHd`). Off, nothing
+//! is encoded and the picture is the original, byte for byte. Nothing here
+//! reaches `sim/`, the network, a save or a replay, so clients may differ
+//! without a desync.
 
 /// The wheel zoom a match starts at with HD art on, from below
 /// [`EASE_BELOW`]: the 2x art shows all its pixels there. The HD art key
@@ -21,7 +24,7 @@ pub(crate) const EASE_BELOW: f32 = 1.5;
 /// `VERA20K_HD_ART=0|1|debug` replaces the profile's switch for this process,
 /// so a tactical capture (which runs with a private settings folder) can take
 /// before and after pictures with one build. `debug` is on with the HD art
-/// tinted green, the HD voxels cyan and the HD terrain magenta.
+/// tinted green and the HD terrain magenta as it is put on its twins.
 /// Returns (on, debug tint).
 pub(crate) fn env_override() -> Option<(bool, bool)> {
     static ENV: std::sync::OnceLock<Option<(bool, bool)>> = std::sync::OnceLock::new();
@@ -38,7 +41,7 @@ fn parse_env(text: &str) -> Option<(bool, bool)> {
 }
 
 /// `VERA20K_HD_CAPTURE_ZOOM=<percent>` holds the wheel zoom at that percent
-/// (25 to 400) for this process. Tactical captures have no wheel gesture;
+/// (the wheel's range, 50 to 400) for this process. Tactical captures have no wheel gesture;
 /// this lets them show the HD art. Presentation only: the camera's zoom never
 /// reaches the simulation.
 pub(crate) fn capture_zoom() -> Option<f32> {
@@ -49,21 +52,8 @@ pub(crate) fn capture_zoom() -> Option<f32> {
             .trim()
             .parse()
             .ok()?;
-        Some((percent / 100.0).clamp(0.25, 4.0))
-    })
-}
-
-/// `VERA20K_HD_PAGE_SHRINK=<n>` (2 to 64) lets the HD passes fill only
-/// 1/n of each page's side, so a capture reaches a full page and its repack
-/// (`render::hd_art`, `render::hd_terrain`) with a few buildings on screen.
-/// A test hook: 1, the whole page, without it.
-pub(crate) fn page_shrink() -> u32 {
-    static SHRINK: std::sync::OnceLock<u32> = std::sync::OnceLock::new();
-    *SHRINK.get_or_init(|| {
-        std::env::var("VERA20K_HD_PAGE_SHRINK")
-            .ok()
-            .and_then(|text| text.trim().parse::<u32>().ok())
-            .map_or(1, |shrink| shrink.clamp(1, 64))
+        // `app::input::camera::{MIN_ZOOM, MAX_ZOOM}`; `render` stays below `app`.
+        Some((percent / 100.0).clamp(0.5, 4.0))
     })
 }
 

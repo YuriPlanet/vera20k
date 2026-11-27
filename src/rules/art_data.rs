@@ -66,12 +66,123 @@ impl FactoryDoorArt {
     }
 }
 
+/// VERA-only, experimental (`docs/picture-model-art.md`): an art section's
+/// `Picture=` and `PictureSize=`. A section with one draws and counts its
+/// frames from the picture and never opens its SHP.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct PictureDecl {
+    /// `Picture=`: the PNG or APNG file name as written.
+    pub file: String,
+    /// `PictureSize=W,H`: the frame canvas in game pixels. None takes the
+    /// picture's own size (1x art).
+    pub size: Option<[i32; 2]>,
+}
+
+/// What the simulation takes from a declared picture where it takes an SHP
+/// header's words ([`ArtRegistry::picture_header`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PictureFacts {
+    /// The candidate file that was read.
+    pub file: String,
+    /// The frame count, shadow frames included (header `+6`).
+    pub frames: i32,
+    /// The frame canvas in game pixels (header `+2`, `+4`).
+    pub size: [i32; 2],
+}
+
+/// The largest `PictureSize=` side.
+const PICTURE_SIZE_MAX: i32 = 4096;
+
+/// `section`'s `PictureSize=W,H`, each side 1 to [`PICTURE_SIZE_MAX`]; a
+/// value out of range is reported and read as none. The one reader of the
+/// key: a `Picture=` section's canvas ([`PictureDecl::size`]) and the
+/// canvas of the interface picture named by the section
+/// (`render::interface_picture`) both come from it.
+pub fn read_picture_size(section_name: &str, section: &IniSection) -> Option<[i32; 2]> {
+    section.read_name("PictureSize", 0x40)?;
+    let size = section
+        .read_int_fields_complete::<2>("PictureSize", 0x40)
+        .filter(|size| {
+            size.iter()
+                .all(|side| (1..=PICTURE_SIZE_MAX).contains(side))
+        });
+    if size.is_none() {
+        log::warn!(
+            "[{section_name}] PictureSize= needs two sizes from 1 to {PICTURE_SIZE_MAX}; \
+             the picture's own size is used"
+        );
+        crate::rules::art_problems::report(
+            section_name,
+            "PictureSize=",
+            &format!("needs two sizes from 1 to {PICTURE_SIZE_MAX}"),
+            "the picture's own size is used",
+        );
+    }
+    size
+}
+
+/// `section`'s [`PictureDecl`], if it declares `Picture=`; `size` is its
+/// [`read_picture_size`].
+fn parse_picture_decl(section: &IniSection, size: Option<[i32; 2]>) -> Option<PictureDecl> {
+    let file = section.read_name("Picture", 0x104)?.to_owned();
+    Some(PictureDecl { file, size })
+}
+
+/// VERA-only, experimental (`docs/picture-model-art.md`): an art section's
+/// `Model=` and `ModelSize=`. A section with one draws its voxel parts from
+/// the model and never opens its VXL or HVA.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ModelDecl {
+    /// `Model=`: the binary glTF (`.glb`) file name as written.
+    pub file: String,
+    /// `ModelSize=L`: the `body` node's rest length along its forward axis,
+    /// in leptons; the whole model scales by the same factor.
+    pub size: i32,
+}
+
+/// The largest `ModelSize=`: six cells, so the body's length stays within the
+/// 255 voxels a VXL section's size byte holds
+/// ([`crate::rules::voxel_asset_catalog::model_tilt_half_sizes`]).
+pub const MODEL_SIZE_MAX: i32 = 6 * 256;
+
+/// `section`'s [`ModelDecl`], if it declares `Model=` with a valid
+/// `ModelSize=`. A `Model=` without one is refused, logged, and the section
+/// keeps its VXL path.
+fn parse_model_decl(section_name: &str, section: &IniSection) -> Option<ModelDecl> {
+    let file = section.read_name("Model", 0x104)?.to_owned();
+    let size = section
+        .read_int_value("ModelSize")
+        .filter(|size| (1..=MODEL_SIZE_MAX).contains(size));
+    let Some(size) = size else {
+        log::warn!(
+            "[{section_name}] Model={file} needs ModelSize= from 1 to {MODEL_SIZE_MAX} leptons; \
+             the model is not used"
+        );
+        crate::rules::art_problems::report(
+            section_name,
+            "ModelSize=",
+            &format!("must be 1 to {MODEL_SIZE_MAX} leptons with Model={file}"),
+            "the VXL is used",
+        );
+        return None;
+    };
+    Some(ModelDecl { file, size })
+}
+
 /// Per-object art configuration parsed from an art.ini section.
 #[derive(Debug, Clone)]
 pub struct ArtEntry {
     /// Image filename override (from art.ini `Image=` key).
     /// None means use the section name as the filename base.
     pub image: Option<String>,
+    /// VERA-only, experimental: `Picture=` and `PictureSize=`.
+    pub picture: Option<PictureDecl>,
+    /// VERA-only, experimental: `PictureSize=`, with or without `Picture=`:
+    /// also the canvas of the interface picture this section is named for
+    /// ([`ArtRegistry::picture_size`]).
+    pub(crate) picture_size: Option<[i32; 2]>,
+    /// VERA-only, experimental: `Model=` and `ModelSize=`.
+    pub model: Option<ModelDecl>,
     /// Sidebar cameo/image override from `Cameo=`.
     pub cameo: Option<String>,
     /// Alternate sidebar cameo/image override from `AltCameo=`.
@@ -80,6 +191,11 @@ pub struct ArtEntry {
     /// in every Rules mode; only Ares' sidebar draws it.
     pub(crate) cameo_pcx: Option<String>,
     pub(crate) alt_cameo_pcx: Option<String>,
+    /// VERA-only, experimental (`docs/picture-model-art.md`): `CameoPicture=`
+    /// and `AltCameoPicture=`, PNG cameos drawn in place of the SHP or PCX
+    /// ones.
+    pub(crate) cameo_picture: Option<String>,
+    pub(crate) alt_cameo_picture: Option<String>,
     /// Ares TechnoTypeExt+0x11C `CameoPalette` (CustomPalette, read from
     /// ImageFile by 1003DFB0 after InitialPayload.Nums): the palette file a
     /// nonempty read names, `~~~` standing for the theater extension.
@@ -1464,10 +1580,17 @@ impl ArtRegistry {
             // (`0x0045F945`, `char[64]`), TechnoType art `Cameo=`/`AltCameo=`
             // (`0x00716C9C`, `0x00716D3F`, `char[256]`).
             let image: Option<String> = section.read_name("Image", 0x40).map(str::to_owned);
+            let picture_size = read_picture_size(section_name, section);
+            let picture = parse_picture_decl(section, picture_size);
+            let model = parse_model_decl(section_name, section);
             let cameo: Option<String> = section.read_name("Cameo", 0x100).map(str::to_owned);
             let alt_cameo: Option<String> = section.read_name("AltCameo", 0x100).map(str::to_owned);
             let cameo_pcx = section.read_ares_pcx_filename("CameoPCX");
             let alt_cameo_pcx = section.read_ares_pcx_filename("AltCameoPCX");
+            let cameo_picture = section.read_name("CameoPicture", 0x104).map(str::to_owned);
+            let alt_cameo_picture = section
+                .read_name("AltCameoPicture", 0x104)
+                .map(str::to_owned);
             let cameo_palette = crate::rules::ares_switch::ares_read(|| {
                 section.read_name("CameoPalette", 2048).map(str::to_owned)
             });
@@ -1645,10 +1768,15 @@ impl ArtRegistry {
                 section_name.to_owned(),
                 ArtEntry {
                     image,
+                    picture,
+                    picture_size,
+                    model,
                     cameo,
                     alt_cameo,
                     cameo_pcx,
                     alt_cameo_pcx,
+                    cameo_picture,
+                    alt_cameo_picture,
                     cameo_palette,
                     new_theater,
                     theater,
@@ -1749,6 +1877,13 @@ impl ArtRegistry {
     /// Look up art entry for an image ID (case-insensitive).
     pub fn get(&self, image_id: &str) -> Option<&ArtEntry> {
         folded_entry_name(&self.entry_names, image_id).and_then(|name| self.entries.get(name))
+    }
+
+    /// VERA-only, experimental (`docs/picture-model-art.md`, "Interface
+    /// art"): `PictureSize=` of the section named `section`
+    /// (case-insensitive), with or without `Picture=`.
+    pub fn picture_size(&self, section: &str) -> Option<[i32; 2]> {
+        self.get(section)?.picture_size
     }
 
     /// Native Foundation474DA0 uses exact section/key identity. The cached
@@ -2166,6 +2301,12 @@ impl ArtRegistry {
         theater_ext: &str,
         theater_name: &str,
     ) {
+        if config.art_body_read
+            && let Some(decl) = self.get(name).and_then(|entry| entry.picture.clone())
+        {
+            self.bind_one_anim_picture(name, config, &decl, asset_manager, theater_name);
+            return;
+        }
         let image_id = self.resolve_anim_image_id(name);
         let candidates = effect_shp_candidates(
             crate::rules::art_data::EffectImageKind::Animation,
@@ -2290,6 +2431,202 @@ impl ArtRegistry {
         } else {
             self.anim_folder_files.insert(name.to_owned(), folder_files);
         }
+    }
+
+    /// VERA-only, experimental (`docs/picture-model-art.md`):
+    /// [`Self::bind_one_anim_asset`] for an AnimType whose art declares
+    /// `Picture=`. The picture's frame count stands in for the SHP header's
+    /// (`427B50`, header `+6`) and its canvas height, `PictureSize=` else the
+    /// picture's own, for the header's `+4`; the SHP is never opened. A picture
+    /// that is missing or unreadable binds as a missing SHP does.
+    fn bind_one_anim_picture(
+        &mut self,
+        name: &str,
+        config: &AnimTypeRuntimeConfig,
+        decl: &PictureDecl,
+        asset_manager: &crate::assets::asset_manager::AssetManager,
+        theater_name: &str,
+    ) {
+        let header = self.picture_header(name, decl, asset_manager, theater_name);
+        let raw_count = header.as_ref().map_or(0, |header| header.frames);
+        let (loaded_end, loaded_loop_end) = if header.is_some() {
+            resolve_loaded_bounds(
+                raw_count,
+                config.shadow,
+                config.explicit_end,
+                config.explicit_loop_end,
+            )
+        } else {
+            (
+                config.explicit_end.unwrap_or(0),
+                config.explicit_loop_end.unwrap_or(0),
+            )
+        };
+        let bound = self.anim_runtime_configs.get_mut(name).unwrap();
+        bound.raw_shp_frame_count = Some(raw_count);
+        bound.raw_shp_height = Some(header.as_ref().map_or(0, |header| header.size[1]));
+        bound.middle_frame = Some(raw_count / 2);
+        bound.end = loaded_end;
+        bound.loop_end = loaded_loop_end;
+    }
+
+    /// Whether any art section declares `Picture=`. Without one, no object
+    /// takes the picture path, so callers skip resolving per object.
+    pub fn declares_any_picture(&self) -> bool {
+        self.entries.values().any(|entry| entry.picture.is_some())
+    }
+
+    /// Whether art section `section` declares `Picture=`, so its frames are
+    /// the picture's and its SHP is never opened (docs/picture-model-art.md).
+    pub fn declares_picture(&self, section: &str) -> bool {
+        self.get(section)
+            .is_some_and(|entry| entry.picture.is_some())
+    }
+
+    /// The art section an object's art metadata is read through
+    /// ([`Self::resolve_metadata_entry`]) and its `Picture=`, when that
+    /// section declares one (docs/picture-model-art.md).
+    pub fn resolve_declared_picture(
+        &self,
+        type_id: &str,
+        rules_image: &str,
+    ) -> Option<(&str, &PictureDecl)> {
+        let image = rules_image.trim();
+        let base = if image.is_empty() { type_id } else { image };
+        let (section, entry) = [base, type_id].into_iter().find_map(|id| {
+            folded_entry_name(&self.entry_names, id)
+                .and_then(|name| self.entries.get_key_value(name))
+        })?;
+        Some((section.as_str(), entry.picture.as_ref()?))
+    }
+
+    /// Whether art section `section` declares `Model=`, so its voxel parts
+    /// are the model's and its VXL and HVA are never opened
+    /// (docs/picture-model-art.md).
+    pub fn declares_model(&self, section: &str) -> bool {
+        self.get(section).is_some_and(|entry| entry.model.is_some())
+    }
+
+    /// The art section a voxel object's image resolves to and its `Model=`,
+    /// when that section declares one (docs/picture-model-art.md). `image`
+    /// is the name the VXL would be read through
+    /// ([`crate::rules::voxel_frame_catalog::voxel_image_id`]); the section is
+    /// that image's, else the type's own, as [`Self::resolve_metadata_entry`]
+    /// takes it.
+    pub fn resolve_declared_model(&self, type_id: &str, image: &str) -> Option<(&str, &ModelDecl)> {
+        let image = image.trim();
+        let base = if image.is_empty() { type_id } else { image };
+        let (section, entry) = [base, type_id].into_iter().find_map(|id| {
+            folded_entry_name(&self.entry_names, id)
+                .and_then(|name| self.entries.get_key_value(name))
+        })?;
+        Some((section.as_str(), entry.model.as_ref()?))
+    }
+
+    /// The files `decl`, declared in art section `section`, may load in
+    /// `theater_name`, the first found winning: with the section's
+    /// `NewTheater=yes`, the name with the theater's and then the generic
+    /// letter, as an SHP name takes them ([`theater_shp_names`]); with
+    /// `Theater=yes`, where the SHP takes the theater's extension (`.tem`),
+    /// the name with that extension before its own (`TREE01.tem.png`), then
+    /// the name as written; else the name as written.
+    pub fn picture_candidates(
+        &self,
+        section: &str,
+        decl: &PictureDecl,
+        theater_name: &str,
+    ) -> Vec<String> {
+        let entry = self.get(section);
+        let (stem, extension) = decl
+            .file
+            .rsplit_once('.')
+            .map_or((decl.file.as_str(), None), |(stem, ext)| (stem, Some(ext)));
+        if entry.is_some_and(|entry| entry.theater && !entry.new_theater) {
+            let theater = crate::map::theater::theater_extension(theater_name);
+            return theater
+                .map(|theater| match extension {
+                    Some(extension) => format!("{stem}.{theater}.{extension}"),
+                    None => format!("{stem}.{theater}"),
+                })
+                .into_iter()
+                .chain([decl.file.clone()])
+                .collect();
+        }
+        if !entry.is_some_and(|entry| entry.new_theater) {
+            return vec![decl.file.clone()];
+        }
+        theater_shp_names(&stem.to_ascii_uppercase(), theater_name)
+            .into_iter()
+            .map(|name| match extension {
+                Some(extension) => format!("{name}.{extension}"),
+                None => name,
+            })
+            .collect()
+    }
+
+    /// The simulation's facts of the picture `decl` declares in `section`:
+    /// its frame count and its canvas in game pixels (`PictureSize=`, else
+    /// the picture's own size), both clamped to an SHP header's signed words.
+    /// None, logged, when no candidate file is found or it is not a PNG.
+    pub fn picture_header(
+        &self,
+        section: &str,
+        decl: &PictureDecl,
+        asset_manager: &crate::assets::asset_manager::AssetManager,
+        theater_name: &str,
+    ) -> Option<PictureFacts> {
+        let candidates = self.picture_candidates(section, decl, theater_name);
+        let Some((file, bytes)) = candidates
+            .iter()
+            .find_map(|file| asset_manager.get_ref(file).map(|bytes| (file, bytes)))
+        else {
+            log::warn!("[{section}] {} is not found; it has no frames", decl.file);
+            crate::rules::art_problems::report(
+                section,
+                &format!("Picture={}", decl.file),
+                "the file is not found",
+                "it draws nothing",
+            );
+            return None;
+        };
+        let header = match crate::assets::picture_file::PictureHeader::read(bytes) {
+            Ok(header) => header,
+            Err(error) => {
+                log::warn!("[{section}] {file} cannot be read ({error}); it has no frames");
+                crate::rules::art_problems::report(
+                    section,
+                    &format!("Picture={}", decl.file),
+                    &format!("{file} cannot be read ({error})"),
+                    "it draws nothing",
+                );
+                return None;
+            }
+        };
+        let word = |value: u32| {
+            i32::try_from(value)
+                .unwrap_or(i32::MAX)
+                .min(i32::from(i16::MAX))
+        };
+        if header.frames > i16::MAX as u32 {
+            log::warn!(
+                "[{section}] {file} has {} frames; the first {} are used",
+                header.frames,
+                i16::MAX
+            );
+            crate::rules::art_problems::report(
+                section,
+                &format!("Picture={}", decl.file),
+                &format!("{file} has {} frames", header.frames),
+                &format!("the first {} are used", i16::MAX),
+            );
+        }
+        Some(PictureFacts {
+            file: file.clone(),
+            frames: word(header.frames),
+            size: decl
+                .size
+                .unwrap_or([word(header.width), word(header.height)]),
+        })
     }
 
     /// Bind native loader-derived End/LoopEnd values for the transitive
@@ -2587,6 +2924,23 @@ impl ArtRegistry {
             .and_then(|entry| normalize_id(entry.alt_cameo.as_deref().unwrap_or_default()))
     }
 
+    /// VERA-only, experimental (`docs/picture-model-art.md`): the normal and
+    /// promoted cameo pictures (`CameoPicture=`, `AltCameoPicture=`), read
+    /// from the section the Ares PCX cameos are read from
+    /// ([`Self::resolve_declared_pcx_cameos`]).
+    pub fn resolve_declared_cameo_pictures(
+        &self,
+        type_id: &str,
+        rules_image: &str,
+    ) -> [Option<&str>; 2] {
+        let resolved = self.resolve_object_art(type_id, rules_image);
+        let entry = self.get(&resolved.base_art_id);
+        [
+            entry.and_then(|entry| entry.cameo_picture.as_deref()),
+            entry.and_then(|entry| entry.alt_cameo_picture.as_deref()),
+        ]
+    }
+
     /// Normal and promoted Ares PCX filenames, including their extensions.
     /// Ares3.0 reads the rules ImageFile section1003E81F..1003E856, without
     /// following the art section's own Image redirect or retrying the type ID.
@@ -2736,6 +3090,21 @@ impl ArtRegistry {
             ))
         };
         for (name, image_id, sized) in pending {
+            // VERA-only, experimental: a picture's frames all have the
+            // canvas `PictureSize=` gives (docs/picture-model-art.md).
+            if let Some(decl) = self.get(&name).and_then(|entry| entry.picture.clone()) {
+                match self.picture_header(&name, &decl, asset_manager, theater_name) {
+                    Some(facts) => {
+                        let entry = self.get_mut(&name).unwrap();
+                        let side = |value: i32| u16::try_from(value).unwrap_or(u16::MAX);
+                        entry.frame_width = side(facts.size[0]);
+                        entry.frame_height = side(facts.size[1]);
+                        populated += 1;
+                    }
+                    None => fallback += 1,
+                }
+                continue;
+            }
             let candidates: Vec<String> = effect_shp_candidates(
                 crate::rules::art_data::EffectImageKind::Animation,
                 Some(self),

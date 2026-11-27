@@ -33,7 +33,6 @@ fn wheel_zoom_keeps_infantry_health_pixels_identical() {
 }
 
 fn wheel_zoom_health_pixels(type_name: &str, category: EntityCategory) {
-    use crate::render::upscale_pass::WorldZoomPass;
     let retail = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
         .expect("physical Battle rules");
     let (_, assets) = crate::rules::retail_ini_fixture::retail_assets().unwrap();
@@ -41,7 +40,13 @@ fn wheel_zoom_health_pixels(type_name: &str, category: EntityCategory) {
     let format = wgpu::TextureFormat::Bgra8UnormSrgb;
     let size = [256, 256];
     let mut batch = BatchRenderer::new_with_device(&gpu.device, &gpu.queue, format);
-    let overlay = SelectionOverlay::new_on_device(&gpu.device, &gpu.queue, &batch, Some(&assets));
+    let overlay = SelectionOverlay::new_on_device(
+        &gpu.device,
+        &gpu.queue,
+        &batch,
+        Some(&assets),
+        crate::render::interface_picture::PictureSizes::None,
+    );
     let mut sim = Simulation::new();
     let owner = sim.intern("Americans");
     let object = retail.rules.object(type_name).unwrap();
@@ -89,12 +94,10 @@ fn wheel_zoom_health_pixels(type_name: &str, category: EntityCategory) {
     for zoom in [1.0, 1.25, 0.8, 1.0 / 1.5] {
         cam.zoom = zoom;
         batch.write_camera(&gpu.queue, cam);
-        let resolve =
-            (zoom != 1.0).then(|| WorldZoomPass::new(&gpu.device, &gpu.queue, format, size, zoom));
-        let source_size = resolve.as_ref().map_or(size, WorldZoomPass::source_size);
-        if resolve.is_some() {
-            batch.set_native_world_resolution(&gpu.queue, source_size);
-        }
+        // The world camera draws the target at the zoom
+        // (`docs/zoom-one-pass.md`); the A plane covers the world pixels it
+        // shows.
+        let world = size.map(|v| (v as f32 / zoom).ceil() as u32);
         let status = techno_extras_for_parent(
             &sim,
             &ObjectRecord::of_test_sim(&sim, &retail.rules, 1),
@@ -139,17 +142,17 @@ fn wheel_zoom_health_pixels(type_name: &str, category: EntityCategory) {
         let a = ShroudBuffer::fixture(
             &gpu.device,
             &gpu.queue,
-            source_size,
+            world,
             cam.camera_pos,
             // The mobile border straddles an A boundary at its parent point.
             // It must still sample live A in frame pixels, while fills bypass A.
-            &(0..source_size[0] * source_size[1])
-                .map(|index| if index % source_size[0] < 63 { 0 } else { 127 })
+            &(0..world[0] * world[1])
+                .map(|index| if index % world[0] < 63 { 0 } else { 127 })
                 .collect::<Vec<_>>(),
         );
         batch.bind_shroud(&gpu.device, Some(&a));
-        let color = gpu.target(source_size, format);
-        let depth = gpu.target(source_size, wgpu::TextureFormat::Depth32Float);
+        let color = gpu.target(size, format);
+        let depth = gpu.target(size, wgpu::TextureFormat::Depth32Float);
         let cv = color.create_view(&Default::default());
         let dv = depth.create_view(&Default::default());
         let mut encoder = gpu.device.create_command_encoder(&Default::default());
@@ -167,42 +170,30 @@ fn wheel_zoom_health_pixels(type_name: &str, category: EntityCategory) {
             &cv,
             &dv,
             &mut terrain,
-            [0, 0, source_size[0], source_size[1]],
+            [0, 0, size[0], size[1]],
             &batch,
             Some(&overlay),
             pool.get("object_extras").map(|(buffer, _)| buffer),
             None,
             &layer,
         );
-        let output = if let Some(resolve) = &resolve {
-            resolve.composite(
-                &gpu.device,
-                &mut encoder,
-                &color,
-                [0, 0, size[0], size[1]],
-                wgpu::Color::BLACK,
-            );
+        if zoom != 1.0 {
             let cameras = batch.create_frame_world_cameras(&gpu.device, zoom, Some(&a));
-            {
-                let mut pass = crate::app::presentation::sidebar_render::begin_main_load_pass(
-                    &mut encoder,
-                    resolve.color_view(),
-                    resolve.frame_depth_view(),
-                );
-                super::object_extras::draw_frame_health(
-                    &mut pass,
-                    &batch,
-                    Some(&overlay),
-                    pool.get("object_extras").map(|(buffer, _)| buffer),
-                    &layer,
-                    [&cameras[0], &cameras[1]],
-                );
-            }
-            resolve.color_texture()
-        } else {
-            &color
-        };
-        let read = gpu.read(&mut encoder, output);
+            let mut pass = crate::app::presentation::sidebar_render::begin_main_load_pass(
+                &mut encoder,
+                &cv,
+                &dv,
+            );
+            super::object_extras::draw_frame_health(
+                &mut pass,
+                &batch,
+                Some(&overlay),
+                pool.get("object_extras").map(|(buffer, _)| buffer),
+                &layer,
+                [&cameras[0], &cameras[1]],
+            );
+        }
+        let read = gpu.read(&mut encoder, &color);
         let pixels = gpu.finish(encoder, &[read], size).remove(0);
         let mut bounds = [size[0], size[1], 0, 0];
         for (index, pixel) in pixels.chunks_exact(4).enumerate() {
@@ -293,7 +284,13 @@ fn a_selected_mobile_shield_background_keeps_its_pipbrd_binding() {
     let format = wgpu::TextureFormat::Bgra8UnormSrgb;
     let size = [128, 96];
     let mut batch = BatchRenderer::new_with_device(&gpu.device, &gpu.queue, format);
-    let overlay = SelectionOverlay::new_on_device(&gpu.device, &gpu.queue, &batch, Some(&assets));
+    let overlay = SelectionOverlay::new_on_device(
+        &gpu.device,
+        &gpu.queue,
+        &batch,
+        Some(&assets),
+        crate::render::interface_picture::PictureSizes::None,
+    );
     let mut sim = Simulation::new();
     let owner = sim.intern("Americans");
     sim.houses_mut_for_test()
@@ -433,7 +430,13 @@ fn bracket_delta_moves_the_health_bar_but_not_the_scale_pips() {
         &gpu.queue,
         wgpu::TextureFormat::Bgra8UnormSrgb,
     );
-    let overlay = SelectionOverlay::new_on_device(&gpu.device, &gpu.queue, &batch, Some(&assets));
+    let overlay = SelectionOverlay::new_on_device(
+        &gpu.device,
+        &gpu.queue,
+        &batch,
+        Some(&assets),
+        crate::render::interface_picture::PictureSizes::None,
+    );
     let strip = |delta: i32| {
         let retail = crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch(
             "XMP03T4.MAP",
@@ -522,7 +525,13 @@ fn a_hovered_enemy_mirage_worn_as_terrain_draws_no_health_strip() {
         &gpu.queue,
         wgpu::TextureFormat::Bgra8UnormSrgb,
     );
-    let overlay = SelectionOverlay::new_on_device(&gpu.device, &gpu.queue, &batch, Some(&assets));
+    let overlay = SelectionOverlay::new_on_device(
+        &gpu.device,
+        &gpu.queue,
+        &batch,
+        Some(&assets),
+        crate::render::interface_picture::PictureSizes::None,
+    );
     let center = crate::util::lepton::absolute_leptons_to_screen(20 * 256 + 128, 20 * 256 + 128, 0);
     let health_fills = |name: &str, selected: bool| {
         let mut sim = Simulation::new();
@@ -675,7 +684,13 @@ fn native_self_heal_draw_fault_order() {
         &gpu.queue,
         wgpu::TextureFormat::Bgra8UnormSrgb,
     );
-    let overlay = SelectionOverlay::new_on_device(&gpu.device, &gpu.queue, &batch, Some(&assets));
+    let overlay = SelectionOverlay::new_on_device(
+        &gpu.device,
+        &gpu.queue,
+        &batch,
+        Some(&assets),
+        crate::render::interface_picture::PictureSizes::None,
+    );
     let mut checked = 0;
     for row in native["divide_controls"].as_array().unwrap() {
         if row["path"] != "draw" {
@@ -896,8 +911,13 @@ fn native_building_status_labels(fixture: &'static str) {
         wgpu::TextureFormat::Rgba8UnormSrgb,
     ] {
         let mut batch = BatchRenderer::new_with_device(&gpu.device, &gpu.queue, format);
-        let overlay =
-            SelectionOverlay::new_on_device(&gpu.device, &gpu.queue, &batch, Some(&assets));
+        let overlay = SelectionOverlay::new_on_device(
+            &gpu.device,
+            &gpu.queue,
+            &batch,
+            Some(&assets),
+            crate::render::interface_picture::PictureSizes::None,
+        );
         let fnt = crate::assets::fnt_file::FntFile::from_bytes(
             assets.get_ref("GAME.FNT").expect("physical GAME.FNT"),
         )
@@ -1257,8 +1277,13 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
         wgpu::TextureFormat::Rgba8UnormSrgb,
     ] {
         let mut batch = BatchRenderer::new_with_device(&gpu.device, &gpu.queue, format);
-        let overlay =
-            SelectionOverlay::new_on_device(&gpu.device, &gpu.queue, &batch, Some(&assets));
+        let overlay = SelectionOverlay::new_on_device(
+            &gpu.device,
+            &gpu.queue,
+            &batch,
+            Some(&assets),
+            crate::render::interface_picture::PictureSizes::None,
+        );
         let mut pool = InstanceBufferPool::new();
         let font = native.get("native_font").map(|_| {
             let fnt = crate::assets::fnt_file::FntFile::from_bytes(
@@ -1847,6 +1872,7 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                     // Extras replay for the separate native body compositions.
                     strip = crate::app::presentation::ui_overlays::TechnoExtras {
                         bomb_clock: strip.bomb_clock,
+                        bomb_image: strip.bomb_image,
                         wrench: strip.wrench,
                         ..Default::default()
                     };
@@ -2347,6 +2373,7 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                         fenced.extras_runs.push(ObjectExtrasRun::Status {
                             parent,
                             bomb_clock: None,
+                            bomb_image: None,
                             wrench: None,
                             power_off: None,
                             rank: *rank,

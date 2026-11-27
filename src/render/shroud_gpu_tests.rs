@@ -62,98 +62,81 @@ fn load_pass<'a>(
 }
 
 #[test]
-#[ignore = "requires GPU; wheel zoom native-world camera, clipped resolve and frame-size UI"]
-fn production_world_zoom_resolves_before_screen_fixed_ui() {
+#[ignore = "requires GPU; one camera draws the world and the frame UI at the window's pixels"]
+fn match_camera_draws_world_and_frame_ui_at_the_window_pixels() {
     let gpu = Gpu::new();
     let format = wgpu::TextureFormat::Bgra8UnormSrgb;
+    // A 6x4 frame at the Options zoom's 200% is a 12x8 composition; at
+    // wheel zoom 1 the world camera draws each world pixel as a 2x2 block.
     let size = [12, 8];
-    let mut zoom =
-        super::upscale_pass::WorldZoomPass::new(&gpu.device, &gpu.queue, format, [10, 8], 1.25);
-    zoom.set_view(&gpu.device, &gpu.queue, size, 0.8, false);
-    let source_size = zoom.source_size();
-    assert_eq!(source_size, [15, 10]);
     let batch = BatchRenderer::new_with_device(&gpu.device, &gpu.queue, format);
-    batch.write_camera(
+    batch.update_match_camera(
         &gpu.queue,
-        super::batch::CameraUniform {
-            zoom: 0.8,
-            ..camera(size)
-        },
-    );
-    batch.set_native_world_resolution(&gpu.queue, source_size);
-    assert_eq!(batch.camera_uniform().screen_size, [15.0, 10.0]);
-    assert_eq!(batch.camera_uniform().zoom, 1.0);
-    assert_eq!(batch.ui_camera_uniform().screen_size, [12.0, 8.0]);
-    let mut composition =
-        super::combat_light::CombatLightRenderer::new_with_device(&gpu.device, &gpu.queue, format);
-    composition.prepare_with_device(
-        &gpu.device,
-        &gpu.queue,
-        &[],
-        source_size.map(|v| v as f32),
+        size.map(|v| v as f32),
         [0.0; 2],
-        1.0,
+        2.0,
+        2.0,
+        DepthAxis::NONE,
     );
+    assert_eq!(batch.camera_uniform().zoom, 2.0);
+    assert_eq!(batch.ui_camera_uniform().zoom, 2.0);
+    assert_eq!(batch.ui_camera_uniform().screen_size, [12.0, 8.0]);
     let red =
         batch.create_texture_on_device(&gpu.device, &gpu.queue, &[255, 0, 0, 255], 1, 1, None);
     let green =
         batch.create_texture_on_device(&gpu.device, &gpu.queue, &[0, 255, 0, 255], 1, 1, None);
-    let native = buffer(
+    let world = buffer(
         &gpu,
         &[SpriteInstance {
-            size: source_size.map(|v| v as f32),
+            size: [6.0, 4.0],
             uv_size: [1.0; 2],
             tint: [1.0; 3],
             alpha: 1.0,
             ..Default::default()
         }],
     );
+    // A frame-pixel column right of the battlefield.
     let ui = buffer(
         &gpu,
         &[SpriteInstance {
-            position: [9.0, 0.0],
-            size: [3.0, 8.0],
+            position: [4.0, 0.0],
+            size: [2.0, 4.0],
             uv_size: [1.0; 2],
             tint: [1.0; 3],
             alpha: 1.0,
             ..Default::default()
         }],
     );
-    let tactical = [0, 1, 9, 7];
-    let clip = zoom.world_clip(tactical);
-    assert_eq!(clip, [0, 1, 12, 9]);
-    let cv = composition.composition_view();
+    // The frame's 4x3 battlefield below a one-pixel band, in the
+    // composition's pixels.
+    let clip = crate::app::renderer_state::scale_frame_rect(2.0, (12, 8), (0, 1, 4, 3));
+    assert_eq!(clip, [0, 2, 8, 6]);
+    let color = gpu.target(size, format);
+    let depth = gpu.target(size, wgpu::TextureFormat::Depth32Float);
+    let cv = color.create_view(&Default::default());
+    let dv = depth.create_view(&Default::default());
     let mut encoder = gpu.device.create_command_encoder(&Default::default());
     clear(
         &mut encoder,
         &cv,
-        zoom.depth_view(),
+        &dv,
         65535,
         wgpu::LoadOp::Clear(wgpu::Color::BLACK),
     );
     {
-        let mut pass = load_pass(&mut encoder, &cv, zoom.depth_view());
+        let mut pass = load_pass(&mut encoder, &cv, &dv);
         pass.set_scissor_rect(clip[0], clip[1], clip[2], clip[3]);
-        batch.draw_passthrough_range(&mut pass, &red, &native, 0, 1);
-    }
-    zoom.composite(
-        &gpu.device,
-        &mut encoder,
-        composition.composition_texture(),
-        tactical,
-        wgpu::Color::BLACK,
-    );
-    {
-        let mut pass = load_pass(&mut encoder, zoom.color_view(), zoom.frame_depth_view());
+        batch.draw_passthrough_range(&mut pass, &red, &world, 0, 1);
+        pass.set_scissor_rect(0, 0, size[0], size[1]);
         batch.draw_with_buffer_ui_passthrough(&mut pass, &green, &ui, 1);
     }
-    let reads = [gpu.read(&mut encoder, zoom.color_texture())];
+    let reads = [gpu.read(&mut encoder, &color)];
     let output = gpu.finish(encoder, &reads, size);
     for y in 0..size[1] {
         for x in 0..size[0] {
-            let expected = if x >= 9 {
+            let expected = if x >= 8 {
                 [0, 255, 0, 255]
-            } else if y >= 1 {
+            } else if y >= 2 {
                 [0, 0, 255, 255]
             } else {
                 [0, 0, 0, 255]
@@ -162,15 +145,10 @@ fn production_world_zoom_resolves_before_screen_fixed_ui() {
             assert_eq!(
                 &output[0][offset..offset + 4],
                 &expected,
-                "frame pixel {x},{y}"
+                "composition pixel {x},{y}"
             );
         }
     }
-    batch.write_camera(&gpu.queue, camera(size));
-    assert_eq!(
-        batch.camera_uniform().screen_size,
-        batch.ui_camera_uniform().screen_size
-    );
 }
 
 #[test]

@@ -1821,3 +1821,98 @@ fn presentation_only_anims_change_nothing_but_their_picture_down_their_chain() {
         "RandomRate draws the Scenario stream"
     );
 }
+
+/// An AnimType whose art declares `Picture=` takes the SHP header's words
+/// from the picture (docs/picture-model-art.md) and never opens its SHP; one
+/// without the key keeps its SHP even beside a same-named picture.
+#[test]
+fn a_declared_picture_stands_in_for_the_shp_header_and_only_when_declared() {
+    let root = AnimDimTestRoot::new();
+    let shp = |frames: i16| {
+        let mut header = vec![0_u8; 8];
+        header[2..4].copy_from_slice(&40_u16.to_le_bytes());
+        header[4..6].copy_from_slice(&50_u16.to_le_bytes());
+        header[6..8].copy_from_slice(&frames.to_le_bytes());
+        header
+    };
+    std::fs::write(root.path().join("BOOM.SHP"), shp(4)).unwrap();
+    std::fs::write(root.path().join("PLAIN.SHP"), shp(4)).unwrap();
+    let picture = crate::assets::picture_file::test_picture(8, 8, Some(12));
+    std::fs::write(root.path().join("boom.png"), &picture).unwrap();
+    std::fs::write(root.path().join("PLAIN.png"), &picture).unwrap();
+    let assets = crate::assets::asset_manager::AssetManager::from_loose_root_for_test(root.path());
+    let mut art = ArtRegistry::from_ini(&IniFile::from_str(
+        "[BOOM]\nPicture=boom.png\nPictureSize=60,30\nShadow=yes\nCrater=yes\n\
+         [PLAIN]\nShadow=yes\nCrater=yes\n",
+    ));
+    art.bind_scheduler_anim_assets(
+        &["BOOM".into(), "PLAIN".into()],
+        &assets,
+        "TEM",
+        "TEMPERATE",
+    );
+    art.populate_anim_frame_dims(&assets, "TEM", "TEMPERATE");
+
+    let boom = art.anim_runtime_config("BOOM").unwrap();
+    assert_eq!(boom.raw_shp_frame_count, Some(12), "the APNG's frames");
+    assert_eq!((boom.end, boom.loop_end), (6, 6), "Shadow=yes halves them");
+    assert_eq!(boom.middle_frame, Some(6));
+    assert_eq!(boom.raw_shp_height, Some(30), "PictureSize= height");
+    let boom = art.get("BOOM").unwrap();
+    assert_eq!((boom.frame_width, boom.frame_height), (60, 30));
+
+    let plain = art.anim_runtime_config("PLAIN").unwrap();
+    assert_eq!(plain.raw_shp_frame_count, Some(4), "the SHP, not PLAIN.png");
+    assert_eq!(plain.raw_shp_height, Some(50));
+}
+
+/// A refused `PictureSize=` and a missing picture each become one line for
+/// the player (`art_problems`), however often the art is read or the picture
+/// looked up (docs/picture-model-art.md, "Keys").
+#[test]
+fn bad_picture_art_reports_one_line_per_problem() {
+    let root = AnimDimTestRoot::new();
+    let assets = crate::assets::asset_manager::AssetManager::from_loose_root_for_test(root.path());
+    let ini = IniFile::from_str("[PMNOTICE]\nPicture=pmnotice.png\nPictureSize=0,30\n");
+    let art = ArtRegistry::from_ini(&ini);
+    let _read_again = ArtRegistry::from_ini(&ini);
+    let decl = art.get("PMNOTICE").unwrap().picture.clone().unwrap();
+    assert_eq!(decl.size, None, "the refused size");
+    for _ in 0..2 {
+        assert!(
+            art.picture_header("PMNOTICE", &decl, &assets, "TEMPERATE")
+                .is_none()
+        );
+    }
+
+    let lines: Vec<String> = crate::rules::art_problems::lines()
+        .into_iter()
+        .filter(|line| line.starts_with("[PMNOTICE]"))
+        .collect();
+    assert_eq!(
+        lines,
+        [
+            "[PMNOTICE] PictureSize=: needs two sizes from 1 to 4096; \
+             the picture's own size is used.",
+            "[PMNOTICE] Picture=pmnotice.png: the file is not found; it draws nothing.",
+        ]
+    );
+}
+
+/// Retail art declares no picture, so every retail image keeps its SHP path
+/// and nothing looks for a picture (docs/picture-model-art.md, "Off").
+#[test]
+fn retail_art_declares_no_picture() {
+    let Some(art) = crate::rules::retail_ini_fixture::retail_ini("artmd.ini") else {
+        eprintln!("SKIPPED: retail artmd.ini is absent");
+        return;
+    };
+    let art = ArtRegistry::from_ini(&art);
+    assert!(art.iter_entries().count() > 1000, "the retail art loaded");
+    let declared: Vec<&str> = art
+        .iter_entries()
+        .filter(|(_, entry)| entry.picture.is_some())
+        .map(|(name, _)| name)
+        .collect();
+    assert!(declared.is_empty(), "{declared:?}");
+}

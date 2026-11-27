@@ -17,7 +17,9 @@ pub(crate) struct AircraftShadowContext {
     pub secondary_facing: u16,
 }
 
-#[derive(Debug)]
+// Copy: a declared model's shadow (VERA-only, docs/picture-model-art.md)
+// reads the pose after the voxel arm has passed on it.
+#[derive(Debug, Clone, Copy)]
 pub(crate) struct AircraftShadowPose {
     /// Absolute screen coordinates, including VERA's common +15 row bias.
     pub anchor: [f32; 2],

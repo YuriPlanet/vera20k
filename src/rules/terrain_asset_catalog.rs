@@ -8,7 +8,9 @@ use std::collections::{BTreeMap, HashMap};
 use std::hash::{Hash, Hasher};
 
 use crate::assets::asset_manager::AssetManager;
+use crate::assets::picture_file::PictureFrames;
 use crate::assets::shp_file::ShpFile;
+use crate::rules::art_data::ArtRegistry;
 use crate::rules::ini_parser::IniSection;
 use crate::rules::terrain_object_type::TerrainObjectType;
 
@@ -64,10 +66,14 @@ impl Hash for TerrainAssetCatalog {
 impl TerrainAssetCatalog {
     pub fn bind(
         terrain_types: &mut HashMap<String, TerrainObjectType>,
+        art: &ArtRegistry,
         asset_manager: &AssetManager,
         theater_ext: &str,
         phase: TerrainAssetLoadPhase,
     ) -> Self {
+        let theater_name = crate::map::theater::theater_names_and_extensions()
+            .find(|(_, ext)| ext.eq_ignore_ascii_case(theater_ext))
+            .map_or("", |(name, _)| name);
         let mut image_colors = BTreeMap::<String, Option<[u8; 3]>>::new();
         for terrain in terrain_types.values_mut() {
             let mut current = [0; 3];
@@ -76,6 +82,17 @@ impl TerrainAssetCatalog {
                     let image_color = *image_colors
                         .entry(image.to_ascii_uppercase())
                         .or_insert_with(|| {
+                            // VERA-only (docs/picture-model-art.md): a declared
+                            // picture's frame 0 mean colour stands in for the
+                            // SHP header's.
+                            if let Some((section, decl)) = art.resolve_declared_picture(image, "") {
+                                return art
+                                    .picture_candidates(section, decl, theater_name)
+                                    .iter()
+                                    .find_map(|file| asset_manager.get_ref(file))
+                                    .and_then(|bytes| PictureFrames::decode(bytes).ok())
+                                    .and_then(|picture| picture.mean_color(0));
+                            }
                             // TerrainTypeReadINI71DF9E..71DFC0 uses ImageFile.SHP
                             // exactly; theater shapes have not been reloaded yet.
                             asset_manager
@@ -104,15 +121,25 @@ impl TerrainAssetCatalog {
                 continue;
             };
             let filename = terrain.shape_filename(theater_ext);
+            // VERA-only (docs/picture-model-art.md): a type whose art declares
+            // `Picture=` counts the picture's frames; its SHP is never opened.
+            let picture = terrain.declared_picture(art);
             let spawner = terrain.spawns_tiberium && terrain.is_animated;
             let frame_count = |bytes: &[u8]| ShpFile::frame_count_from_bytes(bytes).ok();
-            // Only a spawner's frame count reaches the simulation.
-            let bytes = if spawner {
-                folder.read_noting(&filename, frame_count, &mut catalog.folder_files)
-            } else {
-                asset_manager.get_ref(&filename)
+            let count = match picture {
+                Some((section, decl)) => art
+                    .picture_header(section, decl, asset_manager, theater_name)
+                    .map(|facts| facts.frames.clamp(0, i32::from(u16::MAX)) as u16),
+                None => {
+                    // Only a spawner's frame count reaches the simulation.
+                    let bytes = if spawner {
+                        folder.read_noting(&filename, frame_count, &mut catalog.folder_files)
+                    } else {
+                        asset_manager.get_ref(&filename)
+                    };
+                    bytes.and_then(frame_count)
+                }
             };
-            let count = bytes.and_then(frame_count);
             if spawner && count.is_none() {
                 log::warn!(
                     "Terrain spawner [{name}] has no valid SHP {filename}; no validated midpoint is available"
@@ -455,6 +482,42 @@ mod tests {
                 .radar_color,
             [70, 80, 90],
             "a missing Image SHP skips GetColor and preserves the current RadarColor"
+        );
+    }
+
+    /// VERA-only (docs/picture-model-art.md): a TerrainType whose image's
+    /// art declares `Picture=` takes the picture's frame count for the
+    /// spawner timer and its frame 0 mean colour for its radar colour; its
+    /// SHP is never opened.
+    #[test]
+    fn a_declared_terrain_picture_gives_frames_and_radar_color() {
+        let directory = crate::map::source::test_support::TestDirectory::new("terrain-picture");
+        directory.write("TREE.SHP", &test_shp_with_radar_color([10, 20, 30]));
+        let frames = [[40u8, 50, 60, 255], [0, 0, 0, 255], [0, 0, 0, 255]]
+            .map(|pixel| pixel.repeat(4));
+        directory.write(
+            "tree.png",
+            &crate::assets::picture_file::encode_frames(2, 2, &frames).unwrap(),
+        );
+        let assets = AssetManager::from_loose_root_for_test(directory.path());
+        let processed = RulesLayerStack::new(IniFile::from_str(
+            "[TerrainTypes]\n0=TREE\n[TREE]\nImage=TREE\nSpawnsTiberium=yes\nIsAnimated=yes\n",
+        ))
+        .process()
+        .expect("production rules pass");
+        let mut rules = RuleSet::from_processed_rules(&processed).expect("typed Rules projection");
+        rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(
+            &IniFile::from_str("[TREE]\nPicture=tree.png\n"),
+        ));
+        rules.bind_terrain_assets(&assets, "tem", TerrainAssetLoadPhase::Fresh);
+
+        assert_eq!(rules.terrain_spawner_frame_count("TREE"), Some(3));
+        assert_eq!(
+            rules
+                .terrain_object_type_case_insensitive("TREE")
+                .unwrap()
+                .radar_color,
+            [40, 50, 60]
         );
     }
 

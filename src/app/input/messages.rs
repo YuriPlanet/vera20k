@@ -1761,6 +1761,51 @@ pub(crate) fn post_layout_problem(
     );
 }
 
+/// The most art problems [`post_art_problems`] shows as rows of their own.
+const ART_PROBLEM_ROWS: usize = 3;
+
+/// VERA: declared `Picture=` or `Model=` art that this load could not use as
+/// written (`rules::art_problems`, docs/picture-model-art.md), said once when
+/// the match has loaded: the first few problems, then how many more the log
+/// lists. The lines name sections, keys and files, so they stay in English.
+/// Art that declares neither key reports nothing, and nothing is shown.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn post_art_problems(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
+) {
+    let problems = crate::rules::art_problems::take();
+    let mut post = |text: &str, silent: bool| {
+        post_grey_row(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            sfx_player,
+            persistence,
+            text,
+            false,
+            silent,
+        );
+    };
+    // One incoming-message sound for the lot.
+    for (row, line) in problems.iter().take(ART_PROBLEM_ROWS).enumerate() {
+        post(line, row > 0);
+    }
+    if problems.len() > ART_PROBLEM_ROWS {
+        let more = problems.len() - ART_PROBLEM_ROWS;
+        post(&format!("And {more} more art problems (see the log)."), true);
+    }
+}
+
 /// What the layout edit mode tells the player (`input::layout_edit`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum LayoutEditLine {

@@ -1724,8 +1724,10 @@ mod tests {
 
     #[test]
     fn virtual_source_covers_the_supported_zoomed_out_view() {
-        assert_eq!(virtual_dimensions([1280, 720], 0.25), [5120, 2880]);
-        assert_eq!(virtual_dimensions([3840, 2160], 0.25), [15360, 8640]);
+        // The wheel's closest-out zoom (`camera::MIN_ZOOM`) and a continuous one.
+        assert_eq!(virtual_dimensions([1280, 720], 0.5), [2560, 1440]);
+        assert_eq!(virtual_dimensions([3840, 2160], 0.5), [7680, 4320]);
+        assert_eq!(virtual_dimensions([1920, 1080], 0.840_896_4), [2284, 1285]);
         assert_eq!(virtual_dimensions([19, 11], 0.75), [26, 15]);
     }
 

@@ -7,7 +7,7 @@ fn saved_zoom_respects_the_wheel_preference_without_moving_the_center_or_focus()
     let mut pending = PendingCameraScroll::default();
     assert!(pending.focus_on((100., 200.), [8192, 4096, 0], 2, (640., 480.), 0.8));
     pending.last_ai_frame = 42;
-    let saved = pending.saved_view((2100., 1600.), ViewDistanceTier::Large.zoom());
+    let saved = pending.saved_view((2100., 1600.), 0.8);
     validate_saved_tactical_view(&saved).unwrap();
 
     for (enabled, expected_zoom) in [(false, 1.0), (true, saved.zoom)] {

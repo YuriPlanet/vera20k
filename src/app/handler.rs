@@ -1298,8 +1298,8 @@ impl App {
                     return;
                 }
                 // Optional player setting: over the battlefield the wheel
-                // changes the view distance tier, anchored on the tactical
-                // centre. Over the sidebar and the bottom strip it keeps
+                // zooms the camera continuously, toward the point under the
+                // cursor. Over the sidebar and the bottom strip it keeps
                 // gamemd's native SidebarUp/SidebarDown routing.
                 if state.persistence.options_profile.mouse_wheel_zoom
                     && crate::app::input::camera::cursor_over_battlefield(
@@ -1310,14 +1310,7 @@ impl App {
                         &state.persistence,
                     )
                 {
-                    crate::app::input::camera::cycle_view_distance(
-                        &state.platform,
-                        &state.renderer,
-                        &state.frontend.screen,
-                        &mut state.match_state,
-                        &state.persistence,
-                        lines,
-                    );
+                    crate::app::input::camera::wheel_zoom(&mut state.match_state.input, lines);
                 } else if let Some(action) = dispatch::wheel_notch(lines) {
                     // Every wheel notch scrolls the active build strip by
                     // one row. gamemd routes the wheel message straight to
@@ -2016,7 +2009,7 @@ impl ApplicationHandler for App {
                             (position.y as f32 / 30.0).clamp(-3.0, 3.0)
                         }
                     };
-                    crate::app::input::camera::apply_zoom(&mut state.match_state.input, lines);
+                    crate::app::input::camera::wheel_zoom(&mut state.match_state.input, lines);
                     return;
                 }
                 // A watcher's window closes as a player's does.

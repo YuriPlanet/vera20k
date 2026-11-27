@@ -13,6 +13,7 @@ use crate::assets::shp_file::ShpFile;
 use crate::map::terrain::{self, TILE_HEIGHT, TILE_WIDTH};
 use crate::render::batch::{BatchRenderer, BatchTexture, SpriteInstance};
 use crate::render::gpu::GpuContext;
+use crate::render::interface_picture::PictureSizes;
 use crate::sim::production::{BuildingPlacementCell, BuildingPlacementPreview};
 use crate::sim::selection::SelectionState;
 
@@ -77,10 +78,34 @@ pub struct SelectionOverlay {
     #[cfg(feature = "phobos")]
     digital_shapes: Vec<Option<CenteredShapeStrip>>,
     /// Ares/Phobos custom insignia SHPs keyed by their normalized file name.
-    insignia_shapes: std::collections::HashMap<String, CenteredShapeStrip>,
+    insignia_shapes: NamedStrips,
     /// Ares `IvanBomb.Image` SHPs keyed by their file name, MOUSEPAL like
     /// the BOMBCURS.SHP they replace; a name that did not load is absent.
-    ares_bomb_images: std::collections::HashMap<String, CenteredShapeStrip>,
+    ares_bomb_images: NamedStrips,
+}
+
+/// Strips loaded from the files rules keys name, by name, each also at an
+/// index, so a draw can name the strip an instance was cut from
+/// ([`SelectionOverlay::bomb_strip`]) without holding a borrow of it.
+#[derive(Default)]
+struct NamedStrips {
+    strips: Vec<CenteredShapeStrip>,
+    by_name: std::collections::HashMap<String, usize>,
+}
+
+impl NamedStrips {
+    fn insert(&mut self, name: String, strip: CenteredShapeStrip) {
+        self.by_name.insert(name, self.strips.len());
+        self.strips.push(strip);
+    }
+
+    fn index(&self, name: &str) -> Option<usize> {
+        self.by_name.get(name).copied()
+    }
+
+    fn get(&self, name: &str) -> Option<&CenteredShapeStrip> {
+        self.strips.get(self.index(name)?)
+    }
 }
 
 /// Every frame of one SHP packed side by side at its stored size, each with
@@ -192,25 +217,49 @@ impl CenteredShapeStrip {
     /// Decode every SHP frame in its named palette with
     /// `ShpFile::frame_to_rgba`, keeping its indices. This is the same
     /// resource path for windowed loading and offscreen GPU checks.
+    ///
+    /// VERA-only, experimental (`docs/picture-model-art.md`, "Interface
+    /// art"): every interface strip loads here, so `NAME.png` beside the SHP,
+    /// in the same lookup, is drawn in its place when it fits, sized by
+    /// `sizes` (`render::interface_picture`); it needs no SHP.
     pub(crate) fn from_assets_on_device(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         batch: &BatchRenderer,
         assets: &AssetManager,
+        sizes: PictureSizes<'_>,
         shp_name: &str,
         pal_name: &str,
     ) -> Option<Self> {
+        use crate::render::interface_picture::{ArtShape, find};
         use crate::render::shell_ui_style_assets::{decode_ui_shp, ui_art_candidates};
-        let palette = ui_art_candidates(assets, pal_name)
-            .find_map(|asset| Palette::from_bytes(asset.bytes).ok())?;
-        let strip = ui_art_candidates(assets, shp_name).find_map(|asset| {
-            let shp = if assets.mod_selected() {
-                decode_ui_shp(asset.bytes).ok()?
+        let shp = ui_art_candidates(assets, shp_name).find_map(|asset| {
+            if assets.mod_selected() {
+                decode_ui_shp(asset.bytes).ok()
             } else {
-                ShpFile::from_bytes(asset.bytes).ok()?
-            };
-            Self::from_shp_on_device(device, queue, batch, &shp, &palette)
-        })?;
+                ShpFile::from_bytes(asset.bytes).ok()
+            }
+        });
+        let picture = find(
+            shp_name,
+            shp.as_ref().map(ArtShape::of_shp),
+            sizes,
+            false,
+            |name| {
+                ui_art_candidates(assets, name)
+                    .next()
+                    .map(|asset| asset.bytes)
+            },
+        )
+        .and_then(|found| found.game_frames());
+        let strip = match picture {
+            Some(frames) => Self::from_picture_on_device(device, queue, batch, &frames, None)?,
+            None => {
+                let palette = ui_art_candidates(assets, pal_name)
+                    .find_map(|asset| Palette::from_bytes(asset.bytes).ok())?;
+                Self::from_shp_on_device(device, queue, batch, shp.as_ref()?, &palette)?
+            }
+        };
         log::info!(
             "{shp_name} strip in {pal_name}: {}x{}, {} frames",
             strip.atlas_w,
@@ -291,6 +340,85 @@ impl CenteredShapeStrip {
             frames,
         })
     }
+
+    /// VERA-only, experimental (docs/picture-model-art.md):
+    /// [`Self::from_shp_on_device`] for a declared picture's frames,
+    /// house-colour pixels in `ramp`. Each frame is its drawn rectangle at the
+    /// origin a stored SHP frame has, centred by the `PictureSize=` canvas; an
+    /// empty frame draws nothing, as an SHP's. The strip is one picture page
+    /// (`picture_atlas::PicturePage`) at the picture's own resolution with its
+    /// mip levels, sampled at the level the camera needs, frames side by side
+    /// with empty game pixels between them so no level's filtering crosses
+    /// from one to the next. The Phobos placement preview and the interface
+    /// pictures call it.
+    pub(crate) fn from_picture_on_device(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        batch: &BatchRenderer,
+        picture: &crate::render::picture_atlas::GamePictureFrames,
+        ramp: Option<&[crate::assets::pal_file::Color; crate::render::picture_atlas::RAMP_SIZE]>,
+    ) -> Option<Self> {
+        use crate::render::picture_atlas::{HouseColor, PageSprite, PicturePage};
+        let house = ramp.map_or(HouseColor::Own, HouseColor::Baked);
+        // The strip is small: its frames at the picture's own resolution
+        // are streamed once and kept.
+        let sprites: Vec<Option<PageSprite>> = picture.hd_page_sprites(house);
+        // Every frame of one picture has its page scale.
+        let scale = sprites
+            .iter()
+            .flatten()
+            .map(|sprite| sprite.scale)
+            .next()
+            .unwrap_or(1);
+        let gap = 1 << crate::render::picture_atlas::ZOOM_OUT_LEVELS;
+        let word = |value: u32| i32::try_from(value).unwrap_or(i32::MAX);
+        let [canvas_w, canvas_h] = picture.canvas;
+        let mut frames = Vec::with_capacity(sprites.len());
+        let mut placed: Vec<(&PageSprite, [u32; 2])> = Vec::new();
+        let mut x = gap;
+        for sprite in &sprites {
+            let Some(sprite) = sprite else {
+                frames.push(CenteredShapeFrame {
+                    x,
+                    w: 0,
+                    h: 0,
+                    offset: (0, 0),
+                    raw_offset: (0, 0),
+                });
+                continue;
+            };
+            let [w, h] = sprite.size;
+            placed.push((sprite, [x, 0]));
+            let [left, top] = sprite.origin.map(word);
+            frames.push(CenteredShapeFrame {
+                x,
+                w,
+                h,
+                offset: (left - word(canvas_w / 2), top - word(canvas_h / 2)),
+                raw_offset: (left, top),
+            });
+            x += w + gap;
+        }
+        // Frames sit on the page's top row: below them, the gap.
+        let height = sprites
+            .iter()
+            .flatten()
+            .map(|sprite| sprite.size[1])
+            .max()
+            .unwrap_or(0);
+        let max_side = device.limits().max_texture_dimension_2d;
+        let page = PicturePage::compose(scale, [x, height + gap], max_side, &placed);
+        let [atlas_w, atlas_h] = page.uv_extent();
+        Some(Self {
+            texture: crate::render::picture_zoom::page_texture(device, queue, batch, &page),
+            atlas_w,
+            atlas_h,
+            shape_w: canvas_w,
+            shape_h: canvas_h,
+            frames,
+        })
+    }
+
     /// The PLACE instances of [`placement_cell_draws`], in its order.
     pub fn build_building_preview(
         &self,
@@ -376,8 +504,15 @@ pub fn placement_cell_draws(
 impl SelectionOverlay {
     /// Create a new SelectionOverlay with procedurally-generated textures.
     /// If `assets` is provided, loads pips.shp for authentic RA2 health bar rendering.
-    pub fn new(gpu: &GpuContext, batch: &BatchRenderer, assets: Option<&AssetManager>) -> Self {
-        Self::new_on_device(&gpu.device, &gpu.queue, batch, assets)
+    /// `sizes` gives the interface pictures' `PictureSize=`
+    /// (`render::interface_picture`).
+    pub fn new(
+        gpu: &GpuContext,
+        batch: &BatchRenderer,
+        assets: Option<&AssetManager>,
+        sizes: PictureSizes<'_>,
+    ) -> Self {
+        Self::new_on_device(&gpu.device, &gpu.queue, batch, assets, sizes)
     }
 
     /// The same resource construction for windowed rendering and GPU checks.
@@ -386,6 +521,7 @@ impl SelectionOverlay {
         queue: &wgpu::Queue,
         batch: &BatchRenderer,
         assets: Option<&AssetManager>,
+        sizes: PictureSizes<'_>,
     ) -> Self {
         let drag_texture: BatchTexture = batch.create_texture_on_device(
             device,
@@ -404,6 +540,7 @@ impl SelectionOverlay {
                 queue,
                 batch,
                 assets,
+                sizes,
                 "place.shp",
                 "palette.pal",
             )
@@ -441,6 +578,7 @@ impl SelectionOverlay {
                 queue,
                 batch,
                 assets,
+                sizes,
                 "pipbrd.shp",
                 "palette.pal",
             )
@@ -455,6 +593,7 @@ impl SelectionOverlay {
                 queue,
                 batch,
                 assets,
+                sizes,
                 "pips2.shp",
                 "palette.pal",
             )
@@ -469,6 +608,7 @@ impl SelectionOverlay {
                 queue,
                 batch,
                 assets,
+                sizes,
                 "talkbubl.shp",
                 "palette.pal",
             )
@@ -479,6 +619,7 @@ impl SelectionOverlay {
                 queue,
                 batch,
                 assets,
+                sizes,
                 "bombcurs.shp",
                 "mousepal.pal",
             )
@@ -492,6 +633,7 @@ impl SelectionOverlay {
                 queue,
                 batch,
                 assets,
+                sizes,
                 "wrench.shp",
                 "mousepal.pal",
             )
@@ -504,6 +646,7 @@ impl SelectionOverlay {
                 queue,
                 batch,
                 assets,
+                sizes,
                 "poweroff.shp",
                 "mousepal.pal",
             )
@@ -517,6 +660,7 @@ impl SelectionOverlay {
                 queue,
                 batch,
                 assets,
+                sizes,
                 "pips.shp",
                 "palette.pal",
             )
@@ -537,8 +681,8 @@ impl SelectionOverlay {
             pips,
             #[cfg(feature = "phobos")]
             digital_shapes: Vec::new(),
-            insignia_shapes: std::collections::HashMap::new(),
-            ares_bomb_images: std::collections::HashMap::new(),
+            insignia_shapes: NamedStrips::default(),
+            ares_bomb_images: NamedStrips::default(),
         }
     }
 
@@ -571,6 +715,7 @@ impl SelectionOverlay {
                 queue,
                 batch,
                 assets,
+                PictureSizes::Art(rules.art()),
                 &name.to_ascii_lowercase(),
                 "mousepal.pal",
             ) {
@@ -580,17 +725,27 @@ impl SelectionOverlay {
     }
 
     /// The bomb image for a carrier whose `IvanBomb.Image` candidates are
-    /// `names`: the last that loaded, else BOMBCURS.SHP. Runs in every game:
-    /// the caller passes no names unless the Rules were read the Ares way.
-    pub(crate) fn bomb_image(&self, names: &[String]) -> Option<&CenteredShapeStrip> {
-        if let Some(strip) = names
+    /// `names`: the last that loaded (its index, for [`Self::bomb_strip`]),
+    /// else BOMBCURS.SHP (None). Runs in every game: the caller passes no
+    /// names unless the Rules were read the Ares way.
+    pub(crate) fn bomb_image(
+        &self,
+        names: &[String],
+    ) -> Option<(Option<usize>, &CenteredShapeStrip)> {
+        let image = names
             .iter()
             .rev()
-            .find_map(|name| self.ares_bomb_images.get(name))
-        {
-            return Some(strip);
+            .find_map(|name| self.ares_bomb_images.index(name));
+        Some((image, self.bomb_strip(image)?))
+    }
+
+    /// The strip a bomb clock was cut from: an `IvanBomb.Image`
+    /// ([`Self::bomb_image`]'s index), else BOMBCURS.SHP.
+    pub(crate) fn bomb_strip(&self, image: Option<usize>) -> Option<&CenteredShapeStrip> {
+        match image {
+            Some(index) => self.ares_bomb_images.strips.get(index),
+            None => self.bomb_clock(),
         }
-        self.bomb_clock()
     }
 
     /// Load each `[DigitalDisplayTypes]` entry's `Shape=`/`Palette=` once per
@@ -603,6 +758,7 @@ impl SelectionOverlay {
         batch: &BatchRenderer,
         assets: &AssetManager,
         types: &[crate::rules::digital_display::DigitalDisplayType],
+        sizes: PictureSizes<'_>,
     ) {
         self.digital_shapes = types
             .iter()
@@ -617,7 +773,7 @@ impl SelectionOverlay {
                     );
                 }
                 let strip = CenteredShapeStrip::from_assets_on_device(
-                    device, queue, batch, assets, shape, palette,
+                    device, queue, batch, assets, sizes, shape, palette,
                 );
                 if strip.is_none() {
                     log::warn!(
@@ -675,6 +831,7 @@ impl SelectionOverlay {
                 queue,
                 batch,
                 assets,
+                PictureSizes::Art(rules.art()),
                 &name,
                 "palette.pal",
             );

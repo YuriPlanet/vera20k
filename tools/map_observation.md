@@ -34,6 +34,16 @@ frame pixels at zoom 100% and cannot be combined with it. The cursor then rests 
 the middle of the tactical view; when a unit stands there its cursor animates and the
 capture refuses, so move the view with `camera_cell`.
 
+An optional `"wheel_zoom"` in the same block sets the mouse-wheel view distance
+(`[VERA] MouseWheelZoom=`), as the multiple of the stock view the battlefield shows:
+any number from 0.25 to 2 (1 is the stock view; 2 shows the most map, 0.25 is the
+closest zoom). The wheel zooms continuously, so earlier profiles' 0.8, 1, 1.25 and
+1.5 keep working. Once the battle has loaded, the capture eases the camera zoom to
+1 / `wheel_zoom` around the battlefield's centre (`ease_zoom_to_centre`, the owner turning
+wheel zoom off uses), lets the ease settle, and only then centres `camera_cell`
+and records the first frame; `render.camera.zoom` is the settled camera zoom. A GPU
+whose texture limit cannot hold the view refuses the capture.
+
 ## Named commands and outcome inspection
 
 Use `vera20k.map-observation-profile.v3` to name command targets without a separate

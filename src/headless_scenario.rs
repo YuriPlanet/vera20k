@@ -895,8 +895,7 @@ fn load_with_inputs(
         crate::rules::terrain_asset_catalog::TerrainAssetLoadPhase::Fresh,
     );
     rules.bind_alpha_images(&assets);
-    let overlay_shp_ids = crate::rules::effect_asset_catalog::resolved_overlay_shp_ids(
-        rules.overlay_registry(),
+    let overlay_shp_ids = rules.resolved_overlay_shp_ids(
         &assets,
         theater.extension,
         &map.header.theater,

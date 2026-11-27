@@ -199,7 +199,6 @@ static TS_NORMALS: [[f32; 3]; TS_NORMAL_COUNT] = [
 ///
 /// Mode 4 (RA2) uses the 245-entry table. Mode 2 (TS) uses the 36-entry table.
 /// Out-of-range indices return Vec3::Z (pointing up) as a safe fallback.
-#[cfg(test)]
 pub fn get_normal(normals_mode: u8, index: u8) -> Vec3 {
     let table: &[[f32; 3]] = match normals_mode {
         4 => &RA2_NORMALS,
@@ -223,6 +222,13 @@ const YR_WORLD_LIGHT: Vec3 = Vec3::new(
     f32::from_bits(0xbf35_04e6),
     f32::from_bits(0x3eff_ffed),
 );
+
+/// VERA-only, experimental (`docs/picture-model-art.md`): the world light
+/// in the voxel camera's space ([`YR_WORLD_LIGHT`]), viewer +Z, for the
+/// declared models' GPU lighting.
+pub(crate) fn world_light() -> Vec3 {
+    YR_WORLD_LIGHT
+}
 
 fn fp(value: f32) -> X87Value {
     Fpu::load_f32(NativeF32Bits::from_bits(value.to_bits()))

@@ -348,6 +348,10 @@ pub struct TilesetLookup {
     /// Existing suffix siblings are discovered after theater archive activation.
     /// Empty means that this tile has only its pristine file.
     variant_filenames: Vec<Vec<String>>,
+    /// VERA-only, experimental (`docs/picture-model-art.md`): tile_id → the
+    /// stem of its template picture, `{PictureFileName}{NN:02}`, when its
+    /// tileset declares `PictureFileName=`; None draws the TMP's pixels.
+    picture_stems: Vec<Option<String>>,
     /// Tileset index → bounds (start tile_id and count).
     /// Index 0 corresponds to [TileSet0000], etc.
     tileset_bounds: Vec<TilesetBounds>,
@@ -450,6 +454,19 @@ impl TilesetLookup {
             .get(tile_id as usize)
             .map(|v| v.as_slice())
             .unwrap_or(&[])
+    }
+
+    /// VERA-only, experimental (`docs/picture-model-art.md`): the picture
+    /// that draws template `tile_id`'s file `variant` in place of its TMP's
+    /// pixels: `{stem}.png` for the pristine file, `{stem}a.png`, `b`, ...
+    /// for its suffix siblings. None when its tileset declares no
+    /// `PictureFileName=`.
+    pub fn picture_filename(&self, tile_id: u16, variant: u8) -> Option<String> {
+        let stem = self.picture_stems.get(usize::from(tile_id))?.as_deref()?;
+        Some(match variant {
+            0 => format!("{stem}.png"),
+            v => format!("{stem}{}.png", char::from(b'a' + (v - 1).min(25))),
+        })
     }
 
     /// Exact independent TMP filename for a resolved file index.
@@ -572,6 +589,7 @@ pub fn parse_tileset_ini(ini_data: &[u8], extension: &str) -> Result<TilesetLook
 fn parse_tileset_sections(ini: &IniFile, extension: &str) -> Result<TilesetLookup, MapError> {
     let mut entries: Vec<Option<String>> = Vec::new();
     let mut variant_filenames: Vec<Vec<String>> = Vec::new();
+    let mut picture_stems: Vec<Option<String>> = Vec::new();
     let mut tileset_bounds: Vec<TilesetBounds> = Vec::new();
     let mut set_names: Vec<String> = Vec::new();
     let mut morphable_flags: Vec<bool> = Vec::new();
@@ -593,6 +611,9 @@ fn parse_tileset_sections(ini: &IniFile, extension: &str) -> Result<TilesetLooku
         // blank instead (every retail tileset names its file).
         let filename: &str = section.read_name("FileName", 0x40).unwrap_or("");
         let set_name: &str = section.read_name("SetName", 0x40).unwrap_or("No Name");
+        // VERA-only, experimental (docs/picture-model-art.md): the set's
+        // templates draw from `{PictureFileName}{NN:02}.png`.
+        let picture_name = section.read_name("PictureFileName", 0x40);
         let last_tiles_in_set = section.read_int("LastTilesInSet", -1);
         if last_tiles_in_set != -1 && last_tiles_in_set != tiles_in_set {
             let boundary = legacy_cursor.wrapping_add(last_tiles_in_set);
@@ -669,6 +690,7 @@ fn parse_tileset_sections(ini: &IniFile, extension: &str) -> Result<TilesetLooku
             for _ in 0..usize::from(tiles_in_set) {
                 entries.push(None);
                 variant_filenames.push(Vec::new());
+                picture_stems.push(None);
                 tile_anims.push(None);
             }
         } else {
@@ -679,6 +701,7 @@ fn parse_tileset_sections(ini: &IniFile, extension: &str) -> Result<TilesetLooku
                 let main_name = format!("{}{:02}.{}", filename, i, extension);
                 entries.push(Some(main_name));
                 variant_filenames.push(Vec::new());
+                picture_stems.push(picture_name.map(|name| format!("{name}{i:02}")));
                 tile_anims.push(anim_section.and_then(|section| parse_tile_anim(section, i)));
             }
         }
@@ -692,6 +715,7 @@ fn parse_tileset_sections(ini: &IniFile, extension: &str) -> Result<TilesetLooku
     Ok(TilesetLookup {
         entries,
         variant_filenames,
+        picture_stems,
         tileset_bounds,
         set_names,
         morphable_flags,
@@ -1769,6 +1793,96 @@ pub fn inject_template_tiles(
     Ok(())
 }
 
+/// VERA-only, experimental (`docs/picture-model-art.md`): a template's
+/// picture, one frame per TMP cell slot in file order (empty slots
+/// included), each cell's canvas (`pixel_width` x `pixel_height`, the
+/// diamond and its extra data) at the frame's top-left corner, the frames as
+/// large as the largest cell canvas times a whole `scale` (1 to 8). Only the
+/// colour comes from it; height, ramp, land, Z data, extra-data placement and
+/// radar colours stay the TMP's, so the simulation and the tile's Z and
+/// occlusion are unchanged.
+struct TilePicture {
+    frames: crate::assets::picture_file::PictureFrames,
+    scale: u32,
+}
+
+impl TilePicture {
+    /// `file` for `tmp`; None, reported in the game, when it is missing,
+    /// unreadable or does not fit the TMP's cells. The TMP's pixels then draw.
+    fn load(asset_manager: &AssetManager, file: &str, tmp: &TmpFile) -> Option<Self> {
+        let max = tmp.tiles.iter().flatten().fold([1u32, 1u32], |max, tile| {
+            [max[0].max(tile.pixel_width), max[1].max(tile.pixel_height)]
+        });
+        let loaded = asset_manager
+            .get_ref(file)
+            .ok_or_else(|| "the file is not found".to_owned())
+            .and_then(|bytes| {
+                crate::assets::picture_file::PictureFrames::decode(bytes)
+                    .map_err(|error| error.to_string())
+            })
+            .and_then(|frames| {
+                let scale = frames.width / max[0];
+                if scale == 0
+                    || scale > 8
+                    || [frames.width, frames.height] != [max[0] * scale, max[1] * scale]
+                    || frames.frames.len() != tmp.tiles.len()
+                {
+                    return Err(format!(
+                        "{}x{} with {} frames is not {} frames of a whole multiple of {}x{}",
+                        frames.width,
+                        frames.height,
+                        frames.frames.len(),
+                        tmp.tiles.len(),
+                        max[0],
+                        max[1]
+                    ));
+                }
+                Ok(Self { frames, scale })
+            });
+        match loaded {
+            Ok(picture) => {
+                log::info!(
+                    "Tile picture {file}: {} cells at {}x",
+                    picture.frames.frames.len(),
+                    picture.scale
+                );
+                Some(picture)
+            }
+            Err(error) => {
+                log::warn!("Tile picture {file} cannot be drawn: {error}");
+                crate::rules::art_problems::report(
+                    file,
+                    "PictureFileName=",
+                    &format!("{file} cannot be drawn ({error})"),
+                    "the tile's TMP pixels are drawn",
+                );
+                None
+            }
+        }
+    }
+}
+
+/// Cell `index`'s RGBA: from its template picture when one loaded
+/// ([`TilePicture`]), else the TMP's own pixels through `palette`.
+fn tile_rgba(
+    tmp: &TmpFile,
+    index: usize,
+    palette: &Palette,
+    picture: Option<&TilePicture>,
+) -> Result<Vec<u8>, crate::assets::error::AssetError> {
+    if let Some(picture) = picture
+        && let Some(tile) = tmp.tiles.get(index).and_then(Option::as_ref)
+        && let Some(rgba) = picture.frames.shrunk_region(
+            index,
+            picture.scale,
+            [tile.pixel_width, tile.pixel_height],
+        )
+    {
+        return Ok(rgba);
+    }
+    tmp.tile_to_rgba(index, palette)
+}
+
 /// Load RGBA tile images for tiles needed by the map. Groups by tile_id
 /// to batch-load TMP files. Skips missing or unparseable TMP files.
 pub fn load_tile_images(
@@ -1845,6 +1959,9 @@ pub fn load_tile_images(
             }
         };
 
+        let picture = lookup
+            .picture_filename(*tile_id, 0)
+            .and_then(|file| TilePicture::load(asset_manager, &file, &tmp));
         // Log tile dimensions from first successfully parsed TMP file.
         if images.is_empty() {
             log::info!(
@@ -1869,7 +1986,7 @@ pub fn load_tile_images(
                 empty_cell_count += 1;
                 continue;
             };
-            match tmp.tile_to_rgba(source_sub, palette) {
+            match tile_rgba(&tmp, source_sub, palette, picture.as_ref()) {
                 Ok(rgba) => {
                     images.insert(
                         TileKey {
@@ -1910,6 +2027,9 @@ pub fn load_tile_images(
             let Ok(var_tmp) = TmpFile::from_bytes(var_data) else {
                 break;
             };
+            let picture = lookup
+                .picture_filename(*tile_id, (var_idx + 1) as u8)
+                .and_then(|file| TilePicture::load(asset_manager, &file, &var_tmp));
             for &sub in sub_tiles {
                 let Some(source_sub) =
                     wrapped_subtile_index(sub, var_tmp.template_width, var_tmp.template_height)
@@ -1920,7 +2040,7 @@ pub fn load_tile_images(
                 else {
                     continue;
                 };
-                if let Ok(rgba) = var_tmp.tile_to_rgba(source_sub, palette) {
+                if let Ok(rgba) = tile_rgba(&var_tmp, source_sub, palette, picture.as_ref()) {
                     images.insert(
                         TileKey {
                             tile_id: *tile_id,

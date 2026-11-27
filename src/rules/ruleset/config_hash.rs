@@ -1551,6 +1551,7 @@ impl RuleSet {
         self.buildup_assets.hash(&mut hasher);
         self.rubble_assets.hash(&mut hasher);
         self.terrain_assets.hash(&mut hasher);
+        self.alpha_images.hash_declared_pictures(&mut hasher);
         b"art-smudge-config-v2".hash(&mut hasher);
         self.art_registry.fold_smudge_anim_dims(&mut hasher);
         // These effective Bullet values feed FireAt and drawing after load. Hash
@@ -1774,6 +1775,7 @@ impl RuleSet {
         self.buildup_assets.hash(&mut hasher);
         self.terrain_assets.hash(&mut hasher);
         self.rubble_assets.fold_admissions(&mut hasher);
+        self.effect_assets.hash_overlay_picture_inputs(&mut hasher);
         // IsVoxel and the tilt matrix behind a shot's origin
         // (`combat::area_rocker`, `combat::fire_coord`).
         self.voxel_assets.fold_loaded(&mut hasher);
@@ -1842,6 +1844,7 @@ impl RuleSet {
         files.extend(self.buildup_assets.folder_files());
         files.extend(self.terrain_assets.folder_files());
         files.extend(self.rubble_assets.folder_files());
+        files.extend(self.effect_assets.overlay_picture_files());
         files.extend(self.voxel_assets.folder_files());
         if self.ares {
             files.extend(

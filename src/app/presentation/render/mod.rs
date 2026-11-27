@@ -53,9 +53,9 @@ mod placement_gpu_tests;
 mod status_gpu_tests;
 #[cfg(all(test, tests_app_presentation_render))]
 mod target_laser_gpu_tests;
+pub(crate) use draw_passes::draw_software_cursor;
 #[cfg(test)]
 pub(crate) use draw_passes::{draw_bridge_shadows, draw_pooled_cell_bodies};
-pub(crate) use draw_passes::{draw_software_cursor, draw_world_window_copy};
 pub(crate) mod draw_plan_lowering;
 mod merge_passes;
 pub(crate) mod minimap_transaction;
@@ -364,13 +364,17 @@ pub(crate) fn render_game(
     // around the view (ALL06, SOV03) or jump the camera in the same trigger
     // (SOV01 SP3.6, action 112); only SOV01's SP4.5b and base-gained shrinks
     // can leave the view outside, until the player scrolls. VERA moves it at once.
-    // VERA's HD art (`render::hd_switch`): pictures the unit atlas rasterizes from
-    // here on (this frame's first draws included) also make their HD picture,
-    // and keep doing so once HD art has been on in this run, so turning it off
-    // and on again (Page Up) shows them at once.
+    // HD voxels (`render::vxl_raster`): pictures the unit atlas rasterizes
+    // from here on (this frame's first draws included) also make their 2x
+    // picture once the camera has zoomed in during this run, so they show at
+    // once when it zooms in again.
     let hd_art_on = crate::app::state::hd_art_on(&state.persistence).0;
-    state.renderer.hd_art_seen |= hd_art_on;
-    crate::render::vxl_raster::set_hd_voxels(state.renderer.hd_art_seen);
+    // The camera's zoom: the wheel's times the Options zoom's.
+    let zooms_in = state.match_state.input.zoom_level
+        * state.renderer.frame_scale(&state.frontend.screen)
+        > 1.0;
+    state.renderer.hd_voxels_seen |= zooms_in;
+    crate::render::vxl_raster::set_hd_voxels(state.renderer.hd_voxels_seen);
     crate::render::hd_art::set_active(hd_art_on);
     if let Some(zoom) = crate::render::hd_switch::capture_zoom() {
         state.match_state.input.zoom_level = zoom;
@@ -392,8 +396,12 @@ pub(crate) fn render_game(
         );
     }
     // Posed voxels are drawn afresh each frame: make their HD picture only
-    // while HD art is on.
-    crate::render::vxl_raster::set_hd_poses(hd_art_on);
+    // while the camera zooms in.
+    // The capture zoom above may have changed the wheel's zoom.
+    let zooms_in = state.match_state.input.zoom_level
+        * state.renderer.frame_scale(&state.frontend.screen)
+        > 1.0;
+    crate::render::vxl_raster::set_hd_poses(zooms_in);
     crate::app::input::camera::clamp_camera_to_playable_area(
         &state.platform,
         &state.renderer,
@@ -404,13 +412,26 @@ pub(crate) fn render_game(
     );
     // Publish the final view once: world instances, CPU A admission and GPU
     // palette sampling must use this frame's clamped camera and zoom.
-    state.renderer.batch_renderer.update_camera(
-        &state.renderer.gpu,
-        sw,
-        sh,
-        state.match_state.input.camera_x,
-        state.match_state.input.camera_y,
-        state.match_state.input.zoom_level,
+    //
+    // One camera draws the battlefield at the window's pixels at every zoom
+    // (`docs/zoom-one-pass.md`): the composition is the frame's rect in the
+    // window, the world camera's zoom is the wheel zoom times the Options
+    // scale `frame_scale`, and the UI camera scales the frame's pixels by
+    // `frame_scale`. World pixels stay `frame / z`: what the instances, the
+    // A plane, the Z rows and the stores below count in. Without an Options
+    // zoom (`frame_scale` 1) the composition is the frame and, at wheel zoom
+    // 1, every draw is the original's.
+    let frame_scale = state.renderer.frame_scale(&state.frontend.screen);
+    let (target_width, target_height) = state.renderer.composition_size(&state.frontend.screen);
+    state.renderer.batch_renderer.update_match_camera(
+        &state.renderer.gpu.queue,
+        [target_width as f32, target_height as f32],
+        [
+            state.match_state.input.camera_x,
+            state.match_state.input.camera_y,
+        ],
+        state.match_state.input.zoom_level * frame_scale,
+        frame_scale,
         crate::app::presentation::instances::depth_axis(&state.match_state.match_presentation),
     );
     update_native_z_origin(
@@ -429,38 +450,6 @@ pub(crate) fn render_game(
     let vsw = sw / z;
     let vsh = sh / z;
 
-    // Wheel zoom is a presentation copy of the fully resolved world. Keep all
-    // native source/depth/packed operations on the same one-texel lattice;
-    // filtering each sprite (or its palette indices) loses edges and details.
-    // HD art (`render::hd_switch`) draws its art on the zoom's copy, so it keeps
-    // one at 100% too.
-    if z == 1.0 && !hd_art_on {
-        state.renderer.world_zoom_pass = None;
-    } else {
-        // When the Options zoom scales the frame, the world also goes
-        // straight into the window (`draw_world_window_copy`). At 100% (the
-        // Original shape's bars) the frame's world is already the window's.
-        let window_copy = state
-            .renderer
-            .tactical_zoom(&state.frontend.screen)
-            .is_some_and(|zoom| zoom.percent > 100);
-        let renderer = &mut state.renderer;
-        let gpu = &renderer.gpu;
-        let target = [sw as u32, sh as u32];
-        let pass = renderer.world_zoom_pass.get_or_insert_with(|| {
-            crate::render::upscale_pass::WorldZoomPass::new(
-                &gpu.device,
-                &gpu.queue,
-                gpu.surface_format,
-                target,
-                z,
-            )
-        });
-        pass.set_view(&gpu.device, &gpu.queue, target, z, window_copy);
-        renderer
-            .batch_renderer
-            .set_native_world_resolution(&gpu.queue, pass.source_size());
-    }
     let world_camera = state.renderer.batch_renderer.camera_uniform();
 
     // Phase 1: Build game-world instances (terrain, overlays, entities).
@@ -519,6 +508,28 @@ pub(crate) fn render_game(
             )
         })
     });
+    // VERA-only, experimental: the page declared models draw on this frame,
+    // at the camera's scale.
+    crate::app::presentation::instances::begin_model_frame(state, world_camera.zoom);
+    let presentation = &mut state.match_state.match_presentation;
+    let (device, batch) = (&state.renderer.gpu.device, &state.renderer.batch_renderer);
+    // VERA's HD art (`render::hd_switch`) is sampled inside the ordinary
+    // blitters while the camera zooms in with it on.
+    crate::render::hd_art::bind_hd_twins(
+        device,
+        &state.renderer.gpu.queue,
+        batch,
+        presentation.sprite_atlas.as_mut(),
+        presentation.tile_atlas.as_mut(),
+        presentation.overlay_atlas.as_mut(),
+        world_camera.zoom,
+        hd_art_on,
+    );
+    // VERA-only, experimental (docs/zoom-one-pass.md): picture frames of art
+    // above 1x stream in at their own resolution while the camera zooms in.
+    if let Some(sprites) = presentation.sprite_atlas.as_mut() {
+        sprites.stream_pictures(device, &state.renderer.gpu.queue, batch, world_camera.zoom);
+    }
     let mut world = build_instances::build_world_instances(
         &state.platform,
         &state.renderer,
@@ -773,11 +784,7 @@ pub(crate) fn render_game(
     state.renderer.terrain_draw_renderer.prepare(
         &state.renderer.gpu.device,
         state.renderer.combat_light_renderer.composition_texture(),
-        state
-            .renderer
-            .world_zoom_pass
-            .as_ref()
-            .map_or(&state.renderer.depth_view, |zoom| zoom.depth_view()),
+        &state.renderer.depth_view,
         state.renderer.batch_renderer.camera_uniform(),
     );
     let effects_started = render_started.map(|_| Instant::now());
@@ -1200,6 +1207,12 @@ fn update_native_z_origin(
 /// line keeps its depth against the objects wherever a layout puts the
 /// battlefield. The original's clip starts at row 0. Its seed is the panned
 /// one (`native_z::ZSeed`).
+///
+/// The logical pixels are world pixels, the frame's divided by the wheel
+/// zoom. The battlefield is drawn at the window's pixels
+/// (`docs/zoom-one-pass.md`), each logical pixel a block of the world
+/// camera's zoom (the wheel zoom times the Options scale), so the viewport
+/// takes the camera's zoom (the stores' zoom mode, 1 at the original's).
 pub(crate) fn tactical_surface_line_viewport(
     platform: &PlatformState,
     renderer: &RendererState,
@@ -1224,7 +1237,8 @@ pub(crate) fn tactical_surface_line_viewport(
         ),
         clip,
         z_origin_y: (2 * clip[1]).wrapping_sub(renderer.native_z_seed.pan()),
-        zoom: 1.0,
+        // The wheel zoom times the Options scale (`render_game`).
+        zoom: renderer.batch_renderer.camera_uniform().zoom,
     }
 }
 

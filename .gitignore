@@ -157,6 +157,8 @@ Thumbs.db
 !/docs/zh-CN/
 !/docs/images/
 !/docs/images/**
+!/docs/picture-model-art.md
+!/docs/zoom-one-pass.md
 
 .mcp.json
 # Cloudflare CLI cache: holds the account ID and email wherever `cf` runs.

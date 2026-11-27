@@ -1961,6 +1961,7 @@ fn retail_pips2_centered_strip_preserves_native_frames_palette_and_scissor() {
             &gpu.queue,
             &batch,
             &assets,
+            crate::render::interface_picture::PictureSizes::None,
             "pips2.shp",
             "palette.pal",
         )

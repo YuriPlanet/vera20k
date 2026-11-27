@@ -294,8 +294,9 @@ fn emit_psychic_detection_line(
 }
 
 /// The integer logical viewport the line producers draw on. Native rally
-/// 6DA9D0 and action7049C0 operate in unzoomed surface pixels; wheel zoom
-/// scales the finished world surface (`WorldZoomPass`), never their strokes.
+/// 6DA9D0 and action7049C0 operate in unzoomed surface pixels; the zoom
+/// scales each of them to a block of the world camera's zoom when it stores
+/// them (`docs/zoom-one-pass.md`), never their strokes.
 ///
 /// `camera` is the world point at the battlefield's corner, gamemd's tactical
 /// position, and `clip` the battlefield on its surface. The match's view
