@@ -73,10 +73,15 @@ Each converts with its missing parts empty: no projectile path, push or
 immunity modifier, no swapped image, and without the reads the switch stays
 off, as those matches played. No frozen save holds `0x8C73B1B3`. The
 `b268ba798` writer's layout `0xC66CE753` holds everything but the client
-modules' state of the current layout `0x9909B4E7` (RFC 0001 section 10: the
+modules' state of layout `0x9909B4E7` (RFC 0001 section 10: the
 messages waiting for `on_message` and the room's `AutomationAllowed`); its
 saves convert with no message waiting and automation not allowed. The
-`0b918d053` writer covers direct loading of the current layout.
+`0b918d053` writer predates the module visuals. Later writers retained module
+animations (`0xED16B100`), doors (`0x9593BB1E`) and image overrides
+(`0xAA201352`). Conversion keeps each saved collection and starts the
+missing ones empty. It preserves which houses an external driver controlled
+and gives them neutral economic support. The `c3609b58a` writer covers the
+new per-house policy layout `0xD5A96CCA`.
 
 Run the menu and compatibility tests with this command.
 
