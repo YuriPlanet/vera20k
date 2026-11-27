@@ -33,11 +33,15 @@ turning one on turns the other off.
   session, which never changes. It ranks the hostile teams present, so a team
   that leaves the hostile side stops taking a colour: once every house of a
   team is yours, the hostile teams below it move up a colour.
-- **Observers** have no side of their own, so neither key changes anything for
-  them. An enemy the lobby left off every team — every enemy, in a free-for-all
-  with Teams off — has no team to group by, so it takes a warm colour of its
-  own, drawn from its name so it stays put from frame to frame. A player the lobby left off every
-  team still sees the teams around them and keeps the blue of their own side.
+- **Observers** keep a current house even though it is not on the map, and they
+  have no allies, so both keys still recolour what the observer sees: Relation
+  Colours paints the field red, and Team Colours gives every team its warm
+  colour — there is no own blue or ally green to show.
+- **Teamless houses.** An enemy the lobby left off every team — every enemy, in
+  a free-for-all with Teams off — has no team to group by, so it takes a warm
+  colour of its own, drawn from its name so it stays put from frame to frame. A
+  player the lobby left off every team still sees the teams around them and
+  keeps the blue of their own side.
 
 ## What they are and are not
 
