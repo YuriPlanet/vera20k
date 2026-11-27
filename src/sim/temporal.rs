@@ -739,6 +739,16 @@ impl Simulation {
         if let Some(stored) = self.substrate.temporal_link_mut(head) {
             stored.warp_remaining = remaining;
         }
+        // Phobos TemporalClass_AI hooks 71A88D after the remaining write;
+        // early releases above never visit this target's shield.
+        #[cfg(feature = "phobos")]
+        if let Some(target) = link.target {
+            crate::sim::shield::enter_temporal(
+                &mut self.substrate,
+                target,
+                self.session.binary_frame() as i32,
+            );
+        }
         if remaining > 0 {
             return;
         }
