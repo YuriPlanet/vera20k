@@ -67,13 +67,14 @@ impl GameEntity {
     }
 
     /// Phobos `TechnoExt::IsActive` (`src/Ext/Techno/Body.cpp`) plus the power
-    /// plant enhancer loops' `HasPower` (Building+660) gate. Temporal
-    /// targeting and warping are both covered by `is_warped_out`.
+    /// plant enhancer loops' `HasPower` (Building+660) gate. Phobos tests
+    /// TemporalTargetingMe and IsBeingWarpedOut independently.
     #[cfg(feature = "phobos")]
     pub fn is_power_plant_enhancer_active(&self) -> bool {
         self.is_active()
             && self.health.current() > 0
             && !self.lifecycle.in_limbo()
+            && self.temporal.chain_head().is_none()
             && !self.is_warped_out()
             && !self.deactivated.is_offline()
             && self.emp_remaining() <= 0

@@ -176,6 +176,121 @@ fn a_stock_credits_event_fires_from_the_house_poll() {
     assert_eq!(received(&scene), 1, "a one-time trigger");
 }
 
+#[test]
+fn nuclear_launch_callbacks_follow_the_effect_that_fired() {
+    use vera20k_wasm_ext::triggers::EVENT_SUPER_WEAPON_LAUNCHED;
+    for fallback in [false, true] {
+        let _form = crate::rules::ares_switch::read_ares_way(fallback);
+        let Some(mut scene) = scenario() else { return };
+        if fallback {
+            let patch = crate::rules::ini_parser::IniFile::from_str(crate::test_fixture::text(
+                "tests/fixtures/ini/ares_nuclear_fallback.ini",
+            ));
+            let Some(retail) =
+                crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch(
+                    "XMP03T4.MAP",
+                    &patch,
+                )
+            else {
+                return;
+            };
+            let nuke = retail.rules.super_weapon("NukeSpecial").unwrap();
+            assert_eq!(nuke.money_amount, -25);
+            assert_eq!(
+                crate::sim::superweapon::nuke::ares_payload_hit(&retail.rules, nuke)
+                    .map(|(weapon, _, _)| (weapon.id.as_str(), weapon.projectile.as_deref())),
+                Some(("NoNuclearProjectile", None))
+            );
+            scene.runtime.resources_mut().rules = retail.rules;
+            let runtime = &mut scene.runtime;
+            runtime
+                .simulation
+                .intern_rule_type_ids(&runtime.resources.rules);
+            runtime
+                .simulation
+                .resolve_type_handles(&runtime.resources.rules);
+        }
+        let listener = def(0, 2, &[Ev::on(EVENT_SUPER_WEAPON_LAUNCHED)], &[]);
+        let mut scene = installed(scene, &module(&listener, 0, ""));
+        let start = &scene.map.waypoints[&0];
+        let cell = (start.rx, start.ry);
+        let nuclear_launches = i32::from(fallback);
+        for (name, expected) in [
+            ("NukeSpecial", nuclear_launches),
+            ("PsychicRevealSpecial", nuclear_launches + 1),
+        ] {
+            let runtime = &mut scene.runtime;
+            let sim = &mut runtime.simulation;
+            let rules = &runtime.resources.rules;
+            let owner = sim.session.current_house().unwrap_or(sim.houses.order()[0]);
+            let fallback_nuke = fallback && name == "NukeSpecial";
+            let sw = if fallback_nuke {
+                let id = sim.interner.get(name).unwrap();
+                assert!(crate::sim::superweapon::trigger_grant_super(
+                    &sim.interner,
+                    &sim.session,
+                    &mut sim.substrate,
+                    &sim.houses,
+                    &mut sim.super_weapons,
+                    rules,
+                    owner,
+                    id,
+                    true
+                ));
+                crate::sim::credit_income::add_credits(&mut sim.houses, owner, 100);
+                id
+            } else {
+                crate::sim::superweapon::chronosphere_tests::charge_super(sim, owner, name)
+            };
+            let credits = crate::sim::credit_income::available_money(&sim.houses, owner);
+            if fallback_nuke {
+                let instance = &sim.super_weapons()[&owner][&sw];
+                assert!(
+                    instance.is_ready()
+                        && instance.is_active()
+                        && instance.charge_start_tick() != -1
+                );
+                assert!(crate::sim::superweapon::super_weapon_available(
+                    sim, rules, owner, name
+                ));
+                assert_eq!(
+                    sim.super_weapon_target_check(rules, owner, sw, cell, false),
+                    Ok(())
+                );
+            }
+            assert!(sim.fire_super_weapon(
+                rules,
+                owner,
+                sw,
+                cell,
+                None,
+                &mut FrameEffects::default(),
+                false
+            ));
+            if fallback_nuke {
+                assert_eq!(
+                    crate::sim::credit_income::available_money(&sim.houses, owner),
+                    credits,
+                    "refused handler charges no fee"
+                );
+                assert!(!sim.sound_events().iter().any(|e| matches!(
+                    e,
+                    crate::sim::world::SimSoundEvent::AresSuperWeaponActivatedEva { .. }
+                        | crate::sim::world::SimSoundEvent::AresSuperWeaponFinished { .. }
+                )));
+                assert!(sim.projectiles.iter().any(|(_, bullet)| {
+                    bullet
+                        .payload()
+                        .installed_weapon()
+                        .is_some_and(|id| sim.interner.resolve(id) == "NukePayload")
+                }));
+            }
+            scene.tick();
+            assert_eq!(received(&scene), expected, "{name} fallback={fallback}");
+        }
+    }
+}
+
 /// `HouseTransferred` on a bound object after ChangeOwner, carrying the
 /// old house; `value` 0, as this is no mind control.
 #[test]

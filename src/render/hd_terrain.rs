@@ -23,12 +23,20 @@ use std::path::PathBuf;
 
 use bytemuck::{Pod, Zeroable};
 
+use super::atlas_growth::ShelfCursor;
+
 /// HD pixels per side of the page.
 const PAGE: u32 = 4096;
 
-/// New pack files read in one frame: a screen of ground arrives over a few
-/// frames instead of stalling one.
-const LOADS_PER_FRAME: usize = 96;
+/// Pictures asked of the readers and not yet back.
+const MAX_IN_FLIGHT: usize = 512;
+
+/// RGBA bytes of finished pictures uploaded in one `prepare`, so a burst of
+/// arrivals spreads over a few frames.
+const UPLOAD_BYTES_PER_CALL: usize = 16 << 20;
+
+/// `prepare` calls after which a picture with no room is asked for again.
+const NO_ROOM_RETRY_CALLS: u64 = 240;
 
 /// FNV-1a 64 of a tile: width and height (u16 little-endian), then its RGBA.
 pub(crate) fn tile_hash(width: u32, height: u32, rgba: &[u8]) -> u64 {
@@ -133,12 +141,36 @@ struct Gpu {
     shader: wgpu::ShaderModule,
 }
 
+/// A tile's or overlay sprite's HD picture.
+enum Tile {
+    /// The readers have it.
+    Pending,
+    /// The pack has no picture for it (or it is larger than the page).
+    Missing,
+    /// On the page: its origin and HD size there, and the last `prepare`
+    /// that drew it.
+    Ready {
+        origin: [u32; 2],
+        size: [u32; 2],
+        used: u64,
+    },
+    /// Read, but even the pictures on screen left no room; asked again later.
+    NoRoom { at: u64 },
+}
+
 /// The pack's tiles resident on the GPU, keyed by tile hash.
 pub(crate) struct HdTerrain {
     dir: PathBuf,
-    /// Tile hash → its HD page origin, or `None` when the pack has none.
-    tiles: HashMap<u64, Option<[u32; 2]>>,
-    shelf: [u32; 3],
+    tiles: HashMap<u64, Tile>,
+    /// Pictures with the readers: their HD size.
+    waiting: HashMap<u64, [u32; 2]>,
+    loader: super::hd_loader::HdLoader,
+    /// `prepare` calls so far (two a frame: tiles, then overlays), for
+    /// [`Tile::Ready`]'s `used`.
+    calls: u64,
+    shelf: ShelfCursor,
+    /// A full visible set can refuse several pictures in the same pass.
+    repacked_this_pass: bool,
     gpu: Option<Gpu>,
 }
 
@@ -151,13 +183,19 @@ impl HdTerrain {
         Some(Self {
             dir,
             tiles: HashMap::new(),
-            shelf: [0, 0, 0],
+            waiting: HashMap::new(),
+            loader: super::hd_loader::HdLoader::new("HD terrain reader"),
+            calls: 0,
+            shelf: Self::empty_shelf(),
+            repacked_this_pass: false,
             gpu: None,
         })
     }
 
-    /// Bring the HD tiles of `pieces` up (at most [`LOADS_PER_FRAME`] new
-    /// files a frame) and return this frame's draws, in `pieces` order.
+    /// Bring the HD tiles of `pieces` up and return this frame's draws, in
+    /// `pieces` order. New pictures are asked of the readers and go up when
+    /// they are back, a few frames later; a capture reads them at once, since
+    /// it shows one frame.
     pub(crate) fn prepare(
         &mut self,
         device: &wgpu::Device,
@@ -165,16 +203,22 @@ impl HdTerrain {
         lookup: HdLookup<'_>,
         pieces: &[HdTerrainPiece],
     ) -> Vec<HdTerrainDraw> {
+        self.repacked_this_pass = false;
         self.ensure_gpu(device);
-        // A capture shows one frame: it reads everything on screen at once.
-        let budget = if super::hd_switch::capture_zoom().is_some() {
-            usize::MAX
-        } else {
-            LOADS_PER_FRAME
-        };
-        let mut loads = 0;
-        let mut draws = Vec::with_capacity(pieces.len());
+        self.calls += 1;
+        let mut uploaded = 0;
+        while uploaded < UPLOAD_BYTES_PER_CALL {
+            let Some(loaded) = self.loader.take() else {
+                break;
+            };
+            uploaded += self.finish(device, queue, loaded.key, loaded.rgba);
+        }
+        let capture = super::hd_switch::capture_zoom().is_some();
+        let calls = self.calls;
         let (mut unknown, mut resized) = (0, 0);
+        // First mark and ask: a repack while asking moves pictures, so the
+        // draws are made after it.
+        let mut shown = Vec::with_capacity(pieces.len());
         for piece in pieces {
             let Some((hash, atlas_origin, size)) = lookup(piece.uv_origin) else {
                 unknown += 1;
@@ -184,36 +228,32 @@ impl HdTerrain {
                 resized += 1;
                 continue;
             }
-            let hd_origin = match self.tiles.get(&hash) {
-                Some(origin) => *origin,
-                None => {
-                    if loads >= budget {
-                        continue;
-                    }
-                    loads += 1;
-                    let origin = match self.load(queue, hash, size) {
-                        Ok(origin) => origin,
-                        Err(()) => {
-                            log::info!("HD art terrain page full; reloading the tiles on screen");
-                            self.tiles.retain(|_, origin| origin.is_none());
-                            self.shelf = [0, 0, 0];
-                            draws.clear();
-                            continue;
-                        }
-                    };
-                    self.tiles.insert(hash, origin);
-                    origin
+            let ask = match self.tiles.get_mut(&hash) {
+                Some(Tile::Ready { used, .. }) => {
+                    *used = calls;
+                    false
                 }
+                Some(Tile::Pending | Tile::Missing) => false,
+                Some(Tile::NoRoom { at }) => calls > *at + NO_ROOM_RETRY_CALLS,
+                None => true,
             };
-            if let Some(hd_origin) = hd_origin {
-                draws.push(HdTerrainDraw {
+            if ask && (capture || self.loader.in_flight() < MAX_IN_FLIGHT) {
+                self.request(device, queue, hash, size, capture);
+            }
+            shown.push((piece, hash, atlas_origin));
+        }
+        let draws: Vec<_> = shown
+            .into_iter()
+            .filter_map(|(piece, hash, atlas_origin)| match self.tiles.get(&hash)? {
+                Tile::Ready { origin, .. } => Some(HdTerrainDraw {
                     origin: piece.origin,
                     size: piece.size,
                     atlas_origin,
-                    hd_origin,
-                });
-            }
-        }
+                    hd_origin: *origin,
+                }),
+                _ => None,
+            })
+            .collect();
         log::debug!(
             "HD art terrain: {} pieces, {} draws, {unknown} not atlas tiles, {resized} resized",
             pieces.len(),
@@ -222,64 +262,156 @@ impl HdTerrain {
         draws
     }
 
-    /// Read `<hash>.png` and place it: `Ok(None)` when the pack lacks it,
-    /// `Err` when the page is full.
-    fn load(
+    /// Ask for `hash`'s picture: of the readers, or at once in a capture.
+    fn request(
         &mut self,
+        device: &wgpu::Device,
         queue: &wgpu::Queue,
         hash: u64,
         [width, height]: [u32; 2],
-    ) -> Result<Option<[u32; 2]>, ()> {
-        let art = std::fs::read(self.dir.join(format!("{hash:016x}.png")))
-            .ok()
-            .and_then(|bytes| {
-                image::load_from_memory_with_format(&bytes, image::ImageFormat::Png).ok()
-            })
-            .map(|image| image.into_rgba8());
-        let Some(art) = art.filter(|art| art.width() == width * 2 && art.height() == height * 2)
-        else {
-            log::debug!("HD art terrain: no picture for {hash:016x} ({width}x{height})");
-            return Ok(None);
+        capture: bool,
+    ) {
+        let size = [width * 2, height * 2];
+        if size[0] > PAGE || size[1] > PAGE {
+            self.tiles.insert(hash, Tile::Missing);
+            return;
+        }
+        let path = self.dir.join(format!("{hash:016x}.png"));
+        self.waiting.insert(hash, size);
+        if capture {
+            let rgba = super::hd_loader::read_picture(&path, size);
+            self.finish(device, queue, hash, rgba);
+        } else {
+            self.tiles.insert(hash, Tile::Pending);
+            self.loader.request(hash, path, size);
+        }
+    }
+
+    /// Place and upload a finished picture, or note the pack lacks it.
+    /// Returns the RGBA bytes uploaded.
+    fn finish(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        hash: u64,
+        rgba: Option<Vec<u8>>,
+    ) -> usize {
+        let Some([w, h]) = self.waiting.remove(&hash) else {
+            return 0;
         };
-        let [w, h] = [width * 2, height * 2];
-        if w > PAGE || h > PAGE {
-            return Ok(None);
+        let Some(art) = rgba else {
+            log::debug!("HD art terrain: no picture for {hash:016x} ({w}x{h} HD)");
+            self.tiles.insert(hash, Tile::Missing);
+            return 0;
+        };
+        let mut origin = self.shelf.place(w, h);
+        if origin.is_none() && !self.repacked_this_pass {
+            self.repacked_this_pass = true;
+            self.repack(device, queue);
+            origin = self.shelf.place(w, h);
         }
-        let [x, y, row] = &mut self.shelf;
-        if *x + w > PAGE {
-            *y += *row + 2;
-            *x = 0;
-            *row = 0;
-        }
-        if *y + h > PAGE {
-            return Err(());
-        }
-        let origin = [*x, *y];
-        *x += w + 2;
-        *row = (*row).max(h);
+        let Some(origin) = origin else {
+            self.tiles.insert(hash, Tile::NoRoom { at: self.calls });
+            return 0;
+        };
         let gpu = self.gpu.as_ref().expect("HD terrain GPU resources");
-        super::atlas_growth::write_texels(queue, &gpu.page, origin, [w, h], 4, &art.into_raw());
-        Ok(Some(origin))
+        super::atlas_growth::write_texels(queue, &gpu.page, origin, [w, h], 4, &art);
+        self.tiles.insert(
+            hash,
+            Tile::Ready {
+                origin,
+                size: [w, h],
+                used: self.calls,
+            },
+        );
+        art.len()
+    }
+
+    fn empty_shelf() -> ShelfCursor {
+        let page = PAGE / super::hd_switch::page_shrink();
+        ShelfCursor::with_padding(page, page, 2)
+    }
+
+    /// The page is full: copy the pictures drawn in the last frame or so
+    /// (both passes of it) to a fresh page, tallest first, and let the rest
+    /// go (they are read again when seen). Nothing is read from disk again,
+    /// and the old page stays as it is for the draws already recorded from
+    /// it: the tile pass of this frame keeps its pixels when the overlay pass
+    /// fills the page.
+    fn repack(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
+        let keep_from = self.calls.saturating_sub(3);
+        let mut keep: Vec<(u64, [u32; 2], [u32; 2], u64)> = self
+            .tiles
+            .iter()
+            .filter_map(|(hash, tile)| match tile {
+                Tile::Ready { origin, size, used } if *used >= keep_from => {
+                    Some((*hash, *origin, *size, *used))
+                }
+                _ => None,
+            })
+            .collect();
+        keep.sort_by_key(|(hash, _, size, _)| (std::cmp::Reverse(size[1]), *hash));
+        self.tiles
+            .retain(|_, tile| !matches!(tile, Tile::Ready { used, .. } if *used < keep_from));
+        let page = page_texture(device);
+        self.shelf = Self::empty_shelf();
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("HD terrain repack"),
+        });
+        let mut kept = 0;
+        for (hash, old, [w, h], used) in keep {
+            let Some(origin) = self.shelf.place(w, h) else {
+                self.tiles.remove(&hash);
+                continue;
+            };
+            let gpu = self.gpu.as_ref().expect("HD terrain GPU resources");
+            encoder.copy_texture_to_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture: &gpu.page,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d {
+                        x: old[0],
+                        y: old[1],
+                        z: 0,
+                    },
+                    aspect: wgpu::TextureAspect::All,
+                },
+                wgpu::TexelCopyTextureInfo {
+                    texture: &page,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d {
+                        x: origin[0],
+                        y: origin[1],
+                        z: 0,
+                    },
+                    aspect: wgpu::TextureAspect::All,
+                },
+                wgpu::Extent3d {
+                    width: w,
+                    height: h,
+                    depth_or_array_layers: 1,
+                },
+            );
+            self.tiles.insert(
+                hash,
+                Tile::Ready {
+                    origin,
+                    size: [w, h],
+                    used,
+                },
+            );
+            kept += 1;
+        }
+        queue.submit([encoder.finish()]);
+        self.gpu.as_mut().expect("HD terrain GPU resources").page = page;
+        log::info!("HD art terrain page full; kept the {kept} pictures drawn last");
     }
 
     fn ensure_gpu(&mut self, device: &wgpu::Device) {
         if self.gpu.is_some() {
             return;
         }
-        let page = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("HD terrain page"),
-            size: wgpu::Extent3d {
-                width: PAGE,
-                height: PAGE,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8Unorm,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-            view_formats: &[],
-        });
+        let page = page_texture(device);
         let entry = |binding, ty| wgpu::BindGroupLayoutEntry {
             binding,
             visibility: wgpu::ShaderStages::FRAGMENT | wgpu::ShaderStages::VERTEX,
@@ -441,6 +573,26 @@ impl HdTerrain {
         pass.set_vertex_buffer(0, instances.slice(..));
         pass.draw(0..4, 0..draws.len() as u32);
     }
+}
+
+/// The HD page, empty.
+fn page_texture(device: &wgpu::Device) -> wgpu::Texture {
+    device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("HD terrain page"),
+        size: wgpu::Extent3d {
+            width: PAGE,
+            height: PAGE,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba8Unorm,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING
+            | wgpu::TextureUsages::COPY_DST
+            | wgpu::TextureUsages::COPY_SRC,
+        view_formats: &[],
+    })
 }
 
 fn shader_source() -> String {

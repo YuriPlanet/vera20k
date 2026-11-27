@@ -649,6 +649,8 @@ struct EffectRegistry {
 /// Created once at map load; a refresh appends the sprites of newly seen
 /// (type, house colour) pairs to growth pages without touching the rest.
 pub struct SpriteAtlas {
+    /// This atlas among every one made in the run ([`Self::instance`]).
+    instance: u64,
     /// Atlas pages — each is a separate GPU texture. The map-load pack fills
     /// as few as the texture limit allows; refreshes append growth pages.
     pub pages: Vec<SpriteAtlasPage>,
@@ -760,7 +762,9 @@ impl SpriteAtlas {
         entries: HashMap<ShpSpriteKey, ShpSpriteEntry>,
         palettes: ShpPalettes,
     ) -> Self {
+        static NEXT_INSTANCE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
         Self {
+            instance: NEXT_INSTANCE.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
             pages,
             entries,
             frame_sources: HashMap::new(),
@@ -837,6 +841,13 @@ impl SpriteAtlas {
     /// `ShpSpriteEntry::source_palette` minus one indexes it.
     pub(crate) fn palette_rows(&self) -> &[Vec<u8>] {
         &self.palettes.colors
+    }
+
+    /// Which atlas this is: a map load makes a new one with its own number,
+    /// so a consumer keyed by atlas positions (`render::hd_art`) knows its
+    /// keys no longer hold.
+    pub(crate) fn instance(&self) -> u64 {
+        self.instance
     }
 
     /// A cheap change signal for consumers that derive data from the

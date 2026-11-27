@@ -50,13 +50,28 @@ impl Simulation {
         }
         let frame = self.session.binary_frame();
         let speed = SpeedRules::new(rules, &self.interner, &self.houses);
-        let quiet = self.substrate.entities.get(id).is_some_and(|entity| {
-            self.interner
-                .object_type(entity.type_ref(), rules)
-                .is_some_and(|object| rests(entity, object, speed, frame, rules.ares()))
-        });
+        let (quiet, locomotor_resting) =
+            self.substrate
+                .entities
+                .get(id)
+                .map_or((false, false), |entity| {
+                    let quiet = self
+                        .interner
+                        .object_type(entity.type_ref(), rules)
+                        .is_some_and(|object| rests(entity, object, speed, frame, rules.ares()));
+                    (
+                        quiet,
+                        quiet
+                            && crate::sim::movement::motion_query::ground_process_rests(
+                                entity, frame,
+                            ),
+                    )
+                });
         if quiet {
             self.substrate.entities.set_quiet(id);
+            if locomotor_resting {
+                self.substrate.entities.set_locomotor_resting(id);
+            }
         }
     }
 
@@ -120,10 +135,8 @@ pub(crate) fn rests(
         && entity.lifecycle.object_alive()
         && !entity.lifecycle.in_limbo()
         && !entity.death.is_dying()
-        // The warp prologue (`Simulation::temporal_ai_prologue`) and the
-        // frozen tests after it: neither warped nor warping in.
-        && !entity.is_warped_out()
-        && !entity.is_warping_in()
+        // The prologue also advances an erase head when the tank can act.
+        && !entity.needs_warp_ai()
         // The tube tests (`UnitClass::AI @ 0x007360C0`) and the death count
         // (`0x0073635B`).
         && entity.active_tube().is_none()

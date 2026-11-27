@@ -100,6 +100,10 @@ by every `-SPAWN` launch, one human against computer houses included
   whichever thread ran it), the counts `pictures`, `ticks` and `lent_ticks`
   (ticks run on the simulation thread), and the frames it spans
   (`first_frame`, `last_frame`).
+  It also reports `present_p99_ms` between battlefield hand-offs,
+  `intermediate_pictures` showing interpolated tank or aircraft movement (including
+  `jumpjet_pictures` and `fly_pictures` for the two flight locomotors), and `fewest_mobile`,
+  the lowest count of live on-map mobile objects sampled every 100 logic frames.
 
 The test hook `VERA20K_SPAWN_LEAVE_AFTER_SECONDS=N` presses the abort box's
 Leave N seconds after the match appears. It is read only by external

@@ -413,6 +413,7 @@ impl MatchSession {
             room_return: NetworkRoomReturn::Lobby,
             campaign_abort_pending: false,
         };
+        self.staged_tiberium = crate::sim::scenario_session::TiberiumFlags::NETWORK_PREGAME;
         Ok(crate::app::match_bootstrap::LoadingStartup::Network(
             startup,
         ))

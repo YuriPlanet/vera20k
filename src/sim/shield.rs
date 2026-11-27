@@ -295,9 +295,8 @@ fn shield_stage(
     let mut shield_damage_positive = false;
     let shield_return = (|| {
         // `!health || Temporal || damage == 0` returns the damage unchanged.
-        let temporal = target.is_warped_out();
         let mut remaining = receiver_input;
-        if !shield_was_active || temporal || receiver_input == 0 {
+        if !shield_was_active || state.temporal || receiver_input == 0 {
             return remaining;
         }
 
@@ -676,6 +675,34 @@ fn restart_recovery_in_combat(state: &mut ShieldState, ty: &ShieldType, frame: i
     }
 }
 
+/// Phobos TemporalClass_AI (71A88D) -> TechnoExt::UpdateTemporal ->
+/// ShieldClass::AI_Temporal. Pause the selected clock only on entry.
+pub(crate) fn enter_temporal(
+    substrate: &mut crate::sim::world::ObjectSubstrate,
+    target: u64,
+    frame: i32,
+) {
+    let Some(state) = substrate
+        .entities
+        .get_mut_if(target, |entity| {
+            entity
+                .seldom
+                .shield
+                .as_ref()
+                .is_some_and(|shield| !shield.temporal)
+        })
+        .and_then(|entity| entity.seldom.shield.as_mut())
+    else {
+        return;
+    };
+    state.temporal = true;
+    if state.hp <= 0 {
+        state.timers.respawn.pause(frame);
+    } else {
+        state.timers.self_healing.pause(frame);
+    }
+}
+
 /// One `TechnoExt::OnEarlyUpdate -> ShieldClass::AI` visit, in the object's
 /// own AI turn.
 pub(crate) fn tick(sim: &mut Simulation, id: u64, rules: &RuleSet) {
@@ -692,40 +719,22 @@ pub(crate) fn tick(sim: &mut Simulation, id: u64, rules: &RuleSet) {
 
     // `InLimbo || IsImmobilized` skips the visit; a dead, removed or sinking
     // object drops its shield entirely.
-    if entity.lifecycle.in_limbo() {
+    if entity.lifecycle.in_limbo() || entity.chrono_warp_latch() {
         return;
     }
-    if entity.health.current() <= 0 || !entity.lifecycle.object_alive() {
+    if entity.health.current() <= 0
+        || !entity.lifecycle.object_alive()
+        || entity.sinking.is_active()
+    {
         if let Some(entity) = sim.substrate.entities.get_mut(id) {
             entity.seldom.shield = None;
         }
         return;
     }
 
-    // Phobos `ShieldClass::AI_Temporal` (src/New/Entity/ShieldClass.cpp,
-    // b90ab4b) pauses recovery during the leaf's TemporalClass::Update;
-    // frozen leaves skip `TechnoClass::AI @ 0x6F9E50` entirely. Persist
-    // the pause without entering the normal AI's resume/recovery block.
-    state.temporal = entity.temporal.is_warped();
-    if state.temporal {
-        if state.hp <= 0 {
-            state.timers.respawn.pause(frame);
-        } else {
-            state.timers.self_healing.pause(frame);
-        }
-        if let Some(entity) = sim.substrate.entities.get_mut(id) {
-            entity.seldom.shield = Some(state);
-        }
-        return;
-    }
-
-    // Chronosphere skips ShieldClass::AI through IsImmobilized (+0x27C),
-    // but never calls AI_Temporal: its global-frame countdown keeps running.
-    // The latch also gates the launch frame before BeingWarpedOut is set.
-    // Teleport Process state 2 clears it at 0x7198E4 as warp-in begins.
-    if entity.chrono_warp_latch() || entity.ai_frozen() {
-        return;
-    }
+    // Phobos ShieldClass::AI calls TemporalCheck before OnlineCheck. Its
+    // own flag clears even when an erase head still targets this object.
+    state.temporal = false;
 
     // `OnlineCheck` for a Powered shield type.
     if ty.powered() {

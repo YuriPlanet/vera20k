@@ -44,6 +44,7 @@ fn stored_box(profile: &mut RetailOptionsProfile, id: C) -> Option<&mut bool> {
         C::SmoothSidebar => &mut profile.smooth_sidebar,
         C::SmoothOnlineMenus => &mut profile.smooth_online_menus,
         C::VSync => &mut profile.vsync,
+        C::RenderInterpolation => &mut profile.render_interpolation,
         C::HighRefreshRateInBattle => &mut profile.high_refresh_rate_in_battle,
         C::HdMapPreviews => &mut profile.hd_map_previews,
         C::SkipIntro => &mut profile.skip_intro,

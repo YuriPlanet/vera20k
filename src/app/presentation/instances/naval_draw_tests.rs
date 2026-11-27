@@ -48,8 +48,10 @@ fn anchor_in(
     viewport: [f32; 2],
     shadow_anchor: Option<[f32; 2]>,
 ) -> Option<[f32; 2]> {
+    let record = ObjectRecord::of_test(entity);
     unit_draw_anchor(
-        &ObjectRecord::of_test(entity),
+        &record,
+        record.pose.screen,
         crate::app::presentation::instances::TacticalAdmission {
             corner: camera,
             size: viewport,

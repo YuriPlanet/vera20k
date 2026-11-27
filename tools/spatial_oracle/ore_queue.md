@@ -389,8 +389,8 @@ The value-owner consolidation also resolves issue #713. The Mark port tests Land
 physical XMP03T4 authored setup in the same Navigation VM. Set the existing
 `VERA20K_SHRAPNEL_INPUTS` and `VERA20K_ANYTOWN_INPUTS` extraction-bundle variables.
 The separate consumed `ore_authored_natural.json` records original Resize field
-stores, native-normalized LocalSize, explicit UI/session priors and the actual
-skirmish session flags producer and later Scenario overwrite. Native seed0 is
+stores, native-normalized LocalSize, explicit UI/session priors, the network
+PregameSetup that accelerates growth, and the later Scenario overwrite. Native seed0 is
 independent of the normal production scenario's whole-startup RNG history.
 
 Original Growth722C40 then Spread7221B0 execute on every frame0..660; original

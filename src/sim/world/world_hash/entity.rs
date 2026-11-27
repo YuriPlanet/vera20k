@@ -1025,6 +1025,16 @@ pub(super) fn hash_entity_owed(
         0x2c0_u32.hash(hasher);
         entity.seldom.mind_control.hash(hasher);
     }
+    // The head, Teleport departure phase and Ares building flag are already
+    // hashed. Preserve their established stream while the shared +270 agrees,
+    // and distinguish the last-writer value when two effects overlap.
+    let previous_warp_out = entity.temporal.chain_head().is_some()
+        || entity.ares_chronoshifting()
+        || entity.chrono_warp().is_some_and(|warp| warp.is_departing());
+    if entity.is_warped_out() != previous_warp_out {
+        0x270_u32.hash(hasher);
+        entity.is_warped_out().hash(hasher);
+    }
     // TemporalImUsing (+274) and TemporalTargetingMe (+278). Objects
     // with neither fold nothing, so worlds without a Temporal firer
     // keep their hashes.

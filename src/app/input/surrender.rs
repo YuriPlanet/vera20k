@@ -6,8 +6,7 @@
 //! only OK (result 0) surrenders. The box's callback `0x005D36A0` answers
 //! controls 1 and 2 with result 1, so Cancel, Enter and Escape cancel.
 //!
-//! RESIDUAL: the box is drawn over the running battlefield like the
-//! in-match `0xCF`; what native shows behind it after B5 closes is not
+//! RESIDUAL: the box is drawn over the running battlefield; what native shows behind it after B5 closes is not
 //! captured.
 
 use crate::app::audio_runtime::AppAudioRuntime;

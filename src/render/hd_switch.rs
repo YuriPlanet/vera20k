@@ -53,6 +53,20 @@ pub(crate) fn capture_zoom() -> Option<f32> {
     })
 }
 
+/// `VERA20K_HD_PAGE_SHRINK=<n>` (2 to 64) lets the HD passes fill only
+/// 1/n of each page's side, so a capture reaches a full page and its repack
+/// (`render::hd_art`, `render::hd_terrain`) with a few buildings on screen.
+/// A test hook: 1, the whole page, without it.
+pub(crate) fn page_shrink() -> u32 {
+    static SHRINK: std::sync::OnceLock<u32> = std::sync::OnceLock::new();
+    *SHRINK.get_or_init(|| {
+        std::env::var("VERA20K_HD_PAGE_SHRINK")
+            .ok()
+            .and_then(|text| text.trim().parse::<u32>().ok())
+            .map_or(1, |shrink| shrink.clamp(1, 64))
+    })
+}
+
 #[cfg(all(test, tests_render_a_r))]
 mod tests {
     use super::parse_env;

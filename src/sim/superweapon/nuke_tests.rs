@@ -560,8 +560,8 @@ fn launch_rules(types: &[(bool, i32, i32)]) -> RuleSet {
 /// - the Missile mission queued and commenced on it, the house's
 ///   NukeTarget (`+0x5784`) and the silo's firing type (`+0x5F8`);
 /// - the launch event at PlayAtCoord's coordinate, the target's floor
-///   included, for the app's sound and line
-///   (`sound_dispatch::launch_lines_match_native`).
+///   included. The app compares the siren and the launch and Ready lines
+///   in `nuclear_silo_and_one_time_orders_announce_in_native_order`.
 ///
 /// Also compared: the common-tail recheck flag `+0x1FC`. Not compared:
 /// the player's tail (the app's, `super_selection`) and the mute row.

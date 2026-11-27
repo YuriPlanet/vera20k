@@ -35,7 +35,7 @@ use crate::sim::scenario_bootstrap::{
     AuthoredCampaignStart, FreshScenarioPrefix, FreshScenarioPrefixError, MatchLaunchDescriptor,
     ScenarioBootstrapRng,
 };
-use crate::sim::scenario_session::{ScenarioDescriptor, ScenarioGameMode};
+use crate::sim::scenario_session::{ScenarioDescriptor, ScenarioGameMode, TiberiumFlags};
 use crate::sim::world::Simulation;
 use crate::skirmish_launch::{AiDifficulty, LaunchCountry, SkirmishLaunchSession};
 
@@ -229,6 +229,48 @@ pub fn load_with_launch_and_ini(
         process_rules,
     )
     .map_err(|error| error.to_string())
+}
+
+/// Rebuild an authored map from the values recorded at frame zero.
+pub(crate) fn load_replay_start(
+    retail_dir: &Path,
+    map: &str,
+    startup: &crate::sim::replay::ReplayStartup,
+) -> anyhow::Result<HeadlessScenario> {
+    let mode = startup.game_mode();
+    let descriptor;
+    let launch = if let Some(start) = startup.authored_campaign() {
+        HeadlessLaunch::Campaign {
+            launch: crate::sim::scenario_bootstrap::AuthoredCampaignLaunch {
+                start,
+                mode,
+                local_source: Some(0),
+            },
+            manifest: None,
+            game_speed: Some(startup.game_speed()),
+            logical_map: Some(startup.map_name()),
+        }
+    } else {
+        descriptor = startup.launch_descriptor(map)?;
+        HeadlessLaunch::Slots(&descriptor)
+    };
+    let mut assets = AssetManager::new(retail_dir, MediaArchiveMode::STOCK_DIGITAL)?;
+    if matches!(launch, HeadlessLaunch::Slots(_)) {
+        assets = assets.with_ini_roots(&Default::default())?;
+    }
+    load_with_inputs(
+        retail_dir,
+        map,
+        startup.seed(),
+        launch,
+        &mut assets,
+        mode,
+        Some(startup.native_id_prefix()?),
+        None,
+        None,
+        Some(startup.tiberium_flags()),
+    )
+    .map_err(anyhow::Error::from)
 }
 
 /// Load a lockstep campaign from the map's own Houses and the accepted role
@@ -434,7 +476,7 @@ pub fn load_with_mod_module(
     let mut assets = AssetManager::new(retail_dir, MediaArchiveMode::STOCK_DIGITAL)
         .and_then(|assets| assets.with_ini_roots(&Default::default()))
         .map_err(|error| format!("open retail MIX archives: {error}"))?;
-    load_with_assets_and_mod_module(
+    load_with_inputs(
         retail_dir,
         map_file_name,
         seed,
@@ -444,6 +486,7 @@ pub fn load_with_mod_module(
         None,
         None,
         Some(module),
+        None,
     )
     .map_err(|error| error.to_string())
 }
@@ -491,7 +534,7 @@ fn load_with_assets(
     accepted_native_id_prefix: Option<u32>,
     process_rules: Option<&mut crate::rules::process_owner::NativeRulesProcessOwner>,
 ) -> Result<HeadlessScenario, HeadlessLoadError> {
-    load_with_assets_and_mod_module(
+    load_with_inputs(
         retail_dir,
         map_file_name,
         seed,
@@ -501,13 +544,14 @@ fn load_with_assets(
         accepted_native_id_prefix,
         process_rules,
         None,
+        None,
     )
 }
 
-/// [`load_with_assets`]; `mod_module` stands in for the selected mod's
-/// `rules.wasm`, which is otherwise read from the mod's folder.
+/// Fresh map construction. A replay supplies the ore flags admitted before
+/// its first frame. Tests can supply the selected mod's rules.wasm bytes.
 #[allow(clippy::too_many_arguments)]
-fn load_with_assets_and_mod_module(
+fn load_with_inputs(
     retail_dir: &Path,
     map_file_name: &str,
     seed: u32,
@@ -517,6 +561,7 @@ fn load_with_assets_and_mod_module(
     accepted_native_id_prefix: Option<u32>,
     process_rules: Option<&mut crate::rules::process_owner::NativeRulesProcessOwner>,
     mod_module: Option<&[u8]>,
+    recorded_tiberium: Option<TiberiumFlags>,
 ) -> Result<HeadlessScenario, HeadlessLoadError> {
     let (slot_launch, campaign, manifest, campaign_speed, logical_map) = match launch {
         HeadlessLaunch::Slots(launch) => (Some(launch), None, None, None, None),
@@ -730,6 +775,8 @@ fn load_with_assets_and_mod_module(
     .with_authored_special_flags(
         &map.special_flags,
         slot_launch.is_some_and(|launch| launch.session().options.harvester_truce),
+        game_mode,
+        recorded_tiberium,
     );
     let bootstrap_rng = ScenarioBootstrapRng::new(seed);
     let (mut sim, scenario_prefix_projection) = bootstrap_rng
@@ -4073,6 +4120,71 @@ mod retail_construction_tests {
 #[cfg(all(test, tests_scenario))]
 mod launch_special_flags_tests {
     use super::*;
+
+    #[test]
+    fn fresh_offline_battle_uses_the_unaccelerated_retail_ore_timers() {
+        let Some((retail, _)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        let map = "XMP03T4.MAP";
+        let launch = battle_session(
+            map,
+            &[(
+                crate::skirmish_launch::LaunchCountry::Russia,
+                crate::skirmish_launch::AiDifficulty::Easy,
+            )],
+        );
+        let mut battle = load_session(&retail, map, 1, launch).expect("stock Anytown Battle");
+        battle.tick();
+
+        let types = &battle.runtime.resources.rules.tiberium_types;
+        let state = battle.sim().ore_growth_state.native_tiberium_state();
+        let durations = ["Riparius", "Cruentus"].map(|name| {
+            let id = types.id_by_name(name).expect("stock resource type");
+            state.classes[id.0 as usize].growth_timer.duration()
+        });
+        assert_eq!(durations, [2200, 10000]);
+        assert!(battle.sim().session().tiberium_spreads_flag());
+    }
+
+    #[test]
+    fn replay_restores_the_ore_cadence_of_an_accelerated_solo_start() {
+        use crate::sim::replay::{ReplayLaunchInput, ReplayLog, ReplayRunner};
+
+        let Some((retail, mut assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        let map = "XMP03T4.MAP";
+        let launch = battle_session(map, &[(LaunchCountry::Russia, AiDifficulty::Easy)]);
+        let slots = MatchLaunchDescriptor::from_resolved(launch.clone()).unwrap();
+        // A solo Battle following a network game has the same flags as a v6
+        // solo recording made before fresh offline staging was distinguished.
+        let mut battle = load_with_inputs(
+            &retail,
+            map,
+            1,
+            HeadlessLaunch::Slots(&slots),
+            &mut assets,
+            ScenarioGameMode::Skirmish,
+            None,
+            None,
+            None,
+            Some(TiberiumFlags::NETWORK_PREGAME),
+        )
+        .unwrap();
+        let log =
+            ReplayRunner::record_authored_match(&mut battle, ReplayLaunchInput::Slots(&launch), 1)
+                .unwrap();
+        let mut bytes = Vec::new();
+        log.write_json(&mut bytes).unwrap();
+        let recorded = ReplayLog::decode_json(&bytes).unwrap();
+        assert_eq!(
+            ReplayRunner::verify(&retail, &recorded, None)
+                .unwrap()
+                .checked_hashes,
+            1
+        );
+    }
 
     /// The nonzero game mode's session-flags replacement (`0x00687C16..
     /// 0x00687C29`) for Scenario bit `0x800`: `PregameSetup` stores the

@@ -66,6 +66,11 @@ the original game's local variable carryover. This changes no packets: mixed bui
 are refused by the existing build check, and a rollback restores the earlier
 carryover behavior.
 
+Authored LAN and online campaign stages take omitted `[SpecialFlags]` keys from
+shared scenario defaults. A player's previous match can supply those defaults in
+an offline campaign. Replays initialize ore queues with the flags recorded at
+match start. The existing [build check](#build-check) covers mixed versions.
+
 Each new LAN or online match also rebuilds mutable Rules from the frozen startup
 sources and the room's current options. This includes the country/color choices
 shown before loading and the Rules used for random-map agreement and generation.
@@ -626,8 +631,12 @@ playback with camera controls and Escape to close.
 `vera20k --replay-verify <replay.json> --ra2-dir <retail-directory>` reconstructs the
 accepted launch and replays the production frame transaction without connecting
 to the lobby. Startup version, rules, map bytes, seed and initial state must
-match. Playback checks the recorded state hashes. Keep a Multiplayer Campaign
-map at its recorded logical path under `campaigns/<series>/`. When names
+match. Playback checks the recorded state hashes.
+On desktop, `VERA20K_REPLAY_ACTOR=<stable object ID>` logs a visible voxel
+body's drawn and committed screen positions at each frame hand-off. For aircraft
+these positions include the body offset from the flight locomotor. Playback uses
+its ordinary cadence, including pictures between logic ticks. Keep a Multiplayer
+Campaign map at its recorded logical path under `campaigns/<series>/`. When names
 collide, the loader chooses an installed copy by the recorded digest. For
 recordings with a bare map filename, the launcher can use an exact SHA-256
 match from the replay directory or its parent. Generated maps, solo campaigns and

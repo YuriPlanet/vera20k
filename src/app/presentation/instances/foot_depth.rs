@@ -287,13 +287,13 @@ pub(crate) fn unit_z_adjust(
     sim_runtime: &SimHost,
     entity: &ObjectRecord,
     unloading_body: bool,
-    world_z_override: Option<i32>,
+    draw_coord: Option<[i32; 3]>,
 ) -> i32 {
     unit_z_adjust_in(
         DepthWorld::of(sim_runtime),
         entity,
         unloading_body,
-        world_z_override,
+        draw_coord,
     )
 }
 
@@ -301,9 +301,16 @@ pub(super) fn unit_z_adjust_in(
     world: DepthWorld<'_>,
     entity: &ObjectRecord,
     unloading_body: bool,
-    world_z_override: Option<i32>,
+    draw_coord: Option<[i32; 3]>,
 ) -> i32 {
-    let world_z = world_z_override.unwrap_or(entity.place.world_z_leptons_off_map);
+    // Shadows and bodies query the cell under the displayed world position.
+    let [x, y, world_z] = draw_coord.unwrap_or_else(|| {
+        [
+            entity.hud.location.x,
+            entity.hud.location.y,
+            entity.place.world_z_leptons_off_map,
+        ]
+    });
     if !matches!(
         entity.category(),
         EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
@@ -319,7 +326,7 @@ pub(super) fn unit_z_adjust_in(
     };
     let sim = &runtime.simulation;
     let object = draw_type(runtime, entity, unloading_body);
-    let xy = crate::sim::movement::ground_pose::position_world_xy(&entity.position);
+    let xy = [x, y];
     // ObjectClass cell getter 0x41BEA0 truncates signed coordinates toward zero.
     let coord = [(xy[0] / 256) as i16, (xy[1] / 256) as i16];
     let special = if entity.category() == EntityCategory::Unit {
