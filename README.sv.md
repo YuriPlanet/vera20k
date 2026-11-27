@@ -40,13 +40,7 @@ Fastnat? Läs [hjälpsidan](https://vera20k.org/sv/help).
 
 ## Bidra
 
-**Uppskattade PR:er**
-
-- Refaktorering
-- Prestanda
-- Vägval för enheter
-- UI/UX
-- Slumpkartgenerator
+**Uppskattade PR:er** — refaktorering, prestanda, vägval för enheter, UI/UX, slumpkartgenerator.
 
 Redan efter några bra PR:er kan du gå med i administratörsgruppen på samma villkor som de andra.
 

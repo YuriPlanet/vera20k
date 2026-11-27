@@ -40,13 +40,7 @@ Gặp khó khăn? Xem [trang trợ giúp](https://vera20k.org/help) (tiếng Anh
 
 ## Đóng góp
 
-**Các PR được đánh giá cao**
-
-- Tái cấu trúc mã
-- Hiệu năng
-- Tìm đường
-- UI/UX
-- Trình tạo bản đồ ngẫu nhiên
+**Các PR được đánh giá cao** — tái cấu trúc mã, hiệu năng, tìm đường, UI/UX, trình tạo bản đồ ngẫu nhiên.
 
 Chỉ sau vài PR chất lượng, bạn có thể gia nhập đội ngũ quản trị với vai trò ngang hàng với các thành viên khác.
 

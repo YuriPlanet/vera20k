@@ -40,13 +40,7 @@ Takıldınız mı? [Yardım sayfasına](https://vera20k.org/tr/help) göz atın.
 
 ## Katkıda bulunma
 
-**Değer verdiğimiz PR’lar**
-
-- Kodun yeniden düzenlenmesi
-- Performans
-- Yol bulma
-- UI/UX
-- Rastgele harita üreteci
+**Değer verdiğimiz PR’lar** — kodun yeniden düzenlenmesi, performans, yol bulma, UI/UX, rastgele harita üreteci.
 
 Birkaç iyi PR'dan sonra yönetim ekibine diğer üyelerle eşit yetkilerle katılabilirsin.
 

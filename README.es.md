@@ -41,13 +41,7 @@ palabra sobre su rumbo.
 
 ## Contribuir
 
-**PR que valoramos**
-
-- Refactorización
-- Rendimiento
-- Búsqueda de rutas
-- UI/UX
-- Generador de mapas aleatorios
+**PR que valoramos** — refactorización, rendimiento, búsqueda de rutas, UI/UX, generador de mapas aleatorios.
 
 Con solo unos pocos PR de calidad, puedes unirte al equipo de administración en igualdad de condiciones.
 

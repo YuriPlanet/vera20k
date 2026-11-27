@@ -40,13 +40,7 @@ Stuck? See the [help page](https://vera20k.org/help).
 
 ## Contributing
 
-**Valued PRs**
-
-- Refactoring
-- Performance
-- Pathfinding
-- UI/UX
-- Random map generator
+**Valued PRs** — refactoring, performance, pathfinding, UI/UX, random map generator.
 
 After just a few good PRs, you can join the admin team as an equal.
 

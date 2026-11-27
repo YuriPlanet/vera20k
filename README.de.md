@@ -41,13 +41,7 @@ Kommst du nicht weiter? Schau auf der [Hilfeseite](https://vera20k.org/de/help) 
 
 ## Mitmachen
 
-**Geschätzte Pull Requests**
-
-- Refactoring
-- Performance
-- Wegfindung
-- UI/UX
-- Zufallskartengenerator
+**Geschätzte Pull Requests** — Refactoring, Performance, Wegfindung, UI/UX, Zufallskartengenerator.
 
 Schon nach ein paar guten PRs kannst du als gleichberechtigtes Mitglied ins Admin-Team kommen.
 
