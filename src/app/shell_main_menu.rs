@@ -1742,7 +1742,10 @@ impl App {
                 &mut state.audio,
                 &state.persistence,
             ),
-            Purpose::ExitGame | Purpose::Notice => state.platform.window.request_redraw(),
+            Purpose::SwitchEdition { ra2 } if yes => Self::confirm_edition_switch(state, ra2),
+            Purpose::ExitGame | Purpose::SwitchEdition { .. } | Purpose::Notice => {
+                state.platform.window.request_redraw();
+            }
             Purpose::CampaignReplay(retry) => Self::answer_campaign_replay(state, retry, answer),
             Purpose::CampaignVictory(victory) => Self::advance_campaign_victory(state, *victory),
             Purpose::AuthoredCampaignResult(choice) => {
@@ -2244,6 +2247,17 @@ impl App {
                 &state.process_assets,
                 &state.persistence.options_profile,
             ),
+            Action::SwitchEdition => {
+                let ra2 = !crate::util::ra2_launch::enabled();
+                Self::open_terminal_confirm(
+                    &state.platform.window,
+                    &state.renderer,
+                    &mut state.frontend,
+                    &state.process_assets,
+                    &state.persistence.options_profile,
+                    Purpose::SwitchEdition { ra2 },
+                );
+            }
             Action::SinglePlayer => {
                 Self::open_single_player_shell(&mut state.frontend, &state.persistence.repository)
             }
@@ -2299,12 +2313,35 @@ impl App {
         process_assets: &ProcessAssets,
         options_profile: &RetailOptionsProfile,
     ) {
+        Self::open_terminal_confirm(
+            window,
+            renderer,
+            frontend,
+            process_assets,
+            options_profile,
+            Purpose::ExitGame,
+        );
+    }
+
+    fn open_terminal_confirm(
+        window: &Window,
+        renderer: &RendererState,
+        frontend: &mut FrontendState,
+        process_assets: &ProcessAssets,
+        options_profile: &RetailOptionsProfile,
+        purpose: Purpose,
+    ) {
         // State 6 runs after 0xE2 is destroyed: it paints the empty shell
         // backdrop (`0x0052FEC0`) and asks; Cancel builds a new 0xE2 (state
         // 0x12, `0x0052DE39..0x0052DE42`).
         Self::destroy_current_shell_dialog(frontend);
         let csf = |key: &str, fallback: &str| process_assets.csf_label(key, fallback);
-        let shell_box = crate::ui::main_menu_dialogs::exit_confirm(&csf);
+        let shell_box = match purpose {
+            Purpose::SwitchEdition { ra2 } => {
+                crate::ui::main_menu_dialogs::edition_confirm(&csf, ra2)
+            }
+            _ => crate::ui::main_menu_dialogs::exit_confirm(&csf),
+        };
         Self::open_shell_message_box(
             window,
             renderer,
@@ -2312,7 +2349,43 @@ impl App {
             process_assets,
             options_profile,
             shell_box,
-            Purpose::ExitGame,
+            purpose,
+        );
+    }
+
+    fn confirm_edition_switch(state: &mut AppState, ra2: bool) {
+        let mut profile = state.persistence.options_profile.clone();
+        profile.ra2_mode = ra2;
+        let result = state
+            .platform
+            .game_config
+            .as_ref()
+            .ok_or_else(|| std::io::Error::other("no game configuration"))
+            .and_then(|config| profile.commit_settings(config.paths.settings_dir()));
+        if let Err(error) = result {
+            log::warn!("Could not save the selected game edition: {error}");
+            Self::open_shell_notice(
+                &state.platform.window,
+                &state.renderer,
+                &mut state.frontend,
+                &state.process_assets,
+                &state.persistence.options_profile,
+                crate::i18n::tr("VERA:SwitchEditionNotSaved"),
+            );
+            return;
+        }
+
+        state.persistence.options_profile = profile;
+        crate::app::restart::ask_for_edition();
+        Self::start_quit_cascade(
+            &state.platform,
+            &state.renderer,
+            &state.diag,
+            &mut state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            &mut state.audio,
+            &state.persistence,
         );
     }
 
