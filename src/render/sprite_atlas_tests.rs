@@ -4239,6 +4239,75 @@ fn a_picture_building_draws_body_buildup_and_bib_from_pictures() {
     );
 }
 
+/// VERA-only, experimental (docs/picture-model-art.md): a declared picture
+/// needs no SHP. A building body and the `[General] Parachute=` AnimType
+/// (counted at map load from its file, `effect_asset_catalog`) draw and count
+/// their frames from `Picture=` alone, with no SHP of either name present.
+#[test]
+fn a_picture_building_and_parachute_draw_with_no_shp() {
+    use crate::rules::ini_parser::IniFile;
+    let directory = StoredFrameTestDirectory::new();
+    let mut rgba = vec![0u8; 2 * 2 * 4];
+    rgba[..4].copy_from_slice(&[200, 100, 50, 255]);
+    let write = |name: &str, count: usize| {
+        let bytes =
+            crate::assets::picture_file::encode_frames(2, 2, &vec![rgba.clone(); count]).unwrap();
+        std::fs::write(directory.0.join(name), bytes).unwrap();
+    };
+    write("PICBLD.png", 2);
+    write("PICPARA.png", 3);
+    let art_ini =
+        IniFile::from_str("[PICBLD]\nPicture=PICBLD.png\n[PICPARA]\nPicture=PICPARA.png\n");
+    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
+        &IniFile::from_str(
+            "[BuildingTypes]\n0=PICBLD\n[PICBLD]\nStrength=100\n\
+             [Animations]\n0=PICPARA\n[General]\nParachute=PICPARA\n",
+        ),
+        &art_ini,
+    )
+    .expect("rules");
+    rules.install_art_data(ArtRegistry::from_ini(&art_ini));
+    assert_eq!(rules.general.parachute_shp.as_deref(), Some("PICPARA"));
+    let assets = AssetManager::from_loose_root_for_test(&directory.0);
+    let colors = HouseColorMap::from([("Americans".to_string(), HouseColorIndex(2))]);
+    let entities = crate::sim::entity_store::EntityStore::new();
+    let PreparedSpriteAtlas::Raster(work, upload) = prepare_sprite_atlas(
+        8192,
+        &entities,
+        &assets,
+        &Palette::from_rgb(|i| [i, i, i]),
+        "tem",
+        "TEMPERATE",
+        Some(&rules),
+        Some(rules.art()),
+        &colors,
+        &["PICBLD"],
+        &Default::default(),
+        &Default::default(),
+        &Default::default(),
+        None,
+        None,
+        None,
+    ) else {
+        panic!("the picture keys are prepared");
+    };
+    assert!(
+        work.keys
+            .iter()
+            .all(|raster| !raster.key.type_id.starts_with("PIC"))
+    );
+    let placed: HashSet<(&str, u16)> = upload
+        .pictures
+        .iter()
+        .map(|picture| (picture.key.type_id.as_str(), picture.key.frame))
+        .collect();
+    for key in [("PICBLD", 0), ("PICBLD", 1), ("PICPARA", 0), ("PICPARA", 2)] {
+        assert!(placed.contains(&key), "{key:?} in {placed:?}");
+    }
+    assert_eq!(upload.object_shp_frame_counts.get("PICBLD"), Some(&2));
+    assert_eq!(upload.active_anim_frame_counts.get("PICPARA"), Some(&3));
+}
+
 /// VERA-only, experimental (docs/picture-model-art.md): a war factory whose
 /// art declares `Picture=` reads its `DeployingAnim=` and `UnderDoorAnim=`
 /// (raw SHP names, `0x0045F31D`/`0x0045F55A`) as `NAME.png` pictures: every

@@ -2753,11 +2753,15 @@ impl<'a> PictureRoutes<'a> {
                 } else if self.rules.and_then(|rules| rules.object(type_id)).is_some() {
                     self.object(type_id)
                 } else {
+                    // An AnimType image drawn as an object's
+                    // (`[AudioVisual] WebbedInfantry=`) takes its own
+                    // section's picture.
                     let upper = type_id.to_ascii_uppercase();
                     self.bibs
                         .get(&upper)
                         .or_else(|| self.doors.get(&upper))
                         .cloned()
+                        .or_else(|| self.anim(type_id))
                 }
             }
         }
@@ -3361,9 +3365,21 @@ pub(crate) fn prepare_sprite_atlas(
             if !struggles {
                 continue;
             }
-            let count = match object_shp_frame_counts.get(&upper) {
-                Some(&count) => count,
-                None => {
+            // VERA-only, experimental (docs/picture-model-art.md): a
+            // declared picture counts its frames, and the SHP is not opened.
+            let picture = object_shp_frame_counts
+                .get(&upper)
+                .is_none()
+                .then(|| picture_routes.as_mut()?.anim_frames(webbed))
+                .flatten();
+            let count = match (object_shp_frame_counts.get(&upper), picture) {
+                (Some(&count), _) => count,
+                (None, Some(Some(count))) => {
+                    object_shp_frame_counts.insert(upper.clone(), count);
+                    count
+                }
+                (None, Some(None)) => break,
+                (None, None) => {
                     let candidates =
                         effect_anim_shp_candidates(webbed, art, theater_ext, theater_name);
                     let Some((file, data)) = find_shp(asset_manager, &candidates) else {
@@ -3531,8 +3547,23 @@ pub(crate) fn prepare_sprite_atlas(
             format!("{}.shp", shp_name.to_ascii_lowercase()),
             format!("{}.SHP", shp_name),
         ];
-        match find_shp(asset_manager, &candidates) {
-            Some((file, data)) => match ShpFile::frame_count_from_bytes(&data) {
+        // VERA-only, experimental (docs/picture-model-art.md): an AnimType
+        // that declares Picture= counts its picture's frames and draws from
+        // it; its SHP is not opened.
+        let found = match picture_routes
+            .as_mut()
+            .and_then(|routes| routes.anim_frames(shp_name))
+        {
+            Some(Some(count)) => Some((None, Ok(count))),
+            Some(None) => {
+                log::warn!("Parachute picture {shp_name} has no frames; chute will not render");
+                continue;
+            }
+            None => find_shp(asset_manager, &candidates)
+                .map(|(file, data)| (Some(file), ShpFile::frame_count_from_bytes(&data))),
+        };
+        match found {
+            Some((file, counted)) => match counted {
                 Ok(frame_count) => {
                     for frame in 0..frame_count {
                         needed.insert(ShpSpriteKey {
@@ -3544,10 +3575,12 @@ pub(crate) fn prepare_sprite_atlas(
                         });
                     }
                     active_anim_frame_counts.insert(shp_name.to_string(), frame_count);
-                    shp_files.insert(
-                        (ShpImageKind::Animation, shp_name.to_ascii_uppercase()),
-                        file.to_string(),
-                    );
+                    if let Some(file) = file {
+                        shp_files.insert(
+                            (ShpImageKind::Animation, shp_name.to_ascii_uppercase()),
+                            file.to_string(),
+                        );
+                    }
                     log::debug!(
                         "Parachute SHP {}: {} frames loaded (unit palette per AltPalette=yes)",
                         shp_name,
@@ -3655,6 +3688,16 @@ pub(crate) fn prepare_sprite_atlas(
             new_keys.iter().map(|key| routes.key(key)).collect()
         });
     let picture_of = |index: usize| key_pictures.get(index).and_then(Option::as_ref);
+    // The pictures the keys draw from, decoded side by side before the keys
+    // are placed one by one below.
+    if let Some(art) = art {
+        pictures.prefetch(
+            key_pictures.iter().flatten(),
+            art,
+            asset_manager,
+            theater_name,
+        );
+    }
     log::info!(
         "Sprite atlas: {} already resolved, {} new to render, {} total needed",
         needed.len() - new_keys.len(),

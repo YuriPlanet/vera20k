@@ -202,8 +202,9 @@ pub(crate) fn build_ares_software_cursor(
     batch: &BatchRenderer,
     asset_manager: &AssetManager,
     cursors: &MouseCursors,
+    sizes: crate::render::interface_picture::PictureSizes<'_>,
 ) -> Option<SoftwareCursor> {
-    let art = load_mouse_shape(asset_manager)?;
+    let art = load_mouse_shape(asset_manager, sizes)?;
     let mut frames: HashMap<usize, Option<SoftwareCursorFrame>> = HashMap::new();
     let mut sequences = HashMap::new();
     for (index, cursor) in cursors.iter() {
@@ -233,7 +234,7 @@ pub(crate) fn build_ares_software_cursor(
                 SoftwareCursorSequence {
                     frames: sequence_frames,
                     interval_ms,
-                    hotspot: resolve_hotspot(hotspot(cursor), &art.shp),
+                    hotspot: resolve_hotspot(hotspot(cursor), &art),
                 },
             );
         }

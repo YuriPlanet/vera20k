@@ -364,6 +364,7 @@ fn draw_status_prefix<'a>(
 ) {
     let ObjectExtrasRun::Status {
         bomb_clock,
+        bomb_image,
         wrench,
         power_off,
         rank,
@@ -377,7 +378,9 @@ fn draw_status_prefix<'a>(
     else {
         unreachable!("line parents fence status attachment passes");
     };
-    if let (Some(index), Some(shape)) = (bomb_clock, overlay.bomb_clock()) {
+    // The instance was cut from the carrier's `IvanBomb.Image` when one
+    // loaded, else BOMBCURS.SHP; its strip's texture is the one to bind.
+    if let (Some(index), Some(shape)) = (bomb_clock, overlay.bomb_strip(*bomb_image)) {
         //6F524E: MOUSEPAL N1, E00/493DF0 consumes A and bypasses Z.
         batch.draw_passthrough_range(pass, shape.texture(), buffer, *index, 1);
     }

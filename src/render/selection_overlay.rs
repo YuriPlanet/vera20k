@@ -13,6 +13,7 @@ use crate::assets::shp_file::ShpFile;
 use crate::map::terrain::{self, TILE_HEIGHT, TILE_WIDTH};
 use crate::render::batch::{BatchRenderer, BatchTexture, SpriteInstance};
 use crate::render::gpu::GpuContext;
+use crate::render::interface_picture::PictureSizes;
 use crate::sim::production::{BuildingPlacementCell, BuildingPlacementPreview};
 use crate::sim::selection::SelectionState;
 
@@ -77,10 +78,60 @@ pub struct SelectionOverlay {
     #[cfg(feature = "phobos")]
     digital_shapes: Vec<Option<CenteredShapeStrip>>,
     /// Ares/Phobos custom insignia SHPs keyed by their normalized file name.
-    insignia_shapes: std::collections::HashMap<String, CenteredShapeStrip>,
+    insignia_shapes: NamedStrips,
     /// Ares `IvanBomb.Image` SHPs keyed by their file name, MOUSEPAL like
     /// the BOMBCURS.SHP they replace; a name that did not load is absent.
-    ares_bomb_images: std::collections::HashMap<String, CenteredShapeStrip>,
+    ares_bomb_images: NamedStrips,
+}
+
+/// Strips loaded from the files rules keys name, by name, each with the
+/// index the zoomed draw names it by ([`InterfaceStrip`]).
+#[derive(Default)]
+struct NamedStrips {
+    strips: Vec<CenteredShapeStrip>,
+    by_name: std::collections::HashMap<String, usize>,
+}
+
+impl NamedStrips {
+    fn insert(&mut self, name: String, strip: CenteredShapeStrip) {
+        self.by_name.insert(name, self.strips.len());
+        self.strips.push(strip);
+    }
+
+    fn index(&self, name: &str) -> Option<usize> {
+        self.by_name.get(name).copied()
+    }
+
+    fn get(&self, name: &str) -> Option<&CenteredShapeStrip> {
+        self.strips.get(self.index(name)?)
+    }
+
+    fn has_hd_pages(&self) -> bool {
+        self.strips.iter().any(|strip| strip.hd.is_some())
+    }
+}
+
+/// VERA-only, experimental (`docs/picture-model-art.md`, "Interface art"):
+/// an interface strip the zoomed picture draw names
+/// (`render::picture_zoom::HdSource::Interface`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum InterfaceStrip {
+    Placement,
+    Pipbrd,
+    Pips,
+    ScalePips,
+    BombClock,
+    TalkBubble,
+    Wrench,
+    PowerOff,
+    /// PBEACON.SHP in a beacon row's Convert (`BeaconArt::tactical_strip`).
+    Beacon(usize),
+    /// An Ares `IvanBomb.Image` strip ([`SelectionOverlay::bomb_image`]).
+    AresBomb(usize),
+    /// A custom insignia strip ([`SelectionOverlay::insignia_index`]).
+    Insignia(usize),
+    /// A Phobos DigitalDisplay `Shape=` strip, by catalog index.
+    Digital(usize),
 }
 
 /// Every frame of one SHP packed side by side at its stored size, each with
@@ -192,25 +243,49 @@ impl CenteredShapeStrip {
     /// Decode every SHP frame in its named palette with
     /// `ShpFile::frame_to_rgba`, keeping its indices. This is the same
     /// resource path for windowed loading and offscreen GPU checks.
+    ///
+    /// VERA-only, experimental (`docs/picture-model-art.md`, "Interface
+    /// art"): every interface strip loads here, so `NAME.png` beside the SHP,
+    /// in the same lookup, is drawn in its place when it fits, sized by
+    /// `sizes` (`render::interface_picture`); it needs no SHP.
     pub(crate) fn from_assets_on_device(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         batch: &BatchRenderer,
         assets: &AssetManager,
+        sizes: PictureSizes<'_>,
         shp_name: &str,
         pal_name: &str,
     ) -> Option<Self> {
+        use crate::render::interface_picture::{ArtShape, find};
         use crate::render::shell_ui_style_assets::{decode_ui_shp, ui_art_candidates};
-        let palette = ui_art_candidates(assets, pal_name)
-            .find_map(|asset| Palette::from_bytes(asset.bytes).ok())?;
-        let strip = ui_art_candidates(assets, shp_name).find_map(|asset| {
-            let shp = if assets.mod_selected() {
-                decode_ui_shp(asset.bytes).ok()?
+        let shp = ui_art_candidates(assets, shp_name).find_map(|asset| {
+            if assets.mod_selected() {
+                decode_ui_shp(asset.bytes).ok()
             } else {
-                ShpFile::from_bytes(asset.bytes).ok()?
-            };
-            Self::from_shp_on_device(device, queue, batch, &shp, &palette)
-        })?;
+                ShpFile::from_bytes(asset.bytes).ok()
+            }
+        });
+        let picture = find(
+            shp_name,
+            shp.as_ref().map(ArtShape::of_shp),
+            sizes,
+            false,
+            |name| {
+                ui_art_candidates(assets, name)
+                    .next()
+                    .map(|asset| asset.bytes)
+            },
+        )
+        .and_then(|found| found.game_frames());
+        let strip = match picture {
+            Some(frames) => Self::from_picture_on_device(device, queue, batch, &frames, None)?,
+            None => {
+                let palette = ui_art_candidates(assets, pal_name)
+                    .find_map(|asset| Palette::from_bytes(asset.bytes).ok())?;
+                Self::from_shp_on_device(device, queue, batch, shp.as_ref()?, &palette)?
+            }
+        };
         log::info!(
             "{shp_name} strip in {pal_name}: {}x{}, {} frames",
             strip.atlas_w,
@@ -218,30 +293,6 @@ impl CenteredShapeStrip {
             strip.frames.len()
         );
         Some(strip)
-    }
-
-    /// VERA-only, experimental (`docs/picture-model-art.md`, "Interface
-    /// art"): [`Self::from_assets_on_device`] for a hard-coded interface
-    /// SHP, drawn from the picture beside it when one fits
-    /// (`render::interface_picture`).
-    pub(crate) fn from_interface_assets_on_device(
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        batch: &BatchRenderer,
-        assets: &AssetManager,
-        shp_name: &str,
-        pal_name: &str,
-    ) -> Option<Self> {
-        let shp = ShpFile::from_bytes(assets.get_ref(shp_name)?).ok()?;
-        let picture = crate::render::interface_picture::find(shp_name, &shp, false, |name| {
-            assets.get_ref(name)
-        })
-        .and_then(|found| found.game_frames());
-        if let Some(frames) = picture {
-            return Self::from_picture_on_device(device, queue, batch, &frames, None);
-        }
-        let palette = Palette::from_bytes(assets.get_ref(pal_name)?).ok()?;
-        Self::from_shp_on_device(device, queue, batch, &shp, &palette)
     }
 
     /// [`Self::from_assets_on_device`] for a parsed SHP and an already
@@ -479,8 +530,15 @@ pub fn placement_cell_draws(
 impl SelectionOverlay {
     /// Create a new SelectionOverlay with procedurally-generated textures.
     /// If `assets` is provided, loads pips.shp for authentic RA2 health bar rendering.
-    pub fn new(gpu: &GpuContext, batch: &BatchRenderer, assets: Option<&AssetManager>) -> Self {
-        Self::new_on_device(&gpu.device, &gpu.queue, batch, assets)
+    /// `sizes` gives the interface pictures' `PictureSize=`
+    /// (`render::interface_picture`).
+    pub fn new(
+        gpu: &GpuContext,
+        batch: &BatchRenderer,
+        assets: Option<&AssetManager>,
+        sizes: PictureSizes<'_>,
+    ) -> Self {
+        Self::new_on_device(&gpu.device, &gpu.queue, batch, assets, sizes)
     }
 
     /// The same resource construction for windowed rendering and GPU checks.
@@ -489,6 +547,7 @@ impl SelectionOverlay {
         queue: &wgpu::Queue,
         batch: &BatchRenderer,
         assets: Option<&AssetManager>,
+        sizes: PictureSizes<'_>,
     ) -> Self {
         let drag_texture: BatchTexture = batch.create_texture_on_device(
             device,
@@ -502,11 +561,12 @@ impl SelectionOverlay {
         // binds PALETTE.PAL's plain Convert87F6C4. Missing retail art has no
         // invented procedural substitute.
         let placement_shape = assets.and_then(|assets| {
-            CenteredShapeStrip::from_interface_assets_on_device(
+            CenteredShapeStrip::from_assets_on_device(
                 device,
                 queue,
                 batch,
                 assets,
+                sizes,
                 "place.shp",
                 "palette.pal",
             )
@@ -539,11 +599,12 @@ impl SelectionOverlay {
         // LoadPipAssets 5F76B0 binds PIPBRD at AC1478. DrawHealthBar 6F68AE/
         // 6F6947 selects raw frame 1/0; 4AED70 owns the stored centering.
         let pipbrd = assets.and_then(|assets| {
-            CenteredShapeStrip::from_interface_assets_on_device(
+            CenteredShapeStrip::from_assets_on_device(
                 device,
                 queue,
                 batch,
                 assets,
+                sizes,
                 "pipbrd.shp",
                 "palette.pal",
             )
@@ -553,11 +614,12 @@ impl SelectionOverlay {
         // literal PALETTE.PAL; keep the SHP's full raw frame table. The
         // common centered owner applies each stored frame's own origin.
         let scale_pips = assets.and_then(|assets| {
-            CenteredShapeStrip::from_interface_assets_on_device(
+            CenteredShapeStrip::from_assets_on_device(
                 device,
                 queue,
                 batch,
                 assets,
+                sizes,
                 "pips2.shp",
                 "palette.pal",
             )
@@ -567,21 +629,23 @@ impl SelectionOverlay {
         // convert `[0x0087F6C8]` that Init_Game builds from MOUSEPAL.PAL
         // (0x0052C13D..0x0052C1DD).
         let talk_bubble = assets.and_then(|assets| {
-            CenteredShapeStrip::from_interface_assets_on_device(
+            CenteredShapeStrip::from_assets_on_device(
                 device,
                 queue,
                 batch,
                 assets,
+                sizes,
                 "talkbubl.shp",
                 "palette.pal",
             )
         });
         let bomb_clock = assets.and_then(|assets| {
-            CenteredShapeStrip::from_interface_assets_on_device(
+            CenteredShapeStrip::from_assets_on_device(
                 device,
                 queue,
                 batch,
                 assets,
+                sizes,
                 "bombcurs.shp",
                 "mousepal.pal",
             )
@@ -590,11 +654,12 @@ impl SelectionOverlay {
         // through the same Init52C1D8 MOUSEPAL N1 Convert. Per-parent Extras
         // selects its packed E00 material; keep raw frame origins/indices here.
         let repair_wrench = assets.and_then(|assets| {
-            CenteredShapeStrip::from_interface_assets_on_device(
+            CenteredShapeStrip::from_assets_on_device(
                 device,
                 queue,
                 batch,
                 assets,
+                sizes,
                 "wrench.shp",
                 "mousepal.pal",
             )
@@ -602,11 +667,12 @@ impl SelectionOverlay {
         // POWEROFF.SHP by name (0x0045E970, beside WRENCH.SHP); Ares draws
         // it through the same MOUSEPAL Convert.
         let power_off = assets.and_then(|assets| {
-            CenteredShapeStrip::from_interface_assets_on_device(
+            CenteredShapeStrip::from_assets_on_device(
                 device,
                 queue,
                 batch,
                 assets,
+                sizes,
                 "poweroff.shp",
                 "mousepal.pal",
             )
@@ -615,11 +681,12 @@ impl SelectionOverlay {
         // resource serves health6F66BA/6F6A4A, rank70AA4F and self-heal70A6BB.
         // Keep every frame's native origin and original index plane.
         let pips = assets.and_then(|assets| {
-            CenteredShapeStrip::from_interface_assets_on_device(
+            CenteredShapeStrip::from_assets_on_device(
                 device,
                 queue,
                 batch,
                 assets,
+                sizes,
                 "pips.shp",
                 "palette.pal",
             )
@@ -640,8 +707,8 @@ impl SelectionOverlay {
             pips,
             #[cfg(feature = "phobos")]
             digital_shapes: Vec::new(),
-            insignia_shapes: std::collections::HashMap::new(),
-            ares_bomb_images: std::collections::HashMap::new(),
+            insignia_shapes: NamedStrips::default(),
+            ares_bomb_images: NamedStrips::default(),
         }
     }
 
@@ -674,6 +741,7 @@ impl SelectionOverlay {
                 queue,
                 batch,
                 assets,
+                PictureSizes::Art(rules.art()),
                 &name.to_ascii_lowercase(),
                 "mousepal.pal",
             ) {
@@ -683,17 +751,27 @@ impl SelectionOverlay {
     }
 
     /// The bomb image for a carrier whose `IvanBomb.Image` candidates are
-    /// `names`: the last that loaded, else BOMBCURS.SHP. Runs in every game:
-    /// the caller passes no names unless the Rules were read the Ares way.
-    pub(crate) fn bomb_image(&self, names: &[String]) -> Option<&CenteredShapeStrip> {
-        if let Some(strip) = names
+    /// `names`: the last that loaded (its index, for [`Self::bomb_strip`]),
+    /// else BOMBCURS.SHP (None). Runs in every game: the caller passes no
+    /// names unless the Rules were read the Ares way.
+    pub(crate) fn bomb_image(
+        &self,
+        names: &[String],
+    ) -> Option<(Option<usize>, &CenteredShapeStrip)> {
+        let image = names
             .iter()
             .rev()
-            .find_map(|name| self.ares_bomb_images.get(name))
-        {
-            return Some(strip);
+            .find_map(|name| self.ares_bomb_images.index(name));
+        Some((image, self.bomb_strip(image)?))
+    }
+
+    /// The strip a bomb clock was cut from: an `IvanBomb.Image`
+    /// ([`Self::bomb_image`]'s index), else BOMBCURS.SHP.
+    pub(crate) fn bomb_strip(&self, image: Option<usize>) -> Option<&CenteredShapeStrip> {
+        match image {
+            Some(index) => self.ares_bomb_images.strips.get(index),
+            None => self.bomb_clock(),
         }
-        self.bomb_clock()
     }
 
     /// Load each `[DigitalDisplayTypes]` entry's `Shape=`/`Palette=` once per
@@ -706,6 +784,7 @@ impl SelectionOverlay {
         batch: &BatchRenderer,
         assets: &AssetManager,
         types: &[crate::rules::digital_display::DigitalDisplayType],
+        sizes: PictureSizes<'_>,
     ) {
         self.digital_shapes = types
             .iter()
@@ -720,7 +799,7 @@ impl SelectionOverlay {
                     );
                 }
                 let strip = CenteredShapeStrip::from_assets_on_device(
-                    device, queue, batch, assets, shape, palette,
+                    device, queue, batch, assets, sizes, shape, palette,
                 );
                 if strip.is_none() {
                     log::warn!(
@@ -778,6 +857,7 @@ impl SelectionOverlay {
                 queue,
                 batch,
                 assets,
+                PictureSizes::Art(rules.art()),
                 &name,
                 "palette.pal",
             );
@@ -793,6 +873,63 @@ impl SelectionOverlay {
     /// One custom insignia SHP by normalized file name, when loaded.
     pub(crate) fn insignia_shape(&self, name: &str) -> Option<&CenteredShapeStrip> {
         self.insignia_shapes.get(name)
+    }
+
+    /// The index the zoomed draw names a custom insignia by
+    /// ([`InterfaceStrip::Insignia`]).
+    pub(crate) fn insignia_index(&self, name: &str) -> Option<usize> {
+        self.insignia_shapes.index(name)
+    }
+
+    /// VERA-only, experimental: the stock strip `strip` names; a beacon's
+    /// is `BeaconArt`'s.
+    pub(crate) fn interface_strip(&self, strip: InterfaceStrip) -> Option<&CenteredShapeStrip> {
+        match strip {
+            InterfaceStrip::Placement => self.placement_shape.as_ref(),
+            InterfaceStrip::Pipbrd => self.pipbrd.as_ref(),
+            InterfaceStrip::Pips => self.pips.as_ref(),
+            InterfaceStrip::ScalePips => self.scale_pips.as_ref(),
+            InterfaceStrip::BombClock => self.bomb_clock.as_ref(),
+            InterfaceStrip::TalkBubble => self.talk_bubble.as_ref(),
+            InterfaceStrip::Wrench => self.repair_wrench.as_ref(),
+            InterfaceStrip::PowerOff => self.power_off.as_ref(),
+            InterfaceStrip::Beacon(_) => None,
+            InterfaceStrip::AresBomb(index) => self.ares_bomb_images.strips.get(index),
+            InterfaceStrip::Insignia(index) => self.insignia_shapes.strips.get(index),
+            #[cfg(feature = "phobos")]
+            InterfaceStrip::Digital(index) => self.digital_shape(index),
+            #[cfg(not(feature = "phobos"))]
+            InterfaceStrip::Digital(_) => None,
+        }
+    }
+
+    /// VERA-only, experimental: whether a stock strip has an HD twin, which
+    /// the zoomed draw needs.
+    pub(crate) fn has_hd_pages(&self) -> bool {
+        use InterfaceStrip::*;
+        [
+            Placement, Pipbrd, Pips, ScalePips, BombClock, TalkBubble, Wrench, PowerOff,
+        ]
+        .into_iter()
+        .any(|strip| {
+            self.interface_strip(strip)
+                .is_some_and(|strip| strip.hd.is_some())
+        }) || self.ares_bomb_images.has_hd_pages()
+            || self.insignia_shapes.has_hd_pages()
+            || self.has_digital_hd_pages()
+    }
+
+    #[cfg(feature = "phobos")]
+    fn has_digital_hd_pages(&self) -> bool {
+        self.digital_shapes
+            .iter()
+            .flatten()
+            .any(|strip| strip.hd.is_some())
+    }
+
+    #[cfg(not(feature = "phobos"))]
+    fn has_digital_hd_pages(&self) -> bool {
+        false
     }
 
     /// The Crazy Ivan bomb clock art (BOMBCURS.SHP), when the assets have it.

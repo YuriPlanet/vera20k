@@ -14,6 +14,7 @@ use crate::i18n::cameo_labels::{CAMEO_HEIGHT, CAMEO_WIDTH, CameoLabel};
 use crate::render::atlas_growth;
 use crate::render::batch::{BatchRenderer, BatchTexture};
 use crate::render::gpu::GpuContext;
+use crate::render::interface_picture::{ArtShape, PictureSizes};
 use crate::render::shell_ui_style_assets::{decode_ui_pcx, decode_ui_shp, ui_art_candidates};
 use crate::render::sidebar_smoothing::{self, SmoothCopy, SmoothSource};
 use crate::rules::ruleset::RuleSet;
@@ -298,7 +299,7 @@ fn render_cameo(
         && let [Some(name), _] = rules
             .art()
             .resolve_declared_pcx_cameos(type_id, &rules_image)
-        && let Some(cameo) = render_pcx_cameo(type_id, name, asset_manager)
+        && let Some(cameo) = render_pcx_cameo(type_id, name, asset_manager, None)
     {
         return Some(cameo);
     }
@@ -379,7 +380,7 @@ fn render_alt_cameo(
             .art()
             .resolve_declared_pcx_cameos(type_id, &rules_image);
         for name in [promoted, normal].into_iter().flatten() {
-            if let Some(mut cameo) = render_pcx_cameo(type_id, name, asset_manager) {
+            if let Some(mut cameo) = render_pcx_cameo(type_id, name, asset_manager, None) {
                 cameo.kind = CameoKind::Promoted;
                 return Some(cameo);
             }
@@ -433,9 +434,13 @@ fn render_superweapon_cameo(
 ) -> Option<RenderedCameo> {
     let key = &sw.id;
     let ares = rules.ares();
+    // VERA-only, experimental (docs/picture-model-art.md, "Interface art"):
+    // `NAME.png` beside the PCX or SHP a superweapon names, sized by
+    // `PictureSize=` of the art section `NAME`.
+    let sizes = PictureSizes::Art(rules.art());
     if ares
         && let Some(name) = sw.sidebar_pcx()
-        && let Some(mut cameo) = render_pcx_cameo(key, name, asset_manager)
+        && let Some(mut cameo) = render_pcx_cameo(key, name, asset_manager, Some(sizes))
     {
         cameo.kind = CameoKind::SuperWeapon;
         return Some(cameo);
@@ -451,7 +456,9 @@ fn render_superweapon_cameo(
     let palette = custom.as_ref().unwrap_or(palette);
     if let Some(image_name) = sw.sidebar_image.as_deref() {
         let shp_name = format!("{image_name}.SHP");
-        if let Some(mut cameo) = render_cameo_file(key, &shp_name, asset_manager, palette) {
+        if let Some(mut cameo) =
+            render_superweapon_shp(key, &shp_name, asset_manager, palette, sizes)
+        {
             cameo.kind = CameoKind::SuperWeapon;
             log::debug!("SW sidebar cameo {} loaded from {}", image_name, shp_name);
             return Some(cameo);
@@ -462,6 +469,36 @@ fn render_superweapon_cameo(
     let mut cameo = render_placeholder_cameo(key, rules, asset_manager, palette)?;
     cameo.kind = CameoKind::SuperWeapon;
     Some(cameo)
+}
+
+/// `<SidebarImage>.SHP`'s frame 0 as a cameo, or VERA's `NAME.png` beside
+/// it (`render::interface_picture`), which needs no SHP: its frame 0 at game
+/// pixels, cropped to its drawn pixels on its canvas, as a cameo picture's.
+fn render_superweapon_shp(
+    key: &str,
+    shp_name: &str,
+    assets: &AssetManager,
+    palette: &Palette,
+    sizes: PictureSizes<'_>,
+) -> Option<RenderedCameo> {
+    let shp = ui_art_candidates(assets, shp_name)
+        .find_map(|asset| decode_cameo_bytes(assets, asset.bytes));
+    let picture = crate::render::interface_picture::find(
+        shp_name,
+        shp.as_ref().map(ArtShape::of_shp),
+        sizes,
+        false,
+        |name| {
+            ui_art_candidates(assets, name)
+                .next()
+                .map(|asset| asset.bytes)
+        },
+    )
+    .and_then(|found| found.game_frames());
+    if let Some(frames) = picture {
+        return Some(cameo_from_frames(key, &frames));
+    }
+    render_cameo_file(key, shp_name, assets, palette)
 }
 
 /// One PCX as gamemd's PCX blit6BA580 draws it.
@@ -502,6 +539,38 @@ fn render_native_pcx(image: &PcxFile) -> Option<NativePcxImage> {
     })
 }
 
+/// VERA-only, experimental (docs/picture-model-art.md, "Interface art"): a
+/// PCX a rules key names, or `NAME.png` beside it in the same lookup
+/// (`render::interface_picture`), which needs no PCX: one frame, its game
+/// size `PictureSize=`, else the PCX's, else its own, shrunk to it as
+/// picture art is.
+pub(crate) fn load_interface_pcx(
+    assets: &AssetManager,
+    filename: &str,
+    sizes: PictureSizes<'_>,
+) -> Option<NativePcxImage> {
+    let pcx = load_native_pcx(assets, filename);
+    let shape = pcx.as_ref().map(|image| ArtShape {
+        canvas: [image.width, image.height],
+        frames: 1,
+    });
+    let found = crate::render::interface_picture::find(filename, shape, sizes, false, |name| {
+        ui_art_candidates(assets, name)
+            .next()
+            .map(|asset| asset.bytes)
+    });
+    if let Some(found) = found
+        && let Some(rgba) = found.picture.shrunk_region(0, found.scale, found.canvas)
+    {
+        return Some(NativePcxImage {
+            rgba,
+            width: found.canvas[0],
+            height: found.canvas[1],
+        });
+    }
+    pcx
+}
+
 pub(crate) fn load_native_pcx(assets: &AssetManager, filename: &str) -> Option<NativePcxImage> {
     ui_art_candidates(assets, filename).find_map(|asset| {
         let image = if assets.mod_selected() {
@@ -521,12 +590,18 @@ pub(crate) fn load_native_pcx(assets: &AssetManager, filename: &str) -> Option<N
 /// over the cameo cell, with magenta transparent.
 /// https://ares-developers.github.io/Ares-docs/new/pcxcameos.html
 /// Phobos `MissingCameo=` reaches the same blit when it names a `.pcx`.
+/// `sizes`, for a PCX a superweapon names, also takes `NAME.png` beside it
+/// ([`load_interface_pcx`]).
 fn render_pcx_cameo(
     key: &str,
     filename: &str,
     asset_manager: &AssetManager,
+    sizes: Option<PictureSizes<'_>>,
 ) -> Option<RenderedCameo> {
-    let image = load_native_pcx(asset_manager, filename)?;
+    let image = match sizes {
+        Some(sizes) => load_interface_pcx(asset_manager, filename, sizes)?,
+        None => load_native_pcx(asset_manager, filename)?,
+    };
     // A loaded surface remains selected even if every word is keyed out.
     // Cropping it to None would incorrectly select the legacy SHP instead.
     Some(RenderedCameo {
@@ -583,17 +658,26 @@ fn render_picture_cameo(
             return None;
         }
     };
-    let sprite = frames.sprite(0, crate::render::picture_atlas::HouseColor::Own);
     log::info!("Sidebar picture cameo {key} loaded from {file}");
-    Some(match sprite {
+    Some(cameo_from_frames(key, &frames))
+}
+
+/// Frame 0 of a picture at game pixels as a cameo on its canvas, cropped
+/// to its drawn pixels.
+fn cameo_from_frames(
+    key: &str,
+    frames: &crate::render::picture_atlas::GamePictureFrames,
+) -> RenderedCameo {
+    let canvas = frames.canvas;
+    match frames.sprite(0, None) {
         Some(sprite) => RenderedCameo {
             type_id: key.to_ascii_uppercase(),
             kind: CameoKind::Ordinary,
             rgba: sprite.rgba,
             width: sprite.size[0],
             height: sprite.size[1],
-            canvas_width: CAMEO_CANVAS[0],
-            canvas_height: CAMEO_CANVAS[1],
+            canvas_width: canvas[0],
+            canvas_height: canvas[1],
             crop_x: sprite.origin[0],
             crop_y: sprite.origin[1],
             sharp: Vec::new(),
@@ -606,13 +690,13 @@ fn render_picture_cameo(
             rgba: vec![0; 4],
             width: 1,
             height: 1,
-            canvas_width: CAMEO_CANVAS[0],
-            canvas_height: CAMEO_CANVAS[1],
+            canvas_width: canvas[0],
+            canvas_height: canvas[1],
             crop_x: 0,
             crop_y: 0,
             sharp: Vec::new(),
         },
-    })
+    }
 }
 
 /// Frame 0 of cameo file `file`, with the name the interface language draws
@@ -635,15 +719,20 @@ fn render_named_cameo(
     label: Option<&CameoLabel>,
 ) -> Option<RenderedCameo> {
     ui_art_candidates(assets, file).find_map(|asset| {
-        let shape = if assets.mod_selected() {
-            decode_ui_shp(asset.bytes).ok()?
-        } else {
-            ShpFile::from_bytes(asset.bytes).ok()?
-        };
+        let shape = decode_cameo_bytes(assets, asset.bytes)?;
         let cameo = render_labelled_shape(key, shape, palette, label)?;
         log::debug!("Sidebar cameo {key} loaded from {file} in {}", asset.source);
         Some(cameo)
     })
+}
+
+/// A cameo SHP's bytes, decoded with a mod's UI bounds when one is selected.
+fn decode_cameo_bytes(assets: &AssetManager, bytes: &[u8]) -> Option<ShpFile> {
+    if assets.mod_selected() {
+        decode_ui_shp(bytes).ok()
+    } else {
+        ShpFile::from_bytes(bytes).ok()
+    }
 }
 
 /// Frame 0 of a cameo SHP on its full canvas, keyed by `key`.
@@ -740,7 +829,7 @@ fn render_missing_cameo(
     }
     ui_art_candidates(asset_manager, XXICON).next()?;
     if lower.contains(".pcx")
-        && let Some(cameo) = render_pcx_cameo(key, name, asset_manager)
+        && let Some(cameo) = render_pcx_cameo(key, name, asset_manager, None)
     {
         log::debug!("Sidebar cameo {key} fell back to {name}");
         return Some(cameo);
@@ -1614,9 +1703,46 @@ mod tests {
         wide.extend_from_slice(&bytes[bytes.len() - 769..]);
         dir.write("wide.pcx", &wide);
         let assets = AssetManager::from_loose_root_for_test(dir.path());
-        let cameo = super::render_pcx_cameo("TEST", "wide.pcx", &assets).unwrap();
+        let cameo = super::render_pcx_cameo("TEST", "wide.pcx", &assets, None).unwrap();
         assert_eq!([cameo.width, cameo.height], [64, 48]);
         assert_eq!([cameo.canvas_width, cameo.canvas_height], [60, 48]);
+    }
+
+    /// VERA-only, experimental (docs/picture-model-art.md, "Interface
+    /// art"): `NAME.png` beside a PCX a rules key names is one frame, the
+    /// PCX's size times a whole scale, shrunk to it; with no PCX
+    /// `PictureSize=` of the section `NAME` sizes it, else its own size.
+    #[test]
+    fn a_picture_beside_a_named_pcx_takes_its_size_or_picture_size() {
+        use crate::{
+            assets::asset_manager::AssetManager, map::source::test_support::TestDirectory,
+            render::interface_picture::PictureSizes, rules::ini_parser::IniFile,
+        };
+        let dir = TestDirectory::new("interface-pcx-picture");
+        write_pcx(&dir, "side.pcx", [20, 40, 60]);
+        let side = super::load_native_pcx(
+            &AssetManager::from_loose_root_for_test(dir.path()),
+            "side.pcx",
+        )
+        .unwrap();
+        let red = |width: u32, height: u32| {
+            let frame = [255u8, 0, 0, 255].repeat((width * height) as usize);
+            crate::assets::picture_file::encode_frames(width, height, &[frame]).unwrap()
+        };
+        dir.write("side.png", &red(side.width * 2, side.height * 2));
+        dir.write("lone.png", &red(8, 4));
+        let assets = AssetManager::from_loose_root_for_test(dir.path());
+        let none = PictureSizes::None;
+        let image = super::load_interface_pcx(&assets, "side.pcx", none).unwrap();
+        assert_eq!([image.width, image.height], [side.width, side.height]);
+        assert_eq!(image.rgba[..4], [255, 0, 0, 255], "the picture's pixels");
+        let image = super::load_interface_pcx(&assets, "lone.pcx", none).unwrap();
+        assert_eq!([image.width, image.height], [8, 4], "1x at its own size");
+        let art = IniFile::from_str("[LONE]\nPictureSize=4,2\n");
+        let image =
+            super::load_interface_pcx(&assets, "lone.pcx", PictureSizes::Ini(&art)).unwrap();
+        assert_eq!([image.width, image.height], [4, 2], "2x of PictureSize=");
+        assert!(super::load_interface_pcx(&assets, "absent.pcx", none).is_none());
     }
 
     #[test]

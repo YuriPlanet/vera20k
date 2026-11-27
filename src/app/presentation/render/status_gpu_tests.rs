@@ -40,7 +40,13 @@ fn wheel_zoom_health_pixels(type_name: &str, category: EntityCategory) {
     let format = wgpu::TextureFormat::Bgra8UnormSrgb;
     let size = [256, 256];
     let mut batch = BatchRenderer::new_with_device(&gpu.device, &gpu.queue, format);
-    let overlay = SelectionOverlay::new_on_device(&gpu.device, &gpu.queue, &batch, Some(&assets));
+    let overlay = SelectionOverlay::new_on_device(
+        &gpu.device,
+        &gpu.queue,
+        &batch,
+        Some(&assets),
+        crate::render::interface_picture::PictureSizes::None,
+    );
     let mut sim = Simulation::new();
     let owner = sim.intern("Americans");
     let object = retail.rules.object(type_name).unwrap();
@@ -278,7 +284,13 @@ fn a_selected_mobile_shield_background_keeps_its_pipbrd_binding() {
     let format = wgpu::TextureFormat::Bgra8UnormSrgb;
     let size = [128, 96];
     let mut batch = BatchRenderer::new_with_device(&gpu.device, &gpu.queue, format);
-    let overlay = SelectionOverlay::new_on_device(&gpu.device, &gpu.queue, &batch, Some(&assets));
+    let overlay = SelectionOverlay::new_on_device(
+        &gpu.device,
+        &gpu.queue,
+        &batch,
+        Some(&assets),
+        crate::render::interface_picture::PictureSizes::None,
+    );
     let mut sim = Simulation::new();
     let owner = sim.intern("Americans");
     sim.houses_mut_for_test()
@@ -418,7 +430,13 @@ fn bracket_delta_moves_the_health_bar_but_not_the_scale_pips() {
         &gpu.queue,
         wgpu::TextureFormat::Bgra8UnormSrgb,
     );
-    let overlay = SelectionOverlay::new_on_device(&gpu.device, &gpu.queue, &batch, Some(&assets));
+    let overlay = SelectionOverlay::new_on_device(
+        &gpu.device,
+        &gpu.queue,
+        &batch,
+        Some(&assets),
+        crate::render::interface_picture::PictureSizes::None,
+    );
     let strip = |delta: i32| {
         let retail = crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch(
             "XMP03T4.MAP",
@@ -507,7 +525,13 @@ fn a_hovered_enemy_mirage_worn_as_terrain_draws_no_health_strip() {
         &gpu.queue,
         wgpu::TextureFormat::Bgra8UnormSrgb,
     );
-    let overlay = SelectionOverlay::new_on_device(&gpu.device, &gpu.queue, &batch, Some(&assets));
+    let overlay = SelectionOverlay::new_on_device(
+        &gpu.device,
+        &gpu.queue,
+        &batch,
+        Some(&assets),
+        crate::render::interface_picture::PictureSizes::None,
+    );
     let center = crate::util::lepton::absolute_leptons_to_screen(20 * 256 + 128, 20 * 256 + 128, 0);
     let health_fills = |name: &str, selected: bool| {
         let mut sim = Simulation::new();
@@ -660,7 +684,13 @@ fn native_self_heal_draw_fault_order() {
         &gpu.queue,
         wgpu::TextureFormat::Bgra8UnormSrgb,
     );
-    let overlay = SelectionOverlay::new_on_device(&gpu.device, &gpu.queue, &batch, Some(&assets));
+    let overlay = SelectionOverlay::new_on_device(
+        &gpu.device,
+        &gpu.queue,
+        &batch,
+        Some(&assets),
+        crate::render::interface_picture::PictureSizes::None,
+    );
     let mut checked = 0;
     for row in native["divide_controls"].as_array().unwrap() {
         if row["path"] != "draw" {
@@ -881,8 +911,13 @@ fn native_building_status_labels(fixture: &'static str) {
         wgpu::TextureFormat::Rgba8UnormSrgb,
     ] {
         let mut batch = BatchRenderer::new_with_device(&gpu.device, &gpu.queue, format);
-        let overlay =
-            SelectionOverlay::new_on_device(&gpu.device, &gpu.queue, &batch, Some(&assets));
+        let overlay = SelectionOverlay::new_on_device(
+            &gpu.device,
+            &gpu.queue,
+            &batch,
+            Some(&assets),
+            crate::render::interface_picture::PictureSizes::None,
+        );
         let fnt = crate::assets::fnt_file::FntFile::from_bytes(
             assets.get_ref("GAME.FNT").expect("physical GAME.FNT"),
         )
@@ -1242,8 +1277,13 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
         wgpu::TextureFormat::Rgba8UnormSrgb,
     ] {
         let mut batch = BatchRenderer::new_with_device(&gpu.device, &gpu.queue, format);
-        let overlay =
-            SelectionOverlay::new_on_device(&gpu.device, &gpu.queue, &batch, Some(&assets));
+        let overlay = SelectionOverlay::new_on_device(
+            &gpu.device,
+            &gpu.queue,
+            &batch,
+            Some(&assets),
+            crate::render::interface_picture::PictureSizes::None,
+        );
         let mut pool = InstanceBufferPool::new();
         let font = native.get("native_font").map(|_| {
             let fnt = crate::assets::fnt_file::FntFile::from_bytes(
@@ -2332,6 +2372,7 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                         fenced.extras_runs.push(ObjectExtrasRun::Status {
                             parent,
                             bomb_clock: None,
+                            bomb_image: None,
                             wrench: None,
                             power_off: None,
                             rank: *rank,

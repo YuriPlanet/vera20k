@@ -93,30 +93,38 @@ pub struct PictureFacts {
 /// The largest `PictureSize=` side.
 const PICTURE_SIZE_MAX: i32 = 4096;
 
-/// `section`'s [`PictureDecl`], if it declares `Picture=`.
-fn parse_picture_decl(section_name: &str, section: &IniSection) -> Option<PictureDecl> {
+/// `section`'s `PictureSize=W,H`, each side 1 to [`PICTURE_SIZE_MAX`]; a
+/// value out of range is reported and read as none. The one reader of the
+/// key: a `Picture=` section's canvas ([`PictureDecl::size`]) and the
+/// canvas of the interface picture named by the section
+/// (`render::interface_picture`) both come from it.
+pub fn read_picture_size(section_name: &str, section: &IniSection) -> Option<[i32; 2]> {
+    section.read_name("PictureSize", 0x40)?;
+    let size = section
+        .read_int_fields_complete::<2>("PictureSize", 0x40)
+        .filter(|size| {
+            size.iter()
+                .all(|side| (1..=PICTURE_SIZE_MAX).contains(side))
+        });
+    if size.is_none() {
+        log::warn!(
+            "[{section_name}] PictureSize= needs two sizes from 1 to {PICTURE_SIZE_MAX}; \
+             the picture's own size is used"
+        );
+        crate::rules::art_problems::report(
+            section_name,
+            "PictureSize=",
+            &format!("needs two sizes from 1 to {PICTURE_SIZE_MAX}"),
+            "the picture's own size is used",
+        );
+    }
+    size
+}
+
+/// `section`'s [`PictureDecl`], if it declares `Picture=`; `size` is its
+/// [`read_picture_size`].
+fn parse_picture_decl(section: &IniSection, size: Option<[i32; 2]>) -> Option<PictureDecl> {
     let file = section.read_name("Picture", 0x104)?.to_owned();
-    let size = section.read_name("PictureSize", 0x40).and_then(|_| {
-        let size = section
-            .read_int_fields_complete::<2>("PictureSize", 0x40)
-            .filter(|size| {
-                size.iter()
-                    .all(|side| (1..=PICTURE_SIZE_MAX).contains(side))
-            });
-        if size.is_none() {
-            log::warn!(
-                "[{section_name}] PictureSize= needs two sizes from 1 to {PICTURE_SIZE_MAX}; \
-                 the picture's own size is used"
-            );
-            crate::rules::art_problems::report(
-                section_name,
-                "PictureSize=",
-                &format!("needs two sizes from 1 to {PICTURE_SIZE_MAX}"),
-                "the picture's own size is used",
-            );
-        }
-        size
-    });
     Some(PictureDecl { file, size })
 }
 
@@ -169,6 +177,10 @@ pub struct ArtEntry {
     pub image: Option<String>,
     /// VERA-only, experimental: `Picture=` and `PictureSize=`.
     pub picture: Option<PictureDecl>,
+    /// VERA-only, experimental: `PictureSize=`, with or without `Picture=`:
+    /// also the canvas of the interface picture this section is named for
+    /// ([`ArtRegistry::picture_size`]).
+    pub(crate) picture_size: Option<[i32; 2]>,
     /// VERA-only, experimental: `Model=` and `ModelSize=`.
     pub model: Option<ModelDecl>,
     /// Sidebar cameo/image override from `Cameo=`.
@@ -1568,7 +1580,8 @@ impl ArtRegistry {
             // (`0x0045F945`, `char[64]`), TechnoType art `Cameo=`/`AltCameo=`
             // (`0x00716C9C`, `0x00716D3F`, `char[256]`).
             let image: Option<String> = section.read_name("Image", 0x40).map(str::to_owned);
-            let picture = parse_picture_decl(section_name, section);
+            let picture_size = read_picture_size(section_name, section);
+            let picture = parse_picture_decl(section, picture_size);
             let model = parse_model_decl(section_name, section);
             let cameo: Option<String> = section.read_name("Cameo", 0x100).map(str::to_owned);
             let alt_cameo: Option<String> = section.read_name("AltCameo", 0x100).map(str::to_owned);
@@ -1756,6 +1769,7 @@ impl ArtRegistry {
                 ArtEntry {
                     image,
                     picture,
+                    picture_size,
                     model,
                     cameo,
                     alt_cameo,
@@ -1863,6 +1877,13 @@ impl ArtRegistry {
     /// Look up art entry for an image ID (case-insensitive).
     pub fn get(&self, image_id: &str) -> Option<&ArtEntry> {
         folded_entry_name(&self.entry_names, image_id).and_then(|name| self.entries.get(name))
+    }
+
+    /// VERA-only, experimental (`docs/picture-model-art.md`, "Interface
+    /// art"): `PictureSize=` of the section named `section`
+    /// (case-insensitive), with or without `Picture=`.
+    pub fn picture_size(&self, section: &str) -> Option<[i32; 2]> {
+        self.get(section)?.picture_size
     }
 
     /// Native Foundation474DA0 uses exact section/key identity. The cached

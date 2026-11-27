@@ -734,9 +734,15 @@ pub(crate) fn finish_presentation_assets(
             batch,
             asset_manager,
             rules.ares_mouse_cursors(),
+            crate::render::interface_picture::PictureSizes::Art(rules.art()),
         )
     } else {
-        crate::render::cursor_atlas::build_software_cursor(gpu, batch, asset_manager)
+        crate::render::cursor_atlas::build_software_cursor(
+            gpu,
+            batch,
+            asset_manager,
+            crate::render::interface_picture::PictureSizes::Art(rules.art()),
+        )
     };
     if software_cursor.is_some() {
         log::info!("Software cursor loaded from mouse.sha — OS cursor will be hidden");

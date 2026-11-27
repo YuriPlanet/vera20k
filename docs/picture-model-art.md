@@ -14,9 +14,11 @@ follows; each section that is built says so in [Status](#status).
   game with retail data is unchanged, frame for frame and pixel for pixel.
 
 Non-goals for now: the sidebar's own art, the shell UI, the remaining
-hard-coded interface SHPs (shroud, `GRFXTXT`), superweapon cameos, skinned or
-morphing models (see [Not covered](#not-covered)). The cursors, pips, health
-bars, status markers, placement grid and beacons take a picture by file name
+hard-coded interface SHPs (shroud, `GRFXTXT`), skinned or morphing models
+(see [Not covered](#not-covered)). The cursors, pips, health bars, status
+markers, placement grid, beacons and the interface files rules keys name
+(Ivan bomb images, insignia, DigitalDisplay shapes, superweapon cameos and
+sidebar PCXs) take a picture by file name
 ([Interface art](#interface-art-namepng)).
 
 ## The switch
@@ -29,7 +31,8 @@ The art section decides, nothing else:
   never looks for a picture or a model for it, by key or by file name.
 
 The one exception is interface art no section names, which only draws and
-never reaches the simulation: its pictures are found by file name
+never reaches the simulation: its pictures are found by file name and
+sized by `PictureSize=` of the section the file's stem names
 ([Interface art](#interface-art-namepng)).
 
 There is no player option and no build feature. The simulation takes some
@@ -173,32 +176,75 @@ not change. Without a mask the picture has no house colour and no unlit pixels.
 
 ### Interface art: `NAME.png`
 
-VERA-only, experimental, presentation only. The hard-coded interface SHPs
-have no art section, so a picture for one is declared by its file name:
-`NAME.png` beside `NAME.shp` (or `NAME.sha`), found through the SHP's own
-lookup (a loose file in the game folder or a mod, else the archives; for the
+VERA-only, experimental, presentation only. The interface's SHPs and PCXs
+have no art section: some are hard-coded names, the rest are named by rules
+keys. A picture for one is declared by its file name: `NAME.png` beside
+`NAME.shp` (or `NAME.sha`, `NAME.pcx`), found through that file's own lookup
+(a loose file in the game folder or a mod, else the archives; for the
 beacons, the side MIX group the SHP comes from). The engine looks for it once
-when the SHP loads (the startup menu, each match), never per frame; it is not
-in the config hash and not part of the simulation, so players may differ.
-One owner reads and checks it for every file (`render::interface_picture`).
+when the file loads (the startup menu, each match), never per frame; it is
+not in the config hash and not part of the simulation, so players may
+differ. One owner reads, sizes and checks it for every file
+(`render::interface_picture`).
+
+The picture needs no SHP or PCX. Its game size, in this order:
+
+1. `PictureSize=W,H` in the art section named by the file's stem (`[PIPS]`
+   for `pips.png`, `[MOUSE]` for `mouse.png`, `[BOMBX]` for a file named by
+   `IvanBomb.Image=BOMBX`). It is the same key an art section's `Picture=`
+   takes; in a section that already has one (an anim's, say) it means the
+   same canvas. The picture is then that size times one whole scale `k`, 1
+   to 8, on both axes.
+2. Else the SHP's or PCX's canvas, the picture again `k` times it.
+3. Else, with neither, the picture's own size, at 1x.
+
+The frame count is the SHP's when there is one (the picture must have it;
+a PCX is one frame), else the APNG's (`acTL`; a plain PNG is one frame).
+Without an SHP the picture also gives what the SHP header did: each frame
+is cropped to its drawn pixels as a stored SHP frame is and placed on the
+canvas as a full-canvas frame would be (centred where the draw centres).
+The palette indices the draws read (the A plane, the self-heal index mask)
+come from the picture's drawn pixels (index 1, 240 for the mask's unlit
+ones), as for any picture. Above 1x (`k` > 1) the zoomed draw takes the
+picture's own pixels (below); at 1x, a PNG alone with no `PictureSize=`
+included, it draws at game pixels only. Declaring `PictureSize=`, or
+shipping a same-size placeholder SHP, gives it the HD copy.
 
 | What | Rule |
 |---|---|
-| Name | `NAME.png` beside `NAME.shp`; `NAME.mask.png` beside it where house colour applies (beacons), red at 128 or more marking house colour, green unlit, as any mask. |
-| Frames | An APNG (blend and dispose as any picture) with exactly the SHP's frame count, frame N for SHP frame N. The APNG's delays are ignored: timing stays the SHP's. |
-| Size | Each frame is the SHP's canvas times one whole scale `k`, 1 to 8, on both axes (`k * width` x `k * height`); whole-canvas frames. |
+| Name | `NAME.png` beside `NAME.shp`/`.sha`/`.pcx`; `NAME.mask.png` beside it where house colour applies (beacons), red at 128 or more marking house colour, green unlit, as any mask. |
+| Frames | An APNG (blend and dispose as any picture); with an SHP exactly its frame count, frame N for SHP frame N. The APNG's delays are ignored: timing stays the SHP's, or the draw's own. |
+| Size | As above: `PictureSize=`, else the file's canvas, times `k` 1 to 8; else the picture's own size at 1x. Whole-canvas frames. |
 | Pixels | Straight RGBA. |
+
+Hard-coded names:
 
 | File | Drawn by | Frames (retail) | Palette effects kept |
 |---|---|---|---|
 | `mouse.png` | cursors (`render::cursor_atlas`) | 517 | none (no mask) |
-| `pips.png`, `pips2.png`, `pipbrd.png` | health bars, rank, self-heal, cargo and mind-control pips (`render::selection_overlay`) | as the SHPs | the A plane where the world draw reads it (PIPBRD, rank); the self-heal pulse's index mask |
+| `pips.png`, `pips2.png`, `pipbrd.png` | health bars, rank, self-heal, cargo, mind-control and Phobos shield pips (`render::selection_overlay`) | as the SHPs | the A plane where the world draw reads it (PIPBRD, rank); the self-heal pulse's index mask |
 | `bombcurs.png`, `wrench.png`, `poweroff.png`, `talkbubl.png` | Ivan bomb clock, repair wrench, Ares power-off, talk bubble | 13, 7, 7, as the SHP | the A plane (bomb, wrench, power-off) |
 | `place.png` | the placement grid | as the SHP | the plain Convert at brightness 1000 |
 | `pbeacon.png`, `rdrbeacn.png` | tactical and radar beacons (`render::beacon_art`) | as the SHPs | house colour through the mask, each row's ramp |
 
+Files rules keys name (each in the key's own extension's cases):
+
+| Key | File | Drawn as |
+|---|---|---|
+| Ares `IvanBomb.Image=` (WeaponTypes) | `NAME.png` beside `NAME.shp` | the bomb clock, MOUSEPAL's draw |
+| Phobos `Insignia=` and its variants, `[InsigniaTypes]`; Ares `Insignia=` | beside the insignia SHP | the rank insignia |
+| Phobos DigitalDisplay `Shape=` | beside the shape SHP | the digits, each frame placed as `PrintShape` places a stored frame |
+| `SidebarImage=` (SuperWeaponTypes, a rules key without an art section) | beside `NAME.shp` | the superweapon cameo, frame 0, at 1x |
+| Ares `SidebarPCX=` (SuperWeaponTypes) | beside the PCX | the superweapon cameo, one frame, at 1x |
+| Phobos `SuperWeaponSidebar.*PCX=` (`[Side]`) | beside each PCX | the superweapon sidebar's buttons and column, one frame, at 1x |
+
+The cameos and the sidebar have no zoomed draw, so their pictures draw at
+game pixels (shrunk by the coverage rule below) whatever their scale.
+
 When a picture fits, it replaces the SHP's pixels everywhere that SHP is
-drawn; frame numbers, offsets, hotspots, animation and size stay the SHP's.
+drawn; frame numbers and animation stay the SHP's, and offsets, hotspots
+and centring take the game size (the SHP's canvas unless `PictureSize=`
+says otherwise).
 
 - **Placement** is the game pixels' (`GamePictureFrames::stream`): a game
   pixel is drawn when half its picture pixels are. Each frame is cropped to
@@ -224,8 +270,10 @@ drawn; frame numbers, offsets, hotspots, animation and size stay the SHP's.
 
 A picture that is unreadable, has another frame count or another size (or a
 mask that does not match it) is reported in the game
-(`[NAME.shp] NAME.png: ...`) and the SHP's own pixels are drawn. Without the
-file nothing changes: no other file is read and every image is what it was.
+(`[NAME.shp] NAME.png: ...`) and the SHP's or PCX's own pixels are drawn, or
+nothing without one. Without the file nothing changes: no other file is read
+and every image is what it was. An invalid `PictureSize=` is reported and
+read as none.
 
 ### Model: `NAME.glb`
 
@@ -654,13 +702,15 @@ Art that still only comes from SHP, PCX or TMP, and why:
   the original parts that [interface-layout.md](interface-layout.md)
   reserves); `GRFXTXT` and the shroud could take the `NAME.png` rule
   ([Interface art](#interface-art-namepng)) on their own draw paths.
-- Interface strips loaded from rules keys (Ares `IvanBomb.Image`, Phobos
-  and Ares insignia, Phobos DigitalDisplay shapes) keep their SHPs: the
-  `NAME.png` rule covers only the hard-coded names.
-- Superweapon cameos (`SidebarImage=` is a rules key without an art
-  section) and Phobos `SuperWeaponSidebar` PCXs, Insignia, DigitalDisplay
-  and shield pips (rules keys naming files): a picture form of those keys
-  is a follow-up.
+- Phobos shield `Pips.Background=` and the `[AudioVisual] Pips.Shield*`
+  files: VERA reads the keys but draws shield bars from the stock PIPS and
+  PIPBRD strips (whose pictures apply), so there is no file of its own to
+  stand beside yet.
+- Tiles keep their TMP (`PictureFileName=` replaces only the colour): the
+  TMP carries the cells' simulation data (height, ramp, land type), which a
+  picture does not.
+- A techno's `Cameo=` SHP and Ares `CameoPCX=` take no `NAME.png` beside
+  them: its art section's `CameoPicture=` declares the cameo picture.
 - Lasers, electric bolts, rad beams, waves and the other effects drawn in
   code have no image to replace. The other effect art
   (building and unit anims, weather, chrono and iron curtain anims,
@@ -757,6 +807,21 @@ current: say what was done, what was not, and what comes next.
   shadow pairs), `render::sidebar_cameo_atlas` (2x cameo crop), and the
   existing `render::sprite_atlas`, `render::bridge_atlas`, `rules::art_data`
   groups, with retail `ini/` and `RA2_DIR`; `check --features wasm` builds.
+- Interface art for rules-key files and with no SHP: `NAME.png` beside the
+  file an Ares `IvanBomb.Image=`, insignia, Phobos DigitalDisplay `Shape=`,
+  `SidebarImage=`, Ares `SidebarPCX=` or Phobos `SuperWeaponSidebar.*PCX=`
+  names; every interface picture sized by `PictureSize=` of the section its
+  stem names, else the file's canvas, else its own size at 1x, and drawn
+  with no SHP or PCX present (frames, crop and centring from the picture).
+  The Ivan bomb clock now binds the `IvanBomb.Image` strip it was cut from
+  (it bound BOMBCURS's texture before), and the zoomed draw copies the
+  insignia, Ares bomb and DigitalDisplay strips' HD twins. `[General]
+  Parachute=`/`VehicleParachute=` and `WebbedInfantry=` AnimTypes that
+  declare `Picture=` count and draw it with no SHP. Focused tests:
+  `render::interface_picture` (size precedence, PNG-only frames and size,
+  PCX one frame), `render::sidebar_cameo_atlas` (picture beside a named PCX,
+  PNG-only with and without `PictureSize=`), `render::sprite_atlas` (a
+  picture building and parachute with no SHP). Not yet seen in a match.
 - Interface art (`NAME.png`, branch `feature/hd-cursor`): written with
   focused tests in `render::interface_picture` (fit rule, lookup by name,
   reported misfit), `render::cursor_atlas` (smooth window image of the

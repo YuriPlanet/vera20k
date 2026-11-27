@@ -563,6 +563,7 @@ mod tests {
     fn make_art_entry(walk: Option<u16>, firing: Option<u16>) -> ArtEntry {
         ArtEntry {
             picture: None,
+            picture_size: None,
             model: None,
             image: None,
             cameo: None,

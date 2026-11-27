@@ -698,11 +698,12 @@ const CURSOR_DEFS: &[(CursorId, usize, usize, u64, CursorHotspot)] = &[
 ];
 
 /// The art every cursor draws from: MOUSE.SHA, and its pixels through
-/// MOUSEPAL.PAL or from the picture beside it ([`MouseArt`]).
-fn load_mouse_shape(asset_manager: &AssetManager) -> Option<MouseArt> {
-    // Init_Game 0x0052BA60 converts MOUSEPAL.PAL like every palette load.
-    let palette = ui_art_candidates(asset_manager, "mousepal.pal")
-        .find_map(|asset| Palette::from_bytes(asset.bytes).ok())?;
+/// MOUSEPAL.PAL or from the picture beside it ([`MouseArt`]); the picture
+/// needs no MOUSE.SHA. `sizes` gives its `PictureSize=`.
+fn load_mouse_shape(
+    asset_manager: &AssetManager,
+    sizes: crate::render::interface_picture::PictureSizes<'_>,
+) -> Option<MouseArt> {
     // MouseClass::One_Time (0x005BDF30) loads MOUSE.SHA and nothing else;
     // MouseClass__FreeCursorShapes (0x005BE940) frees it at shutdown, which
     // dropping this owner covers.
@@ -714,54 +715,71 @@ fn load_mouse_shape(asset_manager: &AssetManager) -> Option<MouseArt> {
             }
             log::debug!("Mouse cursor shape resolved from {}", asset.source);
             Some(shp)
-        })?
+        })
     } else if let Some(load) = asset_manager.load_file_from_mix("mouse.sha") {
-        ShpFile::from_bytes(&load.bytes).ok()?
+        ShpFile::from_bytes(&load.bytes).ok()
     } else {
-        ShpFile::from_bytes(asset_manager.get_ref("mouse.sha")?).ok()?
-    };
-    if shp.frames.is_empty() {
-        return None;
+        asset_manager
+            .get_ref("mouse.sha")
+            .and_then(|bytes| ShpFile::from_bytes(bytes).ok())
     }
+    .filter(|shp| !shp.frames.is_empty());
+    // VERA-only, experimental (`docs/picture-model-art.md`, "Interface
+    // art"): `mouse.png` beside mouse.sha (`render::interface_picture`).
+    let picture = crate::render::interface_picture::find(
+        "mouse.sha",
+        shp.as_ref()
+            .map(crate::render::interface_picture::ArtShape::of_shp),
+        sizes,
+        false,
+        |name| asset_manager.get_ref(name),
+    );
+    if let Some(found) = picture {
+        return Some(MouseArt {
+            canvas: found.canvas,
+            frames: found.picture.frames.len(),
+            pixels: MousePixels::Picture {
+                picture: found.picture,
+                scale: found.scale,
+            },
+        });
+    }
+    let shp = shp?;
+    // Init_Game 0x0052BA60 converts MOUSEPAL.PAL like every palette load.
+    let palette = ui_art_candidates(asset_manager, "mousepal.pal")
+        .find_map(|asset| Palette::from_bytes(asset.bytes).ok())?;
     maybe_export_mouse_sheet(&shp, &palette);
-    let pixels = mouse_pixels(asset_manager, &shp, palette);
-    Some(MouseArt { shp, pixels })
+    Some(MouseArt {
+        canvas: [u32::from(shp.width), u32::from(shp.height)],
+        frames: shp.frames.len(),
+        pixels: MousePixels::Shp { shp, palette },
+    })
 }
 
-/// VERA-only, experimental (`docs/picture-model-art.md`, "Interface art"):
-/// mouse.sha's pixels from `mouse.png` beside it when one fits
-/// (`render::interface_picture`), else its own.
-fn mouse_pixels(asset_manager: &AssetManager, shp: &ShpFile, palette: Palette) -> MousePixels {
-    let found = crate::render::interface_picture::find("mouse.sha", shp, false, |name| {
-        asset_manager.get_ref(name)
-    });
-    match found {
-        Some(found) => MousePixels::Picture {
-            picture: found.picture,
-            scale: found.scale,
-        },
-        None => MousePixels::Shp(palette),
-    }
-}
-
-/// mouse.sha, whose canvas sets every cursor's size and hotspot, and the
-/// pixels the cursors draw.
+/// The cursors' canvas (every cursor's size and hotspot: mouse.sha's, or
+/// the picture's game size), frame count and pixels.
 pub(crate) struct MouseArt {
-    shp: ShpFile,
+    canvas: [u32; 2],
+    frames: usize,
     pixels: MousePixels,
 }
 
 enum MousePixels {
     /// mouse.sha's own, through MOUSEPAL.PAL.
-    Shp(Palette),
-    /// `mouse.png` ([`mouse_pixels`]): frame for frame mouse.sha's, `scale`
-    /// picture pixels to a mouse.sha pixel.
+    Shp { shp: ShpFile, palette: Palette },
+    /// `mouse.png`: `scale` picture pixels to a game pixel.
     Picture { picture: PictureFrames, scale: u32 },
 }
 
 impl MouseArt {
     fn canvas(&self) -> (u32, u32) {
-        (u32::from(self.shp.width), u32::from(self.shp.height))
+        (self.canvas[0], self.canvas[1])
+    }
+
+    /// The canvas as an SHP header's words, which the hotspots take.
+    fn canvas_words(&self) -> (u16, u16) {
+        let word = |side: u32| u16::try_from(side).unwrap_or(u16::MAX);
+        (word(self.canvas[0]), word(self.canvas[1]))
     }
 
     /// Frame `frame` for the sprite, drawn at the canvas size: the SHP's
@@ -773,8 +791,8 @@ impl MouseArt {
         frame: usize,
     ) -> Option<BatchTexture> {
         match &self.pixels {
-            MousePixels::Shp(palette) => {
-                let rgba = frame_to_canvas_rgba(&self.shp, frame, palette).ok()?;
+            MousePixels::Shp { shp, palette } => {
+                let rgba = frame_to_canvas_rgba(shp, frame, palette).ok()?;
                 let (width, height) = self.canvas();
                 Some(batch.create_texture(gpu, &rgba, width, height))
             }
@@ -800,7 +818,7 @@ impl MouseArt {
     fn badge(&self, frame: usize) -> Option<PlanningBadge> {
         let (width, height) = self.canvas();
         let rgba = match &self.pixels {
-            MousePixels::Shp(palette) => frame_to_canvas_rgba(&self.shp, frame, palette).ok()?,
+            MousePixels::Shp { shp, palette } => frame_to_canvas_rgba(shp, frame, palette).ok()?,
             MousePixels::Picture { picture, scale } => {
                 picture.shrunk_region(frame, *scale, [width, height])?
             }
@@ -820,8 +838,8 @@ impl MouseArt {
         let canvas = self.canvas();
         let drawn = drawn_size(canvas, scale);
         let pixels = match &self.pixels {
-            MousePixels::Shp(palette) => {
-                let rgba = frame_to_canvas_rgba(&self.shp, frame, palette).ok()?;
+            MousePixels::Shp { shp, palette } => {
+                let rgba = frame_to_canvas_rgba(shp, frame, palette).ok()?;
                 nearest_resample(&rgba, canvas, scale)
             }
             MousePixels::Picture { picture, .. } => smooth_resample(
@@ -834,12 +852,14 @@ impl MouseArt {
     }
 }
 
+/// `sizes` gives `mouse.png`'s `PictureSize=` (`render::interface_picture`).
 pub(crate) fn build_software_cursor(
     gpu: &GpuContext,
     batch: &BatchRenderer,
     asset_manager: &AssetManager,
+    sizes: crate::render::interface_picture::PictureSizes<'_>,
 ) -> Option<SoftwareCursor> {
-    let art = load_mouse_shape(asset_manager)?;
+    let art = load_mouse_shape(asset_manager, sizes)?;
 
     let mut sequences: HashMap<CursorId, SoftwareCursorSequence> = HashMap::new();
     for &(id, start, count, interval_ms, hotspot) in CURSOR_DEFS {
@@ -889,12 +909,13 @@ fn build_cursor_sequence(
     Some(SoftwareCursorSequence {
         frames,
         interval_ms,
-        hotspot: resolve_hotspot(hotspot, &art.shp),
+        hotspot: resolve_hotspot(hotspot, art),
     })
 }
 
-fn resolve_hotspot(hotspot: CursorHotspot, shp: &ShpFile) -> [f32; 2] {
-    hotspot_offset(hotspot, shp.width, shp.height)
+fn resolve_hotspot(hotspot: CursorHotspot, art: &MouseArt) -> [f32; 2] {
+    let (width, height) = art.canvas_words();
+    hotspot_offset(hotspot, width, height)
 }
 
 /// `Set_Mouse_Cursor_Shape` (`0x005BDC80`) decodes the record's two hotspot
@@ -929,15 +950,15 @@ fn build_cursor_frame(
     art: &MouseArt,
     frame_idx: usize,
 ) -> Option<SoftwareCursorFrame> {
-    if frame_idx >= art.shp.frames.len() {
+    if frame_idx >= art.frames {
         return None;
     }
     let texture = art.texture(gpu, batch, frame_idx)?;
     Some(SoftwareCursorFrame {
         shp_frame: frame_idx,
         texture,
-        width: art.shp.width as f32,
-        height: art.shp.height as f32,
+        width: art.canvas[0] as f32,
+        height: art.canvas[1] as f32,
     })
 }
 
@@ -1270,7 +1291,8 @@ mod tests {
     #[test]
     fn a_picture_cursor_image_resamples_its_frame_to_the_shp_size() {
         let art = MouseArt {
-            shp: crate::render::interface_picture::test_shp(2, 1, 2),
+            canvas: [2, 1],
+            frames: 2,
             pixels: MousePixels::Picture {
                 picture: two_frame_picture(),
                 scale: 2,

@@ -1383,10 +1383,8 @@ pub fn compute_overlay_radar_colors(
             overlay_registry
                 .flags(overlay_id)
                 .and_then(|flags| flags.cell_anim.as_deref())
-                .and_then(|anim| {
-                    art_registry
-                        .resolve_declared_picture(anim, &art_registry.resolve_anim_image_id(anim))
-                })
+                // An AnimType's picture is its own section's, as it draws.
+                .and_then(|anim| art_registry.resolve_declared_picture(anim, ""))
         } else {
             overlay_registry.declared_picture(name, art_registry)
         };
