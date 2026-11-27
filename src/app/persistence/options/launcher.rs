@@ -33,6 +33,7 @@ fn stored_box(profile: &mut RetailOptionsProfile, id: C) -> Option<&mut bool> {
         C::YrOriginalStyle => &mut profile.yr_original_style,
         C::ShiftQueue => &mut profile.shift_queue,
         C::AutoRepair => &mut profile.auto_repair,
+        #[cfg(target_os = "android")]
         C::Ra2Mode => &mut profile.ra2_mode,
         C::MouseWheelZoom => &mut profile.mouse_wheel_zoom,
         C::RightClickOrders => &mut profile.right_click_orders,
