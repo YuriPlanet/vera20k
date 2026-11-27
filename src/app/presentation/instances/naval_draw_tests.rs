@@ -105,6 +105,58 @@ fn visible_ground_shadow_keeps_high_aircraft_in_the_draw_plan() {
 }
 
 #[test]
+fn a_ships_rolled_hull_and_turret_turn_together_and_grapple_snaps() {
+    use crate::sim::components::DriveCoord;
+    use crate::sim::game_entity::GameEntity;
+    use crate::sim::movement::locomotor::LocomotorState;
+    let mut ship = GameEntity::test_default(8, "DEST", "Americans", 10, 10);
+    ship.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Ship));
+    ship.lifecycle.set_object_alive_for_test(true);
+    ship.lifecycle.set_in_limbo_for_test(false);
+    let from = DriveCoord::cell(10, 10, 0);
+    ship.position.put_location(from);
+    ship.body_facing.snap(0xe000, 0);
+    ship.barrel_facing = Some(crate::sim::movement::FacingClass::new(0xf000, 0));
+    let mut motion = UnitMotion::default();
+    let band = EntityDrawBand::Ground;
+    motion.begin_draw(12, Some(1.), 1.5);
+    let previous = ObjectRecord::of_test(&ship);
+    let start = VehicleGeometry::read(&previous, band, 12, None, None, Some(&motion), || true);
+    motion.drawn(ship.stable_id(), start.sample.unwrap());
+    motion.commit_presented();
+    ship.position.put_location(DriveCoord {
+        x: from.x + 128,
+        ..from
+    });
+    ship.body_facing.snap(0x2000, 0);
+    ship.barrel_facing.as_mut().unwrap().snap(0x1000, 0);
+    ship.rocking = Some(crate::sim::rocking::RockingState::default());
+    ship.rocking
+        .as_mut()
+        .unwrap()
+        .set_angle_sideways(crate::util::fixed_math::SimFixed::from_num(-0.5));
+    let current = ObjectRecord::of_test(&ship);
+    motion.begin_draw(13, Some(0.5), 1.5);
+    let mid = VehicleGeometry::read(&current, band, 13, None, None, Some(&motion), || true);
+    assert_eq!(mid.xyz, [from.x + 64, from.y, 0]);
+    assert_eq!((mid.pose.body, mid.pose.turret), (0, 0));
+    assert_eq!(mid.pose.angles, [-0.25, 0.]);
+    motion.drawn(ship.stable_id(), mid.sample.unwrap());
+    motion.commit_presented();
+    assert!(motion.intermediate_kinds().ship);
+
+    ship.position.put_location(DriveCoord {
+        x: from.x + 160,
+        ..from
+    });
+    let mut grabbed = ObjectRecord::of_test(&ship);
+    grabbed.parasite_infested = true;
+    motion.begin_draw(14, Some(0.), 1.5);
+    let grapple = VehicleGeometry::read(&grabbed, band, 14, None, None, Some(&motion), || true);
+    assert_eq!(grapple.pose, grabbed.pose);
+}
+
+#[test]
 fn offscreen_first_sinking_draw_survives_descent_camera_pan_and_save_load() {
     use crate::sim::snapshot::GameSnapshot;
     let corpus = admission_corpus();

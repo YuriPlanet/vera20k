@@ -18,7 +18,7 @@ use crate::app::presentation::render::draw_plan_lowering::{
 };
 use crate::app::presentation::render_pose::RenderPose;
 use crate::app::presentation::state::MatchPresentationState;
-use crate::app::presentation::vehicle_motion::{AirPose, VehicleMotion, VehicleSample};
+use crate::app::presentation::unit_motion::{AirPose, UnitMotion, UnitSample};
 use crate::app::process_assets::ProcessAssets;
 use crate::app::renderer_state::RendererState;
 use crate::app::state::PlatformState;
@@ -306,23 +306,21 @@ fn terrain_slope_for_render(
 /// (`0x0055A801..0x0055A80C`), whatever slope its body is drawing.
 fn unit_shadow_slope(
     cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
-    entity: &crate::app::presentation::frame::ObjectRecord,
+    on_bridge: bool,
+    [x, y, _]: [i32; 3],
 ) -> u8 {
     // A shadow on the high deck follows its level surface.
-    if entity.on_bridge() {
+    if on_bridge {
         return 0;
     }
-    let [x, y] = crate::sim::movement::ground_pose::position_world_xy(&entity.position);
     clamp_slope_for_render(cells.map_or(0, |cells| cells.ground_fields(cells.lookup_world(x, y)).1))
 }
 
 /// The slope a Unit body's locomotor Draw_Matrix draws it at. `terrain`
-/// supplies the fallback's cell slope, `cells` is the draw's isolated query
-/// of the live map, and `angles` are the rocking angles the body is drawn
-/// with, the ones [`ground_pose_with_angles`] tilts it by.
+/// supplies the fallback's cell slope. `angles` are the rocking angles
+/// [`ground_pose_with_angles`] tilts this body by in this picture.
 fn unit_render_slope_state(
     terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
-    cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
     entity: &crate::app::presentation::frame::ObjectRecord,
     display_binary_frame: u32,
     band: EntityDrawBand,
@@ -375,12 +373,14 @@ fn unit_render_slope_state(
     // ([`hover_draw_slope`](crate::sim::movement::hover::hover_draw_slope));
     // a rocking body's tilt is [`ground_pose_with_angles`]'s.
     if kind == Some(LocomotorKind::Hover) {
-        return UnitRenderSlopeState::Stable(clamp_slope_for_render({
-            // Captured with the pose's rocking angles (`presentation::frame`).
-            debug_assert_eq!(angles, entity.pose.angles);
-            let _ = cells;
+        // The sampled hull can still be rocking after its current native
+        // angles have reached zero. The rocking matrix has no cell slope.
+        let slope = if crate::map::voxel_pose::voxel_tilt_applies(angles) {
+            0
+        } else {
             entity.place.hover_draw_slope
-        }));
+        };
+        return UnitRenderSlopeState::Stable(clamp_slope_for_render(slope));
     }
     // Only a Unit no locomotor state answers for, or with an unused
     // locomotor (Tunnel), reaches this cell-slope fallback.
@@ -481,7 +481,7 @@ fn aircraft_body_offset_y(
 /// body; its ground shadow queries terrain at the displayed world XY.
 struct VehicleGeometry {
     pose: RenderPose,
-    sample: Option<VehicleSample>,
+    sample: Option<UnitSample>,
     tilt: Option<PoseTilt>,
     transient_tilt: bool,
     body_offset_y: f32,
@@ -499,7 +499,7 @@ impl VehicleGeometry {
         frame: u32,
         rules: Option<&crate::rules::ruleset::RuleSet>,
         object: Option<&crate::rules::object_type::ObjectType>,
-        motion: Option<&VehicleMotion>,
+        motion: Option<&UnitMotion>,
         revealed: impl FnOnce() -> bool,
     ) -> Self {
         let motion = motion.filter(|motion| motion.sampling());
@@ -521,9 +521,11 @@ impl VehicleGeometry {
             (EntityCategory::Aircraft, Some(LocomotorKind::Fly))
                 | (EntityCategory::Unit, Some(LocomotorKind::Jumpjet))
         );
+        let surface_vehicle = entity.category() == EntityCategory::Unit
+            && matches!(kind, Some(LocomotorKind::Ship | LocomotorKind::Hover));
         let native_air = AirPose {
             body_offset_y: aircraft_body_offset_y(frame, entity, rules, object),
-            ground_y: if air && motion.is_some() {
+            ground_y: if (air || surface_vehicle) && motion.is_some() {
                 crate::util::lepton::absolute_leptons_to_screen(xyz[0], xyz[1], 0).1
             } else {
                 0.0
@@ -531,6 +533,7 @@ impl VehicleGeometry {
             tilt: match native_tilt {
                 Some(PoseTilt::FlyNormal { pitch, roll }) => [pitch, roll],
                 Some(PoseTilt::Jumpjet(angles)) => angles,
+                _ if surface_vehicle => native.angles,
                 _ => [0.0; 2],
             },
         };
@@ -555,7 +558,7 @@ impl VehicleGeometry {
         result.sample = Some(sample);
         result.pose = motion.pose(sample, native);
         result.depth_xyz[2] = motion.depth_height(sample, result.depth_xyz[2]);
-        if air {
+        if air || surface_vehicle {
             let drawn = motion.air_pose(sample);
             result.xyz = motion.world_coord(sample, xyz);
             result.depth_xyz[..2].copy_from_slice(&result.xyz[..2]);
@@ -563,15 +566,20 @@ impl VehicleGeometry {
             let (projected_x, projected_y) =
                 crate::util::lepton::absolute_leptons_to_screen(result.xyz[0], result.xyz[1], 0);
             // The terrain queries use integer leptons. Carry the display's
-            // subpixel planar motion through their projection; a plane that
-            // only climbs never drags its shadow up with it.
+            // subpixel planar motion through their projection. A Hover's
+            // bob and an aircraft's climb leave the ground shadow still.
             result.shadow_offset = [
                 result.pose.screen[0] - projected_x,
                 drawn.ground_y - projected_y,
             ];
             result.lift_correction =
                 (drawn.ground_y - native_air.ground_y) - (result.pose.screen[1] - native.screen[1]);
-            if drawn.tilt != native_air.tilt {
+            if surface_vehicle {
+                // Ship and Hover use the existing uncached ground rocking
+                // matrix for hull, gun and barrel (Ship 0x0069F670, Hover
+                // 0x00513F40). Water wakes have their own world Location.
+                result.pose.angles = drawn.tilt;
+            } else if drawn.tilt != native_air.tilt {
                 let [pitch, roll] = drawn.tilt;
                 result.tilt = if pitch == 0.0 && roll == 0.0 {
                     None
@@ -765,7 +773,7 @@ pub(crate) fn unit_visitor<'a>(
                 // The screen cull reads only the position, and nothing between here
                 // and the waterline capture writes, so an object off the screen
                 // skips the admission work below.
-                let motion = &match_state.match_presentation.vehicle_motion;
+                let motion = &match_state.match_presentation.unit_motion;
                 // Most records in a big battle miss the viewport. A Unit's
                 // current and formerly visible points bound its step. The
                 // aircraft span also contains its ground shadow; the slack
@@ -806,16 +814,17 @@ pub(crate) fn unit_visitor<'a>(
                     sim.session().binary_frame(),
                     rules,
                     object_type,
-                    carried.is_none().then_some(motion),
+                    (carried.is_none() && entity.is_voxel()).then_some(motion),
                     || {
-                        super::helpers::cell_visibility_for_local_owner(
-                            local_owner_id,
-                            Some(sim.fog()),
-                            entity.position.rx(),
-                            entity.position.ry(),
-                            ignore_visibility,
-                            terrain,
-                        ) == super::helpers::CellVisibilityState::Visible
+                        ignore_visibility
+                            || local_owner_id.is_none_or(|viewer| {
+                                super::helpers::cell_revealed(
+                                    sim.fog(),
+                                    viewer,
+                                    (entity.position.rx(), entity.position.ry()),
+                                    cells.as_ref(),
+                                )
+                            })
                     },
                 );
                 let aircraft_shadow = aircraft_draw_shadow(entity, object_type, terrain, &geometry);
@@ -919,7 +928,6 @@ pub(crate) fn unit_visitor<'a>(
                     .unwrap_or_else(|| {
                         unit_render_slope_state(
                             match_state.terrain_template(),
-                            cells.as_ref(),
                             entity,
                             display_binary_frame,
                             band,
@@ -928,7 +936,8 @@ pub(crate) fn unit_visitor<'a>(
                     });
                 // A lifted body's shadow (Jumpjet, Hover) goes through
                 // [`emit_lifted_unit_shadow`].
-                let shadow_slope = unit_shadow_slope(cells.as_ref(), entity);
+                let shadow_slope =
+                    unit_shadow_slope(cells.as_ref(), entity.on_bridge(), geometry.xyz);
                 let interp_z = pos.z();
                 let draw_state = draw_decision.state;
                 let extra_light = entity.place.extra_light;
@@ -1267,6 +1276,7 @@ pub(crate) fn unit_visitor<'a>(
                                 &match_state.sim_runtime,
                                 entity,
                                 true,
+                                geometry.depth_xyz,
                             ));
                         let body_draw_state = unit_body_draw_state(
                             platform,
@@ -1437,7 +1447,7 @@ pub(crate) fn unit_visitor<'a>(
                     {
                         match_state
                             .match_presentation
-                            .vehicle_motion
+                            .unit_motion
                             .drawn(entity.stable_id(), sample);
                     }
                     // Opt-in app measurement of an actually admitted draw-plan object.
@@ -1448,13 +1458,14 @@ pub(crate) fn unit_visitor<'a>(
                         drawn.body_point,
                         drawn.committed_body_point,
                         render_pose.body,
+                        None,
                     );
                     let planned =
                         objects.object(parent, cargo_pieces.drain(..).chain(pieces.drain(..)));
                     if let Some(rules) = crate::app::state::active_rules(frontend, match_state) {
                         planned.tail_draws =
                             crate::app::presentation::target_lines::target_laser_draws(
-                                Some(&match_state.match_presentation.vehicle_motion),
+                                Some(&match_state.match_presentation.unit_motion),
                                 entity,
                                 sim,
                                 rules,
@@ -1530,7 +1541,7 @@ struct CarriedDraw {
 /// cargo it carries.
 struct DrawnBody {
     render_pose: crate::app::presentation::render_pose::RenderPose,
-    sample: Option<VehicleSample>,
+    sample: Option<UnitSample>,
     /// The body point after the Fly Draw_Point ([`aircraft_body_offset_y`]).
     body_point: [f32; 2],
     committed_body_point: [f32; 2],
@@ -3222,6 +3233,7 @@ fn emit_turret_unit_sprites(
         &match_state.sim_runtime,
         entity,
         true,
+        geometry.depth_xyz,
     ));
     let body_draw_state = unit_body_draw_state(
         platform,

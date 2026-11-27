@@ -3911,7 +3911,7 @@ pub(crate) fn estimated_damage_on(
             ),
             rank_armor,
         },
-        warhead: warhead.map(|warhead| damage::estimate::EstimateWarhead {
+        warhead: warhead.map(|warhead| damage::kernel::DamageWarhead {
             cell_spread: warhead.cell_spread_f64,
             percent_at_max: warhead.percent_at_max_f64,
             armor_multiplier: warhead

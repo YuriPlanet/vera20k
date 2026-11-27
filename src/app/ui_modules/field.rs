@@ -50,7 +50,7 @@ pub(crate) struct FieldInstances {
 pub(crate) struct FieldView<'a> {
     pub(crate) sim: &'a Simulation,
     pub(crate) frame: &'a PresentationFrame,
-    pub(crate) vehicle_motion: &'a crate::app::presentation::vehicle_motion::VehicleMotion,
+    pub(crate) unit_motion: &'a crate::app::presentation::unit_motion::UnitMotion,
     pub(crate) rules: Option<&'a RuleSet>,
     /// The local player; `None` for a spectator.
     pub(crate) player: Option<InternedId>,
@@ -63,7 +63,7 @@ impl FieldView<'_> {
         let (x, y) = ui_overlays::module_status_anchor(
             self.sim, entity, self.rules, self.player, self.viewport.ignore_visibility,
         )?;
-        let [dx, dy] = self.vehicle_motion.offset(entity.stable_id());
+        let [dx, dy] = self.unit_motion.offset(entity.stable_id());
         Some((x + dx, y + dy))
     }
 }
