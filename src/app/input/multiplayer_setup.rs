@@ -637,18 +637,11 @@ pub(crate) fn cursor_moved(state: &mut AppState) {
     if !held {
         // VERA's send key has no control id, so it answers its own hint here:
         // the emote button's, whose tile it borrows (`STT:EmoteButton`).
-        #[cfg(target_os = "android")]
-        let send_help = (!view.dialog.wol() && {
-            let key = crate::ui::shell::geom::room_chat_send_rect(
-                _layout.chat,
-                _layout.chat_log,
-                _layout.page.scale,
-            );
-            x >= key.x && x < key.x + key.w && y >= key.y && y < key.y + key.h
-        })
+        let send_help = (!view.dialog.wol()
+            && _layout.chat_send().is_some_and(|key| {
+                x >= key.x && x < key.x + key.w && y >= key.y && y < key.y + key.h
+            }))
         .then(|| state.process_assets.csf_text("STT:EmoteButton"));
-        #[cfg(not(target_os = "android"))]
-        let send_help: Option<String> = None;
         let help = send_help.unwrap_or_else(|| {
             hovered_help(
                 &state.frontend,
@@ -698,17 +691,8 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
         return;
     };
     let (x, y) = state.match_state.input.cursor_px();
-    // VERA's send key: a phone has no Enter, so the button on the chat box
-    // sends the line.
-    #[cfg(target_os = "android")]
-    if pressed
-        && crate::ui::shell::geom::room_chat_send_rect(
-            layout.chat,
-            layout.chat_log,
-            layout.page.scale,
-        )
-        .contains(x, y)
-    {
+    // VERA's send key: a platform without Enter sends from the chat box.
+    if pressed && layout.chat_send().is_some_and(|key| key.contains(x, y)) {
         key_press(state, Some(winit::keyboard::KeyCode::Enter), None);
         return;
     }
