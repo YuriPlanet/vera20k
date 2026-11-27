@@ -54,6 +54,8 @@ fn shp_turret_frame(start_frame: u16, heading: u16) -> u16 {
 /// Borrowed live inputs for the SHP body emitter. The application and offscreen
 /// comparisons use the same admission, frame, light, depth and piece owners.
 pub(crate) struct ShpInputs<'a> {
+    pub motion: Option<&'a crate::app::presentation::unit_motion::UnitMotion>,
+    pub diagnostics: Option<&'a crate::app::match_diagnostics::MatchDiagnosticsState>,
     pub runtime: &'a crate::sim::runtime::SimRuntime,
     pub frame: &'a crate::app::presentation::frame::PresentationFrame,
     pub atlas: Option<&'a crate::render::sprite_atlas::SpriteAtlas>,
@@ -127,6 +129,14 @@ pub(crate) fn shp_inputs<'a>(
         persistence,
     );
     Some(ShpInputs {
+        motion: presentation
+            .unit_motion
+            .sampling()
+            .then_some(&presentation.unit_motion),
+        diagnostics: match_state
+            .match_diagnostics
+            .traces_actor_draws()
+            .then_some(&match_state.match_diagnostics),
         runtime,
         frame: match_state.sim_runtime.frame()?,
         atlas: presentation.sprite_atlas.as_ref(),
@@ -157,6 +167,94 @@ pub(crate) fn shp_inputs<'a>(
             .as_ref()
             .map(|zshape| zshape.frame_offset),
     })
+}
+
+/// An infantry shape keeps its native action and animation stage. Its foot
+/// supplies one displayed world point to the body, the row depth and both
+/// shadow paths. On a pure climb, INFSHDW keeps its place on the floor.
+struct InfantryPlacement {
+    sample: crate::app::presentation::unit_motion::UnitSample,
+    screen: [f32; 2],
+    coord: [i32; 3],
+    height: i32,
+    lift_px: i32,
+    sort_lift_offset: f32,
+    shadow_body_y: f32,
+}
+
+impl InfantryPlacement {
+    fn read(
+        entity: &crate::app::presentation::frame::ObjectRecord,
+        motion: &crate::app::presentation::unit_motion::UnitMotion,
+        layer: crate::render::tactical_draw_plan::TacticalLayer,
+        cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
+    ) -> Option<Self> {
+        let band = super::helpers::layer_draw_band(
+            crate::sim::world::display_layers::DisplayLayer::from_index(layer.0)?,
+        )?;
+        let committed = entity.hud.location;
+        let (_, ground_y) =
+            crate::util::lepton::absolute_leptons_to_screen(committed.x, committed.y, 0);
+        let sample = motion.sample(
+            entity,
+            band,
+            crate::app::presentation::unit_motion::AirPose {
+                ground_y,
+                ..Default::default()
+            },
+        )?;
+        let screen = motion.pose(sample, entity.pose).screen;
+        let ground = motion.air_pose(sample).ground_y;
+        let current = [
+            committed.x,
+            committed.y,
+            entity.place.world_z_leptons_off_map,
+        ];
+        let mut coord = motion.world_coord(sample, current);
+        let mut height = entity.place.flight_height;
+        if coord != current && entity.position.exact_z_leptons().is_some() {
+            let point = crate::sim::components::DriveCoord {
+                x: coord[0],
+                y: coord[1],
+                z: coord[2],
+            };
+            if height == 0 && band == super::helpers::EntityDrawBand::Ground {
+                // A ground foot remains on the sampled ramp. Interpolating
+                // Z across a ramp edge could otherwise invent a few leptons
+                // of flight and replace its embedded SHP shadow with INFSHDW.
+                if let Some(floor) = cells.and_then(|c| {
+                    crate::sim::movement::ground_pose::query_surface_z(c, point, entity.on_bridge())
+                        .ok()
+                }) {
+                    coord[2] = floor;
+                }
+            } else {
+                height = crate::sim::movement::air_movement::object_height_in_query(
+                    point,
+                    entity.on_bridge(),
+                    cells,
+                );
+            }
+        }
+        let lift_px = if entity.position.exact_z_leptons().is_some() {
+            crate::util::native_x87::adjust_for_z_standard(coord[2])
+        } else {
+            crate::render::locomotor_visual::screen_lift_px(entity)
+        };
+        Some(Self {
+            sample,
+            screen,
+            coord,
+            height,
+            lift_px,
+            sort_lift_offset: (ground - ground_y) - (screen[1] - entity.pose.screen[1]),
+            shadow_body_y: if entity.position.exact_z_leptons().is_some() {
+                ground - lift_px as f32
+            } else {
+                screen[1]
+            },
+        })
+    }
 }
 
 /// Where [`shp_visitor`] puts an object's pieces.
@@ -275,7 +373,7 @@ pub(crate) fn shp_visitor<'a>(
             let [x, y] = super::units::carried_body_point(carrier, entity);
             (x, y)
         } else {
-            let (x, y) = crate::render::locomotor_visual::screen_position(entity);
+            let [x, y] = entity.pose.screen;
             if entity.category() == EntityCategory::Structure {
                 crate::render::locomotor_visual::building_art_anchor(x, y)
             } else {
@@ -315,7 +413,13 @@ pub(crate) fn shp_visitor<'a>(
             // their existing broad gate; missing metadata is not an empty box.
             in_view(sx, sy, 200.0, 200.0, cam_x, cam_y, sw, sh, 200.0)
         };
-        if !visible {
+        if !visible
+            && !(entity.category() == EntityCategory::Infantry
+                && input
+                    .motion
+                    .and_then(|m| m.painted_anchor(stable_id))
+                    .is_some_and(|[x, y]| in_view(x, y, 200.0, 200.0, cam_x, cam_y, sw, sh, 200.0)))
+        {
             return;
         }
         // Common visibility, passenger, limbo, and DrawState admission is shared below.
@@ -415,6 +519,36 @@ pub(crate) fn shp_visitor<'a>(
         let Some(draw_decision) = admission else {
             return;
         };
+        // A carried cargo is no Display member: it takes the policy its parent
+        // would ([`NativeDisplayOrder::object_draw`]).
+        let parent = match carrier {
+            Some(_) => None,
+            None => match ground_order.object_draw(stable_id, SpriteEncoding::Plain) {
+                Some(parent) => Some(parent),
+                None => return,
+            },
+        };
+        let committed_screen = [sx, sy];
+        let placement = (entity.category() == EntityCategory::Infantry)
+            .then(|| {
+                let motion = input.motion?;
+                let cell = (pos.rx(), pos.ry());
+                let hidden = if cells.is_some() {
+                    shrouded(cell)
+                } else {
+                    // A headless or synthetic world can have reveal state without a map.
+                    !ignore_visibility
+                        && local_owner_id.is_some_and(|viewer| {
+                            !sim.fog().is_cell_revealed(viewer, cell.0, cell.1)
+                        })
+                };
+                if hidden {
+                    return None;
+                }
+                InfantryPlacement::read(entity, motion, parent?.layer, cells.as_ref())
+            })
+            .flatten();
+        let [sx, sy] = placement.as_ref().map_or(committed_screen, |p| p.screen);
         let interp_z = pos.z();
         // The lift `screen_position` drew this body with. A building's draw
         // cancels exactly that for its sort row and per-pixel Z seed
@@ -436,7 +570,7 @@ pub(crate) fn shp_visitor<'a>(
             let ShpDraw::Member(ground_objects) = draw else {
                 return;
             };
-            if let Some(frame) = resolve_object_shp_frame_with_facing(
+            if let Some((frame, _)) = resolve_object_shp_frame_with_facing(
                 Some(runtime),
                 rules,
                 sim.interner().resolve(entity.type_ref()),
@@ -557,6 +691,7 @@ pub(crate) fn shp_visitor<'a>(
             }
             _ => None,
         };
+        let mut body_facing = render_pose.body;
         let (shp_frame, make_type_id): (u16, Option<smol_str::SmolStr>) = if is_building_up {
             make_frame(false)
         } else if is_building_down {
@@ -575,7 +710,7 @@ pub(crate) fn shp_visitor<'a>(
                     )
                 }
                 _ => {
-                    let Some(frame) = resolve_object_shp_frame_with_facing(
+                    let Some((frame, facing)) = resolve_object_shp_frame_with_facing(
                         Some(runtime),
                         rules,
                         type_str,
@@ -585,6 +720,7 @@ pub(crate) fn shp_visitor<'a>(
                     ) else {
                         return;
                     };
+                    body_facing = facing;
                     (frame, None)
                 }
             }
@@ -691,7 +827,8 @@ pub(crate) fn shp_visitor<'a>(
                 compute_sprite_depth_params(
                     input.axis.origin_y,
                     input.axis.world_height,
-                    ground_sort_row(entity, depth_y),
+                    ground_sort_row(entity, depth_y)
+                        + placement.as_ref().map_or(0.0, |p| p.sort_lift_offset),
                     interp_z,
                 )
             }
@@ -769,68 +906,60 @@ pub(crate) fn shp_visitor<'a>(
         // ordinary sprites walk gradient 2. Infantry (`InfantryClass Draw_It`, flags 0x2E00) walks
         // entry 2 from `Get_Z_Adjust - 2`, whose base term also cancels the
         // lift, and never writes.
-        let (z_adjust, z_gradient, zshape_origin) =
-            if entity.category() == EntityCategory::Structure {
-                let normal_z_adjust: i32 = match &door_body {
-                    Some((_, _, z_adjust, _)) => *z_adjust,
-                    None => structure_entry.map_or(0, |a| a.normal_z_adjust),
-                };
-                let point_move = building_zshape_point_move(entity, structure_entry);
-                let foundation: (u16, u16) = object_type
-                    .map(|o| o.foundation.dimensions())
-                    .unwrap_or((1, 1));
-                // The gate branch's DrawSHP (`0x0043D683`) passes a null z-shape
-                // (a12, pushed at `0x0043D633`); the ordinary body passes
-                // BUILDNGZ (`0x0043D806`).
-                let zshape = input.building_zshape.is_some()
-                    && foundation.0 <= ZSHAPE_MAX_FOUNDATION_WIDTH
-                    && gate_open_frame.is_none();
-                let origin = native_z::zshape_origin(
-                    native_z::ZSHAPE_ANCHOR,
-                    (sx.round() as i32, sy.round() as i32),
-                    foundation,
-                    point_move,
-                    input.building_zshape.unwrap_or_default(),
-                );
-                (
-                    lifted_z_adjust(lift_px, normal_z_adjust + SHP_DRAW_Z_ADJUST_PX),
-                    native_z::pack_building_z_gradient(
-                        zshape,
-                        entry.is_some_and(|entry| entry.extended),
-                    ),
-                    [origin.0 as f32, origin.1 as f32],
-                )
-            } else {
-                // Unit no-turret SHP branch 0x73CE0D..0x73CE7F, active for SQD:
-                // one complete draw with a7=-16, a8=0. Infantry is excluded by
-                // the adapter. This is distinct from VXL's two-region composite.
-                let world = super::foot_depth::DepthWorld {
-                    runtime: Some(runtime),
-                    frame: Some(input.frame),
-                };
-                let bridge_fudge = super::foot_depth::shp_unit_bridge_fudge(world, entity);
-                (
-                    super::foot_depth::shp_z_adjust(world, entity)
-                        - if bridge_fudge { 16.0 } else { 0.0 },
-                    pack_z_gradient(
-                        if bridge_fudge {
-                            ZGradient::Flat
-                        } else {
-                            ZGradient::Vertical
-                        },
-                        false,
-                    ),
-                    [0.0, 0.0],
-                )
+        let (z_adjust, z_gradient, zshape_origin) = if entity.category()
+            == EntityCategory::Structure
+        {
+            let normal_z_adjust: i32 = match &door_body {
+                Some((_, _, z_adjust, _)) => *z_adjust,
+                None => structure_entry.map_or(0, |a| a.normal_z_adjust),
             };
-        // A carried cargo is no Display member: it takes the policy its parent
-        // would ([`NativeDisplayOrder::object_draw`]).
-        let parent = match carrier {
-            Some(_) => None,
-            None => match ground_order.object_draw(stable_id, SpriteEncoding::Plain) {
-                Some(parent) => Some(parent),
-                None => return,
-            },
+            let point_move = building_zshape_point_move(entity, structure_entry);
+            let foundation: (u16, u16) = object_type
+                .map(|o| o.foundation.dimensions())
+                .unwrap_or((1, 1));
+            // The gate branch's DrawSHP (`0x0043D683`) passes a null z-shape
+            // (a12, pushed at `0x0043D633`); the ordinary body passes
+            // BUILDNGZ (`0x0043D806`).
+            let zshape = input.building_zshape.is_some()
+                && foundation.0 <= ZSHAPE_MAX_FOUNDATION_WIDTH
+                && gate_open_frame.is_none();
+            let origin = native_z::zshape_origin(
+                native_z::ZSHAPE_ANCHOR,
+                (sx.round() as i32, sy.round() as i32),
+                foundation,
+                point_move,
+                input.building_zshape.unwrap_or_default(),
+            );
+            (
+                lifted_z_adjust(lift_px, normal_z_adjust + SHP_DRAW_Z_ADJUST_PX),
+                native_z::pack_building_z_gradient(
+                    zshape,
+                    entry.is_some_and(|entry| entry.extended),
+                ),
+                [origin.0 as f32, origin.1 as f32],
+            )
+        } else {
+            // Unit no-turret SHP branch 0x73CE0D..0x73CE7F, active for SQD:
+            // one complete draw with a7=-16, a8=0. Infantry is excluded by
+            // the adapter. This is distinct from VXL's two-region composite.
+            let world = super::foot_depth::DepthWorld {
+                runtime: Some(runtime),
+                frame: Some(input.frame),
+            };
+            let bridge_fudge = super::foot_depth::shp_unit_bridge_fudge(world, entity);
+            (
+                super::foot_depth::shp_z_adjust(world, entity, placement.as_ref().map(|p| p.coord))
+                    - if bridge_fudge { 16.0 } else { 0.0 },
+                pack_z_gradient(
+                    if bridge_fudge {
+                        ZGradient::Flat
+                    } else {
+                        ZGradient::Vertical
+                    },
+                    false,
+                ),
+                [0.0, 0.0],
+            )
         };
         let parent_policy = parent.map_or(BlitPolicy::z_read(SpriteEncoding::Plain), |parent| {
             parent.policy
@@ -901,7 +1030,7 @@ pub(crate) fn shp_visitor<'a>(
                         atlas,
                         object_type,
                         entity,
-                        cells.as_ref(),
+                        None,
                         &body_key,
                         body_entry,
                         instance,
@@ -979,9 +1108,14 @@ pub(crate) fn shp_visitor<'a>(
             });
             let skip_embedded_shadow = ares_shadow.is_some();
             let shadow = match entity.category() {
-                EntityCategory::Infantry => {
-                    infantry_air_shadow_piece(atlas, entity, cells.as_ref(), [sx, sy], depth)
-                }
+                EntityCategory::Infantry => infantry_air_shadow_piece(
+                    atlas,
+                    entity,
+                    cells.as_ref(),
+                    placement.as_ref(),
+                    [sx, sy],
+                    depth,
+                ),
                 EntityCategory::Unit if !ares_unit && turret_start.is_some() => {
                     stock_turreted_shp_shadow_piece(
                         atlas,
@@ -1076,7 +1210,7 @@ pub(crate) fn shp_visitor<'a>(
                     atlas,
                     actual_type,
                     entity,
-                    cells.as_ref(),
+                    placement.as_ref().map(|p| (p.height, p.lift_px)),
                     &body_key,
                     body_entry,
                     instance,
@@ -1095,6 +1229,43 @@ pub(crate) fn shp_visitor<'a>(
             }
             match (&mut draw, parent) {
                 (ShpDraw::Member(objects), Some(parent)) => {
+                    if entity.category() == EntityCategory::Infantry
+                        && (placement.is_some() || input.diagnostics.is_some())
+                    {
+                        // The packed parent can be admitted well off the battlefield.
+                        // Refresh an interpolated view only for geometry on screen.
+                        let view = input.building_viewport;
+                        let on_screen = |s: &SpriteInstance| {
+                            in_view(
+                                s.position[0],
+                                s.position[1],
+                                s.size[0],
+                                s.size[1],
+                                (view.camera[0] + view.clip[0]) as f32,
+                                (view.camera[1] + view.clip[1]) as f32,
+                                view.clip[2] as f32,
+                                view.clip[3] as f32,
+                                0.0,
+                            )
+                        };
+                        let body_visible = on_screen(&instance);
+                        if let (Some(motion), Some(placement)) = (input.motion, placement.as_ref())
+                            && (body_visible || pieces.iter().any(|p| on_screen(&p.instance)))
+                        {
+                            motion.drawn(stable_id, placement.sample);
+                        }
+                        if let Some(diagnostics) = input.diagnostics.filter(|_| body_visible) {
+                            diagnostics.record_actor_draw(
+                                sim,
+                                entity,
+                                sim.session().binary_frame(),
+                                [sx, sy],
+                                committed_screen,
+                                body_facing,
+                                Some(body_key.frame),
+                            );
+                        }
+                    }
                     objects.object(parent, pieces.drain(..));
                 }
                 (ShpDraw::Carried { pieces: cargo, .. }, _) => cargo.extend(pieces.drain(..)),
@@ -1117,7 +1288,6 @@ pub(crate) fn shp_visitor<'a>(
                     structure_entry,
                     BibDraw {
                         entity,
-                        cells: cells.as_ref(),
                         decision: draw_decision,
                         frame: current_frame.map_or(0, |frame| u16::try_from(frame).unwrap_or(0)),
                     },
@@ -1227,7 +1397,7 @@ pub(crate) fn shp_visitor<'a>(
 fn embedded_shp_shadow_admitted(
     object: Option<&crate::rules::object_type::ObjectType>,
     entity: &crate::app::presentation::frame::ObjectRecord,
-    cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
+    displayed_height: Option<i32>,
     decision: crate::render::draw_state::DrawDecision,
 ) -> bool {
     matches!(decision.native_visual_state, 0 | 1)
@@ -1237,10 +1407,7 @@ fn embedded_shp_shadow_admitted(
         && (!matches!(
             entity.category(),
             EntityCategory::Unit | EntityCategory::Infantry
-        ) || {
-            let _ = cells;
-            entity.place.flight_height == 0
-        })
+        ) || displayed_height.unwrap_or(entity.place.flight_height) == 0)
 }
 
 /// The common embedded second-half shadow owner used by Building, Unit and Infantry
@@ -1256,14 +1423,19 @@ pub(crate) fn embedded_shp_shadow_piece(
     atlas: &crate::render::sprite_atlas::SpriteAtlas,
     object: Option<&crate::rules::object_type::ObjectType>,
     entity: &crate::app::presentation::frame::ObjectRecord,
-    cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
+    placement: Option<(i32, i32)>,
     body_key: &ShpSpriteKey,
     body_entry: &crate::render::sprite_atlas::ShpSpriteEntry,
     body_instance: SpriteInstance,
     decision: crate::render::draw_state::DrawDecision,
     policy: BlitPolicy,
 ) -> Option<ObjectPieceInstance> {
-    if !embedded_shp_shadow_admitted(object, entity, cells, decision) {
+    if !embedded_shp_shadow_admitted(
+        object,
+        entity,
+        placement.map(|(height, _)| height),
+        decision,
+    ) {
         return None;
     }
     let frame_count = atlas.object_shp_frame_count(&body_key.type_id)?;
@@ -1278,7 +1450,10 @@ pub(crate) fn embedded_shp_shadow_piece(
         body_instance.position[0] - body_entry.offset_x,
         body_instance.position[1] - body_entry.offset_y - carried_shadow_raise(entity),
     ];
-    let lift_px = crate::render::locomotor_visual::screen_lift_px(entity);
+    let lift_px = placement.map_or_else(
+        || crate::render::locomotor_visual::screen_lift_px(entity),
+        |(_, lift)| lift,
+    );
     shp_shadow_half(
         atlas,
         body_key,
@@ -1499,15 +1674,19 @@ fn infantry_air_shadow_piece(
     atlas: &crate::render::sprite_atlas::SpriteAtlas,
     entity: &crate::app::presentation::frame::ObjectRecord,
     cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
+    placement: Option<&InfantryPlacement>,
     body_point: [f32; 2],
     depth: f32,
 ) -> Option<ObjectPieceInstance> {
     use crate::map::bridge_facts::{BRIDGE_FLAG_DIRECTION_ZERO, BRIDGE_FLAG_STRUCTURAL};
     use crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS;
     use crate::util::native_x87::adjust_for_z_standard;
-    let mut height = entity.place.flight_height;
+    let mut height = placement.map_or(entity.place.flight_height, |p| p.height);
+    let location_z = placement.map_or(entity.place.world_z_leptons_off_map, |p| p.coord[2]);
     if let Some(cells) = cells {
-        let [x, y] = crate::sim::movement::ground_pose::position_world_xy(&entity.position);
+        let [x, y] = placement.map_or([entity.hud.location.x, entity.hud.location.y], |p| {
+            [p.coord[0], p.coord[1]]
+        });
         let cell = cells.lookup_world(x, y);
         let flags = cells.flags(cell);
         let deck_lift = if let Some(deck) =
@@ -1516,7 +1695,7 @@ fn infantry_air_shadow_piece(
             if entity.on_bridge() {
                 0
             } else {
-                deck.wrapping_sub(entity.place.world_z_leptons_off_map.wrapping_sub(height))
+                deck.wrapping_sub(location_z.wrapping_sub(height))
             }
         } else {
             BRIDGE_DECK_HEIGHT_LEPTONS
@@ -1539,7 +1718,6 @@ fn infantry_air_shadow_piece(
         return None;
     }
     let entry = atlas.infantry_air_shadow()?;
-    let location_z = entity.place.world_z_leptons_off_map;
     Some(ObjectPieceInstance {
         target: ObjectTexture::SpriteAtlasEdit(
             entry.page as usize,
@@ -1549,7 +1727,9 @@ fn infantry_air_shadow_piece(
         instance: SpriteInstance {
             position: [
                 body_point[0] + entry.offset_x,
-                body_point[1] + adjust_for_z_standard(height) as f32 + entry.offset_y,
+                placement.map_or(body_point[1], |p| p.shadow_body_y)
+                    + adjust_for_z_standard(height) as f32
+                    + entry.offset_y,
             ],
             size: entry.pixel_size,
             uv_origin: entry.uv_origin,
@@ -1885,7 +2065,6 @@ fn emit_factory_under_door(
 /// The live building's inputs to its bib draw.
 struct BibDraw<'a> {
     entity: &'a crate::app::presentation::frame::ObjectRecord,
-    cells: Option<&'a crate::map::resolved_terrain::NativeCellQuery<'a>>,
     decision: crate::render::draw_state::DrawDecision,
     /// GetCurrentFrame43EF90, the frame DrawBody passes at `0x0043D8D4`.
     frame: u16,
@@ -1976,7 +2155,7 @@ fn emit_building_bib(
         atlas,
         object,
         draw.entity,
-        draw.cells,
+        None,
         &bib_key,
         bib_entry,
         instance,
@@ -2556,14 +2735,14 @@ fn emit_unit_terrain_body(
         frame: Some(input.frame),
     };
     let bridge_fudge = super::foot_depth::shp_unit_bridge_fudge(world, entity);
-    let body_z =
-        super::foot_depth::shp_z_adjust(world, entity) - if bridge_fudge { 16.0 } else { 0.0 };
+    let body_z = super::foot_depth::shp_z_adjust(world, entity, None)
+        - if bridge_fudge { 16.0 } else { 0.0 };
     let shadow_z = lifted_z_adjust(crate::render::locomotor_visual::screen_lift_px(entity), -4);
     let shadow_admitted = embedded_shp_shadow_admitted(
         sim.interner()
             .object_type(entity.type_ref(), &runtime.resources.rules),
         entity,
-        Some(cells),
+        None,
         decision,
     );
     let pieces = [
@@ -2635,6 +2814,7 @@ pub(crate) fn resolve_object_shp_frame(
         facing,
         cells,
     )
+    .map(|(frame, _)| frame)
 }
 
 /// The types `UnitClass::Draw_Body_And_Turret @ 0x0073C5F0` reads for an
@@ -2750,8 +2930,7 @@ fn resolve_object_shp_frame_with_facing(
     entity: &crate::app::presentation::frame::ObjectRecord,
     facing: u16,
     cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
-) -> Option<u16> {
-    let facing = (facing >> 8) as u8;
+) -> Option<(u16, u16)> {
     let interner = runtime.map(|runtime| runtime.simulation.interner());
     let type_id = if entity.category() == EntityCategory::Unit {
         interner.map_or(type_id, |interner| interner.resolve(entity.type_ref()))
@@ -2780,7 +2959,9 @@ fn resolve_object_shp_frame_with_facing(
         // A retained signed/wide native layout can be outside the atlas frame
         // representation. Do not replace that failure with an infantry-facing
         // fallback, which would draw an unrelated valid frame.
-        return ShpUnitLayout::of(actual, rules, interner, entity, cells).body_frame(entity);
+        return ShpUnitLayout::of(actual, rules, interner, entity, cells)
+            .body_frame(entity)
+            .map(|frame| (frame, facing));
     }
     if let (Some((doing, stage)), Some(set)) = (entity.infantry_sprite_pose(), sequence_set) {
         // Original518D93..518DC8: Doing-1 draws Tread16 only when the
@@ -2812,26 +2993,33 @@ fn resolve_object_shp_frame_with_facing(
                 })
             })
             .and(entity.place.facing_toward_target)
-            .map_or(facing, |direction| (direction >> 8) as u8);
+            .unwrap_or(facing);
         // Native EAX remains signed. A negative/wide result cannot alias an
         // unrelated valid frame in the u16 SHP atlas. This is an asset boundary,
         // not evidence for native invalid-index shape-access behavior.
-        return u16::try_from(animation::resolve_shp_frame(record, facing, stage)).ok();
+        return u16::try_from(animation::resolve_shp_frame(
+            record,
+            (facing >> 8) as u8,
+            stage,
+        ))
+        .ok()
+        .map(|frame| (frame, facing));
     }
     if let (Some(anim_state), Some(set)) = (entity.animation.as_ref(), sequence_set)
         && let Some(def) = set.get(&anim_state.sequence())
     {
         return u16::try_from(animation::resolve_shp_frame(
             def,
-            facing,
+            (facing >> 8) as u8,
             i32::from(anim_state.frame_index()),
         ))
-        .ok();
+        .ok()
+        .map(|frame| (frame, facing));
     }
     // Fallback when no sequence data was built for this type: the standing
     // block is frames 0..7, so the facing slot is the frame index. Uses the
     // same native facing table as the real path so the two cannot disagree.
-    Some(animation::infantry_facing_slot(facing))
+    Some((animation::infantry_facing_slot((facing >> 8) as u8), facing))
 }
 
 #[cfg(all(test, tests_app_presentation_instances))]
@@ -3004,7 +3192,8 @@ mod tests {
                 &ObjectRecord::of_test(&entity),
                 0,
                 None,
-            ),
+            )
+            .map(|(frame, _)| frame),
             Some(24)
         );
         // SelectDrawFrame518DCF..518DFC can substitute the disguise's Type;
@@ -3017,7 +3206,8 @@ mod tests {
                 &ObjectRecord::of_test(&entity),
                 0,
                 None,
-            ),
+            )
+            .map(|(frame, _)| frame),
             Some(42)
         );
     }
@@ -3117,6 +3307,10 @@ mod factory_door_tests;
 #[cfg(all(test, tests_app_presentation_instances))]
 #[path = "infantry_air_shadow_tests.rs"]
 mod infantry_air_shadow_tests;
+
+#[cfg(all(test, tests_app_presentation_instances))]
+#[path = "infantry_motion_tests.rs"]
+mod infantry_motion_tests;
 
 #[cfg(all(test, tests_app_presentation_instances))]
 #[path = "embedded_shadow_tests.rs"]

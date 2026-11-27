@@ -11,7 +11,7 @@
 use crate::app::PlatformState;
 use crate::app::frontend::state::FrontendState;
 use crate::app::match_runtime::state::MatchState;
-use crate::app::presentation::vehicle_motion::VehicleMotion;
+use crate::app::presentation::unit_motion::UnitMotion;
 use crate::app::types::HoverTargetKind;
 use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::RuleSet;
@@ -25,7 +25,7 @@ use crate::sim::world::ControlProjection;
 /// mutation of authoritative entities. Native callers/tests retain raw geometry.
 pub(crate) trait PickSource: Copy {
     fn entities(&self) -> &EntityStore;
-    /// Last displayed vehicle anchor in projected world pixels, independent of camera motion.
+    /// Last displayed unit anchor in projected world pixels, independent of camera motion.
     fn painted_anchor(&self, _id: u64) -> Option<[f32; 2]> {
         None
     }
@@ -129,13 +129,13 @@ impl PickWorld for &crate::sim::world::Simulation {
 pub(crate) struct PresentedWorld<'a> {
     pub sim: &'a crate::sim::world::Simulation,
     pub rules: Option<&'a RuleSet>,
-    pub vehicle_motion: Option<&'a VehicleMotion>,
+    pub unit_motion: Option<&'a UnitMotion>,
     /// [`crate::app::presentation::instances::translucent_fog_viewer`].
     pub translucent_viewer: Option<InternedId>,
 }
 impl PickSource for PresentedWorld<'_> {
     fn painted_anchor(&self, id: u64) -> Option<[f32; 2]> {
-        self.vehicle_motion?.painted_anchor(id)
+        self.unit_motion?.painted_anchor(id)
     }
     fn type_invisible(&self, entity: &crate::sim::game_entity::GameEntity) -> bool {
         self.rules
@@ -196,7 +196,7 @@ pub(crate) fn presented<'a>(
     PresentedWorld {
         sim,
         rules: crate::app::state::active_rules(frontend, match_state),
-        vehicle_motion: Some(&match_state.match_presentation.vehicle_motion),
+        unit_motion: Some(&match_state.match_presentation.unit_motion),
         translucent_viewer: crate::app::presentation::instances::translucent_fog_viewer(
             platform,
             match_state,
@@ -301,7 +301,7 @@ fn hover_object_in_frame(
                     .iter()
                     .filter(|member| match member.kind {
                         ObjectKind::Record { span, .. } => {
-                            // The committed span can already be past a vehicle the player
+                            // The committed span can already be past a unit the player
                             // still sees under the cursor. Keep native encounter order.
                             may_pick(span, world_x, world_y)
                                 || source.painted_anchor(member.id).is_some_and(|[x, y]| {
@@ -2153,7 +2153,7 @@ mod tests {
                 let source = PresentedWorld {
                     sim: &sim,
                     rules: None,
-                    vehicle_motion: None,
+                    unit_motion: None,
                     translucent_viewer,
                 };
                 let (bx, by) = source.screen_position(sim.entities().get(1).unwrap());
@@ -2269,7 +2269,7 @@ mod tests {
                 let source = PresentedWorld {
                     sim: &sim,
                     rules: None,
-                    vehicle_motion: None,
+                    unit_motion: None,
                     translucent_viewer,
                 };
                 let case = format!("{id} {translucent_viewer:?}");
@@ -2387,7 +2387,7 @@ mod tests {
     }
 
     #[test]
-    fn hover_click_and_band_reach_vehicles_at_their_last_presented_position() {
+    fn hover_click_and_band_reach_units_at_their_last_presented_position() {
         use crate::app::presentation::frame::PresentationFrame;
         use crate::app::presentation::instances::EntityDrawBand;
         use crate::rules::locomotor_type::LocomotorKind;
@@ -2396,6 +2396,20 @@ mod tests {
         use crate::sim::world::Simulation;
 
         for (type_name, category, locomotor, band, height) in [
+            (
+                "E1",
+                EntityCategory::Infantry,
+                LocomotorKind::Walk,
+                EntityDrawBand::Ground,
+                0,
+            ),
+            (
+                "JUMPJET",
+                EntityCategory::Infantry,
+                LocomotorKind::Jumpjet,
+                EntityDrawBand::Air,
+                400,
+            ),
             (
                 "MTNK",
                 EntityCategory::Unit,
@@ -2422,13 +2436,13 @@ mod tests {
             let owner = sim.intern("viewer");
             let typ = sim.intern(type_name);
             let mut unit = item83_entity(1, 10, 10, owner, typ, category, false);
-            unit.set_is_voxel_for_test(true);
+            unit.set_is_voxel_for_test(category != EntityCategory::Infantry);
             unit.locomotor = Some(LocomotorState::for_test_kind(locomotor));
             unit.position.put_location(DriveCoord::cell(10, 10, height));
             sim.entities_mut_for_test().insert(unit);
             sim.resubmit_entity_display_for_test(1);
             let rules = RuleSet::empty_for_test();
-            let mut motion = VehicleMotion::default();
+            let mut motion = UnitMotion::default();
             let mut paint = |sim: &Simulation, tick, phase| {
                 let frame = PresentationFrame::of_test(sim, rules);
                 let record = frame.object(1).unwrap();
@@ -2438,7 +2452,7 @@ mod tests {
                 } else {
                     0.
                 };
-                let air = crate::app::presentation::vehicle_motion::AirPose {
+                let air = crate::app::presentation::unit_motion::AirPose {
                     body_offset_y,
                     ..Default::default()
                 };
@@ -2458,7 +2472,7 @@ mod tests {
             let source = PresentedWorld {
                 sim: &sim,
                 rules: None,
-                vehicle_motion: Some(&motion),
+                unit_motion: Some(&motion),
                 translucent_viewer: None,
             };
 

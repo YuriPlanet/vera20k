@@ -18,7 +18,7 @@ use crate::app::presentation::render::draw_plan_lowering::{
 };
 use crate::app::presentation::render_pose::RenderPose;
 use crate::app::presentation::state::MatchPresentationState;
-use crate::app::presentation::vehicle_motion::{AirPose, VehicleMotion, VehicleSample};
+use crate::app::presentation::unit_motion::{AirPose, UnitMotion, UnitSample};
 use crate::app::process_assets::ProcessAssets;
 use crate::app::renderer_state::RendererState;
 use crate::app::state::PlatformState;
@@ -481,7 +481,7 @@ fn aircraft_body_offset_y(
 /// body; its ground shadow queries terrain at the displayed world XY.
 struct VehicleGeometry {
     pose: RenderPose,
-    sample: Option<VehicleSample>,
+    sample: Option<UnitSample>,
     tilt: Option<PoseTilt>,
     transient_tilt: bool,
     body_offset_y: f32,
@@ -499,7 +499,7 @@ impl VehicleGeometry {
         frame: u32,
         rules: Option<&crate::rules::ruleset::RuleSet>,
         object: Option<&crate::rules::object_type::ObjectType>,
-        motion: Option<&VehicleMotion>,
+        motion: Option<&UnitMotion>,
         revealed: impl FnOnce() -> bool,
     ) -> Self {
         let motion = motion.filter(|motion| motion.sampling());
@@ -765,7 +765,7 @@ pub(crate) fn unit_visitor<'a>(
                 // The screen cull reads only the position, and nothing between here
                 // and the waterline capture writes, so an object off the screen
                 // skips the admission work below.
-                let motion = &match_state.match_presentation.vehicle_motion;
+                let motion = &match_state.match_presentation.unit_motion;
                 // Most records in a big battle miss the viewport. A Unit's
                 // current and formerly visible points bound its step. The
                 // aircraft span also contains its ground shadow; the slack
@@ -1437,7 +1437,7 @@ pub(crate) fn unit_visitor<'a>(
                     {
                         match_state
                             .match_presentation
-                            .vehicle_motion
+                            .unit_motion
                             .drawn(entity.stable_id(), sample);
                     }
                     // Opt-in app measurement of an actually admitted draw-plan object.
@@ -1448,13 +1448,14 @@ pub(crate) fn unit_visitor<'a>(
                         drawn.body_point,
                         drawn.committed_body_point,
                         render_pose.body,
+                        None,
                     );
                     let planned =
                         objects.object(parent, cargo_pieces.drain(..).chain(pieces.drain(..)));
                     if let Some(rules) = crate::app::state::active_rules(frontend, match_state) {
                         planned.tail_draws =
                             crate::app::presentation::target_lines::target_laser_draws(
-                                Some(&match_state.match_presentation.vehicle_motion),
+                                Some(&match_state.match_presentation.unit_motion),
                                 entity,
                                 sim,
                                 rules,
@@ -1530,7 +1531,7 @@ struct CarriedDraw {
 /// cargo it carries.
 struct DrawnBody {
     render_pose: crate::app::presentation::render_pose::RenderPose,
-    sample: Option<VehicleSample>,
+    sample: Option<UnitSample>,
     /// The body point after the Fly Draw_Point ([`aircraft_body_offset_y`]).
     body_point: [f32; 2],
     committed_body_point: [f32; 2],

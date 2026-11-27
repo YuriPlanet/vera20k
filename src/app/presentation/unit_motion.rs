@@ -1,7 +1,6 @@
-//! Presentation history for visible voxel vehicles on the ground and in
-//! flight. A tick supplies the endpoints. A successful present supplies
-//! the picker's geometry. An extra draw changes neither the world nor the
-//! native voxel art available for a facing.
+//! Presentation history for visible ground and flying units. A tick supplies
+//! the endpoints. A successful present supplies the picker's geometry. SHP
+//! infantry keep the committed DoType, stage and facing on each extra draw.
 
 use std::cell::RefCell;
 
@@ -84,7 +83,7 @@ impl Transform {
 /// Only the transform and its continuity guards survive a picture. A full
 /// ObjectRecord includes status, drawing and sidebar facts we never need here.
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct VehicleSample {
+pub(crate) struct UnitSample {
     previous: Transform,
     current: Transform,
     air_previous: AirPose,
@@ -96,16 +95,20 @@ pub(crate) struct VehicleSample {
     previous_delta: [i32; 3],
     type_id: InternedId,
     locomotor: LocomotorKind,
+    /// SHP infantry's current action. A change of action starts a fresh
+    /// segment; successive animation stages of its walk use the same pair.
+    infantry_doing: Option<i32>,
     band: EntityDrawBand,
     on_bridge: bool,
     last_fire: i64,
 }
 
-impl VehicleSample {
+impl UnitSample {
     fn continuous_with(&self, next: &Self) -> bool {
         let (a, b) = (self.location, next.location);
         self.type_id == next.type_id
             && self.locomotor == next.locomotor
+            && self.infantry_doing == next.infantry_doing
             && self.band == next.band
             && self.on_bridge == next.on_bridge
             // The flash and projectile start at the authoritative muzzle on
@@ -121,7 +124,8 @@ impl VehicleSample {
             || self.air_previous != self.air_current
             // A climb can move the ground shadow even when the airframe's
             // projected anchor and tilt happen to stay on the same pixel.
-            || (self.locomotor != LocomotorKind::Drive && self.previous_delta != [0; 3])
+            || (matches!(self.locomotor, LocomotorKind::Jumpjet | LocomotorKind::Fly)
+                && self.previous_delta != [0; 3])
     }
 
     fn planar_sort_delta(&self) -> i32 {
@@ -131,7 +135,7 @@ impl VehicleSample {
 
 #[derive(Debug, Default)]
 struct Picture {
-    vehicles: LookupMap<u64, VehicleSample>,
+    units: LookupMap<u64, UnitSample>,
     frame: u32,
     fraction: Option<f32>,
     pixel_aligned: bool,
@@ -143,7 +147,7 @@ struct Picture {
 
 impl Picture {
     fn begin(&mut self, frame: u32, fraction: Option<f32>, zoom: f32) {
-        self.vehicles.clear();
+        self.units.clear();
         self.moving = 0;
         self.planar_moves = 0;
         self.frame = frame;
@@ -153,7 +157,7 @@ impl Picture {
             .map(|f| f.clamp(0.0, 1.0));
     }
 
-    fn transform(&self, sample: VehicleSample) -> Transform {
+    fn transform(&self, sample: UnitSample) -> Transform {
         sample.previous.between(
             sample.current,
             self.fraction.unwrap_or(1.0),
@@ -163,7 +167,7 @@ impl Picture {
 
     /// Aircraft's doubled Fly Draw_Point is added before the sprite rounds
     /// to a screen pixel. Its hit test uses that same final row.
-    fn fly_body_y(&self, sample: VehicleSample) -> f32 {
+    fn fly_body_y(&self, sample: UnitSample) -> f32 {
         let from = sample.previous.anchor[1] + sample.air_previous.body_offset_y;
         let to = sample.current.anchor[1] + sample.air_current.body_offset_y;
         let fraction = self.fraction.unwrap_or(1.);
@@ -178,14 +182,21 @@ impl Picture {
 }
 
 #[derive(Debug, Default)]
-pub(crate) struct VehicleMotion {
+pub(crate) struct UnitMotion {
     presented: Picture,
     /// Object visitors share the match while constructing a candidate draw.
     /// Readers outside that draw only ever see the last published picture.
     drawing: RefCell<Picture>,
 }
 
-impl VehicleMotion {
+#[derive(Debug, Default, PartialEq, Eq)]
+pub(crate) struct IntermediateKinds {
+    pub(crate) jumpjet: bool,
+    pub(crate) fly: bool,
+    pub(crate) infantry: bool,
+}
+
+impl UnitMotion {
     pub(crate) fn clear(&mut self) {
         self.presented.begin(0, None, 1.0);
         self.drawing.get_mut().begin(0, None, 1.0);
@@ -216,9 +227,9 @@ impl VehicleMotion {
                 .is_some_and(|shown| shown != fraction)
     }
 
-    /// Visible vehicles with distinct endpoints on the last intermediate
-    /// present. Includes independent hull and turret turns.
-    pub(crate) fn intermediate_vehicles(&self) -> usize {
+    /// Visible units with distinct endpoints on the last intermediate
+    /// present, including independent voxel hull and turret turns.
+    pub(crate) fn intermediate_units(&self) -> usize {
         if self.presented.fraction.is_some_and(|f| f > 0.0 && f < 1.0) {
             self.presented.moving
         } else {
@@ -226,49 +237,62 @@ impl VehicleMotion {
         }
     }
 
-    /// For the spawn benchmark: which aircraft contributed an intermediate
-    /// pose to this present. Ordinary rendering keeps only the total count.
-    pub(crate) fn intermediate_aircraft(&self) -> (bool, bool) {
-        let (mut jumpjet, mut fly) = (false, false);
-        if self.intermediate_vehicles() != 0 {
-            for row in self.presented.vehicles.values().filter(|row| row.moved()) {
-                match row.locomotor {
-                    LocomotorKind::Jumpjet => jumpjet = true,
-                    LocomotorKind::Fly => fly = true,
-                    _ => continue,
+    /// For the spawn benchmark. Only count an infantryman's anchor when
+    /// the displayed point differs from both committed endpoints: a 1 px
+    /// step at native zoom often leaves no in-between pixel.
+    pub(crate) fn intermediate_kinds(&self) -> IntermediateKinds {
+        let mut kinds = IntermediateKinds::default();
+        if self.intermediate_units() != 0 {
+            for row in self.presented.units.values() {
+                match (row.infantry_doing, row.locomotor) {
+                    (Some(_), _)
+                        if !kinds.infantry && row.previous.anchor != row.current.anchor =>
+                    {
+                        let shown = self.presented.transform(*row).anchor;
+                        kinds.infantry =
+                            shown != row.previous.anchor && shown != row.current.anchor;
+                    }
+                    (None, LocomotorKind::Jumpjet) if !kinds.jumpjet => kinds.jumpjet = row.moved(),
+                    (None, LocomotorKind::Fly) if !kinds.fly => kinds.fly = row.moved(),
+                    _ => {}
                 }
-                if jumpjet && fly {
+                if kinds.jumpjet && kinds.fly && kinds.infantry {
                     break;
                 }
             }
         }
-        (jumpjet, fly)
+        kinds
     }
 
-    /// Drive belongs to Ground. A flying or landing voxel follows the
-    /// Display band the simulation registered; changing bands starts a new
-    /// pair. Carry, crash, warp and weapon lifts have their own draw paths.
+    /// Drive and Walk belong to Ground. Flyers follow their registered
+    /// Display band. A new layer or infantry action starts a fresh pair.
+    /// Teleport infantry stay at their confirmed placement, even for a warp
+    /// shorter than a cell. Carry, crash, paradrop and weapon lifts have
+    /// their own draw paths.
     pub(crate) fn sample(
         &self,
         entity: &ObjectRecord,
         band: EntityDrawBand,
         air: AirPose,
-    ) -> Option<VehicleSample> {
+    ) -> Option<UnitSample> {
         let drawing = self.drawing.borrow();
         drawing.fraction?;
         let locomotor = entity.locomotor.as_ref()?.active_kind();
-        let eligible = matches!(
-            (entity.category(), locomotor, band),
-            (
-                EntityCategory::Unit,
-                LocomotorKind::Drive,
-                EntityDrawBand::Ground
-            ) | (EntityCategory::Unit, LocomotorKind::Jumpjet, _)
-                | (EntityCategory::Aircraft, LocomotorKind::Fly, _)
-        );
-        if !eligible
-            || !entity.is_voxel()
-            || !entity.is_object_alive()
+        let infantry_doing = match (entity.category(), entity.is_voxel(), locomotor, band) {
+            (EntityCategory::Infantry, false, LocomotorKind::Walk, EntityDrawBand::Ground)
+            | (EntityCategory::Infantry, false, LocomotorKind::Jumpjet, _) => {
+                // A corpse can still be displayed as IsAlive at zero health.
+                if entity.health.current() <= 0 || entity.passenger_role.is_inside_transport() {
+                    return None;
+                }
+                Some(entity.infantry_sprite_pose()?.0)
+            }
+            (EntityCategory::Unit, true, LocomotorKind::Drive, EntityDrawBand::Ground)
+            | (EntityCategory::Unit, true, LocomotorKind::Jumpjet, _)
+            | (EntityCategory::Aircraft, true, LocomotorKind::Fly, _) => None,
+            _ => return None,
+        };
+        if !entity.is_object_alive()
             || entity.in_limbo()
             || entity.in_tube
             || entity.on_carryall
@@ -282,7 +306,7 @@ impl VehicleMotion {
             return None;
         }
         let current = Transform::of(entity.pose);
-        let mut next = VehicleSample {
+        let mut next = UnitSample {
             previous: current,
             current,
             air_previous: air,
@@ -291,11 +315,12 @@ impl VehicleMotion {
             previous_delta: [0; 3],
             type_id: entity.type_ref(),
             locomotor,
+            infantry_doing,
             band,
             on_bridge: entity.on_bridge(),
             last_fire: entity.last_fire_frame.frame(),
         };
-        if let Some(old) = self.presented.vehicles.get(&entity.stable_id())
+        if let Some(old) = self.presented.units.get(&entity.stable_id())
             && old.continuous_with(&next)
         {
             if self.presented.frame.wrapping_add(1) == drawing.frame {
@@ -316,10 +341,19 @@ impl VehicleMotion {
                 next.previous_delta = old.previous_delta;
             }
         }
+        if infantry_doing.is_some() {
+            // The 0x00518D80 selector reads the current native 8-way art
+            // facing and Doing/Stage. Only move its draw origin; even a
+            // stationary SHP turn uses the new image straight away.
+            next.previous = Transform {
+                anchor: next.previous.anchor,
+                ..current
+            };
+        }
         Some(next)
     }
 
-    pub(super) fn pose(&self, sample: VehicleSample, committed: RenderPose) -> RenderPose {
+    pub(super) fn pose(&self, sample: UnitSample, committed: RenderPose) -> RenderPose {
         let pose = self.drawing.borrow().transform(sample);
         RenderPose {
             screen: pose.anchor,
@@ -331,7 +365,7 @@ impl VehicleMotion {
     }
 
     /// Height for Foot's depth seed, using the same fraction as the body.
-    pub(super) fn depth_height(&self, sample: VehicleSample, current: i32) -> i32 {
+    pub(super) fn depth_height(&self, sample: UnitSample, current: i32) -> i32 {
         current.saturating_add(
             (sample.previous_delta[2] as f32
                 * (1.0 - self.drawing.borrow().fraction.unwrap_or(1.0)))
@@ -339,7 +373,7 @@ impl VehicleMotion {
         )
     }
 
-    pub(super) fn air_pose(&self, sample: VehicleSample) -> AirPose {
+    pub(super) fn air_pose(&self, sample: UnitSample) -> AirPose {
         let drawing = self.drawing.borrow();
         let fraction = drawing.fraction.unwrap_or(1.);
         let (from, to) = (sample.air_previous, sample.air_current);
@@ -360,7 +394,7 @@ impl VehicleMotion {
         }
     }
 
-    pub(super) fn world_coord(&self, sample: VehicleSample, committed: [i32; 3]) -> [i32; 3] {
+    pub(super) fn world_coord(&self, sample: UnitSample, committed: [i32; 3]) -> [i32; 3] {
         let remaining = 1.0 - self.drawing.borrow().fraction.unwrap_or(1.0);
         std::array::from_fn(|axis| {
             committed[axis]
@@ -372,7 +406,7 @@ impl VehicleMotion {
     /// already known; move it by the two endpoints' planar displacement.
     pub(super) fn sort_delta(&self, id: u64) -> i32 {
         let drawing = self.drawing.borrow();
-        drawing.vehicles.get(&id).map_or(0, |row| {
+        drawing.units.get(&id).map_or(0, |row| {
             (row.planar_sort_delta() as f32 * (1.0 - drawing.fraction.unwrap_or(1.0))).round()
                 as i32
         })
@@ -385,9 +419,9 @@ impl VehicleMotion {
 
     /// Record a body only once the plan has admitted visible pieces. Removing
     /// a body later (for fog) also removes its reason for an extra redraw.
-    pub(crate) fn drawn(&self, id: u64, sample: VehicleSample) {
+    pub(crate) fn drawn(&self, id: u64, sample: UnitSample) {
         let mut drawing = self.drawing.borrow_mut();
-        let old = drawing.vehicles.insert(id, sample);
+        let old = drawing.units.insert(id, sample);
         drawing.moving += usize::from(sample.moved());
         drawing.moving -= usize::from(old.is_some_and(|row| row.moved()));
         drawing.planar_moves += usize::from(sample.planar_sort_delta() != 0);
@@ -396,7 +430,7 @@ impl VehicleMotion {
 
     pub(super) fn conceal(&self, id: u64) {
         let mut drawing = self.drawing.borrow_mut();
-        if let Some(old) = drawing.vehicles.remove(&id) {
+        if let Some(old) = drawing.units.remove(&id) {
             drawing.moving -= usize::from(old.moved());
             drawing.planar_moves -= usize::from(old.planar_sort_delta() != 0);
         }
@@ -408,7 +442,7 @@ impl VehicleMotion {
         if drawing.moving == 0 {
             return [0.0; 2];
         }
-        drawing.vehicles.get(&id).map_or([0.; 2], |&row| {
+        drawing.units.get(&id).map_or([0.; 2], |&row| {
             let anchor = drawing.transform(row).anchor;
             [
                 anchor[0] - row.current.anchor[0],
@@ -418,7 +452,7 @@ impl VehicleMotion {
     }
 
     pub(crate) fn painted_anchor(&self, id: u64) -> Option<[f32; 2]> {
-        let row = *self.presented.vehicles.get(&id)?;
+        let row = *self.presented.units.get(&id)?;
         let mut anchor = self.presented.transform(row).anchor;
         if row.locomotor == LocomotorKind::Fly {
             anchor[1] = self.presented.fly_body_y(row);
@@ -433,7 +467,12 @@ mod tests {
     use crate::sim::game_entity::GameEntity;
     use crate::sim::movement::locomotor::LocomotorState;
 
-    fn airframe(name: &str, category: EntityCategory, kind: LocomotorKind, z: i32) -> GameEntity {
+    fn placed_unit(
+        name: &str,
+        category: EntityCategory,
+        kind: LocomotorKind,
+        z: i32,
+    ) -> GameEntity {
         let mut vehicle =
             GameEntity::test_default_of_category(7, name, "Americans", 10, 10, category);
         vehicle.lifecycle.set_object_alive_for_test(true);
@@ -445,8 +484,8 @@ mod tests {
 
     #[test]
     fn climbing_fly_uses_one_body_row_and_the_same_ground_point() {
-        let mut jet = airframe("ORCA", EntityCategory::Aircraft, LocomotorKind::Fly, 128);
-        let mut motion = VehicleMotion::default();
+        let mut jet = placed_unit("ORCA", EntityCategory::Aircraft, LocomotorKind::Fly, 128);
+        let mut motion = UnitMotion::default();
         let lower = ObjectRecord::of_test(&jet);
         let level = AirPose {
             body_offset_y: 4.,
@@ -489,13 +528,19 @@ mod tests {
             motion.painted_anchor(jet.stable_id()),
             Some([x, physical_y + air.body_offset_y])
         );
-        assert_eq!(motion.intermediate_aircraft(), (false, true));
+        assert_eq!(
+            motion.intermediate_kinds(),
+            IntermediateKinds {
+                fly: true,
+                ..Default::default()
+            }
+        );
     }
 
     #[test]
     fn descending_jumpjet_samples_its_height_until_the_ground_band_takes_it() {
-        let mut heli = airframe("SHAD", EntityCategory::Unit, LocomotorKind::Jumpjet, 232);
-        let mut motion = VehicleMotion::default();
+        let mut heli = placed_unit("SHAD", EntityCategory::Unit, LocomotorKind::Jumpjet, 232);
+        let mut motion = UnitMotion::default();
         let air = AirPose::default();
         let id = heli.stable_id();
         let top = ObjectRecord::of_test(&heli);
@@ -514,7 +559,13 @@ mod tests {
         // A Ground attachment can inherit its airborne parent's sort key.
         assert!(motion.ground_order_changed());
         motion.commit_presented();
-        assert_eq!(motion.intermediate_aircraft(), (true, false));
+        assert_eq!(
+            motion.intermediate_kinds(),
+            IntermediateKinds {
+                jumpjet: true,
+                ..Default::default()
+            }
+        );
 
         // Jumpjet In_Which_Layer (0x0054B8D0) returns Ground below two
         // levels while this helicopter is still descending.
@@ -533,6 +584,91 @@ mod tests {
     }
 
     #[test]
+    fn walking_infantry_uses_the_current_facing_and_stage_at_its_sampled_position() {
+        let mut gi = placed_unit("E1", EntityCategory::Infantry, LocomotorKind::Walk, 0);
+        gi.set_is_voxel_for_test(false);
+        gi.mission_leaf.set_infantry_doing_verified(3).unwrap(); // Walk
+        let id = gi.stable_id();
+        let band = EntityDrawBand::Ground;
+        let air = AirPose::default();
+        let mut motion = UnitMotion::default();
+        let old = ObjectRecord::of_test(&gi);
+        motion.begin_draw(2, Some(1.), 1.);
+        motion.drawn(id, motion.sample(&old, band, air).unwrap());
+        motion.commit_presented();
+
+        let mut to = old.hud.location;
+        to.x += 128;
+        gi.position.put_location(to);
+        gi.body_facing.snap(0x4000, 3);
+        gi.set_native_stage_value(2);
+        let next = ObjectRecord::of_test(&gi);
+        motion.begin_draw(3, Some(0.5), 1.);
+        let sample = motion.sample(&next, band, air).unwrap();
+        let pose = motion.pose(sample, next.pose);
+        assert!(old.pose.screen[0] < pose.screen[0] && pose.screen[0] < next.pose.screen[0]);
+        assert_eq!(pose.body, 0x4000);
+        assert_eq!(next.infantry_sprite_pose(), Some((3, 2)));
+        motion.drawn(id, sample);
+        motion.commit_presented();
+        assert_eq!(motion.painted_anchor(id), Some(pose.screen));
+        assert!(motion.intermediate_kinds().infantry);
+
+        to.x += 32;
+        gi.position.put_location(to);
+        gi.mission_leaf.set_infantry_doing_verified(4).unwrap(); // FireUp
+        let shooting = ObjectRecord::of_test(&gi);
+        motion.begin_draw(4, Some(0.), 1.);
+        let sample = motion.sample(&shooting, band, air).unwrap();
+        assert_eq!(motion.pose(sample, shooting.pose), shooting.pose);
+    }
+
+    #[test]
+    fn a_rocketeer_counts_only_when_its_translation_has_an_in_between_pixel() {
+        let mut trooper = placed_unit(
+            "JUMPJET",
+            EntityCategory::Infantry,
+            LocomotorKind::Jumpjet,
+            500,
+        );
+        trooper.set_is_voxel_for_test(false);
+        let band = EntityDrawBand::Top;
+        let air = AirPose::default();
+        let mut motion = UnitMotion::default();
+        let id = trooper.stable_id();
+        let old = ObjectRecord::of_test(&trooper);
+        motion.begin_draw(9, Some(1.), 1.);
+        motion.drawn(id, motion.sample(&old, band, air).unwrap());
+        motion.commit_presented();
+
+        let mut step = old.hud.location;
+        step.x += 9;
+        trooper.position.put_location(step);
+        let new = ObjectRecord::of_test(&trooper);
+        assert_eq!(
+            new.pose.screen,
+            [old.pose.screen[0] + 1., old.pose.screen[1]]
+        );
+        motion.begin_draw(10, Some(0.5), 1.);
+        motion.drawn(id, motion.sample(&new, band, air).unwrap());
+        motion.commit_presented();
+        assert_eq!(motion.intermediate_kinds(), IntermediateKinds::default());
+
+        // At wheel zoom the sampler submits a fractional world position. The
+        // world zoom pass can still round it while composing the native texture.
+        motion.begin_draw(10, Some(0.5), 2.);
+        motion.drawn(id, motion.sample(&new, band, air).unwrap());
+        motion.commit_presented();
+        assert_eq!(
+            motion.intermediate_kinds(),
+            IntermediateKinds {
+                infantry: true,
+                ..Default::default()
+            }
+        );
+    }
+
+    #[test]
     fn repeated_draws_move_the_body_and_its_attachments_together_only_on_present() {
         let mut tank = GameEntity::test_default(8, "MTNK", "Americans", 10, 10);
         tank.lifecycle.set_object_alive_for_test(true);
@@ -540,7 +676,7 @@ mod tests {
         tank.position.put_location(DriveCoord::cell(10, 10, 0));
         tank.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Drive));
         tank.body_facing.snap(0xf000, 0);
-        let motion = &mut VehicleMotion::default();
+        let motion = &mut UnitMotion::default();
         let old = ObjectRecord::of_test(&tank);
         let id = tank.stable_id();
         motion.begin_draw(10, Some(1.0), 1.0);

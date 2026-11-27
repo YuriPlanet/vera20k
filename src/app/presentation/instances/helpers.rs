@@ -384,7 +384,7 @@ fn tactical_bounded_entity_encounter_order(
     compose_tactical_screen_entity_encounter_order(
         sim,
         frame,
-        &match_state.match_presentation.vehicle_motion,
+        &match_state.match_presentation.unit_motion,
         (min_x, min_y, max_x, max_y),
         local_owner_id,
         match_state.sandbox_full_visibility,
@@ -395,7 +395,7 @@ fn tactical_bounded_entity_encounter_order(
 fn compose_tactical_screen_entity_encounter_order(
     sim: &crate::sim::world::Simulation,
     frame: &crate::app::presentation::frame::PresentationFrame,
-    vehicle_motion: &crate::app::presentation::vehicle_motion::VehicleMotion,
+    unit_motion: &crate::app::presentation::unit_motion::UnitMotion,
     bounds: (f32, f32, f32, f32),
     local_owner_id: Option<InternedId>,
     ignore_visibility: bool,
@@ -448,7 +448,7 @@ fn compose_tactical_screen_entity_encounter_order(
                     return false;
                 }
                 // `entity_pick::PresentedWorld::screen_position`.
-                let [x, y] = vehicle_motion.painted_anchor(*id).unwrap_or_else(|| {
+                let [x, y] = unit_motion.painted_anchor(*id).unwrap_or_else(|| {
                     let [x, y] = entity.pose.screen;
                     [x, y - entity.pose.visual_lift]
                 });

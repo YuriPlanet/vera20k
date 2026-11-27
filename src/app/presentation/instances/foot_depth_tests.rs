@@ -53,7 +53,9 @@ fn unit_z_adjust_in_runtime(
 }
 
 fn shp_z_adjust_in_runtime(runtime: Option<&SimRuntime>, entity: &GameEntity) -> f32 {
-    with_record(runtime, entity, super::shp_z_adjust)
+    with_record(runtime, entity, |world, record| {
+        super::shp_z_adjust(world, record, None)
+    })
 }
 
 fn unit_bridge_split_in_runtime(

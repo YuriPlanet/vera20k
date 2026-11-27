@@ -632,8 +632,9 @@ playback with camera controls and Escape to close.
 accepted launch and replays the production frame transaction without connecting
 to the lobby. Startup version, rules, map bytes, seed and initial state must
 match. Playback checks the recorded state hashes.
-On desktop, `VERA20K_REPLAY_ACTOR=<stable object ID>` logs a visible voxel
-body's drawn and committed screen positions at each frame hand-off. For aircraft
+On desktop, `VERA20K_REPLAY_ACTOR=<stable object ID>` logs the drawn and committed
+screen positions of a visible voxel body or SHP infantry sprite at each frame
+hand-off, including the sprite frame used for infantry. For aircraft
 these positions include the body offset from the flight locomotor. Playback uses
 its ordinary cadence, including pictures between logic ticks. Keep a Multiplayer
 Campaign map at its recorded logical path under `campaigns/<series>/`. When names

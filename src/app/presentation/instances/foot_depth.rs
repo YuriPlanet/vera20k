@@ -220,13 +220,21 @@ fn unit_bridge_condition(
 /// 00825500 at005195AF. TechnoClass::DrawSHP @00705E00 includes that caller
 /// input in both Foot (00706024) and height-only (0070603D) body depth before
 /// the common -2 (00706430); its separate shadow depth does not use it.
-pub(super) fn shp_z_adjust(world: DepthWorld<'_>, entity: &ObjectRecord) -> f32 {
+pub(super) fn shp_z_adjust(
+    world: DepthWorld<'_>,
+    entity: &ObjectRecord,
+    draw_coord: Option<[i32; 3]>,
+) -> f32 {
     let caller_z_adjust: i32 = if entity.category() == EntityCategory::Infantry {
         -10
     } else {
         0
     };
-    let world_z = entity.place.world_z_leptons_off_map;
+    let [x, y, world_z] = draw_coord.unwrap_or([
+        entity.hud.location.x,
+        entity.hud.location.y,
+        entity.place.world_z_leptons_off_map,
+    ]);
     let height_only = caller_z_adjust
         .wrapping_sub(adjust_for_z_standard(world_z))
         .wrapping_sub(2);
@@ -239,7 +247,7 @@ pub(super) fn shp_z_adjust(world: DepthWorld<'_>, entity: &ObjectRecord) -> f32 
     let Some(terrain) = world.runtime.and_then(|rt| rt.view().resolved_terrain()) else {
         return height_only as f32;
     };
-    let xy = crate::sim::movement::ground_pose::position_world_xy(&entity.position);
+    let xy = [x, y];
     let cell = depth_cell(
         terrain,
         None,
@@ -268,7 +276,7 @@ pub(super) fn shp_z_adjust(world: DepthWorld<'_>, entity: &ObjectRecord) -> f32 
         )
     };
     if height_above_ground == 0 {
-        unit_z_adjust_in(world, entity, true, None)
+        unit_z_adjust_in(world, entity, true, draw_coord)
             .wrapping_add(caller_z_adjust)
             .wrapping_sub(2) as f32
     } else {

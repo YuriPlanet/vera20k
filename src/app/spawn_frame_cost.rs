@@ -34,6 +34,7 @@ pub(crate) struct FrameCost {
     last_present: Option<Instant>,
     present_intervals: Vec<Duration>,
     intermediate_pictures: usize,
+    infantry_pictures: usize,
     jumpjet_pictures: usize,
     fly_pictures: usize,
     last_population_bucket: Option<u32>,
@@ -99,7 +100,7 @@ impl FrameCost {
     pub(crate) fn battlefield_presented(
         &mut self,
         at: Instant,
-        motion: &crate::app::presentation::vehicle_motion::VehicleMotion,
+        motion: &crate::app::presentation::unit_motion::UnitMotion,
         population: impl FnOnce() -> Option<usize>,
     ) {
         let Some((_, frame)) = self.frames else {
@@ -109,11 +110,12 @@ impl FrameCost {
             self.present_intervals
                 .push(at.saturating_duration_since(last));
         }
-        if motion.intermediate_vehicles() > 0 {
+        if motion.intermediate_units() > 0 {
             self.intermediate_pictures += 1;
-            let (jumpjet, fly) = motion.intermediate_aircraft();
-            self.jumpjet_pictures += usize::from(jumpjet);
-            self.fly_pictures += usize::from(fly);
+            let kinds = motion.intermediate_kinds();
+            self.jumpjet_pictures += usize::from(kinds.jumpjet);
+            self.fly_pictures += usize::from(kinds.fly);
+            self.infantry_pictures += usize::from(kinds.infantry);
         }
         let bucket = frame / 100;
         if self.last_population_bucket != Some(bucket)
@@ -162,6 +164,7 @@ impl FrameCost {
             pictures: pictures.len(),
             present_p99_ms: (!present_intervals.is_empty()).then(|| at(&present_intervals, 0.99)),
             intermediate_pictures: self.intermediate_pictures,
+            infantry_pictures: self.infantry_pictures,
             jumpjet_pictures: self.jumpjet_pictures,
             fly_pictures: self.fly_pictures,
             fewest_mobile: self.fewest_mobile,
@@ -191,8 +194,10 @@ pub(crate) struct FrameCostReport {
     pub(crate) pictures: usize,
     /// Wall time between battlefield hand-offs. This ends before display scanout.
     pub(crate) present_p99_ms: Option<f64>,
-    /// Battlefield pictures with a moving vehicle sampled between adjacent ticks.
+    /// Battlefield pictures with a moving unit sampled between adjacent ticks.
     pub(crate) intermediate_pictures: usize,
+    /// Hand-offs with a submitted infantry body origin strictly between its endpoints.
+    pub(crate) infantry_pictures: usize,
     /// Intermediate pictures containing motion from each flight locomotor.
     pub(crate) jumpjet_pictures: usize,
     pub(crate) fly_pictures: usize,
