@@ -163,8 +163,9 @@ pub(crate) struct RetailOptionsProfile {
     /// own string-table key. Off by default; a start with it on shows the
     /// texts until the hotkey asks for keys.
     pub(crate) show_string_keys: bool,
-    /// `[VERA] MouseWheelZoom=`: let the mouse wheel change the battle's
-    /// view distance. Off by default; this is a local camera preference.
+    /// `[VERA] MouseWheelZoom=`: let the mouse wheel zoom the battle's
+    /// camera, continuously (`app::input::camera::wheel_zoom`). Off by
+    /// default; this is a local camera preference.
     pub(crate) mouse_wheel_zoom: bool,
     /// `[VERA] RightClickOrders=`: left selects, right issues context orders,
     /// and a double-click on an object selects its type on screen (the T key's

@@ -1220,7 +1220,10 @@ mod tests {
         let line = &doubled.lines[0];
         assert_eq!(line.glyphs.len(), 2);
         let second = stop(stop(plain.width));
-        assert!(close(line.glyphs[1].x, second + plain.glyphs[0].x), "{line:?}");
+        assert!(
+            close(line.glyphs[1].x, second + plain.glyphs[0].x),
+            "{line:?}"
+        );
         assert_eq!(line.glyphs[1].cluster, 3);
         assert!(close(line.width, second + plain.width), "{line:?}");
 

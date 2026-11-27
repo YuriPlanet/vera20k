@@ -96,7 +96,6 @@ fn draw_parts(
         building_viewport: crate::app::presentation::render::tactical_world_viewport(
             camera,
             [0, 0, 800, 600],
-            None,
         ),
         axis: DepthAxis {
             origin_y: 0.0,
@@ -110,6 +109,7 @@ fn draw_parts(
             HouseColorIndex(0),
         )]),
         building_zshape: None,
+        model_frame: None,
     };
     let order = NativeDisplayOrder::from_ordered(vec![(
         if kind == "JUMPJET" {

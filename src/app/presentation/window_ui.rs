@@ -1,18 +1,19 @@
 //! The match's text at the window's own pixels.
 //!
-//! A zoomed match draws its frame at the window's size divided by the zoom,
-//! and the zoom pass scales it up (`render::upscale_pass`), so text drawn
-//! into the frame would show the frame's pixels enlarged; an active-game
-//! menu's text would also grow with the Sidebar size. The battlefield's
-//! screen-fixed text (the timers, the outcome text when its art is missing,
-//! messages and chat, tooltips, Phobos's build description) is laid out in
-//! the frame as ever, emitted for the window ([`TextRaster`]) with the boxes
-//! and frames behind it, and drawn here after the zoom and the sidebar's
-//! window copy ([`draw_battlefield`]), first the sidebar column's own text
-//! when its copy would resample it (`sidebar_surface::column_text`). An active-game menu's text and its
-//! open list come here the same way after the menu's copy
-//! (`skirmish_shell_render::in_game_shell`). The software cursor comes last,
-//! as gamemd draws the mouse.
+//! A zoomed match lays out its frame at the window's size divided by the
+//! zoom. Its composition is drawn at the window's pixels, but the frame's
+//! interface in it scales the frame's pixels (`render::upscale_pass`,
+//! `docs/zoom-one-pass.md`), so text drawn there would show them enlarged;
+//! an active-game menu's text would also grow with the Sidebar size. The
+//! battlefield's screen-fixed text (the timers, the outcome text when its art
+//! is missing, messages and chat, tooltips, Phobos's build description) is
+//! laid out in the frame as ever, emitted for the window ([`TextRaster`])
+//! with the boxes and frames behind it, and drawn here after the composition
+//! went into the window ([`draw_battlefield`]), first the sidebar column's
+//! own text when its copy would resample it (`sidebar_surface::column_text`).
+//! An active-game menu's text and its open list come here the same way after
+//! the menu's copy (`skirmish_shell_render::in_game_shell`). The software
+//! cursor comes last, as gamemd draws the mouse.
 //!
 //! While the Surrender box is open, battlefield text stays underneath it
 //! and the box's text is drawn here.
@@ -237,8 +238,8 @@ impl WindowPass<'_> {
 }
 
 /// The zoom's raster: a frame pixel, in the UI camera's units (its camera
-/// included), at the window pixel the zoom pass shows it on. `None` outside
-/// a zoomed match.
+/// included), at the window pixel the composition shows it on. `None`
+/// outside a zoomed match.
 pub(crate) fn zoom_raster(
     renderer: &RendererState,
     screen: &GameScreen,
@@ -331,9 +332,7 @@ fn window_rect(raster: TextRaster, (x, y, width, height): (u32, u32, u32, u32)) 
     )
 }
 
-/// The battlefield's window layers in the frame's order, the Surrender
-/// box's text, then the software cursor: after the zoom pass and the
-/// sidebar's window copy put the frame in the window `view` (`app::frame`).
+/// Draw the battlefield UI, surrender text and software cursor over the composed frame.
 pub(crate) fn draw_battlefield(
     platform: &PlatformState,
     renderer: &mut RendererState,
@@ -364,7 +363,7 @@ pub(crate) fn draw_battlefield(
     if battlefield_raster(renderer, screen, match_state).is_some() {
         use crate::app::presentation::sidebar_surface::{self, ColumnText};
         // The sidebar column's text, where its copy would resample it, over
-        // the window copy within the column; the timers keep to the
+        // the copy within the column; the timers keep to the
         // tactical view, so drawing them after it changes nothing.
         if let ColumnText::Window(_) =
             sidebar_surface::column_text(platform, renderer, screen, match_state, persistence)

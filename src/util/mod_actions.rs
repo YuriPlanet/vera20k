@@ -15,6 +15,9 @@ pub struct Hooks {
     /// Hand the named `Mods` folder to the system file manager to copy out;
     /// the toast says `done` or `failed`.
     pub export: fn(folder: &str, done: &str, failed: &str) -> bool,
+    /// Pack the named `Mods` folder into a ZIP the player picks; `progress`
+    /// labels the wait, and the toast says `done` or `failed`.
+    pub export_zip: fn(folder: &str, done: &str, failed: &str, progress: &str) -> bool,
     /// Add `folder` as a home-screen shortcut for `id`.
     pub pin: fn(folder: &str, id: &str) -> bool,
     /// Let the player pick a mod ZIP in the system file manager; the toast
@@ -47,6 +50,13 @@ pub fn export(folder: &str, done: &str, failed: &str) -> bool {
     HOOKS
         .get()
         .is_some_and(|hooks| (hooks.export)(folder, done, failed))
+}
+
+/// Ask the platform to pack `folder` into a ZIP; false when it cannot.
+pub fn export_zip(folder: &str, done: &str, failed: &str, progress: &str) -> bool {
+    HOOKS
+        .get()
+        .is_some_and(|hooks| (hooks.export_zip)(folder, done, failed, progress))
 }
 
 /// Ask for a mod ZIP; false when the platform cannot show a picker.

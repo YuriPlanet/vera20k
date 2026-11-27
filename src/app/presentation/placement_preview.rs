@@ -7,7 +7,9 @@
 //! centered at the placement cell plus `PlacementPreview.Offset`; `Remap=yes`
 //! uses the placing house's drawer (theater unit palette with its colour
 //! ramp), and `Remap=no` uses `PlacementPreview.Palette` or the unit palette.
-//! Translucency is the per-type/global `TranslucencyLevel`.
+//! Translucency is the per-type/global `TranslucencyLevel`. A building whose
+//! art declares `Picture=` takes the buildup and body from its pictures
+//! (VERA-only, experimental, docs/picture-model-art.md).
 //!
 //! Residual: gamemd draws the wall auto-fill markers (`0x6D5730`/`0x6D59D0`/
 //! `0x6D5C50`) after the `0x6D528A` hook, so a native preview sits under
@@ -24,6 +26,7 @@ use crate::assets::asset_manager::AssetManager;
 use crate::assets::pal_file::Palette;
 use crate::assets::shp_file::ShpFile;
 use crate::render::batch::{BatchRenderer, BatchTexture, SpriteInstance};
+use crate::render::picture_atlas::{PictureSource, PictureSources};
 use crate::render::selection_overlay::CenteredShapeStrip;
 use crate::rules::house_colors::{HouseColorIndex, NO_REMAP};
 use crate::rules::object_type::ObjectType;
@@ -180,6 +183,35 @@ impl PlacementPreviewArt {
         }
 
         let art = rules.art();
+        // VERA-only, experimental (docs/picture-model-art.md): a building
+        // whose art declares Picture= previews from its Buildup picture at
+        // the same `Frames / 2 - 1`, else its body picture at frame 0, with
+        // the placing house's ramp under `Remap=yes`. Its SHPs are never
+        // opened.
+        if let Some(body) = crate::render::sprite_atlas::object_picture(art, rules, type_id) {
+            let ramp = remap_house
+                .filter(|&house| object.placement_preview_remap() && house != NO_REMAP)
+                .map(|house| rules.house_color_ramps.ramp(house));
+            let mut pictures = PictureSources::default();
+            let mut load = |source: &PictureSource| {
+                let frames = pictures.frames(source, art, assets, theater_name)?;
+                CenteredShapeStrip::from_picture_on_device(device, queue, batch, frames, ramp)
+            };
+            if let Some(strip) =
+                crate::render::sprite_atlas::buildup_picture(art, Some(rules), type_id)
+                    .and_then(|buildup| load(&buildup))
+            {
+                let default_frame = (strip.frame_count() / 2).saturating_sub(1);
+                return Some(CachedPreview {
+                    strip,
+                    default_frame,
+                });
+            }
+            return Some(CachedPreview {
+                strip: load(&body)?,
+                default_frame: 0,
+            });
+        }
         let buildup_candidates = crate::render::sprite_atlas::buildup_shp_candidates(
             art,
             Some(rules),

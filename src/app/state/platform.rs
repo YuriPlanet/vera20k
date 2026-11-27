@@ -187,14 +187,16 @@ impl PlatformState {
         }
     }
 
-    /// True while the window is deactivated and `pause_on_focus_loss` is
-    /// configured; [`super::focus_freeze_active`] adds the session
-    /// gate and is the single gate for the simulation and the message clock.
-    /// The audio stop is deliberately not part of it: gamemd gates its primary
-    /// output on the activation edge itself, so that gate follows
-    /// [`Self::window_active`] alone.
-    pub(crate) fn focus_freeze_configured(&self) -> bool {
-        self.pause_on_focus_loss && !self.window_active
+    pub(crate) fn movie_activity(
+        &self,
+        session: Option<crate::app::match_runtime::session::SessionMode>,
+    ) -> crate::app::movie_playback::MovieActivity {
+        crate::app::movie_playback::MovieActivity::for_window(
+            self.window_active,
+            self.window_hidden,
+            self.pause_on_focus_loss,
+            session,
+        )
     }
 
     /// Whether the game owns the pointer and draws mouse.shp for it: the

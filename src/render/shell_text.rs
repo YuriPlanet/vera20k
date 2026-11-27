@@ -509,8 +509,14 @@ mod tests {
             })
             .find(|text| (111..=114).contains(&font.text_width(text)))
             .expect("the fixture needs a width in the newly available range");
-        assert_eq!(squeeze(&font, &text, rect, ShellAlign::ART_CAPTION), Fit::NONE);
-        assert_ne!(squeeze(&font, &text, rect, ShellAlign::PANEL_TITLE), Fit::NONE);
+        assert_eq!(
+            squeeze(&font, &text, rect, ShellAlign::ART_CAPTION),
+            Fit::NONE
+        );
+        assert_ne!(
+            squeeze(&font, &text, rect, ShellAlign::PANEL_TITLE),
+            Fit::NONE
+        );
 
         let long = "动画及制作人员读取已保存游戏".repeat(3);
         let draw = |text| {
@@ -548,10 +554,13 @@ mod tests {
             assert!(font.fitted(fitted, |font| font.text_width(text)) <= rect.w);
             let actual = draw_in_rect(&font, text, rect, [1.0; 3], align, [0.0; 2], 0.5);
             assert_eq!(actual.instances.len(), text.chars().count());
-            assert!(actual.instances.iter().all(|glyph| {
-                glyph.position[0] >= rect.x as f32
-                    && glyph.position[0] + glyph.size[0] <= (rect.x + rect.w as i32) as f32
-            }), "{text}");
+            assert!(
+                actual.instances.iter().all(|glyph| {
+                    glyph.position[0] >= rect.x as f32
+                        && glyph.position[0] + glyph.size[0] <= (rect.x + rect.w as i32) as f32
+                }),
+                "{text}"
+            );
         }
     }
 

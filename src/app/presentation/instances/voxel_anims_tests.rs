@@ -15,7 +15,11 @@ fn planned_debris(
     render: impl FnOnce(i32, glam::Mat4) -> Option<(UnitSpriteEntry, Option<UnitSpriteEntry>)>,
 ) -> Option<crate::app::presentation::render::draw_plan_lowering::OwnedPlannedObject> {
     let mut plan = PlannedObjects::default();
-    voxel_anim_draw_instance(id, piece, kind, palette, view, order, &mut plan, render)?;
+    voxel_anim_draw_instance(id, piece, kind, palette, view, order, &mut plan, |section, matrix| {
+        let page = |entry: UnitSpriteEntry| (ObjectTexture::UnitPosePage(entry.page), entry);
+        let (body, shadow) = render(section, matrix)?;
+        Some((page(body), shadow.map(page)))
+    })?;
     plan.into_owned().pop()
 }
 

@@ -237,6 +237,7 @@ impl TacticalCaptureSession {
             }
             let camera_cell = profile.camera_cell;
             let cursor_position = profile.cursor_position;
+            let presentation = profile.presentation;
             let audio_config = profile.observe_audio.as_ref().map(MapAudioProfile::config);
             let allow_load_segments = profile.allow_load_segments == Some(true);
             let keyboard_bindings: Vec<_> = if profile.observes_local_input() {
@@ -296,6 +297,11 @@ impl TacticalCaptureSession {
                     &state.match_state.sim_runtime,
                     state.audio.sfx_player.as_mut(),
                 )?;
+            }
+            // The wheel's view distance first, so `camera_cell` centres its
+            // cell at the zoom every observed frame uses.
+            if let Some(presentation) = presentation {
+                presentation.apply_wheel_zoom(state)?;
             }
             if let Some([rx, ry]) = camera_cell {
                 crate::app::input::camera::center_camera_on_cell(

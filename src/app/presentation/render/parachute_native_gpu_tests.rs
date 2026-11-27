@@ -242,7 +242,6 @@ impl Scene {
                 building_viewport: crate::app::presentation::render::tactical_world_viewport(
                     vera_camera(),
                     CLIP,
-                    None,
                 ),
                 axis: DepthAxis::NONE,
                 local_owner: Some(OWNER),
@@ -250,6 +249,7 @@ impl Scene {
                 lighting: light,
                 house_colors: colors,
                 building_zshape: None,
+                model_frame: None,
             },
             &mut parents,
             &order,

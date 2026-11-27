@@ -41,6 +41,8 @@ Kommst du nicht weiter? Schau auf der [Hilfeseite](https://vera20k.org/de/help) 
 
 ## Mitmachen
 
+**Geschätzte Pull Requests** — Refactoring, Performance, Wegfindung, UI/UX, Zufallskartengenerator.
+
 Mitwirkende können Verantwortung für Bereiche der Engine übernehmen und haben dabei viel
 Spielraum für Änderungen, die VERA20K voranbringen.
 

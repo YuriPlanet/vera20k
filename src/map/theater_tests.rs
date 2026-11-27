@@ -1489,6 +1489,69 @@ fn load_theater_prefers_the_profile_theater_ini_then_the_stock_name() {
     assert_eq!(theater.ini_data, profile_ini);
 }
 
+/// A one-cell 8x4 TMP whose diamond pixels are palette index 1.
+fn one_cell_tmp() -> Vec<u8> {
+    let mut data = Vec::new();
+    for word in [1u32, 1, 8, 4, 20] {
+        data.extend_from_slice(&word.to_le_bytes());
+    }
+    data.extend_from_slice(&[0u8; 40]);
+    data.extend_from_slice(&[0, 0, 0]);
+    data.extend_from_slice(&[0u8; 9]);
+    data.extend_from_slice(&[1u8; 16]);
+    data
+}
+
+/// VERA-only (docs/picture-model-art.md): a tileset that declares
+/// `PictureFileName=` draws its cells' colours from the template picture,
+/// shrunk from 2x by coverage, and keeps the TMP's Z and canvas; a picture
+/// that does not fit the TMP's cells leaves the TMP's own pixels.
+#[test]
+fn a_tile_picture_draws_its_cells_and_a_misfit_keeps_the_tmp() {
+    use crate::map::source::test_support::TestDirectory;
+    let directory = TestDirectory::new("tile-picture");
+    directory.write("clear01.tem", &one_cell_tmp());
+    directory.write("misfit01.tem", &one_cell_tmp());
+    let red = [200u8, 10, 20, 255].repeat(16 * 8);
+    let picture =
+        |width, height, rgba: &[u8]| crate::assets::picture_file::encode_frames(width, height, &[rgba.to_vec()]).unwrap();
+    directory.write("hd01.png", &picture(16, 8, &red));
+    directory.write("bad01.png", &picture(9, 4, &[200u8, 10, 20, 255].repeat(9 * 4)));
+    let assets = AssetManager::from_loose_root_for_test(directory.path());
+    let lookup = parse_tileset_ini(
+        b"[TileSet0000]\nFileName=clear\nTilesInSet=1\nPictureFileName=hd\n\
+          [TileSet0001]\nFileName=misfit\nTilesInSet=1\nPictureFileName=bad\n",
+        "tem",
+    )
+    .unwrap();
+    let mut colors = [0u8; 768];
+    colors[3..6].copy_from_slice(&[10, 20, 30]);
+    let palette = crate::assets::pal_file::Palette::from_bytes(&colors).unwrap();
+    let key = |tile_id| TileKey {
+        tile_id,
+        sub_tile: 0,
+        variant: 0,
+    };
+    let images = load_tile_images(&assets, &lookup, &palette, &HashSet::from([key(0), key(1)]));
+
+    let drawn = &images[&key(0)];
+    assert_eq!([drawn.width, drawn.height], [8, 4]);
+    assert!(
+        drawn
+            .rgba
+            .chunks_exact(4)
+            .all(|pixel| pixel == [200, 10, 20, 255]),
+        "every game pixel takes the picture's colour, opaque"
+    );
+    let tmp = TmpFile::from_bytes(&one_cell_tmp()).unwrap();
+    assert_eq!(drawn.depth, tmp.tiles[0].as_ref().unwrap().depth);
+    assert_eq!(
+        images[&key(1)].rgba,
+        tmp.tile_to_rgba(0, &palette).unwrap(),
+        "a 9x4 picture is no whole multiple of the 8x4 cell: the TMP draws"
+    );
+}
+
 /// VERA: a load of the original terrain reads the theater INI and tiles a
 /// retail install reads, past a tile pack in `expandmd06.mix` and loose
 /// files: the pack's table, its bytes for a retail tile, its tile in a slot

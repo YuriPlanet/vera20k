@@ -5,8 +5,7 @@ struct PackedSource { @location(0) word: u32, @location(1) candidate: f32 };
 @fragment
 fn fs_packed(input: VertexOutput) -> PackedSource {
     if ((input.fx_flags & 128u) != 0u && input.world_pos.y >= input.sinking_row) { discard; }
-    let texel = vec2i(input.atlas_uv * vec2f(textureDimensions(atlas)));
-    let index = textureLoad(atlas, texel, 0).r;
+    let index = voxel_byte_at(input.atlas_uv);
     if index == 0u { discard; }
     let rgb = voxel_source_rgb(index, input.remap_row, input.source_palette);
     var word = native_palette_word(vec3u(round(rgb * 255.0)), index,

@@ -35,8 +35,7 @@ pub fn resolve(names: &[String], art: &IniFile) -> Vec<TechType> {
 /// Structures are the theater's main civilian buildings: civilian types
 /// (`CA`/`CT`/`CI`) that are not capturable and not neutral tech buildings,
 /// of at least 2x2 and at most thirty cells, whose body art exists on this
-/// theater (`has_file` answers for the names
-/// [`crate::rules::art_data::building_body_shp_candidates`] tries) and whose
+/// theater ([`body_art_exists`]) and whose
 /// `Name=` reads as no wall, fence or street prop: authored maps set those
 /// apart from the blocks they line. On a theater `urban_survey.ini` lists,
 /// only the buildings authored maps of that theater put in their towns are
@@ -105,18 +104,16 @@ pub fn resolve_vera_urban(
             let piece = bytes.len() >= 2
                 && bytes[bytes.len() - 1].is_ascii_alphabetic()
                 && bytes[bytes.len() - 2].is_ascii_digit();
-            let image_id = registry.resolve_effective_image_id(id, &object.image);
             if footprint.len() == 1
                 && !piece
-                && crate::rules::art_data::building_body_shp_candidates(
-                    Some(registry),
+                && body_art_exists(
+                    registry,
+                    id,
                     &object.image,
-                    &image_id,
                     theater_ext,
                     theater_name,
+                    &has_file,
                 )
-                .iter()
-                .any(|file| has_file(file))
             {
                 props.push(UrbanStructure {
                     name: id.clone(),
@@ -152,17 +149,14 @@ pub fn resolve_vera_urban(
         if w < 2 || h < 2 || footprint.len() > 30 {
             continue;
         }
-        let image_id = registry.resolve_effective_image_id(id, &object.image);
-        let drawn = crate::rules::art_data::building_body_shp_candidates(
-            Some(registry),
+        if !body_art_exists(
+            registry,
+            id,
             &object.image,
-            &image_id,
             theater_ext,
             theater_name,
-        )
-        .iter()
-        .any(|file| has_file(file));
-        if !drawn {
+            &has_file,
+        ) {
             continue;
         }
         // A letter after the number marks one piece of a composite landmark
@@ -245,16 +239,14 @@ pub fn resolve_vera_urban(
                     .iter()
                     .find(|id| id.eq_ignore_ascii_case(name))?;
                 let object = rules.object(id)?;
-                let image_id = registry.resolve_effective_image_id(id, &object.image);
-                crate::rules::art_data::building_body_shp_candidates(
-                    Some(registry),
+                body_art_exists(
+                    registry,
+                    id,
                     &object.image,
-                    &image_id,
                     theater_ext,
                     theater_name,
+                    &has_file,
                 )
-                .iter()
-                .any(|file| has_file(file))
                 .then(|| UrbanStructure {
                     name: id.clone(),
                     footprint: Some(footprint_for(art, id)),
@@ -430,6 +422,36 @@ fn spawn_wild(rules: &RuleSet) -> SpawnFoots {
     }
 }
 
+/// Whether building `id`'s body art exists on this theater: `has_file`
+/// answers for the names [`crate::rules::art_data::building_body_shp_candidates`]
+/// tries, or, when its art declares `Picture=`, for the picture's
+/// (docs/picture-model-art.md); the SHP names are then never asked.
+fn body_art_exists(
+    registry: &crate::rules::art_data::ArtRegistry,
+    id: &str,
+    rules_image: &str,
+    theater_ext: &str,
+    theater_name: &str,
+    has_file: &impl Fn(&str) -> bool,
+) -> bool {
+    if let Some((section, decl)) = registry.resolve_declared_picture(id, rules_image) {
+        return registry
+            .picture_candidates(section, decl, theater_name)
+            .iter()
+            .any(|file| has_file(file));
+    }
+    let image_id = registry.resolve_effective_image_id(id, rules_image);
+    crate::rules::art_data::building_body_shp_candidates(
+        Some(registry),
+        rules_image,
+        &image_id,
+        theater_ext,
+        theater_name,
+    )
+    .iter()
+    .any(|file| has_file(file))
+}
+
 /// The `TREExx` terrain objects authored towns of a theater stand along
 /// their streets (the same survey): temperate kinds, snow-laden ones on Snow
 /// and palms and cacti on Desert.
@@ -552,6 +574,53 @@ mod tests {
             .map(|(index, name)| format!("{index}={name}\n"))
             .collect();
         format!("[BuildingTypes]\n{types}[AI]\nNeutralTechBuildings={list}\n")
+    }
+
+    /// Body art declared as `Picture=` exists when the picture's file does,
+    /// and the body SHP names are then never asked; without the key only
+    /// they are (docs/picture-model-art.md).
+    #[test]
+    fn a_declared_body_picture_answers_for_the_body_art() {
+        let registry = crate::rules::art_data::ArtRegistry::from_ini(&IniFile::from_str(
+            "[CAPIC]\nPicture=capic.png\n[CASHP]\nFoundation=2x2\n",
+        ));
+        let asked = std::cell::RefCell::new(Vec::new());
+        let has = |present: &'static str| {
+            let asked = &asked;
+            move |file: &str| {
+                asked.borrow_mut().push(file.to_string());
+                file == present
+            }
+        };
+        assert!(body_art_exists(
+            &registry,
+            "CAPIC",
+            "",
+            "tem",
+            "TEMPERATE",
+            &has("capic.png")
+        ));
+        assert_eq!(*asked.borrow(), ["capic.png"]);
+        asked.borrow_mut().clear();
+        assert!(!body_art_exists(
+            &registry,
+            "CAPIC",
+            "",
+            "tem",
+            "TEMPERATE",
+            &has("CTPIC.SHP")
+        ));
+        assert_eq!(*asked.borrow(), ["capic.png"], "no SHP name asked");
+        asked.borrow_mut().clear();
+        assert!(body_art_exists(
+            &registry,
+            "CASHP",
+            "",
+            "tem",
+            "TEMPERATE",
+            &has("CTSHP.SHP")
+        ));
+        assert!(asked.borrow().iter().all(|file| !file.ends_with(".png")));
     }
 
     /// The verified stock YR list and footprints through a narrow INI fixture.

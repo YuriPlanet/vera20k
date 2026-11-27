@@ -118,8 +118,11 @@ pub fn build_bridge_atlas(
     theater_ext: &str,
     theater_name: &str,
     overlay_registry: &OverlayTypeRegistry,
+    art: &crate::rules::art_data::ArtRegistry,
     rubble_arts: &[crate::rules::building_rubble::RubbleArt],
 ) -> Option<BridgeAtlas> {
+    let any_picture = art.declares_any_picture();
+    let mut pictures = crate::render::picture_atlas::PictureSources::default();
     let body_names = needed_bridge_body_names(overlay_names);
     // Tactical CellContent6D6D10 at6D70BC..6D719F admits every stored
     // overlay with a nonempty shadow rect, including ordinary rocks. Original
@@ -131,6 +134,27 @@ pub fn build_bridge_atlas(
             .flags_by_name(name)
             .cloned()
             .unwrap_or_default();
+        // VERA-only (docs/picture-model-art.md): a type whose art declares
+        // `Picture=` takes its bridge body and shadow frames from the
+        // picture, by the SHP's frame rules; its SHP is never opened.
+        if let Some((section, decl)) = any_picture
+            .then(|| overlay_registry.declared_picture(name, art))
+            .flatten()
+        {
+            let source = crate::render::picture_atlas::PictureSource {
+                section: section.to_owned(),
+                decl: decl.clone(),
+            };
+            if let Some(frames) = pictures.frames(&source, art, asset_manager, theater_name) {
+                rendered.extend(render_bridge_picture(
+                    frames,
+                    name,
+                    &flags,
+                    body_names.contains(name.as_str()),
+                ));
+            }
+            continue;
+        }
         let Some((_, shp)) = load_overlay_shape(
             asset_manager,
             overlay_registry,
@@ -185,13 +209,37 @@ pub fn build_bridge_atlas(
     // Cell47F64B uses its recorded BuildingType's image, independently of
     // the overlay image whose rectangle admits the outer Tactical sweep.
     let mut loaded_rubble = HashSet::new();
+    // VERA-only (docs/picture-model-art.md): the declared body pictures,
+    // decoded side by side.
+    let mut rubble_pictures =
+        crate::render::picture_atlas::rubble_pictures(rubble_arts, asset_manager).into_iter();
     for art in rubble_arts {
+        let picture = rubble_pictures.next().flatten();
         let key = BridgeAtlasKey {
             name: crate::render::overlay_atlas::rubble_image_name(&art.shp),
             frame: art.shadow_frame,
             kind: BridgeFrameKind::Shadow,
         };
         if !loaded_rubble.insert(key.clone()) {
+            continue;
+        }
+        // VERA-only (docs/picture-model-art.md): a declared body picture's
+        // physical shadow frame (0x0045F1D0's count/2 + 3) is the stencil;
+        // its SHP is never opened.
+        if art.picture.is_some() {
+            rendered.extend(
+                picture
+                    .and_then(|frames| frames.stored_frame(usize::from(art.shadow_frame)))
+                    .map(|frame| RenderedBridge {
+                        key,
+                        rgba: shadow_stencil_to_rgba(&frame.sprite.indices),
+                        source_indices: frame.sprite.indices,
+                        width: frame.sprite.size[0],
+                        height: frame.sprite.size[1],
+                        offset_x: frame.offset[0],
+                        offset_y: frame.offset[1],
+                    }),
+            );
             continue;
         }
         let Some(shp) = asset_manager
@@ -280,6 +328,77 @@ fn render_bridge_sprite(
         offset_x: -((full_w / 2) as f32),
         offset_y: -((full_h / 2) as f32) + flags.y_draw_offset(),
     })
+}
+
+/// VERA-only (docs/picture-model-art.md): [`render_bridge_sprite`]'s body
+/// and shadow frames of overlay `name` from a declared picture: every frame
+/// as a whole-canvas body for a high bridge, and the shadow stencils of the
+/// raw states, frame `count/2 + state` (crate data 0 only).
+fn render_bridge_picture(
+    frames: &crate::render::picture_atlas::GamePictureFrames,
+    name: &str,
+    flags: &OverlayTypeFlags,
+    body: bool,
+) -> Vec<RenderedBridge> {
+    let count = frames.frame_count().min(256);
+    let [full_w, full_h] = frames.canvas;
+    let mut sprites = Vec::new();
+    if body {
+        for frame in 0..count {
+            let Some(sprite) = frames.sprite(frame, crate::render::picture_atlas::HouseColor::Own)
+            else {
+                continue;
+            };
+            let mut rgba = vec![0u8; (full_w * full_h * 4) as usize];
+            let mut indices = vec![0u8; (full_w * full_h) as usize];
+            let width = sprite.size[0] as usize;
+            for y in 0..sprite.size[1] {
+                let source = (y * sprite.size[0]) as usize;
+                let destination = ((sprite.origin[1] + y) * full_w + sprite.origin[0]) as usize;
+                rgba[destination * 4..(destination + width) * 4]
+                    .copy_from_slice(&sprite.rgba[source * 4..(source + width) * 4]);
+                indices[destination..destination + width]
+                    .copy_from_slice(&sprite.indices[source..source + width]);
+            }
+            sprites.push(RenderedBridge {
+                key: BridgeAtlasKey {
+                    name: name.to_owned(),
+                    frame: frame as u16,
+                    kind: BridgeFrameKind::Body,
+                },
+                rgba,
+                source_indices: indices,
+                width: full_w,
+                height: full_h,
+                offset_x: -((full_w / 2) as f32),
+                offset_y: -((full_h / 2) as f32) + flags.y_draw_offset(),
+            });
+        }
+    }
+    let states = if flags.crate_type {
+        1
+    } else {
+        count - count / 2
+    };
+    for state in 0..states {
+        let Some(frame) = frames.stored_frame(count / 2 + state) else {
+            continue;
+        };
+        sprites.push(RenderedBridge {
+            key: BridgeAtlasKey {
+                name: name.to_owned(),
+                frame: state as u16,
+                kind: BridgeFrameKind::Shadow,
+            },
+            rgba: shadow_stencil_to_rgba(&frame.sprite.indices),
+            source_indices: frame.sprite.indices,
+            width: frame.sprite.size[0],
+            height: frame.sprite.size[1],
+            offset_x: frame.offset[0],
+            offset_y: frame.offset[1] + flags.y_draw_offset(),
+        });
+    }
+    sprites
 }
 
 /// Shared SHP stencil extraction for the Cell shadow sweep. Pixel darkening,

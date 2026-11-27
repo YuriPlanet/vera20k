@@ -403,6 +403,14 @@ pub(super) fn dispatch_draw_passes(
         &renderer.batch_renderer,
         encoder,
     );
+    // VERA-only, experimental: the declared models this frame drew
+    // (`render::model_draw`); nothing when it drew none.
+    renderer.model_frame.borrow_mut().encode(
+        &renderer.gpu.device,
+        &renderer.gpu.queue,
+        process_assets.manager(),
+        encoder,
+    );
     // The sidebar's surface is complete before the frame begins; the
     // screen-fixed block copies it in.
     draw_sidebar_surface(
@@ -422,11 +430,7 @@ pub(super) fn dispatch_draw_passes(
     );
     let pool: &InstanceBufferPool = &renderer.instance_pool;
     let pose_cache = renderer.vxl_pose_frame_cache.borrow();
-    let world_depth = renderer
-        .world_zoom_pass
-        .as_ref()
-        .map_or(&renderer.depth_view, |zoom| zoom.depth_view())
-        .clone();
+    let world_depth = renderer.depth_view.clone();
 
     // Everything from here to the screen-fixed chrome block is battlefield: it
     // belongs to the tactical viewport and must not be able to paint a pixel
@@ -438,17 +442,19 @@ pub(super) fn dispatch_draw_passes(
     // Keep the native surface boundary independent of chrome coverage. The
     // ordinary sidebar now uses the resolved stock side archive, real source
     // canvas heights, and one pixel per source pixel in every theme.
-    let (x, y, w, h) = crate::app::input::camera::tactical_viewport_px(
-        platform,
-        renderer,
+    //
+    // The battlefield's rect is in the composition's pixels, the window's
+    // (`docs/zoom-one-pass.md`); the frame's own without an Options zoom.
+    let [tac_x, tac_y, tac_w, tac_h] = renderer.frame_to_composition(
         &frontend.screen,
-        &match_state.match_presentation,
-        persistence,
+        crate::app::input::camera::tactical_viewport_px(
+            platform,
+            renderer,
+            &frontend.screen,
+            &match_state.match_presentation,
+            persistence,
+        ),
     );
-    let [tac_x, tac_y, tac_w, tac_h] = renderer
-        .world_zoom_pass
-        .as_ref()
-        .map_or([x, y, w, h], |zoom| zoom.world_clip([x, y, w, h]));
     let ground = GroundFrame {
         terrain: data.terrain,
         smudge: data.smudge,
@@ -791,9 +797,14 @@ pub(super) fn dispatch_draw_passes(
                 .map(|(overlay, buffer)| (overlay, buffer, Some(renderer.bit_font.atlas()))),
             Some(&renderer.combat_light_renderer),
         );
-        if layer == 2 && renderer.world_zoom_pass.is_none() {
+        if layer == 2 {
             // Tactical6D9427 admits this BuildingClass::Array sweep only
             // after Ground2, before Air3/Top4 and the late Extras sweep.
+            // Its producer projects each anchor by the wheel zoom into frame
+            // pixels: at the original's zoom it draws through the surface
+            // camera, and in a zoomed frame (`docs/zoom-one-pass.md`), whose
+            // world camera would scale it by the wheel zoom again, through
+            // the UI camera, which scales frame pixels by the Options zoom.
             super::object_extras::draw_building_status_text(
                 encoder,
                 view,
@@ -805,7 +816,11 @@ pub(super) fn dispatch_draw_passes(
                 pool.get("building_status_text").map(|(buffer, _)| buffer),
                 Some(renderer.bit_font.atlas()),
                 &data.building_status_text.runs,
-                renderer.batch_renderer.surface_camera_bind_group(),
+                if renderer.batch_renderer.camera_uniform().zoom == 1.0 {
+                    renderer.batch_renderer.surface_camera_bind_group()
+                } else {
+                    renderer.batch_renderer.ui_camera_bind_group()
+                },
             );
         }
     }
@@ -1027,17 +1042,15 @@ pub(super) fn dispatch_draw_passes(
     ] {
         draw_pooled_ui_passthrough(&mut pass, &renderer.batch_renderer, pool, texture, key);
     }
-    // BandBox6DA180 is between the two rally passes (native6D46BD).
-    // Wheel zoom defers its screen-pixel border until after resampling;
-    // native scale retains the original ordering between the rally passes.
+    // BandBox6DA180 is between the two rally passes (native6D46BD), in
+    // frame pixels through the UI camera at every zoom
+    // (`docs/zoom-one-pass.md`).
     let drag_tex = match_state
         .match_presentation
         .selection_overlay
         .as_ref()
         .map(|o| o.drag_texture());
-    if renderer.world_zoom_pass.is_none() {
-        draw_pooled_ui_passthrough(&mut pass, &renderer.batch_renderer, pool, drag_tex, "drag");
-    }
+    draw_pooled_ui_passthrough(&mut pass, &renderer.batch_renderer, pool, drag_tex, "drag");
     // Tactical6D46CF redraws rally pixels whose ABuffer sample is zero.
     draw_pooled_surface_strokes(
         &mut pass,
@@ -1129,209 +1142,12 @@ pub(super) fn dispatch_draw_passes(
         );
     }
 
-    // Resolve wheel zoom once, after every world/depth/destination operation.
-    // Timers, sidebar, messages and cursor then draw in frame pixels.
+    // Every world/depth/destination operation is done. The frame's
+    // screen-fixed layers follow, drawn over the battlefield at the
+    // composition's pixels with the UI camera, which scales frame pixels by
+    // the Options zoom (`docs/zoom-one-pass.md`).
     drop(pass);
-    // VERA's HD art (`render::hd_switch`): at every wheel zoom, the HD art
-    // replaces the zoomed copy's terrain, overlay, building and voxel pixels
-    // (resampled below 200%). It goes over the finished world only; everything
-    // screen-fixed below stays sharp. Off encodes nothing.
-    let (hd_art_on, hd_debug) = crate::app::state::hd_art_on(persistence);
-    let (tac_x, tac_y, tac_w, tac_h) = crate::app::input::camera::tactical_viewport_px(
-        platform,
-        renderer,
-        &frontend.screen,
-        &match_state.match_presentation,
-        persistence,
-    );
-    let view = if let Some(zoom) = renderer.world_zoom_pass.as_ref() {
-        let gpu = &renderer.gpu;
-        let composition = renderer.combat_light_renderer.composition_texture();
-        let frame_tactical = [tac_x, tac_y, tac_w, tac_h];
-        zoom.composite(
-            &gpu.device,
-            encoder,
-            composition,
-            frame_tactical,
-            super::CLEAR_COLOR,
-        );
-        if hd_art_on {
-            if let Some(tiles) = match_state.match_presentation.tile_atlas.as_ref()
-                && let Some(terrain) = renderer
-                    .hd_terrain
-                    .get_or_insert_with(crate::render::hd_terrain::HdTerrain::open)
-                    .as_mut()
-            {
-                let camera = renderer.batch_renderer.camera_uniform();
-                let clip = zoom.world_clip(frame_tactical);
-                let pieces = hd_terrain_pieces(data.terrain.iter(), camera.camera_pos, clip);
-                let draws =
-                    terrain.prepare(&gpu.device, &gpu.queue, &|uv| tiles.hd_tile(uv), &pieces);
-                terrain.encode(
-                    &gpu.device,
-                    &gpu.queue,
-                    encoder,
-                    zoom.color_texture(),
-                    composition,
-                    &tiles.texture.view,
-                    false,
-                    zoom.scale(),
-                    frame_tactical,
-                    &draws,
-                    hd_debug,
-                );
-                // Ore, gems, walls, rocks and the other overlays, then trees
-                // and the other terrain objects: the overlay atlas's bodies.
-                if let Some(overlays) = match_state.match_presentation.overlay_atlas.as_ref() {
-                    let bodies = &match_state.match_presentation.cached_cell_body_instances;
-                    let overlay_bodies = bodies
-                        .iter()
-                        .zip(data.cell_body_draws)
-                        .filter(|(_, draw)| draw.atlas == CellBodyAtlas::Overlay)
-                        .map(|(instance, _)| instance);
-                    let terrain_objects = data.object_layers.iter().flat_map(|layer| {
-                        layer
-                            .static_tree_runs
-                            .iter()
-                            .chain(&layer.building_base_runs)
-                            .chain(&layer.runs)
-                            .filter(|run| {
-                                run.target
-                                    == super::draw_plan_lowering::ObjectTexture::TerrainShp(
-                                        crate::render::terrain_draw::TerrainPiece::Body,
-                                    )
-                            })
-                            .flat_map(|run| {
-                                let range = run.start as usize..(run.start + run.count) as usize;
-                                layer.instances.get(range).into_iter().flatten()
-                            })
-                    });
-                    // Smudges (craters, scorch marks) draw first, right after
-                    // the tiles, as the native pass draws them.
-                    let pieces = hd_terrain_pieces(
-                        data.smudge
-                            .iter()
-                            .chain(overlay_bodies)
-                            .chain(terrain_objects),
-                        camera.camera_pos,
-                        clip,
-                    );
-                    let draws = terrain.prepare(
-                        &gpu.device,
-                        &gpu.queue,
-                        &|uv| overlays.hd_sprite(uv),
-                        &pieces,
-                    );
-                    terrain.encode(
-                        &gpu.device,
-                        &gpu.queue,
-                        encoder,
-                        zoom.color_texture(),
-                        composition,
-                        &overlays.texture.view,
-                        true,
-                        zoom.scale(),
-                        frame_tactical,
-                        &draws,
-                        hd_debug,
-                    );
-                }
-            }
-            let art = renderer
-                .hd_art
-                .get_or_insert_with(crate::render::hd_art::HdArt::open);
-            if let (Some(art), Some(atlas)) = (
-                art.as_mut(),
-                match_state.match_presentation.sprite_atlas.as_ref(),
-            ) {
-                let camera = renderer.batch_renderer.camera_uniform();
-                let pieces = hd_art_pieces(
-                    data.object_layers,
-                    camera.camera_pos,
-                    zoom.world_clip(frame_tactical),
-                );
-                art.prepare(&gpu.device, &gpu.queue, atlas, &pieces);
-                let draws: Vec<_> = pieces
-                    .iter()
-                    .filter_map(|piece| art.placement(piece))
-                    .collect();
-                art.encode(
-                    &gpu.device,
-                    &gpu.queue,
-                    encoder,
-                    zoom.color_texture(),
-                    composition,
-                    zoom.scale(),
-                    frame_tactical,
-                    &draws,
-                    hd_debug,
-                );
-            }
-            if let (Some(units), Some(palette_set)) = (
-                match_state.match_presentation.unit_atlas.as_ref(),
-                match_state.match_presentation.palette_set.as_ref(),
-            ) {
-                let camera = renderer.batch_renderer.camera_uniform();
-                let poses = renderer.vxl_pose_frame_cache.borrow();
-                let pages = hd_voxel_pages(
-                    units,
-                    &poses,
-                    data.object_layers,
-                    camera.camera_pos,
-                    zoom.world_clip(frame_tactical),
-                );
-                renderer
-                    .hd_voxel
-                    .get_or_insert_with(|| crate::render::hd_voxel::HdVoxelPass::new(&gpu.device))
-                    .encode(
-                        &gpu.device,
-                        &gpu.queue,
-                        encoder,
-                        zoom.color_texture(),
-                        composition,
-                        &palette_set.palette_view,
-                        &palette_set.house_ramp_view,
-                        zoom.scale(),
-                        frame_tactical,
-                        &pages,
-                        hd_debug,
-                    );
-            }
-        }
-        draw_zoomed_drag_rect(
-            zoom,
-            encoder,
-            frame_tactical,
-            &renderer.batch_renderer,
-            pool,
-            drag_tex,
-        );
-        zoom.color_view()
-    } else {
-        view
-    };
-    let frame_depth = renderer
-        .world_zoom_pass
-        .as_ref()
-        .map_or(&renderer.depth_view, |zoom| zoom.frame_depth_view());
-    if renderer.world_zoom_pass.is_some() {
-        // Zoomed labels keep GAME.FNT and their backing in frame pixels.
-        // Their producer projects the building anchor, then measures/clips
-        // the text at native font size. Native zoom retains the Ground2 pass.
-        super::object_extras::draw_building_status_text(
-            encoder,
-            view,
-            frame_depth,
-            &mut renderer.terrain_draw_renderer,
-            [tac_x, tac_y, tac_w, tac_h],
-            &renderer.batch_renderer,
-            match_state.match_presentation.selection_overlay.as_ref(),
-            pool.get("building_status_text").map(|(buffer, _)| buffer),
-            Some(renderer.bit_font.atlas()),
-            &data.building_status_text.runs,
-            renderer.batch_renderer.ui_camera_bind_group(),
-        );
-    }
+    let frame_depth = &renderer.depth_view;
     let health_cameras = data
         .object_layers
         .iter()
@@ -1339,7 +1155,7 @@ pub(super) fn dispatch_draw_passes(
         .then(|| {
             renderer.batch_renderer.create_frame_world_cameras(
                 &renderer.gpu.device,
-                match_state.input.zoom_level,
+                renderer.batch_renderer.camera_uniform().zoom,
                 (!match_state.sandbox_full_visibility)
                     .then_some(match_state.match_presentation.shroud_buffer.as_ref())
                     .flatten(),
@@ -1467,12 +1283,18 @@ pub(super) fn dispatch_draw_passes(
     )
     .places()
     .bar == Some(crate::ui::sidebar::Edge::Bottom);
+    // The warp turns the battlefield's rows at the composition's pixels; the
+    // bar's rows under it are the frame's 32, scaled.
     match_state.match_presentation.chrono_screen.draw_tactical(
         &renderer.gpu,
         encoder,
         renderer.game_frame_texture(),
         [tac_x, tac_y, tac_w, tac_h],
-        bar_under,
+        bar_under.then(|| {
+            (crate::ui::sidebar::BOTTOM_STRIP_HEIGHT_PX as f32
+                * renderer.frame_scale(&frontend.screen))
+            .round() as u32
+        }),
     );
     let (surrender_draw, surrender_texts) =
         crate::app::frontend::skirmish_shell_render::surrender_draw(
@@ -1495,8 +1317,13 @@ pub(super) fn dispatch_draw_passes(
     // before this pass (`draw_sidebar_surface`), goes to the right-hand
     // column and the bar's to the strip left of it, scaled by the Sidebar
     // size. The copies scissor themselves.
+    let (target_width, target_height) = renderer.composition_size(&frontend.screen);
     if let Some(surface) = renderer.sidebar_surface.as_ref() {
-        surface.composite(&mut pass);
+        surface.composite(
+            &mut pass,
+            renderer.frame_scale(&frontend.screen),
+            (target_width, target_height),
+        );
     }
     // The column's text, where its copy would resample it, over the copy
     // within the column (`sidebar_surface::column_text`).
@@ -1509,14 +1336,17 @@ pub(super) fn dispatch_draw_passes(
             persistence,
         )
     {
-        let (x, y, width, height) = crate::app::state::sidebar_frame(
-            platform,
-            persistence,
-            renderer,
+        let [x, y, width, height] = renderer.frame_to_composition(
             &frontend.screen,
-            &match_state.match_presentation.sidebar_layout_spec,
-        )
-        .column();
+            crate::app::state::sidebar_frame(
+                platform,
+                persistence,
+                renderer,
+                &frontend.screen,
+                &match_state.match_presentation.sidebar_layout_spec,
+            )
+            .column(),
+        );
         pass.set_scissor_rect(x, y, width, height);
         for key in crate::app::presentation::sidebar_surface::TEXT_LAYERS {
             draw_pooled_ui_passthrough(
@@ -1528,12 +1358,7 @@ pub(super) fn dispatch_draw_passes(
             );
         }
     }
-    pass.set_scissor_rect(
-        0,
-        0,
-        renderer.render_width(&frontend.screen),
-        renderer.render_height(&frontend.screen),
-    );
+    pass.set_scissor_rect(0, 0, target_width, target_height);
     // Phobos SuperWeaponSidebar: left-edge screen-fixed layers. Drawn after
     // the right sidebar blit and before messages, like Phobos' own gadgets.
     #[cfg(feature = "phobos")]
@@ -1619,13 +1444,7 @@ pub(super) fn dispatch_draw_passes(
     let font = Some(renderer.bit_font.atlas());
     if text_in_frame {
         for (texture, key) in [(solid, "message_fill"), (font, "message_text")] {
-            draw_pooled_ui(
-                &mut pass,
-                &renderer.batch_renderer,
-                pool,
-                texture,
-                key,
-            );
+            draw_pooled_ui(&mut pass, &renderer.batch_renderer, pool, texture, key);
         }
     }
     // VERA: the map's overlay (its module's nodes under `MapUI=overlay` and
@@ -1650,6 +1469,7 @@ pub(super) fn dispatch_draw_passes(
     // Tournament surrender confirmation over the live battlefield.
     if let Some(dialog) = surrender_draw.as_ref() {
         dialog.draw(&mut pass, renderer, frontend);
+        pass.set_scissor_rect(0, 0, target_width, target_height);
     }
 
     // --- Step 10.7: build description ---
@@ -1693,8 +1513,8 @@ pub(super) fn dispatch_draw_passes(
         .stage_in_place_composition(
             renderer.game_frame_texture(),
             renderer.gpu.config.format,
-            renderer.render_width(&frontend.screen),
-            renderer.render_height(&frontend.screen),
+            target_width,
+            target_height,
             renderer.gpu.config.width,
             renderer.gpu.config.height,
         );
@@ -1712,11 +1532,7 @@ pub(crate) fn draw_software_cursor(
     let Some(texture) = cursor.and_then(|draw| software_cursor_texture(presentation, draw)) else {
         return;
     };
-    let frame_depth = renderer
-        .world_zoom_pass
-        .as_ref()
-        .map_or(&renderer.depth_view, |zoom| zoom.frame_depth_view());
-    let mut pass = begin_main_load_pass(encoder, view, frame_depth);
+    let mut pass = begin_main_load_pass(encoder, view, &renderer.depth_view);
     pass.set_scissor_rect(
         0,
         0,
@@ -1847,212 +1663,6 @@ fn draw_pooled_with_camera(
         pass.set_vertex_buffer(0, buf.slice(..));
         pass.draw(0..6, 0..count);
     }
-}
-
-/// The band box on the wheel-zoomed frame, after the world went in. Drawn
-/// on the final pixel grid: a 1px border must not become a subpixel span on
-/// the world attachment and disappear before the filtered copy.
-fn draw_zoomed_drag_rect(
-    zoom: &crate::render::upscale_pass::WorldZoomPass,
-    encoder: &mut wgpu::CommandEncoder,
-    tactical: [u32; 4],
-    batch: &BatchRenderer,
-    pool: &InstanceBufferPool,
-    drag: Option<&BatchTexture>,
-) {
-    if drag.is_some() && pool.get("drag").is_some_and(|(_, count)| count != 0) {
-        let mut pass = begin_main_load_pass(encoder, zoom.color_view(), zoom.frame_depth_view());
-        pass.set_scissor_rect(tactical[0], tactical[1], tactical[2], tactical[3]);
-        draw_pooled_ui_passthrough(&mut pass, batch, pool, drag, "drag");
-    }
-}
-
-/// VERA's HD art terrain: every tile the terrain pass drew inside the
-/// native rect `clip`, in walk order, placed in native composition pixels.
-fn hd_terrain_pieces<'a>(
-    terrain: impl Iterator<Item = &'a SpriteInstance>,
-    camera: [f32; 2],
-    clip: [u32; 4],
-) -> Vec<crate::render::hd_terrain::HdTerrainPiece> {
-    let [cx, cy, cw, ch] = clip.map(|v| v as f32);
-    terrain
-        .filter_map(|instance| {
-            let origin = [
-                (instance.position[0] - camera[0] + 0.5).floor(),
-                (instance.position[1] - camera[1] + 0.5).floor(),
-            ];
-            let size = instance.size;
-            let outside = origin[0] + size[0] <= cx
-                || origin[1] + size[1] <= cy
-                || origin[0] >= cx + cw
-                || origin[1] >= cy + ch;
-            (!outside).then_some(crate::render::hd_terrain::HdTerrainPiece {
-                uv_origin: instance.uv_origin,
-                origin,
-                size,
-            })
-        })
-        .collect()
-}
-
-/// VERA's HD art: every building body, bib and animation piece drawn
-/// from an SHP atlas page inside the native rect `clip`, placed in native
-/// composition pixels as the SHP blitter places it. Bodies first, then
-/// everything drawn after them: powered and active animations sit in the
-/// ordinary runs. Only frames the art knows give a draw, so the units in
-/// those runs pass through.
-fn hd_art_pieces(
-    layers: &[super::draw_plan_lowering::ObjectLayerPass],
-    camera: [f32; 2],
-    clip: [u32; 4],
-) -> Vec<crate::render::hd_art::HdArtPiece> {
-    let [cx, cy, cw, ch] = clip.map(|v| v as f32);
-    let mut pieces = Vec::new();
-    for layer in layers {
-        for run in layer.building_base_runs.iter().chain(&layer.runs) {
-            let super::draw_plan_lowering::ObjectTexture::ShpPage(page) = run.target else {
-                continue;
-            };
-            let range = run.start as usize..(run.start + run.count) as usize;
-            for instance in layer.instances.get(range).into_iter().flatten() {
-                let origin = [
-                    (instance.position[0] - camera[0] + 0.5).floor(),
-                    (instance.position[1] - camera[1] + 0.5).floor(),
-                ];
-                let size = instance.size;
-                if origin[0] + size[0] <= cx
-                    || origin[1] + size[1] <= cy
-                    || origin[0] >= cx + cw
-                    || origin[1] >= cy + ch
-                {
-                    continue;
-                }
-                pieces.push(crate::render::hd_art::HdArtPiece {
-                    page,
-                    uv_origin: instance.uv_origin,
-                    origin,
-                    size,
-                    source_palette: instance.source_palette,
-                });
-            }
-        }
-    }
-    pieces
-}
-
-/// VERA's HD art voxels: every unit atlas piece inside the native rect
-/// `clip` whose page has an HD page, grouped by page, placed in native
-/// composition pixels as the voxel blitter places it unzoomed.
-fn hd_voxel_pages<'a>(
-    units: &'a crate::render::unit_atlas::UnitAtlas,
-    poses: &'a crate::render::unit_pose_cache::VxlPoseFrameCache,
-    layers: &[super::draw_plan_lowering::ObjectLayerPass],
-    camera: [f32; 2],
-    clip: [u32; 4],
-) -> Vec<crate::render::hd_voxel::HdVoxelPage<'a>> {
-    use super::draw_plan_lowering::ObjectTexture;
-    let [cx, cy, cw, ch] = clip.map(|v| v as f32);
-    let mut pages: Vec<crate::render::hd_voxel::HdVoxelPage<'a>> = Vec::new();
-    // The atlas's pages, then the pose cache's (tilted, crashing, rocking
-    // and tumbling voxels, `unit_pose_cache`).
-    let mut slots: std::collections::HashMap<(bool, usize), Option<usize>> = Default::default();
-    for layer in layers {
-        for run in layer.building_base_runs.iter().chain(&layer.runs) {
-            let key = match run.target {
-                ObjectTexture::UnitAtlasPage(page) => (false, page),
-                ObjectTexture::UnitPosePage(page) => (true, page),
-                _ => continue,
-            };
-            let slot = *slots.entry(key).or_insert_with(|| {
-                let (native, hd) = match key {
-                    (false, page) => (
-                        units.page_texture(page).map(|t| &t.view),
-                        units.hd_page(page),
-                    ),
-                    (true, page) => (
-                        poses.page_texture(page).map(|t| &t.view),
-                        poses.hd_page(page),
-                    ),
-                };
-                let (native, hd) = (native?, hd?);
-                pages.push(crate::render::hd_voxel::HdVoxelPage {
-                    native,
-                    hd,
-                    draws: Vec::new(),
-                });
-                Some(pages.len() - 1)
-            });
-            let Some(slot) = slot else {
-                continue;
-            };
-            let range = run.start as usize..(run.start + run.count) as usize;
-            for instance in layer.instances.get(range).into_iter().flatten() {
-                let origin = [
-                    (instance.position[0] - camera[0] + 0.5).floor(),
-                    (instance.position[1] - camera[1] + 0.5).floor(),
-                ];
-                let size = instance.size;
-                if origin[0] + size[0] <= cx
-                    || origin[1] + size[1] <= cy
-                    || origin[0] >= cx + cw
-                    || origin[1] >= cy + ch
-                {
-                    continue;
-                }
-                pages[slot]
-                    .draws
-                    .push(crate::render::hd_voxel::HdVoxelDraw {
-                        origin,
-                        size,
-                        uv_origin: instance.uv_origin,
-                        uv_size: instance.uv_size,
-                        remap_row: instance.draw_state.remap_row,
-                        source_palette: instance.source_palette,
-                    });
-            }
-        }
-    }
-    pages
-}
-
-/// The wheel-zoomed world, resampled once from world pixels into the window
-/// after the Options zoom scaled the frame there (`app::frame`), instead of
-/// only through the frame. VERA-only: stock YR has no world zoom. Whatever the
-/// frame drew over the battlefield keeps showing at the frame's pixels
-/// (`WorldZoomPass::draw_window_copy`); the battlefield's window-pixel text and
-/// the cursor go over this (`window_ui`). It draws only when the frame's
-/// `set_view` kept a window copy (`render::mod`).
-pub(crate) fn draw_world_window_copy(
-    platform: &PlatformState,
-    renderer: &RendererState,
-    screen: &GameScreen,
-    presentation: &MatchPresentationState,
-    persistence: &PersistenceState,
-    encoder: &mut wgpu::CommandEncoder,
-    view: &wgpu::TextureView,
-) {
-    let (Some(zoom), Some(world)) = (
-        renderer.tactical_zoom(screen),
-        renderer.world_zoom_pass.as_ref(),
-    ) else {
-        return;
-    };
-    let gpu = &renderer.gpu;
-    world.draw_window_copy(
-        &gpu.device,
-        &gpu.queue,
-        encoder,
-        view,
-        renderer.combat_light_renderer.composition_texture(),
-        zoom,
-        crate::app::input::camera::tactical_viewport_px(
-            platform,
-            renderer,
-            screen,
-            presentation,
-            persistence,
-        ),
-    );
 }
 
 /// VERA's ground marks: world-surface stores at neutral A, before wheel zoom.
@@ -2283,10 +1893,9 @@ mod tests {
         let outcome_text = source_offset("\"outcome_text\"");
         let chrono_capture = source_offset(".draw_tactical(");
         let screen_fixed = source_offset("// --- Screen-fixed UI:");
-        let sidebar_blit = source_offset("surface.composite(&mut pass)");
-        let full_window_scissor = source_offset(
-            "pass.set_scissor_rect(\n        0,\n        0,\n        renderer.render_width(&frontend.screen),",
-        );
+        let sidebar_blit = source_offset("surface.composite(");
+        let full_window_scissor =
+            source_offset("pass.set_scissor_rect(0, 0, target_width, target_height);");
         let first_screen_submission = source_offset("\"message_text\"");
         let tooltip_text = source_offset("\"tooltip_text\"");
         let build_fill = source_offset("\"build_text_fill\"");
@@ -2428,7 +2037,7 @@ mod tests {
         let surface_pass = source_offset("draw_sidebar_surface(\n        platform,");
         let frame_pass = source_offset("begin_main_pass(encoder, view, &world_depth)");
         let timer_text = source_offset("\"super_timer_text\"");
-        let blit = source_offset("surface.composite(&mut pass)");
+        let blit = source_offset("surface.composite(");
         let message = source_offset("\"message_text\"");
 
         assert!(surface_pass < frame_pass);

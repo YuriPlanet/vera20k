@@ -1595,6 +1595,9 @@ impl StatusViewport {
 pub(crate) struct TechnoExtras {
     ///6F519B..524E: BOMBCURS/MOUSEPAL N1 prefix, before every other status.
     pub bomb_clock: Option<SpriteInstance>,
+    /// The Ares `IvanBomb.Image` strip `bomb_clock` was cut from
+    /// (`SelectionOverlay::bomb_image`); `None` is BOMBCURS.SHP.
+    pub bomb_image: Option<usize>,
     ///6F5253..5345: WRENCH/MOUSEPAL N1 prefix, before rank and Building lines.
     pub wrench: Option<SpriteInstance>,
     /// Ares 10049FE0 (hook 0x6F526C): the POWEROFF/MOUSEPAL marker drawn
@@ -2327,7 +2330,7 @@ pub(crate) fn techno_extras_for_parent(
         };
         if bomb_visible
             && rules.is_some()
-            && let (Some(bomb), Some(shape)) = (bomb, overlay.bomb_image(images))
+            && let (Some(bomb), Some((image, shape))) = (bomb, overlay.bomb_image(images))
             && let Some(frame) = bomb.clock_frame(
                 sim.session().binary_frame() as i32,
                 shape.frame_count(),
@@ -2336,6 +2339,7 @@ pub(crate) fn techno_extras_for_parent(
             && let Ok(frame) = usize::try_from(frame)
         {
             strip.bomb_clock = prefix(shape, Mark::BombClock, frame, 0.0);
+            strip.bomb_image = image;
         }
         let binary_frame = sim.session().binary_frame() as i32;
         let options = sim.session().game_options();

@@ -20,7 +20,6 @@
 //! - render/ does NOT depend on: app/, audio/, net/
 
 pub(crate) mod aircraft_shadow;
-pub(crate) mod snapshot;
 pub mod area_scale;
 pub(crate) mod atlas_growth;
 #[cfg(all(test, tests_render_a_r))]
@@ -36,15 +35,11 @@ pub mod cell_window;
 pub mod chrome_atlas;
 pub(crate) mod chrono_screen;
 pub(crate) mod color_vision;
-pub(crate) mod hd_art;
-pub(crate) mod hd_loader;
-pub(crate) mod hd_terrain;
-pub(crate) mod hd_voxel;
-pub(crate) mod hd_switch;
 pub mod combat_light;
 pub mod cursor_atlas;
 #[cfg(all(test, any(tests_render_a_r, tests_app_presentation, tests_render_s_z)))]
 pub(crate) mod depth_gpu_tests;
+pub(crate) mod depth_shift;
 pub mod draw_state;
 pub(crate) mod electric_bolt;
 pub(crate) mod entity_atlas_growth;
@@ -53,25 +48,32 @@ pub(crate) mod frame_handoff;
 pub mod frame_readback;
 pub mod gpu;
 pub(crate) mod gpu_timer;
+pub(crate) mod hd_art;
+pub(crate) mod hd_loader;
+pub(crate) mod hd_switch;
+pub(crate) mod hd_terrain;
 pub(crate) mod hud_paint;
-pub(crate) mod retained_hud;
+pub(crate) mod interface_picture;
 pub(crate) mod laser;
 pub(crate) mod line_trail;
 pub mod loading_screen_chrome;
 pub mod locomotor_visual;
 pub mod main_menu_shell_chrome;
+pub(crate) mod model_draw;
 pub mod native_surface_format;
 pub mod native_z;
-pub(crate) mod zshape_skips;
 pub mod overlay_assets;
 pub mod overlay_atlas;
 pub mod palette_light;
 pub mod palette_textures;
+pub(crate) mod picture_atlas;
+pub(crate) mod picture_stream;
+pub(crate) mod picture_zoom;
 pub mod pixel_fx_sparkles;
 pub mod radar;
 pub(crate) mod radial_indicator;
 pub(crate) mod radiation_beam;
-pub(crate) mod depth_shift;
+pub(crate) mod retained_hud;
 pub(crate) mod scaled_copy;
 pub(crate) mod screen_presentation;
 pub mod screenshot;
@@ -88,15 +90,15 @@ mod shroud_gpu_tests;
 pub mod sidebar_cameo_atlas;
 pub mod sidebar_chrome;
 pub mod sidebar_smoothing;
-#[cfg(feature = "phobos")]
-pub mod sw_sidebar_art;
 pub mod sidebar_text;
 pub(crate) mod sinking;
 pub mod skirmish_shell_chrome;
 pub mod smudge;
+pub(crate) mod snapshot;
 pub mod sprite_atlas;
-pub(crate) mod text_audit;
 pub(crate) mod surface_line;
+#[cfg(feature = "phobos")]
+pub mod sw_sidebar_art;
 pub mod tactical_compat;
 pub mod tactical_draw_plan;
 pub(crate) mod tactical_shader;
@@ -104,6 +106,7 @@ pub(crate) mod terrain_draw;
 #[cfg(test)] // shared by test groups
 pub(crate) mod terrain_draw_gpu_tests;
 pub mod terrain_instances;
+pub(crate) mod text_audit;
 pub mod text_engine;
 pub mod tile_atlas;
 pub(crate) mod uniform_windows;
@@ -111,8 +114,8 @@ pub mod unit_atlas;
 pub mod unit_pose_cache;
 pub(crate) mod unit_shadow;
 pub mod upscale_pass;
-pub mod voxel_image_cache;
 pub(crate) mod voxel_gpu;
+pub mod voxel_image_cache;
 #[cfg(all(test, tests_render_s_z))]
 mod voxel_parity_tests;
 pub mod vxl_normals;
@@ -120,6 +123,7 @@ pub mod vxl_raster;
 pub mod wave_geometry;
 pub(crate) mod webgl;
 pub mod xbr;
+pub(crate) mod zshape_skips;
 
 #[cfg(all(test, tests_render_s_z))]
 mod sidebar_gpu_tests;

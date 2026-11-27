@@ -81,6 +81,10 @@ pub(crate) struct ShpInputs<'a> {
     pub house_colors: &'a crate::map::houses::HouseColorMap,
     /// The loaded BUILDNGZ frame's offset in its canvas.
     pub building_zshape: Option<(i32, i32)>,
+    /// VERA-only, experimental (`docs/picture-model-art.md`): the frame's
+    /// model drawing, for a building whose voxel guns' art declares
+    /// `Model=`; None draws no model.
+    pub model_frame: Option<&'a std::cell::RefCell<crate::render::model_draw::ModelFrame>>,
 }
 
 /// `extra_light` is the class's
@@ -166,6 +170,7 @@ pub(crate) fn shp_inputs<'a>(
             .building_zshape
             .as_ref()
             .map(|zshape| zshape.frame_offset),
+        model_frame: Some(&renderer.model_frame),
     })
 }
 
@@ -1375,8 +1380,56 @@ pub(crate) fn shp_visitor<'a>(
             }
         }
         if entity.category() == EntityCategory::Structure {
+            // VERA-only, experimental (docs/picture-model-art.md): guns whose
+            // art declares `Model=` draw the model; `Some(None)`, a refused
+            // model, draws nothing. None keeps the VXL path below.
+            let gun_model = object_type
+                .filter(|rules_obj| rules_obj.turret_anim_is_voxel)
+                .zip(rules)
+                .and_then(|(rules_obj, rules)| rules.building_gun_model(&rules_obj.id));
+            if let Some(Some(model)) = gun_model
+                && let (Some(rules_obj), Some(rules), Some(frame)) =
+                    (object_type, rules, input.model_frame)
+                && building_voxel_turret_visible(entity, rules_obj.artillary)
+            {
+                let (tint, light) = crate::app::presentation::lighting::techno_effect_light(
+                    entity,
+                    tint,
+                    selected_palette_light(),
+                    sim,
+                    Some(rules),
+                    crate::app::presentation::lighting::TechnoDraw::Voxel,
+                );
+                super::model_art::emit_building_gun_model(
+                    frame,
+                    rules,
+                    &rules_obj.id,
+                    model,
+                    super::model_art::BuildingGunDraw {
+                        turret_facing: render_pose.body,
+                        barrel_elevation: render_pose.barrel,
+                        recoil: render_pose.recoil.0,
+                        turret_offset: art_entry.map_or(0, |art| art.turret_offset),
+                        anchor: [
+                            sx + rules_obj.turret_anim_x as f32,
+                            sy + rules_obj.turret_anim_y as f32,
+                        ],
+                        lift_px,
+                        depth,
+                        tint,
+                        light,
+                        colour_word,
+                        draw_state,
+                        z_adjust: rules_obj.turret_anim_z_adjust,
+                        house: hc,
+                        frame_counter: entity.turret_anim_frame.frame(),
+                    },
+                    &mut building_pieces,
+                );
+            }
             // Building voxel guns remain inside their SHP hull's draw call.
             if let Some(rules_obj) = object_type
+                && gun_model.is_none()
                 && rules_obj.turret_anim_is_voxel
                 && building_voxel_turret_visible(entity, rules_obj.artillary)
                 && let Some(unit_atlas) = input.unit_atlas
@@ -1822,6 +1875,24 @@ fn building_voxel_turret_visible(
             || current == Some(MissionType::Selling) && stage > 0)
 }
 
+/// Building draw43DA80's B8 and C0 HVA frames from the `+0x148` counter
+/// (`0x0043E2FA`): the turret's modulo its frame count, the barrel's
+/// modulo its own when there is no turret, else zero. A count is None for
+/// a part that is not there. Shared by the VXL guns and, VERA-only and
+/// experimental (`docs/picture-model-art.md`), a declared model's.
+pub(super) fn building_gun_frames(
+    frame_counter: i32,
+    turret: Option<u32>,
+    barrel: Option<u32>,
+) -> [u32; 2] {
+    let frame =
+        |count: Option<u32>| count.map_or(0, |count| (frame_counter % count.max(1) as i32) as u32);
+    [
+        frame(turret),
+        if turret.is_some() { 0 } else { frame(barrel) },
+    ]
+}
+
 /// Emit a building's native B8 turret and C0 barrel at its TurretAnim anchor.
 ///
 /// Building draw43DA80 uses the current primary facing and retained +148 HVA
@@ -1885,20 +1956,20 @@ fn emit_building_turret_vxl(
     let turret_frames = frame_count(VxlLayer::Turret);
     let barrel_frames = frame_count(VxlLayer::Barrel);
     let has_turret = turret_frames.is_some();
-    let frame =
-        |count: Option<u32>| count.map_or(0, |count| (frame_counter % count.max(1) as i32) as u32);
+    let [turret_frame, barrel_frame] =
+        building_gun_frames(frame_counter, turret_frames, barrel_frames);
     let turret_key = UnitSpriteKey {
         type_id: type_id.into(),
         turret_index: 0,
         facing: canonical_turret_facing(turret_facing),
         layer: VxlLayer::Turret,
-        frame: frame(turret_frames),
+        frame: turret_frame,
         slope_type: 0, // building turrets don't tilt on slopes
         barrel_pitch: 0,
     };
     let mut barrel_key = UnitSpriteKey {
         layer: VxlLayer::Barrel,
-        frame: if has_turret { 0 } else { frame(barrel_frames) },
+        frame: barrel_frame,
         ..turret_key.clone()
     };
     // The gun images' key: facing and frame low byte (`0x0043E2FA`), -1
@@ -2623,7 +2694,9 @@ fn emit_building_anims(
         // cloak/effect composition is a separate, unresolved owner.
         // The shared pass builder replaces this material for the shadow.
         let (alpha, draw_state) = if flags & 6 != 0
-            && anim_entry.is_some_and(|entry| entry.source_palette != 0)
+            && anim_entry.is_some_and(|entry| {
+                crate::render::sprite_atlas::source_palette_indexed(entry.source_palette)
+            })
             && palette_light.rows() != 0
             && draw_state
                 == (DrawState {

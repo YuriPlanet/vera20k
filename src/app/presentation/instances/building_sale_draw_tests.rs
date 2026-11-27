@@ -222,7 +222,6 @@ fn gate_piece(
         building_viewport: crate::app::presentation::render::tactical_world_viewport(
             [-1000.0; 2],
             [0, 0, 5000, 5000],
-            None,
         ),
         axis: DepthAxis::NONE,
         local_owner: None,
@@ -230,6 +229,7 @@ fn gate_piece(
         lighting: &lighting,
         house_colors: colors,
         building_zshape: Some((0, 0)),
+        model_frame: None,
     };
     let order = NativeDisplayOrder::from_world(&runtime.simulation, None);
     let mut planned = PlannedObjects::default();

@@ -57,7 +57,6 @@ use crate::render::tile_atlas::TileAtlas;
 use crate::render::unit_atlas::UnitAtlas;
 #[cfg(test)]
 use crate::rules::art_data::ArtRegistry;
-use crate::rules::effect_asset_catalog::resolved_overlay_shp_ids;
 #[cfg(test)]
 use crate::rules::ini_parser::IniFile;
 use crate::rules::overlay_types::OverlayTypeRegistry;
@@ -3848,8 +3847,7 @@ fn load_map_first_step(
                                             let fill = authored_terrain_fill.take().expect(
                                         "authored materialization retained its pending Fill owner",
                                     );
-                                            let overlay_shp_ids = resolved_overlay_shp_ids(
-                                                rules.overlay_registry(),
+                                            let overlay_shp_ids = rules.resolved_overlay_shp_ids(
                                                 services.asset_manager,
                                                 theater_ext,
                                                 &map_data.header.theater,
