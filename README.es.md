@@ -143,6 +143,14 @@ Pagos a los colaboradores:
   <a href="https://www.youtube.com/watch?v=ucz-EiMeW88">Red Alert 2 en VERA20K 0.41</a><br clear="all">
 </p>
 
+## Editores de mapas
+
+<p>
+  <a href="https://github.com/996666925/ra2-map-editor"><img src="https://avatars.githubusercontent.com/u/52450772?s=128" width="64" height="64" align="left" alt="996666925"></a>
+  <a href="https://github.com/996666925/ra2-map-editor">YR Map Editor</a><br>
+  Crea mapas para Yuri’s Revenge y pruébalos en VERA20K.<br clear="all">
+</p>
+
 ## Créditos y aviso legal
 
 Gracias a OpenRA, XCC Mixer, la wiki ModEnc, Project Perfect Mod, la publicación por parte de EA del
