@@ -2742,6 +2742,98 @@ fn emit_unit_shadow_sprite(
     );
 }
 
+/// The two Phobos gun-shadow keys and their screen anchors.
+fn phobos_gun_shadow_keys(
+    turret_key: &UnitSpriteKey,
+    barrel_key: &UnitSpriteKey,
+    turret_offset: [f32; 2],
+    barrel_offset: [f32; 2],
+) -> [(UnitSpriteKey, [f32; 2]); 2] {
+    [
+        (
+            UnitSpriteKey {
+                layer: VxlLayer::ShadowTurret,
+                frame: 0,
+                barrel_pitch: 0,
+                ..turret_key.clone()
+            },
+            turret_offset,
+        ),
+        (
+            UnitSpriteKey {
+                layer: VxlLayer::ShadowBarrel,
+                frame: 0,
+                ..barrel_key.clone()
+            },
+            barrel_offset,
+        ),
+    ]
+}
+
+/// Phobos' turret and barrel shadow suffix (`Hooks.MatrixOp.cpp:803,870-892`).
+/// The stable ground path uses the atlas stencils; dynamic ground poses and
+/// lifted units keep the ordinary shadow until their live matrix is ported.
+fn emit_phobos_gun_shadows(
+    vxl_pose_frame_cache: &std::cell::RefCell<VxlPoseFrameCache>,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    atlas: &crate::render::unit_atlas::UnitAtlas,
+    drawer: VoxelDrawer,
+    entity: &crate::app::presentation::frame::ObjectRecord,
+    type_id: &str,
+    turret_key: &UnitSpriteKey,
+    barrel_key: &UnitSpriteKey,
+    turret_offset: [f32; 2],
+    barrel_offset: [f32; 2],
+    center: [f32; 2],
+    depth: f32,
+    voxel_adjust: f32,
+    draw_state: DrawState,
+    no_shadow: bool,
+    band: EntityDrawBand,
+    ground_pose: Option<crate::render::vxl_raster::GroundPose>,
+    pieces: &mut Vec<ObjectPieceInstance>,
+) {
+    let rules = crate::app::state::active_rules(frontend, match_state);
+    let Some(object) = rules.and_then(|rules| rules.object(type_id)) else {
+        return;
+    };
+    if !crate::render::unit_atlas::turret_shadow_enabled(rules, object)
+        || !unit_shadow_admitted(entity, no_shadow, band)
+        || has_lifted_unit_shadow(entity)
+        || ground_pose.is_some()
+    {
+        return;
+    }
+    for (key, offset) in
+        phobos_gun_shadow_keys(turret_key, barrel_key, turret_offset, barrel_offset)
+    {
+        let Some((entry, source)) = voxel_part_entry(
+            vxl_pose_frame_cache,
+            frontend,
+            match_state,
+            process_assets,
+            atlas,
+            drawer,
+            None,
+            &key,
+            None,
+        ) else {
+            continue;
+        };
+        emit_shadow_stencil(
+            entry,
+            source,
+            [center[0] + offset[0], center[1] + offset[1]],
+            depth,
+            voxel_adjust,
+            draw_state,
+            pieces,
+        );
+    }
+}
+
 /// One shadow draw through `TechnoClass::DrawVoxelShadow @ 0x00706BD0`
 /// under its cache record `image` (None: key -1, uncached). A miss or an
 /// uncached draw renders (`0x00707280`); a `UseBuffer=` type's leaves
@@ -3565,6 +3657,28 @@ fn emit_turret_unit_sprites(
         entity,
         draw_state,
         bounds,
+    );
+    emit_phobos_gun_shadows(
+        &renderer.vxl_pose_frame_cache,
+        frontend,
+        match_state,
+        process_assets,
+        atlas,
+        drawer,
+        entity,
+        type_id,
+        &turret_key,
+        &barrel_key,
+        [tur_ox, tur_oy],
+        [barrel_ox, barrel_oy],
+        [center_x, center_y],
+        entity_depth,
+        voxel_adjust,
+        body_draw_state,
+        no_shadow,
+        band,
+        ground_pose,
+        pieces,
     );
     if let Some((entry, texture_source)) = body_entry_opt {
         let sprite = SpriteInstance {

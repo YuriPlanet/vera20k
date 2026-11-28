@@ -237,6 +237,11 @@ rules.ini，也不是按本仓库 rules 分层读取；VERA 需要先找到/建�
    （`rulesmd.ini:365`）属 TS 遗留。VERA 的 `RuleSet::general.tunnel_speed`
    同样只读不用，与原生一致，故本项关闭（详见
    `docs/phobos-tunnel-locomotor.md:120-131`）。
+9. **`TurretShadow=` 的动态与升空姿态**：稳定平地已接通炮塔与炮管阴影
+   （`Hooks.MatrixOp.cpp:803,870-892`），动态 `GroundPose`、Jumpjet/Hover
+   升空及下落单位暂不绘制枪阴影，避免用稳定图集冒充 live 矩阵。触发条件是
+   这些姿态出现；影响是枪阴影缺失或保持普通车体阴影，下游风险仅为视觉差异，
+   不涉及模拟、RNG 或存档。
 
 ### 全局已知残渣（早前链条，仍需实机抽查）
 - **CreateUnit 空中出生落位（2026-11-18）**：`:668-706` 全臂已移植

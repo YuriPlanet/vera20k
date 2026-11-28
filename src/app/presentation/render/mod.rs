@@ -1511,13 +1511,16 @@ fn upload_to_gpu(
     }
 
     // GScreenClass_DrawText's Phobos build description, the tactical view's
-    // top-right identity box; empty outside Phobos builds.
+    // top-right identity box; empty outside games whose data enables Phobos.
+    let phobos = crate::app::state::active_rules(&state.frontend, &state.match_state)
+        .is_some_and(|rules| rules.phobos());
     let (build_text_fill, build_text_text) = crate::app::presentation::build_text::build_instances(
         &state.platform,
         &state.renderer,
         &state.frontend.screen,
         &state.match_state,
         &state.persistence,
+        phobos,
     );
     state.renderer.bit_font.set_raster(frame_raster);
     // The client modules' panels and the map's overlay (`ui.wasm`, map

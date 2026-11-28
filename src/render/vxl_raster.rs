@@ -126,7 +126,7 @@ fn voxel_barrel_pitch(matrix: Mat4, pitch: i8) -> Mat4 {
 
 /// The draw rotation of a pitched barrel: slope * facing, then the pitch,
 /// then the camera.
-fn voxel_pitched_draw_rotation(
+pub(crate) fn voxel_pitched_draw_rotation(
     slope_type: u8,
     blend: Option<VxlSlopeBlend>,
     step: u8,

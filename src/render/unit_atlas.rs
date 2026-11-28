@@ -137,7 +137,10 @@ impl UnitSpriteKey {
         use_buffer: bool,
     ) -> VxlRenderParams {
         VxlRenderParams {
-            frame: if self.layer == VxlLayer::Shadow {
+            frame: if matches!(
+                self.layer,
+                VxlLayer::Shadow | VxlLayer::ShadowTurret | VxlLayer::ShadowBarrel
+            ) {
                 0
             } else {
                 self.frame
@@ -1004,7 +1007,7 @@ fn insert_unit_layer_keys(
 ) {
     let (step, buckets) = facing_config_for_layer(layer);
     let slope_range = if is_ground_vehicle { 0..=16 } else { 0..=0 };
-    let pitches: &[i8] = if layer == VxlLayer::Barrel {
+    let pitches: &[i8] = if matches!(layer, VxlLayer::Barrel | VxlLayer::ShadowBarrel) {
         barrel_pitches
     } else {
         &[0]
@@ -1104,6 +1107,7 @@ fn seed_unit_variant_keys(
         );
     }
     if let Some(object) = rules.and_then(|rules| rules.object(variant))
+        && object.category == crate::rules::object_type::ObjectCategory::Vehicle
         && turret_shadow_enabled(rules, object)
     {
         for (layer, turret_index) in layers.iter().copied() {
@@ -1117,6 +1121,17 @@ fn seed_unit_variant_keys(
                     is_ground_vehicle,
                     &[0],
                 );
+                if layers.contains(&(VxlLayer::Barrel, turret_index)) {
+                    insert_unit_layer_keys(
+                        needed,
+                        variant,
+                        VxlLayer::ShadowBarrel,
+                        turret_index,
+                        1,
+                        is_ground_vehicle,
+                        &barrel_pitches,
+                    );
+                }
             }
         }
     }
@@ -1691,6 +1706,12 @@ impl UnitModel {
                 let turret = turret?;
                 vxl_raster::shadow::render(turret.vxl(), turret.hva(), &params, 0, 0, false)?
             }
+            VxlLayer::ShadowBarrel => {
+                // `Hooks.MatrixOp.cpp:876-892` draws the barrel voxel's section
+                // zero after the turret shadow, with the barrel pitch applied.
+                let barrel = barrel?;
+                vxl_raster::shadow::render(barrel.vxl(), barrel.hva(), &part_params, 0, 0, false)?
+            }
             VxlLayer::Body | VxlLayer::Turret | VxlLayer::Barrel => {
                 let key_pose = (params.frame, params.facing, params.slope_type, slope_blend);
                 if pose.as_ref().is_none_or(|parts| parts.pose != key_pose) {
@@ -1840,7 +1861,10 @@ impl UnitModel {
                 VxlLayer::Barrel => (barrel?, matrices[2]),
                 // Unit consumer retains independent native-ordered parts;
                 // the existing un-tilted shadow has its own owner.
-                VxlLayer::Composite | VxlLayer::Shadow | VxlLayer::ShadowTurret => return None,
+                VxlLayer::Composite
+                | VxlLayer::Shadow
+                | VxlLayer::ShadowTurret
+                | VxlLayer::ShadowBarrel => return None,
             };
             let params = VxlRenderParams {
                 frame: key.frame,
@@ -2168,7 +2192,7 @@ impl UnitModel {
         let (turret, barrel) = self.gun_parts(turret_index);
         let part = |part| part_native_draw_bounds(part, params);
         match layer {
-            VxlLayer::Shadow | VxlLayer::ShadowTurret => None,
+            VxlLayer::Shadow | VxlLayer::ShadowTurret | VxlLayer::ShadowBarrel => None,
             VxlLayer::Body => part(self.body.as_ref()).ok().flatten(),
             VxlLayer::Turret => part(turret).ok().flatten(),
             VxlLayer::Barrel => part(barrel).ok().flatten(),
@@ -2446,7 +2470,7 @@ fn facing_config_for_layer(layer: VxlLayer) -> (u8, u16) {
         VxlLayer::Body | VxlLayer::Composite | VxlLayer::Shadow => {
             (UNIT_FACING_STEP, UNIT_FACING_BUCKETS)
         }
-        VxlLayer::Turret | VxlLayer::Barrel | VxlLayer::ShadowTurret => {
+        VxlLayer::Turret | VxlLayer::Barrel | VxlLayer::ShadowTurret | VxlLayer::ShadowBarrel => {
             (TURRET_FACING_STEP, TURRET_FACING_BUCKETS)
         }
     }

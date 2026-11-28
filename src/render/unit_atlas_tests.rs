@@ -799,20 +799,24 @@ fn turret_shadow_gate_follows_the_art_key_and_seeds_turret_stencils() {
         "TANKTUR.VXL",
         bytes(fixture["vxl"].as_str().unwrap()).as_slice(),
     );
-    for name in ["TANK.HVA", "TANKTUR.HVA"] {
+    dir.write(
+        "TANKBARL.VXL",
+        bytes(fixture["vxl"].as_str().unwrap()).as_slice(),
+    );
+    for name in ["TANK.HVA", "TANKTUR.HVA", "TANKBARL.HVA"] {
         dir.write(name, bytes(fixture["hva"].as_str().unwrap()).as_slice());
     }
     let assets = AssetManager::from_loose_root_for_test(dir.path());
 
     let rules_text = |draw: &str| {
         IniFile::from_str(&format!(
-            "[AudioVisual]\n{draw}[VehicleTypes]\n0=TANK\n[TANK]\nTurret=yes\nImage=TANK\n"
+            "[AudioVisual]\n{draw}[VehicleTypes]\n0=TANK\n[TANK]\nTurret=yes\nImage=TANK\nFireAngle=64\n"
         ))
     };
     let shadow_keys = |draw: &str, art: &IniFile| {
         let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&rules_text(draw), art).unwrap();
         rules.bind_effect_assets(&assets, "TEM", "TEMPERATE");
-        let turret: Vec<_> = needed_unit_keys(
+        let keys = needed_unit_keys(
             &UnitAtlasDemand {
                 ground: BTreeSet::from(["TANK".to_string()]),
                 ..Default::default()
@@ -820,16 +824,23 @@ fn turret_shadow_gate_follows_the_art_key_and_seeds_turret_stencils() {
             &assets,
             Some(&rules),
         )
-        .0
-        .into_iter()
-        .filter(|key| key.layer == VxlLayer::ShadowTurret)
-        .collect();
-        (rules, turret)
+        .0;
+        let turret = keys
+            .iter()
+            .filter(|key| key.layer == VxlLayer::ShadowTurret)
+            .cloned()
+            .collect::<Vec<_>>();
+        let barrel = keys
+            .iter()
+            .filter(|key| key.layer == VxlLayer::ShadowBarrel)
+            .cloned()
+            .collect::<Vec<_>>();
+        (rules, turret, barrel)
     };
 
     // `DrawTurretShadow=` alone opens the gate; the seeded keys sit on the
     // turret facing step, which is finer than the body's.
-    let (rules, turret) = shadow_keys(
+    let (rules, turret, barrel) = shadow_keys(
         "DrawTurretShadow=yes\n",
         &IniFile::from_str("[TANK]\nVoxel=yes\n"),
     );
@@ -844,9 +855,34 @@ fn turret_shadow_gate_follows_the_art_key_and_seeds_turret_stencils() {
         "the turret stencil covers the turret's facing buckets"
     );
     assert_eq!(turret[0].turret_index, 0);
+    assert!(
+        barrel
+            .iter()
+            .any(|key| key.facing % TURRET_FACING_STEP == 0 && key.barrel_pitch != 0),
+        "the barrel stencil follows the turret facing and barrel pitch"
+    );
+    let model = UnitModel::load(&assets, "TANK", Some(&rules)).unwrap();
+    for key in [&turret[0], &barrel[0]] {
+        assert!(
+            model.render(key, None, None, &mut None).is_some(),
+            "the production atlas renders {key:?}"
+        );
+    }
+    let pitched = barrel
+        .iter()
+        .find(|key| key.barrel_pitch != 0)
+        .expect("a pitched barrel shadow");
+    let mut level = pitched.clone();
+    level.barrel_pitch = 0;
+    let pitched_sprite = model.render(pitched, None, None, &mut None).unwrap().0;
+    let level_sprite = model.render(&level, None, None, &mut None).unwrap().0;
+    assert_ne!(
+        pitched_sprite.palette_indices, level_sprite.palette_indices,
+        "barrel pitch changes the shadow geometry"
+    );
 
     // An ART `TurretShadow=no` overrides the global yes.
-    let (rules, art_off) = shadow_keys(
+    let (rules, art_off_turret, art_off_barrel) = shadow_keys(
         "DrawTurretShadow=yes\n",
         &IniFile::from_str("[TANK]\nVoxel=yes\nTurretShadow=no\n"),
     );
@@ -854,15 +890,18 @@ fn turret_shadow_gate_follows_the_art_key_and_seeds_turret_stencils() {
         Some(&rules),
         rules.object("TANK").unwrap()
     ));
-    assert!(art_off.is_empty());
+    assert!(art_off_turret.is_empty());
+    assert!(art_off_barrel.is_empty());
 
     // Default `DrawTurretShadow=no` (`Ext/Rules/Body.h:737`): no stencil.
-    let (rules, default_off) = shadow_keys("", &IniFile::from_str("[TANK]\nVoxel=yes\n"));
+    let (rules, default_off_turret, default_off_barrel) =
+        shadow_keys("", &IniFile::from_str("[TANK]\nVoxel=yes\n"));
     assert!(!turret_shadow_enabled(
         Some(&rules),
         rules.object("TANK").unwrap()
     ));
-    assert!(default_off.is_empty());
+    assert!(default_off_turret.is_empty());
+    assert!(default_off_barrel.is_empty());
 }
 
 /// Byte identity is retail evidence; distinct raster outputs and unchanged

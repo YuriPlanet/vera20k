@@ -3,6 +3,14 @@
 use super::*;
 
 #[test]
+fn retail_games_do_not_admit_the_phobos_boards() {
+    assert!(!boards_admitted(false, &GameScreen::InGame, false));
+    assert!(boards_admitted(true, &GameScreen::InGame, false));
+    assert!(!boards_admitted(true, &GameScreen::MainMenu, false));
+    assert!(!boards_admitted(true, &GameScreen::InGame, true));
+}
+
+#[test]
 fn description_is_the_native_version_description() {
     assert_eq!(
         description(),

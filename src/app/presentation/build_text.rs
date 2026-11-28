@@ -8,8 +8,8 @@
 //! it; this module carries both boards.
 //!
 //! The text is the native product name, version and build warning from
-//! [`crate::app::phobos_version`], drawn only in Phobos builds; every other
-//! build keeps the retail screen, which prints nothing here.
+//! [`crate::app::phobos_version`], drawn only in games whose data enables
+//! Phobos; retail games keep the screen without these boards.
 //!
 //! ## Dependency rules
 //! - Part of the app layer — may depend on everything.
@@ -49,22 +49,29 @@ pub(crate) fn place(view_width: i32, text_width: i32, text_height: i32) -> ([i32
     )
 }
 
+/// Whether the current game admits the Phobos boards.
+fn boards_admitted(phobos: bool, screen: &GameScreen, map_picture: bool) -> bool {
+    phobos && *screen == GameScreen::InGame && !map_picture
+}
+
 /// The description's fill box and text instances, or empty pairs outside a
-/// Phobos build's in-game screen and in a map picture.
+/// Phobos game's in-game screen and in a map picture.
 pub(crate) fn build_instances(
     platform: &PlatformState,
     renderer: &RendererState,
     screen: &GameScreen,
     match_state: &MatchState,
     persistence: &PersistenceState,
+    phobos: bool,
 ) -> (Vec<SpriteInstance>, Vec<SpriteInstance>) {
     // `GScreenClass_DrawText @ 0x4F4583` owns two independent boards: the
     // TESTING_BUILD version description and the `ShowGameTime` clock. Only the
     // common on-screen admission is shared; each board has its own switch.
-    if !crate::rules::PHOBOS_ENABLED
-        || *screen != GameScreen::InGame
-        || (platform.capture_client_size.is_some() && platform.capture_presentation.map_picture)
-    {
+    if !boards_admitted(
+        phobos,
+        screen,
+        platform.capture_client_size.is_some() && platform.capture_presentation.map_picture,
+    ) {
         return (Vec::new(), Vec::new());
     }
     let (view_width, _) = crate::app::input::camera::tactical_viewport_size(

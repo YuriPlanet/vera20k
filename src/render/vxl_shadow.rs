@@ -66,6 +66,12 @@ fn draw_rotation(vxl: &VxlFile, params: &VxlRenderParams) -> Option<super::Mat4>
         Some(super::BodyTilt::JumpjetTilt(angles)) if tilt_is_active(angles) => {
             super::voxel_crash_rotation(step, angles)
         }
+        None if params.barrel_pitch != 0 => super::voxel_pitched_draw_rotation(
+            params.slope_type,
+            params.slope_blend,
+            step,
+            params.barrel_pitch,
+        ),
         _ => super::voxel_draw_rotation_for_state(params.slope_type, None, step),
     })
 }
