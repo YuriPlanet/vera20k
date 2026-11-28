@@ -55,7 +55,8 @@ pub(crate) fn commit_prepared_load(
     );
     // The outgoing replay closes before the process dummy and runtime change.
     crate::app::match_runtime::sim_tick::close_replay_segment_for_new_timeline(state);
-    let npatch = state.rules().is_some_and(|rules| rules.npatch_fixes());
+    let npatch = crate::app::state::active_rules(&state.frontend, &state.match_state)
+        .is_some_and(|rules| rules.npatch_fixes());
     crate::app::reset_scenario_exit_runtime(
         &mut state.frontend,
         &mut state.match_state,

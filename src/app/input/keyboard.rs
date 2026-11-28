@@ -71,7 +71,10 @@ pub(crate) fn in_game_key_edge(
     // NPatch (NPExt item 95, #2941): a release clears the held key even when
     // the pause gate below refuses the edge, so a key held when the match is
     // paused or detached cannot leave camera scroll running afterwards.
-    if state.rules().is_some_and(|rules| rules.npatch_fixes()) && !edge.state.is_pressed() {
+    if crate::app::state::active_rules(&state.frontend, &state.match_state)
+        .is_some_and(|rules| rules.npatch_fixes())
+        && !edge.state.is_pressed()
+    {
         state.match_state.input.keys_held.remove(&edge.physical);
         if let Some(scroll_key) = hotkeys::physical_scroll_key(edge.physical) {
             state.match_state.input.keys_held.remove(&scroll_key);
