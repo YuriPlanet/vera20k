@@ -547,7 +547,7 @@ fn a_plain_active_unit_skips_absent_common_managers() {
 }
 
 #[test]
-fn a_waiting_slave_manager_is_not_handed_out_for_an_empty_update() {
+fn a_slave_manager_stays_untouched_until_its_update_is_due() {
     let mut sim = Simulation::new();
     let mut entity = GameEntity::test_default(1, "TEST", "Americans", 5, 5);
     entity.slave_manager = Some(Box::new(crate::sim::slave_manager::SlaveManager::new(
@@ -566,37 +566,11 @@ fn a_waiting_slave_manager_is_not_handed_out_for_an_empty_update() {
         effects: FrameEffects::empty(),
         overlay_registry: None,
     };
-    let mut outcome = ObjectAiOutcome::default();
-    assert!(techno_after_acquisition(
-        &mut sim,
-        1,
-        &rules,
-        &mut ctx,
-        &mut outcome
-    ));
+    sim.slave_manager_ai(1, &rules, None, &mut ctx.effects)
+        .unwrap();
     assert_eq!(sim.substrate.entities.hand_outs(), handouts_before);
-    assert!(outcome.frame_error.is_none());
-}
 
-#[test]
-fn a_due_slave_manager_runs_through_the_common_block() {
-    let mut sim = Simulation::new();
-    let mut entity = GameEntity::test_default(1, "TEST", "Americans", 5, 5);
-    entity.slave_manager = Some(Box::new(crate::sim::slave_manager::SlaveManager::new(
-        sim.interner.intern("SLAVE"),
-        [],
-        0,
-        0,
-        1,
-    )));
-    register_entity(&mut sim, entity);
     sim.session.set_binary_frame_for_test(11);
-    let rules = RuleSet::empty_for_test();
-
-    let mut ctx = ObjectAiCtx {
-        effects: FrameEffects::empty(),
-        overlay_registry: None,
-    };
     let mut outcome = ObjectAiOutcome::default();
     assert!(techno_after_acquisition(
         &mut sim,

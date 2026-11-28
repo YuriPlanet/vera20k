@@ -248,11 +248,6 @@ impl SlaveManager {
         self.state
     }
 
-    /// Whether `SlaveManagerClass::AI @ 0x006AF5F0` would start this visit.
-    pub(crate) fn ai_timer_expired(&self, frame: i32) -> bool {
-        self.ai_timer.expired(frame)
-    }
-
     #[cfg(any(test, feature = "test-support"))]
     pub fn frame(&self) -> i32 {
         self.frame
@@ -516,12 +511,20 @@ impl Simulation {
         frame_effects: &mut FrameEffects<'_>,
     ) -> Result<(), TiberiumImageError> {
         let now = Self::now_frame(&self.session);
-        let Some(manager) = self.substrate.slave_manager_mut(master) else {
+        // 0x006AF5FD..0x006AF625: the timer's first write is its restart.
+        let Some(manager) = self
+            .substrate
+            .entities
+            .get_mut_if(master, |entity| {
+                entity
+                    .slave_manager
+                    .as_ref()
+                    .is_some_and(|manager| manager.ai_timer.expired(now))
+            })
+            .and_then(|entity| entity.slave_manager.as_mut())
+        else {
             return Ok(());
         };
-        if !manager.ai_timer.expired(now) {
-            return Ok(());
-        }
         manager.ai_timer.start(now, 10);
         self.slave_ai_update(master, rules, registry, frame_effects)?;
         self.slave_manager_step(master, rules, registry, frame_effects)?;

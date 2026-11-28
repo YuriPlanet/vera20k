@@ -1143,39 +1143,17 @@ pub(super) fn techno_after_acquisition(
     // The mission and scan before may have written it: asked here.
     let quiet = sim.quiet(id);
     if !quiet {
-        // Bomb6FA6F5, Slave6FA717 and Capture6FA726: skip only when the
-        // helper's first write cannot happen. A called helper may change the
-        // next owner's state, so re-read before the following call.
-        let frame = sim.session.binary_frame() as i32;
-        let managers = |sim: &Simulation| {
-            sim.substrate
-                .entities
-                .get(id)
-                .map_or((true, true, true), |entity| {
-                    (
-                        entity.bomb.as_ref().is_some_and(|bomb| {
-                            bomb.expired(frame) && !entity.lifecycle.in_limbo()
-                        }),
-                        entity
-                            .slave_manager
-                            .as_ref()
-                            .is_some_and(|manager| manager.ai_timer_expired(frame)),
-                        entity
-                            .capture_manager
-                            .as_ref()
-                            .is_some_and(|manager| manager.is_infinite()),
-                    )
-                })
-        };
-        let (bomb, mut slave, mut capture) = managers(sim);
-        if bomb {
+        // TechnoClass::AI_Update 0x006FA6F5..0x006FA735: with all three
+        // slots empty, no callback can run. Otherwise each update reads its
+        // own slot after the previous callback, which may have changed it.
+        let mut entity = sim.substrate.entities.get(id);
+        if entity.is_some_and(|entity| {
+            entity.bomb.is_some()
+                || entity.slave_manager.is_some()
+                || entity.capture_manager.is_some()
+        }) {
             outcome.bridge_state_changed |=
                 sim.bomb_fuse_step(id, rules, ctx.overlay_registry, &mut ctx.effects);
-            let (_, next_slave, next_capture) = managers(sim);
-            slave = next_slave;
-            capture = next_capture;
-        }
-        if slave {
             if let Err(error) =
                 sim.slave_manager_ai(id, rules, ctx.overlay_registry, &mut ctx.effects)
             {
@@ -1187,13 +1165,10 @@ pub(super) fn techno_after_acquisition(
                 ));
                 return false;
             }
-            let (_, _, next_capture) = managers(sim);
-            capture = next_capture;
-        }
-        if capture {
             sim.capture_manager_update(id, rules, ctx.overlay_registry, &mut ctx.effects);
+            entity = sim.substrate.entities.get(id);
         }
-        if !ai_alive(&sim.substrate, id) {
+        if !entity.is_some_and(GameEntity::is_object_alive) {
             return false;
         }
     }
