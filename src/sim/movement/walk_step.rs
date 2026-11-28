@@ -1,9 +1,10 @@
 //! Paid Walk75BFA9..75C0CB step, between admission/completion and placement.
 //!
-//! RESIDUAL: the gate in front of it is not ported. With the head still 17
-//! leptons or more away (0x75BD70), an owner under EMP (vt+0x37C, Techno
-//! 0x0070EFD0: +0x504 > 0) clears Walk +0x36 and Foot +0x68A and returns
-//! without stepping (0x75BF85..0x75BFA6).
+//! RESIDUAL: the EMP term of the gate in front of it is not ported. With the
+//! head still 17 leptons or more away (0x75BD70), an owner under EMP (vt+0x37C,
+//! Techno 0x0070EFD0: +0x504 > 0) clears Walk +0x36 and Foot +0x68A and
+//! returns without stepping (0x75BF85..0x75BFA6). The movement tick holds a
+//! webbed walker there (Firestorm's Is_Immobilized, `docs/ts-webs.md`).
 //! - Trigger: a walking infantryman under an EMP effect.
 //! - Effect: it keeps stepping, and its Walk sequence, instead of freezing.
 //! - Frequency: none with retail data: `EMEffect=` is set only on the
@@ -70,7 +71,7 @@ pub(super) fn advance(
     let speed = super::foot_speed::owner_current_speed_from_native_fraction(
         adjusted_speed,
         entity.foot_speed.native_applied_fraction(),
-        entity.phobos_speed_multiplier(),
+        entity.effect_speed_multiplier(),
     );
     let speed = prone_crawls.map_or(speed, |crawls| {
         crate::sim::infantry::apply_prone_speed(SimFixed::from_num(speed), crawls, prone_multiplier)

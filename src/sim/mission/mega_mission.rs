@@ -62,6 +62,7 @@ impl MegaMission {
         target: Option<TargetKind>,
         have_attack_move_target: bool,
     ) -> Self {
+        crate::sim::game_entity::NameNote::fixture();
         Self {
             attack_move,
             destination,
@@ -199,6 +200,9 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get_mut(id) else {
             return mission;
         };
+        // MegaDestination and MegaTarget are names the pointer-expiry index
+        // reads.
+        let _ = entity.note_names();
         let mega = &mut entity.seldom.mega_mission;
         mega.have_attack_move_target = false;
         mega.attack_move = true;
@@ -306,13 +310,14 @@ impl Simulation {
         else {
             return;
         };
+        // Wasm module `TargetChanged` after each bare write; the scan's own
+        // write goes through the class setter, which raises it.
         if drop_tarcom {
-            self.substrate
-                .entities
-                .get_mut(id)
-                .unwrap()
-                .attack_target
-                .set(None);
+            let before = self.module_target_before(id);
+            let entity = self.substrate.entities.get_mut(id).unwrap();
+            let note = entity.note_names();
+            entity.attack_target.set(None, note);
+            self.raise_module_target_changed(rules, &mut ctx.effects, id, before);
         }
         let found = crate::sim::world::retaliate_and_scan(
             self,
@@ -323,12 +328,15 @@ impl Simulation {
             None,
         );
         if !found {
+            let before = self.module_target_before(id);
             if let Some(target) = fallback
                 && let Some(entity) = self.substrate.entities.get_mut(id)
             {
                 // `0x004DF4A5`.
-                entity.attack_target.set(target);
+                let note = entity.note_names();
+                entity.attack_target.set(target, note);
             }
+            self.raise_module_target_changed(rules, &mut ctx.effects, id, before);
             return;
         }
         self.foot_queue_mission_now(id, MissionType::Attack, rules);

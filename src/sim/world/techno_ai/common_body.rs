@@ -23,6 +23,7 @@ use crate::sim::rng::SimRng;
 use crate::sim::scenario_session::ScenarioSession;
 use crate::sim::world::FrameChannel;
 use crate::sim::world::SimSoundEvent;
+use crate::util::forked::Forked;
 
 /// The promotion detector of `TechnoClass::AI_Update @ 0x006FA054..0x006FA145`,
 /// run once per live-object visit for every category (the common body is
@@ -38,26 +39,22 @@ use crate::sim::world::SimSoundEvent;
 /// counter is stepped later by4CC770 at6FAC4D, through flash_step; a
 /// newly promoted object's timer therefore loses one on this same visit.
 /// Ares replaces this whole block (`Simulation::update_ares_veterancy`).
+/// The interner and the sound channel are written only by a promotion
+/// (`util::forked`).
 fn veterancy_promotion_step(
-    interner: &mut StringInterner,
+    interner: &mut Forked<StringInterner>,
     substrate: &mut ObjectSubstrate,
     terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
-    sound_events: &mut FrameChannel<SimSoundEvent>,
+    sound_events: &mut Forked<FrameChannel<SimSoundEvent>>,
     id: u64,
     rules: &RuleSet,
-) {
-    let Some(entity) = substrate
+) -> Option<crate::sim::combat::veterancy::Promotion> {
+    let entity = substrate
         .entities
-        .get_mut_if(id, |entity| entity.veterancy.rank_changed())
-    else {
-        return;
-    };
-    let Some(promotion) = entity
+        .get_mut_if(id, |entity| entity.veterancy.rank_changed())?;
+    let promotion = entity
         .veterancy
-        .sample_promotion(&mut entity.flashing, rules.general.elite_flash_timer)
-    else {
-        return;
-    };
+        .sample_promotion(&mut entity.flashing, rules.general.elite_flash_timer)?;
     let owner = entity.owner();
     // The promoted object's type is already interned on the entity; carry it
     // out so the accessibility line can name the game's own object without a
@@ -80,6 +77,7 @@ fn veterancy_promotion_step(
         world,
         eva: None,
     });
+    Some(promotion)
 }
 
 /// The house self-heal pulse of `TechnoClass::AI_Update`, read from the
@@ -185,43 +183,17 @@ fn house_heal_arm(
     let Some(object) = interner.object_type(entity.type_ref(), rules) else {
         return;
     };
-    let unit = entity.category() == EntityCategory::Unit;
-    let admitted = if infantry {
-        entity.category() == EntityCategory::Infantry || (unit && object.organic)
-    } else {
-        unit && !object.organic
-    };
-    if !admitted {
-        return;
-    }
     let strength = object.strength;
-    let health = entity.health.current();
-    if health >= strength || health == 0 {
+    let Some(count) = house_heal_count(
+        houses,
+        entity,
+        object,
+        session.binary_frame(),
+        rules,
+        infantry,
+    ) else {
         return;
-    }
-    let interval = if infantry {
-        rules.general.self_heal_infantry_frames
-    } else {
-        rules.general.self_heal_unit_frames
     };
-    // Original6FA7EE/6FA8E2 divides before testing the House count. Missing
-    // keys retain constructor1000. gamemd traps there on an authored period0
-    // (and signed MIN/-1); VERA carries on: such a period is never due.
-    let frame = session.binary_frame() as i32;
-    if frame.checked_rem(interval) != Some(0) {
-        return;
-    }
-    let owner = entity.owner();
-    let count = houses.get(&owner).map_or(0, |house| {
-        if infantry {
-            house.self_heal_infantry()
-        } else {
-            house.self_heal_units()
-        }
-    });
-    if count <= 0 {
-        return;
-    }
     let amount = if infantry {
         rules.general.self_heal_infantry_amount
     } else {
@@ -245,6 +217,75 @@ fn house_heal_arm(
             rules,
         );
     }
+}
+
+/// The house count [`house_heal_arm`]'s `infantry` arm heals `entity` (of
+/// type `object`) by at `frame`, or `None` when the arm passes it by. It only
+/// reads, so a steady object's visit asks it too (`world::steady_ai`).
+fn house_heal_count(
+    houses: &Houses,
+    entity: &GameEntity,
+    object: &crate::rules::object_type::ObjectType,
+    frame: u32,
+    rules: &RuleSet,
+    infantry: bool,
+) -> Option<i32> {
+    let unit = entity.category() == EntityCategory::Unit;
+    let admitted = if infantry {
+        entity.category() == EntityCategory::Infantry || (unit && object.organic)
+    } else {
+        unit && !object.organic
+    };
+    let health = entity.health.current();
+    if !admitted || health >= object.strength || health == 0 {
+        return None;
+    }
+    if !house_heal_arm_frame(frame, rules, infantry) {
+        return None;
+    }
+    let count = houses.get(&entity.owner()).map_or(0, |house| {
+        if infantry {
+            house.self_heal_infantry()
+        } else {
+            house.self_heal_units()
+        }
+    });
+    (count > 0).then_some(count)
+}
+
+/// Whether `frame` is a heal frame of [`house_heal_arm`]'s `infantry` arm
+/// (`Frame % Rules->SelfHeal…Frames`).
+fn house_heal_arm_frame(frame: u32, rules: &RuleSet, infantry: bool) -> bool {
+    let interval = if infantry {
+        rules.general.self_heal_infantry_frames
+    } else {
+        rules.general.self_heal_unit_frames
+    };
+    // Original6FA7EE/6FA8E2 divides before testing the House count. Missing
+    // keys retain constructor1000. gamemd traps there on an authored period0
+    // (and signed MIN/-1); VERA carries on: such a period is never due.
+    (frame as i32).checked_rem(interval) == Some(0)
+}
+
+/// Whether `frame` is a heal frame of either arm of
+/// [`house_self_heal_step`], which reads nothing else.
+pub(in crate::sim::world) fn house_heal_frame(frame: u32, rules: &RuleSet) -> bool {
+    house_heal_arm_frame(frame, rules, false) || house_heal_arm_frame(frame, rules, true)
+}
+
+/// Whether either arm of [`house_self_heal_step`] heals `entity` (of type
+/// `object`) at `frame`. It only reads, so a steady object's visit asks it
+/// too (`world::steady_ai`).
+pub(in crate::sim::world) fn house_heals(
+    houses: &Houses,
+    entity: &GameEntity,
+    object: &crate::rules::object_type::ObjectType,
+    frame: u32,
+    rules: &RuleSet,
+) -> bool {
+    [false, true]
+        .into_iter()
+        .any(|infantry| house_heal_count(houses, entity, object, frame, rules, infantry).is_some())
 }
 
 /// The self-heal pulse of `TechnoClass::AI_Update @ 0x006FA743..0x006FA757`:
@@ -589,15 +630,22 @@ pub(super) fn techno_common_steps(
     if rules.ares() {
         // Ares TechnoClass_Update_Veterancy1004F2E0 (hook6FA054..6FA14B).
         sim.update_ares_veterancy(id, false, true, rules, effects);
-    } else if !quiet {
-        veterancy_promotion_step(
+    } else if !quiet
+        && let Some(promotion) = veterancy_promotion_step(
             &mut sim.interner,
             &mut sim.substrate,
             sim.resolved_terrain.as_ref(),
             &mut sim.sound_events,
             id,
             rules,
-        );
+        )
+    {
+        // Wasm module `Promoted`, `value` the new rank (1 veteran, 2 elite).
+        let rank = match promotion {
+            crate::sim::combat::veterancy::Promotion::Veteran => 1,
+            crate::sim::combat::veterancy::Promotion::Elite => 2,
+        };
+        sim.raise_module_promoted(rules, effects, id, rank);
     }
     if !quiet {
         crate::sim::credit_income::drain_common_step(sim, id, rules);
@@ -728,11 +776,12 @@ pub(super) fn berserk_step(
 ///
 /// Next, UpdateAirstrikeTint70E920 (call6F9EB6) steps a marked building,
 /// consuming its jitter draw after the Iron draw on the same Scenario stream.
+/// The stream is written only by a stepped tint (`util::forked`).
 ///
 /// [`InvulnerabilityState::update_tint`]: crate::sim::superweapon::invulnerability::InvulnerabilityState::update_tint
 pub(super) fn iron_tint_step(
     session: &ScenarioSession,
-    scenario_rng: &mut SimRng,
+    scenario_rng: &mut Forked<SimRng>,
     substrate: &mut ObjectSubstrate,
     id: u64,
 ) {
@@ -798,7 +847,7 @@ fn charge_turret_step(
 /// illegal target; this is where they let go of it.
 pub(super) fn illegal_target_drop_step(sim: &mut Simulation, id: u64, rules: &RuleSet) {
     use crate::sim::combat::{TargetKind, fire_error::FireError};
-    if !sim.session.binary_frame().is_multiple_of(16) {
+    if !illegal_target_drop_frame(sim.session.binary_frame()) {
         return;
     }
     let Some(entity) = sim.substrate.entities.get(id) else {
@@ -837,6 +886,12 @@ pub(super) fn illegal_target_drop_step(sim: &mut Simulation, id: u64, rules: &Ru
         sim.assign_target_represented(id, None, rules, &mut FrameEffects::default())
             .expect("the queried target-drop receiver remains present");
     }
+}
+
+/// Whether [`illegal_target_drop_step`] asks at `frame`: every sixteenth
+/// frame (`0x006FA472`).
+pub(in crate::sim::world) fn illegal_target_drop_frame(frame: u32) -> bool {
+    frame.is_multiple_of(16)
 }
 
 /// `TechnoClass::AI_Update @ 0x006FAAEF..0x006FABB8`, after the spawn
@@ -892,12 +947,7 @@ pub(super) fn target_reach_step(
     let Some(target) = entity.attack_target.target() else {
         return;
     };
-    if !matches!(
-        entity.category(),
-        EntityCategory::Unit | EntityCategory::Infantry
-    ) || sim.team_script_vm.team_for_member(id).is_some()
-        || entity.navigation.nav_com().is_some()
-    {
+    if !target_reach_asks(sim, id, entity) {
         return;
     }
     // A target that no longer resolves is cleared natively (`PointerExpired`)
@@ -939,6 +989,21 @@ pub(super) fn target_reach_step(
     let _ = sim.assign_target_represented(id, None, rules, effects);
 }
 
+/// Whether [`target_reach_step`] asks about the target `entity` (`id`)
+/// holds: a Unit or Infantry outside a team with no NavCom. A steady
+/// object's visit asks it too (`world::steady_ai`).
+pub(in crate::sim::world) fn target_reach_asks(
+    sim: &Simulation,
+    id: u64,
+    entity: &GameEntity,
+) -> bool {
+    matches!(
+        entity.category(),
+        EntityCategory::Unit | EntityCategory::Infantry
+    ) && sim.team_script_vm.team_of(id).is_none()
+        && entity.navigation.nav_com().is_none()
+}
+
 /// `TechnoClass::AI_Update @ 0x006FA30C..0x006FA46C`, every frame after the
 /// drain blocks: a computer house's object lets go of a target its house is
 /// allied with (`HouseClass::Is_Ally_ByObject @ 0x004F9AF0`). The deciding
@@ -954,14 +1019,30 @@ pub(super) fn target_reach_step(
 ///
 /// Otherwise Assign_Target(NULL). No draw, no retarget.
 pub(super) fn allied_target_drop_step(sim: &mut Simulation, id: u64, rules: &RuleSet) {
+    if !allied_target_drops(sim, id, rules) {
+        return;
+    }
+    //6FA46C precedes the subsequent live target re-read and illegal test.
+    // Preserve class refusal and synchronous action/path effects.
+    sim.assign_target_represented(id, None, rules, &mut FrameEffects::default())
+        .expect("the queried allied-target receiver remains present");
+}
+
+/// Whether [`allied_target_drop_step`] lets `id`'s target go. It only reads,
+/// so a steady object's visit asks it too (`world::steady_ai`).
+pub(in crate::sim::world) fn allied_target_drops(
+    sim: &Simulation,
+    id: u64,
+    rules: &RuleSet,
+) -> bool {
     use crate::sim::combat::{TargetKind, combat_weapon};
     let Some(entity) = sim.substrate.entities.get(id) else {
-        return;
+        return false;
     };
     // The target is read before the house only to spare an object without
     // one the house lookups; neither test writes (VERA-only order).
     let Some(target) = entity.attack_target.target() else {
-        return;
+        return false;
     };
     let house = combat_weapon::controlled_transport_house(
         &sim.substrate.entities,
@@ -971,10 +1052,10 @@ pub(super) fn allied_target_drop_step(sim: &mut Simulation, id: u64, rules: &Rul
     )
     .unwrap_or(entity.owner());
     if sim.owner_is_human(house) {
-        return;
+        return false;
     }
     let Some(obj) = sim.interner.object_type(entity.type_ref(), rules) else {
-        return;
+        return false;
     };
     // `0x004F9AF0` tests the target's Object flag first: a cell is never
     // allied.
@@ -1007,11 +1088,11 @@ pub(super) fn allied_target_drop_step(sim: &mut Simulation, id: u64, rules: &Rul
         allied
     };
     if !drops {
-        return;
+        return false;
     }
     let target_obj = target.and_then(|target| sim.interner.object_type(target.type_ref(), rules));
     if target.is_some() && target_obj.is_none() {
-        return;
+        return false;
     }
     let infantry = entity.category() == EntityCategory::Infantry;
     let target_building = target
@@ -1034,13 +1115,7 @@ pub(super) fn allied_target_drop_step(sim: &mut Simulation, id: u64, rules: &Rul
         && target_scan::weapon_at_index(sim, rules, id, 1)
             .and_then(|weapon| rules.weapon_warhead(weapon))
             .is_some_and(|warhead| warhead.electric_assault);
-    if engineer || overpowers || occupiable || entity.berserk.is_active() {
-        return;
-    }
-    //6FA46C precedes the subsequent live target re-read and illegal test.
-    // Preserve class refusal and synchronous action/path effects.
-    sim.assign_target_represented(id, None, rules, &mut FrameEffects::default())
-        .expect("the queried allied-target receiver remains present");
+    !(engineer || overpowers || occupiable || entity.berserk.is_active())
 }
 
 /// The shared post-acquisition sequence of `TechnoClass::AI_Update`:
@@ -1131,6 +1206,38 @@ pub(super) fn techno_after_acquisition(
     true
 }
 
+/// The GetCoords of `entity` (`id`, of type `object`) whose Cell
+/// [`behind_indicator_step`] asks about ([`behind_indicator_cell`]), or
+/// `None` when the step asks none: for a type without `CanBeHidden=`, an
+/// Aircraft, or while no Cell hides anything. A steady object's mark asks
+/// it too (`world::steady_ai`).
+pub(in crate::sim::world) fn behind_indicator_coord(
+    sim: &Simulation,
+    id: u64,
+    entity: &GameEntity,
+    object: &crate::rules::object_type::ObjectType,
+) -> Option<crate::sim::anim_class::AnimWorldCoord> {
+    // With no hidden-occupation entry no Cell hides anything; skip the
+    // per-object coordinate and Cell lookups (VERA-only, result unchanged).
+    if !object.can_be_hidden
+        || entity.category() == EntityCategory::Aircraft
+        || sim.substrate.hidden_occupation.entry_count() == 0
+    {
+        return None;
+    }
+    sim.anim_owner_coords(id)
+}
+
+/// The Cell holding `coord`, which [`behind_indicator_step`] asks whether it
+/// hides objects; `None` off the map's coordinate range.
+pub(in crate::sim::world) fn behind_indicator_cell(
+    coord: crate::sim::anim_class::AnimWorldCoord,
+) -> Option<(u16, u16)> {
+    u16::try_from(coord.x / 256)
+        .ok()
+        .zip(u16::try_from(coord.y / 256).ok())
+}
+
 /// `TechnoClass::AI_Update @ 0x006FA24A..0x006FA30C`, before the allied
 /// target drop: an object whose type has `CanBeHidden=` (TechnoType `+0x724`)
 /// and that is not an Aircraft (vt+0x2C 2), standing on a Cell that hides it
@@ -1169,19 +1276,10 @@ pub(super) fn behind_indicator_step(sim: &mut Simulation, id: u64, rules: &RuleS
     let Some(object) = sim.interner.object_type(entity.type_ref(), rules) else {
         return;
     };
-    // With no hidden-occupation entry no Cell hides anything; skip the
-    // per-object coordinate and Cell lookups (VERA-only, result unchanged).
-    let coord = (object.can_be_hidden
-        && entity.category() != EntityCategory::Aircraft
-        && sim.substrate.hidden_occupation.entry_count() != 0)
-        .then(|| sim.anim_owner_coords(id))
-        .flatten();
-    let hidden = coord.is_some_and(|coord| {
-        u16::try_from(coord.x / 256)
-            .ok()
-            .zip(u16::try_from(coord.y / 256).ok())
-            .is_some_and(|(rx, ry)| sim.substrate.cell_hides_objects(rx, ry))
-    });
+    let coord = behind_indicator_coord(sim, id, entity, object);
+    let hidden = coord
+        .and_then(behind_indicator_cell)
+        .is_some_and(|(rx, ry)| sim.substrate.cell_hides_objects(rx, ry));
     if !hidden {
         // A quiet unit holds no Behind anim (`world::quiet_units`).
         if !sim.quiet(id)
@@ -1224,8 +1322,25 @@ fn screen_visual_character(
     entity: &crate::sim::game_entity::GameEntity,
     rules: &RuleSet,
 ) -> u8 {
+    screen_visual_character_for(
+        sim,
+        entity,
+        rules,
+        sim.session.current_house(),
+        sim.shared_owned_by_current_house(entity),
+    )
+}
+
+/// [`screen_visual_character`] for `viewer`, with `owned_by_viewer` as the
+/// `+0x41A` byte that house would hold.
+fn screen_visual_character_for(
+    sim: &Simulation,
+    entity: &crate::sim::game_entity::GameEntity,
+    rules: &RuleSet,
+    viewer: Option<crate::sim::intern::InternedId>,
+    owned_by_viewer: bool,
+) -> u8 {
     use crate::sim::combat::combat_weapon::is_ally_by_object;
-    let viewer = sim.session.current_house();
     let owner = entity.owner();
     let allied = |a, b| is_ally_by_object(Some(&sim.house_alliances), &sim.interner, a, b);
     let object = sim.interner.object_type(entity.type_ref(), rules);
@@ -1238,7 +1353,7 @@ fn screen_visual_character(
             object.cloaking_stages(rules.general.cloaking_stages)
         }),
         invisible,
-        sim.shared_owned_by_current_house(entity),
+        owned_by_viewer,
         crate::sim::cloak_disguise::VisualCharacterQuery::screen(
             true,
             viewer.is_some(),
@@ -1248,6 +1363,41 @@ fn screen_visual_character(
             false,
         ),
     )
+}
+
+impl Simulation {
+    /// Whether `viewer` sees the object at this moment as that house's
+    /// screen would show it (RFC 0001 `Visible`): alive and out of limbo;
+    /// the viewer's own or an ally's, or on a cell the viewer's fog shows
+    /// objects on ([`FogState::shows_objects_to`], current sight under
+    /// FogOfWar, as the translucent fog draws); and not Hidden (5) to the
+    /// screen GetVisualState (`0x00703860`) asked for the viewer, which
+    /// covers cloaking, sensors, `Invisible=` and the tunnel ripple.
+    ///
+    /// [`FogState::shows_objects_to`]: crate::sim::vision::FogState::shows_objects_to
+    pub(crate) fn object_seen_by(
+        &self,
+        rules: &RuleSet,
+        entity: &crate::sim::game_entity::GameEntity,
+        viewer: crate::sim::intern::InternedId,
+    ) -> bool {
+        if !entity.lifecycle.object_alive() || entity.lifecycle.in_limbo() {
+            return false;
+        }
+        let owner = entity.owner();
+        let own = owner == viewer;
+        let shown = own
+            || self
+                .house_alliances
+                .is_allied(&self.interner, viewer, owner)
+            || self.fog.shows_objects_to(
+                viewer,
+                entity.position.rx(),
+                entity.position.ry(),
+                self.session.game_options().fog_of_war,
+            );
+        shown && screen_visual_character_for(self, entity, rules, Some(viewer), own) != 5
+    }
 }
 
 /// `TechnoClass::AI_Update @ 0x006FA9D8..0x006FAAEF`, after the spawn manager
@@ -1272,15 +1422,7 @@ pub(super) fn healer_target_drop_step(sim: &mut Simulation, id: u64, rules: &Rul
         sim.substrate.entities.get(id).is_some_and(|entity| {
             sim.interner
                 .object_type(entity.type_ref(), rules)
-                .is_some_and(|kind| {
-                    combat_weapon::weapon_damage_value(
-                        entity,
-                        kind,
-                        &sim.substrate.entities,
-                        rules,
-                        &sim.interner,
-                    ) < 0
-                })
+                .is_some_and(|kind| combat_damage_heals(sim, entity, kind, rules))
         })
     };
     let target = |sim: &Simulation| {
@@ -1364,6 +1506,25 @@ pub(super) fn healer_target_drop_step(sim: &mut Simulation, id: u64, rules: &Rul
     }
 }
 
+/// Whether `entity` (of type `object`) is the healer every arm of
+/// [`healer_target_drop_step`] asks for: its CombatDamage
+/// (`0x006F3970(-1)`) is negative. A Unit's or Infantry's weapon is its own,
+/// so a steady object's mark asks it (`world::steady_ai`).
+pub(in crate::sim::world) fn combat_damage_heals(
+    sim: &Simulation,
+    entity: &GameEntity,
+    object: &crate::rules::object_type::ObjectType,
+    rules: &RuleSet,
+) -> bool {
+    crate::sim::combat::combat_weapon::weapon_damage_value(
+        entity,
+        object,
+        &sim.substrate.entities,
+        rules,
+        &sim.interner,
+    ) < 0
+}
+
 /// The common Techno post-mission stage and the stock-dormant Cyborg Spark
 /// producer. The retained system and both native producers share particles::spawn.
 pub(super) fn techno_common_post(
@@ -1372,20 +1533,10 @@ pub(super) fn techno_common_post(
     rules: &RuleSet,
     effects: &mut FrameEffects<'_>,
 ) {
-    // Techno6FABC4 follows Mission, passive acquisition and the reach slot.
-    // Buildings step at4509DE in their existing UpdateAnimation owner.
     // Native6FABBC..C2 skips ONLY the generic Stage block to6FAC31; the
     //shared flash/particle/EMP tail still precedes Building's Gattling code.
     //Do not reset Stage.changed or flash twice when migrating this caller.
-    // A quiet unit's stage clock stands still (`world::quiet_units`).
-    let now = sim.session.binary_frame() as i32;
-    if !sim.quiet(id)
-        && let Some(entity) = sim.substrate.entities.get_mut_if(id, |entity| {
-            entity.category() != EntityCategory::Structure && entity.native_stage().advances(now)
-        })
-    {
-        entity.tick_native_stage(now);
-    }
+    stage_step(sim, id);
     flash_step(&mut sim.substrate, id, sim.session.binary_frame());
 
     sim.update_damage_spark_after_ai(id, rules);
@@ -1397,6 +1548,22 @@ pub(super) fn techno_common_post(
     // No global frame sweep: limbo/skipped/dead visits never reach this slot.
     if rules.ares() {
         sim.tick_ares_emp(id, rules, effects);
+    }
+}
+
+/// The common stage clock (Techno6FABC4), after Mission, passive acquisition
+/// and the reach slot. Buildings step at4509DE in their existing
+/// UpdateAnimation owner. A quiet unit's clock stands still
+/// (`world::quiet_units`); a steady object's counted visit runs this step
+/// alone (`world::steady_ai`).
+pub(in crate::sim::world) fn stage_step(sim: &mut Simulation, id: u64) {
+    let now = sim.session.binary_frame() as i32;
+    if !sim.quiet(id)
+        && let Some(entity) = sim.substrate.entities.get_mut_if(id, |entity| {
+            entity.category() != EntityCategory::Structure && entity.native_stage().advances(now)
+        })
+    {
+        entity.tick_native_stage(now);
     }
 }
 
@@ -1523,16 +1690,25 @@ const PASSIVE_TARGET_CLEAR_MISSIONS: [MissionType; 12] = [
 /// `TechnoClass::AI_Update @ 0x006F9E50` at `0x006FA5E8..0x006FA63B`: TarCom `+0x2B4`,
 /// the mark `+0x50C`, then the mission `+0xAC`.
 pub(super) fn clear_passive_target_off_mission(sim: &mut Simulation, id: u64, rules: &RuleSet) {
-    let drop = sim.substrate.entities.get(id).is_some_and(|entity| {
-        entity.attack_target.target().is_some()
-            && entity.passive_scan.acquired()
-            && PASSIVE_TARGET_CLEAR_MISSIONS.contains(&entity.passive_acquire_mission())
-    });
-    if !drop {
+    if !sim
+        .substrate
+        .entities
+        .get(id)
+        .is_some_and(off_mission_clear_drops)
+    {
         return;
     }
     let _ = sim.assign_target_represented(id, None, rules, &mut FrameEffects::default());
     if let Some(entity) = sim.substrate.entities.get_mut(id) {
         entity.passive_scan.clear_acquired();
     }
+}
+
+/// Whether [`clear_passive_target_off_mission`] drops `entity`'s target. It
+/// reads the object alone, so a steady object's mark asks it
+/// (`world::steady_ai`).
+pub(in crate::sim::world) fn off_mission_clear_drops(entity: &GameEntity) -> bool {
+    entity.attack_target.target().is_some()
+        && entity.passive_scan.acquired()
+        && PASSIVE_TARGET_CLEAR_MISSIONS.contains(&entity.passive_acquire_mission())
 }

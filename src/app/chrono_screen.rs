@@ -2,7 +2,6 @@
 //! serialized simulation clock; this owner retains surfaces and the last
 //! ordered draw command only. Load/exit retires every acquired resource.
 
-use crate::app::AppState;
 use crate::audio::arbiter::HandleOwner;
 use crate::audio::sfx::{SfxPlayer, SpatialGain};
 use crate::render::chrono_screen::{ChronoScreenDraw, ChronoScreenRenderer};
@@ -58,13 +57,17 @@ impl ChronoScreenPresentation {
 
     /// Native4F4480 skips tactical draws while53BAE0 is active, then
     /// redraws sidebar/UI. Apply stores at that boundary, before chrome.
+    /// `source` is the match composition and `tactical` the battlefield in
+    /// its pixels (the window's in a zoomed match, `docs/zoom-one-pass.md`);
+    /// `bar_rows` is the command bar's height there when it lies under the
+    /// battlefield.
     pub(crate) fn draw_tactical(
         &mut self,
         gpu: &crate::render::gpu::GpuContext,
         encoder: &mut wgpu::CommandEncoder,
         source: &wgpu::Texture,
         tactical: [u32; 4],
-        bar_under: bool,
+        bar_rows: Option<u32>,
     ) {
         let Some(draw) = self.draw else {
             return;
@@ -87,7 +90,7 @@ impl ChronoScreenPresentation {
         self.renderer
             .as_ref()
             .unwrap()
-            .draw(gpu, encoder, source, draw, tactical, bar_under);
+            .draw(gpu, encoder, source, draw, tactical, bar_rows);
         if matches!(draw, ChronoScreenDraw::Restore) {
             self.draw = None;
             self.renderer = None;
@@ -99,10 +102,11 @@ impl ChronoScreenPresentation {
 type Cue<'a> = Option<(&'a str, &'a SoundRegistry)>;
 
 /// `TimeWarpOutSound=`, or `TimeWarpInSound=` on the way back.
-fn cue_name(state: &AppState, returning: bool) -> Option<String> {
-    state
-        .match_state
-        .sim_runtime
+fn cue_name(
+    sim_runtime: &crate::app::match_runtime::sim_host::SimHost,
+    returning: bool,
+) -> Option<String> {
+    sim_runtime
         .runtime()
         .and_then(|runtime| {
             let general = &runtime.resources.rules.general;
@@ -154,53 +158,54 @@ fn finish_audio(sfx: &mut SfxPlayer) {
     sfx.set_chrono_screen_active(false);
 }
 
-pub(crate) fn apply(state: &mut AppState, command: ChronoScreenCommand) {
+pub(crate) fn apply(
+    screen: &crate::ui::game_screen::GameScreen,
+    match_state: &mut crate::app::match_runtime::state::MatchState,
+    process_assets: &crate::app::process_assets::ProcessAssets,
+    audio: &mut crate::app::audio_runtime::AppAudioRuntime,
+    command: ChronoScreenCommand,
+) {
     let wall_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
     match command {
         ChronoScreenCommand::Start => {
-            let screen = &mut state.match_state.match_presentation.chrono_screen;
+            let screen = &mut match_state.match_presentation.chrono_screen;
             screen.renderer = None;
             screen.capture_prior = true;
             screen.capture_destination = false;
             screen.draw = None;
-            let cue = cue_name(state, false);
-            if let Some(sfx) = state.audio.sfx_player.as_mut() {
-                let sounds = state.process_assets.audio_catalog().map(|c| c.sounds());
+            let cue = cue_name(&match_state.sim_runtime, false);
+            if let Some(sfx) = audio.sfx_player.as_mut() {
+                let sounds = process_assets.audio_catalog().map(|c| c.sounds());
                 start_audio(sfx, cue.as_deref().zip(sounds));
             }
         }
         ChronoScreenCommand::Draw { step, duration } => {
-            state.match_state.match_presentation.chrono_screen.draw =
+            match_state.match_presentation.chrono_screen.draw =
                 Some(ChronoScreenDraw::Warp { step, duration });
         }
         ChronoScreenCommand::White => {
-            state.match_state.match_presentation.chrono_screen.draw = Some(ChronoScreenDraw::White);
+            match_state.match_presentation.chrono_screen.draw = Some(ChronoScreenDraw::White);
         }
         ChronoScreenCommand::Pause => {}
         ChronoScreenCommand::CaptureDestination => {
-            state
-                .match_state
+            match_state
                 .match_presentation
                 .chrono_screen
                 .capture_destination = true;
-            let cue = cue_name(state, true);
-            if let Some(sfx) = state.audio.sfx_player.as_mut() {
-                let sounds = state.process_assets.audio_catalog().map(|c| c.sounds());
+            let cue = cue_name(&match_state.sim_runtime, true);
+            if let Some(sfx) = audio.sfx_player.as_mut() {
+                let sounds = process_assets.audio_catalog().map(|c| c.sounds());
                 capture_destination_audio(sfx, cue.as_deref().zip(sounds));
             }
         }
         ChronoScreenCommand::Finish => {
-            if let Some(sfx) = state.audio.sfx_player.as_mut() {
+            if let Some(sfx) = audio.sfx_player.as_mut() {
                 finish_audio(sfx);
             }
-            if !state
-                .match_state
-                .elapsed_clock_paused(&state.frontend.screen)
-            {
-                state.match_state.scenario_elapsed_clock.resume(wall_ms);
+            if !match_state.elapsed_clock_paused(screen) {
+                match_state.scenario_elapsed_clock.resume(wall_ms);
             }
-            state.match_state.match_presentation.chrono_screen.draw =
-                Some(ChronoScreenDraw::Restore);
+            match_state.match_presentation.chrono_screen.draw = Some(ChronoScreenDraw::Restore);
         }
     }
 }
@@ -208,18 +213,20 @@ pub(crate) fn apply(state: &mut AppState, command: ChronoScreenCommand) {
 /// App teardown has no native saved GPU pointer: discard both snapshots. An
 /// EVA suspend left by Start lifts at RadarClass::AI's next resume
 /// (`0x006539B7`) once the phase reads zero, or at the world's ResetAll.
-pub(crate) fn retire(state: &mut AppState, wall_ms: u64) {
-    state.match_state.match_presentation.chrono_screen = Default::default();
-    if let Some(sfx) = state.audio.sfx_player.as_mut() {
+pub(crate) fn retire(
+    screen: &crate::ui::game_screen::GameScreen,
+    match_state: &mut crate::app::match_runtime::state::MatchState,
+    audio: &mut crate::app::audio_runtime::AppAudioRuntime,
+    wall_ms: u64,
+) {
+    match_state.match_presentation.chrono_screen = Default::default();
+    if let Some(sfx) = audio.sfx_player.as_mut() {
         sfx.stop_animation_sound(HANDLE);
         sfx.set_voc_enabled(true);
         sfx.set_chrono_screen_active(false);
     }
-    if !state
-        .match_state
-        .elapsed_clock_paused(&state.frontend.screen)
-    {
-        state.match_state.scenario_elapsed_clock.resume(wall_ms);
+    if !match_state.elapsed_clock_paused(screen) {
+        match_state.scenario_elapsed_clock.resume(wall_ms);
     }
 }
 

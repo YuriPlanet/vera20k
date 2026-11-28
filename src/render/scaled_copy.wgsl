@@ -1,5 +1,5 @@
-// A scaled copy of a surface: the match zoom, the wheel zoom and the
-// sidebar's size.
+// A scaled copy of a surface: the match frame's bars and the active-game
+// shells (`upscale_pass`) and the sidebar's size (`sidebar_surface`).
 //
 // Source pixel (0, 0) lands at `origin`, and each source pixel covers
 // `scale` x `scale` target pixels. A whole scale copies blocks. Between whole
@@ -71,75 +71,4 @@ fn scaled(position: vec2f) -> vec4f {
     let top = mix(texel(at), texel(at + vec2i(1, 0)), t.x);
     let bottom = mix(texel(at + vec2i(0, 1)), texel(at + vec2i(1, 1)), t.x);
     return mix(top, bottom, t.y);
-}
-
-// The window copy over a zoomed frame (`MaskedCopy`): the same copy, kept off
-// every window pixel over a frame pixel that UI drawn after the surface's
-// frame copy covered. That UI writes the frame's depth; every other pixel
-// there keeps the cleared depth, 1.
-struct Mask {
-    origin: vec2f, // window pixel where frame pixel (0, 0) lands
-    scale: f32,    // window pixels per frame pixel, at least 1
-    pad: f32,
-};
-
-@group(0) @binding(2) var t_mask: texture_depth_2d;
-@group(0) @binding(3) var<uniform> mask: Mask;
-
-fn drawn_over(at: vec2i) -> bool {
-    let last = vec2i(textureDimensions(t_mask)) - 1;
-    return textureLoad(t_mask, clamp(at, vec2i(0), last), 0) < 1.0;
-}
-
-// The frame pixels the window pixel centred on `position` covers, from `lo`
-// to `hi`: at most two per axis.
-struct Covered {
-    lo: vec2i,
-    hi: vec2i,
-};
-
-fn covered(position: vec2f) -> Covered {
-    return Covered(
-        vec2i(floor((position - vec2f(0.5) - mask.origin) / mask.scale)),
-        vec2i(ceil((position + vec2f(0.5) - mask.origin) / mask.scale)) - 1,
-    );
-}
-
-@fragment
-fn fs_masked(@builtin(position) position: vec4f) -> @location(0) vec4f {
-    let frame = covered(position.xy);
-    for (var y = frame.lo.y; y <= frame.hi.y; y += 1) {
-        for (var x = frame.lo.x; x <= frame.hi.x; x += 1) {
-            if drawn_over(vec2i(x, y)) {
-                discard;
-            }
-        }
-    }
-    return scaled(position.xy);
-}
-
-// The wheel-zoomed world's window copy (`WindowMask::Changed`): the same copy,
-// kept off every window pixel over a frame pixel that changed after the world
-// went into the frame. Whatever the frame drew over the battlefield since
-// (health bars, labels, the band box, the in-game menus, the Chrono effect)
-// keeps showing at the frame's pixels, however it was drawn.
-@group(0) @binding(4) var t_frame: texture_2d<f32>;
-@group(0) @binding(5) var t_world_frame: texture_2d<f32>;
-
-fn changed(at: vec2i) -> bool {
-    let texel = clamp(at, vec2i(0), vec2i(textureDimensions(t_frame)) - 1);
-    return any(textureLoad(t_frame, texel, 0) != textureLoad(t_world_frame, texel, 0));
-}
-
-@fragment
-fn fs_unchanged(@builtin(position) position: vec4f) -> @location(0) vec4f {
-    let frame = covered(position.xy);
-    for (var y = frame.lo.y; y <= frame.hi.y; y += 1) {
-        for (var x = frame.lo.x; x <= frame.hi.x; x += 1) {
-            if changed(vec2i(x, y)) {
-                discard;
-            }
-        }
-    }
-    return scaled(position.xy);
 }

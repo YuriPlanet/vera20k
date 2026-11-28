@@ -97,6 +97,9 @@ impl CruiseHost<'_> {
 }
 
 impl JumpjetFlightHost for CruiseHost<'_> {
+    fn speed_factor(&self) -> f64 {
+        self.owner().module_speed_factor()
+    }
     fn binary_frame(&self) -> u32 {
         self.frame
     }
@@ -179,6 +182,7 @@ impl JumpjetFlightHost for CruiseHost<'_> {
                 self.stable_id,
                 self.rules,
                 Some(self.rules.overlay_registry()),
+                true,
             );
         }
         foot_set_location(
@@ -994,14 +998,14 @@ mod tests {
         super::super::lifecycle_tests::install_common_raw_terrain(&mut sim, 24, 16, 0, None);
         // A playfield holding the corpus corridor (x 6..20, y 9..11), for the
         // orders' searches and `In_Bounds`.
-        sim.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
+        *sim.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
             base: 12,
             off_fc: 0,
             off_100: 0,
             off_104: 16,
             off_108: 16,
         });
-        sim.playfield_size_height = Some(16);
+        *sim.playfield_size_height = Some(16);
         {
             let cell = sim
                 .resolved_terrain
@@ -1048,7 +1052,7 @@ mod tests {
         }
         entity.locomotor = Some(locomotor);
         sim.substrate.entities.insert(entity);
-        sim.interner = crate::sim::intern::test_interner();
+        *sim.interner = crate::sim::intern::test_interner();
         Simulation::set_object_height_unmarked(&mut sim.substrate, &sim.resolved_terrain, 1, 500);
         sim
     }
@@ -1080,7 +1084,7 @@ mod tests {
         let mut sim = hovering_jumpjet(0x40);
         let rules = crate::sim::crates::tests::crate_ruleset("");
         let registry = rules.overlay_registry();
-        sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(24, 16));
+        *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(24, 16));
         let wood = registry.id_for_name("WOOD").unwrap();
         sim.overlay_grid
             .as_mut()
@@ -1138,7 +1142,7 @@ mod tests {
     #[test]
     fn a_jumpjet_touches_down_at_the_fixed_deck_above_a_depression() {
         let (mut sim, rules) = touchdown_crate_fixture();
-        sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(24, 16));
+        *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(24, 16));
         let terrain = sim.resolved_terrain.as_mut().unwrap();
         let cell = terrain.native_cell_identity((10, 10));
         terrain
@@ -1824,7 +1828,7 @@ mod tests {
             let mut sim = hovering_jumpjet(0x40);
             // The owner's type is read through the world's interner once
             // rules are present.
-            sim.interner = crate::sim::intern::test_interner();
+            *sim.interner = crate::sim::intern::test_interner();
             {
                 let entity = sim.substrate.entities.get_mut(1).expect("jumpjet");
                 let runtime = entity

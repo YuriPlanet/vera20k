@@ -21,6 +21,7 @@ use crate::sim::combat::{self, TargetKind, in_range};
 use crate::sim::components::{DriveCoord, NavTargetRef};
 use crate::sim::mission::MissionType;
 use crate::sim::movement::bump_crush::{CrushTarget, object_is_crushable_by};
+use crate::sim::pathfinding::zone_hierarchy::ThreatPrecheckMemo;
 use crate::sim::world::FrameEffects;
 use crate::sim::world::Simulation;
 use crate::util::direction::cell_delta_unchecked;
@@ -396,13 +397,9 @@ impl Simulation {
             return;
         }
         if !crate::sim::movement::motion_query::is_moving(actor).unwrap_or(false) {
-            if let Err(cause) = self.infantry_do_action(
-                id,
-                super::infantry_action::DO_DEPLOY,
-                false,
-                rules,
-                frame_effects,
-            ) {
+            // A deploy the Wasm module `DeployAllowed` refuses leaves him
+            // standing; the next Approach asks again.
+            if let Err(cause) = self.infantry_request_deploy(id, false, rules, frame_effects) {
                 log::debug!("infantry {id} Approach deploy: {cause}");
             }
             return;
@@ -425,7 +422,7 @@ impl Simulation {
     /// Foot4D5690(false) at 741689, and Infantry522340 calls it at 52236E,
     /// whatever the locomotor: the body tells a Jumpjet apart itself. A
     /// mapless fixture cannot execute native cell/zone queries. No aircraft
-    /// is represented (the body's Rescue residual).
+    /// is represented (`sim::mission::rescue`'s approach residual).
     pub(crate) fn owns_foot_approach(&self, id: u64, rules: &RuleSet) -> bool {
         let Some(actor) = self.substrate.entities.get(id) else {
             return false;
@@ -697,11 +694,12 @@ impl Simulation {
         // test (4D6764 -> 4D689A). 4D5873 sets the same flag for an
         // aircraft, which native brings here from Foot's Mission_Rescue
         // (AircraftClass vt+0x258 = 4DDF90, Approach at 4DDFEB).
-        // RESIDUAL: VERA's aircraft never run Rescue
-        // (`aircraft::dispatch_mission`) and `owns_foot_approach` refuses
-        // them, so that arm is not ported. Trigger: an aircraft on Rescue; VERA's one
-        // Rescue producer, the base-defense response, queues it only on
-        // infantry and units. Effect: none while no producer exists.
+        // RESIDUAL: an aircraft now runs Rescue (`sim::mission::rescue`),
+        // but `owns_foot_approach` refuses it, so the approach arm native
+        // reaches from Mission_Rescue (0x004DDFEB) is not ported. Trigger:
+        // an aircraft on Rescue with a Target; VERA's one Rescue producer,
+        // the base-defense response, queues it only on infantry and units.
+        // Effect: the aircraft holds its position instead of approaching.
         let flies = actor
             .locomotor
             .as_ref()
@@ -743,6 +741,9 @@ impl Simulation {
         // PlaceInfantryInCell picks in the radial cell for the Target's
         // coordinate; anyone else's is the cell centre (4D60FB..613A).
         let spots = category == EntityCategory::Infantry && close_range;
+        // Every candidate's EstimateZoneCost asks under this Foot's threat;
+        // nothing the search does here changes the House threat or zones.
+        let zone_costs = ThreatPrecheckMemo::default();
         'rings: while chosen.is_none() && radius > 204 {
             for offset in OFFSETS {
                 let direction = (i16::from(facing_byte).wrapping_add(offset) as u16) << 8;
@@ -851,6 +852,7 @@ impl Simulation {
                     candidate_bridge,
                     target_bridge,
                     rules,
+                    Some(&zone_costs),
                 )? <= chebyshev(candidate, target_cell) + 8
                 {
                     chosen = Some(candidate);
@@ -872,6 +874,7 @@ impl Simulation {
                     source_bridge,
                     candidate_bridge,
                     rules,
+                    Some(&zone_costs),
                 )? <= chebyshev(start, candidate) + 8
                 {
                     chosen = Some(candidate);
@@ -881,6 +884,9 @@ impl Simulation {
             radius -= 256;
         }
         if let Some(cell) = chosen {
+            // A Wasm module's `ApproachPoint` (`ext_modules::paths`), after
+            // the search and its draws, before the destination is set.
+            let cell = self.module_approach_point(rules, id, target, cell);
             self.assign_destination_represented(
                 id,
                 Some(NavTargetRef::cell(cell.0 as u16, cell.1 as u16)),

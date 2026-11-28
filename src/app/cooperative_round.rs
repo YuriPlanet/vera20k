@@ -36,12 +36,11 @@ use crate::ui::lan_shell::LanChatLine;
 
 /// A network Cooperative match: the router calls the mode's `+0xA0`
 /// before GameExit (`0x0055D0C5..0x0055D0E2`, GameMode 3 or 4).
-pub(crate) fn applies(state: &AppState) -> bool {
+pub(crate) fn applies(match_state: &crate::app::match_runtime::state::MatchState) -> bool {
     runs_cooperative_progress(
-        &state.match_state.session,
-        state.match_state.session_mode(),
-        state
-            .match_state
+        &match_state.session,
+        match_state.session_mode(),
+        match_state
             .sim_runtime
             .runtime()
             .and_then(|runtime| runtime.simulation.session().multiplayer_mode_class()),
@@ -66,9 +65,18 @@ fn runs_cooperative_progress(
 /// becomes the scenario (a defeat, or no match, keeps the current one).
 /// RESIDUAL: the tail's writes (`[0xA8B538]`, `0x004A8BF0`, the score
 /// history column) have no VERA counterpart.
-pub(crate) fn mission_ended(state: &mut AppState, elapsed_ticks: i32) {
-    let Some(sim) = state
-        .match_state
+pub(crate) fn mission_ended(
+    platform: &crate::app::state::PlatformState,
+    renderer: &crate::app::renderer_state::RendererState,
+    diag: &crate::app::diagnostics::state::DiagnosticsState,
+    frontend: &mut crate::app::frontend::state::FrontendState,
+    match_state: &mut crate::app::match_runtime::state::MatchState,
+    process_assets: &crate::app::process_assets::ProcessAssets,
+    sfx_player: &mut Option<crate::audio::sfx::SfxPlayer>,
+    persistence: &crate::app::persistence::PersistenceState,
+    elapsed_ticks: i32,
+) {
+    let Some(sim) = match_state
         .sim_runtime
         .runtime()
         .map(|runtime| &runtime.simulation)
@@ -80,9 +88,14 @@ pub(crate) fn mission_ended(state: &mut AppState, elapsed_ticks: i32) {
         .cooperative_score_rows()
         .into_iter()
         .map(|row| CooperativeMissionRow {
-            name: crate::app::presentation::house_ui::house_ui_name(state, row.owner)
-                .map(|name| crate::util::native_string::narrow_utf16_c_string(name.encode_utf16()))
-                .unwrap_or_default(),
+            name: crate::app::presentation::house_ui::house_ui_name(
+                frontend,
+                match_state,
+                process_assets,
+                row.owner,
+            )
+            .map(|name| crate::util::native_string::narrow_utf16_c_string(name.encode_utf16()))
+            .unwrap_or_default(),
             kills: row.kills as i32,
             built: row.built as i32,
             lost: row.losses as i32,
@@ -90,39 +103,44 @@ pub(crate) fn mission_ended(state: &mut AppState, elapsed_ticks: i32) {
         })
         .collect();
     if won {
-        let house = save_houses(state);
+        let house = save_houses(&match_state.session);
         // 0x0049B7E0 leaves a missing row uninitialised; it reads as zero.
         let missing = CooperativeMissionRow::default();
         let rows = [
             rows.first().unwrap_or(&missing),
             rows.get(1).unwrap_or(&missing),
         ];
-        if let Some(saved) = state
-            .frontend
-            .multiplayer_shell_runtime
-            .record_cooperative_win(rows, elapsed_ticks, house)
+        if let Some(saved) =
+            frontend
+                .multiplayer_shell_runtime
+                .record_cooperative_win(rows, elapsed_ticks, house)
         {
-            crate::app::input::messages::post_cooperative_save_result(state, saved);
+            crate::app::input::messages::post_cooperative_save_result(
+                platform,
+                renderer,
+                diag,
+                frontend,
+                match_state,
+                process_assets,
+                sfx_player,
+                persistence,
+                saved,
+            );
         }
     }
-    let next = state
-        .frontend
+    let next = frontend
         .multiplayer_shell_runtime
         .cooperative_next_scenario_token()
         .map(|token| format!("{token}.MAP"));
     let index = next.and_then(|file| {
-        state
-            .frontend
+        frontend
             .scenario_catalog
             .records()
             .iter()
             .position(|record| record.file_name == file)
     });
     if let Some(index) = index {
-        state
-            .frontend
-            .multiplayer_shell_runtime
-            .set_scenario_index(index);
+        frontend.multiplayer_shell_runtime.set_scenario_index(index);
     }
 }
 
@@ -133,8 +151,8 @@ pub(crate) fn mission_ended(state: &mut AppState, elapsed_ticks: i32) {
 /// (`node+0x4F`), so a player who chose Random saves the drawn country
 /// instead of `<random>`. Nothing reads it back: the saved-campaign
 /// reader's houses have only uncalled getters (`0x0049D0C0`).
-fn save_houses(state: &AppState) -> [(i32, i32); 2] {
-    let Some(launch) = state.match_state.session.network_setup() else {
+fn save_houses(session: &crate::app::match_runtime::session::MatchSession) -> [(i32, i32); 2] {
+    let Some(launch) = session.network_setup() else {
         return [(-1, -1); 2];
     };
     let value = crate::app::frontend::skirmish_session::seat_items;
@@ -166,7 +184,13 @@ pub(crate) fn open_result(state: &mut AppState, victory: bool) {
         .match_state
         .scenario_elapsed_clock
         .stop_buckets(crate::app::match_runtime::frame_pacer::wall_clock_ms());
-    let Some(model) = build_model(state, can_continue, elapsed) else {
+    let Some(model) = build_model(
+        &state.frontend,
+        &state.match_state,
+        &state.process_assets,
+        can_continue,
+        elapsed,
+    ) else {
         App::leave_mission_result_screen(state);
         return;
     };
@@ -190,11 +214,18 @@ pub(crate) fn open_result(state: &mut AppState, victory: bool) {
         .map(|record| record.file_name.clone());
     let rows = model.rows.len();
     let campaign_end = victory
-        .then(|| build_campaign_end(state, model.side))
+        .then(|| {
+            build_campaign_end(
+                &state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                model.side,
+            )
+        })
         .flatten();
     // BC6 keeps the match's route; the shared teardown then finds no match
     // transport to return.
-    crate::app::lan_service::hold_transport_for_continuation(state);
+    crate::app::lan_service::hold_transport_for_continuation(&mut state.match_state);
     App::retire_finished_scenario(state);
     if let Err(error) = state.match_state.session.enter_cooperative_round(
         next_map,
@@ -217,7 +248,12 @@ pub(crate) fn open_result(state: &mut AppState, victory: bool) {
         log::warn!("co-op round countries: {error:#}");
     }
     // 0x0072D300 (Scenario+0x34B8's palette) and 0x0060CF00's SCRBK.
-    App::prepare_campaign_score_art(state, model.side);
+    App::prepare_campaign_score_art(
+        &state.renderer,
+        &mut state.frontend,
+        &state.process_assets,
+        model.side,
+    );
     state.frontend.score_page = None;
     state.frontend.score_art = None;
     state.frontend.campaign_score_page = None;
@@ -241,16 +277,32 @@ pub(crate) fn open_result(state: &mut AppState, victory: bool) {
 /// time `TXT_TIME_FORMAT_HOURS` over the mission's ticks, the next
 /// mission and map names (`A8B322`, the scenario `+0xA0` selected), the
 /// game type and `NAME:COOPDESC<campaign+1><map+1>`.
-fn build_model(state: &AppState, can_continue: bool, elapsed: i32) -> Option<CoopScoreModel> {
-    let sim = &state.match_state.sim_runtime.runtime()?.simulation;
-    let computer = state.csf_text("TXT_COMPUTER");
-    let sources = crate::app::presentation::house_ui::HouseUiSources::from_state(state, &computer);
+fn build_model(
+    frontend: &crate::app::frontend::state::FrontendState,
+    match_state: &crate::app::match_runtime::state::MatchState,
+    process_assets: &crate::app::process_assets::ProcessAssets,
+    can_continue: bool,
+    elapsed: i32,
+) -> Option<CoopScoreModel> {
+    let sim = &match_state.sim_runtime.runtime()?.simulation;
+    let computer = process_assets.csf_text("TXT_COMPUTER");
+    let sources = crate::app::presentation::house_ui::HouseUiSources::from_state(
+        frontend,
+        match_state,
+        &process_assets.csf,
+        &computer,
+    );
     let mut rows: Vec<_> = sim
         .cooperative_score_rows()
         .into_iter()
         .map(|row| crate::ui::score_shell::ScoreRow {
-            name: crate::app::presentation::house_ui::house_ui_name(state, row.owner)
-                .unwrap_or_default(),
+            name: crate::app::presentation::house_ui::house_ui_name(
+                frontend,
+                match_state,
+                process_assets,
+                row.owner,
+            )
+            .unwrap_or_default(),
             rgb: sources.text_rgb(sim, row.owner),
             kills: row.kills,
             losses: row.losses,
@@ -266,15 +318,15 @@ fn build_model(state: &AppState, can_continue: bool, elapsed: i32) -> Option<Coo
     };
     let time = crate::ui::score_shell::format_elapsed(
         &time_model,
-        &state.csf_text("TXT_TIME_FORMAT_HOURS"),
+        &process_assets.csf_text("TXT_TIME_FORMAT_HOURS"),
     );
-    let side = crate::app::input::commands::preferred_local_owner_name(state)
+    let side = crate::app::input::commands::preferred_local_owner_name(match_state)
         .as_deref()
         .and_then(|owner| sim.interner().get(owner))
         .and_then(|owner| sim.houses().get(&owner))
         .map_or(0, |house| house.side_index());
-    let runtime = &state.frontend.multiplayer_shell_runtime;
-    let catalog = &state.frontend.scenario_catalog;
+    let runtime = &frontend.multiplayer_shell_runtime;
+    let catalog = &frontend.scenario_catalog;
     let map_index = catalog
         .records()
         .get(runtime.scenario_index())
@@ -288,26 +340,25 @@ fn build_model(state: &AppState, can_continue: bool, elapsed: i32) -> Option<Coo
         .and_then(|index| catalog.shell_maps().get(index))
         .map(|map| map.display_name.clone())
         .unwrap_or_default();
-    let mode_key = state
-        .match_state
+    let mode_key = match_state
         .session
         .network_setup()
         .and_then(|launch| {
-            crate::skirmish_modes::mode_by_id(&state.frontend.skirmish_modes, launch.mode.id)
+            crate::skirmish_modes::mode_by_id(&frontend.skirmish_modes, launch.mode.id)
         })
         .map_or_else(|| "GUI:None".to_owned(), |mode| mode.ui_name_key.clone());
     let description = runtime
         .cooperative_setup_view()
         .description
         .map(|(campaign, stage)| {
-            state.csf_text(&format!("NAME:COOPDESC{}{}", campaign + 1, stage + 1))
+            process_assets.csf_text(&format!("NAME:COOPDESC{}{}", campaign + 1, stage + 1))
         })
         .unwrap_or_default();
     Some(CoopScoreModel {
         rows,
         time,
         next_mission: map_name.clone(),
-        mode_label: state.csf_text(&mode_key),
+        mode_label: process_assets.csf_text(&mode_key),
         map_label: map_name,
         description,
         side,
@@ -326,21 +377,33 @@ fn build_model(state: &AppState, can_continue: bool, elapsed: i32) -> Option<Coo
 /// RESIDUAL: a missing second human House leaves `0x0049B7E0`'s row
 /// uninitialised; here it has an empty name in the shell's yellow.
 fn build_campaign_end(
-    state: &AppState,
+    frontend: &crate::app::frontend::state::FrontendState,
+    match_state: &crate::app::match_runtime::state::MatchState,
+    process_assets: &crate::app::process_assets::ProcessAssets,
     side: i32,
 ) -> Option<crate::ui::campaign_score_shell::CampaignEndModel> {
     use crate::assets::csf_file::{CsfArg, format_csf};
-    let sim = &state.match_state.sim_runtime.runtime()?.simulation;
-    let computer = state.csf_text("TXT_COMPUTER");
-    let sources = crate::app::presentation::house_ui::HouseUiSources::from_state(state, &computer);
+    let sim = &match_state.sim_runtime.runtime()?.simulation;
+    let computer = process_assets.csf_text("TXT_COMPUTER");
+    let sources = crate::app::presentation::house_ui::HouseUiSources::from_state(
+        frontend,
+        match_state,
+        &process_assets.csf,
+        &computer,
+    );
     let houses: Vec<_> = sim
         .cooperative_score_rows()
         .into_iter()
         .take(2)
         .map(|row| {
             (
-                crate::app::presentation::house_ui::house_ui_name(state, row.owner)
-                    .unwrap_or_default(),
+                crate::app::presentation::house_ui::house_ui_name(
+                    frontend,
+                    match_state,
+                    process_assets,
+                    row.owner,
+                )
+                .unwrap_or_default(),
                 sources.text_rgb(sim, row.owner),
             )
         })
@@ -349,7 +412,7 @@ fn build_campaign_end(
         .first()
         .map(|(name, _)| crate::util::native_string::narrow_utf16_c_string(name.encode_utf16()))
         .unwrap_or_default();
-    let runtime = &state.frontend.multiplayer_shell_runtime;
+    let runtime = &frontend.multiplayer_shell_runtime;
     let (campaign, tallies) = runtime.cooperative_campaign_end(&first_name)?;
     let (mut rows, time) = match tallies {
         Some((tallies, time)) => {
@@ -382,11 +445,11 @@ fn build_campaign_end(
             elapsed_seconds: (time / 60) as u32,
             ..Default::default()
         },
-        &state.csf_text("TXT_TIME_FORMAT_HOURS"),
+        &process_assets.csf_text("TXT_TIME_FORMAT_HOURS"),
     );
     let difficulty = match runtime.cooperative_difficulty() {
         level @ 0..=2 => {
-            let level = state.csf_text(
+            let level = process_assets.csf_text(
                 [
                     "TXT_DIFFICULTY_EASY",
                     "TXT_DIFFICULTY_MEDIUM",
@@ -394,22 +457,22 @@ fn build_campaign_end(
                 ][level as usize],
             );
             format_csf(
-                &state.csf_text("GUI:DifficultyString"),
+                &process_assets.csf_text("GUI:DifficultyString"),
                 &[CsfArg::Str(&level)],
             )
         }
-        _ => state.csf_text("GUI:Blank"),
+        _ => process_assets.csf_text("GUI:Blank"),
     };
     let campaign_name = usize::try_from(campaign)
         .ok()
         .and_then(|campaign| runtime.cooperative_campaign_name(campaign))
-        .map(|key| state.csf_label(key, key))
+        .map(|key| process_assets.csf_label(key, key))
         .unwrap_or_default();
     Some(crate::ui::campaign_score_shell::CampaignEndModel {
         side,
         campaign_name,
         campaign_number: format_csf(
-            &state.csf_text("GUI:CampaignLabel"),
+            &process_assets.csf_text("GUI:CampaignLabel"),
             &[CsfArg::Int(i64::from(campaign) + 1)],
         ),
         difficulty,
@@ -442,14 +505,18 @@ pub(crate) struct CoopScoreView {
     pub(crate) difficulty: i32,
 }
 
-pub(crate) fn view(state: &AppState) -> Option<CoopScoreView> {
+pub(crate) fn view(
+    frontend: &crate::app::frontend::state::FrontendState,
+    match_state: &crate::app::match_runtime::state::MatchState,
+    process_assets: &crate::app::process_assets::ProcessAssets,
+) -> Option<CoopScoreView> {
     use crate::app::frontend::skirmish_shell_render::{
         flag_pcx_for_side_item_data, side_item_data_for_country,
     };
     use crate::app::shell_network_setup::view::choice;
     use crate::rules::ruleset::CountryIdx;
     use crate::ui::skirmish_shell::{SkirmishComboItem, SkirmishCountryChoice};
-    let session = &state.match_state.session;
+    let session = &match_state.session;
     let round = session.cooperative_round()?;
     let launch = session.network_setup()?;
     let mut slots: [Option<CoopSlotView>; 2] = [None, None];
@@ -463,7 +530,7 @@ pub(crate) fn view(state: &AppState) -> Option<CoopScoreView> {
             (
                 crate::ui::multiplayer_setup::SetupChoice {
                     value: -2,
-                    text: state.csf_text("GUI:Random"),
+                    text: process_assets.csf_text("GUI:Random"),
                     swatch: None,
                     greyed: false,
                 },
@@ -472,7 +539,9 @@ pub(crate) fn view(state: &AppState) -> Option<CoopScoreView> {
         } else {
             (
                 choice(
-                    state,
+                    frontend,
+                    match_state,
+                    process_assets,
                     SkirmishComboItem::Country(SkirmishCountryChoice::Country(slot.country)),
                 ),
                 side_item_data_for_country(slot.country),
@@ -483,8 +552,7 @@ pub(crate) fn view(state: &AppState) -> Option<CoopScoreView> {
         } else {
             SkirmishComboItem::Color(usize::from(slot.color_index))
         };
-        let rules = state
-            .match_state
+        let rules = match_state
             .sim_runtime
             .runtime()
             .map(|rt| &rt.resources.rules);
@@ -499,8 +567,13 @@ pub(crate) fn view(state: &AppState) -> Option<CoopScoreView> {
             name: human.name.clone(),
             country,
             flag,
-            color: choice(state, color_item),
-            start: choice(state, SkirmishComboItem::Start(slot.start_position)),
+            color: choice(frontend, match_state, process_assets, color_item),
+            start: choice(
+                frontend,
+                match_state,
+                process_assets,
+                SkirmishComboItem::Start(slot.start_position),
+            ),
             ready: session.cooperative_round_slot_ready(index),
             enabled: index == launch.local_player_index && !round.local_ready(),
         });
@@ -510,10 +583,7 @@ pub(crate) fn view(state: &AppState) -> Option<CoopScoreView> {
         slots,
         continue_enabled: session.cooperative_round_continue_enabled(),
         quit_enabled: round.quit_enabled(),
-        difficulty: state
-            .frontend
-            .multiplayer_shell_runtime
-            .cooperative_difficulty(),
+        difficulty: frontend.multiplayer_shell_runtime.cooperative_difficulty(),
     })
 }
 
@@ -528,7 +598,12 @@ pub(crate) fn apply_action(state: &mut AppState, action: CoopScoreAction) {
             .quit_cooperative_round()
             .map(|()| CooperativeRoundStep::Exit(false)),
         CoopScoreAction::Chat(text) => {
-            send_chat(state, text);
+            send_chat(
+                &state.renderer,
+                &mut state.frontend,
+                &mut state.match_state.session,
+                text,
+            );
             Ok(CooperativeRoundStep::None)
         }
     };
@@ -568,7 +643,7 @@ fn run_step(state: &mut AppState, step: CooperativeRoundStep) {
         CooperativeRoundStep::Assign => {
             // Native cannot fail here. A refused assignment has sent no
             // begin; leaving with `0x24` returns every peer's Quit.
-            match assign(state) {
+            match assign(&mut state.frontend, &mut state.match_state) {
                 Ok(next) => run_step(state, next),
                 Err(error) => {
                     log::error!("co-op round assignment failed: {error:#}");
@@ -586,12 +661,12 @@ fn run_step(state: &mut AppState, step: CooperativeRoundStep) {
         CooperativeRoundStep::PeerLeft { source } => {
             // 0x005E2700(-1, GUI:PlayerLeftCoop, name).
             let name = participant_name(&state.match_state.session, source);
-            let format = state.csf_text("GUI:PlayerLeftCoop");
+            let format = state.process_assets.csf_text("GUI:PlayerLeftCoop");
             let text = crate::assets::csf_file::format_csf(
                 &format,
                 &[crate::assets::csf_file::CsfArg::Str(&name)],
             );
-            append_line(state, text, u32::MAX);
+            append_line(&state.renderer, &mut state.frontend, text, u32::MAX);
         }
         CooperativeRoundStep::Chat {
             source,
@@ -599,16 +674,23 @@ fn run_step(state: &mut AppState, step: CooperativeRoundStep) {
             color,
         } => {
             let name = participant_name(&state.match_state.session, source);
-            append_line(state, format!("{name}: {text}"), color);
+            append_line(
+                &state.renderer,
+                &mut state.frontend,
+                format!("{name}: {text}"),
+                color,
+            );
         }
         CooperativeRoundStep::Exit(true) => begin_next_mission(state),
         CooperativeRoundStep::Exit(false) => finish(state),
         CooperativeRoundStep::TimedOut => {
             finish(state);
-            let text =
-                state.csf_text("TXT_SYSTEM_NOT_RESPONDING");
+            let text = state.process_assets.csf_text("TXT_SYSTEM_NOT_RESPONDING");
             crate::app::shell_lan::append_chat(
-                state,
+                &state.renderer,
+                &mut state.frontend,
+                &state.match_state,
+                &state.process_assets,
                 crate::ui::lan_shell::LanChatLine {
                     text: text.encode_utf16().collect(),
                     color: u32::MAX,
@@ -622,15 +704,16 @@ fn run_step(state: &mut AppState, step: CooperativeRoundStep) {
 /// The master's all-ready (`0x0046FD47`): mode `+0x68` and
 /// `SessionClass::ProcessRandomAssignments` (`0x0069B8C0`) on the gameplay
 /// Scenario stream the match returned, then its own ack and `0x32`.
-fn assign(state: &mut AppState) -> anyhow::Result<CooperativeRoundStep> {
-    let launch = state
-        .match_state
+fn assign(
+    frontend: &mut crate::app::frontend::state::FrontendState,
+    match_state: &mut crate::app::match_runtime::state::MatchState,
+) -> anyhow::Result<CooperativeRoundStep> {
+    let launch = match_state
         .session
         .network_setup()
         .ok_or_else(|| anyhow::anyhow!("no round roster"))?
         .clone();
-    let map = state
-        .frontend
+    let map = frontend
         .scenario_catalog
         .shell_maps()
         .iter()
@@ -641,35 +724,28 @@ fn assign(state: &mut AppState) -> anyhow::Result<CooperativeRoundStep> {
                 .is_some_and(|file| file.eq_ignore_ascii_case(&map.file_name))
         })
         .ok_or_else(|| anyhow::anyhow!("the next mission is unavailable"))?;
-    let preparation = state
-        .frontend
+    let preparation = frontend
         .multiplayer_shell_runtime
         .prepare_network_mode_start(&launch, map)?;
-    state
-        .match_state
+    match_state
         .session
         .apply_network_ai_preparation(preparation.declared_count, preparation.opponents)?;
-    let launch = state
-        .match_state
+    let launch = match_state
         .session
         .network_setup()
         .expect("the round keeps its roster")
         .clone();
-    let banned =
-        crate::app::shell_network_setup::bans::banned_countries(state, launch.options.bans);
-    let resolved = state
-        .frontend
+    let banned = crate::app::shell_network_setup::bans::banned_countries(
+        frontend,
+        match_state,
+        launch.options.bans,
+    );
+    let resolved = frontend
         .multiplayer_shell_runtime
         .resolve_network_assignments(&launch, &banned)?;
-    state
-        .match_state
-        .session
-        .accept_network_assignments(resolved)?;
-    let difficulty = state
-        .frontend
-        .multiplayer_shell_runtime
-        .cooperative_difficulty();
-    state.match_state.session.cooperative_round_assigned(
+    match_state.session.accept_network_assignments(resolved)?;
+    let difficulty = frontend.multiplayer_shell_runtime.cooperative_difficulty();
+    match_state.session.cooperative_round_assigned(
         difficulty,
         crate::app::match_runtime::frame_pacer::wall_clock_bucket(),
     )
@@ -726,7 +802,12 @@ fn finish(state: &mut AppState) {
     match campaign_end {
         Some(model) => {
             crate::app::lan_service::cooperative::release_transport(state);
-            App::open_campaign_end_page(state, model);
+            App::open_campaign_end_page(
+                &state.renderer,
+                &mut state.frontend,
+                &state.process_assets,
+                model,
+            );
         }
         None => return_to_shell(state),
     }
@@ -748,7 +829,7 @@ pub(crate) fn campaign_end_continue(state: &mut AppState) {
 fn leave_result(state: &mut AppState) {
     state.frontend.coop_score_page = None;
     state.frontend.campaign_score_art = None;
-    App::persist_returned_session_toggles(state);
+    App::persist_returned_session_toggles(&mut state.frontend, &state.match_state);
     state.frontend.screen = GameScreen::MainMenu;
     App::resume_shell_after_match(state);
 }
@@ -756,52 +837,54 @@ fn leave_result(state: &mut AppState) {
 /// BC6's chat (`0x540` Enter): a text over two characters echoes locally
 /// as `"%s: %s"` in `[0x7EEF44]` (`0x0046E12C`) and goes to every other
 /// node as `0x0C` with `[0x7EEF2C]` (`0x0046E126`) and this game's hash.
-fn send_chat(state: &mut AppState, text: Vec<u16>) {
+fn send_chat(
+    renderer: &crate::app::renderer_state::RendererState,
+    frontend: &mut crate::app::frontend::state::FrontendState,
+    session: &mut MatchSession,
+    text: Vec<u16>,
+) {
     let text = String::from_utf16_lossy(&text);
     let text = text.trim_end_matches(['\r', '\n']).to_owned();
     if text.encode_utf16().count() <= 2 {
         return;
     }
-    let name = state
-        .match_state
-        .session
-        .local_player_name()
-        .unwrap_or_default()
-        .to_owned();
+    let name = session.local_player_name().unwrap_or_default().to_owned();
     append_line(
-        state,
+        renderer,
+        frontend,
         format!("{name}: {text}"),
         crate::ui::wol_chat::SAY_COLOR,
     );
-    let local = state
-        .match_state
-        .session
+    let local = session
         .network_setup()
         .map_or(0, |launch| launch.local_player_index);
-    let recipients: Vec<usize> = state
-        .match_state
-        .session
+    let recipients: Vec<usize> = session
         .network_connected_source_indices()
         .iter()
         .copied()
         .filter(|index| *index != local)
         .collect();
-    state.match_state.session.request_chat(recipients, text);
+    session.request_chat(recipients, text);
 }
 
 /// `0x005E2700` with a `COLORREF` (-1 the list's default) into BC6's list
 /// `0x53F`.
-fn append_line(state: &mut AppState, text: String, color: u32) {
-    let layout = crate::app::input::coop_score::layout(state);
+fn append_line(
+    renderer: &crate::app::renderer_state::RendererState,
+    frontend: &mut crate::app::frontend::state::FrontendState,
+    text: String,
+    color: u32,
+) {
+    let layout = crate::app::input::coop_score::layout(&renderer.gpu);
     let rect = layout
         .control_rect(crate::ui::coop_score_shell::CHAT_LOG)
         .expect("BC6 lays out its chat list");
     let scale = layout.page.scale;
-    let font = &state.renderer.bit_font;
-    let Some(page) = state.frontend.coop_score_page.as_mut() else {
+    let font = &renderer.bit_font;
+    let Some(page) = frontend.coop_score_page.as_mut() else {
         return;
     };
-    let controller = &mut state.frontend.shell_controller;
+    let controller = &mut frontend.shell_controller;
     let dialog = crate::ui::coop_score_shell::COOP_SCORE_DIALOG;
     let list = controller.control(dialog, crate::ui::coop_score_shell::CHAT_LOG);
     // The log's list keeps the view, following new lines at the bottom.

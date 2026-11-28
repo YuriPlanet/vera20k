@@ -109,7 +109,7 @@ const CAMERA_COMMANDS: [CommandMetadata; 4] = [
 /// (`hotkeys::VERA_DEFAULT_KEYS`). Each name is the Options page's label for
 /// the same setting, but Thread Stats', Ferry's, Relation Colours' and the two
 /// Formation commands', which have none; each category literal is [`VERA_CATEGORY_KEY`].
-const SHORTCUT_COMMANDS: [CommandMetadata; 13] = [
+const SHORTCUT_COMMANDS: [CommandMetadata; 15] = [
     command!(
         HotkeyCommand::PerformanceStats,
         "PerformanceStats",
@@ -207,6 +207,14 @@ const SHORTCUT_COMMANDS: [CommandMetadata; 13] = [
         None
     ),
     command!(
+        HotkeyCommand::TeamColours,
+        "TeamColours",
+        "VERA:TeamColours",
+        "VERA:HotkeyCategory",
+        "VERA:TeamColoursDesc",
+        None
+    ),
+    command!(
         HotkeyCommand::ConvenienceHelp,
         "ConvenienceHelp",
         "VERA:ConvenienceHelp",
@@ -214,9 +222,17 @@ const SHORTCUT_COMMANDS: [CommandMetadata; 13] = [
         "VERA:ConvenienceHelpHelp",
         None
     ),
+    command!(
+        HotkeyCommand::ToggleHdArt,
+        "ToggleHdArt",
+        "VERA:ToggleHdArt",
+        "VERA:HotkeyCategory",
+        "VERA:ToggleHdArtDesc",
+        None
+    ),
 ];
 
-const RETAIL_COMMANDS: [CommandMetadata; 87] = [
+const RETAIL_COMMANDS: [CommandMetadata; 86] = [
     command!(
         HotkeyCommand::Follow,
         "Follow",
@@ -889,14 +905,8 @@ const RETAIL_COMMANDS: [CommandMetadata; 87] = [
         "TXT_SCRNCAP_DESC",
         None
     ),
-    command!(
-        HotkeyCommand::PageUser,
-        "PageUser",
-        "TXT_PAGEUSER",
-        "TXT_INTERFACE",
-        "TXT_PAGEUSER_DESC",
-        None
-    ),
+    // VERA omits PageUser (gamemd 0x00537E50): the friend pager belongs
+    // to the online lobby. Old KEYBOARDMD.INI assignments must not open it in play.
     command!(
         HotkeyCommand::CursorCheat,
         "CursorCheat",

@@ -295,6 +295,27 @@ impl Geometry {
         (0..self.paint_order.len())
             .map(move |step| self.paint_order[if self.use_buffer { last - step } else { step }])
     }
+
+    fn paint(
+        &self,
+        vxl: &VxlFile,
+        pages: &[u8; 256],
+        vpl: Option<&super::VplFile>,
+        mut emit: impl FnMut(PaintWrite, u8),
+    ) -> Option<()> {
+        for index in self.raster_order() {
+            let section = &self.sections[index];
+            paint_section(
+                &vxl.limbs[section.limb_index],
+                section,
+                pages,
+                vpl,
+                self.use_buffer,
+                &mut emit,
+            )?;
+        }
+        Some(())
+    }
 }
 
 /// One literal visibility-map store. Order, including stores of zero, decides
@@ -306,6 +327,9 @@ pub(crate) struct PaintWrite {
     /// VERA-internal auxiliary depth for existing independently baked part
     /// composition. The native opaque leaf writes no per-pixel Z value.
     pub depth: f32,
+    /// VERA's HD art voxels: the cursor's first fraction bit of X (bit 0)
+    /// and of Y (bit 1), the half pixel the store reached. Native ignores it.
+    pub half: u8,
 }
 
 pub(crate) struct PreparedDraw {
@@ -338,6 +362,14 @@ impl Cursor {
             Self::Split([x, y, _]) => (y & 0xff00) | (x >> 8),
         }
     }
+
+    /// The first fraction bits of X and Y ([`PaintWrite::half`]).
+    fn half(self) -> u8 {
+        match self {
+            Self::Packed(point) => (((point >> 7) & 1) | ((point >> 22) & 2)) as u8,
+            Self::Split([x, y, _]) => (((x >> 7) & 1) | ((y >> 6) & 2)) as u8,
+        }
+    }
 }
 
 fn column_offset(body: &[u8], table: usize, column: usize) -> Option<i32> {
@@ -353,17 +385,16 @@ fn column_offset(body: &[u8], table: usize, column: usize) -> Option<i32> {
 /// even when skip/count are zero; checked reads bound such streams without
 /// rejecting native-accepted empty runs based on an invented run-count cap.
 ///
-/// With a depth map the section runs UseBuffer's 757980 (forward) or 757BF0
-/// (backward) instead: a voxel draws only when its Z word's high byte is
-/// strictly above the map's, and then stores that byte and its colour at its
-/// pixel and the next one.
+/// The UseBuffer leaves 757980/757BF0 step three separate words. Hand the
+/// caller each candidate and its Z byte in native order, before the shared
+/// depth test, so a prepared raster can run the same draw against new depth.
 fn paint_section(
     limb: &super::VxlLimb,
     section: &Section,
     pages: &[u8; 256],
     vpl: Option<&super::VplFile>,
-    writes: &mut Vec<PaintWrite>,
-    mut depth_map: Option<&mut [u8]>,
+    use_buffer: bool,
+    emit: &mut impl FnMut(PaintWrite, u8),
 ) -> Option<()> {
     let spans = limb.native_spans.as_ref()?;
     let body = &spans.body;
@@ -427,7 +458,7 @@ fn paint_section(
                 continue;
             }
             let mut pos = spans.data_offset.checked_add(offset as usize)?;
-            let mut cursor = if depth_map.is_some() {
+            let mut cursor = if use_buffer {
                 Cursor::Split(std::array::from_fn(|c| {
                     split_origin[c]
                         .wrapping_add(split_axes[1][c].wrapping_mul(y as u16))
@@ -476,31 +507,18 @@ fn paint_section(
                     });
                     let write = PaintWrite {
                         address: cursor.address(),
+                        half: cursor.half(),
                         color,
                         depth: corner.z
                             + x as f32 * depth_steps[0]
                             + y as f32 * depth_steps[1]
                             + z as f32 * depth_steps[2],
                     };
-                    match (cursor, depth_map.as_deref_mut()) {
-                        (Cursor::Split([.., word]), Some(map)) => {
-                            // 757AB8..757B1F, 757CEC..757D53.
-                            let depth = (word >> 8) as u8;
-                            let address = usize::from(write.address);
-                            if depth > map[address] {
-                                map[address] = depth;
-                                writes.push(write);
-                                if let Some(next) = write.address.checked_add(1) {
-                                    map[usize::from(next)] = depth;
-                                    writes.push(PaintWrite {
-                                        address: next,
-                                        ..write
-                                    });
-                                }
-                            }
-                        }
-                        _ => writes.push(write),
-                    }
+                    let z_byte = match cursor {
+                        Cursor::Packed(_) => 0,
+                        Cursor::Split([.., word]) => (word >> 8) as u8,
+                    };
+                    emit(write, z_byte);
                     cursor = step(cursor);
                     z += 1;
                 }
@@ -561,13 +579,168 @@ fn prepare_lit(
 
 /// A crop inside the 256-square buffer, which [`PreparedDraw::crop_indices`]
 /// can read.
-fn crop_fits([_, _, x, y, width, height]: [i32; 6]) -> bool {
+pub(crate) fn crop_fits([_, _, x, y, width, height]: [i32; 6]) -> bool {
     x >= 0
         && y >= 0
         && width > 0
         && height > 0
         && x.checked_add(width).is_some_and(|right| right <= 256)
         && y.checked_add(height).is_some_and(|bottom| bottom <= 256)
+}
+
+/// UseBuffer's compare and pair of byte stores (757AB8..757B1F,
+/// 757CEC..757D53). Only the first pixel tests depth. The second can
+/// overwrite a larger value; the last address has no neighbor in the map.
+#[inline]
+fn store_buffered_depth(map: &mut [u8], address: u16, z: u8) -> bool {
+    let first = usize::from(address);
+    if z <= map[first] {
+        return false;
+    }
+    map[first] = z;
+    if let Some(next) = address.checked_add(1) {
+        map[usize::from(next)] = z;
+    }
+    true
+}
+
+#[derive(Clone, Copy)]
+struct BufferedVoxel {
+    address: u16,
+    color: u8,
+    z: u8,
+}
+
+struct DepthRow {
+    start: u16,
+    len: u16,
+}
+
+impl DepthRow {
+    fn addresses(&self) -> std::ops::Range<usize> {
+        let start = usize::from(self.start);
+        start..start + usize::from(self.len)
+    }
+}
+
+/// A physical VXL part's 757980/757BF0 candidates in native order. Each
+/// draw still runs against the shared depth left by the preceding parts.
+/// The crop limits the displayed picture only; depth stores can lie outside.
+pub(crate) struct BufferedVoxelRaster {
+    rect: [i32; 6],
+    voxels: Box<[BufferedVoxel]>,
+    clean_rows: Box<[DepthRow]>,
+    clean_depth: Box<[u8]>,
+}
+
+impl BufferedVoxelRaster {
+    /// The retained raster cache budget. A sparse external model larger
+    /// than this worst-case encoding can use the ordinary live renderer.
+    pub(crate) const MAX_BYTES: usize = 8 * 1024 * 1024;
+
+    pub(crate) fn prepare(
+        vxl: &VxlFile,
+        hva: Option<&HvaFile>,
+        params: &super::VxlRenderParams,
+        vpl: Option<&super::VplFile>,
+    ) -> Option<Self> {
+        if !params.use_buffer {
+            return None;
+        }
+        let (geometry, pages) = prepare_lit(vxl, hva, params)?;
+        if !crop_fits(geometry.rect) {
+            return None;
+        }
+        // Each admitted encoded run consumes at most size_z candidates per
+        // column, including a malformed reverse stream. Bound preparation
+        // before accumulating it, leaving room for the entire 256² depth.
+        let max_candidates =
+            (Self::MAX_BYTES - 65536 - 256 * size_of::<DepthRow>() - size_of::<Self>())
+                / size_of::<BufferedVoxel>();
+        let volume = geometry.sections.iter().try_fold(0usize, |sum, section| {
+            let [x, y, z] = section.params.sizes.map(usize::from);
+            sum.checked_add(x * y * z)
+        })?;
+        if volume > max_candidates {
+            return None;
+        }
+        let mut voxels = Vec::new();
+        let mut clean = vec![0u8; 65536];
+        geometry.paint(vxl, &pages, vpl, |write, z| {
+            // A zero Z always fails the unsigned strict comparison.
+            if z != 0 {
+                voxels.push(BufferedVoxel {
+                    address: write.address,
+                    color: write.color,
+                    z,
+                });
+                store_buffered_depth(&mut clean, write.address, z);
+            }
+        })?;
+        // Every nonzero candidate's first address has nonzero final depth:
+        // a prior store either rejected it or it wrote there. Every written
+        // neighbor likewise stays nonzero. These row spans therefore cover
+        // all inputs and outputs of a draw on clear depth, including spill
+        // outside the visible crop. Holes only make the clear test stricter.
+        let mut clean_rows = Vec::new();
+        let mut clean_depth = Vec::new();
+        for (y, row) in clean.chunks_exact(256).enumerate() {
+            if let (Some(left), Some(right)) = (
+                row.iter().position(|&z| z != 0),
+                row.iter().rposition(|&z| z != 0),
+            ) {
+                clean_rows.push(DepthRow {
+                    start: (y * 256 + left) as u16,
+                    len: (right + 1 - left) as u16,
+                });
+                clean_depth.extend_from_slice(&row[left..=right]);
+            }
+        }
+        Some(Self {
+            rect: geometry.rect,
+            voxels: voxels.into_boxed_slice(),
+            clean_rows: clean_rows.into_boxed_slice(),
+            clean_depth: clean_depth.into_boxed_slice(),
+        })
+    }
+
+    pub(crate) fn rect(&self) -> [i32; 6] {
+        self.rect
+    }
+
+    pub(crate) fn bytes(&self) -> usize {
+        std::mem::size_of::<Self>()
+            + std::mem::size_of_val(self.voxels.as_ref())
+            + std::mem::size_of_val(self.clean_rows.as_ref())
+            + self.clean_depth.len()
+    }
+
+    /// Append an accepted voxel's primary address and palette index,
+    /// including index zero. The GPU applies its same-color neighbor store.
+    /// For a known picture on the GPU only the next part's depth is needed.
+    pub(crate) fn apply(&self, depth: &mut super::DepthMap, mut accepted: Option<&mut Vec<u32>>) {
+        if accepted.is_none()
+            && self
+                .clean_rows
+                .iter()
+                .all(|row| depth[row.addresses()].iter().all(|&z| z == 0))
+        {
+            let mut source = self.clean_depth.as_ref();
+            for row in &self.clean_rows {
+                let (values, rest) = source.split_at(usize::from(row.len));
+                depth[row.addresses()].copy_from_slice(values);
+                source = rest;
+            }
+            return;
+        }
+        for voxel in &self.voxels {
+            if store_buffered_depth(depth, voxel.address, voxel.z)
+                && let Some(accepted) = accepted.as_deref_mut()
+            {
+                accepted.push(u32::from(voxel.address) | (u32::from(voxel.color) << 16));
+            }
+        }
+    }
 }
 
 /// An ordinary draw's raster before its stores, for the GPU to execute: the
@@ -753,17 +926,21 @@ pub(super) fn prepare_draw(
             &mut clear[..]
         }
     });
-    for index in geometry.raster_order() {
-        let section = &geometry.sections[index];
-        paint_section(
-            &vxl.limbs[section.limb_index],
-            section,
-            &pages,
-            vpl,
-            &mut writes,
-            depth_map.as_deref_mut(),
-        )?;
-    }
+    geometry.paint(vxl, &pages, vpl, |write, z| {
+        if let Some(map) = depth_map.as_deref_mut() {
+            if store_buffered_depth(map, write.address, z) {
+                writes.push(write);
+                if let Some(next) = write.address.checked_add(1) {
+                    writes.push(PaintWrite {
+                        address: next,
+                        ..write
+                    });
+                }
+            }
+        } else {
+            writes.push(write);
+        }
+    })?;
     Some(PreparedDraw {
         writes,
         rect: geometry.rect,
@@ -808,6 +985,7 @@ impl PreparedDraw {
             let start = (row * 256 + x) as usize;
             cropped_depth.extend_from_slice(&depth[start..start + width as usize]);
         }
+        let hd = super::hd_voxels().then(|| std::sync::Arc::new(self.render_hd()));
         Some(super::VxlSprite {
             palette_indices,
             depth: cropped_depth,
@@ -815,7 +993,50 @@ impl PreparedDraw {
             height: height as u32,
             offset_x: offset_x as f32,
             offset_y: offset_y as f32,
+            hd,
         })
+    }
+
+    /// VERA's HD art voxels ([`super::VxlHd`]): the same stores in the same
+    /// order on a 512-square buffer, each two by two pixels at its half
+    /// pixel, cropped to twice this draw's crop.
+    fn render_hd(&self) -> super::VxlHd {
+        const SIDE: usize = 512;
+        let mut visibility = vec![0u8; SIDE * SIDE];
+        let mut depth = vec![f32::NEG_INFINITY; SIDE * SIDE];
+        for write in &self.writes {
+            let x = usize::from(write.address & 0xff) * 2 + usize::from(write.half & 1);
+            let y = usize::from(write.address >> 8) * 2 + usize::from(write.half >> 1);
+            let z = if write.color == 0 {
+                f32::NEG_INFINITY
+            } else {
+                write.depth
+            };
+            for (px, py) in [(x, y), (x + 1, y), (x, y + 1), (x + 1, y + 1)] {
+                if px < SIDE && py < SIDE {
+                    visibility[py * SIDE + px] = write.color;
+                    depth[py * SIDE + px] = z;
+                }
+            }
+        }
+        let [_, _, x, y, width, height] = self.rect.map(|v| v.max(0) as usize);
+        let mut palette_indices = Vec::with_capacity(4 * width * height);
+        let mut cropped_depth = Vec::with_capacity(4 * width * height);
+        for row in 2 * y..2 * (y + height) {
+            let start = (row * SIDE + 2 * x).min(SIDE * SIDE);
+            let end = (start + 2 * width).min((row + 1) * SIDE).min(SIDE * SIDE);
+            palette_indices.extend_from_slice(&visibility[start..end]);
+            cropped_depth.extend_from_slice(&depth[start..end]);
+            palette_indices.resize(palette_indices.len() + (2 * width - (end - start)), 0);
+            cropped_depth.resize(
+                cropped_depth.len() + (2 * width - (end - start)),
+                f32::NEG_INFINITY,
+            );
+        }
+        super::VxlHd {
+            palette_indices,
+            depth: cropped_depth,
+        }
     }
 }
 
@@ -824,6 +1045,42 @@ mod tests {
     use super::*;
     use serde_json::Value;
 
+    #[test]
+    fn hd_picture_places_each_store_on_its_half_pixel() {
+        let write = |x: u16, y: u16, half: u8, color: u8| PaintWrite {
+            address: y << 8 | x,
+            color,
+            depth: 0.0,
+            half,
+        };
+        let draw = PreparedDraw {
+            // Native pixel (1, 1) on its right and lower half, then (0, 0)
+            // on its corner, then a later zero store erasing (3, 3).
+            writes: vec![
+                write(1, 1, 3, 5),
+                write(0, 0, 0, 7),
+                write(3, 3, 0, 9),
+                write(3, 3, 0, 0),
+            ],
+            rect: [0, 0, 0, 0, 4, 4],
+            depth_map: None,
+        };
+        let hd = draw.render_hd();
+        assert_eq!(hd.palette_indices.len(), 64);
+        let at = |x: usize, y: usize| hd.palette_indices[y * 8 + x];
+        for (x, y) in [(3, 3), (4, 3), (3, 4), (4, 4)] {
+            assert_eq!(at(x, y), 5);
+        }
+        for (x, y) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
+            assert_eq!(at(x, y), 7);
+        }
+        assert_eq!(at(2, 2), 0);
+        assert_eq!(at(5, 5), 0);
+        assert_eq!(at(6, 6), 0);
+        assert_eq!(at(7, 7), 0);
+        assert_eq!(hd.palette_indices.iter().filter(|&&c| c != 0).count(), 8);
+    }
+
     fn bytes(hex: &str) -> Vec<u8> {
         hex.as_bytes()
             .as_chunks::<2>()
@@ -831,6 +1088,89 @@ mod tests {
             .iter()
             .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap())
             .collect()
+    }
+
+    #[test]
+    fn buffered_voxel_program_preserves_shared_depth_and_palette_stores() {
+        let fixture: Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/voxel_oracle/raster_fixtures.json",
+        ))
+        .unwrap();
+        let model = fixture["models"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|model| model["name"] == "ordinary_sections_use_buffer")
+            .unwrap();
+        let vxl = VxlFile::from_bytes(&bytes(model["vxl"].as_str().unwrap())).unwrap();
+        let hva = HvaFile::from_bytes(&bytes(model["hva"].as_str().unwrap())).unwrap();
+        let vpl =
+            super::super::VplFile::from_bytes(&bytes(model["vpl"].as_str().unwrap())).unwrap();
+        let params = super::super::VxlRenderParams {
+            use_buffer: true,
+            ..Default::default()
+        };
+        let program = BufferedVoxelRaster::prepare(&vxl, Some(&hva), &params, Some(&vpl)).unwrap();
+
+        // A preceding draw outside the body stays intact on either path.
+        let mut depth = [0; 65536];
+        depth[0] = 173;
+        let mut reference_depth = depth;
+        prepare_draw(
+            &vxl,
+            Some(&hva),
+            &params,
+            Some(&vpl),
+            Some(&mut reference_depth),
+        )
+        .unwrap();
+        program.apply(&mut depth, None);
+        assert!(
+            depth == reference_depth,
+            "clean depth when the atlas supplies the picture"
+        );
+
+        // High neighboring bytes must fall when a preceding pixel accepts
+        // a lower voxel, while other high bytes reject the first store.
+        depth = std::array::from_fn(|i| if i % 7 == 0 { 255 } else { 0 });
+        reference_depth = depth;
+        let expected = prepare_draw(
+            &vxl,
+            Some(&hva),
+            &params,
+            Some(&vpl),
+            Some(&mut reference_depth),
+        )
+        .unwrap();
+        let mut stores = Vec::new();
+        program.apply(&mut depth, Some(&mut stores));
+        assert!(
+            depth == reference_depth,
+            "every shared byte, including neighbors outside the crop"
+        );
+        assert!(
+            depth.iter().step_by(7).any(|&z| z < 255),
+            "the lower neighbor case was exercised"
+        );
+        assert_eq!(program.rect(), expected.rect);
+        let expected_stores: Vec<_> = expected
+            .writes
+            .chunks_exact(2)
+            .map(|pair| u32::from(pair[0].address) | (u32::from(pair[0].color) << 16))
+            .collect();
+        assert_eq!(
+            stores, expected_stores,
+            "native command order and palette, including zero"
+        );
+        let mut pixels = [0; 65536];
+        for store in stores {
+            let address = usize::from(store as u16);
+            pixels[address..=address + 1].fill((store >> 16) as u8);
+        }
+        assert_eq!(
+            expected.crop_indices(&pixels).unwrap(),
+            expected.render_cpu().unwrap().palette_indices
+        );
     }
 
     fn words(value: &Value) -> Vec<u32> {

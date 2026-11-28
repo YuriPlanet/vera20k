@@ -40,7 +40,7 @@ const MESSAGE_EDIT_WIDTH_MARGIN_PX: i32 = 10;
 /// Set_View_Dimensions (`0x004A8B9B..0x004A8BB8`) pass them: X = tactical
 /// x + 3, Y = tactical y, Width = tactical w − 6, of which Init `0x005D3A60`
 /// keeps Width − 8.
-const MESSAGE_X_INSET: i32 = 3;
+pub(crate) const MESSAGE_X_INSET: i32 = 3;
 const MESSAGE_INIT_WIDTH_INSET: i32 = 6 + 8;
 /// SetWidth `0x005D4AD0` keeps its argument − 8; Set_View_Dimensions
 /// passes the whole tactical width (`0x004A8BBD..0x004A8BC9`).
@@ -316,6 +316,28 @@ impl MessageList {
         if let Some(edit) = self.edit.as_mut() {
             edit.hidden = true;
         }
+    }
+
+    /// The lane's box in the frame: origin, width and the rows it may fill.
+    /// A long press inside it opens the chat on Android.
+    pub fn lane_box(&self) -> (i32, i32, i32, i32) {
+        (
+            self.x,
+            self.y,
+            self.max_width_px,
+            self.max_visible as i32 * MESSAGE_LINE_HEIGHT_PX,
+        )
+    }
+
+    /// The open edit's typed text and end caret in characters, for Android.
+    /// The keyboard edits only the text after the prefix.
+    pub fn edit_ime_state(&self) -> Option<(String, usize)> {
+        self.edit.as_ref().map(|edit| {
+            let typed = edit.buffer.get(edit.start..).unwrap_or(&[]);
+            let text = String::from_utf16_lossy(typed);
+            let caret = text.chars().count();
+            (text, caret)
+        })
     }
 
     /// AddEdit `0x005D4210`: refused while an edit is open. Evicts the

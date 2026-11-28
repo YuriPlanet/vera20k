@@ -121,14 +121,11 @@ impl FreshScenarioLoadContextDescriptor {
     ) -> anyhow::Result<Self> {
         if matches!(physical_source, LoadedMapSource::LegacyFallback { .. }) {
             anyhow::bail!(
-                "fresh scenario loading requires an exact Loose, MIX, or accepted generated source"
+                "fresh scenario loading requires an authored map or an accepted generated source"
             );
         }
         if let LoadingStartup::Campaign(campaign) = startup {
-            if !matches!(
-                physical_source,
-                LoadedMapSource::Loose { .. } | LoadedMapSource::Mix { .. }
-            ) {
+            if !physical_source.is_authored() {
                 anyhow::bail!("campaign start requires an authored physical map source");
             }
             if accepted_rmg_start_staging.is_some() {
@@ -147,10 +144,7 @@ impl FreshScenarioLoadContextDescriptor {
         }
         if let Some(campaign) = startup.authored_campaign() {
             anyhow::ensure!(
-                matches!(
-                    physical_source,
-                    LoadedMapSource::Loose { .. } | LoadedMapSource::Mix { .. }
-                ) && accepted_rmg_start_staging.is_none(),
+                physical_source.is_authored() && accepted_rmg_start_staging.is_none(),
                 "network campaigns require an authored map"
             );
             campaign.start.validate()?;
@@ -248,7 +242,9 @@ impl FreshScenarioLoadContextDescriptor {
                     .waypoint_table_for_admission();
                 (FreshMapMaterialization::AcceptedGenerated, Some(waypoints))
             }
-            LoadedMapSource::Loose { .. } | LoadedMapSource::Mix { .. } => {
+            LoadedMapSource::Loose { .. }
+            | LoadedMapSource::Mix { .. }
+            | LoadedMapSource::Bundled { .. } => {
                 if crate::map::rmg::is_seed_selection(selected_map) {
                     anyhow::bail!("authored physical source cannot satisfy a selected .SED record");
                 }
@@ -260,7 +256,7 @@ impl FreshScenarioLoadContextDescriptor {
                 (FreshMapMaterialization::Authored, None)
             }
             LoadedMapSource::LegacyFallback { .. } => anyhow::bail!(
-                "fresh scenario loading requires an exact Loose, MIX, or accepted generated source"
+                "fresh scenario loading requires an authored map or an accepted generated source"
             ),
         };
         let start_waypoints = staged_waypoints.as_ref().unwrap_or(&map.waypoints);

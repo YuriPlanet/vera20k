@@ -239,6 +239,7 @@ pub struct SkirmishShellChromeAtlas {
     pub combo_face_38: Option<SkirmishShellChromeEntry>,
     pub white_pixel: Option<SkirmishShellChromeEntry>,
     pub start_marker: Option<SkirmishShellChromeEntry>,
+    pub random_map_progress: Option<SkirmishShellChromeEntry>,
     pub flags: Vec<(String, SkirmishShellChromeEntry)>,
 }
 
@@ -626,6 +627,17 @@ pub fn build_skirmish_shell_chrome_atlas(
             Need::Optional,
         );
     }
+    // RMG Generate (0x00598A02) loads PROGBAR2. DrawFill (0x0064347A)
+    // selects the PALETTE.PAL convert for the dialog's null house scheme.
+    if let Some(palette) = load_palette(assets, "PALETTE.PAL") {
+        art.shp(
+            "PROGBAR2.SHP",
+            &palette,
+            0..1,
+            "progbar2.shp",
+            Need::Optional,
+        );
+    }
     art.shp(
         START_MARKER_SHP,
         &shell,
@@ -788,6 +800,7 @@ pub fn build_skirmish_shell_chrome_atlas(
         combo_face_38: face(38),
         white_pixel: get("skirmish_white_pixel"),
         start_marker: first("startbut.shp"),
+        random_map_progress: first("progbar2.shp"),
         flags: flag_names
             .into_iter()
             .filter_map(|name| Some((name.to_string(), get(&name.to_ascii_lowercase())?)))

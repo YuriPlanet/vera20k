@@ -296,6 +296,67 @@ impl Simulation {
         .encode()
     }
 
+    /// The semantic house command a player's production, placement or
+    /// superweapon record stands for, as a Wasm module's `Commanded`,
+    /// `OrderRefused` and `CommandAllowed` describe it
+    /// (`sim::ext_modules::orders`); `None` for other records. It reads the
+    /// record as [`Self::apply_production_record`] and
+    /// [`Self::superweapon_command_from_record`] do and decides nothing.
+    pub(crate) fn house_record_command(
+        &self,
+        record: &CommandRecord,
+        rules: &RuleSet,
+    ) -> Option<Command> {
+        if let Some((_, command)) = self.superweapon_command_from_record(record, rules) {
+            return Some(command);
+        }
+        let (_, record) = self.house_command_record(record)?;
+        let record = record.as_ref();
+        let type_of = |selection: production::ProductionSelection| {
+            self.interner.get(&selection.object_type(rules)?.id)
+        };
+        if let Some(event) = ProductionRecord::decode(record) {
+            let selection = production::ProductionSelection {
+                rtti: event.rtti,
+                type_index: event.type_index,
+                naval: event.naval != 0,
+            };
+            return Some(match event.event {
+                ProductionEvent::Produce => Command::QueueProduction {
+                    type_id: type_of(selection)?,
+                },
+                ProductionEvent::Suspend => Command::SuspendProduction {
+                    category: selection.category(rules)?,
+                },
+                ProductionEvent::Abandon | ProductionEvent::AbandonAll => {
+                    Command::CancelProductionByType {
+                        type_id: type_of(selection)?,
+                        all: event.event == ProductionEvent::AbandonAll,
+                    }
+                }
+            });
+        }
+        let event = PlaceRecord::decode(record)?;
+        let selection = production::ProductionSelection {
+            rtti: event.rtti,
+            type_index: event.type_index,
+            naval: event.naval != 0,
+        };
+        // An empty cell or (-1, -1) takes the producer-exit arm, as
+        // `production::place_production_with_overlays` decides.
+        Some(if matches!((event.x, event.y), (0, 0) | (-1, -1)) {
+            Command::PlaceProducedMobile {
+                category: selection.category(rules)?,
+            }
+        } else {
+            Command::PlaceReadyBuilding {
+                type_id: type_of(selection)?,
+                rx: u16::try_from(event.x).ok()?,
+                ry: u16::try_from(event.y).ok()?,
+            }
+        })
+    }
+
     pub(in crate::sim::world) fn superweapon_command_from_record(
         &self,
         record: &CommandRecord,
@@ -796,6 +857,29 @@ impl Simulation {
         self.encode_int_event(command_owner, crate::sim::command::ALLY_OPCODE, house_index)
     }
 
+    /// VERA extension: a Wasm client module's message (RFC 0001 section
+    /// 10) from `command_owner`'s sender, for the simulation module of
+    /// `source` (0 mod, 1 map). `None` for a house this process does not
+    /// send for, an unknown source or a message over
+    /// [`crate::sim::command::MODULE_MESSAGE_BYTES`].
+    pub fn encode_module_message_record(
+        &self,
+        command_owner: InternedId,
+        source: u8,
+        data: &[u8],
+    ) -> Option<CommandRecord> {
+        if !self.houses.contains_key(&command_owner) {
+            return None;
+        }
+        crate::sim::command::ModuleMessageRecord {
+            house_id: self.command_sender(command_owner)?,
+            frame: self.session.binary_frame() as i32,
+            source,
+            data: data.to_vec(),
+        }
+        .encode()
+    }
+
     /// `EventClass(house, type, value)` (`0x004C6720`): a header event
     /// whose payload is one unmodified signed dword.
     fn encode_int_event(
@@ -1172,6 +1256,16 @@ impl Simulation {
 
         if record.opcode() == crate::sim::command::DESTRUCT_OPCODE {
             return envelope(Command::Destruct);
+        }
+
+        // VERA 0x34: a Wasm client module's message; its sender is the
+        // header's (RFC 0001 section 10).
+        if record.opcode() == crate::sim::command::VERA_MODULE_MESSAGE_OPCODE {
+            let typed = crate::sim::command::ModuleMessageRecord::decode(record)?;
+            return envelope(Command::ModuleMessage {
+                source: typed.source,
+                data: typed.data,
+            });
         }
 
         // Native opcode 0x0D (EventClass::Execute type-13 @ 0x004C794B): the

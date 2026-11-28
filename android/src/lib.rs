@@ -1,8 +1,8 @@
 //! Android entry point for the VERA20k client.
 //!
-//! Android never runs `main`. `android.app.NativeActivity` loads the cdylib and
-//! resolves `android_main` by symbol (the manifest names the library through
-//! `android.app.lib_name`), so the process starts here instead. Everything
+//! Android never runs `main`. `GameActivity` calls into the cdylib through
+//! `initializeNativeCode` (the activity loads `libvera20k_android.so` before
+//! `onCreate`), so the process starts here instead. Everything
 //! platform-specific that has to happen before the first window — the working
 //! directory, logging, panic reporting — runs in this order and then hands over
 //! to `vera20k::entry`, the same start-up the desktop binary uses.
@@ -38,7 +38,146 @@ fn with_activity<R>(f: impl FnOnce(&mut jni::JNIEnv, &JObject) -> R) -> Option<R
     let mut env = vm.attach_current_thread().ok()?;
     // SAFETY: the activity handle is the loader's JNI global reference above.
     let activity = unsafe { JObject::from_raw(context.context().cast()) };
-    Some(f(&mut env, &activity))
+    // android_main stays attached to the VM for the whole event loop. In
+    // particular, each Mod picker poll returns a local String, even when empty.
+    env.with_local_frame(16, |env| Ok::<_, jni::errors::Error>(f(env, &activity)))
+        .ok()
+}
+
+/// Display-inset hook for `vera20k::util::display_insets`.
+///
+/// The activity measures the cutout and the top-left rounded corner from the
+/// window insets; the engine moves the message lane and the performance panel in
+/// by them.
+fn display_insets() -> vera20k::util::display_insets::Insets {
+    with_activity(|env, activity| {
+        let inset = |env: &mut jni::JNIEnv, name: &str| -> i32 {
+            env.call_method(activity, name, "()I", &[])
+                .and_then(|value| value.i())
+                .unwrap_or(0)
+        };
+        vera20k::util::display_insets::Insets {
+            left: inset(env, "displayInsetLeft"),
+            top: inset(env, "displayInsetTop"),
+        }
+    })
+    .unwrap_or_default()
+}
+
+/// Calls one of the activity's Mods page actions, `method(String...)Z` with
+/// `args`; false when it cannot.
+fn activity_flag(method: &str, args: &[&str]) -> bool {
+    with_activity(|env, activity| {
+        let mut strings = Vec::with_capacity(args.len());
+        for arg in args {
+            strings.push(env.new_string(arg).ok()?);
+        }
+        let values: Vec<jni::objects::JValue> = strings.iter().map(|text| text.into()).collect();
+        let signature = format!("({})Z", "Ljava/lang/String;".repeat(args.len()));
+        env.call_method(activity, method, signature, &values)
+            .ok()?
+            .z()
+            .ok()
+    })
+    .flatten()
+    .unwrap_or(false)
+}
+
+/// Mods page: export `folder` through the system file manager; the toasts
+/// say `done` or `failed`.
+fn mod_export(folder: &str, done: &str, failed: &str) -> bool {
+    activity_flag("exportMod", &[folder, done, failed])
+}
+
+/// Mods page: pack `folder` into a ZIP through the system picker.
+fn mod_export_zip(folder: &str, done: &str, failed: &str, progress: &str) -> bool {
+    activity_flag("exportModZip", &[folder, done, failed, progress])
+}
+
+/// Mods page: pick a mod ZIP in the system file manager; the toast says
+/// `failed` when the copy does not work.
+fn mod_pick_zip(failed: &str) -> bool {
+    activity_flag("pickModZip", &[failed])
+}
+
+/// Mods page: pick a mod folder in the system file manager.
+fn mod_pick_folder(failed: &str) -> bool {
+    activity_flag("pickModFolder", &[failed])
+}
+
+/// The mod part a picker copied in, once.
+fn mod_take_picked() -> Option<String> {
+    with_activity(|env, activity| {
+        let value = env
+            .call_method(activity, "takePickedModPart", "()Ljava/lang/String;", &[])
+            .ok()?
+            .l()
+            .ok()?;
+        env.get_string(&JString::from(value))
+            .ok()
+            .map(|text| text.to_string_lossy().into_owned())
+    })
+    .flatten()
+    .filter(|part| !part.is_empty())
+}
+
+/// Mods page: delete the copies the pickers made.
+fn mod_clear_picked() {
+    let _ = with_activity(|env, activity| {
+        env.call_method(activity, "clearPickedModParts", "()V", &[])
+            .is_ok()
+    });
+}
+
+/// Mods page: forget `folder`'s home-screen shortcuts (`id` and its old name).
+fn mod_forget(folder: &str, id: &str) -> bool {
+    activity_flag("forgetModShortcut", &[folder, id])
+}
+
+/// Mods page: add a home-screen shortcut for `folder` under `id`.
+fn mod_pin(folder: &str, id: &str) -> bool {
+    activity_flag("pinMod", &[folder, id])
+}
+
+/// Resolves a `modid:<id>` entry to its folder by the id file the Mods folder
+/// keeps, so a shortcut survives a rename.
+fn folder_for_mod_id(data_dir: &std::path::Path, entry: &str) -> Option<String> {
+    let id = entry.strip_prefix("modid:")?.trim();
+    if id.is_empty() {
+        return None;
+    }
+    let mods = data_dir.join("Mods");
+    let entries = std::fs::read_dir(mods).ok()?;
+    for entry in entries.flatten() {
+        let dir = entry.path();
+        if !dir.is_dir() {
+            continue;
+        }
+        let Ok(text) = std::fs::read_to_string(dir.join(".vera20k-mod-id")) else {
+            continue;
+        };
+        if text.trim() == id {
+            return entry.file_name().to_str().map(|name| format!("mod:{name}"));
+        }
+    }
+    None
+}
+
+/// The entry a launcher shortcut handed over (`VeraActivity.takeLaunchEntry`),
+/// read once: `mod:<folder>` picks that mod for this launch.
+fn launch_entry() -> Option<String> {
+    with_activity(|env, activity| {
+        let value = env
+            .call_method(activity, "takeLaunchEntry", "()Ljava/lang/String;", &[])
+            .ok()?
+            .l()
+            .ok()?;
+        env.get_string(&JString::from(value))
+            .ok()
+            .map(|text| text.to_string_lossy().into_owned())
+    })
+    .flatten()
+    .filter(|entry| !entry.is_empty())
 }
 
 /// Folder-picker hook for `vera20k::util::folder_picker`.
@@ -125,6 +264,111 @@ fn handle_suffix() -> Option<String> {
             .map(|text| text.to_string_lossy().into_owned())
     })?;
     suffix.filter(|text| !text.is_empty())
+}
+
+/// The activity, kept for the soft-keyboard hooks: [`AndroidApp`] is cheap to
+/// clone, and its text-input calls work from any thread.
+static ACTIVITY: std::sync::OnceLock<AndroidApp> = std::sync::OnceLock::new();
+
+/// Show the soft keyboard (`util::android_ime`).
+fn ime_show() {
+    if let Some(app) = ACTIVITY.get() {
+        app.show_soft_input(false);
+    }
+}
+
+/// Hide the soft keyboard.
+fn ime_hide() {
+    if let Some(app) = ACTIVITY.get() {
+        app.hide_soft_input(false);
+    }
+}
+
+/// What the input method currently holds.
+fn ime_state() -> vera20k::util::android_ime::TextState {
+    ACTIVITY
+        .get()
+        .map(|app| {
+            let state = app.text_input_state();
+            vera20k::util::android_ime::TextState {
+                text: state.text,
+                cursor: state.selection.start,
+                compose: state.compose_region.map(|span| (span.start, span.end)),
+            }
+        })
+        .unwrap_or_default()
+}
+
+/// Replace the input method's buffer, with the caret at `cursor` characters.
+///
+/// The platform counts selection offsets in UTF-16 units while the game counts
+/// characters, so a caret after an emoji must be converted before it reaches
+/// the platform: `abc👿` is 4 characters but 5 units.
+fn ime_set_state(text: &str, cursor: usize) {
+    use android_activity::input::{TextInputState, TextSpan};
+    if let Some(app) = ACTIVITY.get() {
+        let state = vera20k::util::android_ime::TextState::from_edit(text, cursor);
+        app.set_text_input_state(TextInputState {
+            text: state.text,
+            selection: TextSpan {
+                start: state.cursor,
+                end: state.cursor,
+            },
+            compose_region: None,
+        });
+    }
+}
+
+/// Tell the input method whether the focused edit hides its text
+/// (`app::shell_wol::login::ime_secret`), so its dictionary and suggestions
+/// never see a password.
+fn ime_set_secret(secret: bool) {
+    let _ = with_activity(|env, activity| {
+        env.call_method(
+            activity,
+            "setImeKind",
+            "(Z)V",
+            &[jni::objects::JValue::Bool(secret as u8)],
+        )
+        .map(|_| ())
+    });
+}
+
+static POINTER_WAKE: std::sync::OnceLock<winit::event_loop::EventLoopProxy<()>> = std::sync::OnceLock::new();
+
+/// One hardware mouse or touchpad event the activity consumed.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_org_vera20k_VeraActivity_nativeMouseEvent(
+    _env: jni::JNIEnv,
+    _activity: JObject,
+    device_id: jni::sys::jint,
+    action: jni::sys::jint,
+    action_button: jni::sys::jint,
+    buttons: jni::sys::jint,
+    x: jni::sys::jfloat,
+    y: jni::sys::jfloat,
+    vscroll: jni::sys::jfloat,
+    hscroll: jni::sys::jfloat,
+    scroll: jni::sys::jfloat,
+    event_time: jni::sys::jlong,
+    tool: jni::sys::jint,
+) {
+    let wake = vera20k::app::android_mouse::push(vera20k::app::android_mouse::PointerEvent {
+        device_id,
+        action,
+        action_button,
+        buttons,
+        x,
+        y,
+        vscroll,
+        hscroll,
+        scroll,
+        event_time,
+        tool,
+    });
+    if wake && let Some(proxy) = POINTER_WAKE.get() {
+        let _ = proxy.send_event(());
+    }
 }
 
 /// The activity's folder-picker answer: the chosen tree as a `content://` URI,
@@ -319,6 +563,26 @@ fn keep_screen_on(app: &AndroidApp) {
     );
 }
 
+/// Read one entry from the APK's assets through Android's AssetManager.
+fn packaged_bytes(app: &AndroidApp, file: &str) -> std::io::Result<Vec<u8>> {
+    let name = std::ffi::CString::new(file)?;
+    let mut asset = app
+        .asset_manager()
+        .open(&name)
+        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, file.to_owned()))?;
+    Ok(asset.buffer()?.to_vec())
+}
+
+fn install_packaged_map(app: &AndroidApp) -> anyhow::Result<()> {
+    use vera20k::map::installed::{ARCTIC_MAP, install_arctic_map};
+
+    let maps = vera20k::util::config::GameConfig::load()?
+        .paths
+        .downloaded_maps_dir();
+    install_arctic_map(&maps, || packaged_bytes(app, ARCTIC_MAP))?;
+    Ok(())
+}
+
 /// Resolved by `android-activity`'s loader trampoline; the name is the ABI.
 ///
 /// Android calls the symbol with the activity's handle, which
@@ -327,6 +591,23 @@ fn keep_screen_on(app: &AndroidApp) {
 fn android_main(app: AndroidApp) {
     keep_screen_on(&app);
     vera20k::util::folder_picker::install(request_folder_picker, cancel_import);
+    // The screen's rounded corner and cutout hide the top-left of what the game
+    // draws there; the activity measures them and the engine moves in by them.
+    vera20k::util::display_insets::install(vera20k::util::display_insets::Hooks {
+        insets: display_insets,
+    });
+    // The Mods page cannot hand a path to a file manager on Android: export,
+    // Add Mod's pickers and the shortcut pin run in the activity.
+    vera20k::util::mod_actions::install(vera20k::util::mod_actions::Hooks {
+        export: mod_export,
+        export_zip: mod_export_zip,
+        pin: mod_pin,
+        forget: mod_forget,
+        pick_zip: mod_pick_zip,
+        pick_folder: mod_pick_folder,
+        take_picked: mod_take_picked,
+        clear_picked: mod_clear_picked,
+    });
     // The launcher icon is a compiled resource, so the VERA Icon box's choice
     // reaches the two activity aliases only through PackageManager.
     vera20k::util::app_icon::install(apply_app_icon);
@@ -342,10 +623,21 @@ fn android_main(app: AndroidApp) {
     vera20k::util::device_identity::install(vera20k::util::device_identity::Hooks {
         handle_suffix,
     });
+    // winit's Android backend has no IME text events (winit#4736 adds them), so
+    // the engine reads the activity's GameTextInput buffer through these hooks.
+    let _ = ACTIVITY.set(app.clone());
+    vera20k::util::android_ime::install(vera20k::util::android_ime::Hooks {
+        show: ime_show,
+        hide: ime_hide,
+        state: ime_state,
+        set_state: ime_set_state,
+        set_secret: ime_set_secret,
+    });
     // Android starts every process in "/" with no writable home. Hand the app's
     // private folder to the engine before anything opens a file: it becomes
     // both the working directory and the settings folder, so logs, config.toml,
     // VERA.INI, saves and replays all persist there.
+    let data_dir = app.internal_data_path();
     match app.internal_data_path() {
         Some(dir) => {
             if let Err(error) = vera20k::entry::adopt_android_data_dir(&dir) {
@@ -357,6 +649,17 @@ fn android_main(app: AndroidApp) {
 
     let log_path = vera20k::entry::init_logging();
     vera20k::entry::log_banner(log_path.as_deref());
+    if let Err(error) = install_packaged_map(&app) {
+        log::warn!("Could not install the packaged skirmish map: {error:#}");
+    }
+    if let Some(root) = vera20k::util::platform_dir::get() {
+        use vera20k::assets::ice_pack;
+        if let Err(error) = ice_pack::install(&root.join(ice_pack::DIRECTORY), |name, _| {
+            packaged_bytes(&app, name)
+        }) {
+            log::warn!("Could not install the packaged ice terrain: {error}");
+        }
+    }
     // Bind the picker's callback before the player can reach the button, and say
     // whether it took: a silent failure here is what turned a missing folder
     // picker into an `UnsatisfiedLinkError` at the worst moment.
@@ -387,6 +690,8 @@ fn android_main(app: AndroidApp) {
         }
     };
 
+    let _ = POINTER_WAKE.set(event_loop.create_proxy());
+
     // Android has no retail command line: the launcher starts an ordinary
     // interactive game. `-SPAWN`, replay and capture launches are desktop
     // automation and stay out of this path.
@@ -394,7 +699,23 @@ fn android_main(app: AndroidApp) {
         vera20k::app::frontend::startup_options::RetailStartupOptions::default(),
     );
 
-    match vera20k::entry::run_with_loop(launch_mode, false, event_loop) {
+    // A pinned shortcut can name the mod this launch plays; `config.toml` keeps
+    // the player's own choice untouched.
+    let mut entry = launch_entry();
+    if let Some(entry) = entry.as_deref() {
+        log::info!("Launch entry: {entry}");
+    }
+    if let Some(id_entry) = entry.clone().filter(|entry| entry.starts_with("modid:")) {
+        match folder_for_mod_id(data_dir.as_deref().unwrap_or(std::path::Path::new(".")), &id_entry) {
+            Some(folder_entry) => {
+                log::info!("Launch entry {id_entry} is {folder_entry}");
+                entry = Some(folder_entry);
+            }
+            None => log::warn!("Launch entry {id_entry} names no mod here"),
+        }
+    }
+    match vera20k::entry::run_with_loop_and_entry(launch_mode, false, event_loop, entry.as_deref())
+    {
         Ok(0) => {}
         // Android has no `-SPAWN` status to propagate; a non-zero one still
         // belongs in the log before the activity finishes.
@@ -419,4 +740,61 @@ fn claim_event_loop() -> bool {
     use std::sync::OnceLock;
     static CLAIMED: OnceLock<()> = OnceLock::new();
     CLAIMED.set(()).is_ok()
+}
+
+use std::ffi::{c_int, c_void};
+
+unsafe extern "C" {
+    fn __real_pthread_create(
+        thread: *mut *mut c_void,
+        attr: *const c_void,
+        start_routine: extern "C" fn(*mut c_void) -> *mut c_void,
+        arg: *mut c_void,
+    ) -> c_int;
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn __wrap_pthread_create(
+    thread: *mut *mut c_void,
+    attr: *const c_void,
+    start_routine: extern "C" fn(*mut c_void) -> *mut c_void,
+    arg: *mut c_void,
+) -> c_int {
+    use std::mem::MaybeUninit;
+    let mut attr_copy: MaybeUninit<libc::pthread_attr_t> = MaybeUninit::uninit();
+    let mut attr_ptr = attr;
+
+    // SAFETY: `attr` is either null or an initialised `pthread_attr_t` the
+    // caller owns, and `attr_copy` is a local of that same type.
+    unsafe {
+        if !attr.is_null() {
+            std::ptr::copy_nonoverlapping(
+                attr as *const libc::pthread_attr_t,
+                attr_copy.as_mut_ptr(),
+                1,
+            );
+        } else {
+            libc::pthread_attr_init(attr_copy.as_mut_ptr());
+        }
+        attr_ptr = attr_copy.as_ptr() as *const c_void;
+        // Keep larger requests and leave caller-provided stacks alone.
+        // Bionic can change the recorded size of a caller's stack even
+        // though the caller's allocation stays the same size.
+        let mut caller_stack: *mut c_void = std::ptr::null_mut();
+        let mut caller_len: usize = 0;
+        let caller_owns = libc::pthread_attr_getstack(
+            attr_copy.as_ptr(),
+            &mut caller_stack,
+            &mut caller_len,
+        ) == 0
+            && !caller_stack.is_null();
+        let mut size: usize = 0;
+        let read = libc::pthread_attr_getstacksize(attr_copy.as_ptr(), &mut size) == 0;
+        let requested = if read { size } else { 0 };
+        if let Some(wanted) = vera20k::util::thread_stack::android_stack(requested, caller_owns) {
+            libc::pthread_attr_setstacksize(attr_copy.as_mut_ptr(), wanted);
+            log::info!("android: thread stack {requested} -> {wanted} bytes");
+        }
+        __real_pthread_create(thread, attr_ptr, start_routine, arg)
+    }
 }

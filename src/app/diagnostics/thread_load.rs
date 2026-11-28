@@ -32,6 +32,11 @@ pub(crate) fn note_simulation_thread() {
     }
 }
 
+/// The calling thread's CPU time so far, where the system reports it.
+pub(crate) fn calling_thread_cpu() -> Option<Duration> {
+    platform::thread_cpu_ns().map(Duration::from_nanos)
+}
+
 /// CPU time used so far, in nanoseconds.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 struct CpuTimes {

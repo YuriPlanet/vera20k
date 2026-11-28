@@ -263,6 +263,36 @@ class CargoRunTests(unittest.TestCase):
             self.assertEqual(status, 0)
             self.assertNotIn('no test matched', errors)
 
+    def test_a_failed_test_launch_reaps_the_children_already_started(self):
+        record = self.root / 'tests.jsonl'
+        calls = [
+            {'command': [sys.executable, '-c', 'import time; time.sleep(60)'],
+             'cwd': str(self.root), 'env': dict(os.environ)},
+            {'command': [str(self.root / 'missing-test-executable')],
+             'cwd': str(self.root), 'env': dict(os.environ)},
+        ]
+        record.write_text('\n'.join(map(json.dumps, calls)), encoding='utf-8')
+        popen = subprocess.Popen
+        started = []
+
+        def launch(*args, **kwargs):
+            child = popen(*args, **kwargs)
+            started.append(child)
+            return child
+
+        try:
+            with patch.object(cargo_run.subprocess, 'Popen', side_effect=launch), \
+                 redirect_stderr(io.StringIO()), self.assertRaises(FileNotFoundError):
+                cargo_run.run_recorded_tests(record)
+            self.assertEqual(len(started), 1)
+            self.assertIsNotNone(started[0].returncode)
+            self.assertTrue(started[0].stdout.closed)
+        finally:
+            for child in started:
+                with child:
+                    if child.poll() is None:
+                        child.kill()
+
     def test_a_focused_build_that_needs_another_groups_test_code_compiles_every_test_instead(self):
         (self.root / 'src').mkdir()
         (self.root / 'Cargo.toml').write_text('[package]\nname = "vera20k"\n')
@@ -317,7 +347,8 @@ class CargoRunTests(unittest.TestCase):
 
     def test_core_only_and_workspace_tests_resolve_core_dependencies_alike(self):
         # Any feature difference gives `-p vera20k-core` its own core test
-        # executable; src/Cargo.toml's dev-dependencies must then gain it.
+        # executable; src/Cargo.toml's dev-dependencies must then gain it, or
+        # its build-dependencies for a crate only proc macros use.
         def tree(*selection):
             try:
                 listing = subprocess.run(
@@ -525,6 +556,19 @@ class CargoRunTests(unittest.TestCase):
              patch.object(cargo_run.subprocess, 'Popen', side_effect=start):
             with self.assertRaisesRegex(OSError, 'volume unavailable'):
                 cargo_run.run(self.root, ['check'], None, 0)
+
+    def test_preserved_executable_keeps_its_terrain_when_the_checkout_changes(self):
+        source = self.root / 'Terrain'
+        source.mkdir()
+        for name in ('vera_ice.mix', 'vera_ice_tiles.ini'):
+            (source / name).write_text(name)
+        self.assertEqual(self.invoke(), 0)
+        label = self.root / '.git/owned-builds/artifacts/build-a'
+        entry, = json.loads((label / 'manifest.json').read_text())['artifacts']
+        preserved = (label / entry['file']).parent / 'Terrain'
+        (source / 'vera_ice.mix').write_text('next revision')
+        self.assertEqual((preserved / 'vera_ice.mix').read_text(), 'vera_ice.mix')
+        self.assertEqual((preserved / 'vera_ice_tiles.ini').read_text(), 'vera_ice_tiles.ini')
 
     def test_copies_only_emitted_executable_and_refuses_overwrite(self):
         self.assertEqual(self.invoke(), 0)

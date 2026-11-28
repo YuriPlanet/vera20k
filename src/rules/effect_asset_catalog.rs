@@ -10,6 +10,7 @@
 //! and headless matches receive the same immutable inputs.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::hash::{Hash, Hasher};
 
 use crate::assets::asset_manager::AssetManager;
 use crate::assets::shp_file::ShpFile;
@@ -28,13 +29,59 @@ pub struct EffectAssetFrameCounts {
 ///
 /// Keys are trimmed, uppercase asset IDs. A `BTreeMap` is deliberate: binding
 /// and hashing must not inherit `HashMap`'s process-random iteration order.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct EffectAssetCatalog {
     entries: BTreeMap<String, EffectAssetFrameCounts>,
     /// Successfully loaded groups admitted by the shared resource resolver:
     /// all names with Ares, only the selected singleton otherwise. Rebuilt
     /// with this catalog so failed requests never borrow another group.
     extra_building_palette_names: BTreeSet<String>,
+    /// Header admission for each declared overlay picture, by overlay ID.
+    overlay_pictures: BTreeMap<u8, OverlayPicture>,
+    /// VERA: the overlay types without a CellAnim that have an image at
+    /// bind, from a picture or an SHP ([`overlay_admitted`]). A CellAnim
+    /// admits the overlay on its own (ReadMapOverlayPacks 0x005FD36D), so
+    /// these are the admissions authored placement reads from files: what
+    /// `RuleSet::file_inputs_hash` folds ([`Self::fold_overlay_admission`]),
+    /// whatever file gave them. Not in [`Hash`].
+    overlay_admission: BTreeSet<u8>,
+}
+
+/// VERA-only, experimental (docs/picture-model-art.md): a declared overlay
+/// picture's admission.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct OverlayPicture {
+    /// The picture was found and readable: the overlay has an image.
+    loaded: bool,
+    /// The overlay has no CellAnim, so this admission decides placement.
+    places: bool,
+    /// The game-folder file that supplied a picture whose admission is not
+    /// the shipped SHP's, or that stands in for an SHP a retail install
+    /// lacks (`FolderFiles::note_stand_in`), for a refused start to name.
+    /// Naming only: nothing hashes it.
+    file: Option<String>,
+}
+
+/// The config hash's overlay fold (`RuleSet::simulation_config_hash`, saves
+/// and replays) is the declared pictures' admission, as before the start's
+/// own fold existed: nothing for retail art.
+impl Hash for EffectAssetCatalog {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.entries.hash(state);
+        self.extra_building_palette_names.hash(state);
+        let mut facts = self
+            .overlay_pictures
+            .iter()
+            .filter(|(_, picture)| picture.places)
+            .peekable();
+        if facts.peek().is_some() {
+            b"overlay-picture-admission-v1".hash(state);
+            for (id, picture) in facts {
+                id.hash(state);
+                picture.loaded.hash(state);
+            }
+        }
+    }
 }
 
 impl EffectAssetCatalog {
@@ -66,33 +113,47 @@ impl EffectAssetCatalog {
         }
 
         for name in authoritative_effect_roots(rules) {
-            let image_id = rules.art().resolve_effective_image_id(&name, &name);
-            let candidates = art_data::effect_shp_candidates(
-                crate::rules::art_data::EffectImageKind::Particle,
-                Some(rules.art()),
-                &name,
-                &image_id,
-                theater_ext,
-                theater_name,
-            );
-            let Some((file_name, data)) = candidates.iter().find_map(|candidate| {
-                asset_manager
-                    .get_ref(candidate)
-                    .map(|data| (candidate, data))
-            }) else {
-                log::warn!(
-                    "Authoritative effect asset [{name}] is missing; consumers will use their fallback"
+            // VERA-only, experimental (docs/picture-model-art.md): an image
+            // whose art section declares `Picture=` counts the picture's
+            // frames; its SHP is never opened.
+            let raw = if let Some((section, decl)) = rules.art().resolve_declared_picture(&name, "")
+            {
+                let Some(raw) = rules
+                    .art()
+                    .picture_header(section, decl, asset_manager, theater_name)
+                    .and_then(|facts| u16::try_from(facts.frames).ok())
+                else {
+                    continue;
+                };
+                raw
+            } else {
+                let image_id = rules.art().resolve_effective_image_id(&name, &name);
+                let candidates = art_data::effect_shp_candidates(
+                    crate::rules::art_data::EffectImageKind::Particle,
+                    Some(rules.art()),
+                    &name,
+                    &image_id,
+                    theater_ext,
+                    theater_name,
                 );
-                continue;
-            };
-
-            let raw = match ShpFile::frame_count_from_bytes(data) {
-                Ok(count) => count,
-                Err(error) => {
+                let Some((file_name, data)) = candidates.iter().find_map(|candidate| {
+                    asset_manager
+                        .get_ref(candidate)
+                        .map(|data| (candidate, data))
+                }) else {
                     log::warn!(
-                        "Authoritative effect asset [{name}] ({file_name}) has an invalid SHP header: {error}; consumers will use their fallback"
+                        "Authoritative effect asset [{name}] is missing; consumers will use their fallback"
                     );
                     continue;
+                };
+                match ShpFile::frame_count_from_bytes(data) {
+                    Ok(count) => count,
+                    Err(error) => {
+                        log::warn!(
+                            "Authoritative effect asset [{name}] ({file_name}) has an invalid SHP header: {error}; consumers will use their fallback"
+                        );
+                        continue;
+                    }
                 }
             };
             let scheduler_owned = rules.art().scheduler_anim_types().contains(&name);
@@ -104,7 +165,82 @@ impl EffectAssetCatalog {
             catalog.insert(name, raw, available);
         }
 
+        let overlays = rules.overlay_registry();
+        if rules.art().declares_any_picture() {
+            let folder = crate::rules::retail_sources::FolderFiles::new(asset_manager);
+            for id in 0..overlays.len().min(256) {
+                let id = id as u8;
+                let Some(name) = overlays.name(id) else {
+                    continue;
+                };
+                let Some((section, decl)) = overlays.declared_picture(name, rules.art()) else {
+                    continue;
+                };
+                let facts = rules
+                    .art()
+                    .picture_header(section, decl, asset_manager, theater_name);
+                let loaded = facts.is_some();
+                let places = overlays
+                    .flags(id)
+                    .is_some_and(|flags| flags.cell_anim.is_none());
+                let mut file = BTreeSet::new();
+                // Named when it admits otherwise than the shipped SHP
+                // (`load_overlay_shape`), or stands in for one a retail
+                // install lacks.
+                if places {
+                    folder.note_stand_in(
+                        facts.as_ref().map_or(&decl.file, |facts| &facts.file),
+                        loaded.then_some(()),
+                        overlays.shp_candidates(name, theater_ext, theater_name),
+                        |bytes| ShpFile::from_bytes(bytes).ok().map(drop),
+                        &mut file,
+                    );
+                }
+                catalog.overlay_pictures.insert(
+                    id,
+                    OverlayPicture {
+                        loaded,
+                        places,
+                        file: file.pop_first(),
+                    },
+                );
+            }
+        }
+        // VERA: every placing overlay's admission, from its picture or its
+        // SHP, as authored placement takes it (`resolved_overlay_shp_ids`).
+        let admission = (0..overlays.len().min(256))
+            .map(|id| id as u8)
+            .filter(|&id| {
+                overlays
+                    .flags(id)
+                    .is_some_and(|flags| flags.cell_anim.is_none())
+                    && overlay_admitted(
+                        overlays,
+                        &catalog,
+                        asset_manager,
+                        id,
+                        theater_ext,
+                        theater_name,
+                    )
+            })
+            .collect();
+        catalog.overlay_admission = admission;
         catalog
+    }
+
+    /// VERA: which overlay types without a CellAnim have an image, from a
+    /// picture or an SHP alike: what `RuleSet::file_inputs_hash` folds of
+    /// overlays. Equal admissions give equal folds whether the SHP is there
+    /// or a picture stands in for it.
+    pub(crate) fn fold_overlay_admission<H: Hasher>(&self, state: &mut H) {
+        b"overlay-admission-v1".hash(state);
+        self.overlay_admission.hash(state);
+    }
+
+    pub(crate) fn overlay_picture_files(&self) -> impl Iterator<Item = &str> {
+        self.overlay_pictures
+            .values()
+            .filter_map(|picture| picture.file.as_deref())
     }
 
     pub(crate) fn loaded_extra_building_palette_name(&self, name: &str) -> Option<&str> {
@@ -405,7 +541,7 @@ pub fn anim_class_roots(rules: &RuleSet) -> Vec<String> {
     }
     // NPSE ObjectClass::Paradrop C2F939..C2F94D substitutes Rules+400
     // for non-infantry. It needs the same physical bounds as Parachute.
-    if crate::rules::NPATCH_ENABLED
+    if rules.npatch()
         && let Some(name) = rules.general.vehicle_parachute.as_deref()
     {
         insert(name);
@@ -576,23 +712,53 @@ pub fn log_unbound_combat_explosion_roots(unbound: usize) {
 /// Overlay type IDs whose native SHP candidates load as an SHP from the active
 /// theater's archives. Authored-overlay finalization (`map::authored_overlay`)
 /// reads it on graphical and headless loads alike.
-pub fn resolved_overlay_shp_ids(
+///
+/// VERA-only, experimental (`docs/picture-model-art.md`): a type whose art
+/// declares `Picture=` has an image when its picture is found and readable;
+/// its SHP is never opened.
+pub(super) fn resolved_overlay_shp_ids(
     registry: &OverlayTypeRegistry,
+    catalog: &EffectAssetCatalog,
     asset_manager: &AssetManager,
     theater_ext: &str,
     theater_name: &str,
 ) -> BTreeSet<u8> {
-    let mut available = BTreeSet::new();
-    for raw_id in 0..registry.len().min(usize::from(u8::MAX) + 1) {
-        let overlay_id = raw_id as u8;
-        let Some(name) = registry.name(overlay_id) else {
-            continue;
-        };
-        if load_overlay_shape(asset_manager, registry, name, theater_ext, theater_name).is_some() {
-            available.insert(overlay_id);
+    (0..registry.len().min(usize::from(u8::MAX) + 1))
+        .map(|raw_id| raw_id as u8)
+        .filter(|&overlay_id| {
+            overlay_admitted(
+                registry,
+                catalog,
+                asset_manager,
+                overlay_id,
+                theater_ext,
+                theater_name,
+            )
+        })
+        .collect()
+}
+
+/// Whether overlay type `overlay_id` has an image: its declared picture
+/// loaded ([`EffectAssetCatalog::bind`]), else its SHP loads
+/// ([`load_overlay_shape`]). The one admission authored placement and the
+/// start's file inputs read.
+fn overlay_admitted(
+    registry: &OverlayTypeRegistry,
+    catalog: &EffectAssetCatalog,
+    asset_manager: &AssetManager,
+    overlay_id: u8,
+    theater_ext: &str,
+    theater_name: &str,
+) -> bool {
+    let Some(name) = registry.name(overlay_id) else {
+        return false;
+    };
+    match catalog.overlay_pictures.get(&overlay_id) {
+        Some(picture) => picture.loaded,
+        None => {
+            load_overlay_shape(asset_manager, registry, name, theater_ext, theater_name).is_some()
         }
     }
-    available
 }
 
 /// Resolve the reached OverlayRead5FE928 / InitTheater5FE620 / saved
@@ -749,6 +915,129 @@ mod tests {
         assert_eq!(catalog.raw_frame_count("BROKEN"), None);
     }
 
+    /// VERA-only (docs/picture-model-art.md): a particle image whose art
+    /// declares `Picture=` counts the picture's frames, not its SHP's, and an
+    /// overlay type whose art declares one has an image without any SHP. A
+    /// retail install has no SHP for it, so the start's file inputs change
+    /// and name the picture; once it is gone, the overlay is admitted as on
+    /// a retail install and nothing is named.
+    #[test]
+    fn declared_pictures_give_particle_counts_and_overlay_presence() {
+        let root = TestRoot::new();
+        std::fs::write(root.path().join("FX.SHP"), shp_with_undecodable_pixels(6))
+            .expect("write effect SHP");
+        let picture = crate::assets::picture_file::test_picture(4, 4, Some(4));
+        std::fs::write(root.path().join("fx.png"), &picture).expect("write effect picture");
+        std::fs::write(root.path().join("wall.png"), &picture).expect("write wall picture");
+        let assets = AssetManager::from_loose_root_for_test(root.path());
+        let ini = IniFile::from_str(
+            "[Particles]\n0=Cloud\n[Cloud]\nImage=FX\n\
+             [OverlayTypes]\n0=PICWALL\n1=BAREWALL\n[PICWALL]\nWall=yes\n[BAREWALL]\nWall=yes\n",
+        );
+        let mut rules = RuleSet::from_ini(&ini).expect("effect catalog rules");
+        rules.install_art_data(ArtRegistry::from_ini(&IniFile::from_str(
+            "[FX]\nShadow=yes\nPicture=fx.png\n[PICWALL]\nPicture=wall.png\n",
+        )));
+
+        let catalog = EffectAssetCatalog::bind(&rules, &assets, "TEM", "TEMPERATE");
+        assert_eq!(catalog.raw_frame_count("FX"), Some(4), "the SHP holds 6");
+        assert_eq!(catalog.effect_frame_count("FX"), Some(2));
+
+        rules.bind_effect_assets(&assets, "TEM", "TEMPERATE");
+        let available = rules.resolved_overlay_shp_ids(&assets, "TEM", "TEMPERATE");
+        assert!(available.contains(&rules.overlay_registry().id_for_name("PICWALL").unwrap()));
+        assert!(!available.contains(&rules.overlay_registry().id_for_name("BAREWALL").unwrap()));
+        let loaded = rules.file_inputs_hash();
+        assert!(
+            rules
+                .file_input_folder_files()
+                .iter()
+                .any(|name| name.eq_ignore_ascii_case("wall.png"))
+        );
+
+        std::fs::remove_file(root.path().join("wall.png")).unwrap();
+        let assets = AssetManager::from_loose_root_for_test(root.path());
+        rules.bind_effect_assets(&assets, "TEM", "TEMPERATE");
+        assert_ne!(rules.file_inputs_hash(), loaded);
+        assert!(rules.file_input_folder_files().is_empty());
+    }
+
+    /// VERA-only (docs/picture-model-art.md): an overlay picture that admits
+    /// the overlay as the shipped SHP does leaves the start's file inputs the
+    /// original game's and names no file, also once a repacked archive drops
+    /// that SHP (the picture is then named, for a refused start); one for an
+    /// overlay the shipped archives hold no SHP for changes them and is
+    /// named, as does a picture that cannot be read where the SHP is gone.
+    #[test]
+    fn an_overlay_picture_that_admits_what_its_shp_admits_keeps_the_retail_file_inputs() {
+        use crate::assets::asset_manager::MediaArchiveMode;
+        let dir = crate::assets::asset_manager::test_support::audio_test_install(
+            "overlay-picture-file-inputs",
+        );
+        let ini = IniFile::from_str(
+            "[OverlayTypes]
+0=SHPWALL
+1=NEWWALL
+[SHPWALL]
+Wall=yes
+[NEWWALL]
+Wall=yes
+",
+        );
+        let mut rules = RuleSet::from_ini(&ini).expect("overlay rules");
+        let shp_name = rules
+            .overlay_registry()
+            .shp_candidates("SHPWALL", "TEM", "TEMPERATE")
+            .remove(0);
+        // A 2x2 one-frame raw SHP.
+        let mut shp = vec![0_u8; 8 + 24];
+        shp[2..4].copy_from_slice(&2u16.to_le_bytes());
+        shp[4..6].copy_from_slice(&2u16.to_le_bytes());
+        shp[6..8].copy_from_slice(&1u16.to_le_bytes());
+        shp[12..14].copy_from_slice(&2u16.to_le_bytes());
+        shp[14..16].copy_from_slice(&2u16.to_le_bytes());
+        shp[28..32].copy_from_slice(&32u32.to_le_bytes());
+        shp.extend_from_slice(&[1, 2, 3, 4]);
+        std::fs::write(
+            dir.path().join("ra2md.mix"),
+            crate::map::source::test_support::make_new_format_mix_bytes(&[(
+                shp_name.as_str(),
+                shp.as_slice(),
+            )]),
+        )
+        .unwrap();
+        let picture = crate::assets::picture_file::test_picture(4, 4, Some(2));
+        std::fs::write(dir.path().join("shpwall.png"), &picture).unwrap();
+        std::fs::write(dir.path().join("newwall.png"), &picture).unwrap();
+        let mut bound = |art: &str| {
+            rules.install_art_data(ArtRegistry::from_ini(&IniFile::from_str(art)));
+            let assets = AssetManager::new(dir.path(), MediaArchiveMode::STOCK_DIGITAL).unwrap();
+            rules.bind_effect_assets(&assets, "TEM", "TEMPERATE");
+            (rules.file_inputs_hash(), rules.file_input_folder_files())
+        };
+        let (retail, retail_files) = bound("");
+        assert!(retail_files.is_empty(), "{retail_files:?}");
+        assert_eq!(
+            bound("[SHPWALL]\nPicture=shpwall.png\n"),
+            (retail, Vec::new())
+        );
+        let (added, files) = bound("[NEWWALL]\nPicture=newwall.png\n");
+        assert_ne!(added, retail);
+        assert_eq!(files, ["newwall.png"]);
+        // A repacked archive without the SHP the picture replaces.
+        std::fs::write(
+            dir.path().join("ra2md.mix"),
+            crate::map::source::test_support::make_new_format_mix_bytes(&[(
+                "unrelated.bin",
+                b"fixture".as_slice(),
+            )]),
+        )
+        .unwrap();
+        assert_eq!(bound("[SHPWALL]\nPicture=shpwall.png\n").0, retail);
+        std::fs::write(dir.path().join("shpwall.png"), b"not a picture").unwrap();
+        assert_ne!(bound("[SHPWALL]\nPicture=shpwall.png\n").0, retail);
+    }
+
     /// The NPSE `[General] VehicleParachute=` canopy is bound through the same
     /// anim asset root the stock `Parachute=` uses, so a mod's own canopy
     /// carries physical frame bounds before `AnimClass::effective_bounds`
@@ -776,16 +1065,18 @@ mod tests {
             RuleSet::from_processed_rules(&processed).expect("project the processed rules");
         rules.install_art_data(ArtRegistry::from_ini(&art));
 
-        let capability = crate::rules::NPATCH_ENABLED;
+        assert!(
+            rules.npatch(),
+            "the fixture's VehicleParachute key turns NPatch on"
+        );
         assert_eq!(
             rules.general.vehicle_parachute.as_deref(),
-            capability.then_some("VEHCHUTE"),
-            "only the extension reader publishes the pointer"
+            Some("VEHCHUTE"),
+            "the extension reader publishes the pointer"
         );
         let roots = anim_class_roots(&rules);
-        assert_eq!(
+        assert!(
             roots.iter().any(|root| root == "VEHCHUTE"),
-            capability,
             "the canopy's art root follows the extension pointer"
         );
         rules.bind_anim_class_assets(&roots, &assets, "TEM", "TEMPERATE");
@@ -794,13 +1085,10 @@ mod tests {
                 .art()
                 .anim_runtime_config("VEHCHUTE")
                 .and_then(|config| config.raw_shp_frame_count),
-            capability.then_some(6),
+            Some(6),
             "the bound canopy carries the SHP's physical frame bounds"
         );
-        assert_eq!(
-            rules.art().scheduler_anim_types().contains("VEHCHUTE"),
-            capability
-        );
+        assert!(rules.art().scheduler_anim_types().contains("VEHCHUTE"));
     }
 
     #[test]
@@ -842,7 +1130,7 @@ mod tests {
                 crate::map::entities::EntityCategory::Infantry,
             ),
         );
-        sim.interner = crate::sim::intern::test_interner();
+        *sim.interner = crate::sim::intern::test_interner();
         let anim = sim.attach_parachute_anim(&rules, 1).unwrap();
         assert_eq!(
             sim.interner.resolve(sim.anim(anim).unwrap().type_id()),
@@ -909,7 +1197,7 @@ mod tests {
                 11,
                 crate::map::entities::EntityCategory::Infantry,
             ));
-        sim.interner = crate::sim::intern::test_interner();
+        *sim.interner = crate::sim::intern::test_interner();
         let owner = sim.entities().get(1).unwrap().owner();
         sim.houses
             .register(crate::sim::house_state::HouseState::new(

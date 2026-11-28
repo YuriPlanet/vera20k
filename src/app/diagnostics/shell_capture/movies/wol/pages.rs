@@ -9,7 +9,7 @@ impl WolCapture {
     /// request answered (2, or unknown for the locale targets), then
     /// `0xFE`, `0x112` or the runner.
     pub(super) fn after_login(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
-        let requests = self.requests(state, frame)?;
+        let requests = self.requests(&mut state.frontend.wol, frame)?;
         ensure!(
             requests
                 == [WolServiceRequest::RequestLocales {
@@ -24,7 +24,7 @@ impl WolCapture {
         );
         self.event(frame, format!("controlled locale {locale}"));
         self.phase = if self.target.locale_unknown() {
-            let requests = self.requests(state, frame)?;
+            let requests = self.requests(&mut state.frontend.wol, frame)?;
             ensure!(
                 requests == [WolServiceRequest::LocaleCount],
                 "0xFE did not ask for the locale count: {requests:?}"
@@ -45,7 +45,11 @@ impl WolCapture {
     pub(super) fn persona_page(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
         use crate::app::shell_wol::WolPage;
         use crate::ui::wol_persona::{ACCEPT, DECLINE};
-        let layout = crate::app::shell_wol::persona::layout(state).context("persona layout")?;
+        let layout = crate::app::shell_wol::persona::layout(
+            state.frontend.wol.as_ref(),
+            &state.renderer.gpu,
+        )
+        .context("persona layout")?;
         match self.target {
             WolTarget::AutoLoginQuery | WolTarget::LocaleQuery => {
                 self.event(frame, "persona page settled");
@@ -76,7 +80,8 @@ impl WolCapture {
                     bail!("0xFE is not open");
                 };
                 let (geometry, _) =
-                    crate::app::shell_wol::persona::list_view(state).context("0xFE list")?;
+                    crate::app::shell_wol::persona::list_view(&state.frontend.shell_controller)
+                        .context("0xFE list")?;
                 let locale = page.rows.get(2).context("0xFE rows")?.locale;
                 welcome_click(state, geometry.row(2));
                 welcome_click(state, layout.page.button_rect(ACCEPT).context("0xFE OK")?);
@@ -93,25 +98,21 @@ impl WolCapture {
         Ok(())
     }
 
-    /// `0xCF` opened over `0x113` or C2: the target's name and text through
-    /// the real input routes.
-    /// The in-match page path: an ANSI page posts its two rows and arms the
-    /// reply window; PageUser (U) inside it opens `0xCF` with the pager and
-    /// the caret in the text; a reply goes out and the stand-in answers.
+    /// A private message stays on the battlefield. Its arrival and the
+    /// former pager shortcut must both leave the player in control.
     pub(super) fn ingame_page(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
-        use crate::app::shell_wol::page;
-        use crate::ui::pause_menu::InGameMenuState;
-        let rows = |state: &AppState| -> Vec<String> {
-            state
-                .match_state
-                .match_presentation
-                .message_list
-                .messages()
-                .iter()
-                .map(|row| row.text.clone())
-                .collect()
+        let on_battlefield = |state: &AppState| {
+            state.frontend.screen == GameScreen::InGame
+                && state.match_state.match_presentation.in_game_menu
+                    == crate::ui::pause_menu::InGameMenuState::Closed
+                && !crate::app::shell_wol::page::open(state.frontend.wol.as_ref())
         };
-        let before = rows(state).len();
+        let before = state
+            .match_state
+            .match_presentation
+            .message_list
+            .messages()
+            .len();
         service_event(
             state,
             WolServiceEvent::Page {
@@ -120,136 +121,53 @@ impl WolCapture {
                 ansi: true,
             },
         );
-        let hint = state.csf_label("TXT_HOW_TO_REPLY", "TXT_HOW_TO_REPLY");
-        let after = rows(state);
+        let messages = state.match_state.match_presentation.message_list.messages();
         ensure!(
-            after.len() == before + 2
-                && after[before].contains("(Tanya) where are you?")
-                && after[before + 1].contains(&hint),
-            "the in-match page did not post its two rows: {after:?}"
+            messages.len() == before + 1
+                && messages
+                    .last()
+                    .is_some_and(|row| row.text.contains("(Tanya) where are you?"))
+                && on_battlefield(state),
+            "expected one battlefield message and no page dialog"
         );
-        self.event(frame, json!({"in-match page rows": &after[before..]}));
-        // U as the window handler hands it to the in-game key edge.
+        self.event(frame, "Private message displayed on the battlefield");
         let u = winit::keyboard::Key::Character("u".into());
-        crate::app::input::keyboard::in_game_key_edge(
-            state,
-            crate::app::input::keyboard::InGameKeyEdge {
-                physical: winit::keyboard::KeyCode::KeyU,
-                logical: &u,
-                unmodified: &u,
-                location: winit::keyboard::KeyLocation::Standard,
-                state: winit::event::ElementState::Pressed,
-                repeat: false,
-                text: Some("u"),
-            },
-            false,
-        );
-        let opened = page::page_dialog(state).is_some()
-            && crate::app::shell_wol::leaf::text(
+        for key_state in [
+            winit::event::ElementState::Pressed,
+            winit::event::ElementState::Released,
+        ] {
+            crate::app::input::keyboard::in_game_key_edge(
                 state,
-                crate::ui::wol_page::PAGE_DIALOG,
-                crate::ui::wol_page::NAME,
-            ) == "Tanya"
-            && crate::app::shell_wol::leaf::focused(state) == Some(crate::ui::wol_page::TEXT);
-        ensure!(
-            state.match_state.match_presentation.in_game_menu == InGameMenuState::Page && opened,
-            "PageUser did not open 0xCF with the pager prefilled"
-        );
-        self.event(frame, "PageUser opened 0xCF, prefilled");
-        page::key_press(state, None, Some("on my way"));
-        page::key_press(state, Some(winit::keyboard::KeyCode::Enter), None);
-        self.page_tick = state
-            .match_state
-            .sim_runtime
-            .runtime()
-            .map(|runtime| runtime.simulation.session().tick());
-        // The controlled service answers the request it was sent.
-        let requests = self.requests(state, frame)?;
-        let paged = requests.iter().any(|request| {
-            matches!(request, WolServiceRequest::Chat {
-                line: WolChatLine::Page { name, text },
-                ..
-            } if String::from_utf16_lossy(name) == "Tanya"
-                && String::from_utf16_lossy(text) == "on my way")
-        });
-        ensure!(paged, "the in-match 0xCF sent no page: {requests:?}");
-        self.event(
-            frame,
-            json!({"in-match 0xCF paged at tick": self.page_tick}),
-        );
-        service_event(state, WolServiceEvent::PageResult(Ok(())));
-        service_event(
-            state,
-            WolServiceEvent::Page {
-                from: member("Tanya", MEMBER_VOICE, ""),
-                text: "Got your page.".encode_utf16().collect(),
-                ansi: false,
-            },
-        );
-        self.ingame_page_answers(state, frame)
-    }
-
-    /// The stand-in's answers in the in-match `0xCF`: the echo, the result
-    /// and its UTF-16 page back, which posts one row with no reply hint.
-    fn ingame_page_answers(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
-        use crate::app::shell_wol::page;
-        use crate::ui::pause_menu::InGameMenuState;
-        let texts: Vec<String> = page::page_dialog(state)
-            .context("the in-match 0xCF closed")?
-            .lines
-            .iter()
-            .map(|line| String::from_utf16_lossy(&line.text))
-            .collect();
-        let sent = state.csf_label("TXT_PAGESENT", "TXT_PAGESENT");
-        ensure!(
-            texts.contains(&format!("[{NICKNAME}] on my way"))
-                && texts.contains(&sent)
-                && texts.iter().any(|text| text == "(Tanya) Got your page."),
-            "the in-match 0xCF lacks the echo or the result: {texts:?}"
-        );
-        let rows: Vec<String> = state
-            .match_state
-            .match_presentation
-            .message_list
-            .messages()
-            .iter()
-            .map(|row| row.text.clone())
-            .collect();
-        let hint = state.csf_label("TXT_HOW_TO_REPLY", "TXT_HOW_TO_REPLY");
-        ensure!(
-            rows.last()
-                .is_some_and(|row| row.contains("(Tanya) Got your page."))
-                && rows.iter().filter(|row| row.contains(&hint)).count() == 1,
-            "the answer did not post one row without a hint: {rows:?}"
-        );
-        self.event(frame, json!({"in-match 0xCF lines": texts, "rows": rows}));
-        if self.target == WolTarget::IngamePageCancel {
-            let cancel = page::page_layout(state)
-                .rect_of(crate::ui::shell::modal::control::CANCEL)
-                .unwrap_or_default();
-            state.match_state.input.cursor_x = (cancel.x + cancel.w / 2) as f32;
-            state.match_state.input.cursor_y = (cancel.y + cancel.h / 2) as f32;
-            for pressed in [
-                winit::event::ElementState::Pressed,
-                winit::event::ElementState::Released,
-            ] {
-                crate::app::input::dispatch::handle_mouse_input(
-                    state,
-                    winit::event::MouseButton::Left,
-                    pressed,
-                );
-            }
-            ensure!(
-                state.match_state.match_presentation.in_game_menu == InGameMenuState::Closed
-                    && page::page_dialog(state).is_none(),
-                "Cancel did not end state 7"
+                crate::app::input::keyboard::InGameKeyEdge {
+                    physical: winit::keyboard::KeyCode::KeyU,
+                    logical: &u,
+                    unmodified: &u,
+                    location: winit::keyboard::KeyLocation::Standard,
+                    state: key_state,
+                    repeat: false,
+                    text: key_state.is_pressed().then_some("u"),
+                },
+                false,
             );
-            self.event(frame, "Cancel ended state 7");
+            ensure!(on_battlefield(state), "U opened a modal during the match");
         }
+        self.page_tick = Some(
+            state
+                .match_state
+                .sim_runtime
+                .runtime()
+                .context("the WOL match has no simulation")?
+                .simulation
+                .session()
+                .tick(),
+        );
+        self.event(frame, "U left battlefield input active");
         self.phase = WolPhase::Settle(SETTLE_FRAMES);
         Ok(())
     }
 
+    /// `0xCF` opened over `0x113` or C2: the target's name and text through
+    /// the real input routes.
     pub(super) fn page_input(
         &mut self,
         state: &mut AppState,
@@ -257,9 +175,12 @@ impl WolCapture {
         setup: bool,
     ) -> Result<()> {
         use crate::app::shell_wol::page;
-        ensure!(page::page_dialog(state).is_some(), "Page did not open 0xCF");
+        ensure!(
+            page::page_dialog(state.frontend.wol.as_ref()).is_some(),
+            "Page did not open 0xCF"
+        );
         self.event(frame, "0xCF opened");
-        let layout = page::page_layout(state);
+        let layout = page::page_layout(&state.renderer);
         let click = |state: &mut AppState, rect: RectPx| {
             if setup {
                 setup_click(state, rect);
@@ -290,7 +211,7 @@ impl WolCapture {
                 key(state, None, Some(text));
                 ensure!(
                     crate::app::shell_wol::leaf::enabled(
-                        state,
+                        &state.frontend.shell_controller,
                         crate::ui::wol_page::PAGE_DIALOG,
                         crate::ui::wol_page::SEND
                     ),
@@ -310,7 +231,8 @@ impl WolCapture {
 
     /// The test service has answered `0xCF`'s locate and page.
     pub(super) fn page_answers(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
-        let Some(page) = crate::app::shell_wol::page::page_dialog(state) else {
+        let Some(page) = crate::app::shell_wol::page::page_dialog(state.frontend.wol.as_ref())
+        else {
             bail!("0xCF closed");
         };
         let texts: Vec<String> = page
@@ -318,7 +240,7 @@ impl WolCapture {
             .iter()
             .map(|line| String::from_utf16_lossy(&line.text))
             .collect();
-        let csf = |key: &str| state.csf_label(key, key);
+        let csf = |key: &str| state.process_assets.csf_label(key, key);
         let done = match self.target {
             WolTarget::PageFindStatus => page.status == csf("TXT_FINDPAGE_NOT_ONLINE"),
             WolTarget::PageUserGone => texts.contains(&csf("TXT_PAGEUSERGONE")),
@@ -344,9 +266,9 @@ impl WolCapture {
             );
             let line = test_page_back(name);
             let transcript = if self.target == WolTarget::SetupPage {
-                setup_chat_has(state, &line)?
+                setup_chat_has(&state.frontend.multiplayer_setup, &line)?
             } else {
-                Self::chat_has(state, &line)?
+                Self::chat_has(&state.frontend.wol, &line)?
             };
             ensure!(
                 transcript,
@@ -357,7 +279,7 @@ impl WolCapture {
             frame,
             json!({"0xCF lines": texts, "status": page.status.clone()}),
         );
-        MoviesCapture::restore_neutral_pointer(state);
+        MoviesCapture::restore_neutral_pointer(&state.renderer.gpu, &mut state.match_state.input);
         if self.target == WolTarget::SetupPage {
             crate::app::input::multiplayer_setup::cursor_moved(state);
             self.settle();
@@ -435,8 +357,9 @@ impl WolCapture {
             }]),
         );
 
-        let layout = crate::app::shell_wol::lobby::layout(state);
-        let ui = &Self::lobby(state)?.ui;
+        let layout =
+            crate::app::shell_wol::lobby::layout(state.frontend.wol.as_ref(), &state.renderer.gpu);
+        let ui = &Self::lobby(&state.frontend.wol)?.ui;
         let rows = &ui.game_rows;
         ensure!(
             rows.len() == 2 && !rows[0].watch && rows[1].watch && rows[1].name == MATCH_ID,
@@ -459,16 +382,25 @@ impl WolCapture {
         // Hit the far edge of the row as well as its name. The source id
         // remains the click target even where a long visible title is clipped.
         for x in [rect.x + rect.w - 2, rect.x + 3] {
-            set_window_pointer_to_rect_center(state, RectPx::new(x, rect.y, 1, rect.h));
+            set_window_pointer_to_rect_center(
+                &state.renderer,
+                &state.frontend.screen,
+                &mut state.match_state.input,
+                RectPx::new(x, rect.y, 1, rect.h),
+            );
             App::handle_wol_mouse_move(state);
-            let ui = &Self::lobby(state)?.ui;
+            let ui = &Self::lobby(&state.frontend.wol)?.ui;
             ensure!(
                 ui.hovered() == Some(lobby_ui::GAMES)
                     && ui.row_at(lobby_ui::GAMES, x, rect.y + 1) == Some(index),
                 "the pointer missed the game row at {x}"
             );
         }
-        let help = crate::app::shell_wol::lobby::status_help(state);
+        let help = crate::app::shell_wol::lobby::status_help(
+            &state.frontend,
+            &state.match_state.input,
+            &state.process_assets,
+        );
         let (size, seats, limit, capacity_key) = if watch {
             (2, 1, 8, "VERA:LobbyWatchCapacity")
         } else {
@@ -499,22 +431,24 @@ impl WolCapture {
     }
 
     pub(super) fn hover_settle(&mut self, state: &mut AppState) {
-        MoviesCapture::restore_neutral_pointer(state);
+        MoviesCapture::restore_neutral_pointer(&state.renderer.gpu, &mut state.match_state.input);
         App::handle_wol_mouse_move(state);
         self.settle();
     }
 
     /// Once the local loader reports 100, the controlled guest finishes too.
-    pub(super) fn complete_peer_loading(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
-        let reports = state
-            .match_state
-            .session
-            .take_network_loading_progress_reports();
+    pub(super) fn complete_peer_loading(
+        &mut self,
+        frontend: &mut FrontendState,
+        session: &mut MatchSession,
+        frame: u32,
+    ) -> Result<()> {
+        let reports = session.take_network_loading_progress_reports();
         if !reports.contains(&100) {
             return Ok(());
         }
         ensure!(
-            crate::app::loading::pump::accept_network_loading_progress(state, 1, 100),
+            crate::app::loading::pump::accept_network_loading_progress(frontend, session, 1, 100),
             "controlled guest completion was refused"
         );
         self.route.push(json!({"frame": frame,
@@ -549,7 +483,7 @@ impl WolCapture {
         match target {
             WolTarget::ModernForgotPassword => {
                 account_type(state, &["Player"]);
-                let (login, ui) = login_mut(state)?;
+                let (login, ui) = login_mut(&mut state.frontend)?;
                 let form = login.account.as_mut().context("Forgot Password")?;
                 ensure!(
                     matches!(
@@ -570,7 +504,7 @@ impl WolCapture {
                 account_type(state, &["Player", "player@example.com", PASSWORD, PASSWORD]);
                 self.event(frame, "Create Account filled in");
                 if target == WolTarget::ModernAccountCode {
-                    let (login, ui) = login_mut(state)?;
+                    let (login, ui) = login_mut(&mut state.frontend)?;
                     let form = login.account.as_mut().context("Create Account")?;
                     ensure!(
                         matches!(form.activate(ui, FORM_OK), Some(AccountFormAction::Send(_)))
@@ -583,7 +517,7 @@ impl WolCapture {
                 }
             }
         }
-        let (login, ui) = login_mut(state)?;
+        let (login, ui) = login_mut(&mut state.frontend)?;
         let form = login.account.as_ref().context("account popup")?;
         ensure!(
             form.ok_enabled(ui),

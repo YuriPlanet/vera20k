@@ -131,7 +131,7 @@ fn invalid_grid_dependencies_fail_before_mutation() {
             .is_err()
     );
     assert_eq!(sim.state_hash(), before);
-    sim.resolved_terrain = map;
+    *sim.resolved_terrain = map;
 }
 
 #[test]
@@ -280,8 +280,8 @@ fn real_garrison_append_and_complete_ejection_refresh_the_existing_building_cach
             .cached_spatial_threat(),
         Some(7)
     );
-    assert!(sim.apply_command_with_overlays(
-        None,
+    assert!((sim.apply_command_with_overlays(
+        crate::sim::command::CommandSender::Player(None),
         "Americans",
         &crate::sim::command::Command::CaptureBuilding {
             engineer_id: passenger,
@@ -290,7 +290,7 @@ fn real_garrison_append_and_complete_ejection_refresh_the_existing_building_cach
         &rules,
         Some(&registry),
         &mut crate::sim::world::FrameEffects::default(),
-    ));
+    )).is_ok());
     let grid = sim.path_grid_snapshot().unwrap();
     for _ in 0..64 {
         sim.advance_tick(&[], Some(&rules), Some(&grid), Some(&registry), 67);
@@ -486,6 +486,29 @@ fn threat_receivers_ask_their_own_ally_masks() {
             interner.resolve(owner)
         );
     }
+}
+
+/// The presentation copy keeps every House body under its key, in the
+/// registration order a draw reads (`Houses::order`), even though the bodies
+/// clone on the worker pool.
+#[test]
+fn the_presentation_copy_carries_every_house_in_registration_order() {
+    let mut sim = Simulation::new();
+    let allied = sim.interner.intern("Americans");
+    let soviet = sim.interner.intern("Russians");
+    // Register in the opposite order to the interned keys.
+    sim.houses
+        .register(HouseState::new(soviet, 1, None, false, 0, 20));
+    sim.houses
+        .register(HouseState::new(allied, 0, None, true, 0, 10));
+
+    let copy = sim.presentation_copy(None, None);
+
+    assert_eq!(copy.houses.order(), &[soviet, allied]);
+    assert_eq!(copy.houses.get(&allied).unwrap().side_index(), 0);
+    assert!(copy.houses.get(&allied).unwrap().is_human());
+    assert_eq!(copy.houses.get(&soviet).unwrap().side_index(), 1);
+    assert!(!copy.houses.get(&soviet).unwrap().is_human());
 }
 
 /// The presentation copy of the world holds no House threat grid, and the

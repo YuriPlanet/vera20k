@@ -438,27 +438,32 @@ impl Simulation {
         });
     }
 
-    /// Ares 3.0 1004B050 (hook 0x702216), after the Stun: a dying techno
-    /// whose `TiberiumRemains` holds (default: `TiberiumHeal=yes` and
-    /// `[General] TiberiumHealEnabled`) leaves `RandomRanged(0, 2)` Riparius
-    /// on the four orthogonal neighbours (directions 0, 2, 4, 6) and the
-    /// centre (8) of the cell of its GetCoords.
+    /// Ares 3.0 1004B050's test: whether a dying techno's `TiberiumRemains`
+    /// holds (default: `TiberiumHeal=yes` and `[General]
+    /// TiberiumHealEnabled`). The death plan reads it
+    /// (`combat::death_plan`), so its tiberium-remains bit is the one
+    /// decision.
+    pub(crate) fn ares_leaves_tiberium_remains(&self, id: u64, rules: &RuleSet) -> bool {
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return false;
+        };
+        self.object_type(entity.type_ref(), rules).is_some_and(|object| {
+            let default = object.tiberium_heal && rules.ares_tiberium_globals().heal_enabled();
+            object.techno_combat().tiberium().tiberium_remains(default)
+        })
+    }
+
+    /// Ares 3.0 1004B050 (hook 0x702216), after the Stun, for a death plan
+    /// with its tiberium-remains bit ([`Self::ares_leaves_tiberium_remains`]
+    /// natively): `RandomRanged(0, 2)` Riparius on the four orthogonal
+    /// neighbours (directions 0, 2, 4, 6) and the centre (8) of the cell of
+    /// the dying techno's GetCoords.
     pub(crate) fn ares_tiberium_remains(
         &mut self,
         id: u64,
         rules: &RuleSet,
         effects: &mut FrameEffects<'_>,
     ) {
-        let Some(entity) = self.substrate.entities.get(id) else {
-            return;
-        };
-        let Some(object) = self.object_type(entity.type_ref(), rules) else {
-            return;
-        };
-        let default = object.tiberium_heal && rules.ares_tiberium_globals().heal_enabled();
-        if !object.techno_combat().tiberium().tiberium_remains(default) {
-            return;
-        }
         let Some(center) = self.coords_cell(id) else {
             return;
         };
@@ -736,8 +741,7 @@ impl Simulation {
                 impact,
                 false,
             ) {
-                let anim = self.interner.resolve(anim).to_owned();
-                self.spawn_named_anim(rules, &anim, anim_coord, 0, 0x600, 0);
+                self.spawn_named_anim(rules, anim, anim_coord, 0, 0x600, 0);
             }
             let warhead_ref = self.interner.intern(&warhead.id);
             crate::sim::combat::world_receiver::apply_area_damage(

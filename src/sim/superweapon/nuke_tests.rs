@@ -375,6 +375,7 @@ fn wait_matches_native() {
                 false,
                 |_, _, _| None,
                 Some(&context),
+                None,
             )
             .unwrap();
 
@@ -559,8 +560,8 @@ fn launch_rules(types: &[(bool, i32, i32)]) -> RuleSet {
 /// - the Missile mission queued and commenced on it, the house's
 ///   NukeTarget (`+0x5784`) and the silo's firing type (`+0x5F8`);
 /// - the launch event at PlayAtCoord's coordinate, the target's floor
-///   included, for the app's sound and line
-///   (`sound_dispatch::launch_lines_match_native`).
+///   included. The app compares the siren and the launch and Ready lines
+///   in `nuclear_silo_and_one_time_orders_announce_in_native_order`.
 ///
 /// Also compared: the common-tail recheck flag `+0x1FC`. Not compared:
 /// the player's tail (the app's, `super_selection`) and the mute row.
@@ -782,7 +783,7 @@ fn retail_nuclear_missile_rises_falls_and_strikes_its_target() {
         house.set_difficulty_for_test(crate::sim::house_state::HouseDifficulty::Hard);
     }
     sim.session.game_options_mut_for_test().super_weapons = true;
-    sim.resolved_terrain = Some(test_grid(
+    *sim.resolved_terrain = Some(test_grid(
         64,
         64,
         super::cell_receiver_tests::test_terrain_cell,
@@ -1471,7 +1472,7 @@ fn nuke_natural_retirement_boundary_snapshot_continues_once() {
     restored.restore_after_snapshot_load().unwrap();
     crate::sim::arena_fixture::flat_ground(&mut restored, &rules);
     // Same native load normalization as the live-wait save test below.
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     let frame = sim.session.binary_frame() as i32;
     sim.projectiles.restart_arm_timers_after_load(frame);
     assert_eq!(restored.state_hash(), sim.state_hash());
@@ -1528,7 +1529,7 @@ fn retail_nuke_wait_and_flash_survive_save_and_load() {
     // Align the control run to the load contract: retail's save reader
     // reinitializes the Scenario RNG, and Bullet Load restarts each bullet's
     // arm timer at the load frame (`0x0046AE9C..0x0046AEB0`).
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     let frame = sim.session.binary_frame() as i32;
     sim.projectiles.restart_arm_timers_after_load(frame);
     let wait = |sim: &Simulation| {

@@ -12,15 +12,24 @@ use super::{SnapshotMapRestoreOutput, SnapshotRestoreError, SnapshotTerrainAsset
 use crate::sim::world::Simulation;
 
 impl Simulation {
-    /// BuildingLoad453ECF invokes NoInit43B680 after the saved global Frame
-    /// has loaded. Reconstruct its independent repair Stage at the player-file
-    /// boundary, preserving mission state, radio links and internal continuations.
-    pub(super) fn reconstruct_building_repair_progress_after_player_load(&mut self) {
+    /// An ordinary player-file load re-anchors object-owned clocks after the
+    /// global Frame has been read. Internal checkpoints keep their epochs.
+    pub(super) fn restore_object_timers_after_player_load(&mut self) {
         let frame = self.session.binary_frame() as i32;
         for entity in self.substrate.entities.values_mut() {
+            // BuildingLoad453ECF calls NoInit43B680 for the independent repair Stage.
             entity
                 .mission_leaf
                 .reconstruct_building_repair_progress_after_player_load(frame);
+            if let Some(manager) = entity.capture_manager.as_mut() {
+                manager.restart_timers_after_load(frame);
+            }
+            if let Some(manager) = entity.spawn_manager.as_mut() {
+                manager.restart_timers_after_load(frame);
+            }
+            if let Some(manager) = entity.slave_manager.as_mut() {
+                manager.restart_timer_after_load(frame);
+            }
         }
     }
 
@@ -69,7 +78,7 @@ impl Simulation {
             check("object", object_id, "type", entity.type_ref())?;
             check("object", object_id, "owner", entity.owner())?;
         }
-        for (&key, house) in &self.houses {
+        for (&key, house) in &*self.houses {
             let object_id = u64::from(key.index());
             check("House", object_id, "key", key)?;
             check("House", object_id, "type", house.house_type_id())?;
@@ -104,6 +113,10 @@ impl Simulation {
     /// order.
     pub(crate) fn restore_after_snapshot_load(&mut self) -> Result<(), SnapshotRestoreError> {
         let retain_continuation = self.retains_snapshot_continuation();
+        // Wasm extension modules come back with their memory and globals;
+        // no module code runs.
+        self.restore_ext_modules()
+            .map_err(SnapshotRestoreError::ExtModule)?;
         for (_, entity) in self.substrate.entities.iter_sorted() {
             if !entity.seldom.type_facts.foundation().valid() {
                 return Err(SnapshotRestoreError::InvalidFoundation {
@@ -190,7 +203,7 @@ impl Simulation {
                 return Err(SnapshotRestoreError::InvalidInfantryDyingMark { object_id });
             }
         }
-        for (&owner, house) in &self.houses {
+        for (&owner, house) in &*self.houses {
             house.validate_scenario_name().map_err(|reason| {
                 SnapshotRestoreError::InvalidHouseScenarioName { owner, reason }
             })?;
@@ -272,7 +285,7 @@ impl Simulation {
                 });
             }
         }
-        if let Some(grid) = &self.smudge_grid {
+        if let Some(grid) = &*self.smudge_grid {
             for (object_id, object) in grid.objects() {
                 if object.object_alive() || !object.in_limbo() {
                     return Err(SnapshotRestoreError::InvalidSmudgeLifetime { object_id });

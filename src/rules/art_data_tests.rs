@@ -1627,7 +1627,7 @@ fn imageless_retail_animation_reaches_existing_gas_particle_owner() {
         .p_type_id_by_name(config.spawns_particle.as_deref().unwrap())
         .unwrap();
     let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 7);
-    sim.native_unique_ids =
+    *sim.native_unique_ids =
         Some(crate::sim::native_identity::NativeUniqueIdCursor::test_at_current_value(1000));
     sim.construct_post_load_particle_system_id(&rules);
     let count = |sim: &crate::sim::world::Simulation| {
@@ -1820,4 +1820,208 @@ fn presentation_only_anims_change_nothing_but_their_picture_down_their_chain() {
         !art.anim_presentation_only("SPARK"),
         "RandomRate draws the Scenario stream"
     );
+}
+
+/// An AnimType whose art declares `Picture=` takes the SHP header's words
+/// from the picture (docs/picture-model-art.md) and never opens its SHP; one
+/// without the key keeps its SHP even beside a same-named picture.
+#[test]
+fn a_declared_picture_stands_in_for_the_shp_header_and_only_when_declared() {
+    let root = AnimDimTestRoot::new();
+    let shp = |frames: i16| {
+        let mut header = vec![0_u8; 8];
+        header[2..4].copy_from_slice(&40_u16.to_le_bytes());
+        header[4..6].copy_from_slice(&50_u16.to_le_bytes());
+        header[6..8].copy_from_slice(&frames.to_le_bytes());
+        header
+    };
+    std::fs::write(root.path().join("BOOM.SHP"), shp(4)).unwrap();
+    std::fs::write(root.path().join("PLAIN.SHP"), shp(4)).unwrap();
+    let picture = crate::assets::picture_file::test_picture(8, 8, Some(12));
+    std::fs::write(root.path().join("PLAIN.png"), &picture).unwrap();
+    // BOOM: 12 frames of a 2x 60x30 canvas, each drawing a 40x20 block, so
+    // its middle frame draws 20x10 game pixels, as an SHP frame stores its
+    // own rectangle.
+    let block = ([0, 0, 40, 20], 0b10, vec![255; 40 * 20 * 4]);
+    let boom = crate::assets::picture_file::test_webp([120, 60], &vec![block; 12]);
+    std::fs::write(root.path().join("boom.webp"), &boom).unwrap();
+    let assets = crate::assets::asset_manager::AssetManager::from_loose_root_for_test(root.path());
+    let mut art = ArtRegistry::from_ini(&IniFile::from_str(
+        "[BOOM]\nPicture=boom.png\nPictureSize=60,30\nShadow=yes\nCrater=yes\n\
+         [PLAIN]\nShadow=yes\nCrater=yes\n",
+    ));
+    art.bind_scheduler_anim_assets(
+        &["BOOM".into(), "PLAIN".into()],
+        &assets,
+        "TEM",
+        "TEMPERATE",
+    );
+    art.populate_anim_frame_dims(&assets, "TEM", "TEMPERATE");
+
+    let boom = art.anim_runtime_config("BOOM").unwrap();
+    assert_eq!(boom.raw_shp_frame_count, Some(12), "the APNG's frames");
+    assert_eq!((boom.end, boom.loop_end), (6, 6), "Shadow=yes halves them");
+    assert_eq!(boom.middle_frame, Some(6));
+    assert_eq!(boom.raw_shp_height, Some(30), "PictureSize= height");
+    let boom = art.get("BOOM").unwrap();
+    assert_eq!((boom.frame_width, boom.frame_height), (20, 10));
+
+    let plain = art.anim_runtime_config("PLAIN").unwrap();
+    assert_eq!(plain.raw_shp_frame_count, Some(4), "the SHP, not PLAIN.png");
+    assert_eq!(plain.raw_shp_height, Some(50));
+}
+
+/// A `Picture=NAME.png` that an art pack ships as `NAME.webp` takes the
+/// WebP's frames and size and names the WebP; with both there the PNG wins
+/// (docs/picture-model-art.md, "Files").
+#[test]
+fn a_png_picture_falls_back_to_its_webp_twin() {
+    let root = AnimDimTestRoot::new();
+    let frame = |value: u8| ([0, 0, 4, 2], 0b10, vec![value; 4 * 2 * 4]);
+    let webp = crate::assets::picture_file::test_webp([4, 2], &[frame(1), frame(2), frame(3)]);
+    std::fs::write(root.path().join("boom.webp"), &webp).unwrap();
+    std::fs::write(root.path().join("both.webp"), &webp).unwrap();
+    let png = crate::assets::picture_file::test_picture(8, 6, Some(5));
+    std::fs::write(root.path().join("both.png"), &png).unwrap();
+    let assets = crate::assets::asset_manager::AssetManager::from_loose_root_for_test(root.path());
+    let art = ArtRegistry::from_ini(&IniFile::from_str(
+        "[BOOM]\nPicture=boom.png\n[BOTH]\nPicture=both.png\n",
+    ));
+    let facts = |section: &str| {
+        // A section of only `Picture=` is no art body to the simulation
+        // (`sim_art_section`); its declaration is still found.
+        let (_, decl) = art.resolve_declared_picture(section, section).unwrap();
+        let decl = decl.clone();
+        let facts = art
+            .picture_header(section, &decl, &assets, "TEMPERATE")
+            .unwrap();
+        (facts.file, facts.frames, facts.size)
+    };
+    assert_eq!(facts("BOOM"), ("boom.webp".to_owned(), 3, [4, 2]));
+    assert_eq!(facts("BOTH"), ("both.png".to_owned(), 5, [8, 6]));
+}
+
+/// A refused `PictureSize=` and a missing picture each become one line for
+/// the player (`art_problems`), however often the art is read or the picture
+/// looked up (docs/picture-model-art.md, "Keys").
+#[test]
+fn bad_picture_art_reports_one_line_per_problem() {
+    let root = AnimDimTestRoot::new();
+    let assets = crate::assets::asset_manager::AssetManager::from_loose_root_for_test(root.path());
+    let ini = IniFile::from_str("[PMNOTICE]\nPicture=pmnotice.png\nPictureSize=0,30\n");
+    let art = ArtRegistry::from_ini(&ini);
+    let _read_again = ArtRegistry::from_ini(&ini);
+    let decl = art
+        .resolve_declared_picture("PMNOTICE", "")
+        .unwrap()
+        .1
+        .clone();
+    assert_eq!(decl.size, None, "the refused size");
+    for _ in 0..2 {
+        assert!(
+            art.picture_header("PMNOTICE", &decl, &assets, "TEMPERATE")
+                .is_none()
+        );
+    }
+
+    let lines: Vec<String> = crate::rules::art_problems::lines()
+        .into_iter()
+        .filter(|line| line.starts_with("[PMNOTICE]"))
+        .collect();
+    assert_eq!(
+        lines,
+        [
+            "[PMNOTICE] PictureSize=: needs two sizes from 1 to 4096; \
+             the picture's own size is used.",
+            "[PMNOTICE] Picture=pmnotice.png: the file is not found; it draws nothing.",
+        ]
+    );
+}
+
+/// Retail art declares no picture, so every retail image keeps its SHP path
+/// and nothing looks for a picture (docs/picture-model-art.md, "Off"); its
+/// room CRC and multiplayer digest are those of the whole file.
+#[test]
+fn retail_art_declares_no_picture() {
+    let Some(ini) = crate::rules::retail_ini_fixture::retail_ini("artmd.ini") else {
+        eprintln!("SKIPPED: retail artmd.ini is absent");
+        return;
+    };
+    assert_eq!(art_native_crc(&ini), ini.native_crc());
+    assert_eq!(art_multiplayer_digest(&ini), ini.multiplayer_digest());
+    let art = ArtRegistry::from_ini(&ini);
+    assert!(art.iter_entries().count() > 1000, "the retail art loaded");
+    let declared: Vec<&str> = art
+        .iter_entries()
+        .filter(|(_, entry)| entry.picture.is_some())
+        .map(|(name, _)| name)
+        .collect();
+    assert!(declared.is_empty(), "{declared:?}");
+}
+
+/// VERA's drawing keys (`VERA_ART_KEYS`) do not count in the art INI's
+/// multiplayer digest, its room CRC or the art part's differing sections,
+/// nor does a section they leave empty; any other change still counts.
+#[test]
+fn the_art_digest_leaves_out_veras_drawing_keys() {
+    let retail = IniFile::from_str("[GI]\nSequence=GISequence\n[EMPTY]\n");
+    let pack = IniFile::from_str(
+        "[GI]\nPicture=GI.png\nSequence=GISequence\nPictureSize=40,50\n\
+         [EMPTY]\n[APMUZZLE]\nPicture=APMUZZLE.png\n\
+         [HTNK]\nModel=HTNK.glb\nModelSize=256\nModelVoxels=24,12\n\
+         CameoPicture=a.png\nAltCameoPicture=b.png\n",
+    );
+    assert_eq!(
+        art_multiplayer_digest(&pack),
+        art_multiplayer_digest(&retail)
+    );
+    assert_eq!(art_native_crc(&pack), retail.native_crc());
+    assert_ne!(pack.native_crc(), retail.native_crc());
+    assert_ne!(pack.multiplayer_digest(), retail.multiplayer_digest());
+    assert!(
+        pack.differing_sections_without(&retail, VERA_ART_KEYS)
+            .is_empty()
+    );
+    let changed = IniFile::from_str("[GI]\nPicture=GI.png\nSequence=Other\n[EMPTY]\n");
+    assert_ne!(
+        art_multiplayer_digest(&changed),
+        art_multiplayer_digest(&retail)
+    );
+    assert_ne!(art_native_crc(&changed), retail.native_crc());
+}
+
+/// A section with only VERA's drawing keys is no art section to the
+/// simulation: the AnimType sweep does not read it as its ART body, and the
+/// art registry's lookups do not find it, while its picture still draws.
+#[test]
+fn a_section_of_only_veras_drawing_keys_is_no_art_body() {
+    use crate::rules::{native_processing::RulesLayerStack, ruleset::RuleSet};
+    let rules_ini = IniFile::from_str("[General]\nMetallicDebris=APMUZZLE,PLAIN\n");
+    let art_ini = IniFile::from_str(
+        "[APMUZZLE]\nPicture=APMUZZLE.png\n[PLAIN]\nRate=1\n[SIZED]\nPictureSize=30,20\n",
+    );
+    let processed = RulesLayerStack::new(rules_ini)
+        .process_with_fixed_art(&art_ini)
+        .unwrap();
+    let rules = RuleSet::from_processed_rules(&processed).unwrap();
+    let read: Vec<_> = rules
+        .anim_type_art_read_states()
+        .iter()
+        .map(|(name, read)| (name.as_str(), *read))
+        .collect();
+    assert_eq!(read, [("APMUZZLE", false), ("PLAIN", true)]);
+    assert!(sim_art_section(&art_ini, "APMUZZLE").is_none());
+    assert!(sim_art_section(&art_ini, "PLAIN").is_some());
+
+    let art = ArtRegistry::from_ini(&art_ini);
+    assert!(art.get("APMUZZLE").is_none(), "no metadata entry");
+    assert!(art.declares_picture("APMUZZLE"));
+    assert_eq!(
+        art.resolve_declared_picture("APMUZZLE", "")
+            .map(|(section, decl)| (section, decl.file.as_str())),
+        Some(("APMUZZLE", "APMUZZLE.png"))
+    );
+    // It still sizes interface art (`PictureSizes::Art`).
+    assert!(art.get("SIZED").is_none());
+    assert_eq!(art.picture_size("SIZED"), Some([30, 20]));
 }

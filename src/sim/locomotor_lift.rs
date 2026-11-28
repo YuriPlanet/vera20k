@@ -179,12 +179,14 @@ impl LocomotorLift {
     /// Install a fixture's held object.
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_target_for_test(&mut self, target: Option<u64>) {
+        crate::sim::game_entity::NameNote::fixture();
         self.target = target;
     }
 
     /// Install a fixture's holder.
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_source_for_test(&mut self, source: Option<u64>) {
+        crate::sim::game_entity::NameNote::fixture();
         self.source = source;
     }
 }
@@ -253,6 +255,7 @@ impl DropCredit {
     /// Install a fixture's dropping Magnetron.
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_manipulated_by_for_test(&mut self, manipulated_by: Option<u64>) {
+        crate::sim::game_entity::NameNote::fixture();
         self.manipulated_by = manipulated_by;
     }
 
@@ -525,8 +528,12 @@ impl Simulation {
         if !installed {
             return;
         }
+        // The holder and the held object are names the pointer-expiry
+        // index reads.
+        let _ = entity.note_names();
         entity.lift.source = Some(firer);
         if let Some(firer) = self.substrate.entities.get_mut(firer) {
+            let _ = firer.note_names();
             firer.lift.target = Some(target);
         }
         if let Err(error) = self.assign_destination_represented(
@@ -629,6 +636,8 @@ impl Simulation {
                 if let Some(entity) = self.substrate.entities.get_mut(held) {
                     entity.crash.raise();
                     entity.seldom.drop_credit.being_manipulated = true;
+                    // A name the pointer-expiry index reads.
+                    let _ = entity.note_names();
                     entity.seldom.drop_credit.manipulated_by = Some(firer);
                     entity.seldom.drop_credit.warped_by_house = Some(firer_house);
                 }
@@ -874,6 +883,8 @@ impl Simulation {
                     &mut self.sound_events,
                 );
             }
+            // Wasm module `Crushed` on the victim, before its kill.
+            self.raise_module_crushed(rules, effects, victim, id);
             let mut context = UninitContext::new(rules).with_effects(effects);
             if !self.record_manipulated_kill(victim, id, context.reborrow()) {
                 self.record_the_kill(

@@ -15,12 +15,18 @@
 //! `GUIMoveInSound` (stock `MenuSlideIn`); the end cue `ShellButtonSlideSound` is
 //! empty in stock rules.
 
+use crate::app::match_runtime::state::MatchState;
+use crate::app::renderer_state::RendererState;
+use crate::app::state::PlatformState;
+use crate::audio::sfx::SfxPlayer;
 use crate::util::time::{Duration, Instant};
 
 use crate::app::AppState;
 use crate::ui::shell::descriptor::DialogResourceId;
 use crate::ui::shell::menu_page::MenuPageSpec;
 
+use crate::app::frontend::state::FrontendState;
+use crate::render::gpu::GpuContext;
 pub(crate) use crate::ui::shell::slide::{
     ColumnDraw, PanelArt, ShellFrameWave, SlideColumn, WaveDirection,
 };
@@ -161,27 +167,38 @@ impl ShellSlideKind {
             },
             |page| page.stacked.len() as u32,
         );
-        crate::ui::shell::slide::SlideDialogSpec {
+        let mut column = crate::ui::shell::slide::SlideDialogSpec {
             top_buttons,
             // The online lobby keeps the warning monitor for its top panel.
             top_panel: spec.top_panel && page.is_none_or(crate::ui::wol_lobby::keeps_top_panel),
             ..spec
         }
-        .column(rows)
+        .column(rows);
+        if self == Self::MainMenu {
+            column.button_above_back = crate::ui::main_menu_shell::HAS_EDITION_SWITCH;
+        }
+        column
     }
 }
 
 /// A new wave of `kind` in `direction`, on the right-panel tile rows of the
 /// current surface (`[0x00B0FA20]`).
-fn new_wave(state: &AppState, kind: ShellSlideKind, direction: WaveDirection) -> ShellFrameWave {
+fn new_wave(
+    gpu: &GpuContext,
+    frontend: &FrontendState,
+    kind: ShellSlideKind,
+    direction: WaveDirection,
+) -> ShellFrameWave {
     // A fitted shell paints the scaled 800x600 column, so its slide must use
     // the authored 9 tile rows even when the live window is too short for
     // `right_panel_rects(window)` to reach the same count. Retail 640/800
     // keep the live window's own rows, but for Options where they are too
     // few for its column: that page is fitted there too.
-    let config = &state.renderer.gpu.config;
+    let config = &gpu.config;
     let (width, height) = (config.width as i32, config.height as i32);
-    let fitted = crate::app::frontend::shell_layout::fills_window(state)
+    let fitted = crate::app::frontend::shell_layout::fills_window(gpu)
+        || (kind == ShellSlideKind::MainMenu
+            && !crate::ui::main_menu_shell::retail_column_fits(width, height))
         || (kind == ShellSlideKind::Options
             && !crate::ui::main_menu_dialogs::options::shell::retail_column_fits(width, height));
     let (width, height) = if fitted {
@@ -195,7 +212,7 @@ fn new_wave(state: &AppState, kind: ShellSlideKind, direction: WaveDirection) ->
     let rows = crate::ui::shell::geom::right_panel_rects(width, height)
         .tile_count
         .max(1) as u32;
-    let page = state.frontend.wol.as_ref().and_then(|visit| match kind {
+    let page = frontend.wol.as_ref().and_then(|visit| match kind {
         ShellSlideKind::WolWelcome => Some(&crate::ui::wol_shell::WOL_WELCOME_PAGE),
         ShellSlideKind::WolLogin => Some(visit.login()?.policy.page_spec()),
         ShellSlideKind::WolLobby => Some(visit.lobby()?.ui.page_spec()),
@@ -203,7 +220,7 @@ fn new_wave(state: &AppState, kind: ShellSlideKind, direction: WaveDirection) ->
     });
     let mut column = kind.column(rows, page);
     if kind == ShellSlideKind::Options
-        && let Some(dialog) = state.frontend.options_dialog.as_ref()
+        && let Some(dialog) = frontend.options_dialog.as_ref()
         && let Some((top_buttons, button_above_back)) =
             crate::ui::main_menu_dialogs::options::shell::launcher_slide_column(dialog.category())
     {
@@ -260,23 +277,24 @@ pub(crate) enum ShellExitStart {
 /// steadily shown dialog slides out: one still sliding in, or one that is not
 /// the showing dialog, returns its result at once.
 pub(crate) fn begin_shell_exit(
-    state: &mut AppState,
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &MatchState,
     kind: ShellSlideKind,
     network_start: bool,
     then: ShellExitThen,
 ) -> ShellExitStart {
-    if state.frontend.shell_exit.is_some() {
+    if frontend.shell_exit.is_some() {
         return ShellExitStart::AlreadyLeaving;
     }
-    if current_shell_slide_target(state) != Some(kind)
-        || state.frontend.shell_slide_active_shell != Some(kind)
-        || state.frontend.shell_first_paint_slide.is_some()
-        || exits_in_place(kind)
+    if current_shell_slide_target(frontend, match_state) != Some(kind)
+        || frontend.shell_slide_active_shell != Some(kind)
+        || frontend.shell_first_paint_slide.is_some()
     {
         return ShellExitStart::Immediate(then);
     }
-    state.frontend.shell_exit = Some(ShellExit {
-        wave: new_wave(state, kind, WaveDirection::SlideOut),
+    frontend.shell_exit = Some(ShellExit {
+        wave: new_wave(&renderer.gpu, frontend, kind, WaveDirection::SlideOut),
         kind,
         network_start,
         then,
@@ -303,14 +321,21 @@ impl ShellExit {
 /// has been shown. A dialog that stopped showing while it slid out (another
 /// route replaced it, such as a game loaded from an overlay panel) takes its
 /// result with it.
-pub(crate) fn advance_shell_exit(state: &mut AppState, now: Instant) -> Option<ShellExitThen> {
-    let kind = state.frontend.shell_exit.as_ref()?.kind;
-    if current_shell_slide_target(state) != Some(kind) {
-        state.frontend.shell_exit = None;
+pub(crate) fn advance_shell_exit(
+    platform: &PlatformState,
+    frontend: &mut FrontendState,
+    match_state: &MatchState,
+    sfx_player: &mut Option<SfxPlayer>,
+    now: Instant,
+) -> Option<ShellExitThen> {
+    let kind = frontend.shell_exit.as_ref()?.kind;
+    if current_shell_slide_target(frontend, match_state) != Some(kind) {
+        frontend.shell_exit = None;
         return None;
     }
-    let hidden_online_start = crate::app::App::online_start_runs_while_hidden(state);
-    let exit = state.frontend.shell_exit.as_mut()?;
+    let hidden_online_start =
+        crate::app::App::online_start_runs_while_hidden(platform, match_state);
+    let exit = frontend.shell_exit.as_mut()?;
     if !exit.advance(now, hidden_online_start) {
         return None;
     }
@@ -318,27 +343,30 @@ pub(crate) fn advance_shell_exit(state: &mut AppState, now: Instant) -> Option<S
         // The last slide-out frame stays on screen while the voice plays.
         let completed_at = *exit.completed_at.get_or_insert(now);
         if now < completed_at + CAMPAIGN_VOICE_WAIT
-            && crate::app::App::campaign_voice_playing(state)
+            && crate::app::App::campaign_voice_playing(sfx_player)
         {
             return None;
         }
     }
-    state.frontend.shell_exit.take().map(|exit| exit.then)
+    frontend.shell_exit.take().map(|exit| exit.then)
 }
 
 /// The teardown slide of `kind` while it runs.
-pub(crate) fn shell_exit_wave(state: &AppState, kind: ShellSlideKind) -> Option<&ShellFrameWave> {
-    state
-        .frontend
-        .shell_exit
+pub(crate) fn shell_exit_wave(
+    shell_exit: &Option<crate::app::frontend::shell_transition::ShellExit>,
+    kind: ShellSlideKind,
+) -> Option<&ShellFrameWave> {
+    shell_exit
         .as_ref()
         .filter(|exit| exit.kind == kind)
         .map(|exit| &exit.wave)
 }
 
 /// Shell capture only: keep the running teardown slide at its current tick.
-pub(crate) fn hold_shell_exit_for_capture(state: &mut AppState) {
-    if let Some(exit) = state.frontend.shell_exit.as_mut() {
+pub(crate) fn hold_shell_exit_for_capture(
+    shell_exit: &mut Option<crate::app::frontend::shell_transition::ShellExit>,
+) {
+    if let Some(exit) = shell_exit.as_mut() {
         exit.wave.hold_for_capture();
     }
 }
@@ -348,46 +376,22 @@ pub(crate) fn hold_shell_exit_for_capture(state: &mut AppState) {
 /// no static timer is delivered (`0x006071E0` sleeps without dispatching).
 /// Both slides belong to the showing dialog: an entry slide is armed for the
 /// current target and an exit is dropped once its dialog stops showing.
-pub(crate) fn shell_slide_running(state: &AppState) -> bool {
-    state.frontend.shell_first_paint_slide.is_some() || state.frontend.shell_exit.is_some()
-}
-
-/// Whether `to` opens in place of `from`, as a page of VERA's Options window
-/// replaces another: Options `0xD5` and its Keyboard page `0xA3`, in either
-/// direction ([`exits_in_place`] has the matching exits). Retail slides
-/// `0xD5` out before `0xA3` (`0x0055FD06`) and `0xA3` out before the new
-/// `0xD5` (`0x005FBEF0`); VERA's Options window is its own layout, so such
-/// an entry arms no slide and plays no cue, and the page's statics start at
-/// once as a slide's SHOW completion would start them.
-fn moves_in_place(from: Option<ShellSlideKind>, to: ShellSlideKind) -> bool {
-    matches!(
-        (from, to),
-        (Some(ShellSlideKind::Options), ShellSlideKind::Keyboard)
-            | (Some(ShellSlideKind::Keyboard), ShellSlideKind::Options)
-    )
-}
-
-/// Whether leaving `kind` opens its next dialog in place ([`moves_in_place`]):
-/// the front-end Keyboard page, whose Back and Cancel both rebuild Options.
-/// Options' own Keyboard button commits at once from its owner
-/// (`App::commit_launcher_options_result`).
-fn exits_in_place(kind: ShellSlideKind) -> bool {
-    kind == ShellSlideKind::Keyboard
+pub(crate) fn shell_slide_running(frontend: &FrontendState) -> bool {
+    frontend.shell_first_paint_slide.is_some() || frontend.shell_exit.is_some()
 }
 
 /// Forget the destroyed/recreated 0xE2 dialog instance at an actual route
 /// boundary, even when the destination never reaches a paint, so a collapsed
 /// 0xE2 -> 0x100 -> Back round trip makes a fresh 0xE2 entry edge (new
 /// statics, new slide) instead of inheriting the old terminal title.
-pub(crate) fn invalidate_main_menu_dialog_instance(state: &mut AppState) {
-    state.frontend.shell_slide_active_shell = None;
-    state.frontend.shell_first_paint_slide = None;
+pub(crate) fn invalidate_main_menu_dialog_instance(frontend: &mut FrontendState) {
+    frontend.shell_slide_active_shell = None;
+    frontend.shell_first_paint_slide = None;
     // A new 0xE2 starts with no press or hover: its status line stays empty
     // until a hover message arrives from the real cursor position. The
     // controller's 0xE2 instance is cleared wherever it sits, under a message
     // box included.
-    state
-        .frontend
+    frontend
         .shell_controller
         .restart_instance(crate::ui::main_menu_shell::MAIN_MENU_DIALOG);
 }
@@ -397,66 +401,98 @@ pub(crate) fn invalidate_main_menu_dialog_instance(state: &mut AppState) {
 /// advances one 30 ms tick when due; once every tick has been shown the
 /// dialog's SHOW completion runs, so this frame already paints the steady
 /// dialog. Returns the dialog whose slide-in completed.
-pub(crate) fn drive_shell_entry(state: &mut AppState, now: Instant) -> Option<ShellSlideKind> {
-    let target = current_shell_slide_target(state);
-    let previous = state.frontend.shell_slide_active_shell;
+pub(crate) fn drive_shell_entry(
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &MatchState,
+    process_assets: &crate::app::process_assets::ProcessAssets,
+    sfx_player: &mut Option<crate::audio::sfx::SfxPlayer>,
+    now: Instant,
+) -> Option<ShellSlideKind> {
+    let target = current_shell_slide_target(frontend, match_state);
+    let previous = frontend.shell_slide_active_shell;
     if target != previous {
-        state.frontend.shell_slide_active_shell = target;
-        state.frontend.shell_first_paint_slide = None;
+        frontend.shell_slide_active_shell = target;
+        frontend.shell_first_paint_slide = None;
         if let Some(kind) = target {
             // A new dialog instance creates new statics: 0x71C at frame 0
             // with its timer unarmed (0x0060A982), hidden 0x694 and 0x695.
-            let frontend = &mut state.frontend;
             frontend.shell_monitor = Default::default();
             frontend.shell_page_title.reset();
             frontend.shell_status_line.reset();
-            // A page that opens in place of the other arms no slide: its
-            // statics start now, as the SHOW completion would start them.
-            if moves_in_place(previous, kind) {
-                show_completion(state, kind, now);
-                return Some(kind);
-            }
-            let wave = new_wave(state, kind, WaveDirection::SlideIn);
-            state.frontend.shell_first_paint_slide = Some(wave);
-            crate::app::App::play_shell_slide_in_sound(state);
+            let wave = new_wave(&renderer.gpu, frontend, kind, WaveDirection::SlideIn);
+            frontend.shell_first_paint_slide = Some(wave);
+            crate::app::App::play_shell_slide_in_sound(
+                frontend,
+                match_state,
+                process_assets,
+                sfx_player,
+            );
         }
     }
     let kind = target?;
-    let wave = state.frontend.shell_first_paint_slide.as_mut()?;
+    let wave = frontend.shell_first_paint_slide.as_mut()?;
     wave.advance(now);
     if !wave.is_complete() {
         return None;
     }
-    state.frontend.shell_first_paint_slide = None;
+    frontend.shell_first_paint_slide = None;
     // The slide-in's end cue precedes its SHOW completion (`0x00607F59`).
-    crate::app::App::play_shell_slide_completion_sound(state);
-    show_completion(state, kind, now);
+    crate::app::App::play_shell_slide_completion_sound(
+        frontend,
+        match_state,
+        process_assets,
+        sfx_player,
+    );
+    show_completion(
+        renderer,
+        frontend,
+        match_state,
+        process_assets,
+        sfx_player,
+        kind,
+        now,
+    );
     Some(kind)
 }
 
 /// The dialog's SHOW completion (`0x4EC -> 0x0060AA60`): its kind-1 statics
 /// start (or repaint, for a dialog shown again).
-fn show_completion(state: &mut AppState, kind: ShellSlideKind, now: Instant) {
+fn show_completion(
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &MatchState,
+    process_assets: &crate::app::process_assets::ProcessAssets,
+    sfx_player: &mut Option<crate::audio::sfx::SfxPlayer>,
+    kind: ShellSlideKind,
+    now: Instant,
+) {
     use crate::app::frontend::menu_page_render::active_page_title_text;
     let heading = match kind {
         // `0x102`'s own statics start, or repaint when the dialog shows again
         // after Choose Map.
         ShellSlideKind::NetworkSetup(_) => {
-            return crate::app::shell_network_setup::show_statics(state);
+            return crate::app::shell_network_setup::show_statics(
+                renderer,
+                frontend,
+                match_state,
+                process_assets,
+            );
         }
         ShellSlideKind::Skirmish => {
             let (title, game_type, map_label) =
                 crate::app::frontend::skirmish_shell_render::skirmish_right_panel_label_strings(
-                    state,
+                    frontend,
+                    process_assets,
                 );
-            let statics = &mut state.frontend.skirmish_shell_state.statics;
+            let statics = &mut frontend.skirmish_shell_state.statics;
             return statics.show(&title, &game_type, &map_label, now);
         }
         // Choose Map `0x6B`, whose statics outlive the random-map dialog, and
         // `0x105`, whose statics outlive the seed browser.
         ShellSlideKind::ChooseMap | ShellSlideKind::RandomMap => {
-            let title = active_page_title_text(state, kind);
-            let shell = &mut state.frontend.skirmish_shell_state;
+            let title = active_page_title_text(frontend, process_assets, kind);
+            let shell = &mut frontend.skirmish_shell_state;
             let statics = if kind == ShellSlideKind::ChooseMap {
                 shell
                     .choose_map_modal
@@ -477,56 +513,75 @@ fn show_completion(state: &mut AppState, kind: ShellSlideKind, now: Instant) {
         // static and, after playing ScoreAnimSound, the 0x72B kind-4 timer.
         // 0xBC7's (`0x00470D30`) plays no sound.
         ShellSlideKind::CampaignScore | ShellSlideKind::CampaignEnd => {
-            let frames = state
-                .frontend
+            let frames = frontend
                 .campaign_score_art
                 .as_ref()
                 .and_then(|art| art.scra.as_ref())
                 .map_or(0, |strip| strip.frames.len());
-            let sound = state
-                .rules()
+            let sound = crate::app::state::active_rules(frontend, match_state)
                 .filter(|_| kind == ShellSlideKind::CampaignScore)
                 .and_then(|rules| rules.general.score_anim_sound())
                 .map(str::to_owned);
-            if let Some(page) = state.frontend.campaign_score_page.as_mut() {
+            if let Some(page) = frontend.campaign_score_page.as_mut() {
                 page.start_presentation(frames, now);
             }
             if let Some(sound) = sound {
-                crate::app::App::play_campaign_score_anim_sound(state, Some(&sound));
+                crate::app::App::play_campaign_score_anim_sound(
+                    process_assets,
+                    sfx_player,
+                    Some(&sound),
+                );
             }
             return;
         }
         // 0x108's SHOW completion starts every kind-1 static at once: the
         // heading, the status line and the 47 table texts.
         ShellSlideKind::Score => {
-            if let Some(page) = state.frontend.score_page.as_mut() {
+            if let Some(page) = frontend.score_page.as_mut() {
                 page.statics.start(now);
             }
-            crate::app::frontend::score_shell_render::score_title_text(state)
+            crate::app::frontend::score_shell_render::score_title_text(
+                &frontend.score_page,
+                process_assets,
+            )
         }
         ShellSlideKind::MainMenu => {
-            crate::app::frontend::main_menu_shell_render::main_menu_title_text(state).into_owned()
+            crate::app::frontend::main_menu_shell_render::main_menu_title_text(process_assets)
+                .into_owned()
         }
-        _ => active_page_title_text(state, kind),
+        _ => active_page_title_text(frontend, process_assets, kind),
     };
     // The family pages' heading 0x694 and status line 0x695.
-    let frontend = &mut state.frontend;
     frontend.shell_page_title.set_text(&heading, now);
     frontend.shell_page_title.start(now);
     frontend.shell_status_line.start(now);
 }
 
-pub(crate) fn blocks_shell_input(state: &AppState) -> bool {
+pub(crate) fn blocks_shell_input(frontend: &FrontendState) -> bool {
     // The graceful quit cascade also freezes shell input (the original processes
     // no input during its blocking teardown), so a stray click can't re-enter the
     // menu mid-fade.
     #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
-    if state.frontend.browser_exit_pending {
+    if frontend.browser_exit_pending {
         return true;
     }
-    state.frontend.quit_cascade.is_some()
-        || shell_slide_running(state)
-        || external_menu_wait(state).is_some()
+    frontend.quit_cascade.is_some()
+        || shell_slide_running(frontend)
+        || external_menu_wait(frontend).is_some()
+        || update_check_holds_main_menu(frontend)
+}
+
+/// VERA: the main menu's first entry waits for the startup update check
+/// (`updater::Updater::holds_main_menu`), over the empty backdrop and taking
+/// no shell input, so a newer release is offered before the menu slides in.
+pub(crate) fn update_check_holds_main_menu(frontend: &FrontendState) -> bool {
+    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+    let held = frontend.updater.holds_main_menu();
+    // The browser build has no updater.
+    #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+    let held = false;
+    held && frontend.screen == crate::ui::game_screen::GameScreen::MainMenu
+        && frontend.shell_route == crate::app::shell_route::ShellRoute::MainMenu
 }
 
 /// Why an external network launch (docs/spawn.md) is at the main menu. It
@@ -539,12 +594,12 @@ pub(crate) enum ExternalMenuWait {
     Reporting,
 }
 
-pub(crate) fn external_menu_wait(state: &AppState) -> Option<ExternalMenuWait> {
-    let external = state.frontend.screen == crate::ui::game_screen::GameScreen::MainMenu
-        && (crate::app::shell_wol::spawned_visit(state)
-            || crate::app::shell_network_setup::external(state));
+pub(crate) fn external_menu_wait(frontend: &FrontendState) -> Option<ExternalMenuWait> {
+    let external = frontend.screen == crate::ui::game_screen::GameScreen::MainMenu
+        && (crate::app::shell_wol::spawned_visit(frontend.wol.as_ref())
+            || crate::app::shell_network_setup::external(frontend.network_setup_protocol.as_ref()));
     external.then(|| {
-        if state.frontend.external_progress.match_started.is_none() {
+        if frontend.external_progress.match_started.is_none() {
             ExternalMenuWait::Joining
         } else {
             ExternalMenuWait::Reporting
@@ -557,17 +612,19 @@ pub(crate) fn external_menu_wait(state: &AppState) -> Option<ExternalMenuWait> {
 /// Utility-card / skirmish-setup paths are not native shell dialogs and do not
 /// slide. Returns the score dialog on the result screen and `None` off the
 /// shell screens.
-pub(crate) fn current_shell_slide_target(state: &AppState) -> Option<ShellSlideKind> {
+pub(crate) fn current_shell_slide_target(
+    frontend: &FrontendState,
+    match_state: &MatchState,
+) -> Option<ShellSlideKind> {
     use crate::ui::game_screen::GameScreen;
     // The score dialog runs after the game, before the shell resumes.
-    if matches!(state.frontend.screen, GameScreen::MissionResult { .. }) {
-        if crate::app::App::score_shell_active(state) {
+    if matches!(frontend.screen, GameScreen::MissionResult { .. }) {
+        if crate::app::App::score_shell_active(frontend) {
             return Some(ShellSlideKind::Score);
         }
-        if crate::app::App::campaign_score_shell_active(state) {
+        if crate::app::App::campaign_score_shell_active(frontend) {
             return Some(ShellSlideKind::campaign_score(
-                state
-                    .frontend
+                frontend
                     .campaign_score_page
                     .as_ref()
                     .map_or_else(Default::default, |page| page.dialog),
@@ -575,12 +632,12 @@ pub(crate) fn current_shell_slide_target(state: &AppState) -> Option<ShellSlideK
         }
         return None;
     }
-    if state.frontend.screen != GameScreen::MainMenu {
+    if frontend.screen != GameScreen::MainMenu {
         return None;
     }
     // Play_Movie and Show_Credits run after their source dialog is destroyed
     // and before the next one exists: no shell dialog is showing.
-    if state.frontend.fullscreen_movie.is_some() || state.frontend.credits_roll.is_some() {
+    if frontend.fullscreen_movie.is_some() || frontend.credits_roll.is_some() {
         return None;
     }
     // Options `0xD5` runs after `0xE2` is destroyed (state 5,
@@ -589,37 +646,36 @@ pub(crate) fn current_shell_slide_target(state: &AppState) -> Option<ShellSlideK
     // slides like it. The Exit confirmation (state 6) and the quit after it
     // (state 7) run without a family dialog. VERA's Esc menu asks over the
     // showing dialog, which stays the target.
-    if let Some(dialog) = state.frontend.keyboard_dialog.as_ref() {
+    if let Some(dialog) = frontend.keyboard_dialog.as_ref() {
         return (dialog.parent == crate::ui::shell::keyboard::KeyboardParent::Launcher)
             .then_some(ShellSlideKind::Keyboard);
     }
-    if state
-        .frontend
+    if frontend
         .shell_message_box
         .as_ref()
         .is_some_and(|message_box| !message_box.keeps_page())
-        || state.frontend.quit_cascade.is_some()
+        || frontend.quit_cascade.is_some()
     {
         return None;
     }
     // Only the native page slides; the assetless fallback does not.
-    if state.frontend.options_dialog.is_some() {
-        return crate::app::App::native_launcher_options_active(state)
+    if frontend.options_dialog.is_some() {
+        return crate::app::App::native_launcher_options_active(frontend)
             .then_some(ShellSlideKind::Options);
     }
     use crate::app::shell_route::ShellRoute;
     use crate::app::shell_wol::WolPage;
-    let shell = &state.frontend.skirmish_shell_state;
-    let wol_page = state.frontend.wol.as_ref().map(|visit| &visit.page);
-    Some(match state.frontend.shell_route {
+    let shell = &frontend.skirmish_shell_state;
+    let wol_page = frontend.wol.as_ref().map(|visit| &visit.page);
+    Some(match frontend.shell_route {
         ShellRoute::Skirmish => skirmish_slide_target(shell)?,
         ShellRoute::LanLobby => ShellSlideKind::LanLobby,
         ShellRoute::NetworkSetup if shell.choose_map_modal.is_some() => {
             skirmish_slide_target(shell)?
         }
-        ShellRoute::NetworkSetup => {
-            ShellSlideKind::NetworkSetup(crate::app::shell_network_setup::dialog(state))
-        }
+        ShellRoute::NetworkSetup => ShellSlideKind::NetworkSetup(
+            crate::app::shell_network_setup::dialog(frontend, match_state),
+        ),
         ShellRoute::SinglePlayer => ShellSlideKind::SinglePlayer,
         ShellRoute::MoviesAndCredits => ShellSlideKind::MoviesAndCredits,
         ShellRoute::MovieList => ShellSlideKind::MovieList,
@@ -644,8 +700,7 @@ pub(crate) fn current_shell_slide_target(state: &AppState) -> Option<ShellSlideK
             Some(WolPage::Options(page)) if page.sound.is_some() => ShellSlideKind::WolSoundOptions,
             Some(WolPage::Options(_)) => ShellSlideKind::WolOptions,
             // 0x113 is created hidden and hidden again for a game join.
-            _ if !state
-                .frontend
+            _ if !frontend
                 .wol
                 .as_ref()
                 .and_then(|visit| visit.lobby())
@@ -655,7 +710,10 @@ pub(crate) fn current_shell_slide_target(state: &AppState) -> Option<ShellSlideK
             }
             _ => ShellSlideKind::WolLobby,
         },
-        ShellRoute::MainMenu if state.frontend.main_menu_shell_error.is_none() => {
+        ShellRoute::MainMenu
+            if frontend.main_menu_shell_error.is_none()
+                && !update_check_holds_main_menu(frontend) =>
+        {
             ShellSlideKind::MainMenu
         }
         ShellRoute::MainMenu => return None,
@@ -682,20 +740,6 @@ pub(crate) fn skirmish_slide_target(
 mod tests {
     use super::*;
     use std::time::Duration;
-
-    /// Options and its Keyboard page replace each other in place, as the
-    /// pages of VERA's Options window do, while every other way into either
-    /// still slides.
-    #[test]
-    fn options_and_its_keyboard_page_replace_each_other_without_a_slide() {
-        use ShellSlideKind::{Keyboard, MainMenu, Options};
-        assert!(moves_in_place(Some(Options), Keyboard));
-        assert!(moves_in_place(Some(Keyboard), Options));
-        assert!(!moves_in_place(Some(MainMenu), Options));
-        assert!(!moves_in_place(None, Keyboard));
-        assert!(exits_in_place(Keyboard));
-        assert!(!exits_in_place(Options));
-    }
 
     #[test]
     fn campaign_score_owns_dialog_0x103() {
@@ -839,6 +883,10 @@ mod tests {
         };
         assert_eq!(top_and_bottom(ShellSlideKind::MainMenu), (5, true, false));
         assert_eq!(
+            ShellSlideKind::MainMenu.column(9, None).button_above_back,
+            crate::ui::main_menu_shell::HAS_EDITION_SWITCH
+        );
+        assert_eq!(
             top_and_bottom(ShellSlideKind::Mods),
             (
                 crate::ui::mods_shell::PAGE.stacked.len() as u32,
@@ -880,7 +928,7 @@ mod tests {
         let column = ShellSlideKind::WolLobby.column(9, Some(lobby.page_spec()));
         assert_eq!(
             (column.top_buttons, column.bottom_button, column.top_panel),
-            (6, true, false)
+            (5, true, false)
         );
         assert_eq!(ShellSlideKind::WolWelcome.column(9, None).top_buttons, 6);
         let retail = ShellSlideKind::WolLobby.column(9, None);

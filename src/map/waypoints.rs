@@ -17,7 +17,7 @@
 
 use std::collections::HashMap;
 
-use crate::rules::ini_parser::IniFile;
+use crate::rules::ini_parser::{IniFile, IniSection};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Waypoint {
@@ -67,12 +67,42 @@ pub fn skirmish_player_capacity(ini: &IniFile) -> i32 {
     }
 }
 
-/// Number of waypoint slots the scenario reader walks: keys `"0"` through
-/// `"701"`. Anything numbered at or above this is never read.
-pub(crate) const WAYPOINT_SLOT_COUNT: u32 = 0x2BE;
+const WAYPOINT_RADIX: u32 = 26;
 
-/// Portable bound for Scenario's fixed waypoint allocation. Native raw
-/// accessors outside it address other fields rather than a waypoint.
+/// The stock scenario reader handles the slots represented by A through ZZ.
+const STOCK_WAYPOINT_SLOT_COUNT: u32 = WAYPOINT_RADIX + WAYPOINT_RADIX.pow(2);
+
+/// VERA extends map-authored waypoints through ZZZ.
+pub(crate) const WAYPOINT_SLOT_COUNT: u32 = STOCK_WAYPOINT_SLOT_COUNT + WAYPOINT_RADIX.pow(3);
+
+/// Decode an alphabetic waypoint shared by trigger actions and TeamTypes.
+/// `FUN_00763690` reads up to two ASCII letters from the start of the token.
+/// VERA recognizes exact three-letter labels even with surrounding whitespace;
+/// all other tokens go through the original prefix reader unchanged.
+pub fn decode_waypoint_token(token: &str) -> Option<u32> {
+    if let &[a, b, c] = token.trim_ascii().as_bytes()
+        && let (Some(a), Some(b), Some(c)) =
+            (waypoint_letter(a), waypoint_letter(b), waypoint_letter(c))
+    {
+        return Some(STOCK_WAYPOINT_SLOT_COUNT + (a * WAYPOINT_RADIX + b) * WAYPOINT_RADIX + c);
+    }
+
+    let mut bytes = token.bytes();
+    let a = waypoint_letter(bytes.next()?)?;
+    Some(
+        bytes
+            .next()
+            .and_then(waypoint_letter)
+            .map_or(a, |b| (a + 1) * WAYPOINT_RADIX + b),
+    )
+}
+
+fn waypoint_letter(byte: u8) -> Option<u32> {
+    let digit = u32::from(byte.to_ascii_uppercase().checked_sub(b'A')?);
+    (digit < WAYPOINT_RADIX).then_some(digit)
+}
+
+/// Portable bound for Scenario's waypoint allocation.
 pub(crate) fn waypoint_slot(index: i32) -> Option<u32> {
     u32::try_from(index)
         .ok()
@@ -97,39 +127,62 @@ pub(crate) fn waypoint_is_defined(
 /// `NewINIFormat` branch and no legacy 128-column packing on this path.
 const WAYPOINT_COORD_FACTOR: i32 = 1000;
 
+fn read_waypoint(section: &IniSection, index: u32, key: &str) -> Option<Waypoint> {
+    let coords = section.read_int(key, 0);
+    // Zero is unset; other values are unpacked as signed coordinates and wrap
+    // to the low 16 bits, including negative inputs to the native reader.
+    (coords != 0).then(|| Waypoint {
+        index,
+        rx: (coords % WAYPOINT_COORD_FACTOR) as u16,
+        ry: (coords / WAYPOINT_COORD_FACTOR) as u16,
+    })
+}
+
+fn read_numbered_waypoints(section: &IniSection, end: u32) -> impl Iterator<Item = Waypoint> + '_ {
+    (0..end).filter_map(move |index| read_waypoint(section, index, &index.to_string()))
+}
+
 /// Parse `[Waypoints]` into a waypoint index -> cell mapping.
 ///
-/// Mirrors the scenario waypoint reader: it walks the fixed slot range
-/// `0..701`, reads each key as an integer defaulting to zero, treats zero as
-/// "unset" rather than as cell `(0, 0)`, and unpacks every other value as
-/// signed `rx = value % 1000` / `ry = value / 1000`, then stores both results
-/// as their raw wrapped 16-bit halves.
+/// Mirrors ScenarioClass__Read_Waypoints @ 0x0068BDC0. Stock slots are
+/// generated as canonical decimal keys. VERA's extension also reads authored
+/// numeric keys through the ZZZ slot.
 pub fn parse_waypoints(ini: &IniFile) -> HashMap<u32, Waypoint> {
     let Some(section) = ini.section("Waypoints") else {
         return HashMap::new();
     };
 
-    let mut waypoints: HashMap<u32, Waypoint> = HashMap::new();
-    for index in 0..WAYPOINT_SLOT_COUNT {
-        let key = index.to_string();
-        // ScenarioClass__Read_Waypoints @ 0x0068BDC0 calls
-        // CCINIClass__ReadInt with each generated canonical decimal key and
-        // default zero. Reuse the shared native integer reader for `$FF`/`FFh`,
-        // leading atoi, and i32 wrapping.
-        let coords = section.read_int(&key, 0);
-        // Zero is the reader's "no waypoint here" value, not the origin cell.
-        if coords == 0 {
-            continue;
+    // The extension stays sparse. It examines authored decimal keys above the
+    // stock range instead of probing every one of the 17,576 extra slots.
+    let extended = section.keys().filter_map(|key| {
+        // As with generated stock keys, leading zeroes and signs are not keys.
+        if !matches!(key.as_bytes().first(), Some(b'1'..=b'9')) {
+            return None;
         }
-        let rx = (coords % WAYPOINT_COORD_FACTOR) as u16;
-        let ry = (coords / WAYPOINT_COORD_FACTOR) as u16;
-        waypoints.insert(index, Waypoint { index, rx, ry });
-    }
+        let index = key.parse::<u32>().ok()?;
+        if (STOCK_WAYPOINT_SLOT_COUNT..WAYPOINT_SLOT_COUNT).contains(&index) {
+            read_waypoint(section, index, key)
+        } else {
+            None
+        }
+    });
+    let waypoints: HashMap<_, _> = read_numbered_waypoints(section, STOCK_WAYPOINT_SLOT_COUNT)
+        .chain(extended)
+        .map(|waypoint| (waypoint.index, waypoint))
+        .collect();
 
     if !waypoints.is_empty() {
         log::info!("Parsed {} waypoints from [Waypoints]", waypoints.len());
     }
     waypoints
+}
+
+/// Read only the admitted start slots for the map selector, in slot order.
+pub(crate) fn read_multiplayer_start_waypoints(ini: &IniFile, capacity: i32) -> Vec<Waypoint> {
+    let Some(section) = ini.section("Waypoints") else {
+        return Vec::new();
+    };
+    read_numbered_waypoints(section, multiplayer_start_slot_limit(capacity)).collect()
 }
 
 /// Return multiplayer start waypoints (0..=7) sorted by waypoint index.

@@ -88,15 +88,21 @@ pub fn build_sw_sidebar_art(
         (SwSidebarArtKind::Bottom, art.bottom_pcx.as_deref()),
     ]
     .into_iter()
-    .filter_map(|(kind, name)| Some((kind, load_pcx(asset_manager, name?)?)))
+    .filter_map(|(kind, name)| Some((kind, load_pcx(asset_manager, rules, name?)?)))
     .collect();
     let (texture, entries) = pack_atlas(gpu, batch, images)?;
     log::info!("SuperWeaponSidebar art atlas: {} entries", entries.len());
     Some(SwSidebarArt { texture, entries })
 }
 
-fn load_pcx(asset_manager: &AssetManager, name: &str) -> Option<NativePcxImage> {
-    let image = crate::render::sidebar_cameo_atlas::load_native_pcx(asset_manager, name);
+/// The PCX, or VERA's `NAME.png` beside it (docs/picture-model-art.md,
+/// "Interface art").
+fn load_pcx(asset_manager: &AssetManager, rules: &RuleSet, name: &str) -> Option<NativePcxImage> {
+    let image = crate::render::sidebar_cameo_atlas::load_interface_pcx(
+        asset_manager,
+        name,
+        crate::render::interface_picture::PictureSizes::Art(rules.art()),
+    );
     if image.is_none() {
         log::warn!("SuperWeaponSidebar PCX {name} did not load");
     }

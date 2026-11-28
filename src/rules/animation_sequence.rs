@@ -386,11 +386,13 @@ impl SequenceSet {
         }
     }
 
+    /// gamemd's 42 records, plus Firestorm's Struggle as record 42 when the
+    /// type's art gives it frames.
     pub(crate) fn set_infantry_actions(
         &mut self,
         actions: Vec<crate::rules::infantry_sequence::InfantrySequenceEntry>,
     ) {
-        assert_eq!(actions.len(), 42);
+        assert!(matches!(actions.len(), 42 | 43));
         self.infantry_actions = Some(actions);
     }
 

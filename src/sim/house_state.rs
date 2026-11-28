@@ -14,6 +14,7 @@ use crate::sim::cell_rect::PlayfieldBounds;
 use crate::sim::economy::Economy;
 use crate::sim::houses::Houses;
 use crate::sim::intern::InternedId;
+use crate::sim::snapshot::retired_driver::{Discarded, SavedDriverPolicy};
 use crate::sim::timer::CdTimer;
 use crate::util::native_x87::{NativeF32Bits, NativeF64Bits};
 
@@ -648,12 +649,12 @@ pub struct HouseState {
     /// mutable `HouseClass` bytes — gamemd keeps this one on the house type.
     #[serde(default)]
     multiplay_passive: bool,
-    /// This house's decisions are owned by an external command-layer
-    /// controller, so the native AI rungs stand down for it. Not a gamemd
-    /// port: native `HouseClass` has no such byte, and it stays out of the
-    /// retail-state concerns entirely.
-    #[serde(default)]
-    command_driven: bool,
+    // Keep the two historical wire fields for player saves. They occupy
+    // no live house storage and always write the ordinary computer defaults.
+    #[serde(default, rename = "command_driven")]
+    retired_controller: Discarded<bool>,
+    #[serde(default, rename = "driver_policy")]
+    retired_policy: Discarded<SavedDriverPolicy>,
     /// The HouseType's `Cost*Mult=`, projected from the rules at creation.
     /// Like `multiplay_passive` it is the type's, so it is left out of the
     /// state hash.
@@ -1206,18 +1207,6 @@ impl HouseState {
     /// native write changes it later.
     pub fn make_multiplay_passive(&mut self) {
         self.multiplay_passive = true;
-    }
-
-    /// Hand this house's decisions to an external command-layer controller:
-    /// the native AI rungs stand down for it (no in-tree caller sets this).
-    pub fn make_command_driven(&mut self) {
-        self.command_driven = true;
-    }
-
-    /// The external-driver-ownership flag (see the field's docs): the native
-    /// AI rungs read this to stand down for a command-layer-driven house.
-    pub const fn command_driven(&self) -> bool {
-        self.command_driven
     }
 
     /// Player control (`+0x1ED`): Create_Houses (`688109..10F`) grants it to
@@ -1900,10 +1889,11 @@ impl HouseState {
             .unwrap_or(0)
     }
 
-    /// Explicit retained Counter prior for native execution comparisons.
+    /// Explicit retained Counter prior, for the tests that need one.
     /// Normal construction/acquisition must never call this fixture adapter.
+    /// Client tests reach it through the `test-support` feature.
     #[cfg(any(test, feature = "test-support"))]
-    pub(crate) fn set_produced_count_for_test(
+    pub fn set_produced_count_for_test(
         &mut self,
         category: ObjectCategory,
         type_index: i32,
@@ -3043,7 +3033,8 @@ impl HouseState {
             difficulty_biases: HouseDifficultyBiases::default(),
             personality: None,
             multiplay_passive: false,
-            command_driven: false,
+            retired_controller: Default::default(),
+            retired_policy: Default::default(),
             country_cost_mults: CountryCostMults::default(),
             country_speed_mults: CountrySpeedMults::default(),
             is_defeated: false,
@@ -3133,11 +3124,14 @@ impl crate::sim::world::Simulation {
 /// These count admitted callbacks, including building captures, rather than
 /// objects currently absent from the map. The counters wrap on increment.
 ///
-/// gamemd sums per-victim-house kill tables into one number for the Kills
-/// column, adds its two loss counters for the Losses column, and sums its four
-/// per-category built counters for the Built column. Totals are all the screen
-/// ever reads, so these are kept as totals. Its Score column reads
-/// [`Economy::score`](crate::sim::economy::Economy::score).
+/// gamemd sums two 20-entry per-victim kill tables (`+0x53E4`, `+0x5438`)
+/// into one number for the Kills column, adds its two loss counters for the
+/// Losses column, and sums its four per-category built counters for the Built
+/// column. Totals are all the screen ever reads, so these are kept as totals.
+/// VERA accumulates that total by category instead, so a victim House past
+/// gamemd's 20 entries still counts as a kill rather than landing in the
+/// attacker's loss counter or past the table (`0x7030AC`, `0x70164D`). Its
+/// Score column reads [`Economy::score`](crate::sim::economy::Economy::score).
 #[derive(
     Debug, Clone, Copy, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize,
 )]
@@ -3194,35 +3188,25 @@ impl MatchStatistics {
         *counter = counter.wrapping_add(1);
     }
 
-    /// RecordKill7030AC/7031DC and ChangeOwner70164D increment the kill table
-    /// entry at the victim owner's House index (`TechnoClass::
-    /// GetOwningHouseIndex @ 0x006F9DB0`, read before ChangeOwner's owner
-    /// store). The score screen (`0x005C996D..0x005C9995`) and the Diplomacy
-    /// dialog (`0x00658330`) sum the 20 entries of each table, so the totals
-    /// kept here are those sums. Each table is followed by its loss counter:
-    /// units `+0x53E4`, UnitsLost `+0x5434`, buildings `+0x5438`,
-    /// BuildingsLost `+0x5488`, then WhoLastHurtMe `+0x548C`, so a kill of
-    /// House 20 or later lands past its table. Both callers share its
-    /// mutation and numeric semantics.
-    pub(crate) fn record_kill(
-        &mut self,
-        category: crate::map::entities::EntityCategory,
-        victim_house: Option<usize>,
-    ) {
-        let structure = category == crate::map::entities::EntityCategory::Structure;
-        let base = if structure { 21 } else { 0 };
-        let counter = match victim_house.map_or(base, |house| house.saturating_add(base)) {
-            0..=19 => &mut self.units_killed,
-            20 => &mut self.units_lost,
-            21..=40 => &mut self.buildings_killed,
-            41 => &mut self.buildings_lost,
-            // WhoLastHurtMe, which only `HouseClass::ComputeCRC @ 0x0050300D`
-            // reads, the sync check VERA's state hash replaces. RESIDUAL: a
-            // 23rd House, beyond gamemd's 8 players and retail's 14
-            // countries (a map adding countries, or a VERA game with more
-            // players), would reach ComputedBaseCenter (`+0x5490`) and later
-            // AI fields; VERA leaves them.
-            _ => return,
+    /// RecordKill `0x007030AC`/`0x007031DC` and ChangeOwner `0x0070164D`
+    /// credit one kill (`TechnoClass::GetOwningHouseIndex @ 0x006F9DB0` is
+    /// read before ChangeOwner's owner store). Native indexes a 20-entry
+    /// per-victim table whose neighbour is the loss counter: units `+0x53E4`,
+    /// UnitsLost `+0x5434`, buildings `+0x5438`, BuildingsLost `+0x5488`, so
+    /// a victim of House 20 or later writes past the tables the score screen
+    /// (`0x005C996D`) and Diplomacy dialog (`0x00658330`) actually sum. VERA
+    /// seats more Houses than the native table holds, so it credits the
+    /// category total directly: within Houses 0..19 this is the same sum, and
+    /// every later victim is counted once instead of corrupting a loss count
+    /// or being dropped. Deliberate difference: gamemd on a map with more
+    /// than 20 Houses books a House-20 kill as the killer's UnitsLost, which
+    /// trigger events 15 and 16 read; VERA does not reproduce that write past
+    /// the table. Both callers share this mutation.
+    pub(crate) fn record_kill(&mut self, category: crate::map::entities::EntityCategory) {
+        let counter = if category == crate::map::entities::EntityCategory::Structure {
+            &mut self.buildings_killed
+        } else {
+            &mut self.units_killed
         };
         *counter = counter.wrapping_add(1);
     }
@@ -3249,7 +3233,7 @@ impl MatchStatistics {
         }
     }
 
-    /// Score-screen and Diplomacy Kills: the sum of both kill tables.
+    /// Score-screen and Diplomacy Kills: units + buildings destroyed.
     pub const fn kills(&self) -> u32 {
         self.units_killed.wrapping_add(self.buildings_killed)
     }

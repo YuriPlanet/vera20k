@@ -71,10 +71,7 @@ pub fn log_banner(log_path: Option<&Path>) {
         "Phobos support compiled in: {}",
         crate::rules::PHOBOS_ENABLED
     );
-    log::info!(
-        "NPatch support compiled in: {}",
-        crate::rules::NPATCH_ENABLED
-    );
+    log::info!("NPatch support: in every build, from the game's data");
     log::info!("VeraX support compiled in: {}", crate::rules::VERAX_ENABLED);
     log::info!("NPBUG support compiled in: {}", crate::rules::NPBUG_ENABLED);
     if let Some(path) = log_path {
@@ -164,12 +161,27 @@ pub fn run_with_loop(
     run_with(launch_mode, app_bundle, event_loop, None)
 }
 
+/// [`run_with_loop`] for a launcher that hands over an entry, such as an
+/// Android shortcut's `mod:<folder>` (`app::mods::launch_entry_switch`).
+pub fn run_with_loop_and_entry(
+    launch_mode: AppLaunchMode,
+    app_bundle: bool,
+    event_loop: EventLoop<()>,
+    entry: Option<&str>,
+) -> Result<i32> {
+    let mod_switch = entry.and_then(crate::app::mods::launch_entry_switch);
+    run_with(launch_mode, app_bundle, event_loop, mod_switch)
+}
+
 fn run_with(
     launch_mode: AppLaunchMode,
     app_bundle: bool,
     event_loop: EventLoop<()>,
     mut mod_switch: Option<crate::app::mods::ModSwitch>,
 ) -> Result<i32> {
+    // Android reaches here without `main`; on the desktop `main` started it.
+    #[cfg(not(target_arch = "wasm32"))]
+    crate::sim::parallel::start_worker_pool();
     // A player started this launch and may have no console: a failure that
     // ends it shows a message box. Spawn, replay and capture launches come
     // from other programs and scripts, which must never wait on a click.
@@ -282,23 +294,19 @@ fn run_with(
     Ok(spawn_status.unwrap_or(0))
 }
 
-/// Flush the log, report a failed launch, and turn the status into the process
-/// result. A non-zero `-SPAWN` status ends the process here. A copy that shut
-/// down in the ordinary way starts the next one when the Mods page asked.
-pub fn finish(result: Result<i32>) -> Result<()> {
+/// Flush the log, report a failed launch, and return the process status.
+/// A successful shutdown starts the next copy when the Mods page asked.
+pub fn finish(result: Result<i32>) -> Result<i32> {
     if let Err(error) = &result {
         log::error!("VERA20k exited with an error: {error:#}");
     }
     log::logger().flush();
-    // docs/spawn.md: a `-SPAWN` launch exits with its result's status.
-    match result? {
-        0 => {
-            // The Mods page's restart: this copy is done, the next may start.
-            crate::app::restart::start_again_if_asked();
-            Ok(())
-        }
-        status => std::process::exit(status),
+    let status = result?;
+    if status == 0 {
+        crate::app::restart::start_again_if_asked();
     }
+    // docs/spawn.md: a `-SPAWN` launch exits with its result's status.
+    Ok(status)
 }
 
 #[cfg(all(test, tests_root))]

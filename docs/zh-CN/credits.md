@@ -8,10 +8,12 @@ lang: zh-CN
 
 [English](../) · **简体中文**
 
-VERA20K 用 Rust 独立重写游戏行为，不加载 `Ares.dll`、`Phobos.dll` 或
+VERA20K 用 Rust 独立重写游戏行为，不加载 `Ares.dll`、`Phobos.dll`、`Kratos.dll` 或
 NPatch 补丁，也不重新分发其二进制。除可选的 Ares 支持外，不导入它们的源码：
 Ares 支持的部分代码译自 Ares 源码（包括从 Ares 3.0 DLL 还原的源码），并保留
-Ares 的版权声明和[许可证](https://github.com/YuriPlanet/vera20k/blob/main/LICENSES/Ares.txt)。
+Ares 的版权声明和[许可证](https://github.com/YuriPlanet/vera20k/blob/main/LICENSES/Ares.txt)；
+Kratos 支持已移植的部分按 Kratos 源码的行为翻译，保留其署名和
+[许可证](https://github.com/YuriPlanet/vera20k/blob/main/LICENSES/KratosPP.txt)。
 下面按扩展列出已支持的实现及其原作者；技术细节和原生地址见对应的英文文档。
 
 ## Ares
@@ -100,6 +102,27 @@ VERA20K 已移植功能对应的原作者：
 VERA 的 include/inheritance 遍历还改编自 baixiong443 的 ra2-mono `IniFile`，
 见 [INI 指令文档](../ini-directives.md#source-mapping)。
 
+## Kratos PP
+
+技术细节：[Kratos 扩展支持](kratos.md)
+
+This product includes software developed by the Kratos Authors.
+
+Kratos PP 是 **DPKratos** 的 C++ 移植版，作者 **双杀步枪（ChrisLv_CN）**，策划
+**艾木魁（M.Kenosis）**，测试 **冲冲冲14782**。它构建在 **Xkein** 的
+[DynamicPatcher](https://github.com/Xkein/YRDynamicPatcher) 之上，并鸣谢 Ares 与
+Phobos 的开发者。Kratos PP 以 LGPLv3 授权
+（[许可证](https://github.com/YuriPlanet/vera20k/blob/main/LICENSES/KratosPP.txt)），
+VERA20K 的 GPLv3 组合作品保留该署名与许可证。
+
+VERA20K 用 Rust 独立实现行为，不加载 `Kratos.dll`，也不分发 Kratos 二进制；已移植的
+每个功能都按 Kratos 源码翻译，原生地址与源码路径写在对应代码旁。
+
+已移植功能对应的原作者：
+
+- 卧倒射击点（`CrawlingFLH`）— **双杀步枪（ChrisLv_CN）**，
+  `src/Ext/TechnoType/CrawlingFLH.cpp` 与 `CrawlingFLHData.h`。
+
 ## VERA20K 移植署名
 
 各扩展功能的 Rust 移植由 VERA20K 贡献者以合并的 pull request 完成；下面用
@@ -113,7 +136,7 @@ GitHub 用户名标注每个链条对应的合并 PR 作者：
   闪烁、`AllowDamageOnSelf`、`DecloakDamagedTargets`、抛射体重力、空袭
   标记颜色、AttachEffect 与暴击链、`$Include`/`$Inherits` 原生钩子；以及
   Ares 的第四 Side 默认值（SideExt）、国家展示、国家空投覆盖与国家 AI
-  电厂。
+  电厂。Kratos 的逐局开关与卧倒射击点（`CrawlingFLH`）也由他移植。
 - **zzzzzzh123** — Ares 的 opt-in 构建能力本身、EMP、水陆类型转换与
   脚本 68、自定义装甲、补充字符串表、按类型 SHP 建筑调色板、EVA 语音
   标签、通用生产前置、`FactoryOwners`、载具驾驶员与 KillDriver、扩展 IFV

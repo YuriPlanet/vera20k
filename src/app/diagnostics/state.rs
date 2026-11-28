@@ -285,23 +285,26 @@ impl DiagnosticsState {
     }
 }
 
-impl crate::app::AppState {
-    /// Read committed simulation state on demand. Trigger announcements are
-    /// posted inside exact advancement, before its receipt returns to capture;
-    /// caching the previous draw's time would timestamp them one tick early.
-    pub(crate) fn diagnostic_presentation_ms(&self) -> Option<u64> {
-        let tick = self
-            .match_state
-            .sim_runtime
-            .runtime()
-            .map_or(0, |runtime| runtime.simulation.session().tick());
-        self.diag.presentation_ms(tick)
-    }
+/// Read committed simulation state on demand. Trigger announcements are
+/// posted inside exact advancement, before its receipt returns to capture;
+/// caching the previous draw's time would timestamp them one tick early.
+pub(crate) fn diagnostic_presentation_ms(
+    diag: &DiagnosticsState,
+    match_state: &crate::app::match_runtime::state::MatchState,
+) -> Option<u64> {
+    let tick = match_state
+        .sim_runtime
+        .runtime()
+        .map_or(0, |runtime| runtime.simulation.session().tick());
+    diag.presentation_ms(tick)
+}
 
-    pub(crate) fn radar_presentation_ms(&self) -> u64 {
-        self.diagnostic_presentation_ms()
-            .unwrap_or_else(crate::app::match_runtime::frame_pacer::wall_clock_ms)
-    }
+pub(crate) fn radar_presentation_ms(
+    diag: &DiagnosticsState,
+    match_state: &crate::app::match_runtime::state::MatchState,
+) -> u64 {
+    diagnostic_presentation_ms(diag, match_state)
+        .unwrap_or_else(crate::app::match_runtime::frame_pacer::wall_clock_ms)
 }
 
 #[cfg(all(test, tests_app))]

@@ -138,6 +138,9 @@ struct NativeRulesSourceSnapshot {
     /// VERA: the player's Ares setting is Off, so no Ares key turns Ares on
     /// in a game this process loads.
     ares_keys_off: bool,
+    /// VERA: the player's Kratos setting (`AssetManager::kratos_setting`),
+    /// which decides `RuleSet::kratos` in every game this process loads.
+    kratos_setting: crate::util::kratos_launch::KratosSetting,
 }
 
 impl NativeRulesSourceSnapshot {
@@ -375,6 +378,7 @@ impl NativeRulesProcessOwner {
             PersonalRules::default(),
             crate::rules::ares_switch::ares_way(),
             false,
+            crate::util::kratos_launch::KratosSetting::Auto,
         )
     }
 
@@ -394,6 +398,7 @@ impl NativeRulesProcessOwner {
         personal_rules: PersonalRules,
         ships_ares: bool,
         ares_keys_off: bool,
+        kratos_setting: crate::util::kratos_launch::KratosSetting,
     ) -> Result<Self, RulesError> {
         let movies = crate::rules::movies::MovieRegistry::from_art(&fixed_art);
         if let Some(NativeLangRuleSource::SelectionFailed(error)) = langrule.as_ref() {
@@ -410,6 +415,7 @@ impl NativeRulesProcessOwner {
             personal_rules,
             ships_ares,
             ares_keys_off,
+            kratos_setting,
         };
         let cold_trace = sources.cold_registry()?;
         Ok(Self {
@@ -450,6 +456,7 @@ impl NativeRulesProcessOwner {
             sources.personal_rules,
             ships_ares,
             sources.ares_keys_off,
+            sources.kratos_setting,
         )
         .expect("the same sources cold-started once already")
     }
@@ -827,7 +834,10 @@ impl NativeRulesProcessOwner {
                 .langrule
                 .as_ref()
                 .and_then(|source| source.source_ini().map(IniFile::multiplayer_digest)),
-            Some(self.sources.fixed_art.multiplayer_digest()),
+            // VERA's drawing keys do not count (`art_data::VERA_ART_KEYS`).
+            Some(crate::rules::art_data::art_multiplayer_digest(
+                &self.sources.fixed_art,
+            )),
         ]
     }
 
@@ -1194,8 +1204,31 @@ impl NativeRulesProcessOwner {
         prefix: NativeScenarioRulesPrefix<'_>,
         map_rules_overrides: &IniFile,
     ) -> Result<NativeScenarioRulesLoad, RulesError> {
-        self.load_scenario_inner(prefix, map_rules_overrides, None, None::<fn(RuleSet)>)
+        self.load_scenario_inner(prefix, map_rules_overrides, None, None::<fn(RuleSet)>, None)
             .map(|(load, _)| load)
+    }
+
+    /// [`Self::load_scenario`], or with `tmcj4f` [`Self::load_scenario_with_post_map`],
+    /// running the Wasm extension modules' `on_rules` at their layers (RFC
+    /// 0001 section 2): the mod's before the map pass, the map's after it.
+    pub fn load_scenario_with_ext_rules<F, T>(
+        &mut self,
+        prefix: NativeScenarioRulesPrefix<'_>,
+        map_rules_overrides: &IniFile,
+        tmcj4f: Option<(&IniFile, F)>,
+        ext_rules: &mut dyn crate::rules::native_processing::ExtRulesHook,
+    ) -> Result<(NativeScenarioRulesLoad, Option<T>), RulesError>
+    where
+        F: FnOnce(RuleSet) -> T,
+    {
+        let (tmcj4f_rules, after_map) = tmcj4f.unzip();
+        self.load_scenario_inner(
+            prefix,
+            map_rules_overrides,
+            tmcj4f_rules,
+            after_map,
+            Some(ext_rules),
+        )
     }
 
     /// Run the post-map AI registry read before Full_Init's optional TMCJ4F
@@ -1223,6 +1256,7 @@ impl NativeRulesProcessOwner {
             map_rules_overrides,
             Some(tmcj4f_rules),
             Some(after_map),
+            None,
         )?;
         Ok((
             load,
@@ -1236,6 +1270,7 @@ impl NativeRulesProcessOwner {
         map_rules_overrides: &IniFile,
         tmcj4f_rules: Option<&IniFile>,
         after_map: Option<F>,
+        ext_rules: Option<&mut dyn crate::rules::native_processing::ExtRulesHook>,
     ) -> Result<(NativeScenarioRulesLoad, Option<T>), RulesError>
     where
         F: FnOnce(RuleSet) -> T,
@@ -1298,38 +1333,23 @@ impl NativeRulesProcessOwner {
             tmcj4f_rules,
             skip_root_color_add_and_mode,
         );
-        let process_result = match (tmcj4f_rules, after_map) {
-            (Some(_), Some(after_map)) => layers
-                .process_with_fixed_art_and_registry_state_recovering_after_map(
-                    &self.sources.fixed_art,
-                    pre_reset_state,
-                    RulesProcessContext::ScenarioReset {
-                        theater: crate::rules::object_image::ImageTheater::from_map(
-                            map_rules_overrides,
-                        ),
-                        skip_root_color_add_and_mode,
-                    },
-                    &self.sources.fixed_eva,
-                    after_map,
-                    &self.sources.fixed_sounds,
-                )
-                .map(|(processed, result)| (processed, Some(result))),
-            (None, None) => layers
-                .process_with_fixed_art_and_registry_state_recovering(
-                    &self.sources.fixed_art,
-                    pre_reset_state,
-                    RulesProcessContext::ScenarioReset {
-                        theater: crate::rules::object_image::ImageTheater::from_map(
-                            map_rules_overrides,
-                        ),
-                        skip_root_color_add_and_mode,
-                    },
-                    &self.sources.fixed_eva,
-                    &self.sources.fixed_sounds,
-                )
-                .map(|processed| (processed, None)),
-            _ => unreachable!("TMCJ4F Rules and its post-map callback are admitted together"),
-        };
+        assert_eq!(
+            tmcj4f_rules.is_some(),
+            after_map.is_some(),
+            "TMCJ4F Rules and its post-map callback are admitted together"
+        );
+        let process_result = layers.process_scenario_with_ext_rules(
+            &self.sources.fixed_art,
+            pre_reset_state,
+            RulesProcessContext::ScenarioReset {
+                theater: crate::rules::object_image::ImageTheater::from_map(map_rules_overrides),
+                skip_root_color_add_and_mode,
+            },
+            &self.sources.fixed_eva,
+            after_map,
+            &self.sources.fixed_sounds,
+            ext_rules,
+        );
         let (mut processed, after_map_result) = match process_result {
             Ok((processed, after_map_result)) => (processed, after_map_result),
             Err(failure) => {
@@ -1388,7 +1408,8 @@ impl NativeRulesProcessOwner {
     fn startup_layers(&self, langrule: Option<&IniFile>) -> RulesLayerStack {
         let mut layers = RulesLayerStack::new(self.scenario_root().into_owned())
             .with_ares_mix(self.sources.ships_ares)
-            .with_ares_keys_off(self.sources.ares_keys_off);
+            .with_ares_keys_off(self.sources.ares_keys_off)
+            .with_kratos_setting(self.sources.kratos_setting);
         if let Some(langrule) = langrule {
             layers.push(RulesLayerKind::LangRule, langrule.clone());
         }

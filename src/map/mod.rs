@@ -30,7 +30,10 @@ pub mod skirmish_scenarios;
 pub mod source;
 pub mod entities;
 pub mod events;
+// Wasm extension modules embedded in a map (RFC 0001).
+pub mod ext_module_pack;
 pub mod houses;
+pub mod installed;
 pub(crate) mod iso_tile_flood;
 pub mod lat;
 pub mod lighting;
@@ -38,6 +41,7 @@ pub mod map_export;
 pub mod map_file;
 pub mod overlay;
 pub(crate) mod overlay_mark;
+pub(crate) mod packed;
 pub mod playfield;
 pub mod preview;
 pub mod ranking;

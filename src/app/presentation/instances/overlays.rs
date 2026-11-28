@@ -9,7 +9,9 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use crate::app::AppState;
+use crate::app::frontend::state::FrontendState;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::state::PlatformState;
 use crate::map::terrain::{self, TILE_HEIGHT, TILE_WIDTH};
 use crate::render::batch::SpriteInstance;
 use crate::render::bridge_atlas::is_high_bridge_body_identity;
@@ -238,6 +240,7 @@ fn overlay_display_identity(
 /// Borrowed inputs to the one retained dynamic-effect traversal. App startup,
 /// platform windows and unrelated presentation resources are not draw inputs.
 pub(crate) struct DisplayEffectInputs<'a> {
+    pub unit_motion: Option<&'a crate::app::presentation::unit_motion::UnitMotion>,
     pub sim: &'a crate::sim::world::Simulation,
     /// The objects drawing reads (`presentation::frame`).
     pub frame: &'a crate::app::presentation::frame::PresentationFrame,
@@ -275,6 +278,8 @@ impl DisplayEffectInputs<'_> {
 /// coordinate. The point is in world screen pixels, before the camera.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct AnimDrawPoint {
+    /// SetOwnerObject's relative coordinates follow its visible vehicle.
+    owner: Option<u64>,
     pub(crate) center: [f32; 2],
     cell: (u16, u16),
     lift_px: i32,
@@ -307,11 +312,26 @@ pub(crate) fn anim_screen_point(
         lift_px += correction;
     }
     Some(AnimDrawPoint {
+        owner: anim.owner_entity(),
         center: [center_x, center_y],
         cell: (rx, ry),
         lift_px,
         drawn_coord: [anim_coord.x, anim_coord.y, anim_coord.z],
     })
+}
+
+impl AnimDrawPoint {
+    fn for_draw(
+        mut self,
+        motion: Option<&crate::app::presentation::unit_motion::UnitMotion>,
+    ) -> Self {
+        if let (Some(owner), Some(motion)) = (self.owner, motion) {
+            let [dx, dy] = motion.offset(owner);
+            self.center[0] += dx;
+            self.center[1] += dy;
+        }
+        self
+    }
 }
 
 /// The point Anim `id`'s Display encounter admits and draws it at, or `None`
@@ -399,7 +419,12 @@ fn passed_by_effect_plans_nothing(
     let id = member.id;
     if let EffectKind::Anim(_) = member.kind {
         return input.sim.anim(id).is_none_or(|anim| {
-            anim_draw_point(input.frame, anim, id, input.tactical_admission()).is_none()
+            anim_screen_point(input.frame, anim, id).is_none_or(|point| {
+                !projection_admitted(
+                    point.for_draw(input.unit_motion).center,
+                    input.tactical_admission(),
+                )
+            })
         });
     }
     let mut scratch =
@@ -458,6 +483,11 @@ pub(crate) fn build_display_effect_instances(
         // the particle builders test their point first too. So a member off
         // the view is passed by on the point its frame keeps, before any
         // store is asked.
+        let mut member = *member;
+        if let EffectKind::Anim(Some(point)) = &mut member.kind {
+            *point = point.for_draw(input.unit_motion);
+        }
+        let member = &member;
         let admitted = member
             .point()
             .is_some_and(|point| projection_admitted(point, admission));
@@ -473,6 +503,7 @@ pub(crate) fn build_display_effect_instances(
             cell: (rx, ry),
             lift_px,
             drawn_coord,
+            ..
         })) = member.kind
         else {
             plan_effect_body(
@@ -601,7 +632,9 @@ pub(crate) fn build_display_effect_instances(
         // it is not a reason to choose the compatibility material.
         let instance_scheme = remap_color.is_some()
             && !anim.use_cell_drawer()
-            && entry.is_some_and(|entry| entry.source_palette != 0);
+            && entry.is_some_and(|entry| {
+                crate::render::sprite_atlas::source_palette_indexed(entry.source_palette)
+            });
         let tint = if is_parachute || instance_scheme {
             [1.0; 3]
         } else {
@@ -1220,23 +1253,21 @@ fn terrain_object_window(
 /// High-bridge bodies and every overlay shadow come from `instances::bridges`.
 /// Low bridges (LOBRDG*) are ordinary bodies on the regular overlay atlas.
 pub(crate) fn build_overlay_instances(
-    state: &AppState,
+    platform: &PlatformState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
     sw: f32,
     sh: f32,
     bodies: &mut Vec<super::CellBody>,
     ground_objects: &mut crate::app::presentation::render::draw_plan_lowering::PlannedObjects,
     ground_order: &crate::app::presentation::render::draw_plan_lowering::NativeDisplayOrder,
 ) {
-    let atlas = match &state.match_state.match_presentation.overlay_atlas {
+    let atlas = match &match_state.match_presentation.overlay_atlas {
         Some(a) => a,
         None => return,
     };
-    let (cam_x, cam_y) = (
-        state.match_state.input.camera_x,
-        state.match_state.input.camera_y,
-    );
-    let (origin_y, world_height) = state
-        .match_state
+    let (cam_x, cam_y) = (match_state.input.camera_x, match_state.input.camera_y);
+    let (origin_y, world_height) = match_state
         .match_presentation
         .terrain_grid
         .as_ref()
@@ -1244,26 +1275,23 @@ pub(crate) fn build_overlay_instances(
         .unwrap_or((0.0, 1.0));
 
     let (viewer, fog, fog_of_war) =
-        state
-            .match_state
+        match_state
             .sim_runtime
             .presentation()
             .map_or((None, None, false), |runtime| {
                 let sim = &runtime.simulation;
-                let viewer = crate::app::input::commands::preferred_local_owner_name(state)
+                let viewer = crate::app::input::commands::preferred_local_owner_name(match_state)
                     .as_deref()
                     .and_then(|name| sim.interner().get(name));
                 (
                     viewer.filter(|_| {
-                        state.translucent_fog_enabled()
-                            && !state.match_state.sandbox_full_visibility
+                        platform.translucent_fog_enabled() && !match_state.sandbox_full_visibility
                     }),
                     Some(sim.fog()),
                     sim.session().game_options().fog_of_war,
                 )
             });
-    let terrain = state
-        .match_state
+    let terrain = match_state
         .sim_runtime
         .presentation()
         .and_then(|runtime| runtime.simulation.resolved_terrain());
@@ -1271,28 +1299,27 @@ pub(crate) fn build_overlay_instances(
     // the opaque leaf keeps the first pixel on equal Z (0x004991EA..0x004991EC),
     // so the bodies' order is part of the image.
     let window = overlay_body_window(terrain, atlas.art_extent(), [cam_x, cam_y], [sw, sh]);
-    let overlays = &state.match_state.match_presentation.overlays;
+    let overlays = &match_state.match_presentation.overlays;
     let window_entries: Vec<_> = overlays.entries_in(window).copied().collect();
     let start = bodies.len();
     let input = CellOverlayInputs {
         entries: &window_entries,
         atlas,
-        names: &state.match_state.match_presentation.overlay_names,
-        live_grid: state
-            .match_state
+        names: &match_state.match_presentation.overlay_names,
+        live_grid: match_state
             .sim_runtime
             .presentation()
             .and_then(|runtime| runtime.simulation.overlay_grid()),
-        registry: state.overlay_registry(),
-        rules: state.rules(),
-        interner: state
-            .match_state
+        registry: crate::app::state::active_overlay_registry(frontend, match_state),
+        rules: crate::app::state::active_rules(frontend, match_state),
+        interner: match_state
             .sim_runtime
             .presentation()
             .map(|runtime| runtime.simulation.interner()),
-        tiberium_types: state.rules().map(|rules| &rules.tiberium_types),
+        tiberium_types: crate::app::state::active_rules(frontend, match_state)
+            .map(|rules| &rules.tiberium_types),
         terrain,
-        lighting: state.match_state.match_presentation.lighting.grid(),
+        lighting: match_state.match_presentation.lighting.grid(),
         camera: [cam_x, cam_y],
         viewport: [sw, sh],
         origin_y,
@@ -1328,8 +1355,7 @@ pub(crate) fn build_overlay_instances(
     }
 
     // Terrain objects from [Terrain] section.
-    let Some(sim) = state
-        .match_state
+    let Some(sim) = match_state
         .sim_runtime
         .presentation()
         .map(|rt| &rt.simulation)
@@ -1384,8 +1410,7 @@ pub(crate) fn build_overlay_instances(
         let type_ref = obj.type_ref();
         let name = sim.interner().resolve(type_ref);
         let (is_animated, spawns_tiberium) = *type_flags.entry(type_ref).or_insert_with(|| {
-            let terrain_type = state
-                .rules()
+            let terrain_type = crate::app::state::active_rules(frontend, match_state)
                 .and_then(|rules| rules.terrain_object_type_case_insensitive(name));
             (
                 terrain_type.is_some_and(|terrain_type| terrain_type.is_animated),
@@ -1414,15 +1439,14 @@ pub(crate) fn build_overlay_instances(
             screen_y,
             lift_px,
         );
-        let tint: [f32; 3] = state
-            .match_state
+        let tint: [f32; 3] = match_state
             .match_presentation
             .lighting
             .grid()
             .terrain_object_tint_for_type(obj.cell(), spawns_tiberium);
         // Terrain DrawIt 0071C286..0071C304: SpawnsTiberium selects the
         // global ordinary Convert/top; ordinary trees select cell Convert/common.
-        let light_grid = state.match_state.match_presentation.lighting.grid();
+        let light_grid = match_state.match_presentation.lighting.grid();
         let palette_light = if spawns_tiberium {
             crate::render::palette_light::PaletteLight::plain(
                 53,
@@ -1525,28 +1549,23 @@ fn native_terrain_instance(
 
 /// Attach native Sonic/magnetic destination edits to retained Display parents.
 pub(crate) fn build_weapon_wave_instances(
-    state: &AppState,
+    match_state: &MatchState,
     objects: &mut crate::app::presentation::render::draw_plan_lowering::PlannedObjects,
     order: &crate::app::presentation::render::draw_plan_lowering::NativeDisplayOrder,
 ) {
-    let Some(sim) = state
-        .match_state
+    let Some(sim) = match_state
         .sim_runtime
         .presentation()
         .map(|rt| &rt.simulation)
     else {
         return;
     };
-    let observer = crate::app::input::commands::preferred_local_owner(state)
+    let observer = crate::app::input::commands::preferred_local_owner(match_state)
         .as_deref()
         .and_then(|owner| sim.interner().get(owner));
-    let camera = [
-        state.match_state.input.camera_x,
-        state.match_state.input.camera_y,
-    ]
-    .map(|value| value.floor() as i32);
-    let rules = &state
-        .match_state
+    let camera =
+        [match_state.input.camera_x, match_state.input.camera_y].map(|value| value.floor() as i32);
+    let rules = &match_state
         .sim_runtime
         .presentation()
         .expect("the wave owner's runtime")
@@ -1556,14 +1575,14 @@ pub(crate) fn build_weapon_wave_instances(
     // registers a wave's weapon (`Wave::with_ares_weapon`).
     let ares = rules.ares();
     let ares_frame = if ares {
-        let Some(frame) = state.match_state.sim_runtime.frame() else {
+        let Some(frame) = match_state.sim_runtime.frame() else {
             return;
         };
         Some(frame)
     } else {
         None
     };
-    let colors = &state.match_state.match_presentation.house_color_map;
+    let colors = &match_state.match_presentation.house_color_map;
     let blend = move |wave: &crate::sim::wave::Wave| match ares_frame {
         Some(frame) => {
             crate::app::presentation::fire_effects::ares_wave_blend(sim, frame, rules, colors, wave)
@@ -1963,6 +1982,7 @@ mod tests {
                 shp: "ruin.shp".into(),
                 body_frame: 3,
                 shadow_frame: 7,
+                picture: None,
             },
         );
         let mut interner = crate::sim::intern::StringInterner::new();

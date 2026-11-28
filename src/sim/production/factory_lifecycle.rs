@@ -20,6 +20,7 @@ use crate::map::entities::EntityCategory;
 use crate::rules::object_type::ObjectCategory;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::ai_unit_choice::UnitChoiceKind;
+use crate::sim::command::CommandRefusal;
 use crate::sim::houses::Houses;
 use crate::sim::intern::StringInterner;
 use crate::sim::intern::{InternKey, InternedId};
@@ -134,19 +135,24 @@ impl HouseFactoryAbandonment {
 /// Building Production Queue option also sets through the scenario's rules)
 /// skips both the busy refusal (`0x4FA520`) and the held-product abandon
 /// (`0x4C9C7B`), so the PRODUCE appends to the factory queue instead.
-pub fn enqueue_by_type(
+///
+/// A refusal says why (VERA, for a module's `OrderRefused`; the native
+/// receiver refuses silently): no factory is `Prerequisite`, the busy
+/// building factory and a refused append `QueueFull`, a module's
+/// `ProductionQueued` refusal `Vetoed`.
+pub fn enqueue_by_type<'k>(
     sim: &mut Simulation,
     rules: &RuleSet,
-    owner: &str,
-    type_id: &str,
+    owner: impl Into<InternKey<'k>>,
+    type_id: impl Into<InternKey<'k>>,
     effects: &mut FrameEffects<'_>,
     force: bool,
-) -> bool {
-    let Some(obj) = rules.object(type_id) else {
-        return false;
+) -> Result<(), CommandRefusal> {
+    let Some(obj) = sim.interner.key_object_type(type_id.into(), rules) else {
+        return Err(CommandRefusal::Other);
     };
     let Some(selection) = super::ProductionSelection::for_type(rules, obj) else {
-        return false;
+        return Err(CommandRefusal::Other);
     };
     enqueue_selected(sim, rules, owner, selection, effects, force)
 }
@@ -161,12 +167,12 @@ pub(crate) fn enqueue_selected<'k>(
     selection: super::ProductionSelection,
     effects: &mut FrameEffects<'_>,
     force: bool,
-) -> bool {
+) -> Result<(), CommandRefusal> {
     let Some(obj) = selection.object_type(rules) else {
-        return false;
+        return Err(CommandRefusal::Other);
     };
     let Some(category) = selection.category(rules) else {
-        return false;
+        return Err(CommandRefusal::Other);
     };
     let type_id = obj.id.as_str();
     let owner_id = sim.interner.intern_key(owner.into());
@@ -188,7 +194,7 @@ pub(crate) fn enqueue_selected<'k>(
         // House4FA45B's forced fallback alone supplies Resume(1).
         true
     } else {
-        return false;
+        return Err(CommandRefusal::Prerequisite);
     };
     let type_interned = sim.interner.intern(type_id);
     let building = obj.category == ObjectCategory::Building;
@@ -202,7 +208,7 @@ pub(crate) fn enqueue_selected<'k>(
             .view(owner_id, category)
             .is_some_and(|factory| factory.is_running())
     {
-        return false;
+        return Err(CommandRefusal::QueueFull);
     }
     if let Some((active, suspended)) = sim.production.factories().active_object(owner_id, category)
         && active == type_interned
@@ -234,7 +240,13 @@ pub(crate) fn enqueue_selected<'k>(
             category,
             type_interned,
         );
-        return true;
+        return Ok(());
+    }
+    // VERA: a Wasm module `ProductionQueued` decision may refuse a PRODUCE
+    // before StartProduction (RFC 0001 6f, `sim::ext_modules::decide`);
+    // StartNext's reissue (`force`) is already queued.
+    if !force && !sim.module_allows_production(rules, owner_id, obj) {
+        return Err(CommandRefusal::Vetoed);
     }
     let holder = FactoryHolder::House(owner_id, category);
     // Phobos `FactoryClass_QueueProduction_ForceCheckBuilding 0x4C9C7B`:
@@ -260,7 +272,7 @@ pub(crate) fn enqueue_selected<'k>(
     if outcome == EnqueueOutcome::AppendRefused {
         sim.sound_events
             .emit(SimSoundEvent::ProductionRefused { owner: owner_id });
-        return false;
+        return Err(CommandRefusal::QueueFull);
     }
     if outcome == EnqueueOutcome::Started {
         start_active_production(
@@ -273,19 +285,19 @@ pub(crate) fn enqueue_selected<'k>(
         )
         .expect("validated StartProduction type must construct one Techno");
     }
-    true
+    Ok(())
 }
 
 /// The SUSPEND event: `HouseClass::Suspend_Production @ 0x004FA910` puts the
 /// category's running build on hold.
-pub(crate) fn suspend_production(
+pub(crate) fn suspend_production<'k>(
     interner: &StringInterner,
     production: &mut ProductionState,
     session: &ScenarioSession,
-    owner: &str,
+    owner: impl Into<InternKey<'k>>,
     category: ProductionCategory,
 ) -> bool {
-    let Some(owner_id) = interner.get(owner) else {
+    let Some(owner_id) = interner.key_id(owner.into()) else {
         return false;
     };
     let frame = session.binary_frame();
@@ -420,12 +432,13 @@ pub(super) fn settle_abandoned(
     // NPSE 2.0 AbandonProduction C2EFB4..C2F06D releases the held
     // object's House before refund, even for human factories or while the
     // switch is off. Later choice cleanup keeps the Factory's own House.
-    #[cfg(feature = "npatch")]
-    if let Some((owner, category, naval)) = abandoned.entity_id.and_then(|id| {
-        let entity = sim.substrate.entities.get(id)?;
-        let ty = sim.entity_object_type(entity, rules)?;
-        Some((entity.owner(), ty.category, ty.naval))
-    }) && let Some(house) = sim.houses.get_mut(&owner)
+    if rules.npatch()
+        && let Some((owner, category, naval)) = abandoned.entity_id.and_then(|id| {
+            let entity = sim.substrate.entities.get(id)?;
+            let ty = sim.entity_object_type(entity, rules)?;
+            Some((entity.owner(), ty.category, ty.naval))
+        })
+        && let Some(house) = sim.houses.get_mut(&owner)
     {
         house.ai_production_mut().release_parallel(category, naval);
     }
@@ -450,7 +463,7 @@ pub(super) fn settle_abandoned(
         && let Some(house) = sim.houses.get_mut(&owner_id)
         && !house.is_controlled_by_human(sim.session.rule_policy())
     {
-        match UnitChoiceKind::of(category, naval) {
+        match UnitChoiceKind::of(category, naval, rules.npatch()) {
             Some(kind) => house.ai_unit_choices_mut().clear(kind),
             None => house.ai_production_mut().clear_building_choice(),
         }
@@ -584,7 +597,7 @@ fn refund_abandoned(
 /// remains the sole owner of the held object, queue and Factory lifetime.
 #[derive(Debug, Clone, Copy)]
 pub enum ProductionCancellation<'a> {
-    Type { type_id: &'a str, naval: bool },
+    Type { type_id: InternKey<'a>, naval: bool },
     Category(ProductionCategory),
     Selected(super::ProductionSelection),
 }
@@ -603,7 +616,7 @@ pub fn cancel_production_for_owner<'k>(
 ) -> bool {
     let request = match request {
         ProductionCancellation::Type { type_id, naval } => {
-            let Some(object) = rules.object(type_id) else {
+            let Some(object) = sim.interner.key_object_type(type_id, rules) else {
                 return false;
             };
             let Some(mut selection) = super::ProductionSelection::for_type(rules, object) else {
@@ -806,6 +819,8 @@ pub(in crate::sim) fn release_delivered_mobile(
             owner,
             object,
         );
+        // Wasm module `Birth` (RFC 0001 appendix 4.3).
+        sim.raise_module_birth(rules, effects, product, None);
     }
 }
 

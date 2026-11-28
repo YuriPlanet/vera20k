@@ -6,17 +6,17 @@ use super::*;
 
 impl WolCapture {
     pub(super) fn options_page(
-        state: &AppState,
+        wol: &Option<WolVisit>,
     ) -> Result<&crate::app::shell_wol::options::WolOptionsPage> {
-        match &state.frontend.wol.as_ref().context("WOL visit")?.page {
+        match &wol.as_ref().context("WOL visit")?.page {
             crate::app::shell_wol::WolPage::Options(page) => Ok(page),
             _ => bail!("0x2BC is not open"),
         }
     }
 
     /// The preference requests `0x0077E110` sends with the WOLAPI object.
-    pub(super) fn applied(state: &AppState) -> [WolServiceRequest; 2] {
-        let live = state.frontend.wol_preferences;
+    pub(super) fn applied(wol_preferences: &WolPreferences) -> [WolServiceRequest; 2] {
+        let live = *wol_preferences;
         [
             WolServiceRequest::SetLangFilter(live.lang_filter),
             WolServiceRequest::SetFindPage {
@@ -33,16 +33,20 @@ impl WolCapture {
             BUDDIES, CANCEL, CHECKBOXES, MUSIC, OK, PAGES, SOUND_OPTIONS,
         };
         let live = state.frontend.wol_preferences;
-        let checks = shown(state).map(|(preferences, _)| preferences.checks());
+        let checks = shown(&state.frontend).map(|(preferences, _)| preferences.checks());
         ensure!(
-            checks == Some(live.checks()) && Self::options_page(state)?.sound.is_none(),
+            checks == Some(live.checks())
+                && Self::options_page(&state.frontend.wol)?.sound.is_none(),
             "0x2BC init does not show the live values"
         );
-        ensure!(!Self::lobby(state)?.shown, "0x113 must hide under 0x2BC");
+        ensure!(
+            !Self::lobby(&state.frontend.wol)?.shown,
+            "0x113 must hide under 0x2BC"
+        );
         self.event(frame, json!({"0x2BC settled": checks}));
         let checked = |state: &AppState, id| {
             let index = CHECKBOXES.iter().position(|checkbox| checkbox.id == id);
-            shown(state)
+            shown(&state.frontend)
                 .zip(index)
                 .is_some_and(|((preferences, _), index)| preferences.checks()[index])
         };
@@ -52,19 +56,31 @@ impl WolCapture {
                     live == WolPreferences::default(),
                     "the isolated VERA.INI holds [WOnline] values: {live:?}"
                 );
-                let rect = crate::app::shell_wol::options::layout(state)
-                    .checkbox_rect(PAGES)
-                    .context("Pages")?;
-                set_window_pointer_to_rect_center(state, rect);
+                let rect = crate::app::shell_wol::options::layout(
+                    state.frontend.wol.as_ref(),
+                    &state.renderer.gpu,
+                )
+                .checkbox_rect(PAGES)
+                .context("Pages")?;
+                set_window_pointer_to_rect_center(
+                    &state.renderer,
+                    &state.frontend.screen,
+                    &mut state.match_state.input,
+                    rect,
+                );
                 App::handle_wol_mouse_move(state);
                 ensure!(
-                    crate::app::shell_wol::options::status_key(state) == Some("STT:WOLOptionsPage"),
+                    crate::app::shell_wol::options::status_key(&state.frontend)
+                        == Some("STT:WOLOptionsPage"),
                     "Pages has no help"
                 );
                 self.settle();
             }
             WolTarget::ModernOptions => {
-                let layout = crate::app::shell_wol::options::layout(state);
+                let layout = crate::app::shell_wol::options::layout(
+                    state.frontend.wol.as_ref(),
+                    &state.renderer.gpu,
+                );
                 ensure!(
                     CHECKBOXES.iter().all(|checkbox| {
                         layout.checkbox_rect(checkbox.id).is_some() == (checkbox.id == MUSIC)
@@ -72,10 +88,15 @@ impl WolCapture {
                     "the modern 0x2BC shows a box other than Play Music"
                 );
                 let rect = layout.checkbox_rect(MUSIC).context("Play Music")?;
-                set_window_pointer_to_rect_center(state, rect);
+                set_window_pointer_to_rect_center(
+                    &state.renderer,
+                    &state.frontend.screen,
+                    &mut state.match_state.input,
+                    rect,
+                );
                 App::handle_wol_mouse_move(state);
                 ensure!(
-                    crate::app::shell_wol::options::status_key(state)
+                    crate::app::shell_wol::options::status_key(&state.frontend)
                         == Some("STT:WOLOptionsMusic"),
                     "Play Music has no help"
                 );
@@ -93,7 +114,7 @@ impl WolCapture {
                 );
                 ensure!(
                     state.frontend.wol_preferences == live
-                        && read_settings(state)?
+                        && read_settings(&state.platform.game_config)?
                             == self.options_before.clone().context("before")?.0,
                     "the preview changed a preference"
                 );
@@ -143,8 +164,11 @@ impl WolCapture {
         use crate::app::shell_wol::options;
         use crate::ui::shell::sound::SHELL_SOUND_SLIDERS;
         use crate::ui::wol_options::{CANCEL, MUSIC, OK, SOUND_OPTIONS};
-        self.options_before = Some((read_settings(state)?, state.frontend.wol_preferences));
-        let layout = options::layout(state);
+        self.options_before = Some((
+            read_settings(&state.platform.game_config)?,
+            state.frontend.wol_preferences,
+        ));
+        let layout = options::layout(state.frontend.wol.as_ref(), &state.renderer.gpu);
         ensure!(
             layout.rect(OK).is_none() && layout.rect(SOUND_OPTIONS).is_none(),
             "the modern page still offers OK or Sound Options"
@@ -162,7 +186,8 @@ impl WolCapture {
             "Play Music did not apply in place"
         );
         if state.audio.launcher_audio_available {
-            let mut expected = crate::app::input::sound::volume_positions(state);
+            let mut expected =
+                crate::app::input::sound::volume_positions(&state.persistence.options_profile);
             for (index, id) in SHELL_SOUND_SLIDERS.into_iter().enumerate() {
                 let rail = layout.rect(id).context("volume trackbar")?;
                 let base = layout.page.scale.base_rect(rail);
@@ -178,8 +203,9 @@ impl WolCapture {
                 welcome_click(state, press);
                 expected[index] = if index == 1 { 10 } else { 0 };
                 ensure!(
-                    crate::app::input::sound::volume_positions(state) == expected
-                        && options::sound_positions(state) == Some(expected),
+                    crate::app::input::sound::volume_positions(&state.persistence.options_profile)
+                        == expected
+                        && options::sound_positions(&state.frontend) == Some(expected),
                     "volume {id:#x} did not update the corresponding channel in place"
                 );
             }
@@ -188,16 +214,17 @@ impl WolCapture {
         let arrow = translate_list_arrow(&layout)?;
         welcome_click(state, arrow);
         ensure!(
-            options::translate_popup(state).is_some(),
+            options::translate_popup(&state.frontend).is_some(),
             "the list did not open"
         );
         App::handle_wol_key(state, Some(winit::keyboard::KeyCode::Escape), true, None);
         ensure!(
-            options::translate_popup(state).is_none() && state.frontend.shell_exit.is_none(),
+            options::translate_popup(&state.frontend).is_none()
+                && state.frontend.shell_exit.is_none(),
             "Escape did not dismiss just the translation list"
         );
         welcome_click(state, arrow);
-        let popup = crate::app::shell_wol::options::translate_popup(state)
+        let popup = crate::app::shell_wol::options::translate_popup(&state.frontend)
             .context("the translation list did not open")?;
         welcome_click(state, popup.row_rect(2).context("Simplified Chinese")?);
         let row = layout
@@ -207,14 +234,16 @@ impl WolCapture {
             state,
             crate::ui::skirmish_shell::checkbox_icon_rect(row, layout.page.scale),
         );
-        let translate = crate::app::shell_wol::options::shown(state).map(|(_, chat)| chat);
+        let translate =
+            crate::app::shell_wol::options::shown(&state.frontend).map(|(_, chat)| chat);
         ensure!(
             translate == Some(translated_lobby_only())
                 && state.persistence.options_profile.chat_translation == translated_lobby_only()
-                && options::translate_popup(state).is_none(),
+                && options::translate_popup(&state.frontend).is_none(),
             "the clicks did not pick the settings: {translate:?}"
         );
-        let saved = read_settings(state)?.context("VERA.INI before Previous")?;
+        let saved =
+            read_settings(&state.platform.game_config)?.context("VERA.INI before Previous")?;
         let ini = crate::rules::ini_parser::IniFile::from_bytes(&saved)?;
         let wonline = ini.section_or_empty("WOnline");
         let vera = ini.section_or_empty("VERA");
@@ -258,22 +287,26 @@ impl WolCapture {
             chat == translated_lobby_only(),
             "Previous did not keep the settings: {chat:?}"
         );
-        let saved = read_settings(state)?.context("VERA.INI")?;
+        let saved = read_settings(&state.platform.game_config)?.context("VERA.INI")?;
         let saved = String::from_utf8_lossy(&saved);
         ensure!(
             saved.contains("TranslateChat=zh-Hans") && saved.contains("TranslateMatches=no"),
             "translation settings are missing from VERA.INI after Previous"
         );
         self.event(frame, "the lobby again: the settings are saved");
-        let layout = crate::app::shell_wol::lobby::layout(state);
+        let layout =
+            crate::app::shell_wol::lobby::layout(state.frontend.wol.as_ref(), &state.renderer.gpu);
         lobby_button(state, &layout, lobby_ui::OPTIONS)?;
         self.phase = WolPhase::TranslationReopened;
         Ok(())
     }
 
     pub(super) fn translation_reopened(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
-        let layout = crate::app::shell_wol::options::layout(state);
-        let shown = crate::app::shell_wol::options::shown(state);
+        let layout = crate::app::shell_wol::options::layout(
+            state.frontend.wol.as_ref(),
+            &state.renderer.gpu,
+        );
+        let shown = crate::app::shell_wol::options::shown(&state.frontend);
         ensure!(
             shown.is_some_and(|(preferences, chat)| {
                 preferences.lobby_music == 0 && chat == translated_lobby_only()
@@ -282,29 +315,40 @@ impl WolCapture {
         );
         if state.audio.launcher_audio_available {
             ensure!(
-                crate::app::shell_wol::options::sound_positions(state) == Some([0, 10, 0]),
+                crate::app::shell_wol::options::sound_positions(&state.frontend)
+                    == Some([0, 10, 0]),
                 "the reopened page does not show the saved volumes"
             );
         }
         self.event(frame, "reopened with the saved settings");
         // The capture's isolated profile goes back as it was.
         let (bytes, _) = self.options_before.clone().context("saved VERA.INI")?;
-        restore_settings(state, bytes)?;
+        restore_settings(&state.platform.game_config, bytes)?;
         if self.target == WolTarget::ModernOptionsTranslationList {
             welcome_click(state, translate_list_arrow(&layout)?);
-            let row = crate::app::shell_wol::options::translate_popup(state)
+            let row = crate::app::shell_wol::options::translate_popup(&state.frontend)
                 .and_then(|popup| popup.row_rect(4))
                 .context("the translation list did not open")?;
-            set_window_pointer_to_rect_center(state, row);
+            set_window_pointer_to_rect_center(
+                &state.renderer,
+                &state.frontend.screen,
+                &mut state.match_state.input,
+                row,
+            );
         } else {
             let list = layout
                 .rect(crate::ui::wol_options::TRANSLATE)
                 .context("the translation list")?;
-            set_window_pointer_to_rect_center(state, list);
+            set_window_pointer_to_rect_center(
+                &state.renderer,
+                &state.frontend.screen,
+                &mut state.match_state.input,
+                list,
+            );
         }
         App::handle_wol_mouse_move(state);
         ensure!(
-            crate::app::shell_wol::options::status_key(state).is_some()
+            crate::app::shell_wol::options::status_key(&state.frontend).is_some()
                 || self.target == WolTarget::ModernOptionsTranslationList,
             "the translation list has no help"
         );
@@ -314,7 +358,7 @@ impl WolCapture {
 
     /// The lobby shown again after `0x2BC` closed.
     pub(super) fn options_returned(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
-        let lobby = Self::lobby(state)?;
+        let lobby = Self::lobby(&state.frontend.wol)?;
         ensure!(
             lobby.shown
                 && matches!(
@@ -323,9 +367,9 @@ impl WolCapture {
                 ),
             "0x113 did not come back"
         );
-        let requests = self.requests(state, frame)?;
+        let requests = self.requests(&mut state.frontend.wol, frame)?;
         ensure!(
-            requests == Self::applied(state),
+            requests == Self::applied(&state.frontend.wol_preferences),
             "0x0077E110 did not send the preferences: {requests:?}"
         );
         let (bytes, before) = self.options_before.clone().context("before")?;
@@ -334,7 +378,7 @@ impl WolCapture {
             ensure!(
                 live == before
                     && state.persistence.options_profile.wol_preferences == before
-                    && read_settings(state)? == bytes,
+                    && read_settings(&state.platform.game_config)? == bytes,
                 "Cancel changed the preferences"
             );
             self.event(frame, "0x113 again: Cancel applied the unchanged values");
@@ -350,7 +394,7 @@ impl WolCapture {
             live == expected && state.persistence.options_profile.wol_preferences == expected,
             "OK did not commit the staged values: {live:?}"
         );
-        let saved = read_settings(state)?.context("VERA.INI after OK")?;
+        let saved = read_settings(&state.platform.game_config)?.context("VERA.INI after OK")?;
         let text = String::from_utf8_lossy(&saved).into_owned();
         let ini = crate::rules::ini_parser::IniFile::from_bytes(&saved)
             .context("parse VERA.INI after OK")?;
@@ -398,7 +442,8 @@ impl WolCapture {
             .take(12)
             .collect::<Vec<_>>()}),
         );
-        let layout = crate::app::shell_wol::lobby::layout(state);
+        let layout =
+            crate::app::shell_wol::lobby::layout(state.frontend.wol.as_ref(), &state.renderer.gpu);
         lobby_button(state, &layout, lobby_ui::OPTIONS)?;
         self.phase = WolPhase::OptionsReopened;
         Ok(())
@@ -406,13 +451,15 @@ impl WolCapture {
 
     /// `0xD6` shown and settled over the hidden `0x2BC`.
     pub(super) fn sound_settled(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
-        let positions = crate::app::input::sound::volume_positions(state);
-        let shown = crate::app::shell_wol::options::sound_positions(state);
+        let positions =
+            crate::app::input::sound::volume_positions(&state.persistence.options_profile);
+        let shown = crate::app::shell_wol::options::sound_positions(&state.frontend);
         ensure!(shown == Some(positions), "0xD6 init positions differ");
         // A press on the music rail near its left end jumps once.
-        let rail = crate::app::shell_wol::options::sound_layout(state).sliders[0];
+        let rail = crate::app::shell_wol::options::sound_layout(&state.renderer.gpu).sliders[0];
         welcome_click(state, RectPx::new(rail.x + 8, rail.y, 4, rail.h));
-        let moved = crate::app::shell_wol::options::sound_positions(state).context("0xD6 state")?;
+        let moved = crate::app::shell_wol::options::sound_positions(&state.frontend)
+            .context("0xD6 state")?;
         ensure!(
             moved[0] < positions[0] && moved[1..] == positions[1..],
             "the music rail press did not move it: {positions:?} -> {moved:?}"
@@ -422,7 +469,7 @@ impl WolCapture {
             json!({"0xD6 settled": positions, "after rail press": moved}),
         );
         if self.target == WolTarget::SoundOptionsBack {
-            let back = crate::app::shell_wol::options::sound_layout(state).back();
+            let back = crate::app::shell_wol::options::sound_layout(&state.renderer.gpu).back();
             welcome_click(state, back);
             ensure!(
                 state.frontend.shell_exit.is_some(),

@@ -27,14 +27,17 @@ fn refused_begin_still_publishes_the_local_prediction_gate_transition() {
         .register(HouseState::new(owner, 0, None, true, 1000, 10));
     sim.session.set_current_house_for_test(Some(owner));
     let before_wallet = sim.houses[&owner].economy().clone();
-    assert!(!enqueue_by_type(
-        &mut sim,
-        &rules,
-        "Americans",
-        "E1",
-        &mut FrameEffects::default(),
-        false
-    ));
+    assert!(
+        !enqueue_by_type(
+            &mut sim,
+            &rules,
+            "Americans",
+            "E1",
+            &mut FrameEffects::default(),
+            false
+        )
+        .is_ok()
+    );
     assert!(
         matches!(sim.lifecycle_outputs.as_slice(), [LifecycleOutput::ProductionBeginAttempted {
         owner: reached, category: ProductionCategory::Infantry, naval: false,
@@ -46,14 +49,17 @@ fn refused_begin_still_publishes_the_local_prediction_gate_transition() {
 
     sim.lifecycle_outputs.clear_for_test();
     sim.session.set_current_house_for_test(None);
-    assert!(!enqueue_by_type(
-        &mut sim,
-        &rules,
-        "Americans",
-        "E1",
-        &mut FrameEffects::default(),
-        false
-    ));
+    assert!(
+        !enqueue_by_type(
+            &mut sim,
+            &rules,
+            "Americans",
+            "E1",
+            &mut FrameEffects::default(),
+            false
+        )
+        .is_ok()
+    );
     assert!(sim.lifecycle_outputs.is_empty());
 }
 
@@ -126,7 +132,8 @@ fn an_idle_factory_refuses_a_type_its_house_is_at_the_limit_for() {
             "ORCA",
             &mut FrameEffects::default(),
             false,
-        ),
+        )
+        .is_ok(),
         "an idle line at the limit refuses the start"
     );
     assert!(
@@ -483,10 +490,11 @@ fn record_last_built_matches_native_class_slots_score_gate_and_rng() {
                 built_total(&row["before"])
             );
             let before = &row["observation"]["rng_before"];
-            sim.scenario_rng =
+            *sim.scenario_rng =
                 SimRng::from_native_state_hex_for_test(before["scenario"].as_str().unwrap());
-            sim.main_rng = SimRng::from_native_state_hex_for_test(before["main"].as_str().unwrap());
-            sim.mapgen_rng =
+            *sim.main_rng =
+                SimRng::from_native_state_hex_for_test(before["main"].as_str().unwrap());
+            *sim.mapgen_rng =
                 SimRng::from_native_state_hex_for_test(before["mapgen"].as_str().unwrap());
 
             super::factory_lifecycle::record_last_built(
@@ -787,14 +795,17 @@ fn paid_infantry_with_backup() -> Option<(crate::sim::runtime::SimRuntime, Inter
             .unwrap();
     }
     for _ in 0..2 {
-        assert!(enqueue_by_type(
-            &mut runtime.simulation,
-            &runtime.resources.rules,
-            "Russians",
-            "E2",
-            &mut FrameEffects::default(),
-            false,
-        ));
+        assert!(
+            enqueue_by_type(
+                &mut runtime.simulation,
+                &runtime.resources.rules,
+                "Russians",
+                "E2",
+                &mut FrameEffects::default(),
+                false,
+            )
+            .is_ok()
+        );
     }
     for _ in 0..100 {
         if runtime.simulation.houses[&owner].economy().spent_credits() > 0 {
@@ -934,7 +945,7 @@ fn offline_backup_recovery_distinguishes_saved_system_and_user_holds() {
 
         // Match Scenario load's native reseed while retaining process RNG and
         // exercising the production save/restore owner, not raw native SAV.
-        sim.scenario_rng = SimRng::new(0);
+        *sim.scenario_rng = SimRng::new(0);
         hold_hashes.push(sim.state_hash());
         let bytes = GameSnapshot::save(sim, 0, rules.simulation_config_hash(), "offline-backup", 0);
         let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
@@ -974,14 +985,17 @@ fn offline_backup_recovery_distinguishes_saved_system_and_user_holds() {
             assert_eq!(branch.houses[&owner].economy().credits(), credits);
             assert_eq!(branch.houses[&owner].economy().spent_credits(), spent);
             if user_hold {
-                assert!(enqueue_by_type(
-                    branch,
-                    rules,
-                    "Russians",
-                    "E2",
-                    &mut FrameEffects::default(),
-                    false
-                ));
+                assert!(
+                    enqueue_by_type(
+                        branch,
+                        rules,
+                        "Russians",
+                        "E2",
+                        &mut FrameEffects::default(),
+                        false
+                    )
+                    .is_ok()
+                );
                 let factory = branch
                     .production
                     .factories()
@@ -1118,7 +1132,7 @@ fn selling_last_retail_barracks_keeps_paid_head_before_map_exit() {
         // Native Scenario load deliberately reseeds this stream to zero. Give
         // both branches the same explicit pre-save state, then exercise the live
         // process retention/restore seam used by the app, not native SAV parsing.
-        runtime.simulation.scenario_rng = SimRng::new(0);
+        *runtime.simulation.scenario_rng = SimRng::new(0);
         let rules = &runtime.resources.rules;
         let bytes = crate::sim::snapshot::GameSnapshot::save(
             &runtime.simulation,
@@ -1250,14 +1264,17 @@ fn restore_accepts_a_queued_tail_left_by_a_refused_start_next() {
             .unwrap();
     }
     for name in ["E2", "FLAKT", "FLAKT"] {
-        assert!(enqueue_by_type(
-            &mut runtime.simulation,
-            &runtime.resources.rules,
-            "Russians",
-            name,
-            &mut FrameEffects::default(),
-            false
-        ));
+        assert!(
+            enqueue_by_type(
+                &mut runtime.simulation,
+                &runtime.resources.rules,
+                "Russians",
+                name,
+                &mut FrameEffects::default(),
+                false
+            )
+            .is_ok()
+        );
     }
     for _ in 0..100 {
         if runtime.simulation.houses[&owner].economy().spent_credits() > 0 {
@@ -1282,7 +1299,7 @@ fn restore_accepts_a_queued_tail_left_by_a_refused_start_next() {
         rules,
         "Russians",
         super::ProductionCancellation::Type {
-            type_id: "E2",
+            type_id: "E2".into(),
             naval: false
         },
         false,
@@ -1347,14 +1364,17 @@ fn retail_barracks_sale_callbacks_reject_successor_or_keep_surviving_producer() 
             "real prerequisites for {successor}"
         );
         for name in ["E2", successor] {
-            assert!(enqueue_by_type(
-                &mut runtime.simulation,
-                &runtime.resources.rules,
-                "Russians",
-                name,
-                &mut FrameEffects::default(),
-                false
-            ));
+            assert!(
+                enqueue_by_type(
+                    &mut runtime.simulation,
+                    &runtime.resources.rules,
+                    "Russians",
+                    name,
+                    &mut FrameEffects::default(),
+                    false
+                )
+                .is_ok()
+            );
         }
         for _ in 0..100 {
             if runtime.simulation.houses[&owner].economy().spent_credits() > 0 {
@@ -1727,14 +1747,17 @@ fn retail_prerequisite_loss_refunds_after_the_factory_charge_sweep() {
             super::tests::stamp_type_foundation(&mut sim, rules, id);
             sim.add_entity_occupancy(id);
         }
-        assert!(enqueue_by_type(
-            &mut sim,
-            rules,
-            "Americans",
-            "MGTK",
-            &mut crate::sim::world::FrameEffects::default(),
-            false,
-        ));
+        assert!(
+            enqueue_by_type(
+                &mut sim,
+                rules,
+                "Americans",
+                "MGTK",
+                &mut crate::sim::world::FrameEffects::default(),
+                false,
+            )
+            .is_ok()
+        );
         let held = held_id(&sim, owner, ProductionCategory::Vehicle);
         for _ in 0..1000 {
             sim.advance_tick(&[], Some(rules), None, None, 67);
@@ -1772,14 +1795,17 @@ fn retail_prerequisite_loss_refunds_after_the_factory_charge_sweep() {
                 .as_i64()
                 .unwrap()
         );
-        assert!(enqueue_by_type(
-            &mut sim,
-            rules,
-            "Americans",
-            "E1",
-            &mut crate::sim::world::FrameEffects::default(),
-            false,
-        ));
+        assert!(
+            enqueue_by_type(
+                &mut sim,
+                rules,
+                "Americans",
+                "E1",
+                &mut crate::sim::world::FrameEffects::default(),
+                false,
+            )
+            .is_ok()
+        );
         sim.houses
             .get_mut(&owner)
             .unwrap()
@@ -1926,14 +1952,17 @@ fn prerequisite_loss_events_preserve_player_copies_cleanup_and_snapshot_replay_b
     let (mut sim, rules, owner) = world(0xfac7_1308);
     sim.session.set_current_house_for_test(Some(owner));
     for name in ["SMIN", "SMIN", "MTNK"] {
-        assert!(enqueue_by_type(
-            &mut sim,
-            &rules,
-            "Americans",
-            name,
-            &mut FrameEffects::default(),
-            false,
-        ));
+        assert!(
+            enqueue_by_type(
+                &mut sim,
+                &rules,
+                "Americans",
+                name,
+                &mut FrameEffects::default(),
+                false,
+            )
+            .is_ok()
+        );
     }
     let parent = held_id(&sim, owner, ProductionCategory::Vehicle);
     let child_ids = children(&sim, parent);
@@ -1946,7 +1975,7 @@ fn prerequisite_loss_events_preserve_player_copies_cleanup_and_snapshot_replay_b
     // Full native Scenario load reseeds its saved stream to zero. Isolate the
     // recheck roundtrip from that intentional transition, and retain the live
     // process cursors through the same in-scenario load seam as the app.
-    sim.scenario_rng = SimRng::new(0);
+    *sim.scenario_rng = SimRng::new(0);
     let bytes = GameSnapshot::save(&sim, 0, rules.simulation_config_hash(), "factory-loss", 0);
     let mut restored = GameSnapshot::load(&bytes).expect("current snapshot").sim;
     restored.retain_process_state_for_load(crate::sim::world::SnapshotProcessState::Live(&sim));
@@ -2170,7 +2199,8 @@ fn retail_superweapon_construction_survives_revalidation() {
                 building,
                 &mut crate::sim::world::FrameEffects::default(),
                 false,
-            ),
+            )
+            .is_ok(),
             "{building}: same completed request is admitted"
         );
         assert_eq!(
@@ -2235,7 +2265,8 @@ fn retail_superweapon_construction_survives_revalidation() {
                 building,
                 &mut crate::sim::world::FrameEffects::default(),
                 false,
-            ),
+            )
+            .is_ok(),
             "{building}: placement does not allow a second copy"
         );
     }
@@ -2269,14 +2300,17 @@ fn limited_heads_survive_revalidation_without_bypassing_limits_or_cleanup() {
             ));
         spawn_structure(&mut sim, &rules, 1, "Americans", producer, 10, 10);
         let category = super::category_for_object(rules.object(name).unwrap());
-        assert!(enqueue_by_type(
-            &mut sim,
-            &rules,
-            "Americans",
-            name,
-            &mut crate::sim::world::FrameEffects::default(),
-            false,
-        ));
+        assert!(
+            enqueue_by_type(
+                &mut sim,
+                &rules,
+                "Americans",
+                name,
+                &mut crate::sim::world::FrameEffects::default(),
+                false,
+            )
+            .is_ok()
+        );
         let head = held_id(&sim, owner, category);
         super::update_factory_queue(
             &mut sim,
@@ -2290,34 +2324,40 @@ fn limited_heads_survive_revalidation_without_bypassing_limits_or_cleanup() {
             head,
             "{name}: own held object remains admissible"
         );
-        assert!(!enqueue_by_type(
-            &mut sim,
-            &rules,
-            "Americans",
-            name,
-            &mut crate::sim::world::FrameEffects::default(),
-            false,
-        ));
+        assert!(
+            !enqueue_by_type(
+                &mut sim,
+                &rules,
+                "Americans",
+                name,
+                &mut crate::sim::world::FrameEffects::default(),
+                false,
+            )
+            .is_ok()
+        );
         assert!(cancel_production_for_owner(
             &mut sim,
             &rules,
             "Americans",
             crate::sim::production::ProductionCancellation::Type {
-                type_id: name,
+                type_id: name.into(),
                 naval: false
             },
             false,
             &mut crate::sim::world::FrameEffects::default(),
         ));
         assert!(!sim.substrate.entities.contains(head));
-        assert!(enqueue_by_type(
-            &mut sim,
-            &rules,
-            "Americans",
-            name,
-            &mut crate::sim::world::FrameEffects::default(),
-            false,
-        ));
+        assert!(
+            enqueue_by_type(
+                &mut sim,
+                &rules,
+                "Americans",
+                name,
+                &mut crate::sim::world::FrameEffects::default(),
+                false,
+            )
+            .is_ok()
+        );
         let replacement = held_id(&sim, owner, category);
         sim.uninit_with_rules(1, &rules);
 
@@ -2408,14 +2448,17 @@ fn manager_factory_cancellation_finishes_graph_accounting_and_promotion() {
         let (mut sim, rules, owner) = world(0xfac7_0010);
         let before = counts(&sim, owner);
         let mut expected = sim.scenario_rng.clone();
-        assert!(enqueue_by_type(
-            &mut sim,
-            &rules,
-            "Americans",
-            parent_type,
-            &mut crate::sim::world::FrameEffects::default(),
-            false,
-        ));
+        assert!(
+            enqueue_by_type(
+                &mut sim,
+                &rules,
+                "Americans",
+                parent_type,
+                &mut crate::sim::world::FrameEffects::default(),
+                false,
+            )
+            .is_ok()
+        );
         let parent = held_id(&sim, owner, ProductionCategory::Vehicle);
         let child_ids = children(&sim, parent);
         assert_eq!(child_ids.len(), if parent_type == "MTNK" { 3 } else { 2 });
@@ -2425,14 +2468,17 @@ fn manager_factory_cancellation_finishes_graph_accounting_and_promotion() {
             (before.0, before.1 + 1 + child_ids.len() as u32)
         );
         let allocated = sim.next_stable_object_id();
-        assert!(enqueue_by_type(
-            &mut sim,
-            &rules,
-            "Americans",
-            parent_type,
-            &mut crate::sim::world::FrameEffects::default(),
-            false,
-        ));
+        assert!(
+            enqueue_by_type(
+                &mut sim,
+                &rules,
+                "Americans",
+                parent_type,
+                &mut crate::sim::world::FrameEffects::default(),
+                false,
+            )
+            .is_ok()
+        );
         assert_eq!(sim.next_stable_object_id(), allocated);
         // ABANDON removes the queued copy first (`0x004FAAEE`), then the active build.
         assert!(cancel_production_for_owner(
@@ -2440,7 +2486,7 @@ fn manager_factory_cancellation_finishes_graph_accounting_and_promotion() {
             &rules,
             "Americans",
             crate::sim::production::ProductionCancellation::Type {
-                type_id: parent_type,
+                type_id: parent_type.into(),
                 naval: false
             },
             false,
@@ -2456,7 +2502,7 @@ fn manager_factory_cancellation_finishes_graph_accounting_and_promotion() {
             &rules,
             "Americans",
             crate::sim::production::ProductionCancellation::Type {
-                type_id: parent_type,
+                type_id: parent_type.into(),
                 naval: false
             },
             false,
@@ -2486,14 +2532,17 @@ fn manager_factory_cancellation_finishes_graph_accounting_and_promotion() {
                 .is_none()
         );
 
-        assert!(enqueue_by_type(
-            &mut sim,
-            &rules,
-            "Americans",
-            parent_type,
-            &mut crate::sim::world::FrameEffects::default(),
-            false,
-        ));
+        assert!(
+            enqueue_by_type(
+                &mut sim,
+                &rules,
+                "Americans",
+                parent_type,
+                &mut crate::sim::world::FrameEffects::default(),
+                false,
+            )
+            .is_ok()
+        );
         let parent = held_id(&sim, owner, ProductionCategory::Vehicle);
         let child_ids = children(&sim, parent);
         assert_constructor_words(&sim, parent, &mut expected);
@@ -2502,20 +2551,23 @@ fn manager_factory_cancellation_finishes_graph_accounting_and_promotion() {
         } else {
             "MTNK"
         };
-        assert!(enqueue_by_type(
-            &mut sim,
-            &rules,
-            "Americans",
-            successor_type,
-            &mut crate::sim::world::FrameEffects::default(),
-            false,
-        ));
+        assert!(
+            enqueue_by_type(
+                &mut sim,
+                &rules,
+                "Americans",
+                successor_type,
+                &mut crate::sim::world::FrameEffects::default(),
+                false,
+            )
+            .is_ok()
+        );
         assert!(cancel_production_for_owner(
             &mut sim,
             &rules,
             "Americans",
             crate::sim::production::ProductionCancellation::Type {
-                type_id: parent_type,
+                type_id: parent_type.into(),
                 naval: false
             },
             false,
@@ -2558,14 +2610,17 @@ fn a_produced_slave_miner_leaves_tethered_without_hunting_yet() {
         .get_mut(1)
         .unwrap()
         .set_archive_target(Some(crate::sim::combat::TargetKind::Cell(30, 30)));
-    assert!(enqueue_by_type(
-        &mut sim,
-        &rules,
-        "Americans",
-        "SMIN",
-        &mut crate::sim::world::FrameEffects::default(),
-        false,
-    ));
+    assert!(
+        enqueue_by_type(
+            &mut sim,
+            &rules,
+            "Americans",
+            "SMIN",
+            &mut crate::sim::world::FrameEffects::default(),
+            false,
+        )
+        .is_ok()
+    );
     let produced = held_id(&sim, owner, ProductionCategory::Vehicle);
     assert!(
         sim.production
@@ -2601,14 +2656,17 @@ fn produced_infantry_retains_its_barracks_rally_until_exit_handoff() {
         };
         assert!(sim.apply_command("Americans", &command, Some(&rules)));
     }
-    assert!(enqueue_by_type(
-        &mut sim,
-        &rules,
-        "Americans",
-        "E1",
-        &mut crate::sim::world::FrameEffects::default(),
-        false,
-    ));
+    assert!(
+        enqueue_by_type(
+            &mut sim,
+            &rules,
+            "Americans",
+            "E1",
+            &mut crate::sim::world::FrameEffects::default(),
+            false,
+        )
+        .is_ok()
+    );
     let produced = held_id(&sim, owner, ProductionCategory::Infantry);
     assert!(
         sim.production
@@ -2667,14 +2725,17 @@ fn a_captured_factory_loses_its_rally_point() {
 fn ready_manager_is_refunded_and_disposed_by_another_buildings_produce() {
     let (mut sim, rules, owner) = world(0xfac7_0011);
     let before = counts(&sim, owner);
-    assert!(enqueue_by_type(
-        &mut sim,
-        &rules,
-        "Americans",
-        "YAREFN",
-        &mut crate::sim::world::FrameEffects::default(),
-        false,
-    ));
+    assert!(
+        enqueue_by_type(
+            &mut sim,
+            &rules,
+            "Americans",
+            "YAREFN",
+            &mut crate::sim::world::FrameEffects::default(),
+            false,
+        )
+        .is_ok()
+    );
     let parent = held_id(&sim, owner, ProductionCategory::Building);
     let child_ids = children(&sim, parent);
     assert_eq!(child_ids.len(), 2);
@@ -2694,14 +2755,17 @@ fn ready_manager_is_refunded_and_disposed_by_another_buildings_produce() {
     // branch (0x004FA5A8..0x004FA5C4), which the build start refuses at stage 54
     // (0x004C9ECD). House ignores that refusal and still admits/relinks:
     // nothing is queued or charged (factory_hold_resume.json).
-    assert!(enqueue_by_type(
-        &mut sim,
-        &rules,
-        "Americans",
-        "YAREFN",
-        &mut crate::sim::world::FrameEffects::default(),
-        false,
-    ));
+    assert!(
+        enqueue_by_type(
+            &mut sim,
+            &rules,
+            "Americans",
+            "YAREFN",
+            &mut crate::sim::world::FrameEffects::default(),
+            false,
+        )
+        .is_ok()
+    );
     assert_eq!(held_id(&sim, owner, ProductionCategory::Building), parent);
     assert!(
         sim.production
@@ -2716,14 +2780,17 @@ fn ready_manager_is_refunded_and_disposed_by_another_buildings_produce() {
     // StartProduction abandons it first (0x004C9C87 -> AbandonProduction
     // 0x004C9FF0), refunding Cost_Of less the zero Balance and destroying its
     // slaves with it, then constructs its own type at once.
-    assert!(enqueue_by_type(
-        &mut sim,
-        &rules,
-        "Americans",
-        "GAPOWR",
-        &mut crate::sim::world::FrameEffects::default(),
-        false,
-    ));
+    assert!(
+        enqueue_by_type(
+            &mut sim,
+            &rules,
+            "Americans",
+            "GAPOWR",
+            &mut crate::sim::world::FrameEffects::default(),
+            false,
+        )
+        .is_ok()
+    );
     assert_gone(&sim, parent, &child_ids);
     assert_eq!(sim.houses[&owner].economy().credits(), credits + 1000);
     assert_eq!(counts(&sim, owner), (before.0 + 1, before.1));
@@ -2769,26 +2836,32 @@ fn building_queue_switch_queues_and_starts_the_next_after_placement() {
 
     let (mut sim, rules, owner) = world_with_building_queue(0xb001_0001);
     assert!(rules.general.building_production_queue);
-    assert!(enqueue_by_type(
-        &mut sim,
-        &rules,
-        "Americans",
-        "GAPOWR",
-        &mut FrameEffects::default(),
-        false,
-    ));
+    assert!(
+        enqueue_by_type(
+            &mut sim,
+            &rules,
+            "Americans",
+            "GAPOWR",
+            &mut FrameEffects::default(),
+            false,
+        )
+        .is_ok()
+    );
     let held = held_id(&sim, owner, ProductionCategory::Building);
     let credits = sim.houses[&owner].economy().credits();
 
     // A different building queues instead of abandoning the running head.
-    assert!(enqueue_by_type(
-        &mut sim,
-        &rules,
-        "Americans",
-        "YAREFN",
-        &mut FrameEffects::default(),
-        false,
-    ));
+    assert!(
+        enqueue_by_type(
+            &mut sim,
+            &rules,
+            "Americans",
+            "YAREFN",
+            &mut FrameEffects::default(),
+            false,
+        )
+        .is_ok()
+    );
     assert_eq!(
         held_id(&sim, owner, ProductionCategory::Building),
         held,
@@ -2850,14 +2923,17 @@ fn building_queue_switch_keeps_a_suspended_held_building() {
     use crate::sim::world::FrameEffects;
 
     let (mut sim, rules, owner) = world_with_building_queue(0xb001_0002);
-    assert!(enqueue_by_type(
-        &mut sim,
-        &rules,
-        "Americans",
-        "GAPOWR",
-        &mut FrameEffects::default(),
-        false,
-    ));
+    assert!(
+        enqueue_by_type(
+            &mut sim,
+            &rules,
+            "Americans",
+            "GAPOWR",
+            &mut FrameEffects::default(),
+            false,
+        )
+        .is_ok()
+    );
     let held = held_id(&sim, owner, ProductionCategory::Building);
     let factory = sim
         .production
@@ -2875,14 +2951,17 @@ fn building_queue_switch_keeps_a_suspended_held_building() {
     ));
     let credits = sim.houses[&owner].economy().credits();
 
-    assert!(enqueue_by_type(
-        &mut sim,
-        &rules,
-        "Americans",
-        "YAREFN",
-        &mut FrameEffects::default(),
-        false,
-    ));
+    assert!(
+        enqueue_by_type(
+            &mut sim,
+            &rules,
+            "Americans",
+            "YAREFN",
+            &mut FrameEffects::default(),
+            false,
+        )
+        .is_ok()
+    );
     assert_eq!(
         held_id(&sim, owner, ProductionCategory::Building),
         held,
@@ -2910,23 +2989,29 @@ fn cancel_one_queued_structure_keeps_the_building_under_construction() {
     use crate::sim::world::FrameEffects;
 
     let (mut sim, rules, owner) = world_with_building_queue(0xb001_0003);
-    assert!(enqueue_by_type(
-        &mut sim,
-        &rules,
-        "Americans",
-        "GAPOWR",
-        &mut FrameEffects::default(),
-        false,
-    ));
+    assert!(
+        enqueue_by_type(
+            &mut sim,
+            &rules,
+            "Americans",
+            "GAPOWR",
+            &mut FrameEffects::default(),
+            false,
+        )
+        .is_ok()
+    );
     let held = held_id(&sim, owner, ProductionCategory::Building);
-    assert!(enqueue_by_type(
-        &mut sim,
-        &rules,
-        "Americans",
-        "GAPOWR",
-        &mut FrameEffects::default(),
-        false,
-    ));
+    assert!(
+        enqueue_by_type(
+            &mut sim,
+            &rules,
+            "Americans",
+            "GAPOWR",
+            &mut FrameEffects::default(),
+            false,
+        )
+        .is_ok()
+    );
     let credits = sim.houses[&owner].economy().credits();
     assert_eq!(
         sim.production
@@ -2944,7 +3029,7 @@ fn cancel_one_queued_structure_keeps_the_building_under_construction() {
         &rules,
         "Americans",
         ProductionCancellation::Type {
-            type_id: "GAPOWR",
+            type_id: "GAPOWR".into(),
             naval: false,
         },
         false,
@@ -2978,14 +3063,17 @@ fn a_building_produce_is_dropped_while_the_building_factory_runs() {
     use crate::sim::world::{FrameEffects, SimSoundEvent};
 
     let (mut sim, rules, owner) = world(0xfa52_e000);
-    assert!(enqueue_by_type(
-        &mut sim,
-        &rules,
-        "Americans",
-        "GAPOWR",
-        &mut FrameEffects::default(),
-        false,
-    ));
+    assert!(
+        enqueue_by_type(
+            &mut sim,
+            &rules,
+            "Americans",
+            "GAPOWR",
+            &mut FrameEffects::default(),
+            false,
+        )
+        .is_ok()
+    );
     let held = held_id(&sim, owner, ProductionCategory::Building);
     let factory = |sim: &Simulation| {
         let view = sim
@@ -3008,7 +3096,8 @@ fn a_building_produce_is_dropped_while_the_building_factory_runs() {
                 type_id,
                 &mut FrameEffects::default(),
                 false,
-            ),
+            )
+            .is_ok(),
             "{type_id}"
         );
     }
@@ -3034,14 +3123,17 @@ fn a_building_produce_abandons_a_held_building_and_starts_its_own() {
     use crate::sim::world::FrameEffects;
 
     let (mut sim, rules, owner) = world(0xfa52_e001);
-    assert!(enqueue_by_type(
-        &mut sim,
-        &rules,
-        "Americans",
-        "GAPOWR",
-        &mut FrameEffects::default(),
-        false,
-    ));
+    assert!(
+        enqueue_by_type(
+            &mut sim,
+            &rules,
+            "Americans",
+            "GAPOWR",
+            &mut FrameEffects::default(),
+            false,
+        )
+        .is_ok()
+    );
     let held = held_id(&sim, owner, ProductionCategory::Building);
     // 150 of GAPOWR's 800 paid so far.
     let factory = sim
@@ -3061,14 +3153,17 @@ fn a_building_produce_abandons_a_held_building_and_starts_its_own() {
     let credits = sim.houses[&owner].economy().credits();
     let mut expected = sim.scenario_rng.clone();
 
-    assert!(enqueue_by_type(
-        &mut sim,
-        &rules,
-        "Americans",
-        "YAREFN",
-        &mut FrameEffects::default(),
-        false,
-    ));
+    assert!(
+        enqueue_by_type(
+            &mut sim,
+            &rules,
+            "Americans",
+            "YAREFN",
+            &mut FrameEffects::default(),
+            false,
+        )
+        .is_ok()
+    );
     assert_gone(&sim, held, &[]);
     assert_eq!(sim.houses[&owner].economy().credits(), credits + 150);
     let successor = held_id(&sim, owner, ProductionCategory::Building);
@@ -3110,14 +3205,17 @@ pub(crate) fn prerequisite_loss_cancellation_fixture(
         // An admitted build and its valid successor precede the prerequisite
         // loss. All publication/receiver decisions below use ordinary owners.
         for name in ["SMIN", "MTNK"] {
-            assert!(enqueue_by_type(
-                sim,
-                &rules,
-                "Americans",
-                name,
-                &mut FrameEffects::default(),
-                false
-            ));
+            assert!(
+                enqueue_by_type(
+                    sim,
+                    &rules,
+                    "Americans",
+                    name,
+                    &mut FrameEffects::default(),
+                    false
+                )
+                .is_ok()
+            );
         }
         sim.uninit_with_rules(4, &rules);
         assert!(sim.houses[&owner].tech_recheck_pending());
@@ -3213,22 +3311,28 @@ pub(crate) fn prerequisite_loss_cancellation_fixture(
 fn prerequisite_revalidation_disposes_manager_and_promoted_build_steps_a_rate_later() {
     let (mut sim, rules, owner) = world(0xfac7_0012);
     sim.session.set_current_house_for_test(Some(owner));
-    assert!(enqueue_by_type(
-        &mut sim,
-        &rules,
-        "Americans",
-        "SMIN",
-        &mut crate::sim::world::FrameEffects::default(),
-        false,
-    ));
-    assert!(enqueue_by_type(
-        &mut sim,
-        &rules,
-        "Americans",
-        "MTNK",
-        &mut crate::sim::world::FrameEffects::default(),
-        false,
-    ));
+    assert!(
+        enqueue_by_type(
+            &mut sim,
+            &rules,
+            "Americans",
+            "SMIN",
+            &mut crate::sim::world::FrameEffects::default(),
+            false,
+        )
+        .is_ok()
+    );
+    assert!(
+        enqueue_by_type(
+            &mut sim,
+            &rules,
+            "Americans",
+            "MTNK",
+            &mut crate::sim::world::FrameEffects::default(),
+            false,
+        )
+        .is_ok()
+    );
     let parent = held_id(&sim, owner, ProductionCategory::Vehicle);
     let child_ids = children(&sim, parent);
     for _ in 0..40 {
@@ -3298,22 +3402,28 @@ fn prerequisite_revalidation_disposes_manager_and_promoted_build_steps_a_rate_la
 #[test]
 fn missing_barracks_retains_completed_infantry_and_queued_successor() {
     let (mut sim, rules, owner) = world_with_creation_cue(0xfac7_0013);
-    assert!(enqueue_by_type(
-        &mut sim,
-        &rules,
-        "Americans",
-        "E1",
-        &mut crate::sim::world::FrameEffects::default(),
-        false,
-    ));
-    assert!(enqueue_by_type(
-        &mut sim,
-        &rules,
-        "Americans",
-        "E1",
-        &mut crate::sim::world::FrameEffects::default(),
-        false,
-    ));
+    assert!(
+        enqueue_by_type(
+            &mut sim,
+            &rules,
+            "Americans",
+            "E1",
+            &mut crate::sim::world::FrameEffects::default(),
+            false,
+        )
+        .is_ok()
+    );
+    assert!(
+        enqueue_by_type(
+            &mut sim,
+            &rules,
+            "Americans",
+            "E1",
+            &mut crate::sim::world::FrameEffects::default(),
+            false,
+        )
+        .is_ok()
+    );
     let held = held_id(&sim, owner, ProductionCategory::Infantry);
     assert!(
         sim.production
@@ -3372,14 +3482,17 @@ fn missing_barracks_retains_completed_infantry_and_queued_successor() {
 fn active_cancel_without_house_does_not_create_refund_account() {
     for all in [false, true] {
         let (mut sim, rules, owner) = world(0xfac7_0014);
-        assert!(enqueue_by_type(
-            &mut sim,
-            &rules,
-            "Americans",
-            "SMIN",
-            &mut crate::sim::world::FrameEffects::default(),
-            false,
-        ));
+        assert!(
+            enqueue_by_type(
+                &mut sim,
+                &rules,
+                "Americans",
+                "SMIN",
+                &mut crate::sim::world::FrameEffects::default(),
+                false,
+            )
+            .is_ok()
+        );
         let parent = held_id(&sim, owner, ProductionCategory::Vehicle);
         let child_ids = children(&sim, parent);
         sim.houses.remove_for_test(&owner);
@@ -3389,7 +3502,7 @@ fn active_cancel_without_house_does_not_create_refund_account() {
             &rules,
             "Americans",
             crate::sim::production::ProductionCancellation::Type {
-                type_id: "SMIN",
+                type_id: "SMIN".into(),
                 naval: false,
             },
             all,
@@ -3406,22 +3519,28 @@ fn active_cancel_without_house_does_not_create_refund_account() {
 fn factory_loss_revalidation_disposes_parent_and_children_before_returning() {
     for parent_type in ["MTNK", "SMIN"] {
         let (mut sim, rules, owner) = world(0xfac7_0016);
-        assert!(enqueue_by_type(
-            &mut sim,
-            &rules,
-            "Americans",
-            parent_type,
-            &mut crate::sim::world::FrameEffects::default(),
-            false,
-        ));
-        assert!(enqueue_by_type(
-            &mut sim,
-            &rules,
-            "Americans",
-            parent_type,
-            &mut crate::sim::world::FrameEffects::default(),
-            false,
-        ));
+        assert!(
+            enqueue_by_type(
+                &mut sim,
+                &rules,
+                "Americans",
+                parent_type,
+                &mut crate::sim::world::FrameEffects::default(),
+                false,
+            )
+            .is_ok()
+        );
+        assert!(
+            enqueue_by_type(
+                &mut sim,
+                &rules,
+                "Americans",
+                parent_type,
+                &mut crate::sim::world::FrameEffects::default(),
+                false,
+            )
+            .is_ok()
+        );
         let parent = held_id(&sim, owner, ProductionCategory::Vehicle);
         let child_ids = children(&sim, parent);
         for _ in 0..40 {
@@ -3464,14 +3583,17 @@ fn factory_loss_revalidation_disposes_parent_and_children_before_returning() {
 #[test]
 fn a_ready_building_goes_with_the_last_construction_yard() {
     let (mut sim, rules, owner) = world(0xfac7_0019);
-    assert!(enqueue_by_type(
-        &mut sim,
-        &rules,
-        "Americans",
-        "GAPOWR",
-        &mut crate::sim::world::FrameEffects::default(),
-        false,
-    ));
+    assert!(
+        enqueue_by_type(
+            &mut sim,
+            &rules,
+            "Americans",
+            "GAPOWR",
+            &mut crate::sim::world::FrameEffects::default(),
+            false,
+        )
+        .is_ok()
+    );
     let held = held_id(&sim, owner, ProductionCategory::Building);
     assert!(
         sim.production
@@ -3557,14 +3679,17 @@ fn a_build_starts_without_money_owing_its_cost_of() {
         .expect("the tank is offered");
     assert!(tank.enabled);
     assert_eq!(tank.cost, 675);
-    assert!(enqueue_by_type(
-        &mut sim,
-        &rules,
-        "Russians",
-        "HTNK",
-        &mut crate::sim::world::FrameEffects::default(),
-        false,
-    ));
+    assert!(
+        enqueue_by_type(
+            &mut sim,
+            &rules,
+            "Russians",
+            "HTNK",
+            &mut crate::sim::world::FrameEffects::default(),
+            false,
+        )
+        .is_ok()
+    );
     for _ in 0..30 {
         sim.advance_tick(&[], Some(&rules), None, None, 67);
     }
@@ -3583,14 +3708,17 @@ fn a_build_starts_without_money_owing_its_cost_of() {
 #[test]
 fn a_cancel_refunds_the_cost_of_at_cancel_time() {
     let (mut sim, rules, owner) = plant_world();
-    assert!(enqueue_by_type(
-        &mut sim,
-        &rules,
-        "Russians",
-        "HTNK",
-        &mut crate::sim::world::FrameEffects::default(),
-        false,
-    ));
+    assert!(
+        enqueue_by_type(
+            &mut sim,
+            &rules,
+            "Russians",
+            "HTNK",
+            &mut crate::sim::world::FrameEffects::default(),
+            false,
+        )
+        .is_ok()
+    );
     crate::sim::credit_income::add_credits(&mut sim.houses, owner, 1000);
     let progress = |sim: &mut Simulation| {
         let factory = sim
@@ -3615,7 +3743,7 @@ fn a_cancel_refunds_the_cost_of_at_cancel_time() {
         &rules,
         "Russians",
         crate::sim::production::ProductionCancellation::Type {
-            type_id: "HTNK",
+            type_id: "HTNK".into(),
             naval: false
         },
         false,
@@ -3639,14 +3767,17 @@ fn occupied_barracks_radio_refunds_discards_and_promotes_one_gi() {
     let cost = sim.cost_of(owner, rules.object("E1").unwrap(), &rules);
     assert!(cost > 0);
 
-    assert!(enqueue_by_type(
-        &mut sim,
-        &rules,
-        "Americans",
-        "E1",
-        &mut crate::sim::world::FrameEffects::default(),
-        false,
-    ));
+    assert!(
+        enqueue_by_type(
+            &mut sim,
+            &rules,
+            "Americans",
+            "E1",
+            &mut crate::sim::world::FrameEffects::default(),
+            false,
+        )
+        .is_ok()
+    );
     let first = held_id(&sim, owner, category);
     // Supply the paid-completion wallet and Balance0 through their existing
     // owners. The actual constructor, publication, PLACE and HELLO2/9 tail run.
@@ -3692,22 +3823,28 @@ fn occupied_barracks_radio_refunds_discards_and_promotes_one_gi() {
             .is_none()
     );
 
-    assert!(enqueue_by_type(
-        &mut sim,
-        &rules,
-        "Americans",
-        "E1",
-        &mut crate::sim::world::FrameEffects::default(),
-        false,
-    ));
-    assert!(enqueue_by_type(
-        &mut sim,
-        &rules,
-        "Americans",
-        "E1",
-        &mut crate::sim::world::FrameEffects::default(),
-        false,
-    ));
+    assert!(
+        enqueue_by_type(
+            &mut sim,
+            &rules,
+            "Americans",
+            "E1",
+            &mut crate::sim::world::FrameEffects::default(),
+            false,
+        )
+        .is_ok()
+    );
+    assert!(
+        enqueue_by_type(
+            &mut sim,
+            &rules,
+            "Americans",
+            "E1",
+            &mut crate::sim::world::FrameEffects::default(),
+            false,
+        )
+        .is_ok()
+    );
     let refused = held_id(&sim, owner, category);
     assert_ne!(refused, first);
     // This completed second head and post-payment wallet are supplied test
@@ -3892,22 +4029,28 @@ fn secret_lab_fallback_capture_paid_queue_snapshot_and_loss_share_the_existing_o
             .secret_labs()
             .is_empty()
     );
-    assert!(enqueue_by_type(
-        &mut sim,
-        &rules,
-        "Americans",
-        "E1",
-        &mut FrameEffects::default(),
-        false
-    ));
-    assert!(enqueue_by_type(
-        &mut sim,
-        &rules,
-        "Americans",
-        "E1",
-        &mut FrameEffects::default(),
-        false
-    ));
+    assert!(
+        enqueue_by_type(
+            &mut sim,
+            &rules,
+            "Americans",
+            "E1",
+            &mut FrameEffects::default(),
+            false
+        )
+        .is_ok()
+    );
+    assert!(
+        enqueue_by_type(
+            &mut sim,
+            &rules,
+            "Americans",
+            "E1",
+            &mut FrameEffects::default(),
+            false
+        )
+        .is_ok()
+    );
     let product = held_id(&sim, owner, ProductionCategory::Infantry);
     for _ in 0..20 {
         sim.advance_tick(&[], Some(&rules), None, None, 67);
@@ -4035,14 +4178,17 @@ fn a_yard_going_offline_refreshes_the_defense_queue_with_ares() {
             owner, 0, None, true, 50_000, 10,
         ));
     spawn_structure(&mut sim, &rules, 1, "Americans", "YARD", 10, 10);
-    assert!(enqueue_by_type(
-        &mut sim,
-        &rules,
-        "Americans",
-        "PILL",
-        &mut crate::sim::world::FrameEffects::default(),
-        false,
-    ));
+    assert!(
+        enqueue_by_type(
+            &mut sim,
+            &rules,
+            "Americans",
+            "PILL",
+            &mut crate::sim::world::FrameEffects::default(),
+            false,
+        )
+        .is_ok()
+    );
     let suspended = |sim: &Simulation| {
         sim.production
             .factories()

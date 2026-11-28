@@ -163,8 +163,9 @@ pub(crate) struct RetailOptionsProfile {
     /// own string-table key. Off by default; a start with it on shows the
     /// texts until the hotkey asks for keys.
     pub(crate) show_string_keys: bool,
-    /// `[VERA] MouseWheelZoom=`: let the mouse wheel change the battle's
-    /// view distance. Off by default; this is a local camera preference.
+    /// `[VERA] MouseWheelZoom=`: let the mouse wheel zoom the battle's
+    /// camera, continuously (`app::input::camera::wheel_zoom`). Off by
+    /// default; this is a local camera preference.
     pub(crate) mouse_wheel_zoom: bool,
     /// `[VERA] RightClickOrders=`: left selects, right issues context orders,
     /// and a double-click on an object selects its type on screen (the T key's
@@ -197,6 +198,8 @@ pub(crate) struct RetailOptionsProfile {
     /// (`GpuContext::set_vsync`). On by default; untick it for lower input
     /// latency, with tearing. Presentation only.
     pub(crate) vsync: bool,
+    /// `[VERA] RenderInterpolation=`: draw moving units between logic frames.
+    pub(crate) render_interpolation: bool,
     /// `[VERA] HighRefreshRateInBattle=`: allow battlefield draws at the monitor's refresh rate.
     pub(crate) high_refresh_rate_in_battle: bool,
     /// `[VERA] HdMapPreviews=`: the setup screens' map preview shows VERA's
@@ -248,6 +251,13 @@ pub(crate) struct RetailOptionsProfile {
     /// 0, off, by default; read as
     /// [`crate::rules::personal_rules::admitted_superweapon_limit`] admits it.
     pub(crate) superweapon_limit: u8,
+    /// `[VERA] WasmBudget=`: the Wasm mod module's operations per frame in
+    /// place of the mod's own (RFC 0001 15.4); 0, the mod's, by default.
+    pub(crate) wasm_budget: u32,
+    /// `[VERA] AutosaveMinutes=`: an offline match is saved every this many
+    /// minutes of play (`persistence::autosave`), 0 never. 0 by default;
+    /// read clamped to 0..=60.
+    pub(crate) autosave_minutes: u8,
     /// `[VERA] SoloSkirmish=`: Start accepts a skirmish that has fewer than two
     /// sides for an undisturbed test match — either no AI row enabled, or every
     /// enabled AI on the local player's own explicit team. Off by default, so
@@ -291,7 +301,12 @@ pub(crate) struct RetailOptionsProfile {
     /// change applies from the next start. Auto keeps the game's data in
     /// charge; an unknown value reads as Auto.
     pub(crate) ares: crate::util::ares_launch::AresSetting,
-    /// `[VERA] RA2Mode=`: the Options page's RA2 Mode box (docs/ra2-mode.md).
+    /// `[VERA] Kratos=Auto|On|Off`: the Kratos extension setting
+    /// (`util::kratos_launch::KratosSetting`). Read at start, like the mod: a
+    /// change applies from the next start. Auto keeps the game's data in
+    /// charge; an unknown value reads as Auto.
+    pub(crate) kratos: crate::util::kratos_launch::KratosSetting,
+    /// `[VERA] RA2Mode=`: the player's saved edition (docs/ra2-mode.md).
     /// On, the game plays original Red Alert 2 from the installation's
     /// non-md files (`util::ra2_launch`). Read at start, like the Ares
     /// setting: a change applies from the next start. Off by default.
@@ -301,6 +316,11 @@ pub(crate) struct RetailOptionsProfile {
     /// value. `Off` keeps the retail image. Client presentation only: the
     /// final frame pass reads it live, and the simulation never sees it.
     pub(crate) color_vision: crate::ui::main_menu_dialogs::options::ColorVisionMode,
+    /// `[VERA] HdArt=`: HD art (`render::hd_switch`), the HD art over the
+    /// wheel-zoomed world, off by default; the Options list and the HD art key
+    /// (Page Up) set it. Client presentation only: the frame reads it live,
+    /// and the simulation never sees it.
+    pub(crate) hd_art_on: bool,
     /// `[VERA] TranslateChat=` and `TranslateMatches=`: the language other
     /// players' online chat is translated into (off by default) and whether
     /// a match's chat is too (on by default). Only the online lobby's Options
@@ -435,6 +455,7 @@ impl Default for RetailOptionsProfile {
             smooth_sidebar: false,
             smooth_online_menus: false,
             vsync: true,
+            render_interpolation: true,
             high_refresh_rate_in_battle: false,
             hd_map_previews: true,
             house_color_strength: crate::rules::house_colors::STRENGTH_RETAIL,
@@ -446,6 +467,8 @@ impl Default for RetailOptionsProfile {
             terrain_deformation: false,
             skirmish_cheats: false,
             superweapon_limit: 0,
+            wasm_budget: 0,
+            autosave_minutes: 0,
             solo_skirmish: false,
             commander_feedback: true,
             custom_end_game_banner: false,
@@ -453,7 +476,9 @@ impl Default for RetailOptionsProfile {
             custom_end_game_movie: false,
             health_bars: crate::ui::main_menu_dialogs::options::HealthBarMode::Vanilla,
             ares: crate::util::ares_launch::AresSetting::Auto,
+            kratos: crate::util::kratos_launch::KratosSetting::Auto,
             color_vision: crate::ui::main_menu_dialogs::options::ColorVisionMode::Off,
+            hd_art_on: false,
             chat_translation: Default::default(),
             language: None,
             skipped_update: String::new(),
@@ -482,7 +507,7 @@ pub(crate) struct FormattedProfileSections {
     pub(crate) audio: [(&'static str, String); 7],
     pub(crate) network: [(&'static str, String); 4],
     /// VERA's own section, written after the native ones.
-    pub(crate) vera: [(&'static str, String); 44],
+    pub(crate) vera: [(&'static str, String); 49],
 }
 
 impl RetailOptionsLoad {
@@ -709,6 +734,8 @@ impl RetailOptionsProfile {
             self.smooth_online_menus =
                 vera.read_bool("SmoothOnlineMenus", self.smooth_online_menus);
             self.vsync = vera.read_bool("VSync", self.vsync);
+            self.render_interpolation =
+                vera.read_bool("RenderInterpolation", self.render_interpolation);
             self.high_refresh_rate_in_battle =
                 vera.read_bool("HighRefreshRateInBattle", self.high_refresh_rate_in_battle);
             self.hd_map_previews = vera.read_bool("HdMapPreviews", self.hd_map_previews);
@@ -729,9 +756,14 @@ impl RetailOptionsProfile {
             self.superweapon_limit = crate::rules::personal_rules::admitted_superweapon_limit(
                 vera.read_int("SuperweaponLimit", i32::from(self.superweapon_limit)),
             );
+            self.wasm_budget =
+                u32::try_from(vera.read_int("WasmBudget", self.wasm_budget as i32)).unwrap_or(0);
             self.auto_repair = vera.read_bool("AutoRepair", self.auto_repair);
             self.ra2_mode = vera.read_bool("RA2Mode", self.ra2_mode);
             self.minimap_beacons = vera.read_bool("MinimapBeacons", self.minimap_beacons);
+            self.autosave_minutes = vera
+                .read_int("AutosaveMinutes", i32::from(self.autosave_minutes))
+                .clamp(0, 60) as u8;
             self.solo_skirmish = vera.read_bool("SoloSkirmish", self.solo_skirmish);
             self.commander_feedback = vera.read_bool("CommanderFeedback", self.commander_feedback);
             self.custom_end_game_banner =
@@ -763,12 +795,18 @@ impl RetailOptionsProfile {
                 self.ares.ini_value(),
                 16,
             ));
+            // Absent keeps the current value; an unknown one reads as Auto.
+            self.kratos = crate::util::kratos_launch::KratosSetting::from_ini_text(
+                &vera.read_string("Kratos", self.kratos.ini_value(), 16),
+            );
             // Absent keeps the current value; a value this build does not know
             // reads as Off instead of enabling a filter with no matrix.
             self.color_vision =
                 crate::ui::main_menu_dialogs::options::ColorVisionMode::from_ini_value(
                     vera.read_int("ColorVisionMode", self.color_vision.ini_value()),
                 );
+            // Absent keeps the current value.
+            self.hd_art_on = vera.read_bool("HdArt", self.hd_art_on);
             // `off`, or a tag this build does not offer, is off.
             if let Some(value) = vera.read_name("TranslateChat", 16) {
                 self.chat_translation.language =
@@ -890,6 +928,7 @@ impl RetailOptionsProfile {
                 ("ShiftQueue", format_bool(self.shift_queue).to_string()),
                 ("ShiftQueueCount", self.shift_queue_count.to_string()),
                 ("SoloSkirmish", format_bool(self.solo_skirmish).to_string()),
+                ("AutosaveMinutes", self.autosave_minutes.to_string()),
                 (
                     "CommanderFeedback",
                     format_bool(self.commander_feedback).to_string(),
@@ -921,6 +960,7 @@ impl RetailOptionsProfile {
                 ("GraphicsAPI", self.graphics_api.ini_value().to_owned()),
                 ("HealthBars", self.health_bars.ini_value().to_string()),
                 ("Ares", self.ares.ini_value().to_string()),
+                ("Kratos", self.kratos.ini_value().to_string()),
                 ("HdRadar", format_bool(self.hd_radar).to_string()),
                 (
                     "SmoothSidebar",
@@ -931,6 +971,10 @@ impl RetailOptionsProfile {
                     format_bool(self.smooth_online_menus).to_string(),
                 ),
                 ("VSync", format_bool(self.vsync).to_string()),
+                (
+                    "RenderInterpolation",
+                    format_bool(self.render_interpolation).to_string(),
+                ),
                 (
                     "HighRefreshRateInBattle",
                     format_bool(self.high_refresh_rate_in_battle).to_string(),
@@ -969,6 +1013,7 @@ impl RetailOptionsProfile {
                     format_bool(self.terrain_deformation).to_string(),
                 ),
                 ("SuperweaponLimit", self.superweapon_limit.to_string()),
+                ("WasmBudget", self.wasm_budget.to_string()),
                 (
                     "SkirmishCheats",
                     format_bool(self.skirmish_cheats).to_string(),
@@ -984,6 +1029,7 @@ impl RetailOptionsProfile {
                     format_bool(self.show_string_keys).to_string(),
                 ),
                 ("ColorVisionMode", self.color_vision.ini_value().to_string()),
+                ("HdArt", format_bool(self.hd_art_on).to_string()),
             ],
         }
     }
@@ -1024,7 +1070,6 @@ impl RetailOptionsProfile {
             VERA_SECTION,
             &[
                 "RA2Look",
-                "RenderInterpolation",
                 "SoundDefaultsApplied",
                 "SkipStartupLogo",
                 "WindowX",
@@ -2269,6 +2314,27 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
         }
     }
 
+    /// HD art starts off (the original picture) and `HdArt=` survives the
+    /// profile writer.
+    #[test]
+    fn hd_art_reads_and_round_trips() {
+        let startup = RetailStartupOptions::default();
+        assert!(!load_snapshot(&startup, b"").retained_profile.hd_art_on);
+        let input = b"[VERA]\nHdArt=yes\nUnowned=keep\n";
+        let profile = load_snapshot(&startup, input).retained_profile;
+        assert!(profile.hd_art_on);
+        let written = String::from_utf8(profile.transform_settings(input)).unwrap();
+        assert!(written.contains("Unowned=keep"), "{written}");
+        assert!(written.contains("HdArt=yes"), "{written}");
+        assert!(
+            load_snapshot(&startup, written.as_bytes())
+                .retained_profile
+                .hd_art_on
+        );
+        let off = b"[VERA]\nHdArt=no\n";
+        assert!(!load_snapshot(&startup, off).retained_profile.hd_art_on);
+    }
+
     /// The three `CustomEndGame*=` switches start off and are independent:
     /// turning one on never touches the other two, so a player can take the
     /// score page's picture without the battlefield verdict, or both without
@@ -2328,23 +2394,30 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
     }
 
     #[test]
-    fn original_yr_style_round_trips_and_retired_keys_are_dropped() {
+    fn original_yr_style_and_saved_tank_smoothing_round_trip_independently() {
         let startup = RetailStartupOptions::default();
+        assert!(
+            load_snapshot(&startup, b"")
+                .retained_profile
+                .render_interpolation
+        );
         for style in [false, true] {
             let input = format!(
-                "[VERA]\nYROriginalStyle={}\nRenderInterpolation=yes\nRA2Look=yes\nWolTestService=yes\nUnowned=keep\n",
+                "[VERA]\nYROriginalStyle={}\nRenderInterpolation={}\nRA2Look=yes\nWolTestService=yes\nUnowned=keep\n",
                 format_bool(style),
+                format_bool(!style),
             );
             let profile = load_snapshot(&startup, input.as_bytes()).retained_profile;
             assert_eq!(profile.yr_original_style, style);
             let written = profile.transform_settings(input.as_bytes());
             let text = String::from_utf8_lossy(&written);
             assert!(!text.contains("RA2Look="));
-            assert!(!text.contains("RenderInterpolation="));
+            assert_eq!(profile.render_interpolation, !style);
             assert!(!text.contains("WolTestService="), "{text}");
             assert!(text.contains("Unowned=keep"));
             let reloaded = load_snapshot(&startup, &written).retained_profile;
             assert_eq!(reloaded.yr_original_style, style);
+            assert_eq!(reloaded.render_interpolation, !style);
         }
     }
 

@@ -547,12 +547,6 @@ pub(crate) fn native_power_ratio(output: i32, drain: i32) -> MaskedX87Value {
     }
 }
 
-/// BuildingType46108A stores NEG(Power) as a signed dword for negative
-/// authored values. MIN remains negative and must not pass the positive-drain gate.
-pub(crate) fn native_building_power_drain(power: i32) -> i32 {
-    if power < 0 { power.wrapping_neg() } else { 0 }
-}
-
 /// BuildingClass::GetPowerDrain44E880: both immediate House registration
 /// and the later assessment read this same live contribution. Health does
 /// not scale drain; a nonzero upgrade count admits all three type slots.
@@ -567,7 +561,7 @@ pub(crate) fn building_power_drain(
     let Some(object) = interner.object_type(entity.type_ref(), rules) else {
         return 0;
     };
-    let mut drain = native_building_power_drain(object.power);
+    let mut drain = object.power_drain();
     if entity.building.gap_generator.supercharged() {
         drain = drain.wrapping_add(object.extra_power.drain());
     }
@@ -575,7 +569,7 @@ pub(crate) fn building_power_drain(
     if upgrades.count() != 0 {
         for type_ref in upgrades.types().iter().flatten() {
             if let Some(upgrade) = interner.object_type(*type_ref, rules) {
-                drain = drain.wrapping_add(native_building_power_drain(upgrade.power));
+                drain = drain.wrapping_add(upgrade.power_drain());
             }
         }
     }
@@ -596,7 +590,7 @@ pub(crate) struct OperationalFacts {
     pub emp_remaining: i32,
     pub health: i32,
     /// Type `+0x1573` Powered and `+0xEE4` drain (the negated negative
-    /// `Power=`, [`native_building_power_drain`]).
+    /// `Power=`, [`crate::rules::object_type::ObjectType::power_drain`]).
     pub powered: bool,
     pub power_drain: i32,
     /// Type `+0x1574` PoweredSpecial; the owner's blackout timer
@@ -1191,7 +1185,7 @@ pub fn is_building_powered(
         return true;
     };
     //4555D0 gates the ratio read on strictly positive native Type+EE4.
-    if native_building_power_drain(obj.power) <= 0 {
+    if obj.power_drain() <= 0 {
         return true;
     }
     // Non-Powered buildings are never deactivated.

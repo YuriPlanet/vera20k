@@ -141,8 +141,13 @@ pub(crate) fn update_team_creation(
     if !house.team_creation().timer.expired(frame)
         || house.is_controlled_by_human(sim.session.rule_policy())
         || house.multiplay_passive()
-        || house.command_driven()
     {
+        return;
+    }
+    // VERA: a Wasm module that claimed `Forces` raises the house's forces
+    // itself; the timer stays expired, as for a human house (RFC 0001 6i,
+    // `sim::ext_modules::claims`).
+    if sim.module_claims(owner, vera20k_wasm_ext::DOMAIN_FORCES) {
         return;
     }
     let admission = AiTriggerAdmission::resolve(&sim.session, house);

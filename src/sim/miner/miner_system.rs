@@ -1328,14 +1328,21 @@ pub(crate) fn assign_miner_cell_destination(
 /// `BSTATE_CONSTRUCTION` before `OnConstructionComplete`), `dying` is the
 /// Limbo'd corpse; a selling building (`building_down`) still counts, as the
 /// native `DEC` only lands at Limbo.
-pub(crate) fn count_purifiers_for_owner(sim: &Simulation, rules: &RuleSet, owner: &str) -> i32 {
+///
+/// Counted by a walk of the store at each payment, not kept as a House
+/// counter: the walk reads the four writers' outcomes (construction end,
+/// capture, limbo, death) from the objects themselves, where a counter would
+/// need each of their Rust owners to write it. A payment is one harvester
+/// unload step, not a per-tick walk.
+pub(crate) fn count_purifiers_for_owner(
+    sim: &Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+) -> i32 {
     sim.substrate
         .entities
         .values()
-        .filter(|e| {
-            counts_as_purifier(sim, rules, e)
-                && sim.interner.resolve(e.owner()).eq_ignore_ascii_case(owner)
-        })
+        .filter(|e| e.owner() == owner && counts_as_purifier(sim, rules, e))
         .count() as i32
 }
 
@@ -1371,13 +1378,11 @@ pub(crate) fn counts_as_purifier(
 pub(crate) fn effective_purifier_count(
     sim: &Simulation,
     rules: &RuleSet,
-    refinery_owner: &str,
+    refinery_owner: InternedId,
 ) -> i32 {
     let real = count_purifiers_for_owner(sim, rules, refinery_owner);
     // The AI virtual bonus needs the owner's house to say it is a computer.
-    let Some(house) =
-        crate::sim::house_state::house_state_for_owner(&sim.houses, refinery_owner, &sim.interner)
-    else {
+    let Some(house) = sim.houses.get(&refinery_owner) else {
         return real;
     };
     if house.is_human() || !sim.session.rule_policy().uses_ai_economy() {

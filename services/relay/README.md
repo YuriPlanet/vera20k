@@ -278,14 +278,18 @@ report, and while every tick-cost reporter holds the next faster rate, the clock
 tries one row faster; a slowdown within 30 seconds of a raise doubles that wait,
 up to 5 minutes. Pauses displace these times like the start. Status keeps the
 certificate's rate. A `VO2C` with flags bit 2 (continuous pacing) instead lets
-the clock seal at any whole rate from the certificate's down to 10: a behind
-player slows it to its holdable rate, at least one frame and at most 25%
-slower per change; a player catching up for 10 seconds straight slows it 5%
-once the last change is 10 seconds old. After a third of the raise wait it goes
-half the way to the slowest raise ceiling, at least one frame and at most a
-tenth of the rate per step. The ceiling is a reporter's tick cost and 95% of
-what it ran in a 10-second backlog or in a second sustained shortfall within
-five minutes, unless its ticks got 10% quicker since.
+the clock seal at any whole rate from the certificate's down to 10, a step at
+most every 5 seconds. A reporter's estimate is what its tick cost holds and,
+while frames wait on it, 90% of what it ran; the relay holds the estimate's low
+point and, once the reporter has kept up for a raise wait (30 seconds, doubled
+by each raise it could not hold up to 2 minutes, reset by a raise that held a
+minute), raises it 20%, or to 90% of the most the reporter ran since, and 20%
+again after each further wait. The clock aims at the least estimate
+less that reporter's backlog over 10 seconds, at most 40% of the estimate. The
+backlog is the head's frame when a sampled checksum arrives less the
+checksum's frame, less the least such gap while the reporter kept up. A step
+comes only when the aim is 5% or more away: down at most 50%, up all the way,
+at most 25%.
 Its rate markers carry any rate from 10 to 90; each game checks the rate
 against its certificate. In a federated room the coordinator decides from every
 relay's reports (see below). The relay's
@@ -486,7 +490,9 @@ the command allowance backpressures new batches while the clock and already
 accepted entries remain writable. A finished room keeps only the bytes it wrote
 through its replay grace. A room whose files could not all be created, or whose
 exact files could not all be removed, keeps its reservation while the relay
-retries the removal once a second.
+retries the removal once a second. Ending a room tries only that room's
+removal; the earlier failures wait for that timed retry, so a relay that ends
+many rooms does not repeat them on every end.
 
 Unexpected journal I/O failure, or a federated entry that no longer fits the
 journal, reports `StorageUnavailable` and preserves the files, rather than

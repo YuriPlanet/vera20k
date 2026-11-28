@@ -290,14 +290,17 @@ fn captured_alternate_refreshes_cameos_then_retracts_queued_product_on_loss() {
             if *reached == owner && *type_id == query
     )));
     assert!(!sim.houses[&owner].tech_recheck_pending());
-    assert!(crate::sim::production::enqueue_by_type(
-        &mut sim,
-        &rules,
-        "H0",
-        "Q",
-        &mut FrameEffects::default(),
-        false,
-    ));
+    assert!(
+        crate::sim::production::enqueue_by_type(
+            &mut sim,
+            &rules,
+            "H0",
+            "Q",
+            &mut FrameEffects::default(),
+            false,
+        )
+        .is_ok()
+    );
     assert!(
         sim.production
             .factories()

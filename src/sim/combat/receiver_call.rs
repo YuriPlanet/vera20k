@@ -4,6 +4,7 @@
 //! delay and Iron Curtain isolation facts the world receiver reads from it.
 
 use super::*;
+use crate::sim::ext_modules::modifiers::Immunity;
 
 /// InfantryClass::ReceiveDamage's prone head (`0x00517FC1..0x00517FEF`): a
 /// prone infantryman's positive raw damage, unless defenses are ignored,
@@ -424,7 +425,9 @@ pub(crate) fn receiver_divisors(
             house_type_armor.to_bits(),
         ),
         unit_armor: target.armor_multiplier(),
-        ae_armor,
+        // Phobos' AttachEffect divisor with the Wasm module modifiers.
+        ae_armor: target
+            .with_module_modifiers(crate::sim::ext_modules::modifiers::Stat::Armor, ae_armor),
         rank_armor,
     }
 }
@@ -493,19 +496,13 @@ pub(super) fn resolve_receive_damage_with_input(
     if target_is_building && target.health.current() == 0 {
         return None;
     }
-    // Residual: a null warhead (the empty name) finds no WarheadType, so the
-    // hit is dropped. Native passes it with IgnoreDefenses: Object 5F5390
-    // skips 489180, Building 442230 reads the warhead only for its Sparky=
-    // test in the NowYellow/NowRed loop, Unit 737C90 and Aircraft 4165C0 never read it, and Foot
-    // 4D7330 and Techno 701BF6 test it, so the target dies; an Infantry death
-    // reads its InfDeath (518369) and crashes. Only custom Rules without
-    // `[CombatDamage] C4Warhead=`/`CrushWarhead=` reach it (retail and all
-    // nine modes set both): the C4 detonation (world_orders), the Fly/Jumpjet
-    // self-destruct (`receive_own_health_c4`), dominated insignificant units
-    // (house_strategy) and the Lift drop crush (locomotor_lift). The tree
-    // death's C4 area damage matches native, which returns on the null
-    // warhead (DamageArea 489280 at 4892D7).
-    let warhead = interner.warhead_type(event.warhead_ref, rules)?;
+    // A native null WarheadType is the empty name. Techno701BF6 skips its
+    // warhead gates and still calls Object at 701DF8. An unresolved named
+    // warhead from outside data keeps the existing refused-call behavior.
+    let warhead = interner.warhead_type(event.warhead_ref, rules);
+    if warhead.is_none() && interner.try_resolve(event.warhead_ref) != Some("") {
+        return None;
+    }
     let source = (event.attacker_id != RAD_NO_ATTACKER)
         .then(|| entities.get(event.attacker_id))
         .flatten();
@@ -545,14 +542,15 @@ pub(super) fn resolve_receive_damage_with_input(
     // replaces the stock ally gate after Poison and before Psychedelic, including
     // ignoreDefenses calls. Reuse the EMP/AttachEffect policy's retained owner.
     let ares_house_damage_allowed = if rules.ares() {
-        warhead.ares_rules().map(|settings| {
+        warhead.and_then(|warhead| {
+            let settings = warhead.ares_rules()?;
             let owner = source.map(|entity| entity.owner()).or(event.source_house);
-            settings.can_affect_house(
+            Some(settings.can_affect_house(
                 owner.is_some(),
                 owner == Some(target.owner()),
                 owner.is_some_and(|owner| allied(owner, target.owner())),
                 warhead.affects_allies,
-            )
+            ))
         })
     } else {
         None
@@ -562,13 +560,15 @@ pub(super) fn resolve_receive_damage_with_input(
         current_hp: target.health.current(),
         object_immune: target_type.is_some_and(|object| object.immune),
         relative_damage: if rules.ares() {
-            warhead.ares_combat().and_then(|combat| {
-                combat.relative_damage(
-                    relative_damage_kind(target, target_type),
-                    target.health.current(),
-                    target_type.map(|object| object.strength),
-                )
-            })
+            warhead
+                .and_then(|warhead| warhead.ares_combat())
+                .and_then(|combat| {
+                    combat.relative_damage(
+                        relative_damage_kind(target, target_type),
+                        target.health.current(),
+                        target_type.map(|object| object.strength),
+                    )
+                })
         } else {
             None
         },
@@ -596,13 +596,13 @@ pub(super) fn resolve_receive_damage_with_input(
     // the splash unprotected. Native walks the same order, so VERA keeps it
     // (docking::bunker_link tests pin both outcomes).
     let bunker_blocked = !receiver_flags.ignore_defenses
-        && if target_is_building && target.bunker.occupant().is_some() {
-            // Linked Building branch is intentionally the inverse of the installed
-            // non-Building branch in TechnoClass::ReceiveDamage.
-            warhead.penetrates_bunker
-        } else {
-            target.bunker.link().installed_in().is_some() && !warhead.penetrates_bunker
-        };
+        && warhead.is_some_and(|warhead| {
+            if target_is_building && target.bunker.occupant().is_some() {
+                warhead.penetrates_bunker
+            } else {
+                target.bunker.link().installed_in().is_some() && !warhead.penetrates_bunker
+            }
+        });
     let active_invulnerability = target.invulnerability.as_ref().filter(|_| {
         crate::sim::superweapon::invulnerability::is_invulnerable(
             target.invulnerability.as_ref(),
@@ -622,25 +622,39 @@ pub(super) fn resolve_receive_damage_with_input(
         // warp-out or a Temporal warp.
         warping_out: !receiver_flags.ignore_defenses && target.is_warped_out(),
         bunker_blocked,
-        radiation_immune: warhead.radiation
-            && (rank_rad || target_type.is_some_and(|object| object.immune_to_radiation)),
-        psychic_immune: warhead.psychic_damage
-            && (rank_psychic || target_type.is_some_and(|object| object.immune_to_psionic_weapons)),
-        poison_immune: warhead.poison
-            && (rank_poison || target_type.is_some_and(|object| object.immune_to_poison)),
-        affects_allies: warhead.affects_allies,
+        // A module's `ImmunityFlags` replaces each gate's native immunity.
+        radiation_immune: warhead.is_some_and(|warhead| warhead.radiation)
+            && target.module_immune(
+                Immunity::Radiation,
+                rank_rad || target_type.is_some_and(|object| object.immune_to_radiation),
+            ),
+        psychic_immune: warhead.is_some_and(|warhead| warhead.psychic_damage)
+            && target.module_immune(
+                Immunity::Psychic,
+                rank_psychic || target_type.is_some_and(|object| object.immune_to_psionic_weapons),
+            ),
+        poison_immune: warhead.is_some_and(|warhead| warhead.poison)
+            && target.module_immune(
+                Immunity::Poison,
+                rank_poison || target_type.is_some_and(|object| object.immune_to_poison),
+            ),
+        affects_allies: warhead.is_none_or(|warhead| warhead.affects_allies),
         attacker_is_allied,
         ares_house_damage_allowed,
         source_house_is_allied,
-        psychedelic: warhead.psychedelic,
-        psionics_immune: target_type.is_some_and(|object| {
-            let immune = rank_psionics || object.immune_to_psionics;
-            if rules.ares() {
-                object.techno_combat().combat().immune_to_berserk(immune)
-            } else {
-                immune
-            }
-        }),
+        psychedelic: warhead.is_some_and(|warhead| warhead.psychedelic),
+        // The Psychedelic gate is berserk (`ImmunityFlags` bit 6).
+        psionics_immune: target.module_immune(
+            Immunity::Berserk,
+            target_type.is_some_and(|object| {
+                let immune = rank_psionics || object.immune_to_psionics;
+                if rules.ares() {
+                    object.techno_combat().combat().immune_to_berserk(immune)
+                } else {
+                    immune
+                }
+            }),
+        ),
         target_is_building,
         skip_low_damage_check,
     };
@@ -659,15 +673,17 @@ pub(super) fn resolve_receive_damage_with_input(
     // block, which the concrete death reads from the killing event.
     let outcome = damage::receive::receive_damage(
         receiver_input,
-        warhead.cell_spread_f64,
-        warhead.percent_at_max_f64,
-        warhead
-            .interaction(
-                target_type.map_or(crate::rules::armor::ArmorId::NONE, |object| {
-                    object.armor_id()
-                }),
-            )
-            .multiplier(),
+        warhead.map(|warhead| damage::kernel::DamageWarhead {
+            cell_spread: warhead.cell_spread_f64,
+            percent_at_max: warhead.percent_at_max_f64,
+            armor_multiplier: warhead
+                .interaction(
+                    target_type.map_or(crate::rules::armor::ArmorId::NONE, |object| {
+                        object.armor_id()
+                    }),
+                )
+                .multiplier(),
+        }),
         &target_view,
         &divisors,
         &gates,
@@ -680,11 +696,13 @@ pub(super) fn resolve_receive_damage_with_input(
     // IronCurtainFlash=`) off goes to 0x701A98, the zero packet without the
     // flash.
     let invulnerability_flashes = !rules.ares()
-        || warhead.ares_combat().is_none_or(|combat| {
-            combat
-                .iron_curtain_flash()
-                .unwrap_or(rules.ares_warhead_globals().iron_curtain_flash())
-        });
+        || warhead
+            .and_then(|warhead| warhead.ares_combat())
+            .is_none_or(|combat| {
+                combat
+                    .iron_curtain_flash()
+                    .unwrap_or(rules.ares_warhead_globals().iron_curtain_flash())
+            });
     let invulnerability_impact = outcome
         .invulnerability_impact_damage
         .filter(|_| invulnerability_flashes)
@@ -731,24 +749,24 @@ pub(super) fn receiver_anger_delta(final_damage: i32, strength: i32, cost: i32) 
 /// TechnoClass::ReceiveDamage PostMortem interpolation at 0x00701ED0.
 /// `CellSpread` and `DelayKillAtMax` are native binary32 inputs; every other
 /// operand is signed i32 and the two ftol results use their low dword.
+///
+/// For a non-finite or out-of-range duration, the masked conversion in
+/// `Math__ftol @ 0x007C5F00` yields the signed qword's integer indefinite.
+/// The timer receives its low dword, zero.
 fn postmortem_delay_duration(warhead: &WarheadType, distance_leptons: i32) -> i32 {
-    let base = X87Chop53::load_i32(warhead.delay_kill_frames);
-    let at_max = X87Chop53::load_f32(NativeF32Bits::from_bits(
+    use crate::util::native_x87::MaskedX87Chop53 as X87;
+    let base = X87::load_i32(warhead.delay_kill_frames);
+    let at_max = X87::load_f32(NativeF32Bits::from_bits(
         (warhead.delay_kill_at_max_f64 as f32).to_bits(),
-    ))
-    .expect("DelayKillAtMax parser retains a finite native f32");
-    let slope = X87Chop53::sub(X87Chop53::mul(at_max, base), base);
+    ));
+    let slope = X87::sub(X87::mul(at_max, base), base);
     let denominator = cell_spread::whole_cells(warhead.cell_spread_f64).wrapping_shl(8);
-    let Ok(slope_per_lepton) = X87Chop53::div(slope, X87Chop53::load_i32(denominator)) else {
-        // Masked x87 divide-by-zero/non-finite conversion yields the integer
-        // indefinite qword; Math__ftol returns its low dword, which is zero.
-        return 0;
-    };
-    let delay = X87Chop53::add(
+    let slope_per_lepton = X87::div(slope, X87::load_i32(denominator));
+    let delay = X87::add(
         base,
-        X87Chop53::mul(X87Chop53::load_i32(distance_leptons), slope_per_lepton),
+        X87::mul(X87::load_i32(distance_leptons), slope_per_lepton),
     );
-    X87Chop53::ftol_i32_low_masked(delay)
+    X87::ftol_i32_low_masked(delay)
 }
 
 pub(super) fn postmortem_duration_for_event(
@@ -906,5 +924,44 @@ mod house_damage_tests {
             receive("AffectsAllies=yes\nAffectsEnemies=no\n", true, true, None),
             0,
         );
+    }
+}
+
+#[cfg(all(test, tests_sim_combat_d_z))]
+mod postmortem_delay_tests {
+    use super::*;
+    use crate::rules::ini_parser::IniFile;
+
+    fn armed_duration(delay_kill_at_max: &str) -> i32 {
+        let ini = IniFile::from_str(&format!(
+            "[VehicleTypes]\n\
+             [BuildingTypes]\n0=BARREL\n\
+             [Warheads]\n0=W\n\
+             [BARREL]\nStrength=5\nArmor=concrete\nEligibleForDelayKill=yes\n\
+             [W]\nCellSpread=4\nPercentAtMax=1\nCausesDelayKill=yes\n\
+             DelayKillFrames=5\nDelayKillAtMax={delay_kill_at_max}\n\
+             Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n"
+        ));
+        let rules = RuleSet::from_ini(&ini).expect("PostMortem rules");
+        let mut sim = crate::sim::world::Simulation::new();
+        sim.resolve_type_handles(&rules);
+        let barrel = sim
+            .spawn_object("BARREL", "Neutral", 8, 5, 0, &rules)
+            .expect("barrel spawns");
+        let warhead = sim.interner.intern("W");
+        let hit = EntityDamageEvent::area(barrel, 10, 512, RAD_NO_ATTACKER, None, warhead);
+        sim.commit_noncombat_aoe_hits(&rules, None, &[hit], &mut Default::default());
+        sim.entities()
+            .get(barrel)
+            .and_then(|entity| entity.building.pending_c4_detonation.pending())
+            .expect("a qualifying fatal hit becomes PostMortem")
+            .timer()
+            .duration()
+    }
+
+    #[test]
+    fn postmortem_arms_the_native_duration_for_finite_and_overflowing_multipliers() {
+        assert_eq!(armed_duration("7"), 20);
+        assert_eq!(armed_duration("1e39"), 0);
     }
 }

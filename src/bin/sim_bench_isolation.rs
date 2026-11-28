@@ -124,6 +124,7 @@ fn load(
     scene.runtime.simulation.batch_path_searches();
     scene.runtime.simulation.batch_target_scans();
     scene.runtime.simulation.present_effect_anims();
+    scene.runtime.simulation.separate_turn_streams(true);
     Ok(scene)
 }
 

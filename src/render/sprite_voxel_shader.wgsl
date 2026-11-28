@@ -11,7 +11,8 @@
 //
 // Bind groups:
 //   group 0: camera uniform
-//   group 1: atlas (R8Uint)
+//   group 1: atlas (R8Uint), and VERA's HD page beside it (R8Uint, 1x1 when
+//   the page has none)
 //   group 2: palette (Rgba8UnormSrgb) + house_ramp (Rgba8UnormSrgb) + sampler
 //   (sRGB format → sampler returns linear RGB; the tint is applied after
 //   re-encoding to sRGB, the space gamemd's LightConvert scales in)
@@ -31,6 +32,10 @@ struct Camera {
 @group(0) @binding(0) var<uniform> camera: Camera;
 
 @group(1) @binding(0) var atlas: texture_2d<u32>;
+// VERA-only, experimental (docs/zoom-one-pass.md): the page's pictures at
+// twice the resolution (`vxl_raster::VxlHd`, `UnitAtlas::upload`), 0 where a
+// picture has none; a 1x1 placeholder on a page without any.
+@group(1) @binding(1) var atlas_hd: texture_2d<u32>;
 
 @group(2) @binding(0) var palette: texture_2d<f32>;
 @group(2) @binding(1) var house_ramp: texture_2d<f32>;
@@ -94,11 +99,11 @@ fn vs_main(
     );
 
     let local: vec2f = quad_pos[idx];
-    let is_zoomed: bool = abs(camera.zoom - 1.0) >= 0.001;
-    // Match the exact source scale used by the other tactical blitters.
-    let raw_pos: vec2f = (instance.position + local * instance.size
-        - camera.camera_pos) * camera.zoom;
-    let pixel_pos: vec2f = select(raw_pos, floor(raw_pos + vec2f(0.5, 0.5)), !is_zoomed);
+    // Snap the corners to whole world pixels, then scale by the zoom: each
+    // world pixel is one zoom-sized block (docs/zoom-one-pass.md), the same
+    // rounding as the other tactical blitters; at zoom 1 the plain rounding.
+    let pixel_pos: vec2f = world_block_corner(instance.position + local * instance.size
+        - camera.camera_pos);
 
     // Convert pixel to clip space (matches batch_shader convention).
     let clip_x: f32 = (pixel_pos.x / camera.screen_size.x) * 2.0 - 1.0;
@@ -161,6 +166,25 @@ fn voxel_source_rgb(index: u32, remap_row: u32, source_palette: u32) -> vec3f {
     return textureLoad(palette, vec2i(i32(index), i32(source_palette)), 0).rgb;
 }
 
+// The palette index at `uv`. VERA-only, experimental (docs/zoom-one-pass.md):
+// while the camera zooms in (only the one-pass battlefield draws with a zoom
+// above 1) a page with an HD page reads the HD index there instead, so a
+// model with more voxels than its 1x picture has pixels shows them. The 1x
+// picture keeps the silhouette: a 1x hole stays a hole, and an HD hole shows
+// the 1x index. Palette, house ramp, light and Z are the 1x pixel's. Before
+// `apply_fx`: the packed voxel raster shares this prefix (`terrain_packed_voxel.wgsl`).
+fn voxel_byte_at(uv: vec2f) -> u32 {
+    let atlas_size: vec2f = vec2f(textureDimensions(atlas));
+    let byte = textureLoad(atlas, vec2i(uv * atlas_size), 0).r;
+    let hd_size = textureDimensions(atlas_hd);
+    if byte == 0u || camera.zoom <= 1.0 || hd_size.x <= 1u {
+        return byte;
+    }
+    let hd_coord = vec2i(clamp(uv * vec2f(hd_size), vec2f(0.0), vec2f(hd_size) - 1.0));
+    let hd = textureLoad(atlas_hd, hd_coord, 0).r;
+    return select(byte, hd, hd != 0u);
+}
+
 fn apply_fx(color: vec4f, _flags: u32, params: vec4f) -> vec4f {
     // Original location: `RA2-GAME.EXE-IDB` canon,
     // `rendering.drawStateEffects.ra2yr.json`; the same branch exists in the
@@ -193,9 +217,7 @@ struct FragOutput {
 };
 
 fn voxel_byte(in: VertexOutput) -> u32 {
-    let atlas_size: vec2f = vec2f(textureDimensions(atlas));
-    let atlas_coord: vec2i = vec2i(in.atlas_uv * atlas_size);
-    return textureLoad(atlas, atlas_coord, 0).r;
+    return voxel_byte_at(in.atlas_uv);
 }
 
 // The Z-read pipeline. A candidate above 65535 never draws and a negative

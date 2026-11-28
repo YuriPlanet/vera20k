@@ -29,6 +29,8 @@ pub mod root;
 pub mod verb_art;
 pub mod verb_compare;
 pub mod verb_csf;
+pub mod verb_export_model;
+pub mod verb_export_picture;
 pub mod verb_extract;
 pub mod verb_find;
 pub mod verb_info;
@@ -40,6 +42,7 @@ pub mod verb_parse_check;
 pub mod verb_render;
 pub mod verb_scan;
 pub mod verb_sound;
+pub mod verb_wasm;
 
 /// Turns an asset or archive name into one output path component: ASCII
 /// letters, digits and `.`, `_`, `-` stay, every other character becomes `_`,

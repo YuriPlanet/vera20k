@@ -34,13 +34,13 @@ struct Batch {
 
 impl MassInput {
     pub(super) fn step(&mut self, state: &mut AppState, frame: u32) -> Result<bool> {
-        self.observe_admissions(state, frame)?;
-        self.observe_executions(state)?;
+        self.observe_admissions(&state.match_state.match_diagnostics, frame)?;
+        self.observe_executions(&mut state.match_state.match_diagnostics)?;
         if !self.initialized && frame >= 10 {
             battle::combatants_with_keyboard(state)?;
-            self.selected = battle::projected_selection(state);
+            self.selected = battle::projected_selection(&state.frontend, &state.match_state);
             self.selected_set = self.selected.iter().copied().collect();
-            let expected = local_combatants(state)?;
+            let expected = local_combatants(&state.frontend, &state.match_state)?;
             ensure!(
                 self.selected_set == expected,
                 "CombatantSelect omitted local combatants or selected foreign actors"
@@ -49,7 +49,7 @@ impl MassInput {
                 self.selected_set.len() == self.selected.len(),
                 "selection contains duplicate actors"
             );
-            self.positions = positions(state, &self.selected)?;
+            self.positions = positions(&state.match_state.sim_runtime, &self.selected)?;
             self.initialized = true;
             state
                 .match_state
@@ -70,7 +70,7 @@ impl MassInput {
             if !batch.covers(&self.selected_set) {
                 return Ok(false);
             }
-            let current = positions(state, &self.selected)?;
+            let current = positions(&state.match_state.sim_runtime, &self.selected)?;
             if batch.kind == "Move" {
                 let moved = current
                     .iter()
@@ -78,7 +78,7 @@ impl MassInput {
                     .filter(|(now, before)| now != before)
                     .count();
                 let pending: BTreeSet<_> = if moved == 0 {
-                    simulation(state)?
+                    simulation(&state.match_state.sim_runtime)?
                         .pending_path_search_actor_ids()
                         .filter(|id| self.selected_set.contains(id))
                         .collect()
@@ -90,7 +90,7 @@ impl MassInput {
                         "Mass capture Move waits for {} selected path requests at frame{}; path_stats={:?}; actors={}",
                         pending.len(),
                         frame,
-                        simulation(state)?.path_batch_stats(),
+                        simulation(&state.match_state.sim_runtime)?.path_batch_stats(),
                         movement_sample(&self.selected, &self.positions, &current, batch, &pending)
                     );
                 }
@@ -99,7 +99,7 @@ impl MassInput {
                     .with_context(|| {
                         format!(
                             "frame{frame}, path_stats={:?}, actors={}",
-                            simulation(state)
+                            simulation(&state.match_state.sim_runtime)
                                 .ok()
                                 .and_then(|sim| sim.path_batch_stats()),
                             movement_sample(
@@ -114,9 +114,9 @@ impl MassInput {
                 {
                     return Ok(false);
                 }
-                self.finish_batch(state, frame, moved, 0)?;
+                self.finish_batch(&state.match_state, frame, moved, 0)?;
             } else {
-                let sim = simulation(state)?;
+                let sim = simulation(&state.match_state.sim_runtime)?;
                 let cleared = self
                     .selected
                     .iter()
@@ -141,35 +141,36 @@ impl MassInput {
                 if frame.saturating_sub(batch.quiet.as_ref().unwrap().0) < 10 {
                     return Ok(false);
                 }
-                self.finish_batch(state, frame, 0, cleared)?;
+                self.finish_batch(&state.match_state, frame, 0, cleared)?;
             }
         }
         if self.pending.is_none() && self.order < 4 {
             ensure!(
-                battle::projected_selection(state) == self.selected,
+                battle::projected_selection(&state.frontend, &state.match_state) == self.selected,
                 "full selection changed before the next command"
             );
             // Capacity includes the existing DoList's retained slots, even
             // after an earlier batch executed. Wait before issuing any normal
             // input; capture wall/frame bounds and all-actor proofs still apply.
-            let available = simulation(state)?.available_local_command_slots();
+            let available =
+                simulation(&state.match_state.sim_runtime)?.available_local_command_slots();
             if available < self.selected.len() {
                 if self.capacity_wait.is_none() {
                     let wait = json!({"order":self.order,"frame":frame,
-                        "selected_actor_count":self.selected.len(),"input":command_input_context(state)?});
+                        "selected_actor_count":self.selected.len(),"input":command_input_context(&state.match_state)?});
                     log::info!("Mass capture waits for full-selection input capacity: {wait}");
                     self.capacity_wait = Some(wait);
                 }
                 return Ok(false);
             }
-            let input_before = command_input_context(state)?;
+            let input_before = command_input_context(&state.match_state)?;
             let capacity_wait = self.capacity_wait.take().map(|wait| {
                 let release = json!({"waiting":wait,"released_frame":frame,"input":input_before});
                 log::info!("Mass capture full-selection input capacity released: {release}");
                 release
             });
-            self.positions = positions(state, &self.selected)?;
-            let before = simulation(state)?.pending_local_command_count();
+            self.positions = positions(&state.match_state.sim_runtime, &self.selected)?;
+            let before = simulation(&state.match_state.sim_runtime)?.pending_local_command_count();
             let sent_before = state
                 .match_state
                 .live_network
@@ -183,7 +184,7 @@ impl MassInput {
                 battle::selected_stop_with_keyboard(state)?;
                 "Stop"
             };
-            let submitted = simulation(state)?
+            let submitted = simulation(&state.match_state.sim_runtime)?
                 .pending_local_command_count()
                 .checked_sub(before)
                 .context("local command FIFO shrank during input")?;
@@ -191,7 +192,7 @@ impl MassInput {
                 submitted == self.selected.len(),
                 "{kind} queued {submitted} of {} selected actors at frame{frame}; before={input_before}, after={}",
                 self.selected.len(),
-                command_input_context(state)?
+                command_input_context(&state.match_state)?
             );
             log::info!("Mass capture {} submitted {} actors", kind, submitted);
             self.pending = Some(Batch {
@@ -211,10 +212,12 @@ impl MassInput {
         Ok(self.order == 4 && self.pending.is_none())
     }
 
-    fn observe_admissions(&mut self, state: &AppState, frame: u32) -> Result<()> {
-        let log = state
-            .match_state
-            .match_diagnostics
+    fn observe_admissions(
+        &mut self,
+        match_diagnostics: &MatchDiagnosticsState,
+        frame: u32,
+    ) -> Result<()> {
+        let log = match_diagnostics
             .replay_log
             .as_ref()
             .context("mass capture requires production command recording")?;
@@ -262,14 +265,10 @@ impl MassInput {
         Ok(())
     }
 
-    fn observe_executions(&mut self, state: &mut AppState) -> Result<()> {
+    fn observe_executions(&mut self, match_diagnostics: &mut MatchDiagnosticsState) -> Result<()> {
         use crate::sim::components::NavTargetRef;
         use crate::sim::mission::{MissionId, MissionType};
-        for execution in state
-            .match_state
-            .match_diagnostics
-            .take_command_observations()?
-        {
+        for execution in match_diagnostics.take_command_observations()? {
             let record = &execution.record;
             let (kind, target) = if let Some(command) = MegaMissionRecord::decode(record) {
                 let MegaMissionOrder::Move { target_x, target_y } = command.order else {
@@ -340,7 +339,7 @@ impl MassInput {
 
     fn finish_batch(
         &mut self,
-        state: &AppState,
+        match_state: &MatchState,
         frame: u32,
         moved: usize,
         stopped: usize,
@@ -351,8 +350,7 @@ impl MassInput {
             accepted == self.selected_set && batch.covers(&self.selected_set),
             "mass command omitted a selected actor execution suffix"
         );
-        let sent = state
-            .match_state
+        let sent = match_state
             .live_network
             .as_ref()
             .context("live transport")?
@@ -378,7 +376,7 @@ impl MassInput {
             "first_pending_path_frame":batch.first_pending_path_frame,
             "capacity_wait":batch.capacity_wait,
             "move_observation_frames":batch.move_observation_frames,
-            "positions":if batch.kind == "Move" {Some(json!({"actor_ids":self.selected,"before":self.positions,"after":positions(state,&self.selected)?}))} else {None}}));
+            "positions":if batch.kind == "Move" {Some(json!({"actor_ids":self.selected,"before":self.positions,"after":positions(&match_state.sim_runtime,&self.selected)?}))} else {None}}));
         log::info!(
             "Mass capture {} admitted all {} actors",
             batch.kind,
@@ -528,27 +526,22 @@ fn ids_digest(ids: impl Iterator<Item = u64>) -> String {
     crate::util::sha256::sha256_hex(&ids.flat_map(u64::to_le_bytes).collect::<Vec<_>>())
 }
 // Bounded read-only input facts: never record chat text or mutate a refusal.
-fn command_input_context(state: &AppState) -> Result<Value> {
-    let sim = simulation(state)?;
+fn command_input_context(match_state: &MatchState) -> Result<Value> {
+    let sim = simulation(&match_state.sim_runtime)?;
     Ok(json!({"available":sim.available_local_command_slots(),
         "pending_local":sim.pending_local_command_count(),
-        "input_locked":crate::app::input::campaign_input::is_locked(state),
+        "input_locked":crate::app::input::campaign_input::is_locked(match_state),
         "scenario_paused":sim.session().scenario_paused(),
         "network_failure":sim.pending_network_failure(),
         "network_interruption":sim.pending_network_interruption(),
-        "chat_editing":state.match_state.match_presentation.message_list.editing(),
-        "planning":state.match_state.input.planning.active()}))
+        "chat_editing":match_state.match_presentation.message_list.editing(),
+        "planning":match_state.input.planning.active()}))
 }
-fn simulation(state: &AppState) -> Result<&crate::sim::world::Simulation> {
-    Ok(&state
-        .match_state
-        .sim_runtime
-        .runtime()
-        .context("mass simulation")?
-        .simulation)
+fn simulation(sim_runtime: &SimHost) -> Result<&crate::sim::world::Simulation> {
+    Ok(&sim_runtime.runtime().context("mass simulation")?.simulation)
 }
-fn positions(state: &AppState, ids: &[u64]) -> Result<Vec<DriveCoord>> {
-    let sim = simulation(state)?;
+fn positions(sim_runtime: &SimHost, ids: &[u64]) -> Result<Vec<DriveCoord>> {
+    let sim = simulation(sim_runtime)?;
     ids.iter()
         .map(|id| {
             let entity = sim.entities().get(*id).context("mass actor disappeared")?;
@@ -562,9 +555,9 @@ fn positions(state: &AppState, ids: &[u64]) -> Result<Vec<DriveCoord>> {
         })
         .collect()
 }
-fn local_combatants(state: &AppState) -> Result<BTreeSet<u64>> {
-    let sim = simulation(state)?;
-    let rules = state.rules().context("mass rules")?;
+fn local_combatants(frontend: &FrontendState, match_state: &MatchState) -> Result<BTreeSet<u64>> {
+    let sim = simulation(&match_state.sim_runtime)?;
+    let rules = crate::app::state::active_rules(frontend, match_state).context("mass rules")?;
     let owner = sim.session().current_house().context("local House")?;
     Ok(sim
         .entities()

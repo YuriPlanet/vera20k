@@ -83,12 +83,13 @@ const POOL_ENTRY_PINS: &[(&str, usize, &str)] = &[
         "sim/movement/path_batch.rs",
         1,
         "detached: each batched search runs inside `detached`; outside it a task \
-         reads only its step counters",
+         reads only its step counters. The work the pass answers beside its \
+         searches is its caller's (`world/object_turn.rs`)",
     ),
     (
         "sim/parallel.rs",
-        5,
-        "the pool's entries themselves; what their tasks do is their callers' pin",
+        13,
+        "the pool builder configures worker stacks and names; tasks run at their pinned callers",
     ),
     (
         "sim/pathfinding/zone_build.rs",
@@ -105,6 +106,12 @@ const POOL_ENTRY_PINS: &[(&str, usize, &str)] = &[
         "sim/secret_lab.rs",
         1,
         "never looks a cell up: the filter reads each building's type in the rules",
+    ),
+    (
+        "sim/snapshot.rs",
+        1,
+        "never looks a cell up: the layout trace decodes made-up values on a \
+         thread of its own, for its stack",
     ),
     (
         "sim/state_hasher.rs",
@@ -128,6 +135,14 @@ const POOL_ENTRY_PINS: &[(&str, usize, &str)] = &[
         "never looks a cell up: syncs the presentation copy's parts side by side",
     ),
     (
+        "sim/world/object_turn.rs",
+        1,
+        "detached: the live object pass's target scans, answered beside its path \
+         searches or by themselves. Each scan runs inside `detached_stamps`, one \
+         that stamped is dropped for its turn, and the due check before it reads \
+         the object (`techno_ai::scan_batch`)",
+    ),
+    (
         "sim/world/sim_construction.rs",
         3,
         "never looks a cell up: the presentation copy's syncs, fog copy, clone and \
@@ -136,8 +151,8 @@ const POOL_ENTRY_PINS: &[(&str, usize, &str)] = &[
     (
         "sim/world/techno_ai/scan_batch.rs",
         1,
-        "detached: each target scan runs inside `detached_stamps` and one that \
-         stamped is dropped for its turn; the due check before it reads the object",
+        "detached: the team step's patrol scans. Each runs inside `detached_stamps`, \
+         and one that stamped is dropped for its team's update",
     ),
     (
         "sim/world/world_hash.rs",
@@ -413,6 +428,11 @@ const DEREF_TYPES: &[(&str, &str, &str)] = &[
         "HumanPlayerClients",
         "sim/world/shroud_refresh.rs",
         "no client, one or a shared list, read as one slice of clients",
+    ),
+    (
+        "Forked",
+        "util/forked.rs",
+        "a copy-on-write world field: `deref_mut` notes the write and gives a fork its own copy",
     ),
     (
         "ModFolder",

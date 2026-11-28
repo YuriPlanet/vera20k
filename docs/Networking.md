@@ -29,6 +29,12 @@ password or delete it ([Accounts](lobby-protocol.md#accounts)). Players then cre
 or join a game. A host can select Easy, Normal or Hard AI from an open player slot in
 Battle or Free For All.
 
+In a desktop online room, **Choose Map → Online Maps** lets the host browse the
+same categories as the website. A map may appear in several categories, including
+after the host downloads it. A public, optional [category feed](lobby-protocol.md#map-library)
+only filters the host's picker. Mixed rooms, releases without category support and
+rollbacks use the existing room map selection and transfer messages.
+
 The HTTPS service supplies match-specific relay credentials before the same loading
 and command handoff. Both paths transfer selected authored maps or generated
 seed/preview data and verify build, rules and effective-map agreement before start.
@@ -59,6 +65,11 @@ longer carries its locals either. Loading a save keeps its saved variables. Offl
 the original game's local variable carryover. This changes no packets: mixed builds
 are refused by the existing build check, and a rollback restores the earlier
 carryover behavior.
+
+Authored LAN and online campaign stages take omitted `[SpecialFlags]` keys from
+shared scenario defaults. A player's previous match can supply those defaults in
+an offline campaign. Replays initialize ore queues with the flags recorded at
+match start. The existing [build check](#build-check) covers mixed versions.
 
 Each new LAN or online match also rebuilds mutable Rules from the frozen startup
 sources and the room's current options. This includes the country/color choices
@@ -400,6 +411,45 @@ are left out, as the rules digest compares them with the mod
 A launcher's match that names such a file does not point at the launcher, whose rules
 parts leave those files out. On LAN the refusal keeps the native text without this
 list. Nothing new is exchanged and the identity stays 32 bytes.
+
+A player with a picture and model art pack ([picture and model art](picture-model-art.md):
+an Art INI that only adds `Picture=`, `PictureSize=`, `CameoPicture=`, `AltCameoPicture=`,
+`Model=`, `ModelSize=` and `ModelVoxels=`, and sections of only those; theater INIs that only
+add `PictureFileName=`; PNG, WebP, glTF and Opus files, with the SHPs, VXLs and sounds they
+replace possibly gone) plays with retail players. Every agreement on those INIs leaves the
+keys out, and a section they leave empty (`retail_sources::vera_drawing_keys`): the Art
+digest and the theater INIs' in the rules digest and its parts, the start's terrain
+digest, the room door's ARTMD CRC (`art_data::art_native_crc`, compared on LAN and in
+`ex_info` as before), and the changed game files Quick Match and a refused start name. An
+INI holding none of them, every retail one, gives the same digests and CRC as before, so
+retail games and rooms are unchanged. A section of only those keys is none to the
+simulation, as a missing one, and an art pack's INI that differs in anything else is
+changed as before. What the simulation reads from the pack's files rides in the start's
+`asset_files` part (`RuleSet::file_inputs_hash`) as facts, whatever file gave them: Buildup,
+rubble, ore-tree and animation frame counts and bounds, a scorching or cratering
+animation's middle frame size class (a picture's middle frame measured by the rectangle
+it draws, as an SHP frame stores it), which main voxel models load and their tilt half
+sizes (`ModelVoxels=X,Y` gives a VXL's own, so a model pack keeps the VXL's tilt without
+the VXL), and which overlays without a CellAnim have an image. Each fold is the fact
+itself, whether an SHP, a VXL, a picture or a model gave it, and never asks whether the
+retail file is there, so a pack that removes the SHPs and VXLs its pictures and models
+replace from repacked archives folds as the original when its facts are the original's.
+A pack whose files give the original's facts starts with retail players; one whose facts
+differ (a picture that cannot be read included) is refused at the start with the
+start-mismatch box, which names its picture or model files, and never desyncs. This
+changed the number every game folds, retail's too, which only players of one build
+compare; the rules digest, the room door and saves' and replays' rules hash
+(`RuleSet::simulation_config_hash`) are unchanged. A game before this rule counted those keys: its pack
+players were refused at the door or by the rules digest; it is another version, which
+the build check refuses first, and a rollback returns to that. Nothing new is exchanged.
+
+A snow map with `[Map] VeraIce=yes` uses the original Yuri's Revenge snow
+terrain and VERA's installed ice pack. The map agreement covers the switch, the
+painted cells and the map's weights. Both loose `Terrain` files enter the
+multiplayer build identity. Each game checks their lengths and SHA-256 against
+that build before using them. An incomplete or changed pack stops the ice map
+from loading and tells the player to restore the installed files. Ice Lake uses the same map identity and transfer
+as any authored map. A mixed-build room follows the existing build check.
 A game from before this is another build, which the build check refuses first; a
 rollback starts such games together again.
 At each deadline, missing input is empty; a command joins the next unsealed
@@ -502,16 +552,23 @@ Native lockstep instead slows every match to its slowest player (ProcessNetwork
 
 A lobby that turns on continuous pacing (certificate flags bit 2, below) lets the
 relay seal at any whole rate instead of Game Speed rows, as lockstep LAN play
-follows its slowest player: a slow player slows the match to its holdable rate,
-nine tenths of what it ran while behind, at least one frame and at most a
-quarter slower at a time, never below 10 frames a second. A player whose frames
-keep waiting for ten seconds though it runs as many as the relay seals slows it
-a twentieth, so that backlog drains. After a third of the raise wait the match
-speeds up half the way to the slowest player's ceiling, at least one frame and
-at most a tenth of its rate at a time, up to its own speed. The ceiling is the
-player's tick cost and nineteen twentieths of what it ran in a ten-second
-backlog or when it fell behind a second time within five minutes, so a hitch of a
-few seconds holds nothing back. Messages, replays and saves are as above.
+follows its slowest player. The relay estimates what each player can run: what
+its tick cost holds and, while frames wait on it, nine tenths of what it ran. It
+holds the low point of that estimate until the player has kept up for a wait,
+then raises it once: by a fifth, or to nine tenths of the most the player has run
+since, and by a fifth again after each further wait it keeps up. A raise the
+player cannot hold doubles the wait, from 30 seconds up to two minutes; one that
+held a minute starts it over. The clock aims at the smallest estimate
+less that player's backlog over ten seconds (at most four tenths of the
+estimate), so a backlog always drains. The backlog comes from the sampled
+checksums the games already send: the newest frame when a checksum arrives,
+less the checksum's frame, less the least such gap while the player kept up.
+Every five seconds the clock moves towards that aim, and only when it is a
+twentieth or more away: down by at most half, up all the way and at most a
+quarter; never below 10 frames a second or above the match's own speed. Messages,
+replays and saves are as above. These rules live in the relay alone: games of
+any version play under a relay with either set, and rolling the relay back
+brings back the earlier rules for matches it starts.
 
 The lobby enables continuous pacing only after every participating relay and
 every admitted game build support bit 2. An older game rejects the grant with
@@ -605,8 +662,13 @@ playback with camera controls and Escape to close.
 `vera20k --replay-verify <replay.json> --ra2-dir <retail-directory>` reconstructs the
 accepted launch and replays the production frame transaction without connecting
 to the lobby. Startup version, rules, map bytes, seed and initial state must
-match. Playback checks the recorded state hashes. Keep a Multiplayer Campaign
-map at its recorded logical path under `campaigns/<series>/`. When names
+match. Playback checks the recorded state hashes.
+On desktop, `VERA20K_REPLAY_ACTOR=<stable object ID>` logs the drawn and committed
+screen positions of a visible unit body at each frame hand-off, including the
+selected sprite frame for SHP infantry and SHP vehicles. For aircraft
+these positions include the body offset from the flight locomotor. Playback uses
+its ordinary cadence, including pictures between logic ticks. Keep a Multiplayer
+Campaign map at its recorded logical path under `campaigns/<series>/`. When names
 collide, the loader chooses an installed copy by the recorded digest. For
 recordings with a bare map filename, the launcher can use an exact SHA-256
 match from the replay directory or its parent. Generated maps, solo campaigns and
@@ -695,6 +757,19 @@ A successful join moves them once. A lost reply retries the same command ID.
 Earlier clients leave first; a lobby without visits never offers this switch.
 The game, lobby and relay exchange the same messages.
 
+Simulation WASM modules run locally on every peer. The existing mod-file
+digest covers a selected mod's loose rules module, and an embedded module
+travels with the agreed map. Module state participates in the match checksum.
+The source-derived build identity refuses a mixed room before simulation.
+Peers on the same earlier build use its earlier behavior after a rollback.
+
+A client module (`ui.wasm`) can send up to 96 bytes to its simulation module
+through the ordinary player command stream. LAN, the relay and replays carry
+the same record. The simulation checks the sender and message limits on each
+peer. The host's `automation_allowed` launch setting defaults to off and enters the room's
+rules digest when enabled. The build check runs before peers exchange module
+messages, including after a rollback.
+
 In VERA Online game rooms, the lobby sends rank badges as part of the join. The
 newcomer sees the room's badges, and everyone already there sees the newcomer's badge
 as their name appears. Released clients use the same ladder messages. After a lobby
@@ -712,7 +787,18 @@ again without it. A lobby that lists matches to watch already supports Teams, th
 and the room rules. A refusal from it leaves the settings in place. The host checks the
 map has enough starts for the playing teams, people and AI before publishing, so they
 can change the map or the seats while keeping their room settings. A room has 2 to 15
-teams, named A to O.
+teams, named A to O. A count outside that range, from a room or a peer, leaves Teams
+Off.
+
+A room's list and its seats come from one number: the rows that admit players. That
+is the map's capacity, and the host's observer row adds one more row when the room
+has one: a WOL room holds the six rows of the original service (`0x005E6440`), or two
+in a tournament room, and the host's observer row adds a row only when the capacity
+is under that limit (`0x005EC4A3..0x005EC4EF`). The list shows exactly those rows, so
+a newcomer takes a row the list shows and the room refuses the next one, instead of
+seating a player in a row nobody sees. Nothing new travels: a player's row travels
+as before, and a room of mixed versions seats as many players as the host's rows
+allow. An older host keeps its own rows, and a rollback does again.
 
 In a VERA room whose mode has teams and Teams set, people play only on a team. A newcomer
 comes in watching while a spectator seat is open and takes a seat with a team header's
@@ -866,6 +952,15 @@ doesn't offer it. A guest's own pick sent at the same moment carries its whole r
 wins on the host. Online, a game sends its room commands to the lobby one at a time; a
 newer options, map-status or ready command replaces an older one of the same kind that
 is still waiting, and goes out after whatever was queued before it.
+A guest's own pick travels as the `R` words the shell wrote, and the host reads them
+with the same owner the room's publication uses (`app::lan_service::picks`): a side
+(-3 while the seat watches, -2 for Random, else the country index up to 65535), a
+colour (-2 for Random, else the index up to 255), a start (-2 or -1 for Auto, else a
+waypoint below the shell's own 120 rows) and a team (-2 or -1 for no team, else the
+team index up to 255). A value outside its domain is refused rather than trimmed, so
+the row the host stores is the row the room re-applies. A guest of another build never
+reaches this path: it is refused at the build check. Online, a pick travels as the
+lobby's typed room data, not as these words, so the online wire is unchanged.
 
 ### Build check
 
@@ -929,7 +1024,9 @@ are (`MatchSession::network_personal_rules`). A launcher's network game
 without the Building Production Queue, which its probe leaves out too, so a player's
 Options page cannot keep a launch from starting. The probe also reports the digest in
 [parts](spawn.md#rules-parts), which only explain a difference; a launch the digest
-refuses names this game's parts in its result. So the room's
+refuses names this game's parts in its result. The parts include the effective VERA.INI
+settings, including `WasmBudget`, so a launcher can identify and sync differences. Older
+launchers can ignore this field. The room's
 door, the native rules hash (LAN's join check, online the room's `ex_info`), leaves
 the switches out, while the rules
 digest compares the ones each game plays.
@@ -939,7 +1036,8 @@ The two checks also read different files, so they can disagree either way. The d
 every mode's INI, CoopCampMD, AIMD and ARTMD whatever mode the room plays, but no
 LANGRULE, theater INI, theater tile or other file of a mod. VERA: the original game's
 door hashes the AIMD a retail install ships, which a match that seats no computer reads
-(above). The digest
+(above), and ARTMD without VERA's drawing keys (above), which leaves a retail ARTMD's CRC
+GetCRC's. The digest
 (`ProcessAssets::multiplayer_rules_digest`) covers only the mode played, and adds
 LANGRULE, the theater INIs (a mod's with its changed tiles, else the retail copies), the
 switches and a mod's other files.
@@ -992,6 +1090,14 @@ other players' games cannot tell why and say only that another game differs. Not
 is exchanged. A game from before this is another version and is refused by the build
 check first; a rollback compares the setting itself again, and one past the setting
 reads none and plays Auto.
+
+The launcher probe and the room compare whether the startup rules enable Kratos.
+The named rules part is `settings.kratos: true`. When Kratos is off both the agreement
+bytes and the rules parts keep their previous form. The final start also compares
+the loaded scenario, which can change the eligible infantry and their art. The client
+names Kratos when it is active. Older lobbies can ignore the optional `kratos` sign-in
+detail. Older clients and a rolled-back client keep the existing version and rules
+checks; a mismatch refuses the start.
 
 [RA2 Mode](ra2-mode.md) (`[VERA] RA2Mode=` or `-ra2`) is not a room rule either: each
 game reads it at start, and it adds its own words to the rules digest
@@ -1242,7 +1348,8 @@ command stream above is an intentional adaptation.
   which LAN packets and online batches carry alike, are laid out in
   `sim::command`: 0x30 paid superweapon, 0x31 bunker eject (still decoded so older
   recordings play; no input sends it), 0x32 producer cycle, and 0x33 explicit
-  target-House economic order. The 0x33 body is a native House slot byte, an
+  target-House economic order. Record 0x34 carries a client module message with
+  a source byte, a length byte and a 96-byte data field. The 0x33 body is a native House slot byte, an
   inner economic opcode byte, and 21 bytes of inner payload with zero padding.
   The event header still authenticates the issuing source. The simulation
   requires FullControl over the target. Ordinary production, placement and

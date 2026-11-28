@@ -423,43 +423,33 @@ pub(crate) fn commit_unit_firing_counter(
 /// Advance the persistent Foot body counter at FootClass's post-Process
 /// point for the current absolute binary frame.
 ///
-/// The moving branch deliberately does not guard a zero `WalkRate`: retail
-/// feeds that raw signed value to IDIV, making zero invalid content. `IdleRate`
-/// is different — zero is its documented branch-off switch and performs no
-/// division. The counter itself is a native dword, so increment wraps.
+/// `due` is [`foot_body_frame_due`] for this entity, this frame and this
+/// state: the counter advances once when the frame is due and changes
+/// nothing otherwise. The caller owns the predicate, so one frame asks it
+/// once and the counter keeps its native dword wrap.
 ///
 /// The same Foot entry is reached by Unit73647B, Infantry51BC9F and
 /// Aircraft414DA3. Only the HoverAttack arm asks for a Unit; the ordinary
 /// moving/idle/DeployToLand arms serve every Foot. Original concrete-class
 /// controls: tools/spatial_oracle/unit_simple_deploy.json.
-///
-/// `air_rate` is the type's Ares `AirRate` (0 in a stock game).
 pub(crate) fn tick_foot_body_frame_counter(
     entity: &mut crate::sim::game_entity::GameEntity,
-    rules: crate::sim::movement::SpeedRules<'_>,
-    cadence: FootBodyCadence,
-    hover_attack: bool,
-    deploy_to_land: bool,
-    air_rate: i32,
-    terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
-    binary_frame: u32,
+    due: bool,
 ) {
-    if foot_body_frame_due(
-        entity,
-        rules,
-        cadence,
-        hover_attack,
-        deploy_to_land,
-        air_rate,
-        terrain,
-        binary_frame,
-    ) {
+    if due {
         entity.body_frame_counter.advance();
     }
 }
 
 /// Whether [`tick_foot_body_frame_counter`] advances `entity`'s counter at
 /// `binary_frame`; otherwise it changes nothing.
+///
+/// The moving branch deliberately does not guard a zero `WalkRate`: retail
+/// feeds that raw signed value to IDIV, making zero invalid content. `IdleRate`
+/// is different — zero is its documented branch-off switch and performs no
+/// division.
+///
+/// `air_rate` is the type's Ares `AirRate` (0 in a stock game).
 pub(crate) fn foot_body_frame_due(
     entity: &crate::sim::game_entity::GameEntity,
     rules: crate::sim::movement::SpeedRules<'_>,
@@ -496,6 +486,16 @@ pub(crate) fn foot_body_frame_due(
     // Foot4DA886..4DAA01: the same+538 feeds SHP and voxel drawing.
     // HoverAttack is Type+390, not TurretSpins. Native deploy6E0 only
     // excludes that hover-attack walk arm; it does not suppress IdleRate.
+    if cadence.walk_rate > 0
+        && cadence.idle_rate >= 0
+        && (binary_frame as i32) % cadence.walk_rate != 0
+        && (cadence.idle_rate == 0 || (binary_frame as i32) % cadence.idle_rate != 0)
+    {
+        // Neither cadence arm can advance the counter, so the moving and
+        // HoverAttack reads cannot change the answer.
+        return deploy_to_land
+            && crate::sim::movement::air_movement::current_fly_height(entity, terrain) > 0;
+    }
     let moving = crate::sim::movement::motion_query::is_moving_now(entity, rules, binary_frame);
     let walking = moving
         || (entity.category() == crate::map::entities::EntityCategory::Unit

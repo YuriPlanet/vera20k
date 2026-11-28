@@ -35,7 +35,7 @@ fn retail_infantry_choice_waits_for_the_retained_corpse_to_finish() {
     sim.session
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Skirmish);
     crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
-    sim.fog = crate::sim::vision::FogState::new(32, 32);
+    *sim.fog = crate::sim::vision::FogState::new(32, 32);
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
     sim.resolve_rule_animation_lists(&rules);
@@ -429,18 +429,24 @@ fn a_saved_state_without_the_naval_slot_loads_as_none() {
 }
 
 /// NPSE 2.0 House Update C33AB0 asks both channels without a shipyard
-/// gate; both calls share the harvester return at C339D0..C33A34.
-#[cfg(feature = "npatch")]
+/// gate; both calls share the harvester return at C339D0..C33A34. The
+/// fixture's `DisableParallelAIQueues=no` is the NPatch key that turns the
+/// per-game switch on.
 #[test]
 fn naval_choice_runs_the_shared_harvester_branch_without_a_shipyard() {
     use crate::rules::ini_parser::IniFile;
 
     let rules = RuleSet::from_ini(&IniFile::from_str(
-        "[General]\nHarvesterUnit=SHIP\nAISlaveMinerNumber=1,1,1\n\
+        "[General]\nDisableParallelAIQueues=no\nHarvesterUnit=SHIP\n\
+         AISlaveMinerNumber=1,1,1\n\
          [IQ]\nHarvester=0\n[Countries]\n0=AI\n[AI]\nSide=GDI\n\
          [VehicleTypes]\n0=SHIP\n[SHIP]\nOwner=AI\nNaval=yes\nTechLevel=1\n",
     ))
     .unwrap();
+    assert!(
+        rules.npatch(),
+        "the fixture's NPatch key turns the switch on"
+    );
     let mut sim = Simulation::with_seed(39);
     let owner = sim.interner.intern("AI");
     sim.houses

@@ -135,6 +135,9 @@ pub(super) struct RulesPassProcessor {
     /// scalars for the pass.
     #[cfg(feature = "phobos")]
     pub(super) rules_missing_cameo: String,
+    /// Phobos `[General] ArtImageSwap=` (default false): whether a
+    /// TechnoType's own ART `Image=` names its visual files.
+    pub(super) rules_art_image_swap: bool,
     pub(super) rules_mind_control_attack_line_frames: i32,
     pub(super) rules_drain_money_frame_delay: i32,
     pub(super) rules_drain_money_amount: i32,
@@ -229,6 +232,7 @@ impl RulesPassProcessor {
             rules_timer_blink_color_scheme: registry_state.rules_timer_blink_color_scheme,
             #[cfg(feature = "phobos")]
             rules_missing_cameo: registry_state.rules_missing_cameo,
+            rules_art_image_swap: false,
             rules_mind_control_attack_line_frames: registry_state
                 .rules_mind_control_attack_line_frames,
             rules_drain_money_frame_delay: registry_state.rules_drain_money_frame_delay,
@@ -295,6 +299,18 @@ impl RulesPassProcessor {
             ordinary.merge_rules_projection(pass);
             self.ordinary = Some(ordinary);
         }
+        // Phobos `[General] ArtImageSwap=` is a RulesClass global; a later
+        // layer that omits it keeps the earlier value, as the scalar reads do.
+        let current_art_image_swap = self.rules_art_image_swap;
+        self.rules_art_image_swap = crate::rules::phobos_switch::phobos_read(|| {
+            self.ordinary
+                .as_ref()
+                .map_or(current_art_image_swap, |ordinary| {
+                    ordinary
+                        .section_or_empty("General")
+                        .read_bool("ArtImageSwap", current_art_image_swap)
+                })
+        });
 
         // Exact constructor-capable order from `RulesClass::Process @
         // 0x00668BF0`. Colors precede every Type registry but spend no Type ID.

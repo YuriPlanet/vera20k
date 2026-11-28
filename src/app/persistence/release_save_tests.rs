@@ -35,6 +35,17 @@ released_saves! {
     main_06789b62b: "main-06789b62b", 0x82C3_2EA4, Skirmish;
     main_8d55b4a73: "main-8d55b4a73", 0xF612_7DC1, Skirmish;
     main_8852f7a76: "main-8852f7a76", 0x9441_E8D8, Skirmish;
+    main_bc55c35e7: "main-bc55c35e7", 0x9F1B_D701, Skirmish;
+    main_30e9a0f38: "main-30e9a0f38", 0xF215_BF3A, Skirmish;
+    main_a33fcac81: "main-a33fcac81", 0xE18E_A373, Skirmish;
+    main_d17e45e42: "main-d17e45e42", 0x919A_B3CD, Skirmish;
+    main_2e39b88dd: "main-2e39b88dd", 0xB65C_0664, Skirmish;
+    main_2e67ebaa8: "main-2e67ebaa8", 0xE527_9FB2, Skirmish;
+    main_fb29ff473: "main-fb29ff473", 0xBA51_A42C, Skirmish;
+    main_b268ba798: "main-b268ba798", 0xC66C_E753, Skirmish;
+    main_0b918d053: "main-0b918d053", 0x9909_B4E7, Skirmish;
+    main_c3609b58a: "main-c3609b58a", 0xD5A9_6CCA, Skirmish;
+    main_a17a144ca: "main-a17a144ca", 0xC0BB_86C8, Skirmish;
 }
 
 const TUNNEL_FIXTURE: &str = "v0.3.9-tunnel";
@@ -93,11 +104,8 @@ fn fixture(release: &str) -> Vec<u8> {
 #[test]
 fn current_writer_has_a_frozen_player_save() {
     let latest = RELEASES.last().unwrap();
-    let header = GameSnapshot::read_metadata(&fixture(latest)).unwrap();
-    assert!(
-        header.is_compatible(),
-        "the current writer changed; add its frozen save and keep every older row"
-    );
+    let header = GameSnapshot::read_header(&fixture(latest))
+        .expect("the current writer must admit its frozen player-save header");
     // A stock snapshot-layout build has no test-support. With its output set,
     // a cfg-only change to the actual player's wire layout fails this row.
     if let Ok(stock) = std::env::var("VERA20K_STOCK_WRITER_LAYOUT") {
@@ -200,6 +208,25 @@ fn resume_and_save_again(release: &str, layout: u32, mode: ScenarioGameMode) {
         assert_eq!(sim.session().game_mode(), mode, "{release}");
         let player = sim.session().current_house().expect("fixture has a player");
         assert_eq!(sim.interner().resolve(player), "Americans", "{release}");
+        if release == "main-a17a144ca" {
+            let (tank_id, tank) = sim
+                .entities()
+                .iter_sorted()
+                .find(|(_, entity)| sim.interner().resolve(entity.type_ref()) == "APC")
+                .unwrap();
+            let head = tank.temporal.chain_head().expect("the saved erase head");
+            let firer = sim.entities().get(head).expect("the saved shooter");
+            assert!(!tank.is_warped_out() && !tank.ai_frozen());
+            assert_eq!(firer.temporal.warp_target(), Some(tank_id));
+            assert_eq!(
+                firer.temporal.warp_remaining(),
+                Some(if sim.session().tick() == 91 {
+                    1000
+                } else {
+                    992
+                })
+            );
+        }
     };
     exercise(
         release,
@@ -207,6 +234,7 @@ fn resume_and_save_again(release: &str, layout: u32, mode: ScenarioGameMode) {
         |runtime| {
             check_world(&runtime.simulation);
             assert_eq!(runtime.resources.rules.object("APC").unwrap().image, "APC");
+            assert!(!runtime.resources.rules.kratos(), "{release}");
             assert_eq!(runtime.simulation.session().tick(), 91, "{release}");
             assert_eq!(
                 runtime.simulation.session().game_options().game_speed,

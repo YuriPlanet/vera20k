@@ -7,24 +7,26 @@ use crate::net::live_commands::LiveCommandMode;
 use crate::net::reliable::RetryTiming;
 use crate::net::udp::LanUdpTransport;
 
-use super::{AppState, SessionMode, direct, gameplay_connections};
+use super::{SessionMode, direct, gameplay_connections};
 
 /// Session697B70 binds source nodes to the actual constructed House table.
 /// The same physical transport used for discovery/loading enters the command
 /// owner; no private peer is inferred from a colour or UI row.
-pub(crate) fn install_gameplay(state: &mut AppState) -> anyhow::Result<()> {
+pub(crate) fn install_gameplay(
+    platform: &crate::app::PlatformState,
+    match_state: &mut crate::app::match_runtime::state::MatchState,
+    process_assets: &mut crate::app::process_assets::ProcessAssets,
+) -> anyhow::Result<()> {
     if !matches!(
-        state.match_state.session_mode(),
+        match_state.session_mode(),
         SessionMode::Lan | SessionMode::Wol
-    ) || (state.platform.capture_client_size.is_some()
-        && state.match_state.lan_service.is_none())
+    ) || (platform.capture_client_size.is_some() && match_state.lan_service.is_none())
     {
         return Ok(());
     }
-    if state.match_state.session_mode() == SessionMode::Wol {
+    if match_state.session_mode() == SessionMode::Wol {
         anyhow::ensure!(
-            state
-                .match_state
+            match_state
                 .lan_service
                 .as_ref()
                 .and_then(|service| service.transport.as_ref())
@@ -33,25 +35,27 @@ pub(crate) fn install_gameplay(state: &mut AppState) -> anyhow::Result<()> {
         );
     }
     anyhow::ensure!(
-        state.match_state.lan_service.is_some(),
+        match_state.lan_service.is_some(),
         "LAN transport was not opened"
     );
     // VERA: the rules digest leaves the original game's terrain files out. A
     // match whose map names a tile the original game lacks read this game
     // folder's, so its start names them (`ProcessAssets::match_terrain_digest`).
     // Asked before the agreement, which loads a theater for a seed's map.
-    let terrain = state
-        .process_assets
+    let terrain = process_assets
         .match_terrain_digest()
         .map_err(anyhow::Error::msg)?;
     // VERA: the start every player's game certifies names its build and
     // rules too, so a launcher's relay match, which no lobby compared,
     // refuses games that would desync.
-    let mut multiplayer = super::shell_network_setup::agreement::local(state)?;
+    let mut multiplayer = super::shell_network_setup::agreement::local(
+        platform.game_config.as_ref(),
+        &match_state.session,
+        process_assets,
+    )?;
     // VERA: and whether Ares plays in the match as it loaded, which the
     // room's digest leaves to the start (`agreement::start_rules`).
-    let rules = &state
-        .match_state
+    let rules = &match_state
         .sim_runtime
         .runtime()
         .ok_or_else(|| anyhow::anyhow!("LAN startup has no constructed world"))?
@@ -68,42 +72,38 @@ pub(crate) fn install_gameplay(state: &mut AppState) -> anyhow::Result<()> {
     // games would take their battles apart in mid-match.
     let file_inputs = rules.file_inputs_hash();
     // The refusal's box names three files; the log names them all.
-    let picture_files = super::shell_network_setup::agreement::match_picture_files(state);
+    let picture_files = super::shell_network_setup::agreement::match_picture_files(
+        &match_state.sim_runtime,
+        process_assets,
+    );
     if !picture_files.is_empty() {
         log::info!(
             "Game files that change what this start certifies of pictures and models: {}",
             picture_files.join(", ")
         );
     }
-    super::shell_network_setup::agreement::log_rules_parts(state);
-    let sim = &state
-        .match_state
+    super::shell_network_setup::agreement::log_rules_parts(&match_state.session, process_assets);
+    let sim = &match_state
         .sim_runtime
         .runtime()
         .ok_or_else(|| anyhow::anyhow!("LAN startup has no constructed world"))?
         .simulation;
-    let startup_transport = state
-        .match_state
+    let startup_transport = match_state
         .lan_service
         .as_ref()
         .and_then(|service| service.transport.as_ref())
         .ok_or_else(|| anyhow::anyhow!("LAN startup transport is already owned by a match"))?;
-    let (local_house, seed, connections) = gameplay_connections(
-        &state.match_state.session,
-        sim,
-        startup_transport.retry_timing(),
-    )?;
-    let host_house = if state.match_state.session.host() {
+    let (local_house, seed, connections) =
+        gameplay_connections(&match_state.session, sim, startup_transport.retry_timing())?;
+    let host_house = if match_state.session.host() {
         local_house
     } else {
-        let host_name = state
-            .match_state
+        let host_name = match_state
             .lan_service
             .as_ref()
             .and_then(|service| service.admitted_host.as_ref().map(|host| host.0.as_str()))
             .ok_or_else(|| anyhow::anyhow!("gameplay has no admitted host identity"))?;
-        let source = state
-            .match_state
+        let source = match_state
             .session
             .network_setup()
             .and_then(|launch| {
@@ -114,12 +114,8 @@ pub(crate) fn install_gameplay(state: &mut AppState) -> anyhow::Result<()> {
             })
             .ok_or_else(|| anyhow::anyhow!("host is absent from the admitted roster"))?;
         i8::try_from(
-            super::match_runtime::network_match::source_house(
-                &state.match_state.session,
-                sim,
-                source,
-            )
-            .ok_or_else(|| anyhow::anyhow!("host has no constructed House"))?,
+            super::match_runtime::network_match::source_house(&match_state.session, sim, source)
+                .ok_or_else(|| anyhow::anyhow!("host has no constructed House"))?,
         )
         .map_err(|_| anyhow::anyhow!("host House index cannot be encoded by the command channel"))?
     };
@@ -127,14 +123,13 @@ pub(crate) fn install_gameplay(state: &mut AppState) -> anyhow::Result<()> {
     // timing from MatchSession's accepted connected roster before the first
     // shared frame; `gameplay_connections` built the private connections from
     // the same roster.
-    let source_houses = state
-        .match_state
+    let source_houses = match_state
         .session
         .network_connected_source_indices()
         .iter()
         .map(|&source| {
             let house = super::match_runtime::network_match::source_house(
-                &state.match_state.session,
+                &match_state.session,
                 sim,
                 source,
             )
@@ -143,8 +138,7 @@ pub(crate) fn install_gameplay(state: &mut AppState) -> anyhow::Result<()> {
                 .map_err(|_| anyhow::anyhow!("connected House index cannot be encoded"))
         })
         .collect::<anyhow::Result<Vec<_>>>()?;
-    let full_houses = state
-        .match_state
+    let full_houses = match_state
         .session
         .network_setup()
         .ok_or_else(|| anyhow::anyhow!("gameplay has no frozen original admission"))?
@@ -152,9 +146,8 @@ pub(crate) fn install_gameplay(state: &mut AppState) -> anyhow::Result<()> {
         .iter()
         .enumerate()
         .map(|(source, human)| {
-            let row = if state.match_state.session.campaign_room().is_some() {
-                state
-                    .match_state
+            let row = if match_state.session.campaign_room().is_some() {
+                match_state
                     .session
                     .network_source_sender(source)
                     .and_then(|sender| u8::try_from(sender).ok())
@@ -163,7 +156,7 @@ pub(crate) fn install_gameplay(state: &mut AppState) -> anyhow::Result<()> {
             }
             .ok_or_else(|| anyhow::anyhow!("admitted human has no shared setup row"))?;
             let house = super::match_runtime::network_match::source_house(
-                &state.match_state.session,
+                &match_state.session,
                 sim,
                 source,
             )
@@ -175,13 +168,12 @@ pub(crate) fn install_gameplay(state: &mut AppState) -> anyhow::Result<()> {
             ))
         })
         .collect::<anyhow::Result<Vec<_>>>()?;
-    let active_rows = state
-        .match_state
+    let active_rows = match_state
         .session
         .network_connected_source_indices()
         .iter()
         .map(|&source| {
-            let session = &state.match_state.session;
+            let session = &match_state.session;
             let row = if session.campaign_room().is_some() {
                 session
                     .network_source_sender(source)
@@ -195,15 +187,14 @@ pub(crate) fn install_gameplay(state: &mut AppState) -> anyhow::Result<()> {
             row.ok_or_else(|| anyhow::anyhow!("active human has no shared setup row"))
         })
         .collect::<anyhow::Result<Vec<_>>>()?;
-    let mode = if state.match_state.session_mode() == SessionMode::Wol {
+    let mode = if match_state.session_mode() == SessionMode::Wol {
         LiveCommandMode::Wol
     } else {
         LiveCommandMode::Lan
     };
     let online_timing = if mode == LiveCommandMode::Wol {
         Some(
-            state
-                .match_state
+            match_state
                 .lan_service
                 .as_ref()
                 .and_then(|service| service.online_timing)
@@ -226,8 +217,7 @@ pub(crate) fn install_gameplay(state: &mut AppState) -> anyhow::Result<()> {
         |_| std::num::NonZeroU8::MIN,
     );
     let rate = std::num::NonZeroU32::from(frame_send_rate);
-    let sim = &mut state
-        .match_state
+    let sim = &mut match_state
         .sim_runtime
         .write_sim(SimWrite::Network)
         .expect("constructed world")
@@ -274,11 +264,10 @@ pub(crate) fn install_gameplay(state: &mut AppState) -> anyhow::Result<()> {
             .into_iter()
             .chain(sim.state_hash_owners())
             .collect();
-        state.match_state.network_quality.record_start_parts(parts);
+        match_state.network_quality.record_start_parts(parts);
     }
-    if state.match_state.session_mode() == SessionMode::Lan {
-        let service = state
-            .match_state
+    if match_state.session_mode() == SessionMode::Lan {
+        let service = match_state
             .lan_service
             .as_mut()
             .ok_or_else(super::closed_visit)?;
@@ -291,8 +280,7 @@ pub(crate) fn install_gameplay(state: &mut AppState) -> anyhow::Result<()> {
             .ok_or_else(|| anyhow::anyhow!("LAN gameplay lost its transport"))?
             .set_lan_scope(scope)?;
     }
-    let mut transport = state
-        .match_state
+    let mut transport = match_state
         .lan_service
         .as_mut()
         .ok_or_else(super::closed_visit)?
@@ -319,8 +307,7 @@ pub(crate) fn install_gameplay(state: &mut AppState) -> anyhow::Result<()> {
         mode,
         ordering_clock,
     )?;
-    if state
-        .match_state
+    if match_state
         .lan_service
         .as_ref()
         .is_some_and(|service| service.online_restore)
@@ -332,29 +319,31 @@ pub(crate) fn install_gameplay(state: &mut AppState) -> anyhow::Result<()> {
     {
         live.configure_precalculated_timing(timing.precalc_max_ahead, timing.precalc_frame_rate);
     }
-    state.match_state.live_network = Some(live);
+    match_state.live_network = Some(live);
     Ok(())
 }
 
 /// End private channels on leaving gameplay, retaining the LAN visit's same
 /// socket pair for BB. It is dropped only when that visit itself ends.
-pub(crate) fn return_transport(state: &mut AppState) {
-    if let Some(report) = crate::app::match_runtime::network_quality::close(state) {
-        crate::app::shell_wol::keep_network_report(state, &report);
+pub(crate) fn return_transport(
+    frontend: &mut crate::app::frontend::state::FrontendState,
+    match_state: &mut crate::app::match_runtime::state::MatchState,
+) {
+    if let Some(report) =
+        crate::app::match_runtime::network_quality::close(&mut match_state.network_quality)
+    {
+        crate::app::shell_wol::keep_network_report(frontend.wol.as_mut(), &report);
     }
-    let online = state.match_state.session_mode() == SessionMode::Wol;
-    let Some(live) = state.match_state.live_network.take() else {
+    let online = match_state.session_mode() == SessionMode::Wol;
+    let Some(live) = match_state.live_network.take() else {
         return;
     };
     if live.watching()
         && let Ok(endpoint) = live.primary_addr()
     {
-        state
-            .match_state
-            .session
-            .disconnect_network_watcher(endpoint);
+        match_state.session.disconnect_network_watcher(endpoint);
     }
-    if let Some(service) = state.match_state.lan_service.as_mut() {
+    if let Some(service) = match_state.lan_service.as_mut() {
         let mut transport = live.into_transport();
         transport.connections_mut().reset();
         if online {
@@ -368,16 +357,15 @@ pub(crate) fn return_transport(state: &mut AppState) {
 }
 
 pub(super) fn send_bytes(
-    state: &mut AppState,
+    match_state: &mut crate::app::match_runtime::state::MatchState,
     bytes: &[u8],
     destination: GlobalDestination,
     reliable: bool,
 ) -> bool {
-    if let Some(live) = state.match_state.live_network.as_mut() {
+    if let Some(live) = match_state.live_network.as_mut() {
         live.send_global(bytes, reliable, destination)
     } else {
-        state
-            .match_state
+        match_state
             .lan_service
             .as_mut()
             .is_some_and(|service| service.send(bytes, destination, reliable))
@@ -385,13 +373,13 @@ pub(super) fn send_bytes(
 }
 
 pub(super) fn send_sources(
-    state: &mut AppState,
+    match_state: &mut crate::app::match_runtime::state::MatchState,
     bytes: &[u8],
     sources: impl IntoIterator<Item = usize>,
 ) {
     for source in sources {
-        if let Some(endpoint) = state.match_state.session.network_endpoint(source) {
-            send_bytes(state, bytes, direct(endpoint), true);
+        if let Some(endpoint) = match_state.session.network_endpoint(source) {
+            send_bytes(match_state, bytes, direct(endpoint), true);
         }
     }
 }

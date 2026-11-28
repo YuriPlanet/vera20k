@@ -60,7 +60,7 @@ fn offline_sparks_match_original_execution() {
         sim.session
             .set_binary_frame_for_test(row["frame"].as_u64().unwrap() as u32);
         let seed = row["seed"].as_u64().unwrap();
-        sim.scenario_rng = SimRng::new(seed);
+        *sim.scenario_rng = SimRng::new(seed);
         sim.deactivated_unit_sparks(1, &rules);
 
         let mut expected = row["expected"].clone();
@@ -172,7 +172,7 @@ fn arena(rules: &RuleSet) -> (Simulation, PathGrid) {
         let terrain = sim.resolved_terrain.as_ref().expect("arena terrain");
         (terrain.width(), terrain.height())
     };
-    sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(width, height));
+    *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(width, height));
     sim.intern_rule_type_ids(rules);
     sim.resolve_type_handles(rules);
     sim.session
@@ -714,9 +714,9 @@ fn robot_tank_state_is_saved_and_hashed() {
     use crate::sim::snapshot::GameSnapshot;
 
     let mut sim = Simulation::new();
-    sim.interner = crate::sim::intern::test_interner();
+    *sim.interner = crate::sim::intern::test_interner();
     // Load resets the Scenario Random to seed zero.
-    sim.scenario_rng = SimRng::new(0);
+    *sim.scenario_rng = SimRng::new(0);
     let house = sim.interner.intern("Americans");
     sim.houses
         .register(HouseState::new(house, 0, None, true, 0, 10));

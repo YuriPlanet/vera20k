@@ -828,6 +828,10 @@ fn network_freeze_keeps_guest_identity_seed_and_return_context_through_loading()
         (SessionMode::Wol, NetworkReturnContext::Wol),
     ] {
         let mut session = MatchSession::default();
+        assert_eq!(
+            session.staged_tiberium(),
+            crate::sim::scenario_session::TiberiumFlags::COLD
+        );
         session.enter_network(context);
         session
             .accept_network_setup(network_fixture(), false, Some(7), false)
@@ -880,6 +884,11 @@ fn network_freeze_keeps_guest_identity_seed_and_return_context_through_loading()
         session.leave_network();
         assert_eq!(session.shell_mode(), Some(SessionMode::Campaign));
         assert!(session.network_return_context().is_none());
+        session.begin_offline(SessionMode::Skirmish, None);
+        assert_eq!(
+            session.staged_tiberium(),
+            crate::sim::scenario_session::TiberiumFlags::NETWORK_PREGAME
+        );
     }
 }
 
@@ -1039,6 +1048,45 @@ fn wol_rows_follow_mode_and_room_clears_guest_acceptance_and_times_from_game_spe
     lan.clear_guest_readiness().unwrap();
     assert!(lan.network_player_ready(0) && !lan.network_player_ready(1));
     assert!(lan.prepare_wol_timing([0; 8], true).is_err());
+}
+
+/// A WOL room whose host watches seats the six rows the WOL limit allows
+/// (`0x005E6440`) and no row more: `0x005EC4A3..0x005EC4EF` gives the
+/// host's observer row one more row only when the row limit was skipped or
+/// the capacity is under it, and here the capacity is the limit. The last
+/// row that fits takes its player, and the next newcomer is refused, so no
+/// player sits in a row the room list does not show.
+#[test]
+fn a_wol_room_where_the_host_watches_seats_no_row_past_its_list() {
+    let mut launch = network_fixture();
+    launch.local_player_index = 0;
+    launch.humans[0].set_observer(true);
+    let template = launch.humans[0].clone();
+    let mut mode = launch.mode.clone();
+    mode.class = crate::skirmish_modes::MpModeClass::ManBattle;
+    let mut session = MatchSession::default();
+    session.enter_network(super::NetworkReturnContext::Wol);
+    // The host watches from row 0 (`open_host_setup`).
+    session
+        .accept_network_setup(launch, true, Some(0), false)
+        .unwrap();
+    session
+        .select_network_map(mode, "EIGHT.MAP".into(), 8)
+        .unwrap();
+    assert_eq!(session.network_setup_capacity(), Some(6));
+    assert_eq!(session.network_player_row_limit(), 6);
+    // The host holds row 0 and the guest row 1; the rows between them and
+    // the limit take players, and then the room is full.
+    for row in 2..6 {
+        assert_eq!(session.network_join_row(false), Some((row, false)));
+        let mut human = template.clone();
+        human.name = format!("Player{row}");
+        human.raw_slot_index = Some(row);
+        session.add_network_participant(human).unwrap();
+    }
+    // The row past the limit is not given out: the joiner is refused.
+    assert_eq!(session.network_join_row(false), None);
+    assert!(session.network_no_open_player_row());
 }
 
 #[test]
@@ -1900,6 +1948,24 @@ fn mode_policy_controls_team_room_and_clears_observer_row_when_disallowed() {
         .unwrap();
     assert!(!session.network_team_room());
     assert_eq!(session.network_observer_row(), None);
+}
+
+/// A room whose options carry a Teams count outside the room's own range is
+/// Teams Off, not a room to seat. The session never holds such a count, and
+/// the team keeper seats nobody rather than expect a team to exist.
+#[test]
+fn a_room_with_an_illegal_teams_count_keeps_its_teams_off() {
+    let mut launch = network_fixture();
+    launch.local_player_index = 0;
+    launch.options.teams = Some(0);
+    let mut session = MatchSession::default();
+    session.enter_network(super::NetworkReturnContext::Wol);
+    session
+        .accept_network_setup(launch, true, Some(7), true)
+        .unwrap();
+    assert!(session.network_team_room());
+    assert_eq!(session.network_teams(), None);
+    assert!(!session.keep_players_on_teams().unwrap());
 }
 
 /// Cooperative's +0x20 (`0x005C1A10`) clears the observer reservation

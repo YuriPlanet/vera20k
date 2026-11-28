@@ -386,6 +386,7 @@ fn built(row: &Value) -> (Vec<SurfaceStroke>, TacticalViewport) {
     }
     let (sim, rules, state, view) = drawing_fixture(row);
     let strokes = build_target_line_strokes(
+        None,
         &state,
         row["input"]["planning"].as_bool().unwrap_or(false),
         Some(&sim),
@@ -509,6 +510,7 @@ fn original_unit_attack_line_pixels_and_read_only_coordinate_queries() {
         let query = NativeCellQuery::canonical(sim.resolved_terrain().unwrap());
         let dummy = query.dummy().snapshot();
         let strokes = build_target_line_strokes(
+            None,
             &state,
             false,
             Some(&sim),
@@ -818,6 +820,7 @@ fn move_line_query_leaves_the_simulation_dummy_unchanged() {
     let query = NativeCellQuery::canonical(terrain);
     let before = query.dummy().snapshot().coord;
     let _ = build_target_line_strokes(
+        None,
         &state,
         false,
         Some(&sim),

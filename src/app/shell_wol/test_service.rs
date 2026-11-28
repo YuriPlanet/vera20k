@@ -31,14 +31,21 @@ use super::{
 };
 use super::{WolProvider, WolServiceRequest, service_event};
 use crate::app::AppState;
+use crate::app::frontend::state::FrontendState;
 use crate::app::match_runtime::session::SessionMode;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::scenario_catalog::ScenarioCatalog;
 use crate::app::shell_network_setup::{NetworkSetupEvent, NetworkSetupRequest};
 use crate::app::shell_route::ShellRoute;
+use crate::app::shell_wol::WolVisit;
 use crate::ui::wol_chat::WolChatLine;
 use crate::ui::wol_lobby::{
     EX_INFO_VERSION, GAME_CHANNEL, MEMBER_OPERATOR, MEMBER_VOICE, WolChannel, WolMember,
 };
+use crate::ui::wol_login::WolAccountGlobals;
 use crate::ui::wol_login::WolCredential;
+use crate::util::config::GameConfig;
 use crate::util::time::Instant;
 
 /// Replies per poll; each may queue further requests (a list reply asks to
@@ -69,7 +76,7 @@ pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
             .as_mut()
             .map(|visit| visit.take_service_requests())
             .unwrap_or_default();
-        let setup = setup_requests(state);
+        let setup = setup_requests(&mut state.frontend, &state.match_state);
         if requests.is_empty() && setup.is_empty() {
             return None;
         }
@@ -80,29 +87,29 @@ pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
             answer_setup(state, request);
         }
     }
-    pending(state).then(Instant::now)
+    pending(state.frontend.wol.as_ref()).then(Instant::now)
 }
 
-fn pending(state: &AppState) -> bool {
-    state
-        .frontend
-        .wol
-        .as_ref()
-        .is_some_and(|visit| !visit.requests.is_empty())
+fn pending(wol: Option<&WolVisit>) -> bool {
+    wol.is_some_and(|visit| !visit.requests.is_empty())
 }
 
 /// The WOL setup's own requests; this service answers a locate, the
 /// guest's leave and, as the joined game's host, the guest's choices.
-fn setup_requests(state: &mut AppState) -> Vec<NetworkSetupRequest> {
-    if state.match_state.session_mode() != SessionMode::Wol
-        || !(state.frontend.shell_route == ShellRoute::NetworkSetup
-            || super::lobby::visiting(state)
-            || crate::app::shell_network_setup::quick_match(state))
+fn setup_requests(
+    frontend: &mut FrontendState,
+    match_state: &MatchState,
+) -> Vec<NetworkSetupRequest> {
+    if match_state.session_mode() != SessionMode::Wol
+        || !(frontend.shell_route == ShellRoute::NetworkSetup
+            || super::lobby::visiting(frontend.wol.as_ref())
+            || crate::app::shell_network_setup::quick_match(
+                frontend.network_setup_protocol.as_ref(),
+            ))
     {
         return Vec::new();
     }
-    state
-        .frontend
+    frontend
         .network_setup_protocol
         .as_mut()
         .map(|protocol| protocol.take_service_requests())
@@ -113,8 +120,8 @@ fn answer_setup(state: &mut AppState, request: NetworkSetupRequest) {
     if let NetworkSetupRequest::WolChat(WolChatLine::Locate { name }) = &request {
         let result = locate(
             &String::from_utf16_lossy(name),
-            stand_in_hash(state),
-            &stand_in_map(state),
+            stand_in_hash(&state.process_assets),
+            &stand_in_map(&state.frontend.scenario_catalog),
         );
         service_event(state, WolServiceEvent::Located(result));
         return;
@@ -133,7 +140,11 @@ fn answer_setup(state: &mut AppState, request: NetworkSetupRequest) {
     }
     // 0x0078F000: the stand-in server keeps the host's new record.
     if request == NetworkSetupRequest::Advertise {
-        super::lobby::republish_channel(state);
+        super::lobby::republish_channel(
+            &mut state.frontend,
+            &state.match_state.session,
+            &state.process_assets,
+        );
         return;
     }
     // C9 Back waits for the leave's OnPart; C2 Back closes at once.
@@ -170,7 +181,7 @@ pub(crate) enum WolTestGuest {
 /// change cleared its acceptance. A host's kick reaches it as the server's
 /// kick echo.
 fn guest_answer(state: &mut AppState, request: &NetworkSetupRequest) {
-    let local = nickname(state);
+    let local = nickname(&state.frontend.wol_account);
     match (state.frontend.wol_test_guest, request) {
         (WolTestGuest::Expected, NetworkSetupRequest::PublishOptions) => guest_joins(state, true),
         (WolTestGuest::Joined, NetworkSetupRequest::PublishOptions) => {
@@ -208,7 +219,7 @@ fn guest_answer(state: &mut AppState, request: &NetworkSetupRequest) {
         }
         (WolTestGuest::Joined, NetworkSetupRequest::Kick { name, .. }) if name == GUEST => {
             state.frontend.wol_test_guest = WolTestGuest::Kicked;
-            let Some(channel) = super::lobby::current_channel(state) else {
+            let Some(channel) = super::lobby::current_channel(state.frontend.wol.as_ref()) else {
                 return;
             };
             service_event(
@@ -340,7 +351,12 @@ fn host_options(
         }
     }
     launch.selected_map_file = Some(file.clone());
-    let map_metadata = crate::app::shell_network_setup::local_map_metadata(state, &file)?;
+    let map_metadata = crate::app::shell_network_setup::local_map_metadata(
+        state.platform.game_config.as_ref(),
+        &state.frontend.scenario_catalog,
+        &state.process_assets,
+        &file,
+    )?;
     crate::app::shell_network_setup::service_event(
         state,
         NetworkSetupEvent::HostSetup(crate::app::shell_network_setup::HostOptions {
@@ -387,7 +403,7 @@ fn answer(state: &mut AppState, request: WolServiceRequest) {
         WolServiceRequest::ListChannels { kind, .. } => WolServiceEvent::Channels {
             kind,
             channels: if kind == GAME_CHANNEL {
-                games(stand_in_hash(state), &stand_in_map(state))
+                games(stand_in_hash(&state.process_assets), &stand_in_map(&state.frontend.scenario_catalog))
             } else {
                 lobbies()
             },
@@ -397,7 +413,7 @@ fn answer(state: &mut AppState, request: WolServiceRequest) {
             let mut members = lobby_members();
             members.push(WolMember {
                 squad: SQUAD,
-                ..member(&nickname(state), 0)
+                ..member(&nickname(&state.frontend.wol_account), 0)
             });
             let Some(mut channel) = lobbies()
                 .into_iter()
@@ -409,7 +425,7 @@ fn answer(state: &mut AppState, request: WolServiceRequest) {
             WolServiceEvent::VisitJoined(WolJoined { channel, members })
         }
         WolServiceRequest::JoinChannel { mut channel, .. } => {
-            let local = nickname(state);
+            let local = nickname(&state.frontend.wol_account);
             let lobby = channel.kind != GAME_CHANNEL;
             let quick_match = [QUICK_MATCH_LOBBY, QUICK_COOP_LOBBY].contains(&channel.name.as_str());
             let mut members = if quick_match {
@@ -446,11 +462,11 @@ fn answer(state: &mut AppState, request: WolServiceRequest) {
             ..
         } => WolServiceEvent::Located(locate(
             &String::from_utf16_lossy(&name),
-            stand_in_hash(state),
-            &stand_in_map(state),
+            stand_in_hash(&state.process_assets),
+            &stand_in_map(&state.frontend.scenario_catalog),
         )),
         WolServiceRequest::Locate(name) => {
-            WolServiceEvent::Located(locate(&name, stand_in_hash(state), &stand_in_map(state)))
+            WolServiceEvent::Located(locate(&name, stand_in_hash(&state.process_assets), &stand_in_map(&state.frontend.scenario_catalog)))
         }
         // The user is in the stand-in squad; the stand-in users are in none.
         WolServiceRequest::SquadInfo { id: 0 | SQUAD } => WolServiceEvent::Squad {
@@ -500,17 +516,17 @@ fn answer(state: &mut AppState, request: WolServiceRequest) {
             line: WolChatLine::Reply { .. },
             ..
         } => {
-            let name = super::last_pager(state).unwrap_or_default().to_owned();
+            let name = super::last_pager(state.frontend.wol.as_ref()).unwrap_or_default().to_owned();
             page(state, &name);
             return;
         }
         // OnPart arrives only for a channel this user is in.
-        WolServiceRequest::LeaveChannel if super::lobby::in_channel(state) => {
+        WolServiceRequest::LeaveChannel if super::lobby::in_channel(state.frontend.wol.as_ref()) => {
             WolServiceEvent::ChannelLeft
         }
         WolServiceRequest::CreateChannel { .. } => {
             state.frontend.wol_test_guest = WolTestGuest::Expected;
-            let local = nickname(state);
+            let local = nickname(&state.frontend.wol_account);
             service_event(
                 state,
                 WolServiceEvent::Created(Ok(vec![WolMember {
@@ -519,7 +535,7 @@ fn answer(state: &mut AppState, request: WolServiceRequest) {
                 }])),
             );
             // The matchbot's opponent joins a Quick Match game at once.
-            if super::quick_match::mode_active(state) {
+            if super::quick_match::mode_active(state.frontend.wol.as_ref()) {
                 guest_joins(state, false);
             }
             return;
@@ -726,8 +742,8 @@ fn locate(name: &str, hash: i32, map: &str) -> Result<WolChannel, u32> {
     }
 }
 
-fn nickname(state: &AppState) -> String {
-    state.frontend.wol_account.nickname.clone()
+fn nickname(account: &WolAccountGlobals) -> String {
+    account.nickname.clone()
 }
 
 fn member(name: &str, flags: u32) -> WolMember {
@@ -793,8 +809,15 @@ fn quick_match_members() -> Vec<WolMember> {
 /// admits, the host country 5 (Libya) in colour 1 and the guest country 4
 /// (Great Britain) in colour 3, both on automatic starts.
 fn match_requested(state: &mut AppState) {
-    let local = nickname(state);
-    let options = match matchbot_options(state, &local, GUEST) {
+    let local = nickname(&state.frontend.wol_account);
+    let options = match matchbot_options(
+        &state.frontend,
+        state.platform.game_config.as_ref(),
+        &state.match_state,
+        &state.process_assets,
+        &local,
+        GUEST,
+    ) {
         Ok(options) => Some(Box::new(options)),
         Err(error) => {
             log::warn!("WOL test service: no matchbot options: {error:#}");
@@ -826,7 +849,10 @@ fn match_requested(state: &mut AppState) {
 /// `guest`, as the host receives them (`local_player_index` 0): its fixed
 /// picks through the Quick Match owner's builder.
 pub(crate) fn matchbot_options(
-    state: &AppState,
+    frontend: &FrontendState,
+    game_config: Option<&GameConfig>,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
     host: &str,
     guest: &str,
 ) -> anyhow::Result<crate::app::shell_network_setup::HostOptions> {
@@ -834,11 +860,12 @@ pub(crate) fn matchbot_options(
     // In Quick Co-op the host's +0x20 replaces the map with the first
     // Allied one, whose stage admits only Americans (index 0); a peer
     // country outside it turns Random, which the shell never resolves.
-    let ((host_country, guest_country), map) = if super::quick_match::quick_coop(state) {
-        ((0, 0), MatchMap::Named(QUICK_COOP_MAP))
-    } else {
-        ((5, 4), MatchMap::First)
-    };
+    let ((host_country, guest_country), map) =
+        if super::quick_match::quick_coop(frontend.wol.as_ref()) {
+            ((0, 0), MatchMap::Named(QUICK_COOP_MAP))
+        } else {
+            ((5, 4), MatchMap::First)
+        };
     let player = |name: &str, country, color| MatchPlayer {
         name: name.into(),
         country,
@@ -849,7 +876,14 @@ pub(crate) fn matchbot_options(
         host: player(host, host_country, 1),
         guest: player(guest, guest_country, 3),
     };
-    super::quick_match::host_options(state, &pairing, map)
+    super::quick_match::host_options(
+        frontend,
+        game_config,
+        match_state,
+        process_assets,
+        &pairing,
+        map,
+    )
 }
 
 fn lobby_members() -> Vec<WolMember> {
@@ -862,15 +896,13 @@ fn lobby_members() -> Vec<WolMember> {
 
 /// The hash the stand-in hosts publish: the user's own, so their games
 /// pass admission (0 without the process sources, when it is skipped).
-fn stand_in_hash(state: &AppState) -> i32 {
-    super::lobby::local_ini_hash(state).unwrap_or(0)
+fn stand_in_hash(process_assets: &ProcessAssets) -> i32 {
+    super::lobby::local_ini_hash(process_assets).unwrap_or(0)
 }
 
 /// The first scenario record, which Tanya's game names.
-fn stand_in_map(state: &AppState) -> String {
-    state
-        .frontend
-        .scenario_catalog
+fn stand_in_map(scenario_catalog: &ScenarioCatalog) -> String {
+    scenario_catalog
         .records()
         .first()
         .map(|record| record.file_name.clone())

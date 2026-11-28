@@ -295,6 +295,7 @@ fn test_composite_layers_depth_correct() {
         height: 2,
         offset_x: 0.0,
         offset_y: 0.0,
+        hd: None,
     };
     // Turret: 1x1 at (1,1), depth 2.0 (closer), palette index 200 — overwrites body.
     let turret = VxlSprite {
@@ -304,6 +305,7 @@ fn test_composite_layers_depth_correct() {
         height: 1,
         offset_x: 1.0,
         offset_y: 1.0,
+        hd: None,
     };
     let out = composite_vxl_layers(&[body.clone(), turret]);
     assert_eq!(out.width, 2);
@@ -319,6 +321,7 @@ fn test_composite_layers_depth_correct() {
         height: 1,
         offset_x: 1.0,
         offset_y: 1.0,
+        hd: None,
     };
     let out2 = composite_vxl_layers(&[body, turret_behind]);
     let idx2 = (out2.width + 1) as usize;
@@ -336,6 +339,7 @@ fn test_pad_layer_to_union_bounds() {
         height: 2,
         offset_x: 0.0,
         offset_y: 0.0,
+        hd: None,
     };
     // Turret at offset (5,3), 1x1, palette index 200 — different origin from body.
     let turret = VxlSprite {
@@ -345,6 +349,7 @@ fn test_pad_layer_to_union_bounds() {
         height: 1,
         offset_x: 5.0,
         offset_y: 3.0,
+        hd: None,
     };
 
     let all_layers: Vec<&VxlSprite> = vec![&body, &turret];
@@ -1165,6 +1170,46 @@ fn tumble_selects_one_physical_section_for_body_and_shadow() {
     );
 }
 
+/// A world whose only voxel unit draws a declared model
+/// (`docs/picture-model-art.md`) still makes the atlas, reading no VXL: the
+/// unit draw visits objects only while an atlas exists, so without one that
+/// unit, and every other, drew nothing.
+#[test]
+fn a_world_of_declared_models_makes_the_atlas() {
+    let directory = crate::map::source::test_support::TestDirectory::new("declared-atlas");
+    let glb = crate::assets::model_file::test_glb::box_model(2.0, 1.0, 4.0, &[]);
+    std::fs::write(directory.path().join("tank.glb"), &glb).unwrap();
+    let assets = AssetManager::from_loose_root_for_test(directory.path());
+    let art = IniFile::from_str("[BODY]\nVoxel=yes\nModel=tank.glb\nModelSize=120\n");
+    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
+        &IniFile::from_str("[VehicleTypes]\n0=TEST\n[TEST]\nImage=BODY\nStrength=300\n"),
+        &art,
+    )
+    .unwrap();
+    rules.install_art_fixture(crate::rules::art_data::ArtRegistry::from_ini(&art));
+    rules.bind_effect_assets(&assets, "TEM", "TEMPERATE");
+    assert!(rules.draws_declared_model("TEST"));
+    let mut entity =
+        crate::sim::game_entity::GameEntity::test_default(1, "TEST", "Americans", 5, 5);
+    entity.set_is_voxel_for_test(true);
+    let mut world = crate::sim::entity_store::EntityStore::new();
+    world.insert(entity);
+    let interner = crate::sim::intern::test_interner();
+    let rules = Some(&rules);
+
+    assert!(!atlas_covers_world(None, &world, rules, Some(&interner)));
+    let mut atlas = None;
+    admit_world_models(&mut atlas, &world, &assets, rules, Some(&interner), 8192);
+    let atlas = atlas.expect("a world of declared models makes the atlas");
+    assert!(atlas.models.is_empty(), "no VXL is read");
+    assert!(atlas_covers_world(
+        Some(&atlas),
+        &world,
+        rules,
+        Some(&interner)
+    ));
+}
+
 /// A placed sprite waits for its upload as the resident cache's pixels
 /// themselves, not a second copy of them.
 #[test]
@@ -1187,6 +1232,7 @@ fn a_placed_sprite_waits_for_its_upload_without_a_copy() {
         native_draw_bounds: None,
         shadow_center: None,
         pool_bytes: 0,
+        hd: None,
     }]);
     let resident = atlas.resident.borrow();
     let [pending] = resident.uploads.as_slice() else {
@@ -1198,4 +1244,34 @@ fn a_placed_sprite_waits_for_its_upload_without_a_copy() {
         staged,
         resident.rendered_cache[0].pixels.as_slice()
     ));
+}
+
+/// Phobos `[General] ArtImageSwap=true`: a vehicle's own ART `Image=` names
+/// its VXL, while `Voxel=` and the other flags stay on that own section.
+/// Retail assets prove the renamed `SAPC` files actually load; the naming
+/// assertions run even without a game directory.
+#[test]
+fn phobos_art_image_swap_names_vehicle_voxel_from_art() {
+    let rules = RuleSet::from_ini_with_fixed_art_for_test(
+        &IniFile::from_str(
+            "[General]\nArtImageSwap=true\n\
+             [VehicleTypes]\n0=SAPCX\n\
+             [SAPCX]\nName=Subterranean APC\nStrength=500\nSpeed=6\nTurret=no\n",
+        ),
+        &IniFile::from_str("[SAPCX]\nImage=SAPC\nVoxel=yes\nRemapable=yes\nCameo=sapicon\n"),
+    )
+    .unwrap();
+    assert_eq!(rules.object("SAPCX").unwrap().image, "SAPCX");
+    assert_eq!(
+        rules.object("SAPCX").unwrap().voxel_image_load(),
+        Some("SAPC")
+    );
+    assert_eq!(voxel_image_id("SAPCX", Some(&rules)), "SAPC");
+
+    use crate::rules::retail_ini_fixture::retail_assets;
+    let Some((_, assets)) = retail_assets() else {
+        return;
+    };
+    let model = UnitModel::load(&assets, "SAPCX", Some(&rules)).expect("SAPC.VXL loads");
+    assert_eq!(model.body.unwrap().identity().0, "SAPC");
 }

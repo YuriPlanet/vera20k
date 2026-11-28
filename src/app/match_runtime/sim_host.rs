@@ -71,6 +71,8 @@ pub(crate) enum SimWrite {
 pub(crate) struct SimHost {
     /// `None` while uninstalled or lent.
     runtime: Option<SimRuntime>,
+    /// Plain IonBlast records from the last world while no world is installed.
+    dominator_ripples: crate::sim::world::RetainedDominatorRipples,
     /// Whether the runtime is on the simulation thread.
     lent: bool,
     /// The last job's result, once the runtime is back.
@@ -118,9 +120,11 @@ pub(crate) struct SimHost {
     /// Whether frames capture VERA's Convenience Help status rows
     /// ([`Self::show_status_rows`]); off, the capture skips them.
     status_rows: bool,
-    /// The camera and the pass-by window around it, published each pass:
-    /// the view the next capture answers for.
-    view: Option<([f32; 2], crate::app::presentation::instances::PassByWindow)>,
+    /// The client modules' local looks of objects ([`Self::set_local_looks`]).
+    local_looks: crate::app::presentation::frame::LocalLooks,
+    /// Whether frames capture the status templates' amounts
+    /// ([`Self::capture_status_amounts`]).
+    status_amounts: bool,
     /// Global B04474 and its comparison timer (`FrameChecksumState`):
     /// process state that launch and load retain, written and compared only
     /// inside a multiplayer tick.
@@ -162,13 +166,30 @@ impl SimHost {
             target_arch = "wasm32",
             target_os = "unknown"
         ))]
-        return sim_thread_available() && self.worker.as_ref().is_some_and(|worker| worker.running);
+        return sim_thread_available()
+            && self.worker.as_ref().is_some_and(|worker| worker.running)
+            && !self.has_ext_modules();
         #[cfg(not(all(
             feature = "wasm-threads",
             target_arch = "wasm32",
             target_os = "unknown"
         )))]
         sim_thread_available()
+    }
+
+    /// Whether the match runs Wasm extension modules. In the browser each
+    /// one is a JavaScript instance of the main thread (wasm-ext
+    /// `browser.rs`), so such a match never lends a tick to the worker. A
+    /// lent runtime has none: it was lent because it had none.
+    #[cfg(all(
+        feature = "wasm-threads",
+        target_arch = "wasm32",
+        target_os = "unknown"
+    ))]
+    fn has_ext_modules(&self) -> bool {
+        self.runtime
+            .as_ref()
+            .is_some_and(|runtime| !runtime.simulation.ext_modules().is_empty())
     }
 
     /// The start of a frame-loop pass: whether it may go on. A pass goes on
@@ -351,6 +372,16 @@ impl SimHost {
             .map(SimRuntime::take_radar_terrain_dirty)
     }
 
+    /// The simulation's client outbox (`Simulation::take_client_outbox`):
+    /// the `Notify`s and `SimEvent`s its frames since the last take left
+    /// for client modules (RFC 0001 section 10). A [`SimWrite::Presentation`]
+    /// write: hand-off state that is neither saved nor hashed. `None`
+    /// without a world. Taken at a frame's tail, while the runtime is home.
+    pub(crate) fn take_client_outbox(&mut self) -> Option<crate::sim::ext_modules::ClientOutbox> {
+        self.write_sim(SimWrite::Presentation)
+            .map(|runtime| runtime.simulation.take_client_outbox())
+    }
+
     /// Mutable access to the installed runtime for one write route; a lent
     /// runtime comes back first.
     pub(crate) fn write_sim(&mut self, _route: SimWrite) -> Option<&mut SimRuntime> {
@@ -380,56 +411,27 @@ impl SimHost {
         }
     }
 
-    /// Capture the frame of the home runtime, and with `world` the copy of
-    /// the world drawing reads beside it.
+    /// Capture the frame of the home runtime, and with `world` its Display
+    /// members and the copy of the world drawing reads beside it.
     fn capture_frame(&mut self, world: bool) {
         let _ = self.frame();
         if world
             && self.presentation.is_none()
             && let (Some(frame), Some(runtime)) = (self.frame.get(), self.runtime.as_mut())
         {
+            // The cursor's pick and every draw read the Display members. Filed
+            // now, while the pool is idle, no draw beside the lent tick files
+            // them on the pool the tick works on.
+            frame.display_members(&runtime.simulation);
             let viewer = runtime.simulation.session().current_house();
             let reuse = self.spare.take();
             let started = Instant::now();
-            // Box selection (AddSelectable 0x006D9EF0) can ask for the order
-            // before drawing. Sort while the Ground objects are still attached.
-            frame.display_order(&runtime.simulation);
             self.presentation = Some(Box::new(runtime.presentation_copy(viewer, reuse)));
             let mut costs = self.snapshot_costs.get();
             costs.copy += started.elapsed();
             costs.copies += 1;
             self.snapshot_costs.set(costs);
         }
-    }
-
-    /// The camera and the pass-by window around it, for the frame's screen
-    /// answers. A camera that leaves the standing frame's scope drops that
-    /// frame, so the next read captures one for the new view.
-    pub(crate) fn set_view(
-        &mut self,
-        camera: [f32; 2],
-        window: crate::app::presentation::instances::PassByWindow,
-    ) {
-        self.view = Some((camera, window));
-        if !self.lent
-            && self
-                .frame
-                .get()
-                .is_some_and(|frame| !frame.covers_camera(camera))
-        {
-            self.forget_frame();
-        }
-    }
-
-    /// The camera positions the standing frame's scope still covers, while a
-    /// tick is lent: the camera may not leave them, or the picture would
-    /// show objects the frame did not answer for. A home world drops its
-    /// frame instead, so the camera is free there.
-    pub(crate) fn frame_camera_limit(&self) -> Option<([f32; 2], [f32; 2])> {
-        if !self.lent {
-            return None;
-        }
-        self.frame.get().and_then(|frame| frame.camera_range())
     }
 
     /// What drawing reads of the objects: the frame the lent tick started
@@ -442,11 +444,12 @@ impl SimHost {
         let runtime = self.runtime.as_ref()?;
         Some(self.frame.get_or_init(|| {
             let started = Instant::now();
-            let frame = Box::new(PresentationFrame::capture(
+            let frame = Box::new(PresentationFrame::capture_with_looks(
                 runtime,
                 &self.sidebar_types,
                 self.status_rows,
-                self.view.map(|(camera, window)| (window, camera)),
+                &self.local_looks,
+                self.status_amounts,
             ));
             let mut costs = self.snapshot_costs.get();
             costs.capture += started.elapsed();
@@ -474,6 +477,31 @@ impl SimHost {
     /// Have frames capture VERA's Convenience Help status rows, or stop.
     /// A home frame captured the other way is dropped, so the next read
     /// captures it; a lent tick's frame stands until the tick comes back.
+    /// Have frames carry the client modules' local looks of objects
+    /// (`ui_modules`, `Decoration`). A home frame captured with others is
+    /// dropped; a lent tick's frame stands until the tick comes back.
+    pub(crate) fn set_local_looks(&mut self, looks: crate::app::presentation::frame::LocalLooks) {
+        if self.local_looks == looks {
+            return;
+        }
+        self.local_looks = looks;
+        if !self.lent {
+            self.forget_frame();
+        }
+    }
+
+    /// Have frames capture the amounts the client modules' status templates
+    /// read (`ui_modules::status`), or stop.
+    pub(crate) fn capture_status_amounts(&mut self, on: bool) {
+        if self.status_amounts == on {
+            return;
+        }
+        self.status_amounts = on;
+        if !self.lent {
+            self.forget_frame();
+        }
+    }
+
     pub(crate) fn show_status_rows(&mut self, on: bool) {
         if self.status_rows == on {
             return;
@@ -528,16 +556,12 @@ impl SimHost {
     }
 
     /// Install `runtime` in place of any current one.
-    pub(crate) fn install(&mut self, runtime: Option<SimRuntime>) {
-        // A job's result belongs to the world it ran on.
-        self.reclaim(true);
-        self.report_early_returns();
-        self.job_result = None;
-        self.lend_cost = None;
+    pub(crate) fn install(&mut self, mut runtime: Option<SimRuntime>) {
+        drop(self.take_runtime());
+        if let Some(incoming) = &mut runtime {
+            self.dominator_ripples.resume_in(&mut incoming.simulation);
+        }
         self.runtime = runtime;
-        self.forget_frame();
-        self.sidebar_types = SidebarTypes::default();
-        self.spare = None;
         // The first copy of the world is a whole one, tens of milliseconds
         // at 20,000 objects. Taken while the scenario loads, the first lent
         // tick only brings it up to date.
@@ -549,7 +573,7 @@ impl SimHost {
         }
     }
 
-    /// Remove and return the installed runtime.
+    /// Remove the installed runtime, retaining the process's Dominator ripples.
     pub(crate) fn take_runtime(&mut self) -> Option<SimRuntime> {
         self.reclaim(true);
         self.report_early_returns();
@@ -558,7 +582,9 @@ impl SimHost {
         self.forget_frame();
         self.sidebar_types = SidebarTypes::default();
         self.spare = None;
-        self.runtime.take()
+        let mut runtime = self.runtime.take()?;
+        self.dominator_ripples.take_from(&mut runtime.simulation);
+        Some(runtime)
     }
 }
 
@@ -649,7 +675,7 @@ impl SimWorker {
         std::thread::Builder::new()
             .name("simulation".into())
             // The main thread's size: a tick recurses as deep there.
-            .stack_size(8 << 20)
+            .stack_size(crate::util::GAME_STACK_BYTES)
             .spawn(move || run_jobs(&job_queue, &send_back))
             .expect("start the simulation thread");
         Self { jobs, returned }
@@ -843,6 +869,57 @@ mod tests {
     use crate::sim::command_queue::{ChecksumMismatch, FrameInfo, FrameInfoCompareGate};
     use crate::sim::world::Simulation;
 
+    fn strike_dominator(runtime: &mut SimRuntime, cell: (i16, i16)) {
+        *runtime.simulation.psychic_dominator_mut_for_test() =
+            crate::sim::superweapon::psychic_dominator::PsychicDominatorState::for_test(
+                2, cell, None, None,
+            );
+        runtime.advance_frame_for_tooling(&[], 67).unwrap();
+    }
+
+    #[test]
+    fn player_load_keeps_the_live_workers_dominator_ripples_at_their_current_ages() {
+        use crate::sim::snapshot::GameSnapshot;
+        let mut outgoing = SimRuntime::from_simulation(Simulation::new());
+        strike_dominator(&mut outgoing, (3, 4));
+        let bytes = GameSnapshot::save(&outgoing.simulation, 0, 0, "", 0);
+        let saved = GameSnapshot::load(&bytes)
+            .unwrap()
+            .into_simulation_for_test();
+        assert_eq!(saved.ion_blasts().count(), 0);
+        let mut host = SimHost::default();
+        host.install(Some(outgoing));
+        assert!(host.lend(Box::new(|runtime| {
+            strike_dominator(runtime, (5, 6));
+            Box::new(())
+        })));
+        host.install(Some(SimRuntime::from_simulation(saved)));
+        let world = &host.runtime().unwrap().simulation;
+        assert_eq!(
+            world.ion_blasts().collect::<Vec<_>>(),
+            [([896, 1152, 0], 2), ([1408, 1664, 0], 1)]
+        );
+    }
+
+    #[test]
+    fn scenario_restart_keeps_dominator_ripples_through_an_empty_shell() {
+        let mut outgoing = SimRuntime::from_simulation(Simulation::new());
+        strike_dominator(&mut outgoing, (3, 4));
+        let mut host = SimHost::default();
+        host.install(Some(outgoing));
+        drop(host.take_runtime());
+        host.install(None);
+        let mut incoming = SimRuntime::from_simulation(Simulation::new());
+        strike_dominator(&mut incoming, (7, 8));
+        host.install(Some(incoming));
+        let live = host.write_sim(SimWrite::Tick).unwrap();
+        live.advance_frame_for_tooling(&[], 67).unwrap();
+        assert_eq!(
+            live.simulation.ion_blasts().collect::<Vec<_>>(),
+            [([896, 1152, 0], 2), ([1920, 2176, 0], 2)]
+        );
+    }
+
     #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn returning_to_skirmish_can_write_rules_while_the_old_frame_is_being_freed() {
@@ -897,6 +974,54 @@ mod tests {
         assert!(host.lend(Box::new(|_| Box::new(()))));
         assert!(host.take_job_result().is_some());
         assert_eq!((host.lent_jobs, host.early_returns), (2, 1));
+    }
+
+    /// Drawing reads no trigger, so a lent tick's world copy holds none:
+    /// debug builds refuse the read, and the live world keeps its own.
+    #[test]
+    fn the_world_copy_leaves_the_triggers_with_the_live_world() {
+        let mut runtime = SimRuntime::from_simulation(Simulation::new());
+        runtime
+            .simulation
+            .set_trigger_variable_for_test(true, 3, true);
+        let copy = runtime.presentation_copy(None, None);
+        let refused = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            copy.simulation.global_variables()
+        }));
+        assert_eq!(refused.is_err(), cfg!(debug_assertions));
+        assert!(runtime.simulation.global_variables()[3]);
+    }
+
+    /// The world copy clones the anims beside the rest of the world: the
+    /// copy draws the live world's anims, and the live world keeps them.
+    #[test]
+    fn the_world_copy_holds_the_anims_the_live_world_keeps() {
+        use crate::rules::{art_data::ArtRegistry, ini_parser::IniFile, ruleset::RuleSet};
+        use crate::sim::{anim_class::AnimWorldCoord, components::AnimClassSpawnDescriptor};
+        let rules_ini = IniFile::from_str("[Animations]\n0=FIRE\n");
+        let art_ini = IniFile::from_str("[FIRE]\nEnd=20\n");
+        let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&rules_ini, &art_ini).unwrap();
+        rules.install_art_data(ArtRegistry::from_ini(&art_ini));
+        rules.bind_anim_frame_count_for_test("FIRE", 20);
+        let mut sim = Simulation::with_seed(31);
+        let fire = sim.intern("FIRE");
+        let coord = AnimWorldCoord {
+            x: 16512,
+            y: 16512,
+            z: 0,
+        };
+        let (rx, ry, sub_x, sub_y, z) = coord.to_cell_sub_z();
+        let anim = sim
+            .spawn_anim_at_world(
+                &rules,
+                AnimClassSpawnDescriptor::new(fire, rx, ry, sub_x, sub_y, z),
+                coord,
+            )
+            .unwrap();
+        let mut runtime = SimRuntime::from_simulation(sim);
+        let copy = runtime.presentation_copy(None, None);
+        assert!(copy.simulation.anim(anim).is_some());
+        assert!(runtime.simulation.anim(anim).is_some());
     }
 
     /// A frame answers every type the sidebar has asked of the scenario. A

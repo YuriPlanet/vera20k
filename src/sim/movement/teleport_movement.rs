@@ -231,11 +231,9 @@ impl ChronoWarpDelay {
 /// The Chronosphere's warp on the Teleport a Chrono Warp piggybacks over a
 /// Foot's locomotor (`SuperClass::Launch 0x006CC989..0x006CCB6A`): Teleport
 /// Process's states (`+0x38`, `0x007197CC..0x00719BE2`, run by
-/// `movement::teleport_chrono`), its timer, and the Techno bytes those states
-/// write. Native keeps the bytes on the Techno; only the Teleport's states
-/// write them, and End_Piggyback waits until all are clear
-/// (`0x00719F30`), so they live and die with this Teleport.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+/// `movement::teleport_chrono`), its timer, latch and warp-in. Temporal also
+/// writes the Techno's +270 byte, which outlives this piggyback.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ChronoWarp {
     /// Teleport `+0x38`.
     state: u8,
@@ -248,8 +246,10 @@ pub struct ChronoWarp {
     destination: DriveCoord,
     /// Techno `+0x27C`: set by case 4, cleared by state 2.
     latched: bool,
-    /// Techno `+0x270` BeingWarpedOut: set by state 0, cleared by state 2.
-    warped_out: bool,
+    /// Pre-overlap saves kept Teleport's last +270 write here. The entity
+    /// store consumes it when converting one of those saves.
+    #[serde(rename = "warped_out")]
+    legacy_warped_out: bool,
     /// Techno `+0x271` WarpingIn: set by state 2, cleared by TimerCheck's
     /// expiry and state 7.
     warping_in: bool,
@@ -261,7 +261,7 @@ impl std::hash::Hash for ChronoWarp {
         self.timer.hash(state);
         self.destination.hash(state);
         self.latched.hash(state);
-        self.warped_out.hash(state);
+        self.is_departing().hash(state); // retain the historical Teleport hash
         self.warping_in.hash(state);
         // Existing Chronosphere warps have native pending0. Its absence and
         // zero have identical consumers; preserve their established hash fold.
@@ -285,7 +285,7 @@ impl ChronoWarp {
             timer: crate::sim::timer::CdTimer::started(frame as i32, 0),
             destination,
             latched: true,
-            warped_out: false,
+            legacy_warped_out: false,
             warping_in: false,
         }
     }
@@ -343,9 +343,14 @@ impl ChronoWarp {
         self.latched
     }
 
-    /// Techno `+0x270`.
-    pub(crate) fn warped_out(&self) -> bool {
-        self.warped_out
+    pub(crate) fn take_legacy_warp_out(&mut self) -> bool {
+        std::mem::take(&mut self.legacy_warped_out)
+    }
+
+    /// Only states 1 and 2 follow the departure timer's start at 7197DF
+    /// and precede the state-2 clear. Used for historical hash continuity.
+    pub(crate) fn is_departing(&self) -> bool {
+        self.latched && matches!(self.state, 1 | 2)
     }
 
     /// Techno `+0x271`.
@@ -353,11 +358,9 @@ impl ChronoWarp {
         self.warping_in
     }
 
-    /// Techno `+0x27C`, `+0x270` and `+0x271` as warp states 0 and 2 store
-    /// them.
-    pub(crate) fn set_bytes(&mut self, latched: bool, warped_out: bool, warping_in: bool) {
+    /// Techno `+0x27C` and `+0x271`, on this Chronosphere warp.
+    pub(crate) fn set_bytes(&mut self, latched: bool, warping_in: bool) {
         self.latched = latched;
-        self.warped_out = warped_out;
         self.warping_in = warping_in;
     }
 
@@ -451,10 +454,13 @@ impl TeleportRuntime {
 
 impl crate::sim::game_entity::GameEntity {
     /// The Chronosphere warp, on the active Teleport or one a Drive suspended:
-    /// it holds the owner's bytes (Techno `+0x270`, `+0x271`, `+0x27C`,
-    /// `+0x42C`), whichever locomotor is active.
+    /// it holds the owner's `+0x271` and `+0x27C` whichever locomotor is active.
     pub(crate) fn chrono_warp(&self) -> Option<&ChronoWarp> {
         self.locomotor.as_ref()?.warp_teleport()?.chrono()
+    }
+
+    pub(crate) fn chrono_warp_mut(&mut self) -> Option<&mut ChronoWarp> {
+        self.locomotor.as_mut()?.warp_teleport_mut()?.chrono_mut()
     }
 
     /// The warp on the active Teleport, whose Process runs its states: this
@@ -612,12 +618,9 @@ impl crate::sim::world::Simulation {
             || actor.is_warping_in()
         {
             // The refusal's NavCom store (`0x00718213`).
-            self.substrate
-                .entities
-                .get_mut(id)
-                .unwrap()
-                .navigation
-                .store_nav_com(None);
+            let entity = self.substrate.entities.get_mut(id).unwrap();
+            let note = entity.note_names();
+            entity.navigation.store_nav_com(None, note);
             return Ok(false);
         }
         let infantry = actor.category() == EntityCategory::Infantry;

@@ -329,6 +329,8 @@ pub struct RandomMapSetupModalState {
     pub generated: bool,
     /// True while the synchronous generate block owns the dialog.
     pub generating: bool,
+    /// Last percentage reported by the active map generator.
+    pub(crate) progress_percent: u8,
     /// Load/Delete enablement. Starts at saved-seed availability, but the
     /// generate action turns it on unconditionally, as the original does.
     pub saved_seed_buttons_enabled: bool,
@@ -452,6 +454,7 @@ impl RandomMapSetupModalState {
             players_range: PLAYERS_RANGE,
             generated: false,
             generating: false,
+            progress_percent: 0,
             saved_seed_buttons_enabled: saved_seeds_available,
             generated_preview: None,
             preview_generation: 0,
@@ -859,12 +862,14 @@ impl RandomMapSetupModalState {
     /// Begin the synchronous generate block: every control goes inert.
     pub fn begin_generate(&mut self) {
         self.generating = true;
+        self.progress_percent = 0;
     }
 
     /// Release a failed worker without presenting an old/partial map as a
     /// successful result. Only finish_generate may enable Save and Accept.
     pub fn fail_generate(&mut self) {
         self.generating = false;
+        self.progress_percent = 0;
         self.generated = false;
         self.generated_preview = None;
         self.exported = false;
@@ -892,6 +897,7 @@ impl RandomMapSetupModalState {
     /// any saved seed actually exists.
     pub fn finish_generate(&mut self, preview: Option<PreviewImage>) {
         self.generating = false;
+        self.progress_percent = 100;
         self.generated = true;
         self.exported = false;
         self.exported_to = None;

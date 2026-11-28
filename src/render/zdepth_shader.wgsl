@@ -17,6 +17,12 @@ struct Camera {
 };
 @group(0) @binding(0) var<uniform> camera: Camera;
 
+// The tile atlas (encoded colour), its sampler and its R8 depth plane.
+// VERA-only, experimental (docs/zoom-one-pass.md): while the battlefield
+// draws zoomed in with HD art on, the atlas's HD binding
+// (`TileAtlas::bind_hd_twin`) binds its 2x twin at 0 (premultiplied, two
+// levels) with a linear sampler; the depth plane stays the 1x one, so a
+// colour page larger than the depth plane is the twin.
 @group(1) @binding(0) var t_sprite: texture_2d<f32>;
 @group(1) @binding(1) var s_sprite: sampler;
 @group(1) @binding(2) var t_zdepth: texture_2d<f32>;
@@ -57,10 +63,11 @@ fn vs_main(
     );
 
     let local: vec2f = quad_pos[idx];
-    let is_zoomed: bool = abs(camera.zoom - 1.0) >= 0.001;
-    // Match the exact source scale used by the other tactical blitters.
-    let raw_pos: vec2f = (instance.position + local * instance.size - camera.camera_pos) * camera.zoom;
-    let pixel_pos: vec2f = select(raw_pos, floor(raw_pos + vec2f(0.5, 0.5)), !is_zoomed);
+    // Snap the corners to whole world pixels, then scale by the zoom: each
+    // world pixel is one zoom-sized block (docs/zoom-one-pass.md), the same
+    // rounding as the other tactical blitters; at zoom 1 the plain rounding.
+    let pixel_pos: vec2f = world_block_corner(instance.position + local * instance.size
+        - camera.camera_pos);
 
     let clip_x: f32 = (pixel_pos.x / camera.screen_size.x) * 2.0 - 1.0;
     let clip_y: f32 = 1.0 - (pixel_pos.y / camera.screen_size.y) * 2.0;
@@ -96,14 +103,37 @@ struct FragOutput {
 
 @fragment
 fn fs_main(input: VertexOutput) -> FragOutput {
-    // Tile pages are Rgba8Unorm: this is already the encoded colour.
-    let color: vec4f = textureSample(t_sprite, s_sprite, input.uv);
+    // Derivatives first, in uniform control flow.
+    let uv_dx = dpdx(input.uv);
+    let uv_dy = dpdy(input.uv);
+    let depth_size = textureDimensions(t_zdepth);
+    let page_size = textureDimensions(t_sprite);
+    var color: vec4f;
+    if (page_size.x > depth_size.x) {
+        // The HD twin, at the level whose texels match the target's pixels
+        // (log2 of the twin texels a target pixel spans, clamped by the
+        // sampler to its last level, one texel per tile pixel); less than
+        // half covered is outside the tile.
+        let dims = vec2f(page_size);
+        let span = max(length(uv_dx * dims), length(uv_dy * dims));
+        let lod = max(log2(max(span, 1e-6)), 0.0);
+        let twin = textureSampleLevel(t_sprite, s_sprite, input.uv, lod);
+        if (twin.a < 0.5) {
+            discard;
+        }
+        color = vec4f(min(twin.rgb / twin.a, vec3f(1.0)), 1.0);
+    } else {
+        // Tile pages are Rgba8Unorm: this is already the encoded colour.
+        color = textureSampleLevel(t_sprite, s_sprite, input.uv, 0.0);
+    }
     if (color.a < 0.01) {
         discard;
     }
 
-    // R8 depth atlas: byte 0..255 stored as 0..1.
-    let z_byte: f32 = round(textureSample(t_zdepth, s_sprite, input.uv).r * 255.0);
+    // R8 depth atlas: byte 0..255 stored as 0..1, the texel a nearest
+    // sample of `uv` reads.
+    let depth_texel = vec2i(clamp(input.uv * vec2f(depth_size), vec2f(0.0), vec2f(depth_size) - 1.0));
+    let z_byte: f32 = round(textureLoad(t_zdepth, depth_texel, 0).r * 255.0);
     let ground_row: f32 = input.canvas_top - (input.z_adjust + z_byte);
     let frag_depth: f32 = stored_native_depth(32768
         + native_z_origin_row(camera.camera_pos.y + camera.native_z_origin_y, camera.native_z_pan)

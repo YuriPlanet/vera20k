@@ -60,7 +60,9 @@ pub(crate) use self::production_refinery::spawn_building_free_unit;
 pub use self::production_repair::{
     RepairControl, repair_remaining, repair_step_cost, toggle_repair,
 };
-pub use self::production_repair::{buildings_wanting_repair, can_repair_building};
+pub use self::production_repair::{
+    buildings_wanting_repair, can_repair_building, player_repair_type_admits,
+};
 pub(crate) use self::production_repair::{engineer_repair, update_repair_and_power};
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) use self::production_sell::begin_selling;
@@ -89,7 +91,7 @@ pub use self::production_types::*;
 // Re-exports for external consumers (files outside production/ that previously
 // imported private submodules directly).
 pub(crate) use self::can_build::ares_build_limit_remaining;
-pub(crate) use self::can_build::owns_prerequisites;
+pub(crate) use self::can_build::{buildable_by_player, owns_prerequisites};
 pub use self::can_build::{CanBuild, can_build, primary_factory_category};
 pub(crate) use self::can_build::{RequirementStatus, requirements_met};
 pub use self::can_build::{

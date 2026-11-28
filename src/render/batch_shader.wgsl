@@ -44,9 +44,12 @@ struct VertexOutput {
     @location(13) @interpolate(flat) source_palette: u32,
 };
 
+// `on_frame`: the instance is already placed on the target's own pixel
+// lattice (`vs_frame`), so it is projected as it is.
 fn vertex_impl(
     idx: u32,
     instance: Instance,
+    on_frame: bool,
 ) -> VertexOutput {
     // Quad vertex positions: (0,0) top-left to (1,1) bottom-right.
     var quad_pos = array<vec2f, 6>(
@@ -63,9 +66,15 @@ fn vertex_impl(
     // UV range stretches every sprite independently, distorting pixel spacing
     // and misaligning neighboring terrain texels. Nearest sampling needs no
     // extra coverage; shared world boundaries project to the same screen edge.
-    let is_zoomed: bool = abs(camera.zoom - 1.0) >= 0.001;
-    let raw_pos: vec2f = (instance.position + local * instance.size - camera.camera_pos) * camera.zoom;
-    let pixel_pos: vec2f = select(raw_pos, floor(raw_pos + vec2f(0.5, 0.5)), !is_zoomed);
+    // Corners snap to whole world pixels, then scale by the zoom, so each
+    // world pixel is one zoom-sized block (docs/zoom-one-pass.md); at zoom 1
+    // this is the plain rounding to target pixels.
+    let world_rel: vec2f = instance.position + local * instance.size - camera.camera_pos;
+    let pixel_pos: vec2f = select(
+        world_block_corner(world_rel),
+        world_rel * camera.zoom,
+        on_frame,
+    );
 
     // Convert pixel coordinates to clip space.
     // Screen: (0,0) = top-left, (screen_size) = bottom-right.
@@ -88,13 +97,21 @@ fn vertex_impl(
 
 @vertex
 fn vs_main(@builtin(vertex_index) idx: u32, instance: Instance) -> VertexOutput {
-    return vertex_impl(idx, instance);
+    return vertex_impl(idx, instance, false);
+}
+
+// Frame health strips (`object_extras::defer_health_to_frame`): their
+// producer puts every corner on a whole target pixel under a zoomed world
+// camera, which the world-pixel snap would move.
+@vertex
+fn vs_frame(@builtin(vertex_index) idx: u32, instance: Instance) -> VertexOutput {
+    return vertex_impl(idx, instance, true);
 }
 
 // Shared native storage conversion is used only by pipelines that test Z.
 @vertex
 fn vs_depth(@builtin(vertex_index) idx: u32, instance: Instance) -> VertexOutput {
-    var output = vertex_impl(idx, instance);
+    var output = vertex_impl(idx, instance, false);
     output.position.z = compatibility_depth_on_native_axis(
         instance.depth,
         native_z_origin_row(camera.camera_pos.y + camera.native_z_origin_y, camera.native_z_pan),

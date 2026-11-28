@@ -25,12 +25,12 @@ The rest needs a build with the `phobos` feature, which plays Phobos in every ga
 cargo run --release --bin vera20k --features phobos
 ```
 
-The capability is independent of Ares and NPatch: a Phobos build needs neither. Every build holds
-Ares, which a game's data switches on ([Ares](ares.md)), and Phobos combines with NPatch as
-`--features phobos,npatch`. Every implemented Phobos chain must keep working
-when Ares plays or the other capabilities are compiled in — the compatibility rule and the pattern for two
+The capability is independent of Ares and NPatch: a Phobos build needs neither, since both are
+in every build and a game's data switches them on ([Ares](ares.md),
+[NPatch](npatch.md)). Every implemented Phobos chain must keep working when Ares or NPatch
+plays, or the other capabilities are compiled in — the compatibility rule and the pattern for two
 extensions touching one native site are in
-[NPatch placeholder](npatch.md#cross-extension-compatibility).
+[NPatch](npatch.md#cross-extension-compatibility).
 
 Phobos builds identify themselves in the window title, the startup log, and the build description
 drawn at the tactical view's top right during a match. That description is Phobos's own text: the

@@ -1,10 +1,11 @@
 # Android build
 
-**Status: initial Android support.** The contributor reported a debug APK playing
-the intro movie, reaching the main menu, and importing a retail installation on an
-Android 16 arm64 tablet (OnePlus Pad 2 Pro). The review fixes have not been built or
-tested on Android hardware; the earlier results below do not validate them. The
-open items at the bottom still separate this from a release.
+**Status: initial Android support, device-verified.** A debug APK plays the intro
+movie, reaches the shell, imports a retail installation, and takes text from the
+platform's keyboard everywhere the game has an edit; the LAN lobby and the LAN room
+send chat from a key of their own, and the in-match chat opens with a long press.
+All of it was exercised on an Android 16 arm64 tablet (OnePlus Pad 2 Pro). The open
+items at the bottom still separate this from a release.
 
 ## Layout
 
@@ -13,18 +14,24 @@ Everything Android-specific lives in `android/`: it is both the
 
 | Path | What it is |
 |---|---|
-| `android/Cargo.toml`, `android/src/lib.rs` | The `vera20k-android` cdylib: `android_main`, the working-directory fix, and the hand-off to `vera20k::entry::run_with_loop`. Body is `#![cfg(target_os = "android")]`, so desktop builds compile it empty. |
+| `android/Cargo.toml`, `android/src/lib.rs` | The `vera20k-android` cdylib: `android_main`, the working-directory fix, and the hand-off to `vera20k::entry::run_with_loop`. It installs the hooks the engine reaches through statics — the text-input bridge (`util::android_ime`), the display insets, the launcher icon, the device identity and the Wi-Fi binding — and the body is `#![cfg(target_os = "android")]`, so desktop builds compile it empty. |
 | `android/app/` | The only Gradle module: `VeraActivity`, `hasCode="true"`. |
 | `android/app/src/main/java/org/vera20k/VeraActivity.kt` | Starts the system folder picker and reads the selected tree through Android's `ContentResolver`. |
 | `android/app/src/main/java/org/vera20k/AssetImportJob.kt` | Owns import admission, cancellation, safe destination paths and atomic publication of the completed copy. Its filesystem tests run on the JVM. |
 | `android/app/src/main/jniLibs/` | Where `cargo ndk -o` writes `libvera20k_android.so`. Generated, git-ignored. |
 | `src/entry.rs` | Start-up shared with the desktop binary: logging, panic hook, banner, event loop, exit status. `main.rs` is now just the CLI switches plus a call into it. |
+| `src/util/display_insets.rs` | The screen's top-left cutout and rounded-corner inset. The activity measures both from the window insets in screen pixels; `frame_offset` converts them to render-frame units, and the message lane plus the performance panels move in by them. |
 
 The library name must stay in sync: the crate is `vera20k-android`, so the
 artifact is `libvera20k_android.so`, and the manifest's
 `android.app.lib_name` is `vera20k_android`.
 
 ## Building
+
+For a test build, run **Android ARM64 APK** in GitHub Actions and download
+`vera20k-android-arm64-debug.apk` from the run's artifacts. Each run uses a fresh
+debug signing key. Switching between these builds requires uninstalling the previous
+copy, which removes its app data, including imported game files.
 
 Prerequisites: `platforms;android-36`, `build-tools;36.1.0`, `ndk;28.2.13676358`,
 `cargo-ndk`, a JDK 17+ that `JAVA_HOME` and `PATH` agree on. The Gradle wrapper
@@ -59,11 +66,93 @@ cargo ndk -t arm64-v8a --platform 26 -o android\app\src\main\jniLibs build `
 android\gradlew.bat -p android :app:assembleDebug
 ```
 
+`For iteration build `--profile fast` and `:app:assembleDebug`; the recipe above
+(shipping plus a symbol strip) is for releases. Remove
+`android/app/build/outputs/apk` and `android/app/build/intermediates/merged_native_libs`
+when a rebuild must repackage the native library: Gradle otherwise keeps the
+previous `.so`. A `cargo check` that prints `Finished` in under a second means
+Cargo did not see the edit — touch the file and check again before trusting a
+device build.
+
 `x86_64` is only for the emulator; install `x86_64-linux-android` with `rustup`
 and add `-t x86_64` when you need it. Drop it for releases. On macOS/Linux, use
 `mkdir -p android/.android`, forward-slash paths, a shell environment assignment
 for `CARGO_PROFILE_SHIPPING_STRIP`, and
 `./android/gradlew -p android :app:assembleDebug`.
+
+### Build caches across checkouts
+
+One checkout's Rust cache is large (a debug profile alone can pass 100 GB) and a
+second worktree gets its own: `tools/cargo_run` keeps every checkout's cache
+under the primary checkout's `target/owned-worktrees/<checkout-hash>`, so the
+directory is shared but the artifacts are not. What is shared already:
+`CARGO_HOME` (registry, git checkouts, crates) and `GRADLE_USER_HOME`.
+
+To share compiled crates between worktrees, put `sccache` in front of `rustc`:
+
+```powershell
+cargo install sccache --locked        # once
+$env:RUSTC_WRAPPER      = 'sccache'
+$env:CARGO_INCREMENTAL  = '0'         # incremental output is never cached
+$env:SCCACHE_DIR        = 'D:\Programming\cargo-cache\sccache'  # all worktrees
+$env:SCCACHE_CACHE_SIZE = '20G'
+sccache --show-stats                  # hits, misses, cache location
+```
+
+`sccache` caches library and dependency compilations, including the
+`aarch64-linux-android` and `wasm32` targets, so a second worktree's first build
+reuses them. It never caches the final binary or cdylib (the server logs
+`CannotCache(crate-type, bin)` — a dependency-free crate therefore shows no hits
+at all) and it does not cache linking.
+
+Reclaiming space: delete `target/owned-worktrees/<hash>` for a retired checkout,
+`target/aarch64-linux-android` (the `cargo ndk` default target, regenerated on
+the next native build) and `target/debug`; the `fast` profile used for device
+builds stays small.
+
+## The Mods page on Android
+
+The app owns its storage, so no file manager can open `files/Mods`. The page
+keeps its list and Use This Mod, Check Files and New Mod; the right column's
+other rows are Android's own:
+
+| Row | Action |
+|---|---|
+| Add Mod | Choose ZIPs and Choose Folder open the system file manager (`VeraActivity.pickModZip`, `pickModFolder`). The activity copies the pick into `files/tmp/mod-import-*/`, keeping its name, and Add Mod's usual preview and install take it from there (`app::shell_mod_import`). The copies are deleted once the import ends or Add Mod closes, and at the next start. |
+| Export Mod | Asks for a ZIP or a folder copy. A ZIP is packed into its own cache folder so an earlier share stays readable. Cancel or Back stops packing. The result opens in the system share panel (`VeraActivity.exportModZip`, FileProvider); a folder copy goes to `ACTION_OPEN_DOCUMENT_TREE` (`exportMod`). |
+| Rename Mod | Asks for a new name; renames the folder, keeps a shown `mod.ini` `Name=` and the next start's choice in step. |
+| Delete Mod | Asks first, then removes the folder and its home-screen shortcuts. |
+| Add Desktop Entry | Pins a home-screen shortcut for the selected mod (`VeraActivity.pinMod`). |
+
+New Mod and Rename Mod ask for the name in a dialog of the page's own
+(`ui::mods_shell::NAME_EDIT`), which the soft keyboard types into
+(`app::input::ime`). The activity's toasts say how an export or a failed
+copy went, in the player's language; the engine reaches the activity through
+`util::mod_actions`, whose hooks only the Android crate installs.
+
+## Launching a mod from a shortcut
+
+A launcher shortcut starts the game on one mod without changing the player's
+own choice. Its intent carries the `org.vera20k.ENTRY` extra, which the
+activity hands over once (`VeraActivity.takeLaunchEntry`): `mod:<folder>`
+gives the choice `--mod <folder>` gives a desktop launch
+(`app::mods::launch_entry_switch`), so that folder loads for this launch only
+and `config.toml` keeps the player's `[paths] mod`.
+
+Add Desktop Entry pins `modid:<id>` instead. The id is the hex string in the
+folder's `.vera20k-mod-id`, written when a mod is made, imported or pinned;
+the Android crate turns it into the folder that holds it now, so a renamed mod
+keeps its shortcut. The launcher owns the shortcut's label, which stays the
+name it was pinned with. At start the activity disables pinned shortcuts
+whose id no folder holds.
+
+```powershell
+adb shell am start -n org.vera20k/org.vera20k.VeraActivity `
+  --es org.vera20k.ENTRY "mod:Winter War"
+```
+
+An empty extra, an unknown prefix or a missing folder picks nothing, which is
+what a launch from the plain icon does.
 
 ## Launcher icon
 
@@ -145,19 +234,22 @@ Two more conditions come from the game:
 - **Player names are the LAN identity**, and a clash looks like "the other
   player does not exist". A player discards advertisements whose name matches
   its own, so two peers left at the default `[New Player]` never see each
-  other's games. Android has no text input yet, so the activity
+  other's games. The stock name repeats on every install, so the activity
   appends the last three hex digits of the Android ID: a fresh install enters
-  the lobby as `[New Player]-1A2` (`util::device_identity`). The ID survives
-  reinstall and an app-data clear and changes only on a factory reset. Every
-  other platform keeps the stock name.
+  the lobby as `[New Player]-1A2` (`util::device_identity`), and the player can
+  rename it in the lobby. The ID survives reinstall and an app-data clear and
+  changes only on a factory reset. Every other platform keeps the stock name.
 
 A guest also needs the host's map in its own map library.
 
 ## Deliberate choices
 
-- **`NativeActivity`, not `GameActivity`.** Smallest M0. It has no IME, so text
-  entry (player name, chat, passwords) is unusable until P6 chooses: switch winit
-  to `android-game-activity`, or overlay a Java `EditText` and add JNI.
+- **`GameActivity`, not `NativeActivity`.** NativeActivity was the smaller first
+  milestone, but it has no IME, so text entry (player name, chat, passwords) was
+  unusable. GameActivity carries the text input the engine's chat edits need;
+  `VeraActivity` extends it and loads `libvera20k_android.so` itself, since
+  GameActivity has no `android.app.lib_name` metadata. Its build-time glue must
+  match the `androidx.games:games-activity` AAR version (2.0.2 here).
 - **Vulkan only.** The manifest requires `android.hardware.vulkan.level 0`;
   GLES-only devices cannot install. Whether to port the existing `webgl`
   fallback to a runtime capability check is P4's call.
@@ -239,6 +331,131 @@ They have not been independently reproduced for the current code.
 - Toolchain used: cmdline-tools 23.0, platforms/android-36, build-tools 36.1.0,
   NDK 28.2.13676358, AGP 8.11.1, Gradle 8.13, JDK 19.
 
+## Touch chat
+
+The in-match chat opens with a long press on the message lane (the touch mapper's
+own right click) and sends with a tap on the lane. Text itself comes from the
+platform input method through `util::android_ime`: winit 0.30's Android backend
+delivers no `WindowEvent::Ime`, so the bridge reads the platform's text state each
+frame, seeds it from the focused edit and hands its changes to that screen's own
+input path. An open composition is drawn by the GUI library: `GuiStyle::ime`
+(default `true`) paints it for the page's focused `Edit`, which covers the
+chooser's search line and the setup room's chat. Only the in-game message lane,
+the one edit outside the GUI trees, still paints its own. The library's
+`ImeEvent` (`Preedit`/`Commit`/`Enabled`, `focus_rect`) is specified but not yet
+used by the engine, and replaces this once its owner wires it.
+
+The edits belong to the GUI library (`gui/`, `docs/gui-library-api.md`): each shell
+page keeps its `Edit` nodes in a `vera20k_gui` tree — the shell's one
+`DialogController`, the WOL lobby's own tree, the Setups page and the saved-seed
+browser, and the saved-game browsers' — so the
+bridge asks the tree the current page owns for its focused edit, and takes from it
+the text and caret to seed the platform buffer with, the node's rectangle for the
+candidate window, and `Prop::Password` for the input method's password flag. The
+finished text and each Backspace go back through that screen's own key entry
+(`handle_wol_key`, `shell_lan::key_press`, `multiplayer_setup::key_press`,
+`choose_map_search_text`, the saved-game browser's), the path a typed character
+takes on the desktop. No screen keeps IME state of its own; the in-game message
+lane is the one edit outside the GUI trees, and keeps the bridge it always had.
+
+The keyboard comes up for the edit the player tapped. A press that lands on a GUI
+`Edit` arms it (`util::android_ime::arm`, recorded by the shell's dialog
+controller), because the pages give their edits the focus when they open: without
+the tap, entering the LAN lobby, the setup room or Choose Map would put the
+keyboard over the page. The WOL lobby and the save-name prompts ask for it without
+a tap.
+
+The bridge holds the input method's composing range back from those commits and
+draws it in the IME colour, so a pinyin run only reaches the game once it is
+committed. The password boxes report themselves
+(`TYPE_TEXT_VARIATION_PASSWORD`), so the keyboard's dictionary never learns them,
+and the name boxes are byte-only (`0x4D1(1)`): `ui::lan_shell::name_input` drops
+every character above `0x7F` — the same rule VERA's account forms apply, and what
+the native edit's own filter does with units from `0x100` up — and
+`app::shell_lan` re-applies it to the node every frame within its 16-byte limit,
+so a Chinese name cannot reach the single-byte roster row whichever path the text
+arrived by.
+
+When an edit refuses input, the game sends its accepted text and caret back to
+the keyboard after composition ends. Chat can keep supplementary characters,
+including emoji. Android counts the caret in UTF-16 units.
+
+The engine needs an 8 MiB stack on the glue's game thread; `android/build.rs`
+links `-Wl,--wrap=pthread_create` and the wrapper raises a smaller requested
+stack to 8 MiB (`util::thread_stack::android_stack`). It never lowers one: a
+thread that asked for more keeps it, and a caller that brought its own stack
+(`pthread_attr_setstack`) is left alone. `android-activity` stays the crates.io
+0.6.0 release.
+
+### Send keys on the LAN screens
+
+The LAN lobby and room show a send button on desktop and Android.
+Both put VERA's key where the online room's emote button sits,
+using that button's own square art: `atlas.wol_emote_images()`'s released frame
+(`wodact.pcx`, the `Picture::Emote` path), 26 x 23 authored pixels, six authored
+pixels right of the box and one pixel above it. A tap sends through the screen's
+own `Enter` path (`key_press`), so the chat, its length cap and its prefix behave
+as typed text does. The online room keeps its native emote button. The LAN key
+is host-drawn rather than a GUI node, so it
+needs `!leaving` or it hangs over the next page's slide, and it answers the
+emote button's hint (`STT:EmoteButton`) in the status line while the pointer is
+on it.
+
+The room's chat box takes the online room's measured geometry: its width is the
+chat log's less the key and a six-pixel gap, and its row stays where the template
+puts it. The LAN lobby's row moves to the same spacing, five authored pixels under
+its log, and the key follows the row.
+
+### Display cutout and rounded corners
+
+The battlefield fills the window on Android, so the screen's punch-hole and
+corner arc cover the top-left of what the game draws there. `VeraActivity`
+records the cutout's safe inset and the top-left rounded corner's radius in its
+`updateDisplayInsets`; the Android crate reads them over JNI
+(`android/src/lib.rs::display_insets`), `util::display_insets::get` returns them in
+screen pixels, and `frame_offset` converts them to render-frame units through the
+window and render sizes. The message lane moves in by them, the
+in-match performance panel starts on the lane's line (its x is
+battlefield-local, so it scales by the zoom), and the menu and loading screens'
+panel uses the shell scale plus the same insets so one panel reads the same size
+in both places. Everywhere else the hooks stay uninstalled and the insets are
+zero.
+
+A long press elsewhere on the battlefield is the touch mapper's right click
+(`app::input::touch`, 400 ms), so it cancels whatever a right click cancels —
+including a pending placement. Over the message lane the long press opens the
+chat instead, and in an offline skirmish it opens it as the `ChatTarget::Skirmish`
+that the plain Enter key picks, which cancels a pending `/…` spawn group
+(`docs/skirmish-cheats.md`). A tap on the lane sends, as Enter does.
+
+Residuals:
+
+- The touch entry is Android-only. The browser build already takes text from the
+  platform through its hidden textarea (`web::ime`), but on a touch browser the
+  in-game chat has no way to open: it still needs the Enter key. Making the entry
+  platform-neutral (Android and wasm) is recorded in the local plan as a separate
+  change.
+- Discoverability: the long press is invisible, so the first network match a
+  profile plays posts one line into the lane (`VERA:TouchToChat`, five seconds
+  in, white, no prefix, gone after ten seconds) and spends `[Android]
+  ChatHint=no` the way `[Intro] Play` is spent (`app::persistence::chat_hint`,
+  per profile). One attempt per match, then an hour's backoff
+  (`match_state.input.chat_hint_due`); offline matches never trigger it, and
+  later matches stay silent until a fresh install. The key is translated in
+  every shipped language file.
+- The soft keyboard is not kept out of the way. On a phone it covers the online
+  login's edited field, and the password box's dots are what the player cannot
+  see; the text still reaches the game because the bridge reads the platform's
+  buffer, not the screen. `android-activity` reports the IME height through
+  `MainEvent::InsetsChanged`, which winit drops, so lifting a page above the
+  keyboard is a separate change (IME insets).
+- When a tablet is connected to an external keyboard, ColorOS's secure input
+  that a tap expands, while the same build on a phone shows the ordinary
+  full-width secure keyboard. That is the input method's large-screen behaviour
+  for a password field, not the app's editor info, so it stays as it is; if
+  another input method shows a full-width secure keyboard on the tablet, this
+  residual can be dropped.
+
 ## Windows local-build gotchas
 
 - Run Cargo from a Developer PowerShell. Without `INCLUDE`/`LIB`, `ring`'s C
@@ -253,4 +470,6 @@ They have not been independently reproduced for the current code.
 
 ## TODO
 
-Save/Map files import/export, touch UI, audio focus, LAN locks, CI.
+Save/Map files import/export, the rest of the touch UI (the shell pages are still
+pointer-sized for a mouse), audio focus, LAN locks, CI, and the soft-keyboard
+insets that would lift a page above the keyboard.

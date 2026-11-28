@@ -553,6 +553,11 @@ pub struct ObjectType {
     /// `Soylent=` (TechnoType `+0x614`): when nonzero, the refund
     /// `TechnoTypeClass::GetRefund @ 0x00711F60` returns instead of the cost.
     pub soylent: i32,
+    /// `Points=` (TechnoType +0x728, initialized at 0x00711237 and read by
+    /// TechnoTypeClass::ReadINI at 0x007149A7). Exposed to Wasm
+    /// modules' TechnoType `Points` (RFC 0001 appendix 7.7); no simulation
+    /// rule uses it.
+    pub points: i32,
     /// `FactoryPlant=` (BuildingType `+0x16CD`): Unlimbo and ChangeOwner add
     /// the building to its House's FactoryPlant list (House `+0x140`).
     pub factory_plant: bool,
@@ -2245,6 +2250,8 @@ pub struct ObjectType {
     /// Retained WeaponStruct and transport-port coordinates, projected from
     /// the ordered type reader rather than reconstructed from the final Image.
     weapon_offsets: crate::rules::weapon_offsets::WeaponOffsets,
+    /// Kratos' frozen status inputs (`kratos_freeze`): `Wreck` today.
+    kratos_freeze: crate::rules::kratos_freeze::FreezeRules,
 
     /// `WeaponCount=` (`TechnoTypeClass+0x80C`, ReadINI `0x00712873`). Bounds
     /// the `Weapon%d`/`EliteWeapon%d` loop; slots at or past it keep their
@@ -2657,6 +2664,12 @@ pub struct ObjectType {
     /// default at `0x005243B8`). No stock INI authors it. See
     /// [`ObjectType::emits_damage_spark`] for the spark flag it feeds.
     pub cyborg: bool,
+    /// Tiberian Sun Firestorm's InfantryType `IsWebImmune=` (`+0x4B7`, read
+    /// with the current value as default by `InfantryTypeClass::Read_INI`
+    /// `0x004DA8E0` at `0x004DAB40`; constructor false, `0x004DA229`): a web
+    /// leaves this infantryman alone (`docs/ts-webs.md`). gamemd has no
+    /// such key.
+    pub is_web_immune: bool,
     /// TechnoType `+0xC8F`, projected from the Rules passes: see
     /// [`ObjectType::emits_damage_spark`].
     pub damage_sparks: bool,

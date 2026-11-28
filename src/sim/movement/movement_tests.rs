@@ -87,8 +87,8 @@ fn ordinary_drive_retires_selector_before_entering_an_explicit_tube() {
             .is_empty()
     );
     assert!(committed_track_head(accepted).is_none());
-    sim.resolved_terrain = Some(terrain.clone());
-    sim.zone_grid = Some(zones.clone().into());
+    *sim.resolved_terrain = Some(terrain.clone());
+    *sim.zone_grid = Some(zones.clone().into());
     crate::sim::arena_fixture::supply_native_map(&mut sim);
     let rules = drive_type_rules();
     sim.process_ground_locomotor_for_test(1, Some(&rules), Some(&grid), None)
@@ -482,7 +482,7 @@ fn drive_ship_slope_process_tick(
     terrain: &crate::map::resolved_terrain::ResolvedTerrainGrid,
     native_frame: u32,
 ) {
-    sim.resolved_terrain = Some(terrain.clone());
+    *sim.resolved_terrain = Some(terrain.clone());
     crate::sim::arena_fixture::supply_native_map(sim);
     gsi_04_05_tick_production_movement(sim, None, native_frame);
 }
@@ -678,7 +678,7 @@ fn drive_slope_boundary_is_detected_on_process_after_forced_track_crossing() {
         .unwrap()
         .snap(4, 0);
     let rules = forced_drive_rules("DRIVE", 5);
-    sim.resolved_terrain = Some(terrain.clone());
+    *sim.resolved_terrain = Some(terrain.clone());
     crate::sim::arena_fixture::supply_native_map(&mut sim);
     assert!(sim.force_track(
         1,
@@ -827,7 +827,7 @@ fn walk_arrival_keeps_list_order_and_snapshot_continuation() {
     crate::sim::arena_fixture::supply_native_map(&mut sim);
     // Full publication reads Map Size from the bridge-runtime map owner, even
     // for an empty bridge set. Preserve this non-square fixture's 6x3 geometry.
-    sim.bridge_state = Some(
+    *sim.bridge_state = Some(
         crate::sim::bridge_state::BridgeRuntimeState::from_resolved_terrain_with_map_size(
             &terrain,
             true,
@@ -974,7 +974,7 @@ fn walk_arrival_keeps_list_order_and_snapshot_continuation() {
                     loaded.scenario_rng.logical_state(),
                     SimRng::new(0).logical_state()
                 );
-                sim.scenario_rng = SimRng::new(0);
+                *sim.scenario_rng = SimRng::new(0);
                 assert_eq!(loaded.state_hash(), sim.state_hash());
                 assert!(loaded.substrate.occupancy.contains_entity(2, 1, resident));
                 restored = Some(loaded);
@@ -1332,8 +1332,8 @@ fn walk_move(
     id: u64,
     to: (u16, u16),
 ) {
-    assert!(sim.apply_command_with_overlays(
-        None,
+    assert!((sim.apply_command_with_overlays(
+        crate::sim::command::CommandSender::Player(None),
         "Americans",
         &crate::sim::command::Command::Move {
             entity_id: id,
@@ -1343,7 +1343,7 @@ fn walk_move(
         rules,
         None,
         &mut crate::sim::world::FrameEffects::default(),
-    ));
+    )).is_ok());
 }
 
 fn walk_frame(sim: &mut Simulation, rules: &crate::rules::ruleset::RuleSet) {
@@ -1565,10 +1565,10 @@ fn sharp_turn_preserves_path_node_count() {
         vec![2, 5],
     );
     let mut sim = crate::sim::world::Simulation::new();
-    sim.interner = test_interner();
+    *sim.interner = test_interner();
     sim.substrate.entities.insert(entity);
     // The fresh arm reads the map cells.
-    sim.resolved_terrain = Some(crate::map::resolved_terrain::test_flat_ground_grid(20));
+    *sim.resolved_terrain = Some(crate::map::resolved_terrain::test_flat_ground_grid(20));
     let grid = PathGrid::new(20, 20);
     sim.process_ground_locomotor_for_test(1, Some(&drive_type_rules()), Some(&grid), None)
         .unwrap();
@@ -1612,10 +1612,10 @@ fn off_octant_hull_turns_before_any_curve_is_selected() {
     let entity =
         gsi_06_13_fixture_mover((10, 10), 0, vec![(10, 10), (11, 11), (12, 12)], vec![3, 3]);
     let mut sim = crate::sim::world::Simulation::new();
-    sim.interner = test_interner();
+    *sim.interner = test_interner();
     sim.substrate.entities.insert(entity);
     // The fresh arm reads the map cells.
-    sim.resolved_terrain = Some(crate::map::resolved_terrain::test_flat_ground_grid(20));
+    *sim.resolved_terrain = Some(crate::map::resolved_terrain::test_flat_ground_grid(20));
     let grid = PathGrid::new(20, 20);
     sim.process_ground_locomotor_for_test(1, Some(&drive_type_rules()), Some(&grid), None)
         .unwrap();

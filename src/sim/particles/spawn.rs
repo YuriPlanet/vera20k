@@ -7,7 +7,9 @@
 //!     Producers own their individual cap/cadence gates.
 //!
 //! Every behavior's system enters the shared live Logic vector, and its owned
-//! particles run in that system visit.
+//! particles run in that system visit. A presentation system
+//! (`Simulation::spawn_effect_particle_system`) runs after that vector instead
+//! (`Simulation::advance_presented_particle_systems`).
 
 use super::{Particle, ParticleSystem};
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
@@ -44,12 +46,18 @@ impl AttachedParticleSystem {
     }
 
     /// The native producer stores the constructor result, including NULL.
-    pub(crate) fn bind(&mut self, system: Option<u64>) {
+    pub(crate) fn bind(&mut self, system: Option<u64>, _: crate::sim::game_entity::NameNote) {
         self.system = system;
     }
 
     pub(crate) fn forget(&mut self) {
         self.system = None;
+    }
+
+    /// Install a fixture's system.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn set_for_test(&mut self, system: Option<u64>) {
+        self.bind(system, crate::sim::game_entity::NameNote::fixture());
     }
 }
 
@@ -79,8 +87,48 @@ impl DamageSmoke {
     /// Install a fixture's system.
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_for_test(&mut self, system: Option<u64>) {
+        crate::sim::game_entity::NameNote::fixture();
         self.system = system;
     }
+}
+
+/// Whether the Cyborg spark producer ([`Simulation::update_damage_spark_after_ai`])
+/// admits `entity`, of type `object`, past its first two tests: the type
+/// sparks, and its health ratio is below `[General] ConditionYellow=`. A
+/// steady object's visit asks it too (`world::steady_ai`).
+pub(crate) fn damage_sparks_admit(
+    entity: &crate::sim::game_entity::GameEntity,
+    object: &crate::rules::object_type::ObjectType,
+    rules: &RuleSet,
+) -> bool {
+    // Ares TechnoClass_Update_DamageSparks (Ares.dll 1004B760, hook
+    // 0x6FACD9): the type's `DamageSparks`, else its own flag.
+    let sparks = if rules.ares_form() {
+        object
+            .techno_combat()
+            .damage()
+            .damage_sparks(object.emits_damage_spark())
+    } else {
+        object.emits_damage_spark()
+    };
+    sparks && health_below(entity, object, rules.general.condition_yellow)
+}
+
+/// Whether `entity`'s health ratio is below `threshold` as the spark
+/// producer compares them: an unordered answer counts as below.
+fn health_below(
+    entity: &crate::sim::game_entity::GameEntity,
+    object: &crate::rules::object_type::ObjectType,
+    threshold: f64,
+) -> bool {
+    use crate::util::native_x87::{MaskedX87Chop53 as X87, MaskedX87Ordering};
+    matches!(
+        X87::compare(
+            entity.health.ratio(object.strength),
+            X87::load_f64(NativeF64Bits::from_bits(threshold.to_bits()))
+        ),
+        MaskedX87Ordering::Less | MaskedX87Ordering::Unordered
+    )
 }
 
 impl Simulation {
@@ -106,56 +154,36 @@ impl Simulation {
     /// ordinary damaged vehicles never enter this producer. Both it and
     /// FireAt use the actual +308 link and the one system constructor.
     pub(crate) fn update_damage_spark_after_ai(&mut self, id: u64, rules: &RuleSet) {
-        use crate::util::native_x87::{MaskedX87Chop53 as X87, MaskedX87Ordering, NativeF64Bits};
-
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
         };
         let Some(object) = self.object_type(entity.type_ref(), rules) else {
             return;
         };
-        // Ares TechnoClass_Update_DamageSparks (Ares.dll 1004B760, hook
-        // 0x6FACD9): the type's `DamageSparks`, else its own flag.
-        let sparks = if rules.ares_form() {
-            object
-                .techno_combat()
-                .damage()
-                .damage_sparks(object.emits_damage_spark())
-        } else {
-            object.emits_damage_spark()
-        };
-        if !sparks {
-            return;
-        }
-        let ratio = entity.health.ratio(object.strength);
-        let below = |threshold: f64| {
-            matches!(
-                X87::compare(
-                    ratio,
-                    X87::load_f64(NativeF64Bits::from_bits(threshold.to_bits()))
-                ),
-                MaskedX87Ordering::Less | MaskedX87Ordering::Unordered
-            )
-        };
-        if !below(rules.general.condition_yellow)
+        if !damage_sparks_admit(entity, object, rules)
             || Self::damage_particle_owner_height(&self.resolved_terrain, entity) <= -10
             || entity.seldom.spark_particle_system.system().is_some()
         {
             return;
         }
-        // 6FAD51..6FADA1 retains Spark entries in authored list order.
-        let systems: Vec<_> = object
-            .damage_particle_systems
-            .iter()
-            .filter_map(|name| rules.ps_type_id_by_name(name))
-            .filter(|&type_id| {
-                rules.particle_system_type(type_id).behaves_like == ParticleSystemBehavesLike::Spark
-            })
-            .collect();
-        if systems.is_empty() {
+        // 6FAD51..6FADA1 retains Spark entries in authored list order. They
+        // are counted here and walked again for the one the roll picks: most
+        // rolls refuse, so no list is built for them.
+        let spark_systems = || {
+            object
+                .damage_particle_systems
+                .iter()
+                .filter_map(|name| rules.ps_type_id_by_name(name))
+                .filter(|&type_id| {
+                    rules.particle_system_type(type_id).behaves_like
+                        == ParticleSystemBehavesLike::Spark
+                })
+        };
+        let count = spark_systems().count();
+        if count == 0 {
             return;
         }
-        let threshold = if below(rules.general.condition_red) {
+        let threshold = if health_below(entity, object, rules.general.condition_red) {
             rules.general.condition_red_spark_threshold
         } else {
             rules.general.condition_yellow_spark_threshold
@@ -177,21 +205,19 @@ impl Simulation {
         }
         let selected = self
             .scenario_rng
-            .next_range_u32_inclusive(0, systems.len() as u32 - 1);
+            .next_range_u32_inclusive(0, count as u32 - 1);
+        // The roll stays below the count of the same list; both draws are made.
+        let Some(selected) = spark_systems().nth(selected as usize) else {
+            return;
+        };
         // 6FAEBC..6FAED1: supplied target NULL, owner=this, zero fifth
         // Coord (B0EA90 initialized by6F2A50), owner House NULL. Native
         // constructor target/owner derivation remains centralized below.
-        let system = self.spawn_particle_system(
-            systems[selected as usize],
-            coords,
-            None,
-            Some(id),
-            IVec3::ZERO,
-            None,
-            rules,
-        );
+        let system =
+            self.spawn_particle_system(selected, coords, None, Some(id), IVec3::ZERO, None, rules);
         if let Some(entity) = self.substrate.entities.get_mut(id) {
-            entity.seldom.spark_particle_system.bind(system);
+            let note = entity.note_names();
+            entity.seldom.spark_particle_system.bind(system, note);
         }
     }
 
@@ -269,6 +295,8 @@ impl Simulation {
     /// matching `EBolt::Init @ 0x004C2A60`'s construction at `0x004C2B30`:
     /// no owner house, no attachment, handle discarded, no constructor RNG.
     /// Both system and particle constructors retain their AbstractClass IDs.
+    /// It asks through [`Self::spawn_effect_particle_system`], so in a match
+    /// a picture-only system is a presentation one.
     /// Ordinary FireAt and SpawnShrapnel call this same owner. The latter
     /// reaches it once per child whose weapon has `IsElectricBolt`, including
     /// retail Electricbounce -> TeslaFragment on elite Tesla discharges.
@@ -307,8 +335,8 @@ impl Simulation {
         // Original62DC50 calls Abstract410230 -> Scenario68BCB0 before
         // registration. The native numeric identity is not the Rust handle.
         // Executed constructor/CRC: procedural_drawing_oracle/electric_bolt.
-        let native_unique_id = self.next_native_runtime_id();
-        let stable_id = self.substrate.allocate_stable_id();
+        // A presentation system takes its own ([`Self::present_particles`]).
+        let (native_unique_id, stable_id) = self.next_particle_identity();
         // 62DD90..62DE14: a supplied target provides GetCoords; a Cell on
         // a structural bridge additionally receives the native bridge height.
         // The existing target-coordinate owner supplies that same Cell result.
@@ -381,14 +409,17 @@ impl Simulation {
                 .then(|| super::ares_system::AresParticleSystemExt::for_system(pst, rules))
                 .flatten()
                 .map(Box::new),
+            presentation_order: self.presentation_order_of(stable_id),
         };
         debug_assert!(
             !self.substrate.entities.contains(stable_id)
                 && !self.substrate.anims.contains_key(stable_id)
-                && !self.particle_systems().contains_key(stable_id),
+                && self.particle_systems().get(stable_id).is_none(),
             "shared object id {stable_id} collided before particle-system insertion"
         );
         self.substrate.particle_systems.insert(sys);
+        // A presentation system, which no shared store holds, joins neither
+        // Logic nor Display here.
         self.reveal_particle_system(stable_id);
         // A system at 0,0,0 gets no glow even where VERA reveals it
         // (`unlimbo_alpha_shape`).
@@ -398,6 +429,113 @@ impl Simulation {
             rules,
         );
         Some(stable_id)
+    }
+
+    /// [`Self::spawn_particle_system`] for a producer that keeps no hold on
+    /// the system: a presentation system when the match presents its effects
+    /// ([`Self::present_effect_anims`]) and the type changes nothing but its
+    /// own picture ([`RuleSet::particle_system_presentation_only`]), else a
+    /// shared one. Only such producers ask.
+    ///
+    /// VERA-only sim-scale deviation: gamemd keeps every system in Logic and
+    /// Display and gives it and each of its particles a unique id, announces
+    /// each particle's end to the pointer-expiry listeners and draws their
+    /// AI from the Scenario stream. A presentation system does none of it
+    /// ([`Self::present_particles`]), which changes the unique ids later
+    /// objects take, the Scenario draws and the state hash and sync checksum
+    /// with them. It runs in each frame but outside the lockstep state: no
+    /// save keeps it, so after a load a damaged object has no smoke until a
+    /// hit makes it red, or yellow again after a repair
+    /// ([`Self::maintain_damage_smoke_after_receive`]).
+    pub fn spawn_effect_particle_system(
+        &mut self,
+        type_id: ParticleSystemTypeId,
+        coords: IVec3,
+        target: Option<crate::sim::combat::TargetKind>,
+        owner_entity: Option<u64>,
+        target_coords: IVec3,
+        owner_house: Option<InternedId>,
+        rules: &RuleSet,
+    ) {
+        let spawn = |sim: &mut Self| {
+            sim.spawn_particle_system(
+                type_id,
+                coords,
+                target,
+                owner_entity,
+                target_coords,
+                owner_house,
+                rules,
+            );
+        };
+        if self.effect_anims_presented() && rules.particle_system_presentation_only(type_id) {
+            self.present_particles(spawn);
+        } else {
+            spawn(self);
+        }
+    }
+
+    /// Run `work` as the presentation particles' world: the systems and
+    /// particles it makes take presentation ids, unique ids and no Logic or
+    /// Display slot ([`Self::next_particle_identity`]), its draws take their
+    /// own stream ([`Self::particle_rng`]), and its cell lookups stamp a copy
+    /// of the shared dummy cell only it sees (`SharedCellDummy::detached`).
+    /// Nothing it does reaches the simulation; it only reads it.
+    pub(crate) fn present_particles<R>(&mut self, work: impl FnOnce(&mut Self) -> R) -> R {
+        let dummy = self.effective_shared_cell_dummy();
+        let outer = self.substrate.particle_systems.set_presenting(true);
+        let result = dummy.detached(|| work(self));
+        self.substrate.particle_systems.set_presenting(outer);
+        result
+    }
+
+    /// A new particle's or system's unique id (Abstract410230 ->
+    /// Scenario68BCB0) and stable id, or while presentation particles are
+    /// made ([`Self::present_particles`]) a presentation pair, which leaves the
+    /// shared counters as they were.
+    pub(crate) fn next_particle_identity(&mut self) -> (i32, u64) {
+        if self.substrate.particle_systems.presenting() {
+            return self.substrate.particle_systems.next_presented_identity();
+        }
+        (
+            self.next_native_runtime_id(),
+            self.substrate.allocate_stable_id(),
+        )
+    }
+
+    /// Where presentation object `id`, made now, draws in submission order
+    /// (`DisplayLayers::unshared_order`), as an ordinary member submitted now
+    /// would; zero for a shared object, which Display places.
+    pub(crate) fn presentation_order_of(&self, id: u64) -> u64 {
+        if super::is_presented_particle_id(id) {
+            self.substrate.display.unshared_order()
+        } else {
+            0
+        }
+    }
+
+    /// The presentation systems' AI, run after the Logic vector, as a
+    /// shared system's is in it: the same `ParticleSystemClass::AI @
+    /// 0x0062FD60` ([`super::system_ai::tick_particle_system`]). The expiry
+    /// of an object one names has already reached it, as it reaches a shared
+    /// one (`ParticleSystemStore::presented_pointer_expired`). They are
+    /// walked in the order they were made; one made during the walk waits
+    /// for the next frame.
+    pub(crate) fn advance_presented_particle_systems(&mut self, rules: &RuleSet) {
+        let walk = self.substrate.particle_systems.take_presented_walk();
+        if !walk.is_empty() {
+            self.present_particles(|sim| {
+                for &id in &walk {
+                    super::system_ai::tick_particle_system(
+                        sim,
+                        rules,
+                        id,
+                        crate::sim::world::UninitContext::new(rules),
+                    );
+                }
+            });
+        }
+        self.substrate.particle_systems.return_presented_walk(walk);
     }
 
     /// Execute88 at6DF3F7..6DF49B: signed waypoint center642740, then
@@ -453,6 +591,7 @@ impl Simulation {
     /// Execute89 at6DF49E..6DF518: all Alive systems whose GetCell41BEA0
     /// equals the waypoint receive virtual F8/6301E0. No type/House filter,
     /// RNG, timer, detach or physical deletion; even an empty list returns1.
+    /// A presentation system there ends the same way.
     pub(crate) fn trigger_mark_particle_systems_done_at_waypoint(
         session: &ScenarioSession,
         substrate: &mut ObjectSubstrate,
@@ -461,18 +600,18 @@ impl Simulation {
         let Some(cell) = session.waypoint_cell(waypoint) else {
             return false;
         };
-        for (_, system) in substrate.particle_systems.iter_mut() {
-            if !system.alive() {
-                continue;
-            }
+        let mark = |system: &mut ParticleSystem| {
             let at = (
                 crate::util::lepton::lepton_to_cell_packed(system.coords.x),
                 crate::util::lepton::lepton_to_cell_packed(system.coords.y),
             );
-            if at == cell {
+            if system.alive() && at == cell {
                 system.mark_done_spawning();
             }
-        }
+        };
+        let systems = &mut substrate.particle_systems;
+        systems.iter_mut().for_each(|(_, system)| mark(system));
+        systems.presented_systems_mut().for_each(mark);
         true
     }
 
@@ -495,14 +634,21 @@ impl Simulation {
             .health
             .compare_ratio(object.strength, rules.general.condition_yellow)
             == crate::util::native_x87::MaskedX87Ordering::Greater;
-        let current_system = entity.seldom.damage_smoke_system_id.system();
+        // A presentation smoke holds the presentation's side of the slot, so
+        // an object whose type changed keeps one smoke, as `+0x310` keeps one.
+        let smoking = entity.seldom.damage_smoke_system_id.system().is_some()
+            || self
+                .substrate
+                .particle_systems
+                .presented_damage_smoke(stable_id)
+                .is_some();
 
         if above_yellow {
             self.substrate.retire_attached_damage_smoke(stable_id);
             return;
         }
 
-        if current_system.is_some()
+        if smoking
             || !matches!(
                 state,
                 crate::sim::combat::damage::DamageState::Yellow
@@ -540,6 +686,44 @@ impl Simulation {
         }) {
             return;
         }
+        // VERA-only sim-scale deviation ([`Self::spawn_effect_particle_system`]):
+        // when every candidate changes nothing but its picture, the smoke is a
+        // presentation system and `+0x310` stays empty, so nothing the
+        // simulation reads or hashes names it. The presentation keeps the
+        // link instead: it makes no second smoke while the first lasts, takes
+        // the pick from its own stream, and ends the smoke's emission on a
+        // heal as `retire_attached_damage_smoke` does a shared one's.
+        // RESIDUAL: a save keeps no presentation smoke, and a hit makes one
+        // only as it makes the object yellow or red, so after a load a damaged
+        // object has none until a hit makes it red, or yellow again after a
+        // repair. Frequency: each load; an object already red stays without
+        // smoke until repaired. Nothing in the simulation reads it.
+        if self.effect_anims_presented()
+            && system_types
+                .iter()
+                .all(|&kind| rules.particle_system_presentation_only(kind))
+        {
+            self.present_particles(|sim| {
+                let selected = sim
+                    .particle_rng()
+                    .next_range_u32_inclusive(0, system_types.len().saturating_sub(1) as u32)
+                    as usize;
+                if let Some(system) = sim.spawn_particle_system(
+                    system_types[selected],
+                    coords,
+                    None,
+                    Some(owner_entity),
+                    IVec3::ZERO,
+                    None,
+                    rules,
+                ) {
+                    sim.substrate
+                        .particle_systems
+                        .link_presented_damage_smoke(owner_entity, system);
+                }
+            });
+            return;
+        }
         let selected = self
             .scenario_rng
             .next_range_u32_inclusive(0, system_types.len().saturating_sub(1) as u32)
@@ -556,6 +740,8 @@ impl Simulation {
             return;
         };
         if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
+            // A name the pointer-expiry index reads.
+            let _ = entity.note_names();
             entity.seldom.damage_smoke_system_id.system = Some(system_id);
         }
     }
@@ -595,7 +781,8 @@ impl Simulation {
         let system =
             self.spawn_particle_system(type_id, coords, cell, None, IVec3::ZERO, None, rules);
         if let Some(entity) = self.substrate.entities.get_mut(building_id) {
-            entity.building.natural_particle_system.bind(system);
+            let note = entity.note_names();
+            entity.building.natural_particle_system.bind(system, note);
         }
     }
 
@@ -671,7 +858,11 @@ impl Simulation {
             rules,
         );
         if let Some(entity) = self.substrate.entities.get_mut(building_id) {
-            entity.building.destroy_smoke_particle_system.bind(system);
+            let note = entity.note_names();
+            entity
+                .building
+                .destroy_smoke_particle_system
+                .bind(system, note);
         }
     }
 }
@@ -696,11 +887,13 @@ impl crate::sim::world::ObjectSubstrate {
     /// Mark the attached Techno+310 smoke system for retirement while retaining
     /// its owner pointer. Native ParticleSystem virtual F8 (6301E0) only sets
     /// its done-spawning byte; the done-empty Limbo broadcast owns pointer expiry.
+    /// A presentation smoke, which the presentation links, ends the same way.
     pub(crate) fn retire_attached_damage_smoke(&mut self, stable_id: u64) {
         let system_id = self
             .entities
             .get(stable_id)
-            .and_then(|entity| entity.seldom.damage_smoke_system_id.system());
+            .and_then(|entity| entity.seldom.damage_smoke_system_id.system())
+            .or_else(|| self.particle_systems.presented_damage_smoke(stable_id));
         if let Some(system_id) = system_id
             && let Some(system) = self.particle_systems.get_mut(system_id)
         {
@@ -906,6 +1099,42 @@ mod tests {
         assert!(!draws("PLAIN"));
     }
 
+    /// 6FAD51..6FAE40: only the Spark entries of `DamageParticleSystems=`
+    /// count, in authored order, and the admitted roll indexes them.
+    #[test]
+    fn a_damaged_vehicle_picks_among_its_spark_systems_only() {
+        use crate::sim::game_entity::GameEntity;
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[General]\nConditionRedSparkingProbability=1.0\n\
+             [VehicleTypes]\n0=SPARKY\n\
+             [SPARKY]\nStrength=100\nDamageSparks=yes\n\
+             DamageParticleSystems=Smk,Missing,SparkA,SparkB\n\
+             [Particles]\n0=Spk\n1=Puff\n[ParticleSystems]\n0=Smk\n1=SparkA\n2=SparkB\n\
+             [Spk]\nBehavesLike=Spark\nMaxEC=10\n[Puff]\nBehavesLike=Smoke\nMaxEC=10\n\
+             [Smk]\nBehavesLike=Smoke\nHoldsWhat=Puff\n\
+             [SparkA]\nBehavesLike=Spark\nHoldsWhat=Spk\n\
+             [SparkB]\nBehavesLike=Spark\nHoldsWhat=Spk\n",
+        ))
+        .unwrap();
+        let mut sim = Simulation::new();
+        let id = sim.substrate.allocate_stable_id();
+        let mut entity = GameEntity::test_default(id, "SPARKY", "A", 3, 3);
+        entity.set_type_ref_for_test(sim.interner.intern("SPARKY"));
+        entity.set_owner_for_test(sim.interner.intern("A"));
+        entity.health.set_for_test(20);
+        sim.substrate.entities.insert(entity);
+        let mut expected = sim.scenario_rng.clone();
+        let roll = expected.next_range_u32_inclusive(0, 0x7fff_fffe);
+        assert!(roll < rules.general.condition_red_spark_threshold);
+        let pick = ["SparkA", "SparkB"][expected.next_range_u32_inclusive(0, 1) as usize];
+        sim.update_damage_spark_after_ai(id, &rules);
+        let system = sim.substrate.entities.get(id).unwrap();
+        let system = system.seldom.spark_particle_system.system().unwrap();
+        let system = sim.substrate.particle_systems.get(system).unwrap();
+        assert_eq!(Some(system.type_id()), rules.ps_type_id_by_name(pick));
+    }
+
     /// The constructor's colour seed (`0x0062BA51`) draws for any type with a
     /// `ColorList` and a start colour, a Fire type as much as a Spark one.
     #[test]
@@ -963,7 +1192,7 @@ mod tests {
             let mut cell = test_flat_cell(entity.position.rx(), entity.position.ry());
             cell.level = input["level"].as_u64().unwrap() as u8;
             cell.slope_type = input["slope"].as_u64().unwrap() as u8;
-            sim.resolved_terrain = Some(ResolvedTerrainGrid::from_cells(8, 8, vec![cell]));
+            *sim.resolved_terrain = Some(ResolvedTerrainGrid::from_cells(8, 8, vec![cell]));
             assert_eq!(
                 Simulation::damage_particle_owner_height(&sim.resolved_terrain, &entity),
                 row["output"]["height"].as_i64().unwrap() as i32

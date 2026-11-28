@@ -1083,6 +1083,15 @@ impl ProjectilePayload {
         Self { ares_range, ..self }
     }
 
+    /// The same payload carrying another BulletType: a Wasm module's `Fire`
+    /// plan entry fired with the shot's own weapon (RFC 0001 section 9).
+    pub(crate) fn with_projectile_type(self, projectile_type: Option<InternedId>) -> Self {
+        Self {
+            projectile_type,
+            ..self
+        }
+    }
+
     /// The sole +130 mutation, corresponding to SetWeaponType46B260.
     /// Constructing another payload does not infer this reference from type.
     pub fn with_installed_weapon(mut self, weapon: Option<InternedId>) -> Self {
@@ -1720,6 +1729,24 @@ mod trailer_tests;
 pub(crate) struct ProjectileAiHead {
     id: u64,
     phase: ProjectileAiPhase,
+}
+
+/// A Wasm module's step for one flight visit (RFC 0001 section 9, appendix
+/// 4.5 `ProjectileFrame` and `Launch`): it replaces the candidate step of
+/// [`ProjectileStore::advance_after_head`], guided and Vertical arms
+/// included, together with the detonation tests those arms make (arrival
+/// snap, safety altitude, closing rate, bridge decks, DetonationAltitude).
+/// The ordinary tail, range, firestorm, shared probe, proximity fuse and
+/// impact ladder follow for every such bullet, guided or not.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ModuleMotion {
+    /// The bullet's new velocity; `None` keeps its binary64 bits.
+    pub(crate) velocity: Option<ProjectileVelocity>,
+    /// The candidate; `None` takes the position plus the (new) velocity's
+    /// integer projection.
+    pub(crate) position: Option<ProjectileCoord>,
+    /// An impact at the candidate (leaving the map still comes first).
+    pub(crate) detonate: bool,
 }
 
 enum ProjectileAiPhase {
@@ -2389,7 +2416,43 @@ impl ProjectileStore {
             false,
             collides_at,
             nuke,
+            None,
         )
+    }
+
+    /// Whether the flight visit `head` starts reaches the candidate step of
+    /// [`Self::advance_after_head`]: a flying bullet (no anim wait) whose
+    /// target still resolves and whose frame fuse has not run out. Only
+    /// reads, so a module can be asked in between (`ProjectileFrame`).
+    pub(crate) fn reaches_candidate_step(
+        &self,
+        head: &ProjectileAiHead,
+        mut resolve_target_position: impl FnMut(
+            ProjectileTarget,
+            ProjectileTargetQuery,
+        ) -> Option<ProjectileCoord>,
+    ) -> bool {
+        if !matches!(head.phase, ProjectileAiPhase::Flight(_)) {
+            return false;
+        }
+        let Some(projectile) = self.get(head.id) else {
+            return false;
+        };
+        let resolves = match projectile.target {
+            target @ (ProjectileTarget::Entity(_) | ProjectileTarget::Terrain(_)) => {
+                resolve_target_position(
+                    target,
+                    if projectile.tracks_target {
+                        ProjectileTargetQuery::GuidanceAim
+                    } else {
+                        ProjectileTargetQuery::TargetAim
+                    },
+                )
+                .is_some()
+            }
+            _ => true,
+        };
+        resolves && projectile.fuse_frames_remaining != Some(0)
     }
 
     pub(crate) fn advance_after_head(
@@ -2413,6 +2476,7 @@ impl ProjectileStore {
             ProjectileCollisionPhase,
         ) -> Option<ProjectileCollisionResponse>,
         nuke: Option<&NukeImpactContext<'_>>,
+        module_motion: Option<ModuleMotion>,
     ) -> Option<ProjectileAdvanceResult> {
         let mut result = ProjectileAdvanceResult::default();
 
@@ -2507,7 +2571,22 @@ impl ProjectileStore {
         let mut near_target = false;
 
         let mut ordinary_motion = None;
-        let mut candidate = if projectile.guidance.is_some() {
+        // A module's step (RFC 0001 section 9) replaces whichever arm
+        // follows; that arm's own detonation tests go with it.
+        let mut candidate = if let Some(motion) = module_motion {
+            if let Some(velocity) = motion.velocity {
+                projectile.velocity = velocity;
+            }
+            impact_flag = motion.detonate;
+            motion.position.unwrap_or_else(|| {
+                let step = projectile.velocity.integer_projection();
+                ProjectileCoord::new(
+                    projectile.position.x.wrapping_add(step.x),
+                    projectile.position.y.wrapping_add(step.y),
+                    projectile.position.z.wrapping_add(step.z),
+                )
+            })
+        } else if projectile.guidance.is_some() {
             let step = homing::step(
                 projectile,
                 target_position,
@@ -2594,7 +2673,9 @@ impl ProjectileStore {
         // Early returns preserve Bullet+E8 at tail entry. Ordinary scratch
         // gravity/reflection commits only at 467AB2; Vertical already
         // committed its ramp at 4672A3..4672B4 and skips that copyback.
-        if projectile.guidance.is_none()
+        // A module-moved bullet takes this tail whatever its ROT, with the
+        // velocity the module left (RFC 0001 section 9).
+        if (projectile.guidance.is_none() || module_motion.is_some())
             && let Some(ProjectileCollisionResponse::Ordinary {
                 candidate: selected,
                 velocity,
@@ -2605,10 +2686,9 @@ impl ProjectileStore {
                 projectile,
                 candidate,
                 ProjectileCollisionPhase::Ordinary {
-                    persistent_velocity: if matches!(
-                        projectile.trajectory,
-                        ProjectileTrajectory::Vertical { .. }
-                    ) {
+                    persistent_velocity: if module_motion.is_some()
+                        || matches!(projectile.trajectory, ProjectileTrajectory::Vertical { .. })
+                    {
                         projectile.velocity
                     } else {
                         previous_velocity
@@ -3659,6 +3739,7 @@ mod tests {
                             .then_some(ProjectileCollisionResponse::TargetZClamp(candidate))
                     },
                     None,
+                    None,
                 )
                 .unwrap();
             assert_eq!(result.detonations.is_empty(), continues);
@@ -3818,8 +3899,8 @@ mod tests {
         sim.admit_projectile(stable_id, spawn(ProjectileTarget::Cell { rx: 1, ry: 0 }));
         // Native in-scenario load restarts Scenario RNG from Seed0. Normalize
         // both controls so this fixture isolates projectile persistence/hash.
-        empty.scenario_rng = crate::sim::rng::SimRng::new(0);
-        sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+        *empty.scenario_rng = crate::sim::rng::SimRng::new(0);
+        *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
         let expected_hash = sim.state_hash();
 
         assert_ne!(empty.state_hash(), expected_hash);

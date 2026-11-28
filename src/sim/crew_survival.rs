@@ -511,7 +511,7 @@ impl Simulation {
         //443141 raises A8E7AC after the constructor and before the caller's
         //ordinary481180. It remains raised through Scatter/Walk and the
         //mission queue, and is decremented at443288, including failed exits.
-        self.with_object_placement_scope(|sim| {
+        let placed = self.with_object_placement_scope(|sim| {
             if !sim.unlimbo_crew(rules, id, unlimbo, None, effects) {
                 sim.discard_constructed_limbo(id, rules, effects);
                 return false;
@@ -556,7 +556,13 @@ impl Simulation {
                 }
             }
             true
-        })
+        });
+        // Wasm module `Birth`, the building as `other`, once out of the
+        // placement bracket.
+        if placed {
+            self.raise_module_birth(rules, effects, id, Some(building_id));
+        }
+        placed
     }
 
     /// The absorbed passengers' exit, shared by SpawnSurvivors' Phase A
@@ -856,6 +862,8 @@ impl Simulation {
         }
         //738364..73837A, after Unlimbo, health, Scatter, mission and Select.
         self.trigger_runtime.transfer_object_tag(unit_id, id);
+        // Wasm module `Birth`, the vehicle as `other`, after the Tag moved.
+        self.raise_module_birth(rules, effects, id, Some(unit_id));
     }
 
     /// The passenger block of `UnitClass::ReceiveDamage`
@@ -1083,8 +1091,8 @@ impl Simulation {
             // `0x00738143..0x0073816E`: a computer passenger joins the unit's Team
             // (`TeamClass::Add_Member @ 0x006EA500`), or Hunts without one.
             if !sim.owner_is_human(passenger_owner) {
-                match sim.team_script_vm.team_for_member(unit_id) {
-                    Some((team_id, _)) => {
+                match sim.team_script_vm.team_of(unit_id) {
+                    Some(team_id) => {
                         sim.team_add_member(team_id, passenger, false, rules, effects);
                     }
                     None => sim
@@ -1390,6 +1398,8 @@ impl Simulation {
                 self.with_object_placement_scope(|sim| {
                     sim.substrate.queue_crew_mission(id, MissionType::Move)
                 });
+                // Wasm module `Birth`, the sold building as `other`.
+                self.raise_module_birth(rules, effects, id, Some(building_id));
                 spawned = true;
             }
         }

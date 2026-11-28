@@ -67,11 +67,11 @@ const _: () = {
 };
 
 impl SimRuntime {
-    /// The host releases the frame's and presentation copy's resource references
-    /// before returning the live runtime for a Rules write.
+    /// The host releases the presentation copy's resource reference before
+    /// returning the live runtime for a Rules write.
     pub fn resources_mut(&mut self) -> &mut SimResources {
         std::sync::Arc::get_mut(&mut self.resources)
-            .expect("resources are shared only with a presentation frame the host drops first")
+            .expect("resources are shared only with a presentation copy the host drops first")
     }
 
     /// Test adapter for an existing simulation with empty resource inputs.
@@ -272,14 +272,16 @@ impl SimRuntime {
         owner: &str,
         command: &crate::sim::command::Command,
     ) -> bool {
-        self.simulation.apply_command_with_overlays(
-            None,
-            owner,
-            command,
-            &self.resources.rules,
-            Some(self.resources.rules.overlay_registry()),
-            &mut crate::sim::world::FrameEffects::default(),
-        )
+        self.simulation
+            .apply_command_with_overlays(
+                crate::sim::command::CommandSender::Player(None),
+                owner,
+                command,
+                &self.resources.rules,
+                Some(self.resources.rules.overlay_registry()),
+                &mut crate::sim::world::FrameEffects::default(),
+            )
+            .is_ok()
     }
 
     /// Replace a same-content restored simulation in place. Resource ownership
@@ -587,7 +589,7 @@ mod tests {
         let mut sim = Simulation::from_descriptor(&descriptor);
         // Isolate the actual map-read reservation/constructor continuation;
         // the normal app launch capture covers selected Rules/House prefixes.
-        sim.native_unique_ids =
+        *sim.native_unique_ids =
             Some(build_noncampaign_fresh_id_prefix(0, 0, 0, 0, 0, 0, 40, 40).into_cursor());
         sim.construct_native_map_tubes(&map.ini).unwrap();
         let mut trace = RmgConstructionTrace::default();
@@ -1010,7 +1012,7 @@ where
     // Keep this same grid and its Cell+122 history through post-map
     // finalization. Compatibility fixtures may have no overlays.
     if let Some(grid) = overlay_grid {
-        sim.overlay_grid = Some(grid);
+        *sim.overlay_grid = Some(grid);
     }
     // Wire the cliff/slope coefficients from [General] into the live World config;
     // it otherwise holds compiled vanilla defaults and never sees a modded INI.
@@ -1420,7 +1422,7 @@ where
 
     let final_terrain = terrain.clone();
     sim.install_resolved_terrain_for_new_map(terrain);
-    sim.overlay_grid = Some(overlay_grid);
+    *sim.overlay_grid = Some(overlay_grid);
     sim.install_bridge_runtime(bridge_state);
     Ok(final_terrain)
 }
@@ -1596,14 +1598,14 @@ fn finalization_keeps_populated_neighbor_counts() {
     let rules = SimResources::empty().rules;
     let roster = crate::map::houses::parse_house_roster(&map.ini, &[], Some(&rules));
     let mut sim = Simulation::new();
-    sim.resolved_terrain = Some(ResolvedTerrainGrid::from_cells(
+    *sim.resolved_terrain = Some(ResolvedTerrainGrid::from_cells(
         8,
         8,
         (0..8)
             .flat_map(|y| (0..8).map(move |x| test_flat_cell(x, y)))
             .collect(),
     ));
-    sim.overlay_grid = Some(OverlayGrid::new(8, 8));
+    *sim.overlay_grid = Some(OverlayGrid::new(8, 8));
     sim.overlay_grid
         .as_mut()
         .unwrap()

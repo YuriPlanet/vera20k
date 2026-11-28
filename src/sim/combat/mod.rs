@@ -39,13 +39,16 @@ pub(crate) mod crit;
 #[cfg(all(test, tests_sim_combat_a_c, feature = "phobos"))]
 mod crit_tests;
 pub(crate) mod damage;
+mod damage_incoming;
 pub(crate) mod destruction_effects;
+mod death_plan;
 pub(crate) mod detonation_anim;
 mod effects;
 pub mod electric_bolt;
 pub mod fire_coord;
 pub mod fire_error;
 pub(crate) mod fire_error_world;
+mod fire_plan;
 pub mod gattling;
 pub(crate) mod greatest_threat;
 pub mod in_range;
@@ -140,6 +143,8 @@ mod screen_shake_tests;
 #[cfg(all(test, tests_sim_combat_d_z))]
 mod shrapnel_chain_tests;
 #[cfg(all(test, tests_sim_combat_d_z))]
+mod ts_web_tests;
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod unit_damage_response_tests;
 #[cfg(all(test, tests_sim_combat_d_z))]
 mod walk_attack_tests;
@@ -181,7 +186,6 @@ use attack_target::{attack_world_z_leptons, cell_center_coords, target_coords};
 use projectile_delivery::{
     ProjectileDelivery, bullet_type, classify_projectile_delivery, projectile_arm_delay,
 };
-#[cfg(feature = "phobos")]
 use receiver_call::resolve_receive_damage_with_input;
 use receiver_call::{
     BuildingReceivePrelude, ResolvedReceiveDamage, apply_building_receive_prelude,
@@ -377,9 +381,6 @@ pub(crate) struct CombatEmit {
     pub(crate) damage_events: Vec<combat_aoe::AreaDamageReceiver>,
     pub(crate) remove_attack: Vec<u64>,
     pub(crate) fire_events: Vec<SimFireEvent>,
-    /// Unit Facing outputs committed immediately at each live object slot.
-    /// Component fixtures retain them here for observation.
-    pub(crate) unit_facing: Vec<UnitFacingUpdate>,
     /// (parent_id, target) — a `Spawner=yes` weapon reached its fire point.
     /// gamemd's `Fire_At` hands the target to the parent's `SpawnManager` and
     /// returns NULL, so no bullet, damage or rearm follows.

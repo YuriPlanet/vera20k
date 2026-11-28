@@ -54,6 +54,11 @@ use common_body::techno_after_acquisition;
 use common_body::techno_common_post;
 use common_body::techno_common_steps;
 use common_body::unit_techno_bracket;
+pub(super) use common_body::{
+    allied_target_drops, behind_indicator_cell, behind_indicator_coord, combat_damage_heals,
+    house_heal_frame, house_heals, illegal_target_drop_frame, off_mission_clear_drops, stage_step,
+    target_reach_asks,
+};
 pub(crate) use foot_patrol::PatrolPost;
 mod mission_handlers;
 mod scan_batch;
@@ -468,6 +473,39 @@ impl Simulation {
                 0,
             );
         }
+        // Wasm module flight (RFC 0001 section 9): `ProjectileFrame` or a
+        // `Launch` path, asked here, after the head, the Trailer, target
+        // resolution and the frame fuse, before the candidate step. The
+        // handler only reads, so nothing moves between this and the flight.
+        let module_motion = if self.module_flight_active() {
+            let shared_cell_dummy = self.effective_shared_cell_dummy();
+            let reaches = {
+                let world = super::projectile_collision::ProjectileCollisionWorld {
+                    terrain: self.resolved_terrain.as_ref(),
+                    dummy: &shared_cell_dummy,
+                    occupancy: &self.substrate.occupancy,
+                    entities: &self.substrate.entities,
+                    terrain_objects: self.terrain_objects.objects(),
+                    interner: &self.interner,
+                    alliances: &self.house_alliances,
+                    overlays: self.overlay_grid.as_ref(),
+                    rules,
+                    map_size: self.map_size_diamond(),
+                    ares_firestorm: &self.ares_firestorm,
+                };
+                self.projectiles
+                    .reaches_candidate_step(&head, |target, query| {
+                        world.target_coordinate(target, query)
+                    })
+            };
+            if reaches {
+                self.module_projectile_motion(rules, id)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
         let projectile = self
             .projectiles
             .get(id)
@@ -545,6 +583,7 @@ impl Simulation {
                     collision_world.collide(projectile, candidate, phase)
                 },
                 nuke.as_ref(),
+                module_motion,
             )
             .expect("projectile remained present for its Logic slot");
         let terminal = !result.expired.is_empty() || !result.detonations.is_empty();
@@ -594,6 +633,7 @@ impl Simulation {
                 &request,
                 &mut ctx.effects,
             );
+            self.waves.return_damage_cells(request);
         }
         let context =
             self.wave_update_context(self.waves.get(id).expect("represented Wave"), rules);
@@ -614,6 +654,7 @@ impl Simulation {
                 &request,
                 &mut ctx.effects,
             );
+            self.waves.return_damage_cells(request);
         }
         if !result.alive {
             let retired = self.retire_non_entity_object(
@@ -954,12 +995,6 @@ fn techno_ai_shell(
     // A quiet unit is neither warped nor warping (`world::quiet_units`).
     let temporal_frozen = !sim.quiet(id)
         && sim.temporal_ai_prologue(id, rules, ctx, &mut outcome.bridge_state_changed);
-    // Phobos `ShieldClass::AI_Temporal` pauses recovery during the Temporal
-    // prologue; frozen leaves never reach the normal `ShieldClass::AI` at
-    // `TechnoClass_AI @ 0x6F9E50+0x5`. The shield owner handles that paused
-    // visit or the normal recovery visit after this frame's warp update.
-    #[cfg(feature = "phobos")]
-    crate::sim::shield::tick(sim, id, rules);
     if temporal_frozen {
         return;
     }
@@ -1001,7 +1036,12 @@ fn techno_ai_shell(
     // ApplyMindControlRangeLimit`, after the leaf's own steps and before the
     // common Techno body's estimated-health recover.
     #[cfg(feature = "phobos")]
-    sim.apply_mind_control_range_limit(id, rules, ctx.overlay_registry, &mut ctx.effects);
+    {
+        // OnEarlyUpdate runs UpdateShield first, after the leaf's freeze and
+        // death returns. A thawed object can reach it with an erase head.
+        crate::sim::shield::tick(sim, id, rules);
+        sim.apply_mind_control_range_limit(id, rules, ctx.overlay_registry, &mut ctx.effects);
+    }
     // Techno6F9F6E..9F precedes veterancy promotion, missions and acquisition for every
     // Techno category. object_ai_visit_one excludes the entry-active Tube leaf
     // before this common owner. Actual health and this retained estimate differ.

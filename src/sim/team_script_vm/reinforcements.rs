@@ -265,6 +265,9 @@ impl Simulation {
                         rules,
                         effects,
                     );
+                    // Wasm module `Birth` (RFC 0001 appendix 4.3), the
+                    // building it left as producer.
+                    self.raise_module_birth(rules, effects, member, Some(receiver));
                     placed_any = true;
                 } else {
                     //65DB07 invokes the scalar destructor, not UnInit or
@@ -547,6 +550,9 @@ impl Simulation {
                 .expect("arm_chrono armed the reinforcement warp")
                 .set_pending_state(3);
             let _ = self.substrate.mission_commence_exact(member, frame);
+            // Wasm module `Birth` (RFC 0001 appendix 4.3), once the member
+            // has commenced its warp in.
+            self.raise_module_birth(rules, effects, member, None);
         }
         let review = self.team_type_house(team_type, rules).and_then(|owner| {
             self.session
@@ -1057,7 +1063,11 @@ impl Simulation {
                     if placed {
                         if !aircraft {
                             sim.team_member_queue_mission(member, MissionType::Guard, rules);
-                            sim.team_member_commence(member, rules);
+                            // TeamTypeClass::Place_Reinforcement_Members at 0x0065E46B
+                            // commences Guard immediately, even at a War Factory exit.
+                            let _ = sim
+                                .substrate
+                                .mission_commence_exact(member, sim.session.binary_frame());
                         }
                         return (true, None);
                     }
@@ -1095,6 +1105,9 @@ impl Simulation {
                     (false, next)
                 });
                 if placed {
+                    // Wasm module `Birth` (RFC 0001 appendix 4.3), after
+                    // 65E010 placed the member (outside the A8E7AC scope).
+                    self.raise_module_birth(rules, effects, member, None);
                     placed_any = true;
                     break;
                 }

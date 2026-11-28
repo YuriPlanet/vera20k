@@ -112,7 +112,7 @@ fn generated_rules_read_before_generation_and_carried() {
         7,
         "AI reads before TMCJ4F"
     );
-    let (rules, _, _, _, _) = prepared.into_parts();
+    let (rules, ..) = prepared.into_parts();
     assert_eq!(rules.powerups.weights[POWERUP_MONEY], 9);
     assert_eq!(
         owner.saved_scenario_rules().unwrap().content_hash(),

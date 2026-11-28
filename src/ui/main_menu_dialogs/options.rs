@@ -72,10 +72,6 @@ pub(crate) const HAS_CHECK_FOR_UPDATES: bool = !BROWSER;
 /// The column's Mods button, which opens VERA's Mods page
 /// (`ui::mods_shell`). The browser build has no Mods folder.
 pub(crate) const HAS_MODS: bool = !BROWSER;
-/// The Gameplay page's RA2 Mode (`util::ra2_launch`). The browser build keeps
-/// one game instance across its starts, and its launcher probe reads no saved
-/// choice, so it has no box.
-pub(crate) const HAS_RA2_MODE: bool = !BROWSER;
 /// The Esc menu's Set Window Size button. A browser tab's canvas takes its size
 /// from the page and an Android window fills the screen, so those builds have
 /// none.
@@ -94,6 +90,22 @@ pub(crate) fn ares_label(setting: crate::util::ares_launch::AresSetting) -> Stri
         AresSetting::Auto => "VERA:AresSettingAuto",
         AresSetting::On => "VERA:AresSettingOn",
         AresSetting::Off => "VERA:AresSettingOff",
+    })
+}
+
+/// The `[VERA] Kratos=` list's rows, top to bottom; the first is the default.
+pub(crate) fn kratos_choices() -> Vec<crate::util::kratos_launch::KratosSetting> {
+    use crate::util::kratos_launch::KratosSetting;
+    vec![KratosSetting::Auto, KratosSetting::On, KratosSetting::Off]
+}
+
+/// The `[VERA] Kratos=` list's row text.
+pub(crate) fn kratos_label(setting: crate::util::kratos_launch::KratosSetting) -> String {
+    use crate::util::kratos_launch::KratosSetting;
+    crate::i18n::tr(match setting {
+        KratosSetting::Auto => "VERA:KratosSettingAuto",
+        KratosSetting::On => "VERA:KratosSettingOn",
+        KratosSetting::Off => "VERA:KratosSettingOff",
     })
 }
 
@@ -384,24 +396,6 @@ impl ZoomGeometry {
             y * scale + self.origin.1 as f32,
         )
     }
-
-    /// The window pixels wholly inside source rect `(x, y, width, height)`
-    /// once scaled: one it shares with a neighbour keeps the zoom's blend.
-    pub(crate) fn window_rect(self, (x, y, width, height): (u32, u32, u32, u32)) -> [u32; 4] {
-        let (left, top) = self.source_to_window(x as f32, y as f32);
-        let (right, bottom) = self.source_to_window((x + width) as f32, (y + height) as f32);
-        let (frame_width, frame_height) = self.frame_size();
-        let left = left.ceil() as u32;
-        let top = top.ceil() as u32;
-        let right = (right.floor() as u32).min(self.origin.0 + frame_width);
-        let bottom = (bottom.floor() as u32).min(self.origin.1 + frame_height);
-        [
-            left,
-            top,
-            right.saturating_sub(left),
-            bottom.saturating_sub(top),
-        ]
-    }
 }
 
 /// VERA's sidebar size: how big a battle draws its sidebar, on top of the
@@ -599,6 +593,47 @@ impl HealthBarMode {
     }
 }
 
+/// The HD art list (`render::hd_switch`, `[VERA] HdArt=`): Off, the original
+/// picture, or On, the HD art over the world and the HD sidebar. The HD art
+/// key (Page Up) flips the same setting in a match. Presentation only.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) enum HdLook {
+    #[default]
+    Off,
+    On,
+}
+
+impl HdLook {
+    const ALL: [Self; 2] = [Self::Off, Self::On];
+
+    /// The list's rows, top to bottom; the first is the default.
+    pub(crate) fn choices() -> Vec<Self> {
+        Self::ALL.to_vec()
+    }
+
+    /// Whether the row turns HD art on.
+    pub(crate) const fn is_on(self) -> bool {
+        matches!(self, Self::On)
+    }
+
+    /// The row for the switch's state.
+    pub(crate) const fn from_on(on: bool) -> Self {
+        if on { Self::On } else { Self::Off }
+    }
+
+    pub(crate) fn label(self) -> String {
+        crate::i18n::tr(match self {
+            Self::Off => "VERA:HdLookOff",
+            Self::On => "VERA:HdLookOn",
+        })
+    }
+
+    /// The rows while no HD art pack runs: Off alone.
+    pub(crate) fn choices_without_pack() -> Vec<Self> {
+        vec![Self::Off]
+    }
+}
+
 /// VERA's `[VERA] ColorVisionMode=` whole-viewport colour-vision filter.
 ///
 /// gamemd has no equivalent: this is a presentation-only final-frame pass
@@ -748,12 +783,17 @@ pub(crate) enum LauncherComboId {
     HealthBars,
     /// The whole-viewport colour filter.
     ColorVision,
+    /// HD art, Off or On (`[VERA] HdArt=`).
+    HdLook,
     /// VERA's interface language. Its rows are each language's own name for
     /// itself, so they need no translation.
     Language,
     /// The Ares extension setting, from the next start
     /// (`util::ares_launch::AresSetting`).
     Ares,
+    /// The Kratos extension setting, from the next start
+    /// (`util::kratos_launch::KratosSetting`).
+    Kratos,
     /// The `[VERA] GraphicsAPI=` list: the renderer, from the next start;
     /// on the page where it chooses anything ([`HAS_GRAPHICS_API`]).
     GraphicsApi,
@@ -908,8 +948,8 @@ pub(crate) enum LauncherCheckboxId {
     ShiftQueue,
     /// The player's damaged buildings are sent the Repair order by themselves.
     AutoRepair,
-    /// The next start plays original Red Alert 2 (`[VERA] RA2Mode=`,
-    /// docs/ra2-mode.md).
+    /// Android applies the saved edition when the player next starts the app.
+    #[cfg(target_os = "android")]
     Ra2Mode,
     /// The wheel changes battle view distance.
     MouseWheelZoom,
@@ -928,6 +968,8 @@ pub(crate) enum LauncherCheckboxId {
     /// The online client's enlarged art draws lightly smoothed.
     SmoothOnlineMenus,
     VSync,
+    /// Moving tanks draw between two committed simulation poses.
+    RenderInterpolation,
     /// Battles draw at the monitor's refresh rate where draw time allows
     /// (`[VERA] HighRefreshRateInBattle=`), with either VSync setting.
     HighRefreshRateInBattle,
@@ -1001,7 +1043,6 @@ impl Setting {
             ) => HAS_VSYNC,
             Self::List(LauncherComboId::GraphicsApi) => HAS_GRAPHICS_API,
             Self::Checkbox(LauncherCheckboxId::HdMapPreviews) => HAS_HD_MAP_PREVIEWS,
-            Self::Checkbox(LauncherCheckboxId::Ra2Mode) => HAS_RA2_MODE,
             _ => true,
         }
     }
@@ -1083,8 +1124,10 @@ pub(crate) const ROWS: &[Row] = {
             "BuildingProductionQueue"
         ),
         row!(Gameplay, Checkbox(AutoRepair), "AutoRepair"),
+        #[cfg(target_os = "android")]
         row!(Gameplay, Checkbox(Ra2Mode), "Ra2Mode"),
         row!(Gameplay, List(Ares), "AresSetting"),
+        row!(Gameplay, List(Kratos), "KratosSetting"),
         row!(
             Gameplay,
             Checkbox(CustomEndGameBanner),
@@ -1157,7 +1200,10 @@ pub(crate) const ROWS: &[Row] = {
         row!(Controls, Checkbox(MouseWheelZoom), "MouseWheelZoom"),
         row!(Controls, Checkbox(LockCursor), "LockCursor"),
         row!(General, List(Language), "Language"),
+        // VERA's HD art switch; Display is full at 640x480.
+        row!(General, List(HdLook), "HdLook"),
         row!(General, Checkbox(YrOriginalStyle), "YrOriginalStyle"),
+        row!(General, Checkbox(RenderInterpolation), "RenderInterpolation"),
         row!(General, Checkbox(SmoothOnlineMenus), "SmoothOnlineMenus"),
         row!(General, Checkbox(HdMapPreviews), "HdMapPreviews"),
         row!(General, Checkbox(VeraIcon), "VeraIcon"),
@@ -1282,9 +1328,13 @@ pub(crate) enum LauncherOptionsEvent {
     HealthBarModeSelected(HealthBarMode),
     /// Played from the next start.
     AresSelected(crate::util::ares_launch::AresSetting),
+    /// Played from the next start.
+    KratosSelected(crate::util::kratos_launch::KratosSetting),
     /// The `[VERA] GraphicsAPI=` list's pick, read at the next start.
     GraphicsApiSelected(GraphicsApi),
     ColorVisionModeSelected(ColorVisionMode),
+    /// The HD art list's pick, applied to the next frame.
+    HdLookSelected(HdLook),
     DisplaySelected(DisplayTarget),
     /// A language tag.
     LanguageSelected(String),
@@ -1344,9 +1394,15 @@ pub(crate) struct LauncherOptionsValues {
     pub(crate) sidebar_columns: SidebarColumns,
     pub(crate) health_bars: HealthBarMode,
     pub(crate) ares: crate::util::ares_launch::AresSetting,
+    pub(crate) kratos: crate::util::kratos_launch::KratosSetting,
     /// The Graphics API list's choice; it applies from the next start.
     pub(crate) graphics_api: GraphicsApi,
     pub(crate) color_vision: ColorVisionMode,
+    /// Whether HD art is on.
+    pub(crate) hd_look: HdLook,
+    /// Whether the running mod brings an HD art pack: without one the list
+    /// offers only Off and its help names what it needs.
+    pub(crate) hd_look_available: bool,
 }
 
 impl Default for LauncherOptionsValues {
@@ -1357,6 +1413,7 @@ impl Default for LauncherOptionsValues {
             C::Tooltips,
             C::TargetLines,
             C::VSync,
+            C::RenderInterpolation,
             C::HdMapPreviews,
             C::CommanderFeedback,
         ] {
@@ -1369,8 +1426,11 @@ impl Default for LauncherOptionsValues {
             sidebar_columns: SidebarColumns::default(),
             health_bars: HealthBarMode::default(),
             ares: Default::default(),
+            kratos: Default::default(),
             graphics_api: GraphicsApi::default(),
             color_vision: ColorVisionMode::default(),
+            hd_look: HdLook::default(),
+            hd_look_available: false,
         }
     }
 }
@@ -1715,8 +1775,10 @@ impl OptionsDialogState {
             E::SidebarColumnsSelected(columns) => v.sidebar_columns = *columns,
             E::HealthBarModeSelected(mode) => v.health_bars = *mode,
             E::AresSelected(setting) => v.ares = *setting,
+            E::KratosSelected(setting) => v.kratos = *setting,
             E::GraphicsApiSelected(api) => v.graphics_api = *api,
             E::ColorVisionModeSelected(mode) => v.color_vision = *mode,
+            E::HdLookSelected(look) => v.hd_look = *look,
             E::DisplaySelected(display) if *display == self.display => return,
             E::DisplaySelected(display) => self.display = display.clone(),
             E::LanguageSelected(tag) if *tag == self.language => return,
@@ -2477,6 +2539,18 @@ mod tests {
     /// Every control is on exactly one page of the column: one the table
     /// leaves out could not be reached, and one listed twice would show
     /// twice. The in-game Game Controls page repeats rows of the column,
+
+    /// HD art is Off or On, and Off alone while no HD art pack runs, so it
+    /// cannot be turned on without one; the list starts Off.
+    #[test]
+    fn hd_look_offers_on_only_with_a_pack() {
+        assert_eq!(HdLook::choices(), [HdLook::Off, HdLook::On]);
+        assert_eq!(HdLook::choices_without_pack(), [HdLook::Off]);
+        assert_eq!(HdLook::from_on(true), HdLook::On);
+        let values = LauncherOptionsValues::default();
+        assert_eq!(values.hd_look, HdLook::Off);
+        assert!(!values.hd_look_available);
+    }
     /// Game Speed aside.
     #[test]
     fn every_control_is_on_exactly_one_page() {
@@ -2499,7 +2573,8 @@ mod tests {
         );
         assert_eq!(
             count(|s| matches!(s, Setting::List(_))),
-            8 + usize::from(HAS_GRAPHICS_API)
+            // HD art's list included.
+            10 + usize::from(HAS_GRAPHICS_API)
         );
         for (index, setting) in placed.iter().enumerate() {
             assert!(!placed[index + 1..].contains(setting), "{setting:?}");

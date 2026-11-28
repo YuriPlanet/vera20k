@@ -161,8 +161,8 @@ impl RulesPassProcessor {
             // NPSE extension read (`0xC30FF8..0xC3101F`): the canopy an
             // airdropped non-infantry object takes. The extension's General
             // reader runs after the stock reads, so its FindOrAllocate lands
-            // after every vanilla General pointer; an ordinary build skips it
-            // entirely (below) and neither allocates nor retains the type.
+            // after every vanilla General pointer; every build reads it now
+            // (below), marked as an NPatch read.
             ("VehicleParachute", RulesTypeFamily::Animation, false),
         ];
 
@@ -297,16 +297,42 @@ impl RulesPassProcessor {
         // while every other key and the whole YR path stay on [General].
         // (Derived from rules.ini [AudioVisual] vs rulesmd.ini [General].)
         const RA2_AUDIOVISUAL_MOVED_KEYS: &[&str] = &[
-            "BarrelDebris", "BarrelExplode", "BarrelParticle", "Behind",
-            "BombParachute", "BridgeExplosions", "ChronoBeam", "ChronoBlast",
-            "ChronoBlastDest", "ChronoPlacement", "ChronoSparkle1",
-            "DamageFireTypes", "DeadBodies", "DropPod", "DropZoneAnim",
-            "EMPulseSparkles", "FlamingInfantry", "InfantryExplode",
-            "InfantryHeadPop", "InfantryNuked", "IonBeam", "IonBlast",
-            "IronCurtainInvokeAnim", "MetallicDebris", "MoveFlash",
-            "NukeTakeOff", "OreTwinkle", "Parachute", "Wake", "WarpAway",
-            "WarpIn", "WarpOut", "WeaponNullifyAnim", "WeatherConBoltExplosion",
-            "WeatherConBolts", "WeatherConClouds",
+            "BarrelDebris",
+            "BarrelExplode",
+            "BarrelParticle",
+            "Behind",
+            "BombParachute",
+            "BridgeExplosions",
+            "ChronoBeam",
+            "ChronoBlast",
+            "ChronoBlastDest",
+            "ChronoPlacement",
+            "ChronoSparkle1",
+            "DamageFireTypes",
+            "DeadBodies",
+            "DropPod",
+            "DropZoneAnim",
+            "EMPulseSparkles",
+            "FlamingInfantry",
+            "InfantryExplode",
+            "InfantryHeadPop",
+            "InfantryNuked",
+            "IonBeam",
+            "IonBlast",
+            "IronCurtainInvokeAnim",
+            "MetallicDebris",
+            "MoveFlash",
+            "NukeTakeOff",
+            "OreTwinkle",
+            "Parachute",
+            "Wake",
+            "WarpAway",
+            "WarpIn",
+            "WarpOut",
+            "WeaponNullifyAnim",
+            "WeatherConBoltExplosion",
+            "WeatherConBolts",
+            "WeatherConClouds",
         ];
         let ra2_av = crate::util::ra2_launch::enabled()
             .then(|| pass.section("AudioVisual"))
@@ -320,11 +346,11 @@ impl RulesPassProcessor {
             } else {
                 section
             };
-            // An ordinary build never reads the NPSE extension, so it neither
-            // allocates the canopy's AnimType nor keeps the pointer.
-            if key == "VehicleParachute" && !crate::rules::NPATCH_ENABLED {
-                continue;
-            }
+            // NPSE's General reader runs after the stock reads, so its
+            // FindOrAllocate lands after every vanilla General pointer. Every
+            // build reads it now, marked as an NPatch read, so the key turns
+            // the per-game switch on (`npatch_switch`).
+            let _npatch = (key == "VehicleParachute").then(crate::rules::ares_switch::npatch_reads);
             if ares_way
                 && key != "DefaultMirageDisguises"
                 && ARES_GENERAL_LISTS.iter().any(|&(name, _)| name == key)
@@ -792,6 +818,15 @@ impl RulesPassProcessor {
         for key in ["SmallFire", "LargeFire"] {
             let _ = self.resolve_scalar_from(section, key, RulesTypeFamily::Animation, 0x80);
         }
+        // Firestorm 2.0's WebbedInfantry (`docs/ts-webs.md`): ReadString into
+        // 0x80 bytes and AnimType FindOrMake (`0x005D39A0`), an empty value
+        // keeping the pointer. gamemd has no such read, so VERA reads it after
+        // every AudioVisual key gamemd reads: an INI without the key
+        // allocates nothing.
+        let webbed =
+            self.resolve_scalar_from(section, "WebbedInfantry", RulesTypeFamily::Animation, 0x80);
+        self.rules_type_references
+            .read_pointer("WebbedInfantry", webbed);
     }
 
     pub(super) fn process_special_weapons(&mut self, pass: &IniFile) {

@@ -47,6 +47,7 @@ pub(crate) struct FireSubject<'a> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct FirerPart {
     ares: bool,
+    kratos: bool,
     class: FirerClass,
     frame: i32,
     /// Every link to the target unset: [`Self::facts`] sets them.
@@ -87,6 +88,7 @@ impl FirerPart {
         firer.temporal = self.temporal_target.map(link);
         FireFacts {
             ares: self.ares,
+            kratos: self.kratos,
             class: self.class,
             frame: self.frame,
             weapon_index,
@@ -209,6 +211,8 @@ impl<'a> FireSubject<'a> {
             fire_in_transport: weapon.fire_in_transport,
             area_fire: weapon.area_fire,
             is_mag_beam: weapon.is_mag_beam,
+            no_money_no_talk: weapon.no_money_no_talk,
+            dont_need_money: weapon.dont_need_money,
             warhead: warhead.map(|warhead| WarheadFacts {
                 mind_control: warhead.mind_control,
                 ivan_bomb: warhead.ivan_bomb,
@@ -236,11 +240,13 @@ impl<'a> FireSubject<'a> {
                     aa: false,
                     ag: true,
                     rot: 0,
+                    aa_only: false,
                 },
                 |projectile| ProjectileFacts {
                     aa: projectile.aa,
                     ag: projectile.ag,
                     rot: projectile.rot,
+                    aa_only: projectile.aa_only,
                 },
             ),
         }
@@ -287,8 +293,10 @@ impl<'a> FireSubject<'a> {
                     .ares_disable_weapons
                     .remaining(frame as i32)
                     > 0,
+            module_weapons_disabled: firer.module_weapons_disabled(),
             emp_remaining: firer.emp_remaining(),
             death_frame_counter: firer.unit_death_counter.get(),
+            webbed: firer.is_webbed(frame as i32),
             on_bridge: firer.on_bridge(),
             z: self.terrain().map_or(0, |terrain| {
                 crate::sim::movement::ground_pose::object_world_z_leptons(firer, Some(terrain))
@@ -439,6 +447,7 @@ impl<'a> FireSubject<'a> {
         };
         FirerPart {
             ares: self.rules.ares(),
+            kratos: self.rules.kratos(),
             class,
             frame: frame as i32,
             firer: firer_facts,
@@ -523,16 +532,22 @@ impl<'a> FireSubject<'a> {
                         // Ares TechnoClass_CanFire_PsionicsImmune (10049EF0,
                         // hook 0x6FC417): the rank's PSIONICSIMMUNE joins the
                         // type flag and `ImmuneToBerserk` overrides both.
-                        immune_to_psionics: if self.rules.ares() {
-                            target_obj.techno_combat().combat().immune_to_berserk(
+                        // A module's `ImmunityFlags` bit 6 (berserk) replaces it.
+                        immune_to_psionics: entity.module_immune(
+                            crate::sim::ext_modules::modifiers::Immunity::Berserk,
+                            if self.rules.ares() {
+                                target_obj.techno_combat().combat().immune_to_berserk(
+                                    target_obj.immune_to_psionics
+                                        || target_obj.promotion_abilities().is_some_and(
+                                            |abilities| {
+                                                abilities.psionics_immune(entity.veterancy.raw())
+                                            },
+                                        ),
+                                )
+                            } else {
                                 target_obj.immune_to_psionics
-                                    || target_obj.promotion_abilities().is_some_and(|abilities| {
-                                        abilities.psionics_immune(entity.veterancy.raw())
-                                    }),
-                            )
-                        } else {
-                            target_obj.immune_to_psionics
-                        },
+                            },
+                        ),
                         spawned: target_obj.spawned,
                         balloon_hover: target_obj.balloon_hover,
                         jumpjet: target_obj.jumpjet,
@@ -796,6 +811,7 @@ impl FireQuery for WorldQuery<'_, '_> {
                     obj,
                     subject.terrain(),
                     self.house_allied(subject.firer.owner(), entity.owner()),
+                    subject.world.session.binary_frame() as i32,
                     subject.rules,
                     &subject.world.interner,
                 )
@@ -959,6 +975,13 @@ impl FireQuery for WorldQuery<'_, '_> {
         self.subject
             .terrain()
             .is_some_and(|terrain| in_range::is_on_bridge_for_firing(self.subject.firer, terrain))
+    }
+
+    fn available_money(&mut self) -> i32 {
+        crate::sim::credit_income::available_money(
+            &self.subject.world.houses,
+            self.subject.firer.owner(),
+        )
     }
 
     fn can_infect(&mut self) -> bool {

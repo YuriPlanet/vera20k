@@ -486,7 +486,7 @@ fn an_empty_fighter_lets_go_heads_for_its_edge_and_idles() {
             sim.substrate.entities.insert(pad);
         }
         // After `test_default` interned the names.
-        sim.interner = crate::sim::intern::test_interner();
+        *sim.interner = crate::sim::intern::test_interner();
         let owner = sim.interner.intern("Americans");
         sim.houses
             .register(crate::sim::house_state::HouseState::new(

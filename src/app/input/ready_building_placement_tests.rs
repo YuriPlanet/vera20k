@@ -179,22 +179,28 @@ fn paid_ready_fixture_from(
         .iter()
         .map(|name| sim.cost_of(owner, rules.object(name).unwrap(), &rules))
         .sum();
-    assert!(production::enqueue_by_type(
-        &mut sim,
-        &rules,
-        "Americans",
-        "GAPOWR",
-        &mut FrameEffects::default(),
-        false,
-    ));
-    assert!(production::enqueue_by_type(
-        &mut sim,
-        &rules,
-        "Americans",
-        "GAPILL",
-        &mut FrameEffects::default(),
-        false,
-    ));
+    assert!(
+        production::enqueue_by_type(
+            &mut sim,
+            &rules,
+            "Americans",
+            "GAPOWR",
+            &mut FrameEffects::default(),
+            false,
+        )
+        .is_ok()
+    );
+    assert!(
+        production::enqueue_by_type(
+            &mut sim,
+            &rules,
+            "Americans",
+            "GAPILL",
+            &mut FrameEffects::default(),
+            false,
+        )
+        .is_ok()
+    );
     // A fixture timeout, not an expected native completion frame. Both strips
     // run their real timers and charge the same House economy during these frames.
     for _ in 0..4096 {
@@ -2399,14 +2405,17 @@ fn queued_only_cameo_right_retains_pending_and_preview_before_abandon() {
                     .any(|option| option.type_id == type_id && option.visible_in_sidebar()),
                 "the retail barracks fixture must expose {name}"
             );
-            assert!(production::enqueue_by_type(
-                &mut fixture.sim,
-                &fixture.rules,
-                "Americans",
-                name,
-                &mut FrameEffects::default(),
-                false,
-            ));
+            assert!(
+                production::enqueue_by_type(
+                    &mut fixture.sim,
+                    &fixture.rules,
+                    "Americans",
+                    name,
+                    &mut FrameEffects::default(),
+                    false,
+                )
+                .is_ok()
+            );
         }
         let engineer = fixture.sim.interner().get("ENGINEER").unwrap();
         let queue = production::queue_view_for_owner(&fixture.sim, &fixture.rules, "Americans");
@@ -3474,14 +3483,17 @@ fn same_factory_rearm_retains_the_old_cameos_factory_link_and_construction_order
         "GAPILL",
         SidebarTab::Defense
     ));
-    assert!(production::enqueue_by_type(
-        &mut fixture.sim,
-        &fixture.rules,
-        "Americans",
-        "GAPILE",
-        &mut FrameEffects::default(),
-        false,
-    ));
+    assert!(
+        production::enqueue_by_type(
+            &mut fixture.sim,
+            &fixture.rules,
+            "Americans",
+            "GAPILE",
+            &mut FrameEffects::default(),
+            false,
+        )
+        .is_ok()
+    );
     let type_id = fixture.sim.interner().get("GAPILE").unwrap();
     for _ in 0..4096 {
         if production::ready_building_entity_for_owner(&fixture.sim, &fixture.rules, owner, type_id)

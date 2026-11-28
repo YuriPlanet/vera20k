@@ -16,6 +16,7 @@ use serde::{Deserialize, Serialize};
 
 pub mod migration;
 mod object_references;
+pub(super) mod retired_driver;
 mod saved_ids;
 #[path = "snapshot/saved_local_view.rs"]
 pub mod saved_local_view;
@@ -56,8 +57,25 @@ fn snapshot_layout() -> u32 {
     #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
     {
         static LAYOUT: OnceLock<u32> = OnceLock::new();
-        *LAYOUT.get_or_init(traced_snapshot_layout)
+        *LAYOUT.get_or_init(traced_on_a_game_stack)
     }
+}
+
+/// [`traced_snapshot_layout`] on a thread of its own with the 8 MiB stack of
+/// the game's own threads. The trace runs under whichever caller first saves
+/// or loads, and it decodes a made-up snapshot through every saved type:
+/// unoptimized, its frames hold about 1.9 MiB of whole snapshots and worlds,
+/// more than a 2 MiB thread has left. A caller whose thread did not start or
+/// did not finish traces itself.
+#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+fn traced_on_a_game_stack() -> u32 {
+    std::thread::Builder::new()
+        .name("snapshot layout".into())
+        .stack_size(crate::util::GAME_STACK_BYTES)
+        .spawn(traced_snapshot_layout)
+        .ok()
+        .and_then(|trace| trace.join().ok())
+        .unwrap_or_else(traced_snapshot_layout)
 }
 
 /// [`snapshot_layout`], traced from the saved types.
@@ -334,8 +352,8 @@ where
         // gamemd reads the saved ScenarioClass Random at +0x218, then
         // immediately reseeds it. MapGen starts at Seed(0) until the live
         // process cursor, if present, is bound during player-load admission.
-        simulation.scenario_rng = crate::sim::rng::SimRng::new(0);
-        simulation.mapgen_rng = crate::sim::rng::SimRng::new(0);
+        *simulation.scenario_rng = crate::sim::rng::SimRng::new(0);
+        *simulation.mapgen_rng = crate::sim::rng::SimRng::new(0);
     }
     Ok(simulation)
 }
@@ -386,6 +404,8 @@ pub enum SnapshotError {
     MissingScenarioResources,
     #[error("save has no retained local view")]
     MissingLocalView,
+    #[error("invalid saved module projectile path")]
+    InvalidModuleProjectilePath,
     #[error("snapshot contains an invalid simulation random number cursor")]
     InvalidRandomCursor,
     #[error("snapshot map continuation does not match the saved scenario rules and authority")]
@@ -429,6 +449,8 @@ pub enum SnapshotError {
 /// Structural failures found before a deserialized simulation is admitted.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum SnapshotRestoreError {
+    #[error("a Wasm extension module in the save cannot run: {0}")]
+    ExtModule(String),
     #[error(transparent)]
     Factory(#[from] crate::sim::production::FactoryRestoreError),
     #[error(transparent)]
@@ -920,7 +942,7 @@ impl GameSnapshot {
             simulation.reconstruct_cellclass_dummy_for_map_resize();
             // InfantryLoad521A0C -> TechnoNoInit6F4335 resets the transition clock.
             simulation.restart_cloak_progress_after_player_load();
-            simulation.reconstruct_building_repair_progress_after_player_load();
+            simulation.restore_object_timers_after_player_load();
         }
         simulation.validate_ares_state_for_load(rules.ares())?;
         simulation.restore_after_snapshot_load()?;
@@ -1090,6 +1112,11 @@ impl GameSnapshot {
     /// The checks a decoded snapshot passes before anything reads it, in
     /// place: a snapshot is large, and a load passes it on by value once.
     fn validate_admitted(snapshot: &mut GameSnapshot) -> Result<(), SnapshotError> {
+        // Layout tracing deserializes synthetic fields. Validate the actual path
+        // only when admitting a current or converted player save.
+        if !snapshot.sim.ext_modules.valid_saved_projectile_paths() {
+            return Err(SnapshotError::InvalidModuleProjectilePath);
+        }
         if snapshot.tick != snapshot.sim.session.tick() {
             return Err(SnapshotError::TickMetadataMismatch {
                 header_tick: snapshot.tick,

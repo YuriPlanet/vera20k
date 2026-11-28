@@ -3,10 +3,18 @@
 //! with their voice and action-line policies.
 
 use super::{ORDINARY_SELECTION_VOICE_POLICY, SelectionActionLinePolicy, SelectionVoicePolicy};
-use crate::app::AppState;
+use crate::app::PlatformState;
+use crate::app::diagnostics::state::DiagnosticsState;
+use crate::app::frontend::state::FrontendState;
 use crate::app::input::commands::{preferred_local_owner, schedule_command};
 use crate::app::input::entity_pick::SelectionMutation;
+use crate::app::input::state::MatchInputState;
 use crate::app::match_runtime::sim_host::SimWrite;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
+use crate::audio::sfx::SfxPlayer;
 use crate::sim::command::Command;
 use std::collections::{HashSet, VecDeque};
 
@@ -65,47 +73,46 @@ impl KeyModifiers {
     }
 }
 
-pub(crate) fn is_shift_held(state: &AppState) -> bool {
-    state.match_state.input.hotkey_modifiers.shift_key()
+pub(crate) fn is_shift_held(input: &MatchInputState) -> bool {
+    input.hotkey_modifiers.shift_key()
 }
 
-pub(crate) fn is_ctrl_held(state: &AppState) -> bool {
-    state.match_state.input.hotkey_modifiers.control_key()
+pub(crate) fn is_ctrl_held(input: &MatchInputState) -> bool {
+    input.hotkey_modifiers.control_key()
 }
 
 /// Return `true` if either Alt key is currently held.
 ///
 /// Used in order resolution to detect Alt+Ctrl = attack-move (NOT force-fire),
 /// matching gamemd's `What_Action_OnCell` Alt-overrides-Ctrl rule.
-pub(crate) fn is_alt_held(state: &AppState) -> bool {
-    state.match_state.input.hotkey_modifiers.alt_key()
+pub(crate) fn is_alt_held(input: &MatchInputState) -> bool {
+    input.hotkey_modifiers.alt_key()
 }
 
-/// [`selected_stable_ids_in_order`] of `state`'s world and ledger. That walks
+/// [`selected_stable_ids_in_order`] of the match's world and ledger. That walks
 /// every object, so a draw reads this once and hands it to its consumers, and
 /// while the ledger stands as the frame's reconciliation left it
 /// ([`CommittedSelection`]) the ledger is the answer and nothing is walked.
-pub(crate) fn selected_in_order(state: &AppState) -> Vec<u64> {
-    let input = &state.match_state.input;
-    let sim = state
-        .match_state
-        .sim_runtime
-        .runtime()
-        .map(|rt| &rt.simulation);
+pub(crate) fn selected_in_order(frontend: &FrontendState, match_state: &MatchState) -> Vec<u64> {
+    let input = &match_state.input;
+    let sim = match_state.sim_runtime.runtime().map(|rt| &rt.simulation);
     let read = || {
         selected_stable_ids_in_order(
             sim,
-            state.rules(),
+            crate::app::state::active_rules(frontend, match_state),
             &input.selection_order,
             input.selection_order_pending,
         )
     };
     if let Some(sim) = sim
         && !input.selection_order_pending
-        && input
-            .selection_committed
-            .as_ref()
-            .is_some_and(|committed| committed.holds(sim, state.rules(), &input.selection_order))
+        && input.selection_committed.as_ref().is_some_and(|committed| {
+            committed.holds(
+                sim,
+                crate::app::state::active_rules(frontend, match_state),
+                &input.selection_order,
+            )
+        })
     {
         debug_assert!(
             !crate::sim::live_read_check_enabled() || input.selection_order == read(),
@@ -243,9 +250,13 @@ fn admit_missing_selected_ids(
     let mut members: HashSet<_> = ordered.iter().copied().collect();
     let mut ordered = VecDeque::from(ordered);
     admit_logic_selects(&mut ordered, &mut members, sim, rules, logic_selects, true);
-    for entity in sim.entities().values() {
-        if entity.seldom.selection.is_selected() && members.insert(entity.stable_id()) {
-            insert_selected_id(&mut ordered, entity.stable_id(), sim, rules);
+    // The pool finds the few selected objects among the many, in store order.
+    let selected = sim
+        .entities()
+        .par_filter_map(|id, entity| entity.seldom.selection.is_selected().then_some(id));
+    for id in selected {
+        if members.insert(id) {
+            insert_selected_id(&mut ordered, id, sim, rules);
         }
     }
     ordered.into()
@@ -271,21 +282,21 @@ pub(super) fn selection_membership_committed(
 /// removals have committed for this frame. `outputs` are the frame's
 /// lifecycle facts, whose logic Selects enter in call order.
 pub(crate) fn reconcile_selection_order_after_sim(
-    state: &mut AppState,
+    match_state: &mut MatchState,
     outputs: &[crate::sim::world::LifecycleOutput],
 ) {
-    let Some(runtime) = state.match_state.sim_runtime.runtime() else {
-        state.match_state.input.selection_order.clear();
-        state.match_state.input.selection_order_pending = false;
-        state.match_state.input.category_navigation = Default::default();
+    let Some(runtime) = match_state.sim_runtime.runtime() else {
+        match_state.input.selection_order.clear();
+        match_state.input.selection_order_pending = false;
+        match_state.input.category_navigation = Default::default();
         // RESIDUAL: native keeps the scope byte B0FE64 from one scenario
         // into the next; a new VERA match starts with an on-screen scope.
-        state.match_state.input.type_select.reset_scope();
+        match_state.input.type_select.reset_scope();
         return;
     };
     let selected = logic_selects(outputs);
     reconcile_selection_order_for_sim(
-        &mut state.match_state.input,
+        &mut match_state.input,
         &runtime.simulation,
         Some(&runtime.resources.rules),
         &selected,
@@ -293,9 +304,9 @@ pub(crate) fn reconcile_selection_order_after_sim(
     // Phobos "Flashing Technos on selecting" sits in ObjectClass::Select
     // (`0x005F46AE`/`0x005F4718`), so the frame's logic Selects flash too.
     #[cfg(feature = "phobos")]
-    if state.match_state.match_presentation.show_flash_on_selecting
+    if match_state.match_presentation.show_flash_on_selecting
         && !selected.is_empty()
-        && let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Command)
+        && let Some(runtime) = match_state.sim_runtime.write_sim(SimWrite::Command)
     {
         runtime
             .simulation
@@ -386,26 +397,28 @@ pub(crate) fn selection_order_for_world(
 }
 
 pub(super) fn apply_selection_mutation(
-    state: &mut AppState,
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
     mutation: SelectionMutation,
     voice_policy: SelectionVoicePolicy,
 ) -> bool {
     if !mutation.clear && mutation.deselect.is_empty() && mutation.select.is_empty() {
         return false;
     }
-    let Some(sim) = state
-        .match_state
-        .sim_runtime
-        .runtime()
-        .map(|rt| &rt.simulation)
-    else {
+    let Some(sim) = match_state.sim_runtime.runtime().map(|rt| &rt.simulation) else {
         return false;
     };
     let current = selected_stable_ids_in_order(
         Some(sim),
-        state.rules(),
-        &state.match_state.input.selection_order,
-        state.match_state.input.selection_order_pending,
+        crate::app::state::active_rules(frontend, match_state),
+        &match_state.input.selection_order,
+        match_state.input.selection_order_pending,
     );
     let SelectionMutationEffects {
         ordered,
@@ -417,23 +430,23 @@ pub(super) fn apply_selection_mutation(
         unselected_all,
     } = resolve_selection_mutation(
         sim,
-        state.rules(),
+        crate::app::state::active_rules(frontend, match_state),
         current,
-        state.match_state.input.follow_target,
-        state.armed_building_type().is_some(),
-        state.match_state.input.planning.active(),
+        match_state.input.follow_target,
+        match_state.input.armed_building_type().is_some(),
+        match_state.input.planning.active(),
         &mutation,
     );
-    state.match_state.input.follow_target = follow_target;
+    match_state.input.follow_target = follow_target;
     // Phobos "Flashing Technos on selecting": the client switch gates the
     // `[AudioVisual] SelectionFlashDuration` the sim's flash owner reads.
     // ObjectClass_Select flashes each newly selected Techno the current player
     // controls (0x005F46AE/0x005F4718); an already-selected object makes no
     // Select call and therefore no flash.
     #[cfg(feature = "phobos")]
-    if state.match_state.match_presentation.show_flash_on_selecting
+    if match_state.match_presentation.show_flash_on_selecting
         && !successful_adds.is_empty()
-        && let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Command)
+        && let Some(runtime) = match_state.sim_runtime.write_sim(SimWrite::Command)
     {
         runtime
             .simulation
@@ -441,38 +454,40 @@ pub(super) fn apply_selection_mutation(
     }
     if unselected_all {
         // Unselect_All's tail, BeaconManager ClearSelection (0x0048DCB8).
-        state
-            .match_state
-            .match_presentation
-            .beacons
-            .clear_selection();
+        match_state.match_presentation.beacons.clear_selection();
     }
 
     // Select and Unselect_All reset only the selection mode (0x00731D00);
     // nothing but the T and P keys writes the map-scope byte B0FE64.
     if native_selection_mode_reset {
-        state
-            .match_state
+        match_state
             .input
             .type_select
             .note_successful_selection_mutation(false);
     }
     for id in selection_voice_recipients(
         voice_policy,
-        state.match_state.input.selection_voice_enabled,
+        match_state.input.selection_voice_enabled,
         &successful_adds,
         first_select_adds,
         first_attempt_added,
     ) {
-        emit_selection_voice(state, *id);
+        emit_selection_voice(match_state, *id);
     }
-    state.match_state.input.selection_order = ordered.clone();
-    state.match_state.input.selection_order_pending = true;
-    let Some(owner) = preferred_local_owner(state) else {
+    match_state.input.selection_order = ordered.clone();
+    match_state.input.selection_order_pending = true;
+    let Some(owner) = preferred_local_owner(match_state) else {
         return true;
     };
     schedule_command(
-        state,
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        sfx_player,
+        persistence,
         &owner,
         Command::Select {
             entity_ids: ordered,
@@ -675,13 +690,27 @@ pub(super) fn selection_voice_recipients(
     }
 }
 
-pub(super) fn queue_selection_snapshot_command(
-    state: &mut AppState,
+pub(crate) fn queue_selection_snapshot_command(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
     selected_ids: Vec<u64>,
     additive: bool,
 ) {
     apply_selection_mutation(
-        state,
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        sfx_player,
+        persistence,
         SelectionMutation {
             clear: !additive,
             select: selected_ids,
@@ -698,11 +727,10 @@ pub(super) fn queue_selection_snapshot_command(
 /// flash their current orders for the 25-frame window. TypeSelect tap preserves
 /// the prior timer instead.
 pub(super) fn apply_selection_action_line_policy(
-    state: &mut AppState,
+    match_state: &mut MatchState,
     policy: SelectionActionLinePolicy,
 ) {
-    let Some(frame) = state
-        .match_state
+    let Some(frame) = match_state
         .sim_runtime
         .runtime()
         .map(|rt| &rt.simulation)
@@ -711,7 +739,7 @@ pub(super) fn apply_selection_action_line_policy(
         return;
     };
     apply_selection_action_line_policy_at_frame(
-        &mut state.match_state.match_presentation.target_lines,
+        &mut match_state.match_presentation.target_lines,
         frame,
         policy,
     );
@@ -728,16 +756,16 @@ pub(super) fn apply_selection_action_line_policy_at_frame(
 }
 
 /// Emit the modeled VoiceSelect side effect for one successful Select call.
-fn emit_selection_voice(state: &mut AppState, entity_id: u64) {
-    let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Command) else {
+fn emit_selection_voice(match_state: &mut MatchState, entity_id: u64) {
+    let Some(runtime) = match_state.sim_runtime.write_sim(SimWrite::Command) else {
         return;
     };
     if let Some(event) = crate::app::match_runtime::sound_dispatch::selection_voice_event(
         &mut runtime.simulation,
         &runtime.resources.rules,
         entity_id,
-        state.match_state.input.selection_voice_enabled,
+        match_state.input.selection_voice_enabled,
     ) {
-        state.match_state.match_audio.sound_events.push(event);
+        match_state.match_audio.sound_events.push(event);
     }
 }

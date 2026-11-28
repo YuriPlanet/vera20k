@@ -24,7 +24,7 @@ fn gsi_04_07_wall_sell_raw_lockstep_replay_converges_with_semantic_execution() {
             .set_player_control_for_test(true);
         let mut grid = crate::sim::overlay_grid::OverlayGrid::new(3, 3);
         grid.place_owned_wall(1, 1, 2, 0, wall_owner);
-        sim.overlay_grid = Some(grid);
+        *sim.overlay_grid = Some(grid);
         (sim, rules, overlays, receiver)
     }
 
@@ -114,15 +114,14 @@ fn wall_sale_respects_the_admitted_player_control_rule_in_skirmish() {
     let (wall_owner, receiver) = gsi_04_07_wall_sell_seed_houses(&mut sim);
     let mut grid = crate::sim::overlay_grid::OverlayGrid::new(3, 3);
     grid.place_owned_wall(1, 1, 2, 0, wall_owner);
-    sim.overlay_grid = Some(grid);
+    *sim.overlay_grid = Some(grid);
 
     let mode = ScenarioGameMode::Skirmish;
     let stock = mode.stock_rule_policy(None);
     sim.install_session_admission(mode, None, stock);
     let sell = |sim: &mut Simulation| {
-        let receiver_name = sim.interner.resolve(receiver).to_owned();
         sim.sell_wall_at_cell(
-            &receiver_name,
+            receiver.into(),
             None,
             1,
             1,
@@ -158,14 +157,14 @@ fn gsi_04_07_wall_sell_raw_signed_linear_coordinates_use_canonical_cell() {
             .decode_native_command_record(&record, sim.session.tick())
             .expect("registered receiver decodes");
         let receiver = sim.interner.resolve(envelope.owner).to_string();
-        sim.apply_command_with_overlays(
-            None,
+        (sim.apply_command_with_overlays(
+            crate::sim::command::CommandSender::Player(None),
             &receiver,
             &envelope.payload,
             rules,
             Some(overlays),
             &mut crate::sim::world::FrameEffects::default(),
-        )
+        )).is_ok()
     }
 
     let (rules, overlays) = gsi_04_07_wall_sell_rules(false, false);
@@ -175,7 +174,7 @@ fn gsi_04_07_wall_sell_raw_signed_linear_coordinates_use_canonical_cell() {
     for cell in [(1, 1), (511, 0), (0, 0), (2, 1)] {
         grid.place_owned_wall(cell.0, cell.1, 2, 0, wall_owner);
     }
-    sim.overlay_grid = Some(grid);
+    *sim.overlay_grid = Some(grid);
 
     assert!(apply_raw(&mut sim, &rules, &overlays, 513, 0));
     assert_eq!(

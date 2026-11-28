@@ -10,34 +10,45 @@
 //! and answers a balance with each one's team (`wol::balance_teams`).
 
 use super::*;
+use crate::app::frontend::state::FrontendState;
 use crate::app::match_runtime::session::{MatchSession, SeatPick};
+use crate::app::match_runtime::state::MatchState;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::shell_network_setup::NetworkSetupProtocol;
 use crate::skirmish_launch::{
     LaunchStartPosition, LaunchTeam, NETWORK_PLAYER_SLOT_COUNT, SkirmishLaunchSession,
 };
+use crate::util::config::GameConfig;
 
 /// The host sets the room's Teams, Off or a count, and the options carry it.
-pub(super) fn set_teams(state: &mut AppState, teams: Option<u8>) -> anyhow::Result<()> {
-    state.match_state.session.set_network_teams(teams)?;
-    actions::queue(state, NetworkSetupRequest::PublishOptions);
+pub(super) fn set_teams(
+    protocol: &mut Option<NetworkSetupProtocol>,
+    session: &mut MatchSession,
+    teams: Option<u8>,
+) -> anyhow::Result<()> {
+    session.set_network_teams(teams)?;
+    actions::queue(protocol, NetworkSetupRequest::PublishOptions);
     Ok(())
 }
 
 /// Only a lobby known to predate watching may need a room rule omitted.
-pub(crate) fn lobby_refused_option(state: &mut AppState) -> Option<&'static str> {
-    let lobby_watches = crate::app::shell_wol::lobby_watches(state);
+pub(crate) fn lobby_refused_option(
+    frontend: &mut FrontendState,
+    session: &mut MatchSession,
+) -> Option<&'static str> {
+    let lobby_watches = crate::app::shell_wol::lobby_watches(frontend.wol.as_ref());
     if lobby_watches == Some(false)
-        && super::maps::generated_selection(&state.match_state.session)
-        && state
-            .frontend
-            .multiplayer_shell_runtime
-            .start_staging()
-            .count
+        && super::maps::generated_selection(session)
+        && frontend.multiplayer_shell_runtime.start_staging().count
             > crate::map::preview::NATIVE_START_STAGING_SLOTS as i32
     {
         return Some("VERA:BigRandomMapNotTaken");
     }
-    let line = refused_room_rule(&mut state.match_state.session, lobby_watches)?;
-    actions::queue(state, NetworkSetupRequest::PublishOptions);
+    let line = refused_room_rule(session, lobby_watches)?;
+    actions::queue(
+        &mut frontend.network_setup_protocol,
+        NetworkSetupRequest::PublishOptions,
+    );
     Some(line)
 }
 
@@ -45,9 +56,12 @@ pub(crate) fn lobby_refused_option(state: &mut AppState) -> Option<&'static str>
 /// that carry it, whether or not it lists matches: the host turns the queue
 /// off and sends its options again. `None` when the refused options did not
 /// carry it, so the refusal stands.
-pub(crate) fn lobby_refused_building_queue(state: &mut AppState) -> Option<&'static str> {
-    let line = refused_building_queue(&mut state.match_state.session)?;
-    actions::queue(state, NetworkSetupRequest::PublishOptions);
+pub(crate) fn lobby_refused_building_queue(
+    protocol: &mut Option<NetworkSetupProtocol>,
+    session: &mut MatchSession,
+) -> Option<&'static str> {
+    let line = refused_building_queue(session)?;
+    actions::queue(protocol, NetworkSetupRequest::PublishOptions);
     Some(line)
 }
 
@@ -95,8 +109,8 @@ fn refused_room_rule(
 
 /// The host's Balance Teams in Quick Team Setup, online: `/balance` in the
 /// room's chat, as if typed.
-pub(super) fn balance(state: &mut AppState) {
-    actions::queue(state, NetworkSetupRequest::Balance);
+pub(super) fn balance(protocol: &mut Option<NetworkSetupProtocol>) {
+    actions::queue(protocol, NetworkSetupRequest::Balance);
 }
 
 /// Team Starts in a room with Teams set: each player's start by team, on
@@ -106,20 +120,24 @@ pub(super) fn balance(state: &mut AppState) {
 /// item gives everyone one. Where the room seats more players than the
 /// map has starts, a team's people share its bases ([`shared_bases`]) and
 /// everyone gets one. Returns whether it gave any out.
-pub(super) fn team_starts(state: &mut AppState, keep_picks: bool) -> anyhow::Result<bool> {
-    if state.match_state.session.network_teams().is_none() {
+pub(super) fn team_starts(
+    game_config: Option<&GameConfig>,
+    frontend: &FrontendState,
+    session: &mut MatchSession,
+    process_assets: &mut ProcessAssets,
+    keep_picks: bool,
+) -> anyhow::Result<bool> {
+    if session.network_teams().is_none() {
         return Ok(false);
     }
-    let Some(map) = view::local_map_index(state) else {
+    let Some(map) = view::local_map_index(frontend, session) else {
         return Ok(false);
     };
-    let starts = App::map_start_cells(state, map);
+    let starts = App::map_start_cells(frontend, map);
     if starts.len() < 2 {
         return Ok(false);
     }
-    let launch = state
-        .match_state
-        .session
+    let launch = session
         .network_setup()
         .ok_or_else(|| anyhow::anyhow!("no setup"))?;
     let all = seats(launch);
@@ -132,7 +150,7 @@ pub(super) fn team_starts(state: &mut AppState, keep_picks: bool) -> anyhow::Res
                 held == start && (other != team || team == LaunchTeam::None)
             })
     });
-    let keep_picks = keep_picks && !(mixed && state.match_state.session.network_shares_bases());
+    let keep_picks = keep_picks && !(mixed && session.network_shares_bases());
     // A pick Team Starts cannot place stays out of its seating.
     let seats: Vec<(u8, LaunchTeam, LaunchStartPosition)> = all
         .into_iter()
@@ -157,14 +175,19 @@ pub(super) fn team_starts(state: &mut AppState, keep_picks: bool) -> anyhow::Res
         .iter()
         .map(|&(_, team, _)| team.shell_value())
         .collect();
-    let session = &state.match_state.session;
     let bases = starts
         .len()
         .min(session.network_setup_capacity().unwrap_or(0).max(0) as usize);
     let shared = (session.network_shares_bases() && seats.len() > bases)
         .then(|| shared_bases(&teams, bases))
         .flatten();
-    let drive = App::map_drive_distances(state, map, &starts);
+    let drive = App::map_drive_distances(
+        game_config,
+        &frontend.scenario_catalog,
+        process_assets,
+        map,
+        &starts,
+    );
     let given = if let Some((base_of, base_teams)) = shared {
         let free = vec![None; base_teams.len()];
         let given = crate::ui::skirmish_shell::starts_by_team(
@@ -186,7 +209,7 @@ pub(super) fn team_starts(state: &mut AppState, keep_picks: bool) -> anyhow::Res
             (row, SeatPick::Start(start))
         })
         .collect();
-    state.match_state.session.set_network_seat_picks(&picks)?;
+    session.set_network_seat_picks(&picks)?;
     Ok(true)
 }
 
@@ -310,16 +333,18 @@ pub(super) fn seats(launch: &SkirmishLaunchSession) -> Vec<(u8, LaunchTeam, Laun
 /// team ([`crate::ui::team_tools::colors_by_team`]), from the room's colour
 /// list and the loaded rules' `[Colors]`. Players can still change theirs.
 /// Returns whether it gave any out.
-pub(super) fn team_colors(state: &mut AppState) -> anyhow::Result<bool> {
-    let Some(count) = state.match_state.session.network_teams() else {
+pub(super) fn team_colors(
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+) -> anyhow::Result<bool> {
+    let Some(count) = match_state.session.network_teams() else {
         return Ok(false);
     };
-    let Some(rules) = state.rules() else {
+    let Some(rules) = crate::app::state::active_rules(frontend, match_state) else {
         return Ok(false);
     };
     let listed = crate::ui::team_tools::listed_hues(rules);
-    let launch = state
-        .match_state
+    let launch = match_state
         .session
         .network_setup()
         .ok_or_else(|| anyhow::anyhow!("no setup"))?;
@@ -342,7 +367,7 @@ pub(super) fn team_colors(state: &mut AppState) -> anyhow::Result<bool> {
     if picks.is_empty() {
         return Ok(false);
     }
-    state.match_state.session.set_network_seat_picks(&picks)?;
+    match_state.session.set_network_seat_picks(&picks)?;
     Ok(true)
 }
 

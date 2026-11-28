@@ -18,6 +18,31 @@ use crate::sim::movement::{DriveLocomotionRuntime, ShipLocomotionRuntime};
 use crate::sim::movement::{FacingClass, SpeedRules};
 use crate::util::fixed_math::{SIM_ZERO, SimFixed};
 
+/// The world's body-frame tick: the predicate answers, then the counter
+/// advances on that answer.
+fn tick_body_frame(
+    entity: &mut GameEntity,
+    rules: SpeedRules<'_>,
+    cadence: FootBodyCadence,
+    hover_attack: bool,
+    deploy_to_land: bool,
+    air_rate: i32,
+    terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
+    binary_frame: u32,
+) {
+    let due = foot_body_frame_due(
+        entity,
+        rules,
+        cadence,
+        hover_attack,
+        deploy_to_land,
+        air_rate,
+        terrain,
+        binary_frame,
+    );
+    tick_foot_body_frame_counter(entity, due);
+}
+
 /// Helper: create a SequenceDef for tests.
 fn test_def(
     start_frame: u16,
@@ -205,8 +230,8 @@ impl Gsi1306Speed {
         }
         Self {
             rules: RuleSet::from_ini(&IniFile::from_str(
-                "[VehicleTypes]\n0=DLPH\n1=SQD\n2=DRON\n\
-                 [DLPH]\nSpeed=8\n[SQD]\nSpeed=8\n[DRON]\nSpeed=10\n",
+                "[VehicleTypes]\n0=DLPH\n1=SQD\n2=DRON\n3=MIXED\n\
+                 [DLPH]\nSpeed=8\n[SQD]\nSpeed=8\n[DRON]\nSpeed=10\n[MIXED]\nSpeed=10\n",
             ))
             .expect("SHP fixture rules"),
             interner: crate::sim::intern::test_interner(),
@@ -217,6 +242,43 @@ impl Gsi1306Speed {
     fn rules(&self) -> SpeedRules<'_> {
         SpeedRules::new(&self.rules, &self.interner, &self.houses)
     }
+}
+
+#[test]
+fn body_cadence_skips_the_speed_lookup_between_ticks() {
+    let mut speed = Gsi1306Speed::new();
+    crate::sim::intern::test_intern("mixed");
+    speed.interner = crate::sim::intern::test_interner();
+    let mut entity = gsi_13_06_active_shp_unit("mixed", LocomotorKind::Drive);
+    entity.body_facing = FacingClass::new(0, 0);
+    let cadence = FootBodyCadence {
+        walk_rate: 3,
+        idle_rate: 4,
+    };
+    let before = RuleSet::name_key_copies();
+    assert!(!foot_body_frame_due(
+        &entity,
+        speed.rules(),
+        cadence,
+        false,
+        false,
+        0,
+        None,
+        1,
+    ));
+    assert_eq!(RuleSet::name_key_copies(), before);
+
+    assert!(foot_body_frame_due(
+        &entity,
+        speed.rules(),
+        cadence,
+        false,
+        false,
+        0,
+        None,
+        3,
+    ));
+    assert_eq!(RuleSet::name_key_copies(), before + 1);
 }
 
 #[test]
@@ -259,7 +321,7 @@ fn gsi_13_06_counter_suppressions_hold_the_persistent_value() {
 
     for (name, mut entity) in variants {
         entity.body_frame_counter.set_for_test(17);
-        tick_foot_body_frame_counter(
+        tick_body_frame(
             &mut entity,
             speed.rules(),
             cadence,
@@ -292,7 +354,7 @@ fn gsi_13_06_positive_fraction_below_get_current_speed_threshold_is_idle() {
             !crate::sim::movement::motion_query::is_moving_now(&entity, speed.rules(), 1),
             "{name} slot +0x80 requires truncated GetCurrentSpeed > 0"
         );
-        tick_foot_body_frame_counter(
+        tick_body_frame(
             &mut entity,
             speed.rules(),
             FootBodyCadence {
@@ -1742,7 +1804,7 @@ fn unit_body_counter_matches_original_foot_cadence() {
                     1,
                 )));
             }
-            tick_foot_body_frame_counter(
+            tick_body_frame(
                 &mut entity,
                 speed.rules(),
                 FootBodyCadence {
@@ -1854,7 +1916,7 @@ fn foot_body_counter_matches_original_concrete_classes() {
                 1,
             )));
         }
-        tick_foot_body_frame_counter(
+        tick_body_frame(
             &mut entity,
             speed.rules(),
             FootBodyCadence {
@@ -1896,7 +1958,7 @@ fn ares_air_rate_alone_steps_an_airborne_foot() {
     entity.position.set_exact_z_leptons_for_test(Some(300));
     entity.body_frame_counter.set_for_test(0);
     for frame in 1..=6 {
-        tick_foot_body_frame_counter(
+        tick_body_frame(
             &mut entity,
             speed.rules(),
             cadence,
@@ -1910,7 +1972,7 @@ fn ares_air_rate_alone_steps_an_airborne_foot() {
     assert_eq!(entity.body_frame_counter.get(), 2);
     entity.position.set_exact_z_leptons_for_test(Some(0));
     for frame in 7..=8 {
-        tick_foot_body_frame_counter(
+        tick_body_frame(
             &mut entity,
             speed.rules(),
             cadence,

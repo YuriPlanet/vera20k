@@ -35,13 +35,28 @@ impl Simulation {
         rules: &RuleSet,
         effects: &mut FrameEffects<'_>,
     ) -> Result<i32, String> {
-        let deployed = self
+        let entity = self
             .substrate
             .entities
             .get(id)
-            .ok_or("simple deploy receiver retired")?
-            .is_fully_deployed();
-        self.update_unit_simple_deploy(id, !deployed, rules, effects)?;
+            .ok_or("simple deploy receiver retired")?;
+        let deployed = entity.is_fully_deployed();
+        // Wasm module `DeployAllowed` (veto) before a deploy begins
+        // (`ext_modules::control`): refused, nothing starts and the Unload
+        // takes Guard below as a finished one does.
+        let starting = !deployed && !entity.unit_deploying() && !entity.landing_for_deploy();
+        if !(starting && !self.module_allows_deploy(rules, id)) {
+            self.update_unit_simple_deploy(id, !deployed, rules, effects)?;
+        }
+        // Wasm module `Deployed` once the updater finished either way.
+        if self
+            .substrate
+            .entities
+            .get(id)
+            .is_some_and(|entity| entity.is_fully_deployed() != deployed)
+        {
+            self.raise_module_deployed(rules, effects, id, None, !deployed);
+        }
         // Ares 3.0 UnitClass_Mi_Unload_SimpleDeployer (1004C070, hook
         // 0x73DE90), past the updater: a deployed (6E0) unit whose type has
         // `Convert.Deploy` converts in place (TechnoExt::ConvertToType
@@ -137,7 +152,7 @@ impl Simulation {
             return Ok(());
         }
         let deploy_to_land = object.deploy_to_land;
-        let configured_anim = object.deploying_anim.clone();
+        let configured_anim = object.deploying_anim.as_deref();
         let object_has_deploying_anim = configured_anim.is_some();
         let active = if deploying {
             leaf.deploy_begin_active()
@@ -211,7 +226,7 @@ impl Simulation {
                 let anim_id = if let Some(anim_id) = retained {
                     anim_id
                 } else {
-                    self.start_unit_deploy_anim(id, &name, !deploying, rules)?
+                    self.start_unit_deploy_anim(id, name, !deploying, rules)?
                 };
                 let anim = self
                     .anim(anim_id)

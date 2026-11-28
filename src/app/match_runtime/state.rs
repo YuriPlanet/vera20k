@@ -94,6 +94,11 @@ pub(crate) struct MatchState {
     /// The debug pause (`J` hotkey): the simulation is frozen
     /// without an in-scenario modal. Every modal transition ends it.
     pub(crate) debug_pause: bool,
+    /// The match's client extension modules (`ui.wasm`, RFC 0001 section
+    /// 10) and their nodes; `None` for a match without any, which then
+    /// pays nothing for them. Built when the world is installed, dropped
+    /// with it ([`crate::app::ui_modules`]).
+    pub(crate) ui_modules: Option<crate::app::ui_modules::UiModules>,
 }
 
 impl MatchState {
@@ -202,14 +207,80 @@ impl MatchState {
             .and_then(|runtime| scenario_local_owner(&runtime.simulation))
     }
 
-    /// Bring VERA's relation colours up to date with the world, as the local
-    /// house sees it.
+    /// Immutable view of the running simulation (F10): the read boundary
+    /// presentation cones consume. `None` outside a match. Sites that also
+    /// hold `&mut` match parts keep the `sim_runtime` field chain and call
+    /// `rt.view()` directly for split borrows.
+    pub(crate) fn sim_view(&self) -> Option<crate::sim::runtime::SimView<'_>> {
+        self.sim_runtime.runtime().map(|rt| rt.view())
+    }
+
+    /// Current terrain authority, replaced together with the running world on
+    /// map load and restore. No presentation height projection is retained.
+    pub(crate) fn resolved_terrain(
+        &self,
+    ) -> Option<&crate::map::resolved_terrain::ResolvedTerrainGrid> {
+        self.sim_runtime.runtime()?.simulation.resolved_terrain()
+    }
+
+    /// The immutable base resolved-terrain template for the active match
+    /// (static rendering + restore); never the live sim grid.
+    pub(crate) fn terrain_template(
+        &self,
+    ) -> Option<&crate::map::resolved_terrain::ResolvedTerrainGrid> {
+        self.sim_runtime
+            .runtime()
+            .and_then(|rt| rt.resources.terrain_template.as_ref())
+    }
+
+    /// Bring VERA's colour override up to date with the world, as the local
+    /// house sees it: the relation bands (Alt+A) or the team bands (Alt+T),
+    /// whichever toggle is on.
     pub(crate) fn refresh_relation_colors(&mut self) {
-        if let Some(runtime) = self.sim_runtime.runtime() {
-            let sim = &runtime.simulation;
-            self.match_presentation
-                .rebuild_relation_color_map(sim, scenario_local_owner(sim));
+        // Teams are the match's REAL launch teams and never change, while the
+        // alliance graph does; cache them the first time a team-colour view
+        // asks, and never rebuild per frame.
+        if self.match_presentation.team_colors && self.match_presentation.team_by_owner.is_none() {
+            let teams = self.launch_teams_by_owner();
+            self.match_presentation.team_by_owner = Some(teams);
         }
+        let Some(runtime) = self.sim_runtime.runtime() else {
+            return;
+        };
+        let sim = &runtime.simulation;
+        let map = self.match_presentation.colour_override(
+            sim,
+            scenario_local_owner(sim),
+            self.match_presentation.team_by_owner.as_ref(),
+            &runtime.resources.rules.enemy_team_palette,
+        );
+        self.match_presentation.set_colour_override(map);
+    }
+
+    /// Each launched House's real team, keyed by its owner name in upper case.
+    /// `normalized_launch_slots`' `owner_name` is exactly the name the sim
+    /// interner registered for that house. An observer's seat carries no team:
+    /// it has no side to colour.
+    fn launch_teams_by_owner(&self) -> std::collections::HashMap<String, Option<u8>> {
+        let launch = self
+            .session
+            .network_setup()
+            .or_else(|| self.startup.offline_launch());
+        let mut teams = std::collections::HashMap::new();
+        let Some(launch) = launch else {
+            return teams;
+        };
+        for slot in crate::sim::scenario_bootstrap::normalized_launch_slots(launch) {
+            let team = match slot.team() {
+                crate::skirmish_launch::LaunchTeam::Team(team) => Some(team),
+                crate::skirmish_launch::LaunchTeam::None => None,
+            };
+            teams.insert(
+                slot.owner_name.to_ascii_uppercase(),
+                if slot.observer { None } else { team },
+            );
+        }
+        teams
     }
 }
 

@@ -168,14 +168,22 @@ impl Simulation {
         ) else {
             return ControlFlow::Continue(Some(dock));
         };
-        let in_contact = !aircraft.seldom.radio_contacts.is_empty();
-        let has_slot = target.seldom.radio_contacts.has_free_or(id);
-        let holds_aircraft = target.seldom.radio_contacts.contains(id);
         let archive = |sim: &mut Self, target: Option<NavTargetRef>| {
             if let Some(entity) = sim.substrate.entities.get_mut(id) {
                 entity.set_archive_target(target.map(TargetKind::from));
             }
         };
+        // VERA defers ordinary death cleanup. A zero-health aircraft refuses
+        // HELLO (RadioClass::Receive_Message, 0x0065A8B2), so MOVE_HERE would
+        // re-enter this setter (FootClass, 0x004D91E1) without forming a link.
+        // Keep the dock destination for the Foot setter and skip the handshake.
+        if !aircraft.is_alive() {
+            archive(self, Some(dock));
+            return ControlFlow::Continue(Some(dock));
+        }
+        let in_contact = !aircraft.seldom.radio_contacts.is_empty();
+        let has_slot = target.seldom.radio_contacts.has_free_or(id);
+        let holds_aircraft = target.seldom.radio_contacts.contains(id);
         if in_contact {
             if !has_slot {
                 archive(self, Some(dock));
@@ -277,7 +285,8 @@ impl Simulation {
         if repair {
             // `0x0041ABC4`.
             if let Some(entity) = self.substrate.entities.get_mut(id) {
-                entity.pending_entry.install(building);
+                let note = entity.note_names();
+                entity.pending_entry.install(building, note);
             }
             destination = None;
         }
@@ -392,7 +401,7 @@ impl Simulation {
         edge: super::edge_cell::Edge,
     ) -> Option<(u16, u16)> {
         super::edge_cell::find_paradrop_edge_cell(
-            self.playfield_bounds,
+            *self.playfield_bounds,
             self.resolved_terrain.as_ref(),
             edge,
             &mut self.scenario_rng,
@@ -757,7 +766,7 @@ impl Simulation {
         }
         let location = ground_pose::position_world_coord(&entity.position);
         let mut cell = ((location.x / 256) as i16, (location.y / 256) as i16);
-        if let Some(bounds) = self.playfield_bounds
+        if let Some(bounds) = *self.playfield_bounds
             && !entity.is_mission_only()
             && !crate::sim::cell_rect::cell_is_in_playfield_height_aware(
                 (i32::from(cell.0), i32::from(cell.1)),

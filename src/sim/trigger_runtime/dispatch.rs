@@ -145,9 +145,10 @@ impl Simulation {
         self.publish_trigger_effects(effects);
     }
 
-    /// Retail gamemd.exe: TeamClass::Recalc6EA49F..6EA4D2 walks the Tag
-    /// array backwards; TeamClass::AI6E92D0..6E9320 walks forwards and
+    /// Retail gamemd.exe: TeamClass::Recalc6EA49F..6EA4D2 walks the Logic Tag
+    /// list (items 8B40CC, count 8B40D8) backwards; TeamClass::AI walks forwards and
     /// revisits the slot after a successful raise (6E9312). Both broadcast
+    /// to Logic Tags only (game.exe 6B8C6F/6B7C6E: items 866164, count 866170),
     /// before destroying the empty leaving Team. No own RNG draws, timers
     /// or detach: ordinary Register/Reset/actions own those effects.
     ///
@@ -165,11 +166,11 @@ impl Simulation {
     ) {
         let mut ordinal = match order {
             TeamTagOrder::Forward => Some(0),
-            TeamTagOrder::Reverse => self.trigger_runtime.tag_order.len().checked_sub(1),
+            TeamTagOrder::Reverse => self.trigger_runtime.logic_tags.len().checked_sub(1),
         };
         let mut effects = Vec::new();
         while let Some(slot) = ordinal {
-            if let Some(&tag) = self.trigger_runtime.tag_order.get(slot) {
+            if let Some(&tag) = self.trigger_runtime.logic_tags.get(slot) {
                 let repeating = self.trigger_runtime.tag(tag).is_some_and(|live| {
                     self.trigger_runtime.definitions.tag_types[live.type_index].repeat == 2
                 });
@@ -184,12 +185,12 @@ impl Simulation {
                     registry,
                     frame_effects,
                 );
-                if raised && self.trigger_runtime.tag_order.is_empty() {
+                if raised && self.trigger_runtime.logic_tags.is_empty() {
                     break;
                 }
                 if raised
                     && order == TeamTagOrder::Forward
-                    && (!repeating || self.trigger_runtime.tag_order.get(slot) != Some(&tag))
+                    && (!repeating || self.trigger_runtime.logic_tags.get(slot) != Some(&tag))
                 {
                     continue;
                 }
@@ -204,6 +205,15 @@ impl Simulation {
             };
         }
         self.publish_trigger_effects(effects);
+        // Wasm module triggers on event 23 (RFC 0001 appendix 4.1), after
+        // the map's Tags and while the leaving Team still exists.
+        self.raise_module_global_stock_event(
+            rules,
+            frame_effects,
+            23,
+            None,
+            super::StockInput::NONE,
+        );
     }
 
     /// Original Tag6E53A0 attached-object ingress. `subject` chooses the
@@ -238,24 +248,44 @@ impl Simulation {
         input: TagEventInput,
         mut context: crate::sim::world::UninitContext<'_>,
     ) -> bool {
-        let Some(&tag) = self
+        let tag = self
             .trigger_runtime
             .attachments
             .get(&TagAttachment::Object(subject))
-        else {
-            return false;
-        };
-        let mut effects = Vec::new();
-        self.dispatch_live_tag_event(
-            tag,
-            input,
-            &mut effects,
-            context.rules(),
-            context.registry(),
-            context.effects(),
-        );
-        self.publish_trigger_effects(effects);
-        true
+            .copied();
+        if let Some(tag) = tag {
+            let mut effects = Vec::new();
+            self.dispatch_live_tag_event(
+                tag,
+                input,
+                &mut effects,
+                context.rules(),
+                context.registry(),
+                context.effects(),
+            );
+            self.publish_trigger_effects(effects);
+        }
+        // Wasm module triggers on the same raise, after the object's Tag
+        // (RFC 0001 appendix 4.1): one flag check without them.
+        if self.trigger_runtime.module_listens(input.kind) {
+            let other = input
+                .source
+                .or(input.actor.filter(|actor| *actor != subject));
+            let stock = super::StockInput {
+                actor: input.actor,
+                source: input.source,
+                ares_source: input.ares_source,
+            };
+            self.raise_module_stock_object_event(
+                context.rules(),
+                context.effects(),
+                input.kind,
+                subject,
+                other,
+                stock,
+            );
+        }
+        tag.is_some()
     }
 
     /// FootAI4DA7B0..4DA80C, after high-flight sight and before Process.
@@ -618,6 +648,11 @@ impl Simulation {
             self.trigger_runtime.map_cursor = self.trigger_runtime.map_cursor.wrapping_add(1);
         }
         self.publish_trigger_effects(effects);
+        // Wasm module triggers bound to a cell on the arrival cell's row or
+        // column (events 25 and 26, RFC 0001 appendix 4.1), after the map's.
+        if self.trigger_runtime.module_listens(25) || self.trigger_runtime.module_listens(26) {
+            self.raise_module_line_events(context.rules(), context.effects(), actor, cell);
+        }
         // Ordinary Fly ingress remains unproven.
     }
 
@@ -880,6 +915,7 @@ impl Simulation {
     /// The 50 Scenario global values, read as the campaign carry-over record
     /// copies their bytes (`0x004C6187..0x004C61A1`).
     pub fn global_variables(&self) -> [bool; SCENARIO_GLOBAL_COUNT] {
+        self.trigger_runtime.check_attached();
         std::array::from_fn(|index| self.trigger_runtime.globals_set.contains(&(index as u32)))
     }
 
@@ -937,6 +973,15 @@ impl Simulation {
             values.remove(&(index as u32));
         }
         if previous != set {
+            // Wasm module `VariablePoll` timers reset as Tag timers do
+            // (RFC 0001 appendix 4.4); variable IDs 0..99 locals, 100..149
+            // globals.
+            if trigger_runtime.module_listens(vera20k_wasm_ext::triggers::EVENT_VARIABLE_POLL) {
+                let id = if global { 100 + index } else { index };
+                trigger_runtime
+                    .module
+                    .reset_variable_polls(id, session.binary_frame());
+            }
             trigger_runtime.dirty[0] = true;
             let events = if global { [27, 28] } else { [36, 37] };
             //689670/689910 -> Tag6E57F0/6E5820 ->7263A0/7263D0:

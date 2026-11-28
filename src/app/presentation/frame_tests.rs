@@ -20,12 +20,13 @@ fn the_draw_record_stays_under_its_ceiling() {
 // 824 since an SHP Unit's draw reads three more of its fields: the body's
 // current facing (`shp_body_facing`), the Foot occupation enable and
 // IsOnCarryall. Four bytes of state, one alignment step of the record.
-const CEILING: usize = 824;
+// 832 since the modules' looks and status amounts (`ModuleFacts`):
+// one pointer, the facts themselves boxed for the few objects that have any.
+const CEILING: usize = 832;
 
-/// A record is found by its stable id and a missing id is not, and the
-/// frame's Display order is built once: a second ask returns the first.
+/// A record is found by its stable id and a missing id is not.
 #[test]
-fn a_frame_finds_records_by_id_and_keeps_one_display_order() {
+fn a_frame_finds_records_by_id() {
     use crate::map::entities::EntityCategory;
     use crate::sim::{combat::Health, game_entity::GameEntity};
 
@@ -54,8 +55,22 @@ fn a_frame_finds_records_by_id_and_keeps_one_display_order() {
         assert_eq!(frame.object(id).map(|record| record.stable_id()), Some(id));
     }
     assert!(frame.object(8).is_none() && frame.object(21).is_none());
-    let order = frame.display_order(&sim);
-    assert!(std::ptr::eq(order, frame.display_order(&sim)));
+}
+
+/// The slot index answers as a search of every id does: for ids in a dense
+/// run and far apart, and for ids before, between and past them.
+#[test]
+fn the_slot_index_answers_as_a_search_of_every_id() {
+    let ids = [5, 6, 7, 8, 300, 301, 4_000, 1_000_000];
+    let index = SlotIndex::of(&ids);
+    for id in [
+        0, 4, 5, 8, 9, 300, 302, 4_000, 999_999, 1_000_000, 1_000_001,
+    ] {
+        assert_eq!(index.slot(&ids, id), ids.binary_search(&id).ok(), "id {id}");
+    }
+    assert_eq!(index.slot(&ids, u64::MAX), None);
+    assert_eq!(SlotIndex::of(&[]).slot(&[], 5), None);
+    assert_eq!(SlotIndex::of(&[9]).slot(&[9], 9), Some(0));
 }
 
 /// The building walk lists exactly the Structure records, in stable-id
@@ -188,119 +203,5 @@ fn an_shp_body_reads_primary_facing_through_the_games_current() {
         [RuleSet::empty_for_test(), &ares]
             .map(|rules| ObjectRecord::of_test_in(&entity, None, rules).shp_body_facing),
         [0x3FFC, 0x4000]
-    );
-}
-
-/// A frame answers the screen questions for the objects the view reaches,
-/// and keeps the radar facts for every object.
-#[test]
-fn a_frame_answers_for_the_view_and_keeps_every_radar_fact() {
-    use crate::map::entities::EntityCategory;
-    use crate::sim::{combat::Health, game_entity::GameEntity};
-
-    let mut sim = Simulation::new();
-    let owner = sim.intern("Americans");
-    let tank = sim.intern("MTNK");
-    for (id, cell) in [(3u64, 10u16), (7, 200)] {
-        sim.entities_mut_for_test()
-            .insert(GameEntity::new_at_frame_zero_for_test(
-                id,
-                cell,
-                cell,
-                0,
-                0,
-                owner,
-                Health::new(100),
-                tank,
-                EntityCategory::Unit,
-                0,
-                5,
-                false,
-            ));
-    }
-    let rules = crate::rules::ruleset::RuleSet::empty_for_test();
-    let all = PresentationFrame::of_test(&sim, rules);
-    assert!(
-        all.objects().all(|record| record.is_scoped()),
-        "a frame without a scope answers for every object"
-    );
-    let near = all.object(3).expect("the near tank");
-    let span = crate::app::presentation::display_members::ScreenSpan::of(near);
-    let window = crate::app::presentation::instances::PassByWindow::around([[
-        span.x - 8.0,
-        span.top - 8.0,
-        span.x + 8.0,
-        span.bottom + 8.0,
-    ]]);
-    let frame = PresentationFrame::of_test_with_scope(&sim, rules, Some((window, [0.0, 0.0])));
-
-    let near = frame.object(3).expect("the near tank");
-    assert!(near.is_scoped(), "the view reaches the near tank");
-    assert_ne!(
-        near.place.center_xy,
-        [0, 0],
-        "the near tank has a placement"
-    );
-    assert_ne!(near.hud.get_coords.x, 0, "the near tank has a status strip");
-
-    let far = frame.object(7).expect("the far tank");
-    assert!(!far.is_scoped(), "the view does not reach the far tank");
-    assert_ne!(
-        far.place.center_xy,
-        [0, 0],
-        "the far tank keeps the centre the radar places it by"
-    );
-    assert_ne!(
-        far.hud.get_coords.x, 0,
-        "the far tank keeps the coordinates the labels and rings place it by"
-    );
-    assert_ne!(
-        far.scene.radar.location().x,
-        0,
-        "the far tank keeps its radar facts"
-    );
-}
-
-/// The camera-range predicate accepts positions within its margin.
-#[test]
-fn a_frame_scope_covers_the_camera_by_the_margin() {
-    use crate::map::entities::EntityCategory;
-    use crate::sim::{combat::Health, game_entity::GameEntity};
-
-    let mut sim = Simulation::new();
-    let owner = sim.intern("Americans");
-    let tank = sim.intern("MTNK");
-    sim.entities_mut_for_test()
-        .insert(GameEntity::new_at_frame_zero_for_test(
-            3,
-            10,
-            10,
-            0,
-            0,
-            owner,
-            Health::new(100),
-            tank,
-            EntityCategory::Unit,
-            0,
-            5,
-            false,
-        ));
-    let rules = crate::rules::ruleset::RuleSet::empty_for_test();
-    let camera = [100.0f32, 200.0f32];
-    let window = crate::app::presentation::instances::PassByWindow::around([[
-        camera[0],
-        camera[1],
-        camera[0] + 800.0,
-        camera[1] + 600.0,
-    ]]);
-    let frame = PresentationFrame::of_test_with_scope(&sim, rules, Some((window, camera)));
-    assert!(frame.covers_camera(camera), "the scope covers its camera");
-    assert!(
-        frame.covers_camera([camera[0] + 100.0, camera[1] - 100.0]),
-        "the scope covers a camera inside the margin"
-    );
-    assert!(
-        !frame.covers_camera([camera[0] + 100_000.0, camera[1]]),
-        "the scope does not cover a camera outside the margin"
     );
 }

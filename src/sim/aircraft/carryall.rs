@@ -582,10 +582,16 @@ impl Simulation {
                 )?;
                 // 10048920's success arm: the rates the AI copy brought from
                 // the Carryall go back to the cargo type's `ROT=` and
-                // `TurretROT=` (else `ROT=`).
-                if ares && let Some(entity) = sim.substrate.entities.get_mut(cargo) {
-                    entity.body_facing.set_rot(object.turret_rot);
-                    if let Some(turret) = entity.barrel_facing.as_mut() {
+                // `TurretROT=` (else `ROT=`), the body's through a module
+                // `ROTMultiplier`.
+                if ares {
+                    sim.set_body_rot(cargo, object.turret_rot);
+                    if let Some(turret) = sim
+                        .substrate
+                        .entities
+                        .get_mut(cargo)
+                        .and_then(|entity| entity.barrel_facing.as_mut())
+                    {
                         turret.set_rot(object.secondary_turn_rate());
                     }
                 }
@@ -666,7 +672,7 @@ impl Simulation {
                 self.session.binary_frame(),
                 &crate::sim::mission::authority::LiveReadyInputProvider { rules },
             );
-            if let Some((team, _)) = self.team_script_vm.team_for_member(cargo) {
+            if let Some(team) = self.team_script_vm.team_of(cargo) {
                 self.team_add_member(team, cargo, false, rules, effects);
             }
         }

@@ -9,7 +9,8 @@ fn fs_packed(input: VertexOutput) -> PackedSource {
     let index = textureLoad(source_indices, texel, 0).r;
     if index == 0u { discard; }
     let candidate = native_candidate(input);
-    let color = source_color(texel, index, input.source_palette);
+    // An HD twin's texel under the UV, not the index texel's top-left.
+    let color = source_color_at(input.uv, index, input.source_palette);
     let rgb = vec3u(round(color.rgb * 255.0));
     let word = native_palette_word(rgb, index, input.palette_light, tactical_a_at(input.position.xy));
     return PackedSource(word | 0x10000u, f32(candidate));

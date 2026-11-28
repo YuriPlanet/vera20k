@@ -57,18 +57,24 @@ impl PreparedSpriteAtlas {
             Self::Raster(work, upload) => (work, upload),
         };
         anyhow::ensure!(completion.initial, "loading must not replace a live atlas");
+        let mut completion = completion;
+        let pictures = completion.take_pictures();
         // A map-load build that cannot draw a required frame fails here.
         let (rendered, unrenderable, palettes) = completion
             .drawn(work.render())
             .map_err(sprite_atlas_load_error)?;
-        let added = rendered.len();
-        if rendered.is_empty() {
+        let added = rendered.len() + pictures.keys.len();
+        // A world whose every SHP is drawn from pictures (an art pack that
+        // replaces them all) still makes the atlas, of picture pages only.
+        if rendered.is_empty() && pictures.keys.is_empty() {
             log::warn!("No SHP sprites rendered");
             return Ok(SpriteAtlasLoadingJob::ready(None));
         }
         let texture_limit = device.limits().max_texture_dimension_2d;
         let mut plan = plan_shp_pages(rendered, texture_limit);
-        let (atlas, indices) = create_packed_shp_atlas(device, queue, batch, &mut plan, palettes);
+        let (mut atlas, indices) =
+            create_packed_shp_atlas(device, queue, batch, &mut plan, palettes);
+        atlas.append_pictures(device, queue, batch, pictures);
         #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
         let (send, messages) = mpsc::sync_channel(1);
         #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]

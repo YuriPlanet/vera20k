@@ -20,7 +20,7 @@ fn authored_signed_group_queues_guard_across_houses() {
     // The clear arena and registered Houses are scene priors. Group, missions,
     // object construction and the live elapsed Trigger use production readers.
     crate::sim::arena_fixture::flat_arena(&mut sim, rules);
-    sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
+    *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
     sim.session.set_game_mode(ScenarioGameMode::Skirmish);
     // This unit-only scene uses the normal non-short-game defeat policy.
     sim.session.game_options_mut_for_test().short_game = false;

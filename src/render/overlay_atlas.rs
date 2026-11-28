@@ -421,9 +421,35 @@ pub struct OverlayAtlas {
     /// Union of every entry's rectangle, fixed with `entries` at construction.
     art_extent: crate::render::cell_window::ArtExtent,
     zshapes: Option<OverlayZShapes>,
+    /// VERA's HD art ground (`render::hd_terrain::RgbaTwin`), when this
+    /// start has a pack with tiles.
+    hd: Option<crate::render::hd_terrain::RgbaTwin>,
 }
 
 impl OverlayAtlas {
+    /// VERA-only, experimental (`docs/zoom-one-pass.md`): whether the
+    /// overlay, smudge and terrain object draws read the atlas's HD twin this
+    /// frame (`on`: the camera zooms in with HD art on,
+    /// `render::hd_art::bind_hd_twins`). The page's `texture.bind_group` then
+    /// is the twin's RGBA HD binding (`BatchRenderer::create_picture_hd_binding`
+    /// with this page's index plane), which `sprite_source.wgsl` samples as
+    /// it samples a picture page.
+    pub(crate) fn bind_hd_twin(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        batch: &BatchRenderer,
+        on: bool,
+    ) {
+        let Some(twin) = self.hd.as_mut() else {
+            return;
+        };
+        let indices = &self.texture.source_indices;
+        twin.bind(device, queue, &mut self.texture.bind_group, on, |hd| {
+            batch.create_picture_hd_binding(device, hd, indices, None)
+        });
+    }
+
     pub(crate) fn apply_zshape(
         &self,
         request: OverlayShapeRequest,
@@ -671,9 +697,39 @@ pub(crate) fn build_overlay_atlas_on_device(
     // Render each unique sprite.
     let mut rendered: Vec<RenderedOverlay> = Vec::with_capacity(needed.len());
     let mut load_fail_count: u32 = 0;
+    let art = rules.art();
+    let any_picture = art.declares_any_picture();
+    let mut pictures = crate::render::picture_atlas::PictureSources::default();
 
     for key in &needed {
         let resource_image = key.name.strip_prefix(TIBERIUM_IMAGE_PREFIX);
+        // VERA-only (docs/picture-model-art.md): a type whose art declares
+        // `Picture=` (walls, resources, fences, rails, low bridges, ...) draws
+        // the same frame of its picture; its SHP is never opened.
+        if let Some((section, decl)) = any_picture
+            .then(|| overlay_registry.declared_picture(resource_image.unwrap_or(&key.name), art))
+            .flatten()
+        {
+            let y_offset = overlay_registry
+                .flags_by_name(resource_image.unwrap_or(&key.name))
+                .map_or(0.0, |flags| {
+                    let mut flags = flags.clone();
+                    flags.tiberium |= resource_image.is_some();
+                    flags.y_draw_offset()
+                });
+            let source = crate::render::picture_atlas::PictureSource {
+                section: section.to_owned(),
+                decl: decl.clone(),
+            };
+            match usize::try_from(key.frame).ok().and_then(|frame| {
+                let frames = pictures.frames(&source, art, asset_manager, theater_name)?;
+                render_picture_frame(frames, key.clone(), frame, y_offset)
+            }) {
+                Some(sprite) => rendered.push(sprite),
+                None => load_fail_count += 1,
+            }
+            continue;
+        }
         let mut flags: OverlayTypeFlags = overlay_registry
             .flags_by_name(resource_image.unwrap_or(&key.name))
             .cloned()
@@ -735,6 +791,19 @@ pub(crate) fn build_overlay_atlas_on_device(
         let Some(terrain_type) = rules.terrain_object_type_case_insensitive(name) else {
             continue;
         };
+        if let Some((section, decl)) = any_picture
+            .then(|| terrain_type.declared_picture(art))
+            .flatten()
+        {
+            let source = crate::render::picture_atlas::PictureSource {
+                section: section.to_owned(),
+                decl: decl.clone(),
+            };
+            if let Some(frames) = pictures.frames(&source, art, asset_manager, theater_name) {
+                rendered.extend(render_terrain_picture(frames, terrain_type));
+            }
+            continue;
+        }
         let Some(shape_filename) = rules.terrain_shape_filename(name) else {
             continue;
         };
@@ -766,6 +835,28 @@ pub(crate) fn build_overlay_atlas_on_device(
     if let Some(smudge_reg) = smudge_types {
         for (_id, def) in smudge_reg.iter_with_id() {
             let file_basename: &str = def.image_name.as_deref().unwrap_or(&def.name);
+            if let Some((section, decl)) = any_picture
+                .then(|| {
+                    art.resolve_declared_picture(&def.name, def.image_name.as_deref().unwrap_or(""))
+                })
+                .flatten()
+            {
+                let source = crate::render::picture_atlas::PictureSource {
+                    section: section.to_owned(),
+                    decl: decl.clone(),
+                };
+                match pictures
+                    .frames(&source, art, asset_manager, theater_name)
+                    .and_then(|frames| render_smudge_picture(frames, &def.name))
+                {
+                    Some(sprite) => {
+                        rendered.push(sprite);
+                        smudge_rendered_count += 1;
+                    }
+                    None => smudge_failed_count += 1,
+                }
+                continue;
+            }
             match render_smudge_sprite(
                 asset_manager,
                 theater_palette,
@@ -801,9 +892,24 @@ pub(crate) fn build_overlay_atlas_on_device(
     // destroyed type's own image frame through the cell's ordinary Convert, so
     // it shares the ordinary overlay palette and has no type Y bias.
     let mut rubble_loaded: HashSet<OverlaySpriteKey> = HashSet::new();
+    // VERA-only (docs/picture-model-art.md): the declared body pictures,
+    // decoded side by side.
+    let mut rubble_pictures =
+        crate::render::picture_atlas::rubble_pictures(rubble_arts, asset_manager).into_iter();
     for art in rubble_arts {
+        let picture = rubble_pictures.next().flatten();
         let key = rubble_key(&art.shp, art.body_frame);
         if rubble_loaded.contains(&key) {
+            continue;
+        }
+        // VERA-only (docs/picture-model-art.md): a body art that declares
+        // Picture= draws its rubble frame from the picture; its SHP is never
+        // opened.
+        if art.picture.is_some() {
+            if let Some(sprite) = picture.and_then(|frames| render_rubble_picture(&frames, art)) {
+                rendered.push(sprite);
+                rubble_loaded.insert(key);
+            }
             continue;
         }
         let Some(shp) = asset_manager
@@ -831,6 +937,68 @@ pub(crate) fn build_overlay_atlas_on_device(
 
     if rendered.is_empty() {
         return None;
+    }
+
+    // VERA's HD art collection: every overlay frame and terrain object of
+    // the theater, not only the map's, for the offline upscaler.
+    if std::env::var_os("VERA20K_HD_DUMP_TERRAIN").is_some() {
+        let mut every: Vec<RenderedOverlay> = Vec::new();
+        for overlay_id in 0u8..=u8::MAX {
+            let Some(flags) = overlay_registry.flags(overlay_id).cloned() else {
+                continue;
+            };
+            let Some(name) = resolve_overlay_name_for_render(overlay_registry, overlay_id) else {
+                continue;
+            };
+            let palette: &Palette = if flags.tiberium {
+                tiberium_palette
+            } else if flags.wall || flags.is_veins || flags.is_veinhole_monster {
+                unit_palette
+            } else {
+                theater_palette
+            };
+            for frame in 0..64 {
+                let key = overlay_body_key(name.clone(), frame, flags.tiberium);
+                every.extend(render_overlay_sprite(
+                    asset_manager,
+                    palette,
+                    &key,
+                    theater_ext,
+                    theater_name,
+                    overlay_registry,
+                    &flags,
+                ));
+            }
+        }
+        let mut names: Vec<&String> = rules.terrain_object_types.keys().collect();
+        names.sort();
+        for name in names {
+            let (Some(terrain_type), Some(shape)) = (
+                rules.terrain_object_type_case_insensitive(name),
+                rules.terrain_shape_filename(name),
+            ) else {
+                continue;
+            };
+            let palette = if terrain_type.spawns_tiberium {
+                unit_palette
+            } else {
+                theater_palette
+            };
+            every.extend(render_terrain_sprites(
+                asset_manager,
+                palette,
+                terrain_type,
+                shape,
+            ));
+        }
+        crate::render::hd_terrain::dump_rgba(
+            every
+                .iter()
+                .chain(&rendered)
+                .filter(|sprite| !sprite.key.name.starts_with("__terrain_shadow::"))
+                .map(|sprite| (sprite.width, sprite.height, sprite.rgba.as_slice())),
+            "srgba",
+        );
     }
 
     let mut atlas = pack_overlay_sprites(device, queue, batch, &rendered);
@@ -996,6 +1164,114 @@ fn render_decoded_overlay_frame(
     })
 }
 
+/// VERA-only (docs/picture-model-art.md): `art`'s rubble body frame from
+/// its declared picture, at the frame index and stored-frame placement the
+/// SHP arm gives `render_decoded_overlay_frame` (0x0045F160's frame 3,
+/// `CellClass::DrawOverlay_Body @ 0x0047F6A0`, no Y bias). The index plane
+/// holds the picture's lit and unlit indices, so the ordinary overlay draw
+/// reads this page's RGBA as it reads every overlay sprite's.
+fn render_rubble_picture(
+    frames: &crate::render::picture_atlas::GamePictureFrames,
+    art: &crate::rules::building_rubble::RubbleArt,
+) -> Option<RenderedOverlay> {
+    render_picture_frame(
+        frames,
+        rubble_key(&art.shp, art.body_frame),
+        usize::from(art.body_frame),
+        0.0,
+    )
+}
+
+/// VERA-only (docs/picture-model-art.md): frame `frame` of a declared
+/// picture as `render_decoded_overlay_frame` gives an SHP frame: the stored
+/// frame's crop and placement, `y_offset` below it, no frame format bit. None
+/// for a frame past the end or with nothing drawn, as `resolve_body_frame`
+/// refuses an SHP's.
+fn render_picture_frame(
+    frames: &crate::render::picture_atlas::GamePictureFrames,
+    key: OverlaySpriteKey,
+    frame: usize,
+    y_offset: f32,
+) -> Option<RenderedOverlay> {
+    let frame = frames.stored_frame(frame)?;
+    Some(RenderedOverlay {
+        key,
+        width: frame.sprite.size[0],
+        height: frame.sprite.size[1],
+        rgba: frame.sprite.rgba,
+        source_indices: frame.sprite.indices,
+        offset_x: frame.offset[0],
+        offset_y: frame.offset[1] + y_offset,
+        draw_point_offset: frame.draw_point,
+        extended: false,
+    })
+}
+
+/// VERA-only (docs/picture-model-art.md): [`render_terrain_sprites`] over a
+/// declared picture: the same body frames and their second-half shadows.
+fn render_terrain_picture(
+    frames: &crate::render::picture_atlas::GamePictureFrames,
+    terrain_type: &TerrainObjectType,
+) -> Vec<RenderedOverlay> {
+    let half = frames.frame_count() / 2;
+    let stages = if terrain_type.is_animated {
+        0..half.max(1)
+    } else {
+        0..2
+    };
+    let name = &terrain_type.name;
+    let mut sprites = Vec::new();
+    for frame in stages {
+        let stage = frame as i32;
+        sprites.extend(render_picture_frame(
+            frames,
+            terrain_body_key(name, stage),
+            frame,
+            0.0,
+        ));
+        sprites.extend(render_picture_frame(
+            frames,
+            terrain_shadow_key(name, stage),
+            frame + half,
+            0.0,
+        ));
+    }
+    sprites
+}
+
+/// VERA-only (docs/picture-model-art.md): [`render_smudge_sprite`] over a
+/// declared picture: frame 0 on its whole canvas, centred on the footprint's
+/// origin cell.
+fn render_smudge_picture(
+    frames: &crate::render::picture_atlas::GamePictureFrames,
+    name: &str,
+) -> Option<RenderedOverlay> {
+    let sprite = frames.sprite(0, crate::render::picture_atlas::HouseColor::Own)?;
+    let [full_w, full_h] = frames.canvas;
+    let mut rgba = vec![0u8; (full_w * full_h * 4) as usize];
+    let mut indices = vec![0u8; (full_w * full_h) as usize];
+    for y in 0..sprite.size[1] {
+        let source = (y * sprite.size[0]) as usize;
+        let destination = ((sprite.origin[1] + y) * full_w + sprite.origin[0]) as usize;
+        let width = sprite.size[0] as usize;
+        rgba[destination * 4..(destination + width) * 4]
+            .copy_from_slice(&sprite.rgba[source * 4..(source + width) * 4]);
+        indices[destination..destination + width]
+            .copy_from_slice(&sprite.indices[source..source + width]);
+    }
+    Some(RenderedOverlay {
+        key: smudge_key(name),
+        rgba,
+        source_indices: indices,
+        width: full_w,
+        height: full_h,
+        offset_x: -(full_w as f32) / 2.0,
+        offset_y: -(full_h as f32) / 2.0,
+        draw_point_offset: [0; 2],
+        extended: false,
+    })
+}
+
 /// CC_Draw_Shape @ 0x004AED70 centers by the integer canvas half, then
 /// adds the stored frame X/Y before passing its width/height to the walker.
 /// Keep that cropped rectangle: padding a 43-row GAWALL frame to its 70-row
@@ -1073,7 +1349,51 @@ pub fn compute_overlay_radar_colors(
 ) -> HashMap<(u8, u8), [u8; 3]> {
     // Cache: overlay_id -> loaded ShpFile
     let mut shp_cache: HashMap<u8, ShpFile> = HashMap::new();
+    let mut result: HashMap<(u8, u8), [u8; 3]> = HashMap::new();
+    // VERA-only (docs/picture-model-art.md): a declared picture, the type's
+    // own or its CellAnim's where that is the source, gives each frame the
+    // mean colour of its drawn pixels in place of the SHP header's.
+    let picture_colors = |section: &str, decl: &art_data::PictureDecl| {
+        art_registry
+            .find_picture(section, decl, theater_name, |file| {
+                asset_manager.get_ref(file)
+            })
+            .and_then(|(_, bytes)| {
+                // Frame by frame as the file is read, so no picture is too
+                // large to colour the radar.
+                let mut stream = crate::assets::picture_file::FrameStream::new(bytes).ok()?;
+                let mut colors = Vec::new();
+                for frame in 0..=u8::MAX {
+                    let Some(Ok(rgba)) = stream.next_frame() else {
+                        break;
+                    };
+                    if let Some(rgb) = crate::assets::picture_file::mean_color(rgba) {
+                        colors.push((frame, rgb));
+                    }
+                }
+                Some(colors)
+            })
+    };
     for (&overlay_id, name) in overlay_names {
+        let cell_anim_source = source == OverlayRadarColorSource::Cell
+            && overlay_registry
+                .flags(overlay_id)
+                .is_some_and(|flags| flags.tiberium);
+        let declared = if cell_anim_source {
+            overlay_registry
+                .flags(overlay_id)
+                .and_then(|flags| flags.cell_anim.as_deref())
+                // An AnimType's picture is its own section's, as it draws.
+                .and_then(|anim| art_registry.resolve_declared_picture(anim, ""))
+        } else {
+            overlay_registry.declared_picture(name, art_registry)
+        };
+        if let Some((section, decl)) = declared {
+            for (frame, rgb) in picture_colors(section, decl).unwrap_or_default() {
+                result.insert((overlay_id, frame), rgb);
+            }
+            continue;
+        }
         let load = |candidates: Vec<String>| {
             candidates.iter().find_map(|candidate| {
                 asset_manager
@@ -1116,7 +1436,6 @@ pub fn compute_overlay_radar_colors(
         }
     }
 
-    let mut result: HashMap<(u8, u8), [u8; 3]> = HashMap::new();
     for (&overlay_id, shp) in &shp_cache {
         for (frame, header) in shp.frames.iter().take(usize::from(u8::MAX) + 1).enumerate() {
             if let Ok(frame) = u8::try_from(frame) {
@@ -1263,6 +1582,7 @@ fn pack_overlay_sprites(
         rgba,
         source_indices,
         entries,
+        pictures,
         width: atlas_width,
         height: atlas_height,
     } = pack_overlay_pixels(sprites, device.limits().max_texture_dimension_2d);
@@ -1282,11 +1602,24 @@ fn pack_overlay_sprites(
         atlas_height,
         Some(&source_indices),
     );
+    // The HD twin is made from the page itself (`hd_terrain::RgbaTwin`).
+    let hd = crate::render::hd_art::pack_available()
+        .then(|| {
+            crate::render::hd_terrain::RgbaTwin::new(
+                "overlay atlas",
+                rgba,
+                [atlas_width, atlas_height],
+                pictures,
+                [255, 0, 255],
+            )
+        })
+        .flatten();
     OverlayAtlas {
         texture,
         art_extent: crate::render::cell_window::ArtExtent::of(entries.values()),
         entries,
         zshapes: None,
+        hd,
     }
 }
 
@@ -1294,6 +1627,8 @@ struct PackedOverlaySprites {
     rgba: Vec<u8>,
     source_indices: Vec<u8>,
     entries: LookupMap<OverlaySpriteKey, OverlaySpriteEntry>,
+    /// Each sprite's origin and size, for the HD twin.
+    pictures: Vec<([u32; 2], [u32; 2])>,
     width: u32,
     height: u32,
 }
@@ -1334,6 +1669,7 @@ fn pack_overlay_pixels(sprites: &[RenderedOverlay], max_texture_dim: u32) -> Pac
         LookupMap::with_capacity_and_hasher(plan.placements.len(), Default::default());
     let aw: f32 = atlas_width as f32;
     let ah: f32 = atlas_height as f32;
+    let mut pictures = Vec::with_capacity(plan.placements.len());
 
     for placed in &plan.placements {
         let [px, py] = placed.origin;
@@ -1343,6 +1679,9 @@ fn pack_overlay_pixels(sprites: &[RenderedOverlay], max_texture_dim: u32) -> Pac
         if py.saturating_add(h) > atlas_height || px.saturating_add(w) > atlas_width {
             left_out += 1;
             continue;
+        }
+        if spr.rgba.len() == (w * h * 4) as usize {
+            pictures.push(([px, py], [w, h]));
         }
 
         for y in 0..h {
@@ -1380,6 +1719,7 @@ fn pack_overlay_pixels(sprites: &[RenderedOverlay], max_texture_dim: u32) -> Pac
         rgba,
         source_indices,
         entries,
+        pictures,
         width: atlas_width,
         height: atlas_height,
     }
@@ -1393,6 +1733,7 @@ impl OverlayAtlas {
             entries: LookupMap::default(),
             art_extent: Default::default(),
             zshapes: None,
+            hd: None,
         }
     }
 }
@@ -1976,5 +2317,101 @@ mod tests {
         for (name, frame) in [("TIB05", 8), ("GEM01", 11)] {
             assert!(keys.contains(&tiberium_image_key(name, frame)));
         }
+    }
+
+    /// A building whose art declares `Picture=` draws its rubble from the
+    /// picture frame the SHP arm draws (0x0045F160's frame 3), placed as that
+    /// stored SHP frame (CC_Draw_Shape 0x004AED70), lit by its index plane.
+    #[test]
+    fn rubble_picture_draws_the_frame_the_shp_arm_selects() {
+        use super::*;
+        use crate::render::picture_atlas::{GamePictureFrames, LIT_INDEX};
+        use crate::rules::building_rubble::{RUBBLE_BODY_FRAME, RubbleArt};
+        // Eight 8x2 frames; frame i draws one pixel at column i of row 1.
+        let frames = (0..8u8)
+            .map(|i| {
+                let mut frame = vec![0u8; 8 * 2 * 4];
+                let at = (8 + usize::from(i)) * 4;
+                frame[at..at + 4].copy_from_slice(&[10 * i, 0, 0, 255]);
+                frame
+            })
+            .collect();
+        let picture = GamePictureFrames::shrink(
+            crate::assets::picture_file::PictureFrames {
+                width: 8,
+                height: 2,
+                frames,
+            },
+            None,
+            None,
+        )
+        .unwrap();
+        let art = RubbleArt {
+            shp: "ruin.png".into(),
+            body_frame: RUBBLE_BODY_FRAME,
+            shadow_frame: 7,
+            picture: Some(crate::rules::art_data::PictureDecl {
+                file: "ruin.png".into(),
+                size: None,
+            }),
+        };
+
+        let sprite = render_rubble_picture(&picture, &art).unwrap();
+        assert_eq!(sprite.key, rubble_key("ruin.png", RUBBLE_BODY_FRAME));
+        assert_eq!((sprite.width, sprite.height), (1, 1));
+        assert_eq!(sprite.rgba, [30, 0, 0, 255], "frame 3, not frame 0");
+        assert_eq!(sprite.source_indices, [LIT_INDEX]);
+        // Column 3 and row 1 less the canvas half (4, 1).
+        assert_eq!((sprite.offset_x, sprite.offset_y), (-1.0, 0.0));
+        assert_eq!(sprite.draw_point_offset, [1, 0]);
+        assert!(!sprite.extended);
+    }
+
+    /// A TerrainType whose art declares `Picture=` draws its body stages and
+    /// their second-half shadows from the picture as Terrain DrawIt
+    /// (0x71C1B0) picks SHP frames: stage F and F + count/2.
+    #[test]
+    fn terrain_picture_pairs_each_stage_with_its_second_half_shadow() {
+        use super::*;
+        use crate::render::picture_atlas::GamePictureFrames;
+        // Four 4x1 frames; frame i draws one pixel at column i.
+        let frames = (0..4u8)
+            .map(|i| {
+                let mut frame = vec![0u8; 4 * 4];
+                let at = usize::from(i) * 4;
+                frame[at..at + 4].copy_from_slice(&[10 * (i + 1), 0, 0, 255]);
+                frame
+            })
+            .collect();
+        let picture = GamePictureFrames::shrink(
+            crate::assets::picture_file::PictureFrames {
+                width: 4,
+                height: 1,
+                frames,
+            },
+            None,
+            None,
+        )
+        .unwrap();
+        let tree = TerrainObjectType::from_ini_section_with_tree_strength(
+            "TREE",
+            crate::rules::ini_parser::IniFile::from_str("[TREE]\nStrength=1\n")
+                .section("TREE")
+                .unwrap(),
+            1,
+        );
+
+        let sprites = render_terrain_picture(&picture, &tree);
+        let red = |key: OverlaySpriteKey| {
+            sprites
+                .iter()
+                .find(|sprite| sprite.key == key)
+                .map(|sprite| sprite.rgba[0])
+        };
+        assert_eq!(sprites.len(), 4);
+        assert_eq!(red(terrain_body_key("TREE", 0)), Some(10));
+        assert_eq!(red(terrain_shadow_key("TREE", 0)), Some(30));
+        assert_eq!(red(terrain_body_key("TREE", 1)), Some(20));
+        assert_eq!(red(terrain_shadow_key("TREE", 1)), Some(40));
     }
 }

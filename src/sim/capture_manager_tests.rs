@@ -930,7 +930,7 @@ fn native_decide_unit_fate_corpus() {
             .map_mut_for_test()
             .insert(russians, power_state);
         let seed = input["seed"].as_u64().unwrap();
-        sim.scenario_rng = SimRng::new(seed);
+        *sim.scenario_rng = SimRng::new(seed);
         assert_ne!(queued_mission(&sim, unit), Some(MissionType::Hunt));
 
         sim.decide_unit_fate(
@@ -1169,7 +1169,7 @@ fn native_overload_update_corpus() {
         }
         let location = crate::sim::movement::ground_pose::position_world_coord(&entity.position);
         let location = glam::IVec3::new(location.x, location.y, location.z);
-        sim.scenario_rng = SimRng::new(input["seed"].as_u64().unwrap());
+        *sim.scenario_rng = SimRng::new(input["seed"].as_u64().unwrap());
         let native_location = ints(
             &input
                 .get("location")
@@ -1506,14 +1506,14 @@ fn native_joined_overload_preserves_constructor_rng_ids_and_rate_words() {
                 )
             );
         }
-        world.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(
+        *world.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(
             row["native_cursor_before"].as_u64().unwrap() as u32,
         ));
-        world.main_rng =
+        *world.main_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap());
-        world.scenario_rng =
+        *world.scenario_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["scenario"].as_str().unwrap());
-        world.mapgen_rng =
+        *world.mapgen_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["mapgen"].as_str().unwrap());
         compare_actor(&world, mind, &row["before"]);
         assert_eq!(rng_state(&world), row["rng_before"]);
@@ -2580,13 +2580,46 @@ fn control_link_timer_selection_ports_cleanup_and_snapshot_share_the_manager() {
     );
     sim.session.set_binary_frame_for_test(119);
     assert_eq!(sim.capture_link_coordinates(controller, &rules).len(), 2);
-    let bytes = crate::sim::snapshot::GameSnapshot::save_validated(&sim, 0, 0, "control links", 0);
-    let restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
-        .unwrap()
-        .sim;
+    let terrain = crate::map::resolved_terrain::test_grid(
+        32,
+        32,
+        crate::map::resolved_terrain::test_clear_cell,
+    );
+    let mut file_world = sim.clone();
+    *file_world.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
+    file_world.install_resolved_terrain_for_new_map(terrain.clone());
+    let bytes =
+        crate::sim::snapshot::GameSnapshot::save_validated(&file_world, 0, 0, "control links", 0);
+    let saved = crate::sim::snapshot::GameSnapshot::load(&bytes).unwrap();
     assert_eq!(
-        restored.capture_link_coordinates(controller, &rules),
+        saved.sim.capture_link_coordinates(controller, &rules),
         sim.capture_link_coordinates(controller, &rules)
+    );
+    // An exact checkpoint above preserves the visible line. An ordinary
+    // player load restores the node references and expires its display timer.
+    let (restored, _) = saved
+        .restore_player_world(
+            crate::sim::world::SnapshotProcessState::Live(&sim),
+            &rules,
+            terrain,
+            Default::default(),
+            crate::sim::snapshot::PlayerSaveCells::FixtureBaseline,
+        )
+        .unwrap();
+    assert!(
+        restored
+            .capture_link_coordinates(controller, &rules)
+            .is_empty()
+    );
+    assert_eq!(
+        restored
+            .entities()
+            .get(first)
+            .unwrap()
+            .seldom
+            .mind_control
+            .controller(),
+        Some(controller),
     );
     sim.session.set_binary_frame_for_test(120);
     assert!(sim.capture_link_coordinates(controller, &rules).is_empty());

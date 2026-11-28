@@ -197,22 +197,16 @@ pub(super) fn fire_death_weapon_payload<'r>(
     current_weapon: Option<&'r WeaponType>,
     interner: &mut StringInterner,
 ) -> Option<DeathWeaponPayload<'r>> {
+    // By name: neither `DeathWeapon=` is among a type's resolved weapon
+    // records, and this runs once per death. The exact-name probe allocates
+    // nothing.
     let chosen = obj
         .death_weapon
         .as_deref()
         .and_then(|weapon_id| rules.weapon(weapon_id))
         .or(current_weapon);
     if let Some(weapon) = chosen {
-        let damage =
-            death_weapon_ftol_product_i32_f32(weapon.damage, obj.death_weapon_damage_modifier)?;
-        let warhead = interner.intern(weapon.warhead.as_ref()?);
-        let weapon_ref = interner.intern(&weapon.id);
-        return Some(DeathWeaponPayload {
-            damage,
-            warhead,
-            weapon_ref,
-            weapon,
-        });
+        return death_weapon_payload_of(weapon, obj, interner);
     }
     let fallback = rules
         .combat_damage
@@ -226,6 +220,26 @@ pub(super) fn fire_death_weapon_payload<'r>(
         warhead,
         weapon_ref,
         weapon: fallback,
+    })
+}
+
+/// `weapon` fired as `obj`'s death weapon: `ftol(Damage *
+/// DeathWeaponDamageModifier)` (`0x0070D6EB..0x0070D6F7`); `None` for a
+/// weapon without a warhead.
+fn death_weapon_payload_of<'r>(
+    weapon: &'r WeaponType,
+    obj: &ObjectType,
+    interner: &mut StringInterner,
+) -> Option<DeathWeaponPayload<'r>> {
+    let damage =
+        death_weapon_ftol_product_i32_f32(weapon.damage, obj.death_weapon_damage_modifier)?;
+    let warhead = interner.intern(weapon.warhead.as_ref()?);
+    let weapon_ref = interner.intern(&weapon.id);
+    Some(DeathWeaponPayload {
+        damage,
+        warhead,
+        weapon_ref,
+        weapon,
     })
 }
 
@@ -243,12 +257,15 @@ pub(super) struct DeathWeaponPayload<'r> {
 /// 0x0046B050`, owner and target the object itself) detonated at the object's
 /// GetCoords (vt+0x48, `0x0070D77C`; a building's foundation centre) through
 /// `DetonateAtCoord @ 0x004690B0`. `None` when no weapon fires.
+/// `weapon_override` (a Wasm module's death plan, `combat::death_plan`)
+/// fires in place of the type's choice, at the same damage modifier.
 pub(crate) fn death_weapon_detonation(
     interner: &mut StringInterner,
     substrate: &ObjectSubstrate,
     resolved_terrain: &Option<ResolvedTerrainGrid>,
     id: u64,
     rules: &RuleSet,
+    weapon_override: Option<&WeaponType>,
 ) -> Option<ProjectileDetonation> {
     let entity = substrate.entities.get(id)?;
     let object = interner.object_type(entity.type_ref(), rules)?;
@@ -261,7 +278,10 @@ pub(crate) fn death_weapon_detonation(
         warhead,
         weapon_ref,
         weapon,
-    } = fire_death_weapon_payload(rules, object, current_weapon, interner)?;
+    } = match weapon_override {
+        Some(weapon) => death_weapon_payload_of(weapon, object, interner)?,
+        None => fire_death_weapon_payload(rules, object, current_weapon, interner)?,
+    };
     Some(ProjectileDetonation {
         projectile_id: id,
         source_id: id,

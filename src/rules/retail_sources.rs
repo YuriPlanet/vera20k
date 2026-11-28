@@ -230,6 +230,9 @@ pub struct RetailRulesSources {
     ships_ares: bool,
     /// The player's Ares setting is Off: no Ares key turns Ares on.
     ares_keys_off: bool,
+    /// The player's Kratos setting (`AssetManager::kratos_setting`), which
+    /// every game this owner loads carries into `RuleSet::kratos`.
+    kratos_setting: crate::util::kratos_launch::KratosSetting,
 }
 
 impl RetailRulesSources {
@@ -267,6 +270,7 @@ impl RetailRulesSources {
             personal_rules: PersonalRules::default(),
             ships_ares,
             ares_keys_off: assets.ares_setting() == crate::util::ares_launch::AresSetting::Off,
+            kratos_setting: assets.kratos_setting(),
         })
     }
 
@@ -303,6 +307,7 @@ impl RetailRulesSources {
             self.personal_rules,
             self.ships_ares,
             self.ares_keys_off,
+            self.kratos_setting,
         )
         .map_err(|error| format!("Native rules cold startup failed: {error}"))?;
         Ok(owner)
@@ -488,6 +493,46 @@ impl<'a> FolderFiles<'a> {
         }
         Some(bytes)
     }
+
+    /// VERA-only, experimental (docs/picture-model-art.md): notes in
+    /// `changed` the picture or model `file` a binder read in place of an
+    /// SHP or VXL when what it took from it, `taken` (None when the file
+    /// gave nothing), is not what the copy a retail install reads of the
+    /// first of `retail` it ships gives (`value`; None when it ships none).
+    /// The file noted is the game-folder file that supplies `file`
+    /// ([`game_folder_file`]), else `file` itself when nothing does; a
+    /// shipped archive's is never noted. Equal values note nothing, so a
+    /// pack that keeps the original's facts is never named while the
+    /// retail file is there; where a repacked archive dropped it, the
+    /// stand-in is named whatever its fact. Naming only: no hash may depend
+    /// on this, as the retail file's presence is no fact the simulation
+    /// reads. Whether the values differ, noted or not.
+    pub(crate) fn note_stand_in<V: PartialEq, N: AsRef<str>>(
+        &self,
+        file: &str,
+        taken: Option<V>,
+        retail: impl IntoIterator<Item = N>,
+        value: impl FnOnce(&[u8]) -> Option<V>,
+        changed: &mut std::collections::BTreeSet<String>,
+    ) -> bool {
+        let shipped = retail
+            .into_iter()
+            .find_map(|name| self.shipped(name.as_ref()))
+            .and_then(value);
+        if shipped == taken {
+            return false;
+        }
+        match self.assets.get_with_source_ref(file) {
+            Some((_, source)) if shipped_source(source) => {}
+            Some((_, source)) => {
+                changed.insert(game_folder_file(source));
+            }
+            None => {
+                changed.insert(file.to_owned());
+            }
+        }
+        true
+    }
 }
 
 fn outermost_archive(source: &str) -> &str {
@@ -516,8 +561,8 @@ pub(crate) fn shipped_nested_archive(assets: &AssetManager, name: &str) -> Optio
 /// with the shipped one: a shipped archive's own entry, else the one in
 /// `ra2md.mix`'s own `localmd.mix`, read there because a mod's archive can
 /// mount another `localmd.mix` first. The same entries
-/// (`IniFile::multiplayer_digest`) are unchanged, and so is a name nothing
-/// supplies.
+/// (`IniFile::multiplayer_digest`, without [`vera_drawing_keys`]) are
+/// unchanged, and so is a name nothing supplies.
 pub fn files_changing_shipped_inis(assets: &AssetManager, names: &[&str]) -> Vec<String> {
     let shipped = ShippedInis::new(assets);
     let mut files = Vec::new();
@@ -585,19 +630,20 @@ impl<'a> ShippedInis<'a> {
     /// one; `None` when nothing supplies `name`.
     pub fn used(&self, name: &str) -> Option<UsedIni<'_>> {
         let name = name.trim();
-        let used = (!name.is_empty())
-            .then(|| self.assets.resolve_ref(name))
+        let (source, bytes) = (!name.is_empty())
+            .then(|| self.assets.installed_file(name))
             .flatten()?;
         let mut found = UsedIni {
-            source: used.source_archive,
-            bytes: used.bytes,
+            source,
+            bytes,
             shipped: ShippedCopy::Same,
         };
-        if shipped_source(used.source_archive) {
+        if shipped_source(source) {
             return Some(found);
         }
         let shipped = self.shipped(name);
-        if !shipped.is_some_and(|shipped| same_entries(shipped, used.bytes)) {
+        let dropped = vera_drawing_keys(self.assets, name);
+        if !shipped.is_some_and(|shipped| same_entries(shipped, bytes, dropped)) {
             found.shipped = ShippedCopy::Changed(shipped);
         }
         Some(found)
@@ -684,12 +730,39 @@ pub fn select_ai_ini(assets: &AssetManager, file: AiFile) -> Result<IniFile, Str
     select_ini(assets, name).map(|selected| selected.ini)
 }
 
-fn same_entries(shipped: &[u8], used: &[u8]) -> bool {
+/// Whether `used` holds `shipped`'s entries as the multiplayer digest reads
+/// them, without the keys `dropped` ([`vera_drawing_keys`]).
+fn same_entries(shipped: &[u8], used: &[u8], dropped: &[&str]) -> bool {
     shipped == used
         || match (IniFile::from_bytes(shipped), IniFile::from_bytes(used)) {
-            (Ok(shipped), Ok(used)) => shipped.multiplayer_digest() == used.multiplayer_digest(),
+            (Ok(shipped), Ok(used)) => {
+                shipped.multiplayer_digest_without(dropped)
+                    == used.multiplayer_digest_without(dropped)
+            }
             _ => false,
         }
+}
+
+/// VERA-only, experimental (docs/picture-model-art.md): the keys of the INI
+/// `name` the game reads that only choose what is drawn, which every
+/// agreement on that INI leaves out (`IniFile::multiplayer_digest_without`):
+/// VERA's art keys in the Art root (`art_data::VERA_ART_KEYS`), the tile
+/// pictures' key in a theater INI (`map::theater::VERA_THEATER_KEYS`), none
+/// in any other. So an art pack's INIs that add only those keys are the
+/// original game's to rooms, Quick Match and the rules parts. Retail INIs
+/// hold none of them.
+pub fn vera_drawing_keys(assets: &AssetManager, name: &str) -> &'static [&'static str] {
+    let name = name.trim();
+    if name.eq_ignore_ascii_case(assets.ini_roots().art()) {
+        crate::rules::art_data::VERA_ART_KEYS
+    } else if crate::map::theater::theater_ini_names(assets)
+        .iter()
+        .any(|theater| theater.eq_ignore_ascii_case(name))
+    {
+        crate::map::theater::VERA_THEATER_KEYS
+    } else {
+        &[]
+    }
 }
 
 /// Cold-start native Rules authority plus the one shell compatibility
@@ -1266,5 +1339,47 @@ mod tests {
         std::fs::write(&rules, b"[General]\nBuildSpeed=.5\n").unwrap();
         dir.write_mix("expandmd99.mix", "aimd.ini", b"[AI]\nValue=2\n");
         assert_eq!(changed(), ["rulesmd.ini", "expandmd99.mix"]);
+    }
+
+    /// VERA (docs/picture-model-art.md): a loose art INI that only adds
+    /// VERA's drawing keys, a section of only those among them, changes no
+    /// game file (`vera_drawing_keys`); one that changes any other key does.
+    /// The same key in the Rules root still counts.
+    #[test]
+    fn an_art_ini_that_only_adds_veras_drawing_keys_changes_no_game_file() {
+        use crate::assets::asset_manager::MediaArchiveMode;
+        use crate::assets::asset_manager::test_support::audio_test_install;
+        use crate::map::source::test_support::make_new_format_mix_bytes;
+        let dir = audio_test_install("shipped-art-pictures");
+        let local = make_new_format_mix_bytes(&[
+            ("artmd.ini", b"[GI]\nSequence=GISequence\n"),
+            ("rulesmd.ini", b"[General]\nBuildSpeed=.7\n"),
+        ]);
+        std::fs::remove_file(dir.path().join("localmd.mix")).unwrap();
+        std::fs::write(
+            dir.path().join("ra2md.mix"),
+            make_new_format_mix_bytes(&[("localmd.mix", &local)]),
+        )
+        .unwrap();
+        let changed = || {
+            let assets = AssetManager::new(dir.path(), MediaArchiveMode::STOCK_DIGITAL).unwrap();
+            files_changing_shipped_inis(&assets, &["artmd.ini", "rulesmd.ini"])
+        };
+        let art = dir.path().join("artmd.ini");
+        std::fs::write(
+            &art,
+            b"[GI]\nPicture=gi.png\nSequence=GISequence\nPictureSize=40,50\n\
+              [APMUZZLE]\nPicture=apmuzzle.png\n",
+        )
+        .unwrap();
+        assert!(changed().is_empty());
+        std::fs::write(
+            dir.path().join("rulesmd.ini"),
+            b"[General]\nBuildSpeed=.7\nPicture=x.png\n",
+        )
+        .unwrap();
+        assert_eq!(changed(), ["rulesmd.ini"]);
+        std::fs::write(&art, b"[GI]\nPicture=gi.png\nSequence=Other\n").unwrap();
+        assert_eq!(changed(), ["artmd.ini", "rulesmd.ini"]);
     }
 }

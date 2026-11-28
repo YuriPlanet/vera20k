@@ -79,6 +79,7 @@ use crate::rules::object_type::ObjectType;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::anim_class::{AnimId, AnimWorldCoord};
+use crate::sim::ext_modules::modifiers::Immunity::MindControl;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::intern::InternedId;
 use crate::sim::mission::{MissionId, MissionType};
@@ -126,6 +127,14 @@ pub struct CaptureManagerState {
 }
 
 impl CaptureManagerState {
+    /// CaptureManagerClass::Load 0x47282E..0x472841 restores the two node
+    /// references and starts a zero-length line timer at the load frame.
+    pub(crate) fn restart_timers_after_load(&mut self, frame: i32) {
+        for node in &mut self.nodes {
+            node.line_timer.start(frame, 0);
+        }
+    }
+
     fn constructed(max_control: i32, infinite: bool) -> Self {
         Self {
             max_control,
@@ -219,6 +228,7 @@ impl CaptureManagerState {
 
     #[cfg(any(test, feature = "test-support"))]
     pub fn with_victims_for_test(max_control: i32, infinite: bool, victims: &[u64]) -> Self {
+        crate::sim::game_entity::NameNote::fixture();
         let mut state = Self::constructed(max_control, infinite);
         state.nodes = victims
             .iter()
@@ -239,6 +249,7 @@ impl CaptureManagerState {
     /// A manager holding these `(victim, original owner)` nodes in order.
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn with_nodes_for_test(nodes: &[(u64, InternedId)]) -> Self {
+        crate::sim::game_entity::NameNote::fixture();
         let mut state = Self::constructed(3, false);
         state.nodes = nodes
             .iter()
@@ -472,8 +483,9 @@ impl CaptureVictimFacts {
     pub(crate) fn of(target: &GameEntity, target_obj: &ObjectType, frame: u32, ares: bool) -> Self {
         // 3: `ImmuneToPsionics=` (`+0xD35`); 4: a Unit in a tank bunker
         // (`+0x2E4`); 5: already controlled; 6: a trigger transfer (+0x2CC,
-        // 471CF0); 7: the Iron Curtain; 9: Selling or Construction.
-        let refused = target_obj.immune_to_psionics
+        // 471CF0); 7: the Iron Curtain; 9: Selling or Construction. A
+        // module's `ImmunityFlags` bit 0 replaces gate 3.
+        let refused = target.module_immune(MindControl, target_obj.immune_to_psionics)
             || (target.category() == EntityCategory::Unit
                 && target.bunker.link().installed_in().is_some())
             || target.seldom.mind_control.is_mind_controlled()
@@ -954,13 +966,19 @@ impl Simulation {
         // 0x00471DB8: ChangeOwner(controller's house, 1). It refuses only an
         // unchanged house, which CanCapture already excluded.
         self.announce_controlled_building(target_id, controller_owner, rules);
-        self.change_owner_with_rules(target_id, controller_owner, rules, registry, frame_effects);
-        if let Some(manager) = self
-            .substrate
-            .entities
-            .get_mut(controller_id)
-            .and_then(|controller| controller.capture_manager.as_mut())
-        {
+        self.change_owner_by_mind_control(
+            target_id,
+            controller_owner,
+            rules,
+            registry,
+            frame_effects,
+        );
+        let controller = self.substrate.entities.get_mut(controller_id);
+        // A node's victim is a name the pointer-expiry index reads.
+        if let Some(manager) = controller.and_then(|controller| {
+            let _ = controller.note_names();
+            controller.capture_manager.as_mut()
+        }) {
             manager.nodes.push(ControlNode {
                 victim: target_id,
                 original_owner,
@@ -1007,7 +1025,7 @@ impl Simulation {
         let Some(object_type) = self.object_type(object.type_ref(), rules) else {
             return false;
         };
-        !object_type.immune_to_psionics
+        !object.module_immune(MindControl, object_type.immune_to_psionics)
             && !crate::sim::superweapon::invulnerability::is_invulnerable(
                 object.invulnerability.as_ref(),
                 self.session.binary_frame(),
@@ -1041,7 +1059,7 @@ impl Simulation {
         {
             self.free_unit(controller, id, rules, registry, frame_effects);
         }
-        self.change_owner_with_rules(id, house, rules, registry, frame_effects);
+        self.change_owner_by_mind_control(id, house, rules, registry, frame_effects);
         if let Some(object) = self.substrate.entities.get_mut(id) {
             object.seldom.mind_control.permanent = true;
         }
@@ -1073,17 +1091,19 @@ impl Simulation {
         let Some(object_type) = self.object_type(object.type_ref(), rules) else {
             return false;
         };
-        if object_type.immune_to_psionics
-            || object_type
-                .promotion_abilities()
-                .is_some_and(|abilities| abilities.psionics_immune(object.veterancy.raw()))
-        {
+        if object.module_immune(
+            MindControl,
+            object_type.immune_to_psionics
+                || object_type
+                    .promotion_abilities()
+                    .is_some_and(|abilities| abilities.psionics_immune(object.veterancy.raw())),
+        ) {
             return false;
         }
         if let Some(controller) = object.seldom.mind_control.controller {
             self.free_unit(controller, id, rules, registry, frame_effects);
         }
-        self.change_owner_with_rules(id, house, rules, registry, frame_effects);
+        self.change_owner_by_mind_control(id, house, rules, registry, frame_effects);
         let ring = self.substrate.entities.get_mut(id).and_then(|object| {
             object.seldom.mind_control.permanent = true;
             crate::sim::mission::authority::queue_entity_mission_deferred(
@@ -1126,7 +1146,7 @@ impl Simulation {
         {
             self.free_unit(controller, id, rules, registry, frame_effects);
         }
-        self.change_owner_with_rules(id, house, rules, registry, frame_effects);
+        self.change_owner_by_mind_control(id, house, rules, registry, frame_effects);
         let old_ring = self.substrate.entities.get_mut(id).and_then(|object| {
             object.seldom.mind_control.permanent = permanent;
             object.seldom.mind_control.ring_anim.take()
@@ -1467,7 +1487,13 @@ impl Simulation {
             }
             // 0x004720D5..0x004720DA: ChangeOwner(original house, 1).
             self.announce_controlled_building(victim_id, original_owner, rules);
-            self.change_owner_with_rules(victim_id, original_owner, rules, registry, frame_effects);
+            self.change_owner_by_mind_control(
+                victim_id,
+                original_owner,
+                rules,
+                registry,
+                frame_effects,
+            );
             // DecideUnitFate runs while `+0x2C0` still names the controller.
             self.decide_unit_fate(controller_id, victim_id, rules, frame_effects);
             if let Some(victim) = self.substrate.entities.get_mut(victim_id) {
@@ -1589,15 +1615,18 @@ impl Simulation {
         let reason = self.capture_reason(controller_owner, health, strength, rules);
         // 0x004724E3: `RandomRanged(1, 100)` on the Scenario stream.
         let roll = self.scenario_rng.next_range_i32_inclusive(1, 100);
+        // A house whose `Forces` a Wasm module claims (RFC 0001 6i) keeps
+        // the unit's orders, as a human's does; the roll is still drawn so
+        // the Scenario stream does not move.
+        if self.module_claims(unit_owner, vera20k_wasm_ext::DOMAIN_FORCES) {
+            return;
+        }
         let Some(choice) = capture_decision(rules.mind_control.ai_capture_table(reason), roll)
         else {
             return;
         };
         let mut choice = i32::from(choice);
-        let controller_team = self
-            .team_script_vm
-            .team_for_member(controller_id)
-            .map(|(team_id, _)| team_id);
+        let controller_team = self.team_script_vm.team_of(controller_id);
         if let Some(decision) = controller_team
             .and_then(|team_id| self.team_script_vm.mind_control_decision(team_id))
             .filter(|&decision| decision != 0)

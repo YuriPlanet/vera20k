@@ -180,8 +180,8 @@ def cargo_args(args: list[str], label: str | None, focus: tuple[str, list[str]] 
 
 # `cargo test --workspace` builds core's tests with the features the client
 # enables on core. A core-only test run gets the same ones, so both reuse one
-# core test executable and its incremental cache; src/Cargo.toml's
-# dev-dependencies align the dependency features the same way.
+# core test executable and its incremental cache; src/Cargo.toml's dev- and
+# build-dependencies align the dependency features the same way.
 WORKSPACE_CORE_FEATURES = ('dev-overlays', 'test-support')
 
 
@@ -482,6 +482,13 @@ def test_runner_config(record: Path) -> str:
 TEST_SUMMARY = re.compile(rb'^test result: \S+ (\d+) passed; (\d+) failed; (\d+) ignored;')
 
 
+def reap_recorded_test(child: subprocess.Popen) -> None:
+    """Close the pipe and reap the child before the checkout lock is released."""
+    with child:
+        if child.poll() is None:
+            child.kill()
+
+
 def run_recorded_tests(record: Path) -> int:
     """Start the recorded test executables together; report them in Cargo's order.
 
@@ -504,9 +511,11 @@ def run_recorded_tests(record: Path) -> int:
         for i, call in enumerate(calls):
             print(f'Running {call["command"][0]} (build lock released)', file=sys.stderr, flush=True)
             output = outputs.enter_context(tempfile.TemporaryFile()) if i else None
-            children.append((call['command'][0], output, subprocess.Popen(
+            child = subprocess.Popen(
                 call['command'], cwd=call['cwd'], env=call['env'], stdout=output or subprocess.PIPE,
-                stderr=subprocess.STDOUT if output else None)))
+                stderr=subprocess.STDOUT if output else None)
+            outputs.callback(reap_recorded_test, child)
+            children.append((call['command'][0], output, child))
         for executable, output, child in children:
             # The first executable's lines pass through as they arrive.
             sys.stdout.flush()
@@ -707,6 +716,13 @@ def _run(root: Path, args: list[str], label: str | None, timeout: float, policy,
                         destination = staging / str(i) / path.name
                         destination.parent.mkdir()
                         shutil.copy2(path, destination)
+                        # Preserved games/tools can outlive their source checkout.
+                        terrain = root / 'Terrain'
+                        if terrain.is_dir():
+                            loose = destination.parent / terrain.name
+                            loose.mkdir()
+                            for name in ('vera_ice.mix', 'vera_ice_tiles.ini'):
+                                shutil.copyfile(terrain / name, loose / name)
                         records.append({'source': str(path), 'file': destination.relative_to(staging).as_posix(),
                                         'sha256': hashlib.sha256(destination.read_bytes()).hexdigest()})
                     manifest = {'schema': 1, 'checkout': str(root), 'source': before,

@@ -29,9 +29,36 @@ pub struct PersonalRules {
     /// reads it from the rules every peer, save and replay reads. A network
     /// room shares its host's ([`HostRules`](crate::skirmish_launch::HostRules)).
     building_production_queue: bool,
+    /// `[VERA] WasmBudget=` in VERA.INI: the Wasm mod module's operations
+    /// per frame in place of the mod's `[VeraWasm] Budget=` (RFC 0001
+    /// 15.4); 0 for none. A network room plays its host's.
+    #[serde(default)]
+    wasm_budget: u32,
+    /// The room switch "Allow automation" (RFC 0001 6i, 10): Wasm client
+    /// modules may send player orders for their player
+    /// (`client_send_order`), and simulation modules read it as the global
+    /// `AutomationAllowed`. Off by default; a network room plays its host's.
+    #[serde(default)]
+    automation_allowed: bool,
 }
 
 impl PersonalRules {
+    pub fn set_wasm_budget(&mut self, budget: u32) {
+        self.wasm_budget = budget;
+    }
+
+    pub fn wasm_budget(&self) -> u32 {
+        self.wasm_budget
+    }
+
+    pub fn set_automation_allowed(&mut self, allowed: bool) {
+        self.automation_allowed = allowed;
+    }
+
+    pub fn automation_allowed(&self) -> bool {
+        self.automation_allowed
+    }
+
     pub fn set_terrain_deformation(&mut self, on: bool) {
         self.terrain_deformation = on;
     }
@@ -61,6 +88,11 @@ impl PersonalRules {
     /// A switch changes the game: [`Self::scenario_root`] composes it and
     /// [`Self::compatibility_crc`] adds it to the network rules digest.
     pub fn in_effect(&self) -> bool {
+        self.changes_rules() || self.wasm_budget != 0 || self.automation_allowed
+    }
+
+    /// A switch that composes rules into the scenario root.
+    fn changes_rules(&self) -> bool {
         self.terrain_deformation || self.superweapon_limit != 0 || self.building_production_queue
     }
 
@@ -80,7 +112,7 @@ impl PersonalRules {
     /// Queue sets `[General] BuildingProductionQueue=yes`. Map and mode rules
     /// still read after it and can turn any of them off.
     pub(crate) fn scenario_root<'a>(&self, root: &'a IniFile) -> Cow<'a, IniFile> {
-        if !self.in_effect() {
+        if !self.changes_rules() {
             return Cow::Borrowed(root);
         }
         let mut options = String::new();
@@ -114,6 +146,12 @@ impl PersonalRules {
         }
         if self.building_production_queue {
             header.push_str("BuildingProductionQueue=yes\n");
+        }
+        if self.wasm_budget != 0 {
+            header.push_str(&format!("WasmBudget={}\n", self.wasm_budget));
+        }
+        if self.automation_allowed {
+            header.push_str("AllowAutomation=yes\n");
         }
         Some(IniFile::from_str(&header).native_crc())
     }

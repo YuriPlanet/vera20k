@@ -252,7 +252,6 @@ fn present(
         runtime,
         &Default::default(),
         false,
-        None,
     );
     let colors = HouseColorMap::new();
     let overlay_colors = HashMap::new();

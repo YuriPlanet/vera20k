@@ -132,14 +132,17 @@ impl PaidHead {
                 .is_empty()
         );
         for _ in 0..2 {
-            assert!(production::enqueue_by_type(
-                sim,
-                rules,
-                "Russians",
-                "E2",
-                &mut FrameEffects::default(),
-                false,
-            ));
+            assert!(
+                production::enqueue_by_type(
+                    sim,
+                    rules,
+                    "Russians",
+                    "E2",
+                    &mut FrameEffects::default(),
+                    false,
+                )
+                .is_ok()
+            );
         }
         // The native harness also visits only FactoryAI here. A whole frame
         // would publish readiness/deliver the old head before the forced seam.
@@ -155,8 +158,8 @@ impl PaidHead {
             {
                 break;
             }
-            sim.session
-                .set_binary_frame_for_test(sim.session.binary_frame().wrapping_add(1));
+            let session = &mut *sim.session;
+            session.set_binary_frame_for_test(session.binary_frame().wrapping_add(1));
             production::step_factories(sim);
         }
         let factory = sim.production.factories().view(owner, CATEGORY).unwrap();
@@ -171,11 +174,11 @@ impl PaidHead {
         let type_id = sim.interner.get("E2").unwrap();
         // All fixture constructors/payments precede this recorded boundary.
         // Streams are installed once and retained through every measured phase.
-        sim.main_rng =
+        *sim.main_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap());
-        sim.scenario_rng =
+        *sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["scenario"].as_str().unwrap());
-        sim.mapgen_rng =
+        *sim.mapgen_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["mapgen"].as_str().unwrap());
         Some(Self {
             runtime,

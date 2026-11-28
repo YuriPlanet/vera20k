@@ -70,7 +70,7 @@ use super::super_actions::ChronoshiftTarget;
 #[cfg(all(test, tests_sim_t_z))]
 #[path = "idle_animation_tests.rs"]
 mod idle_animation_tests;
-use super::team_ai::member_is_live_joined;
+use super::team_ai::{member_awaits_join_up, member_is_live_joined};
 use super::{TeamScriptAction, TeamScriptRefusal, TeamScriptState, TeamTarget, script_action_at};
 use crate::sim::find_nearby_cell::{NearbyArgs, NearbyFootprint, PassabilityArgs};
 use crate::sim::intern::StringInterner;
@@ -165,7 +165,7 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: &mut FrameEffects<'_>,
     ) {
-        let vm = &mut self.team_script_vm;
+        let vm = &mut *self.team_script_vm;
         let Some(team) = vm.teams.get_mut(&team_id) else {
             return;
         };
@@ -358,7 +358,7 @@ impl Simulation {
                 }
                 self.team_regroup(team_id, rules, frame_effects);
                 if let Some(team) = self.team_script_vm.teams.get_mut(&team_id)
-                    && team.guard_timer.remaining(current_frame) == 0
+                    && team.guard_over(current_frame)
                 {
                     team.advance_pending = true;
                 }
@@ -1373,7 +1373,7 @@ impl Simulation {
 
     /// Script16 / Team6ECCE0..6ECE51, dispatched at6E962A. First takes
     /// the waypoint's Cell; an empty focus does so again only when the
-    /// current script argument is unsigned-below702. On the global
+    /// current script argument is in range (A..ZZ in gamemd, A..ZZZ in VERA). On the global
     /// frame modulo ftol([AI]PatrolScan*900), the shared LeadershipRating
     /// leader asks GreatestThreat(1, its Location, false). A found object
     /// replaces the mission target. An empty scan clears a non-waypoint
@@ -1385,6 +1385,24 @@ impl Simulation {
     /// Invalid modded periods whose IDIV faults natively skip scanning here
     /// with an error, retaining normal movement. This safety policy does not
     /// affect retail periods and is not claimed as native parity.
+    ///
+    /// Two sim-scale deviations from native order (update order and
+    /// same-frame effects), both on only with batched target scans
+    /// (`Simulation::batch_target_scans`), pending side-by-side play:
+    /// - Each team scans where the frame plus its own phase is a multiple of
+    ///   the period ([`Self::patrol_scan_due`]), so the teams' scans spread
+    ///   over the period instead of all falling on one frame, and, as the
+    ///   team updates on its own turn ([`Self::run_team_ai_pass`]), on the
+    ///   first own turn from that frame. A team still scans once a period,
+    ///   but up to a period less one frame (13 frames with retail's 14)
+    ///   sooner or up to 16 later than natively, so it turns on a threat
+    ///   that much sooner or later.
+    /// - A leader whose scan is due as the team step begins has it answered
+    ///   then, beside the other teams' (`techno_ai::scan_batch`), and its
+    ///   scan here takes that answer while the leader stands as it did. The
+    ///   answer does not see what the step's earlier updates changed, such as
+    ///   an order another team gave its members; the next scan, a period
+    ///   later, does.
     fn team_action_patrol_waypoint(
         &mut self,
         team_id: u64,
@@ -1407,13 +1425,14 @@ impl Simulation {
                     self.team_script_vm.scripts.get(&team.script_id),
                     team.cursor,
                 )
-                .is_some_and(|action| (action.argument as u32) < 702)
+                .is_some_and(|action| {
+                    crate::map::waypoints::waypoint_slot(action.argument).is_some()
+                })
         }) {
             self.team_assign_mission_target(team_id, Some(waypoint_target), rules, effects);
         }
-        let frame = self.session.binary_frame() as i32;
-        match frame.checked_rem(rules.general.patrol_scan_frames()) {
-            Some(0) => {
+        match self.patrol_scan_due(team_id, rules) {
+            Some(true) => {
                 if let Some(leader) = self.team_leader(team_id, rules) {
                     let threat = crate::sim::world::direct_greatest_threat(
                         self,
@@ -1445,7 +1464,7 @@ impl Simulation {
                     }
                 }
             }
-            Some(_) => {}
+            Some(false) => {}
             None => log::error!("Team {team_id} Script16 has an invalid PatrolScan divisor"),
         }
         if self
@@ -1458,6 +1477,42 @@ impl Simulation {
         } else {
             self.team_coordinate_move(team_id, rules, registry, effects);
         }
+    }
+
+    /// Whether `team_id`'s Script16 scans in this update
+    /// (`0x006ECD40..0x006ECD63`): the signed global frame (`0x00A8ED84`)
+    /// modulo `ftol([AI] PatrolScan= * 900)` is zero; `None` for a period
+    /// whose IDIV faults. With batched target scans (sim-scale deviations,
+    /// see [`Self::team_action_patrol_waypoint`]) the frame first gains the
+    /// team's phase, its id modulo the period's size: team ids rise with
+    /// construction and are saved, so the phase keeps no state of its own.
+    /// The scan then runs on the team's own turn ([`Self::team_own_turn`])
+    /// when such a frame fell since its last one: the remainder is below the
+    /// frames between the turns. A period shorter than that scans on every
+    /// own turn.
+    pub(super) fn patrol_scan_due(&self, team_id: u64, rules: &RuleSet) -> Option<bool> {
+        let period = rules.general.patrol_scan_frames();
+        let frame = self.session.binary_frame() as i32;
+        let Some(turns) = self.team_update_period() else {
+            return frame.checked_rem(period).map(|remainder| remainder == 0);
+        };
+        // Below the period's size, at most 2^31, so it fits.
+        let phase = (team_id % u64::from(period.unsigned_abs().max(1))) as i32;
+        let remainder = frame.wrapping_add(phase).checked_rem(period)?;
+        Some(self.team_own_turn(team_id) && (0..turns as i32).contains(&remainder))
+    }
+
+    /// Whether `Coordinate_Attack`'s leader check runs in `team_id`'s update:
+    /// on frames where the signed `Frame % 8` is 4 (`0x006EB59A..0x006EB5AE`,
+    /// [`attack_check_frame`]). A team that updates on its own turn (a
+    /// sim-scale deviation, [`Self::run_team_ai_pass`]) checks on its own
+    /// turn when such a frame fell since its last one.
+    fn team_attack_check_due(&self, team_id: u64) -> bool {
+        let frame = self.session.binary_frame() as i32;
+        let Some(turns) = self.team_update_period() else {
+            return attack_check_frame(frame);
+        };
+        self.team_own_turn(team_id) && frame.wrapping_sub(4).rem_euclid(8) < turns as i32
     }
 
     /// Script action 11 (`0x006ED7E0`, `first` unread): each live member
@@ -1479,7 +1534,7 @@ impl Simulation {
         }
         // The walk reads a copy: a member's join or move can change the list.
         let members = self.team_script_vm.copy_members(team_id);
-        for &member in &members {
+        for (position, &member) in members.iter().enumerate() {
             let Some(zone) = self
                 .team_script_vm
                 .teams
@@ -1494,13 +1549,13 @@ impl Simulation {
             if !entity.lifecycle.object_alive() {
                 continue;
             }
-            self.team_member_join_up(team_id, member, rules, frame_effects);
+            self.team_member_join_up(team_id, position, member, rules, frame_effects);
             let Some(entity) = self.substrate.entities.get(member) else {
                 continue;
             };
             if !member_is_live_joined(
                 entity,
-                self.team_member_initiated(team_id, member),
+                self.team_member_initiated(team_id, position, member),
                 self.object_placement_scope_active(),
             ) || entity.attack_target.target().is_some()
             {
@@ -1622,7 +1677,7 @@ impl Simulation {
                 break 'walk;
             }
             let mut waiting = false;
-            for &member in &members {
+            for (position, &member) in members.iter().enumerate() {
                 if self
                     .team_script_vm
                     .teams
@@ -1631,14 +1686,14 @@ impl Simulation {
                 {
                     break;
                 }
-                self.team_member_join_up(team_id, member, rules, frame_effects);
+                self.team_member_join_up(team_id, position, member, rules, frame_effects);
                 let Some(entity) = self.substrate.entities.get(member) else {
                     continue;
                 };
                 if member == transport
                     || !member_is_live_joined(
                         entity,
-                        self.team_member_initiated(team_id, member),
+                        self.team_member_initiated(team_id, position, member),
                         self.object_placement_scope_active(),
                     )
                 {
@@ -1754,14 +1809,14 @@ impl Simulation {
         let members = self.team_script_vm.copy_members(team_id);
         'walk: {
             let mut unloaded = true;
-            for &member in &members {
-                self.team_member_join_up(team_id, member, rules, frame_effects);
+            for (position, &member) in members.iter().enumerate() {
+                self.team_member_join_up(team_id, position, member, rules, frame_effects);
                 let Some(entity) = self.substrate.entities.get(member) else {
                     continue;
                 };
                 if !member_is_live_joined(
                     entity,
-                    self.team_member_initiated(team_id, member),
+                    self.team_member_initiated(team_id, position, member),
                     self.object_placement_scope_active(),
                 ) || entity.passenger_role().passenger_count() == 0
                 {
@@ -1872,14 +1927,14 @@ impl Simulation {
         // The walk reads a copy: a member's join or move can change the list.
         let members = self.team_script_vm.copy_members(team_id);
         let mut deployed = true;
-        for &member in &members {
-            self.team_member_join_up(team_id, member, rules, frame_effects);
+        for (position, &member) in members.iter().enumerate() {
+            self.team_member_join_up(team_id, position, member, rules, frame_effects);
             let Some(entity) = self.substrate.entities.get(member) else {
                 continue;
             };
             if !member_is_live_joined(
                 entity,
-                self.team_member_initiated(team_id, member),
+                self.team_member_initiated(team_id, position, member),
                 self.object_placement_scope_active(),
             ) {
                 continue;
@@ -2351,8 +2406,9 @@ impl Simulation {
         };
         self.team_assign_mission_target(team_id, None, rules, frame_effects);
         // FireAt rereads Foot+0x5D4 after the member setters return.
-        if let Some(team_id) = self.team_script_vm.member_team.get(&firer)
-            && let Some(team) = self.team_script_vm.teams.get_mut(team_id)
+        let vm = &mut *self.team_script_vm;
+        if let Some(team_id) = vm.member_team.get(&firer)
+            && let Some(team) = vm.teams.get_mut(team_id)
         {
             team.advance_pending = true;
         }
@@ -2416,7 +2472,7 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: &mut FrameEffects<'_>,
     ) {
-        let vm = &mut self.team_script_vm;
+        let vm = &mut *self.team_script_vm;
         let Some(team) = vm.teams.get_mut(&team_id) else {
             return;
         };
@@ -2441,16 +2497,29 @@ impl Simulation {
         'walk: {
             let mut finished = true;
             let mut found = false;
-            for &member in &members {
-                if !self.team_script_vm.teams.contains_key(&team_id) {
+            // The walk reads the team and the member once, and again only
+            // after a call that can change them.
+            for (position, &member) in members.iter().enumerate() {
+                let vm = &self.team_script_vm;
+                let Some(team) = vm.teams.get(&team_id) else {
                     break 'walk;
-                }
-                if self.team_member_join_up(team_id, member, rules, frame_effects) {
-                    finished = false;
-                }
-                let Some(entity) = self.substrate.entities.get(member) else {
+                };
+                let Some(mut entity) = self.substrate.entities.get(member) else {
                     continue;
                 };
+                let mut initiated = team.member_initiated(position, member);
+                let mut stray = team.stray(vm, rules);
+                if member_awaits_join_up(entity, initiated, self.object_placement_scope_active()) {
+                    if self.team_member_join_up(team_id, position, member, rules, frame_effects) {
+                        finished = false;
+                    }
+                    let Some(joining) = self.substrate.entities.get(member) else {
+                        continue;
+                    };
+                    entity = joining;
+                    initiated = self.team_member_initiated(team_id, position, member);
+                    stray = self.team_stray(team_id, rules);
+                }
                 let unload = MissionType::Unload as i32;
                 let unloading = entity.mission.effective().raw() == unload
                     || entity.mission.queued().raw() == unload;
@@ -2460,13 +2529,12 @@ impl Simulation {
                 if unloading
                     || !member_is_live_joined(
                         entity,
-                        self.team_member_initiated(team_id, member),
+                        initiated,
                         self.object_placement_scope_active(),
                     )
                 {
                     continue;
                 }
-                let mut stray = self.team_stray(team_id, rules);
                 let terrain = self.resolved_terrain.as_ref();
                 if crate::sim::movement::air_movement::is_high_flying(
                     entity,
@@ -2520,6 +2588,10 @@ impl Simulation {
                                 registry,
                                 frame_effects,
                             );
+                            let Some(idle) = self.substrate.entities.get(member) else {
+                                continue;
+                            };
+                            entity = idle;
                         }
                     }
                 } else {
@@ -2530,24 +2602,26 @@ impl Simulation {
                         //6EBDF3..6EBE0D recalls an automatic coil charger: the
                         //class setter clears its target before Move/Commence.
                         self.team_member_clear_target(member, rules);
+                        let Some(recalled) = self.substrate.entities.get(member) else {
+                            continue;
+                        };
+                        entity = recalled;
                     }
-                    if self.substrate.entities.get(member).is_some_and(|entity| {
-                        entity.mission.effective() != MissionId::from_known(MissionType::Move)
-                    }) {
+                    if entity.mission.effective() != MissionId::from_known(MissionType::Move) {
                         self.team_member_queue_mission(member, MissionType::Move, rules);
                         self.team_member_commence(member, rules);
+                        let Some(moving) = self.substrate.entities.get(member) else {
+                            continue;
+                        };
+                        entity = moving;
                     }
-                    if self
-                        .substrate
-                        .entities
-                        .get(member)
-                        .is_some_and(|entity| entity.navigation.nav_com().is_none())
-                    {
+                    if entity.navigation.nav_com().is_none() {
                         self.team_member_set_destination(member, Some(focus), rules, frame_effects);
+                        let Some(sent) = self.substrate.entities.get(member) else {
+                            continue;
+                        };
+                        entity = sent;
                     }
-                    let Some(entity) = self.substrate.entities.get(member) else {
-                        continue;
-                    };
                     let balloon_hover = self
                         .object_type(entity.type_ref(), rules)
                         .is_some_and(|object| object.balloon_hover);
@@ -2581,14 +2655,15 @@ impl Simulation {
                                     },
                                 )))
                     }) || (entity.navigation.nav_com().is_none() && balloon_hover);
+                    finished = false;
                     if resend {
                         self.team_member_set_destination(member, Some(focus), rules, frame_effects);
+                        let Some(resent) = self.substrate.entities.get(member) else {
+                            continue;
+                        };
+                        entity = resent;
                     }
-                    finished = false;
                 }
-                let Some(entity) = self.substrate.entities.get(member) else {
-                    continue;
-                };
                 let nav = entity.navigation.nav_com();
                 //6EBEC1 repeats Object+1BC after the destination setter, even
                 //with a NULL NavCom; its ordered Dummy lookups still take effect.
@@ -3124,7 +3199,7 @@ impl Simulation {
         }
         // `0x006EB59A..0x006EB5D2`. Without a target the action finishes
         // below, and a restart after the step's advance changes nothing.
-        if attack_check_frame(self.session.binary_frame() as i32)
+        if self.team_attack_check_due(team_id)
             && let (Some(leader), Some(target)) = (leader, focus)
             && self.selected_weapon_fire_error(rules, leader, target.target_kind(), true)
                 == FireError::Illegal
@@ -3151,30 +3226,41 @@ impl Simulation {
         let members = self.team_script_vm.copy_members(team_id);
         'walk: {
             let mut busy = false;
-            for &member in &members {
-                if !self.team_script_vm.teams.contains_key(&team_id) {
+            // The walk reads the team and the member once, and again only
+            // after a call that can change them.
+            for (position, &member) in members.iter().enumerate() {
+                let Some(team) = self.team_script_vm.teams.get(&team_id) else {
                     break 'walk;
-                }
-                self.team_member_join_up(team_id, member, rules, frame_effects);
-                let Some(entity) = self.substrate.entities.get(member) else {
+                };
+                let Some(mut entity) = self.substrate.entities.get(member) else {
                     continue;
                 };
-                if !member_is_live_joined(
-                    entity,
-                    self.team_member_initiated(team_id, member),
-                    self.object_placement_scope_active(),
-                ) {
+                let mut initiated = team.member_initiated(position, member);
+                if member_awaits_join_up(entity, initiated, self.object_placement_scope_active()) {
+                    self.team_member_join_up(team_id, position, member, rules, frame_effects);
+                    let Some(joining) = self.substrate.entities.get(member) else {
+                        continue;
+                    };
+                    entity = joining;
+                    initiated = self.team_member_initiated(team_id, position, member);
+                }
+                if !member_is_live_joined(entity, initiated, self.object_placement_scope_active()) {
                     busy |= droppod && entity.lifecycle.in_limbo();
                     continue;
                 }
-                let infiltrates = || {
-                    self.object_type(entity.type_ref(), rules)
-                        .is_some_and(|object| object.infiltrate)
-                };
+                let infiltrates = action == 15
+                    && entity.category() == EntityCategory::Infantry
+                    && self
+                        .object_type(entity.type_ref(), rules)
+                        .is_some_and(|object| object.infiltrate);
                 let mission = entity.mission.effective().raw();
-                if action == 15 && entity.category() == EntityCategory::Infantry && infiltrates() {
+                if infiltrates {
                     self.team_member_queue_mission(member, MissionType::Capture, rules);
                     self.team_member_assign_target(member, target, rules, frame_effects);
+                    let Some(capturing) = self.substrate.entities.get(member) else {
+                        continue;
+                    };
+                    entity = capturing;
                 } else if ![
                     MissionType::Attack,
                     MissionType::Enter,
@@ -3194,16 +3280,18 @@ impl Simulation {
                     self.team_member_queue_mission(member, MissionType::Attack, rules);
                     self.team_member_clear_target(member, rules);
                     self.team_member_set_destination(member, None, rules, frame_effects);
+                    let Some(attacking) = self.substrate.entities.get(member) else {
+                        continue;
+                    };
+                    entity = attacking;
                 }
-                let Some(entity) = self.substrate.entities.get(member) else {
-                    continue;
-                };
                 if entity.attack_target.target().is_none() {
                     self.team_member_assign_target(member, target, rules, frame_effects);
+                    let Some(aimed) = self.substrate.entities.get(member) else {
+                        continue;
+                    };
+                    entity = aimed;
                 }
-                let Some(entity) = self.substrate.entities.get(member) else {
-                    continue;
-                };
                 let spent_aircraft = entity.category() == EntityCategory::Aircraft
                     && self
                         .object_type(entity.type_ref(), rules)

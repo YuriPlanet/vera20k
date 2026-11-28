@@ -51,7 +51,7 @@ fn engineer_family_selector_matches_original_boundary_and_dummy() {
         let mut sim = Simulation::with_seed(31);
         sim.resolve_type_handles(&rules);
         sim.install_resolved_terrain_for_new_map(terrain);
-        sim.overlay_grid = Some(overlays);
+        *sim.overlay_grid = Some(overlays);
         let engineer = sim
             .construct_object_limbo_at_height(
                 "ENGINEER",

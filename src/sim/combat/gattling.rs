@@ -441,10 +441,12 @@ impl crate::sim::world::Simulation {
         let elite = is_elite(entity);
         let world = Self::movement_sound_world(entity);
         let mut state = entity.gattling;
+        // None for no record or one with no weapon named; Some(None) for a
+        // name the rules do not hold.
         let weapon = |index: i32| {
             crate::sim::combat::combat_weapon::weapon_for_index(obj, veterancy, index)
-                .and_then(|record| record.weapon_id)
-                .map(|weapon_id| rules.weapon(weapon_id))
+                .filter(|record| record.weapon_id.is_some())
+                .map(|record| record.weapon(rules))
         };
         let owner = gattling_sound_owner(id);
         let ares_cycle = rules.ares().then(|| obj.techno_combat().gattling_cyclic());

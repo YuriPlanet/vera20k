@@ -16,7 +16,10 @@
 
 use anyhow::Result;
 
+use crate::app::match_runtime::session::SessionMode;
+use crate::app::movie_playback::MovieActivity;
 use crate::app::movie_subtitles::{BAND_HEIGHT, BAND_WIDTH, SubtitleTrack, text_origin};
+use crate::app::state::PlatformState;
 use crate::render::batch::SpriteInstance;
 use crate::render::bink_movie::BinkMovieSurface;
 use crate::render::bit_font::BitFont;
@@ -102,9 +105,15 @@ pub(crate) fn movie_rect(screen_w: i32, screen_h: i32, movie_w: i32, movie_h: i3
     [(screen_w - w) / 2, (screen_h - h) / 2, w, h]
 }
 
-/// Hidden windows park the fullscreen renderer even if the platform still reports focus.
-pub(crate) fn playback_active(state: &crate::app::AppState) -> bool {
-    state.platform.window_active && !state.platform.window_hidden
+impl MovieReturn {
+    pub(crate) fn activity(&self, platform: &PlatformState, session: SessionMode) -> MovieActivity {
+        match self {
+            Self::StartupLogo | Self::StartupIntro | Self::MoviesAndCredits | Self::MovieList => {
+                platform.movie_activity(None)
+            }
+            _ => platform.movie_activity(Some(session)),
+        }
+    }
 }
 
 pub(crate) struct FullscreenMovie {
@@ -119,7 +128,7 @@ impl FullscreenMovie {
         voice_volume: f32,
         subtitles: Option<SubtitleTrack>,
         return_to: MovieReturn,
-        active: bool,
+        activity: MovieActivity,
     ) -> Self {
         Self {
             playback: crate::app::movie_playback::MoviePlayback::new(
@@ -127,7 +136,7 @@ impl FullscreenMovie {
                 mixer,
                 voice_volume,
                 subtitles,
-                active,
+                activity,
             ),
             return_to,
         }
@@ -138,8 +147,9 @@ impl FullscreenMovie {
     pub(crate) fn return_to(&self) -> &MovieReturn {
         &self.return_to
     }
-    pub(crate) fn set_active(&mut self, active: bool) {
-        self.playback.set_active(active);
+    pub(crate) fn sync_window(&mut self, platform: &PlatformState, session: SessionMode) {
+        self.playback
+            .set_activity(self.return_to.activity(platform, session));
     }
     pub(crate) fn step(
         &mut self,

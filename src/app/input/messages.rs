@@ -7,8 +7,18 @@
 //! ## Dependency rules
 //! - Part of the app layer — may depend on everything.
 
+#[cfg(target_os = "android")]
 use crate::app::AppState;
+use crate::app::PlatformState;
+use crate::app::diagnostics::state::DiagnosticsState;
+use crate::app::frontend::state::FrontendState;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
+use crate::app::presentation::state::MatchPresentationState;
 use crate::app::presentation::text_hud::{self, TextHud};
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
+use crate::audio::sfx::SfxPlayer;
 use crate::render::batch::SpriteInstance;
 use crate::ui::game_screen::GameScreen;
 
@@ -29,17 +39,83 @@ const TYPE_SELECT_FALLBACK_SCHEME_ENTRY: crate::rules::house_colors::HouseColorI
 /// Menu/Scenario pause stops polling, not this clock. EnterPause683EB0 and
 /// ExitPause683FB0 only stop/rearm the separate Scenario614 score clock.
 /// Source: original gamemd.exe instructions and message-pause native controls.
-pub(crate) fn message_now_ms(state: &AppState) -> u64 {
-    crate::app::input::tooltips::now_ms(state)
+pub(crate) fn message_now_ms(diag: &DiagnosticsState, match_state: &MatchState) -> u64 {
+    crate::app::input::tooltips::now_ms(diag, match_state)
 }
 
 /// Original TAction11 6DE0B0..6DE122 resolves its CSF label, selects the
 /// scenario-side priority through69A310 and adds a non-silent4046 row.
 /// MessageDelay's ftol result is in WallClock16ms buckets, not sim frames.
-pub(crate) fn post_trigger_message(state: &mut AppState, csf_key: &str) {
-    let Some(runtime) = state.match_state.sim_runtime.runtime() else {
+pub(crate) fn post_trigger_message(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
+    csf_key: &str,
+) {
+    let Some((rgb, timeout)) = trigger_message_style(match_state) else {
         return;
     };
+    post_localized_message(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        sfx_player,
+        persistence,
+        &crate::ui::messages::MessagePost {
+            prefix: None,
+            text: csf_key,
+            rgb,
+            timeout_ms: timeout,
+            silent: false,
+        },
+    );
+}
+
+/// A client module's `ShowMessage` (RFC 0001 appendix 5.4): the CSF entry
+/// `text` names, or else `text` itself (the rule of the node `Label`,
+/// appendix 7.10), as a trigger message row; `rgb` replaces the trigger
+/// message's colour.
+pub(crate) fn post_module_message(state: &mut crate::app::AppState, text: &str, rgb: Option<[f32; 3]>) {
+    let Some((side_rgb, timeout)) = trigger_message_style(&state.match_state) else {
+        return;
+    };
+    let resolved = state
+        .process_assets
+        .csf
+        .as_ref()
+        .and_then(|csf| csf.get(text))
+        .unwrap_or(text)
+        .to_owned();
+    post_resolved_message(
+        &state.platform,
+        &state.renderer,
+        &state.diag,
+        &state.frontend,
+        &mut state.match_state,
+        &state.process_assets,
+        &mut state.audio.sfx_player,
+        &state.persistence,
+        &crate::ui::messages::MessagePost {
+            prefix: None,
+            text: &resolved,
+            rgb: rgb.unwrap_or(side_rgb),
+            timeout_ms: timeout,
+            silent: false,
+        },
+    );
+}
+
+/// TAction11's row style: the scenario side's colour and MessageDelay.
+fn trigger_message_style(match_state: &MatchState) -> Option<([f32; 3], Option<u64>)> {
+    let runtime = match_state.sim_runtime.runtime()?;
     // The selected campaign opening keeps its startup player/country. The
     // existing House owner supplies that side; a later scenario-side change
     // independent of the current House remains a separate retained-field gap.
@@ -66,16 +142,7 @@ pub(crate) fn post_trigger_message(state: &mut AppState, csf_key: &str) {
         trigger_message_rgb(&rules.color_schemes, side, rules.skirmish_colors())
     };
     let timeout = message_delay_timeout_ms(rules.general.message_delay_minutes);
-    post_localized_message(
-        state,
-        &crate::ui::messages::MessagePost {
-            prefix: None,
-            text: csf_key,
-            rgb,
-            timeout_ms: timeout,
-            silent: false,
-        },
-    );
+    Some((rgb, timeout))
 }
 
 fn message_delay_buckets(delay: crate::util::native_x87::NativeF64Bits) -> i32 {
@@ -123,30 +190,79 @@ fn trigger_message_rgb(
 }
 
 /// Post the localized, silent HUD result of one executed TypeSelect tap.
-pub(crate) fn post_type_select_feedback(state: &mut AppState, csf_key: &str) {
-    post_silent_house_feedback(state, csf_key, TYPE_SELECT_MESSAGE_TIMEOUT_MS);
+pub(crate) fn post_type_select_feedback(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    persistence: &PersistenceState,
+    csf_key: &str,
+) {
+    post_silent_house_feedback(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        persistence,
+        csf_key,
+        TYPE_SELECT_MESSAGE_TIMEOUT_MS,
+    );
 }
 
 /// PlanMgr's refusals (63A0D0/639FD0/639130/638120/637270) and help
 /// (63A120/63A1B0) use the same silent730A90 HUD owner with duration1E0.
 /// A refusal's separate ScoldSound belongs to the planning input owner.
-pub(crate) fn post_planning_message(state: &mut AppState, csf_key: &str) {
-    post_silent_house_feedback(state, csf_key, 0x1E0 * 16);
+pub(crate) fn post_planning_message(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    persistence: &PersistenceState,
+    csf_key: &str,
+) {
+    post_silent_house_feedback(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        persistence,
+        csf_key,
+        0x1E0 * 16,
+    );
 }
 
-fn post_silent_house_feedback(state: &mut AppState, csf_key: &str, timeout_ms: u64) {
-    sync_view(state);
-    let now = message_now_ms(state);
+fn post_silent_house_feedback(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    persistence: &PersistenceState,
+    csf_key: &str,
+    timeout_ms: u64,
+) {
+    sync_view(platform, renderer, frontend, match_state, persistence);
+    let now = message_now_ms(diag, match_state);
     let rgb = house_message_rgb(
-        crate::app::input::commands::preferred_local_owner_name(state).as_deref(),
-        &state.match_state.match_presentation.house_color_map,
-        state.rules().map(|rules| rules.color_schemes.as_slice()),
+        crate::app::input::commands::preferred_local_owner_name(match_state).as_deref(),
+        &match_state.match_presentation.house_color_map,
+        crate::app::state::active_rules(frontend, match_state)
+            .map(|rules| rules.color_schemes.as_slice()),
     );
-    let font = &state.renderer.bit_font;
+    let font = &renderer.bit_font;
     let measure = |s: &str| font.text_width(s) as i32;
     let outcome = add_localized_message(
-        &mut state.match_state.match_presentation.message_list,
-        state.process_assets.csf.as_ref(),
+        &mut match_state.match_presentation.message_list,
+        process_assets.csf.as_ref(),
         &crate::ui::messages::MessagePost {
             prefix: None,
             text: csf_key,
@@ -209,30 +325,35 @@ fn add_localized_message(
 
 /// HealthNav uses the same silent, house-colored 0xF0-bucket message add as
 /// TypeSelect, after formatting MSG:UnitsWorth/NoUnitsSel/NavEmpty (733569).
-pub(crate) fn post_selection_navigation_text(state: &mut AppState, text: &str) {
-    sync_view(state);
-    let now = message_now_ms(state);
+pub(crate) fn post_selection_navigation_text(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    persistence: &PersistenceState,
+    text: &str,
+) {
+    sync_view(platform, renderer, frontend, match_state, persistence);
+    let now = message_now_ms(diag, match_state);
     let rgb = house_message_rgb(
-        crate::app::input::commands::preferred_local_owner_name(state).as_deref(),
-        &state.match_state.match_presentation.house_color_map,
-        state.rules().map(|rules| rules.color_schemes.as_slice()),
+        crate::app::input::commands::preferred_local_owner_name(match_state).as_deref(),
+        &match_state.match_presentation.house_color_map,
+        crate::app::state::active_rules(frontend, match_state)
+            .map(|rules| rules.color_schemes.as_slice()),
     );
-    let font = &state.renderer.bit_font;
-    state
-        .match_state
-        .match_presentation
-        .message_list
-        .add_message(
-            &crate::ui::messages::MessagePost {
-                prefix: None,
-                text,
-                rgb,
-                timeout_ms: Some(TYPE_SELECT_MESSAGE_TIMEOUT_MS),
-                silent: true,
-            },
-            now,
-            &|s| font.text_width(s) as i32,
-        );
+    let font = &renderer.bit_font;
+    match_state.match_presentation.message_list.add_message(
+        &crate::ui::messages::MessagePost {
+            prefix: None,
+            text,
+            rgb,
+            timeout_ms: Some(TYPE_SELECT_MESSAGE_TIMEOUT_MS),
+            silent: true,
+        },
+        now,
+        &|s| font.text_width(s) as i32,
+    );
 }
 
 /// Local message facts share one ordered projection with the Supers' lines.
@@ -403,7 +524,14 @@ fn ares_message_post<'a>(
 /// A cameo press refusal's line, with the local player as the firer: the
 /// select hook 10034DA0 prints only the funds and CannotFire labels.
 pub(crate) fn post_ares_superweapon_refusal(
-    state: &mut AppState,
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
     section: &str,
     refusal: crate::sim::superweapon::AresCameoRefusal,
 ) {
@@ -414,41 +542,69 @@ pub(crate) fn post_ares_superweapon_refusal(
         R::InsufficientFunds => M::InsufficientFunds,
         R::NotReady | R::ManualFireDisabled | R::Unstoppable => return,
     };
-    let owner = crate::app::input::commands::preferred_local_owner_name(state);
-    post_ares_superweapon_message(state, section, message, owner.as_deref());
+    let owner = crate::app::input::commands::preferred_local_owner_name(match_state);
+    post_ares_superweapon_message(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        sfx_player,
+        persistence,
+        section,
+        message,
+        owner.as_deref(),
+    );
 }
 
 /// SWTypeExt::PrintMessage10033BD0 of one label of `section`, for `firer`
 /// (the House whose colour Message.FirerColor picks; None prints Gold).
 pub(crate) fn post_ares_superweapon_message(
-    state: &mut AppState,
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
     section: &str,
     message: crate::rules::superweapon_type::AresSuperWeaponMessage,
     firer: Option<&str>,
 ) {
-    let Some(settings) = state
-        .rules()
+    let Some(settings) = crate::app::state::active_rules(frontend, match_state)
         .and_then(|rules| rules.super_weapon(section))
         .map(|sw| sw.ares_messages().clone())
     else {
         return;
     };
-    let player = crate::app::input::commands::preferred_local_owner_name(state);
-    let Some(rules) = state.rules() else {
+    let player = crate::app::input::commands::preferred_local_owner_name(match_state);
+    let Some(rules) = crate::app::state::active_rules(frontend, match_state) else {
         return;
     };
     let Some(post) = ares_message_post(
         &settings,
         message,
         &rules.color_schemes,
-        &state.match_state.match_presentation.house_color_map,
+        &match_state.match_presentation.house_color_map,
         firer,
         player.as_deref(),
         rules.general.message_delay_minutes,
     ) else {
         return;
     };
-    post_localized_message(state, &post);
+    post_localized_message(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        sfx_player,
+        persistence,
+        &post,
+    );
 }
 
 /// House4F8D5C and the Super print callers use MessageList5D3BA0 with
@@ -456,9 +612,19 @@ pub(crate) fn post_ares_superweapon_message(
 /// localization and IncomingMessage owners; no warning timer/guard lives here.
 /// The callers' text flags still share the existing bitmap-text lane; this
 /// transport does not establish native glyph/style raster equivalence.
-pub(crate) fn post_hud_message(state: &mut AppState, message: HudMessage) {
+pub(crate) fn post_hud_message(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
+    message: HudMessage,
+) {
     if let HudMessage::AresSuperWeaponRefused(sw_type) = message {
-        let section = state.match_state.sim_runtime.runtime().and_then(|runtime| {
+        let section = match_state.sim_runtime.runtime().and_then(|runtime| {
             runtime
                 .simulation
                 .interner()
@@ -467,7 +633,14 @@ pub(crate) fn post_hud_message(state: &mut AppState, message: HudMessage) {
         });
         if let Some(section) = section {
             post_ares_superweapon_refusal(
-                state,
+                platform,
+                renderer,
+                diag,
+                frontend,
+                match_state,
+                process_assets,
+                sfx_player,
+                persistence,
                 &section,
                 crate::sim::superweapon::AresCameoRefusal::CannotFire,
             );
@@ -480,7 +653,7 @@ pub(crate) fn post_hud_message(state: &mut AppState, message: HudMessage) {
         firer,
     } = message
     {
-        let names = state.match_state.sim_runtime.runtime().and_then(|runtime| {
+        let names = match_state.sim_runtime.runtime().and_then(|runtime| {
             let interner = runtime.simulation.interner();
             Some((
                 interner.try_resolve(sw_type)?.to_owned(),
@@ -488,12 +661,24 @@ pub(crate) fn post_hud_message(state: &mut AppState, message: HudMessage) {
             ))
         });
         if let Some((section, firer)) = names {
-            post_ares_superweapon_message(state, &section, message, firer.as_deref());
+            post_ares_superweapon_message(
+                platform,
+                renderer,
+                diag,
+                frontend,
+                match_state,
+                process_assets,
+                sfx_player,
+                persistence,
+                &section,
+                message,
+                firer.as_deref(),
+            );
         }
         return;
     }
     if let HudMessage::AresTechCaptureLabel(label) = message {
-        let Some(label) = state.match_state.sim_runtime.runtime().and_then(|runtime| {
+        let Some(label) = match_state.sim_runtime.runtime().and_then(|runtime| {
             runtime
                 .simulation
                 .interner()
@@ -502,54 +687,119 @@ pub(crate) fn post_hud_message(state: &mut AppState, message: HudMessage) {
         }) else {
             return;
         };
-        let Some(rules) = state.rules() else {
+        let Some(rules) = crate::app::state::active_rules(frontend, match_state) else {
             return;
         };
         let post = crate::ui::messages::MessagePost {
             prefix: None,
             text: &label,
             rgb: house_message_rgb(
-                crate::app::input::commands::preferred_local_owner_name(state).as_deref(),
-                &state.match_state.match_presentation.house_color_map,
+                crate::app::input::commands::preferred_local_owner_name(match_state).as_deref(),
+                &match_state.match_presentation.house_color_map,
                 Some(&rules.color_schemes),
             ),
             timeout_ms: message.timeout_ms(rules),
             silent: false,
         };
-        post_localized_message(state, &post);
+        post_localized_message(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            sfx_player,
+            persistence,
+            &post,
+        );
         return;
     }
     if let HudMessage::EvaObjectLine { label, type_id } = message {
-        if let Some(name) = eva_text_product_name(state, type_id) {
-            post_eva_text(state, label, &name);
+        if let Some(name) = eva_text_product_name(frontend, match_state, process_assets, type_id) {
+            post_eva_text(
+                platform,
+                renderer,
+                diag,
+                frontend,
+                match_state,
+                process_assets,
+                sfx_player,
+                persistence,
+                label,
+                &name,
+            );
         }
         return;
     }
     if let HudMessage::EvaTextLine { label } = message {
-        post_eva_plain_text(state, label);
+        post_eva_plain_text(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            sfx_player,
+            persistence,
+            label,
+        );
         return;
     }
     let Some(key) = message.csf_key() else {
         return;
     };
     if let HudMessage::PlayerDefeated(house) = message {
-        post_house_line(state, key, house, HouseLineColor::Player);
+        post_house_line(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            sfx_player,
+            persistence,
+            key,
+            house,
+            HouseLineColor::Player,
+        );
         return;
     }
     if let HudMessage::Alliance { owner, other, .. } = message {
-        post_house_names_line(state, key, &[owner, other], HouseLineColor::Country);
+        post_house_names_line(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            sfx_player,
+            persistence,
+            key,
+            &[owner, other],
+            HouseLineColor::Country,
+        );
         return;
     }
-    let Some(rules) = state.rules() else {
+    let Some(rules) = crate::app::state::active_rules(frontend, match_state) else {
         return;
     };
     let rgb = house_message_rgb(
-        crate::app::input::commands::preferred_local_owner_name(state).as_deref(),
-        &state.match_state.match_presentation.house_color_map,
+        crate::app::input::commands::preferred_local_owner_name(match_state).as_deref(),
+        &match_state.match_presentation.house_color_map,
         Some(&rules.color_schemes),
     );
     if let Some(post) = message.post(rules, rgb) {
-        post_localized_message(state, &post);
+        post_localized_message(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            sfx_player,
+            persistence,
+            &post,
+        );
     }
 }
 
@@ -557,17 +807,22 @@ pub(crate) fn post_hud_message(state: &mut AppState, message: HudMessage) {
 /// ([`crate::assets::csf_file::type_ui_name`]); a type with no `UIName=`
 /// keeps its rules key (e.g. `HTNK`).
 fn eva_text_product_name(
-    state: &AppState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
     type_id: crate::sim::intern::InternedId,
 ) -> Option<String> {
-    let section = state
-        .match_state
+    let section = match_state
         .sim_runtime
         .runtime()?
         .simulation
         .interner()
         .resolve(type_id);
-    eva_text_name(section, state.rules()?, state.process_assets.csf.as_ref())
+    eva_text_name(
+        section,
+        crate::app::state::active_rules(frontend, match_state)?,
+        process_assets.csf.as_ref(),
+    )
 }
 
 fn eva_text_name(
@@ -589,38 +844,103 @@ fn eva_text_name(
 /// get a row: hold/resume arms speak the same line and name the resumed type,
 /// while on-hold, unable-to-comply and select-target arms speak other lines.
 /// The cancel line has its own row; see [`post_eva_cancel`].
-pub(crate) fn post_eva_production_start(state: &mut AppState, eva_line: &str, type_key: &str) {
+pub(crate) fn post_eva_production_start(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
+    eva_line: &str,
+    type_key: &str,
+) {
     let label = match eva_line {
         crate::app::input::sidebar_eva::EVA_BUILDING => "VERA:EvaBuildingStarted",
         crate::app::input::sidebar_eva::EVA_TRAINING => "VERA:EvaTrainingStarted",
         _ => return,
     };
-    post_eva_type_line(state, label, type_key);
+    post_eva_type_line(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        sfx_player,
+        persistence,
+        label,
+        type_key,
+    );
 }
 
 /// `EVA_Canceled` (`SelectClass::Action @ 0x006AAD00`, `0x006AAE39`) names
 /// nothing either, and a single `ABANDON` removed exactly the clicked cameo's
 /// type. `structure` comes from the strip that owns the click.
-pub(crate) fn post_eva_cancel(state: &mut AppState, type_key: &str, structure: bool) {
+pub(crate) fn post_eva_cancel(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
+    type_key: &str,
+    structure: bool,
+) {
     let label = if structure {
         "VERA:EvaBuildingCanceled"
     } else {
         "VERA:EvaTrainingCanceled"
     };
-    post_eva_type_line(state, label, type_key);
+    post_eva_type_line(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        sfx_player,
+        persistence,
+        label,
+        type_key,
+    );
 }
 
-fn post_eva_type_line(state: &mut AppState, label: &str, type_key: &str) {
-    if !state.persistence.options_profile.detailed_eva_text {
+fn post_eva_type_line(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
+    label: &str,
+    type_key: &str,
+) {
+    if !persistence.options_profile.detailed_eva_text {
         return;
     }
-    let Some(name) = state
-        .rules()
-        .and_then(|rules| eva_text_name(type_key, rules, state.process_assets.csf.as_ref()))
+    let Some(name) = crate::app::state::active_rules(frontend, match_state)
+        .and_then(|rules| eva_text_name(type_key, rules, process_assets.csf.as_ref()))
     else {
         return;
     };
-    post_eva_text(state, label, &name);
+    post_eva_text(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        sfx_player,
+        persistence,
+        label,
+        &name,
+    );
 }
 
 /// Post one detailed EVA text row from the VERA template `label`, with the
@@ -630,32 +950,68 @@ fn post_eva_type_line(state: &mut AppState, label: &str, type_key: &str) {
 /// Detailed EVA text for a newly unlocked construction option. The voice is
 /// app-local (sidebar cameo insert), so its text is posted beside that voice
 /// rather than through the sim sound-events bridge.
-pub(crate) fn post_eva_new_construction(state: &mut AppState) {
-    post_eva_plain_text(state, "VERA:EvaNewConstruction");
+pub(crate) fn post_eva_new_construction(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
+) {
+    post_eva_plain_text(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        sfx_player,
+        persistence,
+        "VERA:EvaNewConstruction",
+    );
 }
 
 /// Post one detailed EVA row with no subject object: `label` is a complete
 /// VERA template (no `{name}` slot), used for alerts whose sim event carries
 /// no type id. Shares the switch and the subtitle styling with
 /// [`post_eva_text`].
-fn post_eva_plain_text(state: &mut AppState, label: &str) {
-    if !state.persistence.options_profile.detailed_eva_text {
+fn post_eva_plain_text(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
+    label: &str,
+) {
+    if !persistence.options_profile.detailed_eva_text {
         return;
     }
     let Some(text) = crate::i18n::find(label) else {
         return;
     };
-    let Some(rules) = state.rules() else {
+    let Some(rules) = crate::app::state::active_rules(frontend, match_state) else {
         return;
     };
     let timeout_ms = message_delay_timeout_ms(rules.general.message_delay_minutes);
     let rgb = house_message_rgb(
-        crate::app::input::commands::preferred_local_owner_name(state).as_deref(),
-        &state.match_state.match_presentation.house_color_map,
+        crate::app::input::commands::preferred_local_owner_name(match_state).as_deref(),
+        &match_state.match_presentation.house_color_map,
         Some(&rules.color_schemes),
     );
     post_resolved_message(
-        state,
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        sfx_player,
+        persistence,
         &crate::ui::messages::MessagePost {
             prefix: None,
             text: &text,
@@ -666,25 +1022,43 @@ fn post_eva_plain_text(state: &mut AppState, label: &str) {
     );
 }
 
-fn post_eva_text(state: &mut AppState, label: &str, name: &str) {
-    if !state.persistence.options_profile.detailed_eva_text {
+fn post_eva_text(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
+    label: &str,
+    name: &str,
+) {
+    if !persistence.options_profile.detailed_eva_text {
         return;
     }
     let Some(template) = crate::i18n::find(label) else {
         return;
     };
     let text = crate::i18n::fill(&template, &[("name", &name)]);
-    let Some(rules) = state.rules() else {
+    let Some(rules) = crate::app::state::active_rules(frontend, match_state) else {
         return;
     };
     let timeout_ms = message_delay_timeout_ms(rules.general.message_delay_minutes);
     let rgb = house_message_rgb(
-        crate::app::input::commands::preferred_local_owner_name(state).as_deref(),
-        &state.match_state.match_presentation.house_color_map,
+        crate::app::input::commands::preferred_local_owner_name(match_state).as_deref(),
+        &match_state.match_presentation.house_color_map,
         Some(&rules.color_schemes),
     );
     post_resolved_message(
-        state,
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        sfx_player,
+        persistence,
         &crate::ui::messages::MessagePost {
             prefix: None,
             text: &text,
@@ -704,24 +1078,41 @@ fn auto_loaded_line(count: usize) -> Option<String> {
 /// VERA's smart-command result line: the number of orders Ctrl+D issued.
 /// Shares the detailed-EVA text lane and every one of its gates; the count is
 /// the number of orders the hotkey actually scheduled, never a guess.
-pub(crate) fn post_eva_auto_loaded(state: &mut AppState, count: usize) {
-    if !state.persistence.options_profile.detailed_eva_text {
+pub(crate) fn post_eva_auto_loaded(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
+    count: usize,
+) {
+    if !persistence.options_profile.detailed_eva_text {
         return;
     }
     let Some(text) = auto_loaded_line(count) else {
         return;
     };
-    let Some(rules) = state.rules() else {
+    let Some(rules) = crate::app::state::active_rules(frontend, match_state) else {
         return;
     };
     let timeout_ms = message_delay_timeout_ms(rules.general.message_delay_minutes);
     let rgb = house_message_rgb(
-        crate::app::input::commands::preferred_local_owner_name(state).as_deref(),
-        &state.match_state.match_presentation.house_color_map,
+        crate::app::input::commands::preferred_local_owner_name(match_state).as_deref(),
+        &match_state.match_presentation.house_color_map,
         Some(&rules.color_schemes),
     );
     post_resolved_message(
-        state,
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        sfx_player,
+        persistence,
         &crate::ui::messages::MessagePost {
             prefix: None,
             text: &text,
@@ -748,36 +1139,89 @@ pub(crate) enum HouseLineColor {
 /// TXT_LEFT_GAME/TXT_CONNECTION_LOST (name read at 5DA772); MPlayer_Defeated
 /// posts TXT_PLAYER_DEFEATED (4FC271..4FC2DB local, 4FC34F..4FC3AD remote).
 pub(crate) fn post_house_line(
-    state: &mut AppState,
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
     key: &str,
     house: crate::sim::intern::InternedId,
     color: HouseLineColor,
 ) {
-    post_house_names_line(state, key, &[house], color);
+    post_house_names_line(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        sfx_player,
+        persistence,
+        key,
+        &[house],
+        color,
+    );
 }
 
 /// [`post_house_line`] naming player `name` instead of the House: VERA
 /// shared control names which of a shared House's players left.
 pub(crate) fn post_player_house_line(
-    state: &mut AppState,
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
     key: &str,
     house: crate::sim::intern::InternedId,
     name: &str,
     color: HouseLineColor,
 ) {
-    post_named_house_line(state, key, house, &[name.to_owned()], color);
+    post_named_house_line(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        sfx_player,
+        persistence,
+        key,
+        house,
+        &[name.to_owned()],
+        color,
+    );
 }
 
 /// [`post_house_line`] with one `%s` per House, coloured by the first.
 fn post_house_names_line(
-    state: &mut AppState,
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
     key: &str,
     houses: &[crate::sim::intern::InternedId],
     color: HouseLineColor,
 ) {
     let Some(names) = houses
         .iter()
-        .map(|&house| crate::app::presentation::house_ui::house_ui_name(state, house))
+        .map(|&house| {
+            crate::app::presentation::house_ui::house_ui_name(
+                frontend,
+                match_state,
+                process_assets,
+                house,
+            )
+        })
         .collect::<Option<Vec<String>>>()
     else {
         return;
@@ -785,19 +1229,38 @@ fn post_house_names_line(
     let Some(&house) = houses.first() else {
         return;
     };
-    post_named_house_line(state, key, house, &names, color);
+    post_named_house_line(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        sfx_player,
+        persistence,
+        key,
+        house,
+        &names,
+        color,
+    );
 }
 
 /// The line itself: the template with `names`, coloured by `house`.
 fn post_named_house_line(
-    state: &mut AppState,
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
     key: &str,
     house: crate::sim::intern::InternedId,
     names: &[String],
     color: HouseLineColor,
 ) {
-    let Some(sim) = state
-        .match_state
+    let Some(sim) = match_state
         .sim_runtime
         .runtime()
         .map(|runtime| &runtime.simulation)
@@ -808,15 +1271,15 @@ fn post_named_house_line(
     let country = sim
         .houses()
         .get(&house)
-        .and_then(|state| state.country())
+        .and_then(|house_state| house_state.country())
         .map(|country| sim.interner().resolve(country).to_string());
-    let Some(rules) = state.rules() else {
+    let Some(rules) = crate::app::state::active_rules(frontend, match_state) else {
         return;
     };
     let rgb = match color {
         HouseLineColor::Player => house_message_rgb(
             Some(&owner),
-            &state.match_state.match_presentation.house_color_map,
+            &match_state.match_presentation.house_color_map,
             Some(&rules.color_schemes),
         ),
         HouseLineColor::Country => {
@@ -830,14 +1293,21 @@ fn post_named_house_line(
         }
     };
     let timeout_ms = message_delay_timeout_ms(rules.general.message_delay_minutes);
-    let template = state.csf_text(key);
+    let template = process_assets.csf_text(key);
     let args: Vec<crate::assets::csf_file::CsfArg<'_>> = names
         .iter()
         .map(|name| crate::assets::csf_file::CsfArg::Str(name))
         .collect();
     let text = crate::assets::csf_file::format_csf(&template, &args);
     post_resolved_message(
-        state,
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        sfx_player,
+        persistence,
         &crate::ui::messages::MessagePost {
             prefix: None,
             text: &text,
@@ -850,23 +1320,31 @@ fn post_named_house_line(
 
 /// MapPlayerColorToScheme `0x0069A310` of a player's Session colour: VERA
 /// reads it as the House's own scheme, as MPlayer_Defeated's lines do.
-pub(crate) fn player_line_rgb(state: &AppState, owner: crate::sim::intern::InternedId) -> [f32; 3] {
-    let owner = state
-        .match_state
+pub(crate) fn player_line_rgb(
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    owner: crate::sim::intern::InternedId,
+) -> [f32; 3] {
+    let owner = match_state
         .sim_runtime
         .runtime()
         .map(|runtime| runtime.simulation.interner().resolve(owner).to_string());
     house_message_rgb(
         owner.as_deref(),
-        &state.match_state.match_presentation.house_color_map,
-        state.rules().map(|rules| rules.color_schemes.as_slice()),
+        &match_state.match_presentation.house_color_map,
+        crate::app::state::active_rules(frontend, match_state)
+            .map(|rules| rules.color_schemes.as_slice()),
     )
 }
 
 /// Network packet colour is a Session priority, converted by69A310 before
 /// TextLabel72A4A0. Keep this in the same message-colour owner as local echoes.
-pub(crate) fn packet_player_line_rgb(state: &AppState, priority: i32) -> [f32; 3] {
-    let Some(rules) = state.rules() else {
+pub(crate) fn packet_player_line_rgb(
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    priority: i32,
+) -> [f32; 3] {
+    let Some(rules) = crate::app::state::active_rules(frontend, match_state) else {
         return MESSAGE_RGB_SYSTEM;
     };
     country_message_rgb(
@@ -878,13 +1356,32 @@ pub(crate) fn packet_player_line_rgb(state: &AppState, priority: i32) -> [f32; 3
 /// A chat line: Add_Message with the sender's name as prefix, style 4046,
 /// MessageDelay*900 buckets and silent 0, so IncomingMessage plays once
 /// (`0x0055F0A8..0x0055F104` echo, `0x0048D93A..0x0048D98D` receive).
-pub(crate) fn post_chat_line(state: &mut AppState, name: &str, text: &str, rgb: [f32; 3]) {
-    let Some(rules) = state.rules() else {
+pub(crate) fn post_chat_line(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
+    name: &str,
+    text: &str,
+    rgb: [f32; 3],
+) {
+    let Some(rules) = crate::app::state::active_rules(frontend, match_state) else {
         return;
     };
     let timeout_ms = message_delay_timeout_ms(rules.general.message_delay_minutes);
     post_resolved_message(
-        state,
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        sfx_player,
+        persistence,
         &crate::ui::messages::MessagePost {
             prefix: Some(name),
             text,
@@ -897,11 +1394,33 @@ pub(crate) fn post_chat_line(state: &mut AppState, name: &str, text: &str, rgb: 
 
 /// Radar subtitle callback `0x005BF360`: literal text, scheme 0 and native
 /// MessageList duration buckets; cue Position/RGB belong to full-screen movies.
-pub(crate) fn post_movie_subtitle(state: &mut AppState, text: &str, duration: u32) {
-    let rgb = state.rules().map_or(MESSAGE_RGB_SYSTEM, |rules| {
-        country_message_rgb(0, &rules.color_schemes)
-    });
-    post_resolved_message(state, &movie_subtitle_post(text, duration, rgb));
+pub(crate) fn post_movie_subtitle(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
+    text: &str,
+    duration: u32,
+) {
+    let rgb = crate::app::state::active_rules(frontend, match_state)
+        .map_or(MESSAGE_RGB_SYSTEM, |rules| {
+            country_message_rgb(0, &rules.color_schemes)
+        });
+    post_resolved_message(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        sfx_player,
+        persistence,
+        &movie_subtitle_post(text, duration, rgb),
+    );
 }
 
 fn movie_subtitle_post(
@@ -922,43 +1441,120 @@ fn movie_subtitle_post(
 /// The observer gate's silent `TXT_OBSERVER_CANT_SEND` row in the "Grey"
 /// scheme (`0x004E12D0` with `0x00822728`), flags 0x16, MessageDelay*900
 /// (`0x0055EED0..0x0055EF2C`).
-pub(crate) fn post_observer_refusal(state: &mut AppState) {
-    post_grey_row(state, "TXT_OBSERVER_CANT_SEND", true, true);
+pub(crate) fn post_observer_refusal(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
+) {
+    post_grey_row(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        sfx_player,
+        persistence,
+        "TXT_OBSERVER_CANT_SEND",
+        true,
+        true,
+    );
 }
 
-/// The WOL page sinks in a match (`0x007A92F9..0x007A93B4`): the page line
-/// and, from the ANSI sink, `TXT_HOW_TO_REPLY` under it, each a Grey row
-/// with flags 0x16, `MessageDelay * 900` and silent 0.
-pub(crate) fn post_wol_page_rows(state: &mut AppState, line: &str, reply_hint: bool) {
-    post_grey_row(state, line, false, false);
-    if reply_hint {
-        post_grey_row(state, "TXT_HOW_TO_REPLY", true, false);
-    }
-}
-
-/// A WOL find or page-result row in a match with no window to take it
-/// (`0x007AA5D5..`, `0x007A9800`): the same Grey row, silent 0.
-pub(crate) fn post_wol_result_row(state: &mut AppState, text: &str) {
-    post_grey_row(state, text, false, false);
+/// The message row for a WOL page, locate or send result during a match
+/// (0x007A92F9, 0x007AA5D5, 0x007A9800). VERA omits the retail pager's
+/// reply hint because that dialog is only available outside the match.
+pub(crate) fn post_wol_row(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
+    text: &str,
+) {
+    post_grey_row(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        sfx_player,
+        persistence,
+        text,
+        false,
+        false,
+    );
 }
 
 /// The WOL NetStatus sink's lost connection in a match (`0x007AA7C0..`):
 /// one `TXT_WOL_CONNLOST` row in the same scheme, flags and timeout, with
 /// its sound.
-pub(crate) fn post_wol_connection_lost(state: &mut AppState) {
-    post_grey_row(state, "TXT_WOL_CONNLOST", true, false);
+pub(crate) fn post_wol_connection_lost(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
+) {
+    post_grey_row(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        sfx_player,
+        persistence,
+        "TXT_WOL_CONNLOST",
+        true,
+        false,
+    );
 }
 
 /// Cooperative `+0xA0`'s save result (`0x005C37B7..0x005C381F`):
 /// `TXT_COOP_SAVE_SUCCESS` or `TXT_COOP_SAVE_FAILED`, a Grey row with its
 /// sound.
-pub(crate) fn post_cooperative_save_result(state: &mut AppState, saved: bool) {
+pub(crate) fn post_cooperative_save_result(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
+    saved: bool,
+) {
     let key = if saved {
         "TXT_COOP_SAVE_SUCCESS"
     } else {
         "TXT_COOP_SAVE_FAILED"
     };
-    post_grey_row(state, key, true, false);
+    post_grey_row(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        sfx_player,
+        persistence,
+        key,
+        true,
+        false,
+    );
 }
 
 /// `GadgetClass::GetColorScheme`'s "Grey" (`0x004E12D0`) as a row colour.
@@ -976,14 +1572,33 @@ fn grey_rgb(rules: &crate::rules::ruleset::RuleSet) -> [f32; 3] {
 
 /// A row in `GadgetClass::GetColorScheme` (`0x004E12D0`, "Grey"), flags
 /// 0x16, `MessageDelay * 900`; `text` is a CSF key when `localize`.
-fn post_grey_row(state: &mut AppState, text: &str, localize: bool, silent: bool) {
-    let Some(rules) = state.rules() else {
+fn post_grey_row(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
+    text: &str,
+    localize: bool,
+    silent: bool,
+) {
+    let Some(rules) = crate::app::state::active_rules(frontend, match_state) else {
         return;
     };
     let timeout_ms = message_delay_timeout_ms(rules.general.message_delay_minutes);
     let rgb = grey_rgb(rules);
     post_message(
-        state,
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        sfx_player,
+        persistence,
         &crate::ui::messages::MessagePost {
             prefix: None,
             text,
@@ -998,14 +1613,58 @@ fn post_grey_row(state: &mut AppState, text: &str, localize: bool, silent: bool)
 /// A change to the relay's shared timeline (`network_match`): a speed
 /// change, or another player's shared pause or resume. gamemd has no such
 /// lines, so `text` is VERA's own, not a CSF key.
-pub(crate) fn post_relay_notice(state: &mut AppState, text: &str) {
-    post_grey_row(state, text, false, false);
+pub(crate) fn post_relay_notice(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
+    text: &str,
+) {
+    post_grey_row(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        sfx_player,
+        persistence,
+        text,
+        false,
+        false,
+    );
 }
 
 /// VERA: the answer to a `/pause` or `/resume` chat line
 /// (`pause_menu::chat_command`); `text` is VERA's own, not a CSF key.
-pub(crate) fn post_chat_command_answer(state: &mut AppState, text: &str) {
-    post_grey_row(state, text, false, false);
+pub(crate) fn post_chat_command_answer(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
+    text: &str,
+) {
+    post_grey_row(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        sfx_player,
+        persistence,
+        text,
+        false,
+        false,
+    );
 }
 
 /// VERA: what online play and a replay are doing, as silent Grey rows
@@ -1014,32 +1673,39 @@ pub(crate) fn post_chat_command_answer(state: &mut AppState, text: &str) {
 /// them up to date, also while a pause holds Main_Tick and the rows' expiry.
 /// A replay's hint expires as any row does; the other notices stay while
 /// their state lasts. gamemd has none of these, so the texts are VERA's own.
-pub(crate) fn show_status_notices(state: &mut AppState) {
+pub(crate) fn show_status_notices(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    persistence: &PersistenceState,
+) {
     use crate::ui::messages::NoticeSlot;
-    if state.frontend.screen != GameScreen::InGame {
+    if frontend.screen != GameScreen::InGame {
         return;
     }
-    let Some(rules) = state.rules() else {
+    let Some(rules) = crate::app::state::active_rules(frontend, match_state) else {
         return;
     };
     let rgb = grey_rgb(rules);
     let delay_ms = message_delay_timeout_ms(rules.general.message_delay_minutes);
-    let network =
-        crate::app::match_runtime::network_match::recovery_notice(state).map(crate::i18n::tr);
-    let pause = crate::app::input::pause_menu::multiplayer_control(state)
+    let network = crate::app::match_runtime::network_match::recovery_notice(frontend, match_state)
+        .map(crate::i18n::tr);
+    let pause = crate::app::input::pause_menu::multiplayer_control(match_state)
         .and_then(|control| control.status)
         .map(crate::i18n::tr);
-    let diagnostics = &state.match_state.match_diagnostics;
+    let diagnostics = &match_state.match_diagnostics;
     let replay_ms = if diagnostics.playback_playing() {
         delay_ms
     } else {
         None
     };
     let replay = diagnostics.playback_status();
-    sync_view(state);
-    let now = message_now_ms(state);
-    let font = &state.renderer.bit_font;
-    let list = &mut state.match_state.match_presentation.message_list;
+    sync_view(platform, renderer, frontend, match_state, persistence);
+    let now = message_now_ms(diag, match_state);
+    let font = &renderer.bit_font;
+    let list = &mut match_state.match_presentation.message_list;
     for (slot, text, timeout_ms) in [
         (NoticeSlot::Network, network, None),
         (NoticeSlot::Pause, pause, None),
@@ -1060,9 +1726,17 @@ pub(crate) fn show_status_notices(state: &mut AppState) {
 
 /// VERA: a match whose `veraui.ini` had lines the game could not use says so
 /// once, naming the first; the log lists them all.
-pub(crate) fn post_layout_problem(state: &mut AppState) {
-    let Some(place) = state
-        .match_state
+pub(crate) fn post_layout_problem(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
+) {
+    let Some(place) = match_state
         .match_presentation
         .match_layouts
         .problems()
@@ -1072,7 +1746,64 @@ pub(crate) fn post_layout_problem(state: &mut AppState) {
         return;
     };
     let text = crate::i18n::tr_fill("VERA:LayoutFileProblem", &[("where", &place)]);
-    post_grey_row(state, &text, false, false);
+    post_grey_row(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        sfx_player,
+        persistence,
+        &text,
+        false,
+        false,
+    );
+}
+
+/// The most art problems [`post_art_problems`] shows as rows of their own.
+const ART_PROBLEM_ROWS: usize = 3;
+
+/// VERA: declared `Picture=` or `Model=` art that this load could not use as
+/// written (`rules::art_problems`, docs/picture-model-art.md), said once when
+/// the match has loaded: the first few problems, then how many more the log
+/// lists. The lines name sections, keys and files, so they stay in English.
+/// Art that declares neither key reports nothing, and nothing is shown.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn post_art_problems(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
+) {
+    let problems = crate::rules::art_problems::take();
+    let mut post = |text: &str, silent: bool| {
+        post_grey_row(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            sfx_player,
+            persistence,
+            text,
+            false,
+            silent,
+        );
+    };
+    // One incoming-message sound for the lot.
+    for (row, line) in problems.iter().take(ART_PROBLEM_ROWS).enumerate() {
+        post(line, row > 0);
+    }
+    if problems.len() > ART_PROBLEM_ROWS {
+        let more = problems.len() - ART_PROBLEM_ROWS;
+        post(&format!("And {more} more art problems (see the log)."), true);
+    }
 }
 
 /// What the layout edit mode tells the player (`input::layout_edit`).
@@ -1088,42 +1819,158 @@ pub(crate) enum LayoutEditLine {
 
 /// Tell the player the layout edit mode is on and how to use it, or that it
 /// is off and whether what they moved is kept.
-pub(crate) fn post_layout_edit(state: &mut AppState, line: LayoutEditLine) {
+pub(crate) fn post_layout_edit(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
+    line: LayoutEditLine,
+) {
     let key = match line {
         LayoutEditLine::On => "VERA:LayoutEditHint",
         LayoutEditLine::Saved => "VERA:LayoutEditDone",
         LayoutEditLine::Cancelled => "VERA:LayoutEditCancelled",
     };
-    post_grey_row(state, &crate::i18n::tr(key), false, false);
+    post_grey_row(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        sfx_player,
+        persistence,
+        &crate::i18n::tr(key),
+        false,
+        false,
+    );
 }
 
 /// VERA formation lock (`context_order::toggle_formation_lock`): say that
 /// the selection's units were locked, and how many, or unlocked. gamemd has
 /// no such line, so the text is VERA's own.
-pub(crate) fn post_formation_lock(state: &mut AppState, locked: bool, units: usize) {
+pub(crate) fn post_formation_lock(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
+    locked: bool,
+    units: usize,
+) {
     let text = if locked {
         crate::i18n::tr_fill("VERA:FormationLocked", &[("count", &units)])
     } else {
         crate::i18n::tr("VERA:FormationUnlocked")
     };
-    post_grey_row(state, &text, false, true);
+    post_grey_row(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        sfx_player,
+        persistence,
+        &text,
+        false,
+        true,
+    );
 }
 
 /// VERA primary rotation (`input::primary_rotation`): say how many factories
 /// now take turns, or that the selected ones stopped. gamemd has no such
 /// line, so the text is VERA's own.
-pub(crate) fn post_primary_rotation(state: &mut AppState, factories: usize) {
+pub(crate) fn post_primary_rotation(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
+    factories: usize,
+) {
     let text = if factories > 0 {
         crate::i18n::tr_fill("VERA:PrimaryRotationOn", &[("count", &factories)])
     } else {
         crate::i18n::tr("VERA:PrimaryRotationOff")
     };
-    post_grey_row(state, &text, false, true);
+    post_grey_row(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        sfx_player,
+        persistence,
+        &text,
+        false,
+        true,
+    );
 }
 
-pub(super) fn post_command_backpressure(state: &mut AppState) {
+/// VERA's HD art key (`render::hd_switch`): say that HD art is now on or off, or,
+/// for None, that it needs an HD art pack mod. gamemd has no such line.
+pub(crate) fn post_hd_art(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
+    on: Option<bool>,
+) {
+    let text = crate::i18n::tr(match on {
+        Some(true) => "VERA:HdArtOnLine",
+        Some(false) => "VERA:HdArtOffLine",
+        None => "VERA:HdLookNeedsPack",
+    });
     post_grey_row(
-        state,
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        sfx_player,
+        persistence,
+        &text,
+        false,
+        true,
+    );
+}
+
+pub(super) fn post_command_backpressure(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
+) {
+    post_grey_row(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        sfx_player,
+        persistence,
         &crate::i18n::tr("VERA:CommandsStillSending"),
         false,
         true,
@@ -1131,31 +1978,87 @@ pub(super) fn post_command_backpressure(state: &mut AppState) {
 }
 
 /// Post a row whose `text` is a CSF key.
-fn post_localized_message(state: &mut AppState, post: &crate::ui::messages::MessagePost<'_>) {
-    post_message(state, post, true);
+fn post_localized_message(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
+    post: &crate::ui::messages::MessagePost<'_>,
+) {
+    post_message(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        sfx_player,
+        persistence,
+        post,
+        true,
+    );
 }
 
 /// Post a row whose `text` is already formatted from its CSF template.
-fn post_resolved_message(state: &mut AppState, post: &crate::ui::messages::MessagePost<'_>) {
-    post_message(state, post, false);
+fn post_resolved_message(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
+    post: &crate::ui::messages::MessagePost<'_>,
+) {
+    post_message(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        sfx_player,
+        persistence,
+        post,
+        false,
+    );
 }
 
-fn post_message(state: &mut AppState, post: &crate::ui::messages::MessagePost<'_>, localize: bool) {
-    sync_view(state);
-    let now = message_now_ms(state);
-    let font = &state.renderer.bit_font;
+fn post_message(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
+    post: &crate::ui::messages::MessagePost<'_>,
+    localize: bool,
+) {
+    sync_view(platform, renderer, frontend, match_state, persistence);
+    let now = message_now_ms(diag, match_state);
+    let font = &renderer.bit_font;
     let outcome = add_localized_message(
-        &mut state.match_state.match_presentation.message_list,
-        state.process_assets.csf.as_ref().filter(|_| localize),
+        &mut match_state.match_presentation.message_list,
+        process_assets.csf.as_ref().filter(|_| localize),
         post,
         now,
         &|s| font.text_width(s) as i32,
     );
     if outcome.play_sound {
-        let sound = state
-            .rules()
-            .and_then(|r| r.general.incoming_message_sound().map(str::to_owned));
-        crate::app::App::play_shell_ui_sound_by_id(state, sound.as_deref());
+        crate::app::App::play_shell_rules_sound(
+            frontend,
+            match_state,
+            process_assets,
+            sfx_player,
+            |rules| rules.general.incoming_message_sound(),
+        );
     }
 }
 
@@ -1201,19 +2104,23 @@ fn house_message_rgb(
 
 /// Main_Tick55DDA5 polls Manage only when its offline menu/Scenario holds
 /// permit it. On the first resumed pass, deadlines include the entire hold.
-pub(crate) fn update(state: &mut AppState, main_tick_admitted: bool) -> Option<u64> {
-    if state.frontend.screen != GameScreen::InGame
-        || !poll_is_admitted(main_tick_admitted, state.match_state.main_tick_frozen())
+pub(crate) fn update(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    persistence: &PersistenceState,
+    main_tick_admitted: bool,
+) -> Option<u64> {
+    if frontend.screen != GameScreen::InGame
+        || !poll_is_admitted(main_tick_admitted, match_state.main_tick_frozen())
     {
         return None;
     }
-    sync_view(state);
-    let now = message_now_ms(state);
-    state
-        .match_state
-        .match_presentation
-        .message_list
-        .manage(now);
+    sync_view(platform, renderer, frontend, match_state, persistence);
+    let now = message_now_ms(diag, match_state);
+    match_state.match_presentation.message_list.manage(now);
     Some(now)
 }
 
@@ -1223,13 +2130,48 @@ fn poll_is_admitted(main_tick_admitted: bool, currently_frozen: bool) -> bool {
     main_tick_admitted || !currently_frozen
 }
 
-fn sync_view(state: &mut AppState) {
-    let typing = state
-        .frontend
-        .multiplayer_shell_runtime
-        .scroll_text(state.match_state.session_mode());
+/// Android: whether a window-space point lies in the message lane, where a
+/// long press opens the chat instead of the right-click cancel.
+#[cfg(target_os = "android")]
+pub(crate) fn lane_contains_window_px(state: &AppState, px: i32, py: i32) -> bool {
+    let (lx, ly, lw, lh) = state.match_state.match_presentation.message_list.lane_box();
+    let (lx, ly, lw, lh) = match state.renderer.tactical_zoom(&state.frontend.screen) {
+        Some(zoom) => {
+            let (x, y) = zoom.source_to_window(lx as f32, ly as f32);
+            let scale = zoom.scale();
+            (
+                x.round() as i32,
+                y.round() as i32,
+                (lw as f32 * scale).round() as i32,
+                (lh as f32 * scale).round() as i32,
+            )
+        }
+        None => (lx, ly, lw, lh),
+    };
+    px >= lx && px < lx + lw && py >= ly && py < ly + lh
+}
+
+/// Android: the open chat edit's text and caret, for seeding the input method.
+#[cfg(target_os = "android")]
+pub(crate) fn ime_edit_state(state: &AppState) -> Option<(String, usize)> {
     state
         .match_state
+        .match_presentation
+        .message_list
+        .edit_ime_state()
+}
+
+fn sync_view(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    persistence: &PersistenceState,
+) {
+    let typing = frontend
+        .multiplayer_shell_runtime
+        .scroll_text(match_state.session_mode());
+    match_state
         .match_presentation
         .message_list
         .set_typing(typing);
@@ -1238,16 +2180,101 @@ fn sync_view(state: &mut AppState) {
     // VERA's performance panel holds the viewport's top left while it shows, and the
     // list and its edit line start below it.
     let [x, y, width, _] = crate::app::presentation::field_parts::rect(
-        state,
+        platform,
+        renderer,
+        &frontend.screen,
+        &match_state.match_presentation,
+        persistence,
         crate::ui::field_layout::FieldPart::Messages,
     );
-    let (_, tactical_y, _, _) = crate::app::input::camera::tactical_viewport_px(state);
-    let top = state.renderer.performance_overlay.message_top();
-    state.match_state.match_presentation.message_list.set_view(
-        x,
-        y.max(tactical_y as i32 + top),
-        width,
+    let (_, tactical_y, _, _) = crate::app::input::camera::tactical_viewport_px(
+        platform,
+        renderer,
+        &frontend.screen,
+        &match_state.match_presentation,
+        persistence,
     );
+    let top = renderer.performance_overlay.message_top();
+    // Android: the battle view fills the window, so the screen's rounded
+    // corner and its cutout sit over the lane's first rows. Move the lane in
+    // by what they hide, from screen pixels to the render frame's own units.
+    #[cfg(target_os = "android")]
+    let (x, y) = {
+        let window = platform.window.inner_size();
+        let (dx, dy) = crate::util::display_insets::frame_offset(
+            (
+                renderer.render_width(&frontend.screen),
+                renderer.render_height(&frontend.screen),
+            ),
+            (window.width, window.height),
+        );
+        (x + dx, y.max(tactical_y as i32 + top + dy))
+    };
+    #[cfg(not(target_os = "android"))]
+    let y = y.max(tactical_y as i32 + top);
+    match_state
+        .match_presentation
+        .message_list
+        .set_view(x, y, width);
+}
+
+/// Android: the one-shot "touch here to chat" line, five seconds into the first
+/// network match a profile plays (`persistence::chat_hint`).
+#[cfg(target_os = "android")]
+pub(crate) fn maybe_post_chat_hint(state: &mut AppState) {
+    use crate::util::time::Duration;
+    if !state.match_state.session_mode().is_network() {
+        return;
+    }
+    let now = crate::util::time::Instant::now();
+    let Some(due) = state.match_state.input.chat_hint_due else {
+        state.match_state.input.chat_hint_due = Some(now + Duration::from_secs(5));
+        return;
+    };
+    if now < due {
+        return;
+    }
+    // One attempt per match: `chat_hint::consume` writes the flag when the line
+    // is posted, and a spent flag keeps later matches silent.
+    state.match_state.input.chat_hint_due = Some(now + Duration::from_secs(3600));
+    let Some(config) = state.platform.game_config.as_ref() else {
+        return;
+    };
+    let settings = config.paths.settings_dir().to_path_buf();
+    if crate::app::persistence::chat_hint::consume(&settings) {
+        post_chat_hint(state);
+    }
+}
+
+/// Android: the hint line itself, in neutral white so it never reads as a
+/// player's chat message, expiring after ten seconds.
+#[cfg(target_os = "android")]
+fn post_chat_hint(state: &mut AppState) {
+    sync_view(
+        &state.platform,
+        &state.renderer,
+        &state.frontend,
+        &mut state.match_state,
+        &state.persistence,
+    );
+    let text = crate::i18n::tr("VERA:TouchToChat");
+    let now = message_now_ms(&state.diag, &state.match_state);
+    let font = &state.renderer.bit_font;
+    state
+        .match_state
+        .match_presentation
+        .message_list
+        .add_message(
+            &crate::ui::messages::MessagePost {
+                prefix: None,
+                text: &text,
+                rgb: [1.0, 1.0, 1.0],
+                timeout_ms: Some(10_000),
+                silent: true,
+            },
+            now,
+            &|s| font.text_width(s) as i32,
+        );
 }
 
 /// Prepare one successful offline TextLabel paint, using raw wall time for
@@ -1257,22 +2284,30 @@ fn sync_view(state: &mut AppState) {
 /// nonsilent TextLabel72A4A0 advances its raw-wall reveal and requests the
 /// typing sound once per successful paint. It steps whether or not a layout
 /// shows the messages.
-pub(crate) fn advance_messages(state: &mut AppState) {
-    if state.frontend.screen != GameScreen::InGame {
+pub(crate) fn advance_messages(
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+) {
+    if frontend.screen != GameScreen::InGame {
         return;
     }
-    let wall_ms = crate::app::input::tooltips::now_ms(state) as u32;
-    let requests = state
-        .match_state
+    let wall_ms = crate::app::input::tooltips::now_ms(diag, match_state) as u32;
+    let requests = match_state
         .match_presentation
         .message_list
         .advance_reveal(wall_ms);
     if requests > 0 {
-        let sound = state
-            .rules()
-            .and_then(|rules| rules.general.message_char_typed_sound().map(str::to_owned));
         for _ in 0..requests {
-            crate::app::App::play_shell_ui_sound_by_id(state, sound.as_deref());
+            crate::app::App::play_shell_rules_sound(
+                frontend,
+                match_state,
+                process_assets,
+                sfx_player,
+                |rules| rules.general.message_char_typed_sound(),
+            );
         }
     }
 }
@@ -1280,55 +2315,57 @@ pub(crate) fn advance_messages(state: &mut AppState) {
 /// The message lines as they stand after this frame's
 /// [`advance_messages`], drawn through `hud`.
 pub(crate) fn build_message_instances(
-    state: &AppState,
+    ime: &crate::app::input::ime::ImeState,
+    bit_font: &crate::render::bit_font::BitFont,
+    screen: &GameScreen,
+    match_state: &MatchState,
     hud: &mut TextHud,
 ) -> (Vec<SpriteInstance>, Vec<SpriteInstance>) {
-    if state.frontend.screen != GameScreen::InGame {
+    if *screen != GameScreen::InGame {
         return (Vec::new(), Vec::new());
     }
     // A layout that leaves the messages out only takes them off the screen.
     if !crate::app::presentation::field_parts::shows(
-        state,
+        &match_state.match_presentation,
         crate::ui::field_layout::FieldPart::Messages,
     ) {
         return (Vec::new(), Vec::new());
     }
-    let font = &state.renderer.bit_font;
     let rows = message_rows(
-        font,
-        &state.match_state.match_presentation.message_list,
-        state
-            .platform
-            .ime
-            .composition(crate::app::input::ime::ImeTarget::InGameChat)
+        bit_font,
+        &match_state.match_presentation.message_list,
+        ime.composition(crate::app::input::ime::ImeTarget::InGameChat)
             .map(|(units, _)| units),
     );
     draw_message_rows(
-        font,
+        bit_font,
         &rows,
-        [
-            state.match_state.input.camera_x,
-            state.match_state.input.camera_y,
-        ],
+        [match_state.input.camera_x, match_state.input.camera_y],
         hud,
     )
 }
 
 /// The open edit line in window pixels, where the input method shows its
 /// candidates; `None` while no edit is open.
-pub(crate) fn ime_edit_rect(state: &AppState) -> Option<crate::ui::shell::geom::RectPx> {
-    if state.frontend.screen != GameScreen::InGame {
+pub(crate) fn ime_edit_rect(
+    renderer: &RendererState,
+    screen: &GameScreen,
+    presentation: &MatchPresentationState,
+) -> Option<crate::ui::shell::geom::RectPx> {
+    if *screen != GameScreen::InGame {
         return None;
     }
-    let list = &state.match_state.match_presentation.message_list;
+    let list = &presentation.message_list;
     let edit = list.edit_line()?;
-    let font = &state.renderer.bit_font;
+    let font = &renderer.bit_font;
     // The message rows are frame pixels, which a zoomed match shows scaled
     // and centred in the window.
     let (x, y) = (list.x() as f32, edit.y as f32);
-    let ((x, y), scale) = state.tactical_zoom().map_or(((x, y), 1.0), |zoom| {
-        (zoom.source_to_window(x, y), zoom.scale())
-    });
+    let ((x, y), scale) = renderer
+        .tactical_zoom(screen)
+        .map_or(((x, y), 1.0), |zoom| {
+            (zoom.source_to_window(x, y), zoom.scale())
+        });
     Some(crate::ui::shell::geom::RectPx::new(
         x as i32,
         y as i32,
@@ -1422,7 +2459,10 @@ fn draw_message_rows(
         );
     }
     hud.finish(font);
-    (hud.boxes().copied().collect(), hud.glyphs().copied().collect())
+    (
+        hud.boxes().copied().collect(),
+        hud.glyphs().copied().collect(),
+    )
 }
 
 #[cfg(all(test, tests_app_input_d_z))]

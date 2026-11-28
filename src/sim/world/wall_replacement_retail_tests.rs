@@ -104,17 +104,20 @@ fn retail_paid_two_gap_wall_retains_constructor_identities_until_deferred_drain(
     assert!(held.lifecycle.object_alive() && held.lifecycle.in_limbo());
     let credits = sim.houses[&owner].economy().credits();
     assert!(sim.substrate.pending_delete.is_empty());
-    assert!(crate::sim::production::place_production_with_overlays(
-        sim,
-        rules,
-        &owner_name,
-        crate::sim::production::ProductionPlacement::Building {
-            type_id: "GAWALL",
-            cell: *origin,
-        },
-        Some(registry),
-        &mut FrameEffects::default(),
-    ));
+    assert!(
+        crate::sim::production::place_production_with_overlays(
+            sim,
+            rules,
+            &owner_name,
+            crate::sim::production::ProductionPlacement::Building {
+                type_id: "GAWALL".into(),
+                cell: *origin,
+            },
+            Some(registry),
+            &mut FrameEffects::default(),
+        )
+        .is_ok()
+    );
     // Observe the production call before the ordinary frame's shared drain.
     // No health, rule, pose, timer or RNG input is overridden by this witness.
     let held = sim

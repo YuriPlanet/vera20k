@@ -110,6 +110,57 @@ fn threat_active_prechecks_bypass_the_precheck_memo() {
     assert_eq!(graph.memo.len(), kept);
 }
 
+/// A threat memo answers a repeated threat-active precheck as a fresh search
+/// does, keeping each level's answer once; under another coefficient the
+/// precheck searches without it.
+#[test]
+fn a_threat_memo_keeps_one_coefficients_answers() {
+    let row = threat_packet()["prechecks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| !row["reads"].as_array().unwrap().is_empty())
+        .expect("a precheck that reads the threat");
+    let graph = hierarchy(&row["graphs"], None);
+    let lookup = |index| Ok(grid_value(&row["grid"], index));
+    let fresh = |coefficient| {
+        zone_precheck_flat(
+            &graph,
+            1,
+            4,
+            MovementZone::Normal,
+            &ZonePrecheckExclusions::default(),
+            Some(ZonePrecheckThreat::new(coefficient, &lookup)),
+        )
+        .unwrap()
+    };
+    let memo = ThreatPrecheckMemo::default();
+    let memoized = |coefficient| {
+        zone_precheck_flat_memoized(
+            &graph,
+            1,
+            4,
+            MovementZone::Normal,
+            ZonePrecheckThreat::new(coefficient, &lookup),
+            &memo,
+        )
+        .unwrap()
+    };
+    let coefficient = NativeF64Bits::from_bits(
+        u64::from_str_radix(row["coefficient_bits"].as_str().unwrap(), 16).unwrap(),
+    );
+    assert_eq!(memoized(coefficient), fresh(coefficient));
+    let kept = memo.answers.len();
+    assert!(kept > 0);
+    assert_eq!(memoized(coefficient), fresh(coefficient));
+    assert_eq!(memo.answers.len(), kept);
+
+    let other = NativeF64Bits::ONE;
+    assert_ne!(other, coefficient);
+    assert_eq!(memoized(other), fresh(other));
+    assert_eq!(memo.answers.len(), kept);
+}
+
 #[test]
 fn original_positive_zone_prechecks_match_routes_float_costs_and_threat_reads() {
     let packet = threat_packet();
@@ -263,7 +314,7 @@ fn simulation() -> (Simulation, RuleSet, u64) {
     sim.session.set_map_height_for_test(WIDTH);
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
-    sim.zone_grid = Some(zones.into());
+    *sim.zone_grid = Some(zones.into());
     sim.install_resolved_terrain_for_new_map(terrain);
     let id = sim.substrate.allocate_stable_id();
     let mut actor =
@@ -368,6 +419,7 @@ fn native_controls_cover_heap_ties_head_admission_and_binary32_costs() {
                 row["source_bridge"].as_bool().unwrap(),
                 row["target_bridge"].as_bool().unwrap(),
                 &rules,
+                None,
             )
             .unwrap();
         assert_eq!(
@@ -439,6 +491,7 @@ fn physical_fv_candidate_and_fallback_costs_match_four_native_bridge_states() {
                 row["source_bridge"].as_bool().unwrap(),
                 row["target_bridge"].as_bool().unwrap(),
                 &rules,
+                None,
             )
             .unwrap();
         assert_eq!(

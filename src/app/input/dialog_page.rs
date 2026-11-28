@@ -7,7 +7,18 @@
 
 use vera20k_gui::{Gui, InputEvent, MouseButton, NodeId, NodeKind, NodeSpec};
 
-use crate::app::{App, AppState};
+use crate::app::App;
+use crate::app::PlatformState;
+use crate::app::audio_runtime::AppAudioRuntime;
+use crate::app::diagnostics::state::DiagnosticsState;
+use crate::app::frontend::state::FrontendState;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
+use crate::app::presentation::state::MatchPresentationState;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
+use crate::audio::sfx::SfxPlayer;
+use crate::ui::game_screen::GameScreen;
 use crate::ui::shell::controller::DialogController;
 use crate::ui::shell::descriptor::DialogResourceId;
 use crate::ui::shell::geom::RectPx;
@@ -24,8 +35,21 @@ pub(crate) fn event_at(x: i32, y: i32, down: Option<bool>) -> InputEvent {
 }
 
 /// [`event_at`] the active-game shell's cursor.
-pub(crate) fn shell_event(state: &AppState, down: Option<bool>) -> InputEvent {
-    let (x, y) = crate::app::frontend::skirmish_shell_render::in_game_shell_cursor(state);
+pub(crate) fn shell_event(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    screen: &GameScreen,
+    match_state: &MatchState,
+    persistence: &PersistenceState,
+    down: Option<bool>,
+) -> InputEvent {
+    let (x, y) = crate::app::frontend::skirmish_shell_render::in_game_shell_cursor(
+        platform,
+        renderer,
+        screen,
+        match_state,
+        persistence,
+    );
     event_at(x, y, down)
 }
 
@@ -93,8 +117,8 @@ pub(crate) struct InGameDialog {
     /// The render pass's label.
     pub(crate) label: &'static str,
     /// The controller its controls live on.
-    pub(crate) ui: fn(&AppState) -> Option<&DialogController>,
-    pub(crate) ui_mut: fn(&mut AppState) -> Option<&mut DialogController>,
+    pub(crate) ui: fn(&MatchPresentationState) -> Option<&DialogController>,
+    pub(crate) ui_mut: fn(&mut MatchPresentationState) -> Option<&mut DialogController>,
     /// Its boxes play GUICheckboxSound where their proc cases do, not at
     /// the toggle.
     pub(crate) own_checkbox_sound: bool,
@@ -110,12 +134,12 @@ impl InGameDialog {
     /// call before it paints from the nodes.
     pub(crate) fn sync(
         &self,
-        state: &mut AppState,
+        presentation: &mut MatchPresentationState,
         nodes: impl FnOnce() -> NodeSpec,
         rect_of: impl Fn(u16) -> Option<RectPx>,
         sync: impl FnOnce(&mut Gui, NodeId),
     ) {
-        if let Some(ui) = (self.ui_mut)(state) {
+        if let Some(ui) = (self.ui_mut)(presentation) {
             sync_dialog(ui, self.id, nodes, rect_of, sync);
         }
     }
@@ -125,70 +149,167 @@ impl InGameDialog {
     /// rest.
     pub(crate) fn route(
         &self,
-        state: &mut AppState,
+        platform: &PlatformState,
+        renderer: &RendererState,
+        frontend: &FrontendState,
+        match_state: &mut MatchState,
+        process_assets: &ProcessAssets,
+        sfx_player: &mut Option<SfxPlayer>,
+        persistence: &PersistenceState,
         down: Option<bool>,
         nodes: impl FnOnce() -> NodeSpec,
         rect_of: impl Fn(u16) -> Option<RectPx>,
         sync: impl FnOnce(&mut Gui, NodeId),
     ) -> Vec<PageEvent> {
-        let event = shell_event(state, down);
-        let Some(ui) = (self.ui_mut)(state) else {
+        let event = shell_event(
+            platform,
+            renderer,
+            &frontend.screen,
+            match_state,
+            persistence,
+            down,
+        );
+        let Some(ui) = (self.ui_mut)(&mut match_state.match_presentation) else {
             return Vec::new();
         };
         let mut events = route(ui, self.id, nodes, rect_of, sync, event);
         if self.own_checkbox_sound {
             events.retain(|event| *event != PageEvent::Cue(page::PageCue::Checkbox));
         }
-        play_cues(state, events)
+        play_cues(frontend, match_state, process_assets, sfx_player, events)
     }
 }
 
 /// The controller the scenario's modal dialogs share.
-pub(crate) fn shared_ui(state: &AppState) -> Option<&DialogController> {
-    Some(&state.match_state.match_presentation.dialog_ui)
+pub(crate) fn shared_ui(presentation: &MatchPresentationState) -> Option<&DialogController> {
+    Some(&presentation.dialog_ui)
 }
 
-pub(crate) fn shared_ui_mut(state: &mut AppState) -> Option<&mut DialogController> {
-    Some(&mut state.match_state.match_presentation.dialog_ui)
+pub(crate) fn shared_ui_mut(
+    presentation: &mut MatchPresentationState,
+) -> Option<&mut DialogController> {
+    Some(&mut presentation.dialog_ui)
 }
 
 /// A dialog's `layout` on the active-game shell as it stands.
 pub(crate) fn layout<L>(
-    state: &AppState,
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    persistence: &PersistenceState,
     layout: impl FnOnce(i32, i32, crate::ui::shell::in_game_shell::InGameShellLayout, [i32; 2]) -> L,
 ) -> Option<L> {
     Some(
-        crate::app::frontend::skirmish_shell_render::current_in_game_shell_layout(state)?
-            .place(layout),
+        crate::app::frontend::skirmish_shell_render::current_in_game_shell_layout(
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            persistence,
+        )?
+        .place(layout),
     )
 }
 
 /// One left-button message (`down`: `None` moves) on the in-game shell
 /// dialog `menu` shows, if it is one of these.
 pub(crate) fn in_game_pointer(
-    state: &mut AppState,
+    platform: &mut PlatformState,
+    renderer: &mut RendererState,
+    diag: &DiagnosticsState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &mut ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    persistence: &mut PersistenceState,
     menu: crate::ui::pause_menu::InGameMenuState,
     down: Option<bool>,
 ) {
     use crate::ui::pause_menu::InGameMenuState;
     match menu {
-        InGameMenuState::Menu => super::pause_menu::pointer(state, down),
-        InGameMenuState::AbortConfirm => super::abort::pointer(state, down),
-        InGameMenuState::Surrender => super::surrender::pointer(state, down),
-        InGameMenuState::Sound => super::sound::pointer(state, down),
-        InGameMenuState::Diplomacy => super::diplomacy::pointer(state, down),
-        InGameMenuState::MissionBriefing => super::restate::pointer(state, down),
+        InGameMenuState::Menu => super::pause_menu::pointer(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            audio,
+            persistence,
+            down,
+        ),
+        InGameMenuState::AbortConfirm => super::abort::pointer(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            audio,
+            persistence,
+            down,
+        ),
+        InGameMenuState::Surrender => super::surrender::pointer(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            audio,
+            persistence,
+            down,
+        ),
+        InGameMenuState::Sound => super::sound::pointer(
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            process_assets,
+            audio,
+            persistence,
+            down,
+        ),
+        InGameMenuState::Diplomacy => super::diplomacy::pointer(
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            process_assets,
+            audio,
+            persistence,
+            down,
+        ),
+        InGameMenuState::MissionBriefing => super::restate::pointer(
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            process_assets,
+            audio,
+            persistence,
+            down,
+        ),
         _ => {}
     }
 }
 
 /// Plays the cues among `events` (an enabled button's GUIMainButtonSound at
 /// mouse down, `0x0061374B`) and returns the rest.
-pub(crate) fn play_cues(state: &mut AppState, events: Vec<PageEvent>) -> Vec<PageEvent> {
+pub(crate) fn play_cues(
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    events: Vec<PageEvent>,
+) -> Vec<PageEvent> {
     let mut rest = Vec::with_capacity(events.len());
     for event in events {
         match event {
-            PageEvent::Cue(cue) => App::play_page_cue(state, cue),
+            PageEvent::Cue(cue) => {
+                App::play_page_cue(frontend, match_state, process_assets, sfx_player, cue)
+            }
             event => rest.push(event),
         }
     }

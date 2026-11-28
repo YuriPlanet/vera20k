@@ -21,7 +21,7 @@ use crate::map::resolved_terrain::{NativeCellQuery, ResolvedTerrainGrid};
 use crate::rules::locomotor_type::MovementZone;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::command::{
-    ABSTRACT_OBJECT_TARGET_KIND, CELL_TARGET_KIND, Command, CommandEnvelope,
+    ABSTRACT_OBJECT_TARGET_KIND, CELL_TARGET_KIND, Command, CommandEnvelope, CommandSender,
     MEGAMISSION_ACTION_OFFSET, MEGAMISSION_DESTINATION_KIND_OFFSET,
     MEGAMISSION_DESTINATION_VALUE_OFFSET, MEGAMISSION_OPCODE, MEGAMISSION_SECONDARY_KIND_OFFSET,
     MEGAMISSION_SECONDARY_VALUE_OFFSET, MEGAMISSION_SOURCE_KIND_OFFSET,
@@ -77,7 +77,7 @@ impl Simulation {
         &mut self,
         commands: impl IntoIterator<Item = CommandEnvelope>,
     ) -> bool {
-        if self.replaying_recorded_commands {
+        if *self.replaying_recorded_commands {
             return false;
         }
         let network = self.session.execution_topology().is_lockstep();
@@ -309,7 +309,7 @@ impl Simulation {
         let receipt = record.then(|| command.replay_envelope());
         let accepted = self.pending_commands.admit_bounded(
             command,
-            self.dispatch_reserved_slots,
+            *self.dispatch_reserved_slots,
             if self.session.execution_topology().is_lockstep() {
                 crate::sim::command_queue::NETWORK_COMMAND_CAPACITY
             } else {
@@ -352,7 +352,7 @@ impl Simulation {
         let count = self.local_commands.len();
         let entries: Vec<_> = self.local_commands.take_prefix(count).collect();
         for command in entries {
-            if self.replaying_recorded_commands {
+            if *self.replaying_recorded_commands {
                 // The recorded accepted stream owns due input. A snapshot
                 // may also retain future input not present in this batch.
                 let future = command.record().map_or_else(
@@ -379,7 +379,7 @@ impl Simulation {
     /// tick, and insertion position exactly. It does not sort, retime, normalize,
     /// intern, deduplicate, or apply the negotiated input delay.
     pub fn queue_command(&mut self, command: CommandEnvelope) {
-        if self.replaying_recorded_commands {
+        if *self.replaying_recorded_commands {
             return;
         }
         let record = !Self::command_uses_frame_ingress(
@@ -605,7 +605,7 @@ impl Simulation {
 
     /// Drain the remote EXIT senders the executor recorded.
     pub fn take_departed_senders(&mut self) -> Vec<i8> {
-        std::mem::take(&mut self.departed_senders)
+        std::mem::take(&mut *self.departed_senders)
     }
 
     /// Only local frame-ingress actions leave the FIFO before Logic. Native
@@ -697,7 +697,7 @@ impl Simulation {
     ) -> Vec<CommandEnvelope> {
         #[cfg(feature = "debug-tools")]
         self.set_debug_session_context(crate::sim::cheats::DebugSessionContext::Replay);
-        self.replaying_recorded_commands = true;
+        *self.replaying_recorded_commands = true;
         self.frame_command_admissions.clear();
         let commands: Vec<_> = commands.into_iter().collect();
         for recorded in &commands {
@@ -716,9 +716,13 @@ impl Simulation {
 
     /// VERA-only: one command and its spawn-refresh report: a Deploy whose MCV left
     /// the store or carries the `TerminalLifetime` dying mark counts as a spawn.
+    ///
+    /// A Wasm module listening hears the outcome afterwards: `Commanded` on
+    /// each actor of an applied command, `OrderRefused` for a refused one
+    /// (`sim::ext_modules::orders`).
     fn apply_one_due_command(
         &mut self,
-        sender: Option<i8>,
+        sender: CommandSender,
         cmd: &CommandEnvelope,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
@@ -739,15 +743,15 @@ impl Simulation {
         // release it during settlement. Capture only this derived refresh
         // fact now; the production owner remains the placement authority.
         let placed_building_owner = self.successful_non_wall_placement_owner(cmd, true, rules);
-        let cmd_owner_str = self.interner.resolve(cmd.owner).to_string();
-        let applied = self.apply_command_with_overlays(
+        let outcome = self.apply_command_with_overlays(
             sender,
-            &cmd_owner_str,
+            cmd.owner,
             &cmd.payload,
             rules,
             overlay_registry,
             frame_effects,
         );
+        let applied = outcome.is_ok();
         let placed_building_owner = placed_building_owner.filter(|_| applied);
         let synchronous_deploy = applied
             && matches!(cmd.payload, Command::DeployMcv { entity_id }
@@ -772,6 +776,7 @@ impl Simulation {
                     .get(id)
                     .is_some_and(|entity| entity.on_bridge() != before)
             });
+        self.raise_module_command_outcome(rules, frame_effects, cmd, outcome);
         (applied, spawned_entity)
     }
 
@@ -974,7 +979,7 @@ impl Simulation {
         let cell = cells.lookup(candidate);
         if !crate::sim::cell_rect::cell_is_in_playfield_height_aware(
             (i32::from(candidate.0), i32::from(candidate.1)),
-            self.playfield_bounds,
+            *self.playfield_bounds,
             Some(terrain),
         ) {
             return group_destination::CandidateFacts::outside_playfield();
@@ -1037,11 +1042,10 @@ impl Simulation {
         let sender = sender
             .filter(|_| self.session.execution_topology().is_lockstep())
             .map(|house| {
-                let owner = self.interner.resolve(house.owner);
                 (
-                    owner,
+                    house.owner,
                     house.house_id,
-                    self.resolve_command_grant_source(owner, house.house_id),
+                    self.resolve_command_grant_source(house.owner.into(), house.house_id),
                 )
             });
         let mut run_start = 0;
@@ -1073,6 +1077,11 @@ impl Simulation {
                     let Some(entity) = self.substrate.entities.get(entity_id) else {
                         continue;
                     };
+                    // The receiver refuses an attached slave in every game mode.
+                    if entity.seldom.slave.owner().is_some() {
+                        orders -= 1;
+                        continue;
+                    }
                     if sender.is_some_and(|(owner, source, granted_source)| {
                         // A semantic PlanningRecord can have native payload
                         // bytes without coming from the native queue.
@@ -1088,7 +1097,7 @@ impl Simulation {
                             CommandCapability::PrimaryHouse
                         };
                         self.command_actor_outside_scope(
-                            owner,
+                            owner.into(),
                             granted_source,
                             entity_id,
                             capability,
@@ -1293,7 +1302,7 @@ impl Simulation {
                     | Command::AssignControlGroup { .. }
                     | Command::MoveFlash { .. } => {
                         let _ = self.apply_one_due_command(
-                            None,
+                            CommandSender::Player(None),
                             command,
                             rules,
                             Some(rules.overlay_registry()),
@@ -1328,6 +1337,38 @@ impl Simulation {
             .expect("component command dispatch must succeed")
     }
 
+    /// Wasm modules' house orders (RFC 0001 section 6g), after the frame's
+    /// player commands: each order is the player commands its house's player
+    /// would send, spread as a player's group order is and executed by the
+    /// same receiver. Returns whether one spawned an object.
+    pub(super) fn run_ext_module_orders(
+        &mut self,
+        rules: &RuleSet,
+        frame_effects: &mut FrameEffects<'_>,
+    ) -> bool {
+        if self.ext_modules.is_empty() {
+            return false;
+        }
+        let mut spawned = false;
+        for mut order in crate::sim::ext_modules::take_due_orders(self, rules) {
+            self.adjust_staged_megamission_destinations(&mut order, rules, None);
+            // One order is one `Commanded` serial.
+            self.ext_modules.begin_command_group();
+            for command in &order {
+                spawned |= self
+                    .apply_one_due_command(
+                        CommandSender::HouseOrder,
+                        command,
+                        rules,
+                        Some(rules.overlay_registry()),
+                        frame_effects,
+                    )
+                    .1;
+            }
+        }
+        spawned
+    }
+
     /// How Execute_DoList scans this session's DoList.
     pub(super) fn command_dispatch_mode(&self) -> CommandDispatchMode {
         if self.session.execution_topology().command_queue_route()
@@ -1357,8 +1398,8 @@ impl Simulation {
                 DoListInsertion::Back,
             );
         }
-        let mut list = std::mem::take(&mut self.pending_commands);
-        self.dispatch_reserved_slots = list.native_occupancy();
+        let mut list = std::mem::take(&mut *self.pending_commands);
+        *self.dispatch_reserved_slots = list.native_occupancy();
         // One scan per command sender, in sender order. A sender is its
         // House's index, as in gamemd's House scan, unless players share
         // Houses (VERA): each of them then gets its own scan of that House.
@@ -1406,10 +1447,10 @@ impl Simulation {
         let result = list.dispatch(clock, &houses, mode, &mut host);
         let spawned = host.spawned;
         let executed = host.executed;
-        self.dispatch_reserved_slots = Default::default();
-        let mut newly_admitted = std::mem::take(&mut self.pending_commands);
+        *self.dispatch_reserved_slots = Default::default();
+        let mut newly_admitted = std::mem::take(&mut *self.pending_commands);
         list.append_retained(&mut newly_admitted);
-        self.pending_commands = list;
+        *self.pending_commands = list;
         result
             .map(|summary| (summary.executed, spawned))
             .map_err(|cause| (cause, executed, spawned))
@@ -1585,7 +1626,7 @@ impl DoListHost<QueuedCommand> for WorldCommandHost<'_, '_, '_> {
         };
         if let Some(command) = command {
             let (applied, spawned) = self.sim.apply_one_due_command(
-                entry.record().map(|record| record.house_id()),
+                CommandSender::Player(entry.record().map(|record| record.house_id())),
                 &command,
                 self.rules,
                 Some(self.rules.overlay_registry()),

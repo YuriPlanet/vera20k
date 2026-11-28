@@ -118,9 +118,10 @@ impl Patriot {
             &self.runtime,
             &Default::default(),
             false,
-            None,
         );
         let input = ShpInputs {
+            motion: None,
+            diagnostics: None,
             runtime: &self.runtime,
             frame: &frame,
             atlas: Some(&self.shp),
@@ -135,7 +136,6 @@ impl Patriot {
             building_viewport: crate::app::presentation::render::tactical_world_viewport(
                 [-1000.0; 2],
                 [0, 0, 5000, 5000],
-                None,
             ),
             axis: DepthAxis::NONE,
             local_owner: None,
@@ -143,6 +143,7 @@ impl Patriot {
             lighting: &lighting,
             house_colors: &colors,
             building_zshape: None,
+            model_frame: None,
         };
         let order = NativeDisplayOrder::from_world(&self.runtime.simulation, None);
         let mut planned = PlannedObjects::default();
@@ -181,8 +182,7 @@ fn retail_patriot_turret_appears_on_the_last_buildup_frame() {
             crate::app::presentation::frame::PresentationFrame::capture(
                 &scene.runtime,
                 &Default::default(),
-                false,
-                None,
+                false
             )
             .object(scene.id)
             .unwrap(),

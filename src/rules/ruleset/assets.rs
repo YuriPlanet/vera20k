@@ -317,6 +317,23 @@ impl RuleSet {
         self.art_registry.get_mut(name)
     }
 
+    /// The overlay images available for authored map placement. Declared
+    /// pictures use the same bound admission that multiplayer certifies.
+    pub fn resolved_overlay_shp_ids(
+        &self,
+        assets: &crate::assets::asset_manager::AssetManager,
+        theater_ext: &str,
+        theater_name: &str,
+    ) -> std::collections::BTreeSet<u8> {
+        crate::rules::effect_asset_catalog::resolved_overlay_shp_ids(
+            self.overlay_registry(),
+            &self.effect_assets,
+            assets,
+            theater_ext,
+            theater_name,
+        )
+    }
+
     /// Resolve particle image SHP frame counts from the active theater assets
     /// without constructing a renderer atlas.
     pub fn bind_effect_assets(
@@ -350,8 +367,63 @@ impl RuleSet {
         self.voxel_assets.voxel_anim(id.0 as usize)
     }
 
+    /// VERA-only, experimental (`docs/picture-model-art.md`): the declared
+    /// model building `type_id` draws for its voxel guns. None when its art
+    /// declares none, so the VXL path draws; `Some(None)` when the model was
+    /// refused and the guns draw nothing.
+    pub fn building_gun_model(
+        &self,
+        type_id: &str,
+    ) -> Option<Option<&std::sync::Arc<crate::rules::voxel_asset_catalog::DeclaredModel>>> {
+        self.voxel_assets.building_gun_model(type_id)
+    }
+
+    /// VERA-only, experimental (`docs/picture-model-art.md`): whether the
+    /// voxel unit, aircraft or building gun `type_id` draws from a declared
+    /// `Model=` (admitted or refused) and never from its VXL, so the unit
+    /// atlas need not load it. False for retail art.
+    pub fn draws_declared_model(&self, type_id: &str) -> bool {
+        if self.building_gun_model(type_id).is_some() {
+            return true;
+        }
+        self.object(type_id).is_some_and(|object| {
+            object.voxel_image_load().is_some_and(|image| {
+                self.art()
+                    .resolve_declared_model(&object.id, image)
+                    .is_some()
+            })
+        })
+    }
+
+    /// [`Self::building_gun_model`] for the voxel projectile type `type_id`.
+    pub fn projectile_model(
+        &self,
+        type_id: &str,
+    ) -> Option<Option<&std::sync::Arc<crate::rules::voxel_asset_catalog::DeclaredModel>>> {
+        self.voxel_assets.projectile_model(type_id)
+    }
+
+    /// The declared model the VoxelAnim type `id` draws in place of its VXL:
+    /// its own `Image=` art's, or the part it shares of a `ShareSource=`
+    /// type's ([`crate::rules::voxel_asset_catalog::DebrisModel`]). None
+    /// for the VXL path; a refused model draws nothing.
+    pub fn voxel_anim_declared_model(
+        &self,
+        id: VoxelAnimTypeId,
+    ) -> Option<&crate::rules::voxel_asset_catalog::DebrisModel> {
+        self.voxel_assets.voxel_anim_declared_model(id.0 as usize)
+    }
+
     pub(crate) fn voxel_models_bound(&self) -> bool {
         self.voxel_assets.is_bound()
+    }
+
+    /// VERA-only, experimental (`docs/picture-model-art.md`): whether any
+    /// type draws an admitted `Model=` ([`crate::rules::voxel_asset_catalog::LoadedVoxelModel::declared_model`],
+    /// building guns, voxel projectiles and debris included).
+    /// False for retail data, so the renderer does no model work.
+    pub fn declares_models(&self) -> bool {
+        self.voxel_assets.declares_models()
     }
 
     /// Techno6F9E10's loaded-main-VXL predicate for the type `object` names,
@@ -388,6 +460,7 @@ impl RuleSet {
     ) {
         self.terrain_assets = crate::rules::terrain_asset_catalog::TerrainAssetCatalog::bind(
             &mut self.terrain_object_types,
+            &self.art_registry,
             asset_manager,
             theater_ext,
             phase,

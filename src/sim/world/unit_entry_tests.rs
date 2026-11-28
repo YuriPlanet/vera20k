@@ -476,7 +476,7 @@ fn compare_rows(json: &str, expected_count: usize, repair_projection: bool) {
                     }
                 })
                 .collect();
-            sim.resolved_terrain = Some(ResolvedTerrainGrid::from_cells_with_tubes(
+            *sim.resolved_terrain = Some(ResolvedTerrainGrid::from_cells_with_tubes(
                 33, 33, cells, tubes,
             ));
         }
@@ -522,7 +522,7 @@ fn compare_rows(json: &str, expected_count: usize, repair_projection: bool) {
             )),
         );
         if let Some(bounds) = input["bounds"].as_array() {
-            sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds {
+            *sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds {
                 base: bounds[0].as_i64().unwrap() as i32,
                 off_fc: bounds[1].as_i64().unwrap() as i32,
                 off_100: bounds[2].as_i64().unwrap() as i32,
@@ -587,7 +587,7 @@ fn compare_rows(json: &str, expected_count: usize, repair_projection: bool) {
             // Team activation lifecycle. Non-action3 is false for either7F.
             let mut state = serde_json::to_value(&sim.team_script_vm).unwrap();
             state["teams"][id.to_string()]["cursor"] = team["cursor"].clone();
-            sim.team_script_vm = serde_json::from_value(state).unwrap();
+            *sim.team_script_vm = serde_json::from_value(state).unwrap();
         }
         let mut ids = Vec::new();
         for (index, node) in input["objects"]

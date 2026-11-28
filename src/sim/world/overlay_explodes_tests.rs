@@ -297,6 +297,85 @@ fn retail_barrel_death_checks_cardinal_overlay_before_arming_its_death_fuse() {
 }
 
 #[test]
+fn a_tire_bouncing_onto_an_ammo_crate_hits_without_a_warhead() {
+    let Some(battle) =
+        crate::rules::retail_ini_fixture::retail_battle_rules_for_map("SOV02SMD.MAP")
+    else {
+        return;
+    };
+    let rules = battle.rules;
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 31);
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    sim.resolve_rule_animation_lists(&rules);
+    let ammo = sim
+        .spawn_object_with_overlay_registry(
+            "AMMOCRAT",
+            "Americans",
+            11,
+            10,
+            0,
+            &rules,
+            rules.overlay_registry(),
+        )
+        .unwrap();
+    let neighbour = sim
+        .spawn_object_with_overlay_registry(
+            "MTNK",
+            "Russians",
+            12,
+            10,
+            0,
+            &rules,
+            rules.overlay_registry(),
+        )
+        .unwrap();
+    let health = sim.entities().get(neighbour).unwrap().health.current();
+    let tire = rules.voxel_anim_type_id_by_name("TIRE").unwrap();
+    assert!(rules.voxel_anim_type(tire).warhead.is_none());
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(2906);
+    // Native constructor 7494EE..749824 launches at (6, 0, 32).
+    // On visit 45 its 74A8A9 contact reaches the neighbouring crate's exact XY.
+    sim.emit_debris_voxel(
+        tire,
+        rules.voxel_anim_type(tire),
+        None,
+        glam::IVec3::new(2688, 2688, 0),
+        true,
+        &mut Vec::new(),
+        &rules,
+    )
+    .unwrap();
+    let piece = sim.voxel_anims().ids()[0];
+    for _ in 0..44 {
+        sim.visit_voxel_anim(piece, &rules, &mut FrameEffects::default())
+            .unwrap();
+    }
+    assert_eq!(sim.entities().get(ammo).unwrap().health.current(), 1);
+    sim.visit_voxel_anim(piece, &rules, &mut FrameEffects::default())
+        .unwrap();
+    // Ares' 74A884 hook skips a zero-damage contact altogether.
+    let remaining = sim
+        .entities()
+        .get(ammo)
+        .map_or(0, |object| object.health.current());
+    assert_eq!(remaining, i32::from(rules.ares()));
+    let after_blast = sim
+        .entities()
+        .get(neighbour)
+        .map_or(0, |object| object.health.current());
+    assert_eq!(
+        after_blast < health,
+        !rules.ares(),
+        "the crate's BarrelExplosion"
+    );
+    assert_eq!(
+        sim.voxel_type_damage(tire, &rules),
+        i32::from(!rules.ares())
+    );
+}
+
+#[test]
 fn retail_voxel_contact_cap_survives_snapshot_and_piece_retirement() {
     use crate::sim::snapshot::GameSnapshot;
     let Some((mut sim, rules)) = scene() else {
@@ -347,7 +426,7 @@ fn retail_voxel_contact_cap_survives_snapshot_and_piece_retirement() {
         position,
         kind.damage_radius,
         BounceContactDamage::VoxelType(type_id),
-        warhead,
+        Some(warhead),
         &rules,
         &mut FrameEffects::default(),
     );
@@ -363,15 +442,15 @@ fn retail_voxel_contact_cap_survives_snapshot_and_piece_retirement() {
     assert!(sim.voxel_anims().is_empty());
     // Isolated snapshot continuation: the native full-load RNG reset remains
     // separate; restore the supplied pre-save cursor for this equality check.
-    let rng = sim.scenario_rng.clone();
+    let rng = (*sim.scenario_rng).clone();
     let expected_hash = sim.state_hash();
     let bytes = GameSnapshot::save(&sim, 0, 0, "shared Voxel damage", 0);
     let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
-    restored.scenario_rng = rng;
+    *restored.scenario_rng = rng;
     restored.restore_after_snapshot_load().unwrap();
     restored.rebuild_caches_after_load(
         sim.resolved_terrain().unwrap().clone(),
-        sim.terrain_speed_config.clone(),
+        (*sim.terrain_speed_config).clone(),
         &rules,
     );
     restored.resolve_type_handles(&rules);

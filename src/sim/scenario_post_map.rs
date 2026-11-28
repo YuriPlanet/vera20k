@@ -1044,7 +1044,7 @@ mod tests {
         let mut sim = Simulation::with_seed(seed);
         sim.session.set_map_width_for_test(MAP_SIZE);
         sim.session.set_map_height_for_test(MAP_SIZE);
-        sim.resolved_terrain = Some(flat_terrain());
+        *sim.resolved_terrain = Some(flat_terrain());
         let mut overlay_grid = OverlayGrid::new(MAP_SIZE, MAP_SIZE);
         // The (8,8) fixed-grid diamond admits only x+y > 8 here; the cells are
         // deliberately listed out of native order.
@@ -1054,8 +1054,8 @@ mod tests {
         }
         // Outside the native diamond: never visited, never rolled.
         overlay_grid.place_overlay(1, 1, 0, 3);
-        sim.overlay_grid = Some(overlay_grid);
-        sim.native_unique_ids =
+        *sim.overlay_grid = Some(overlay_grid);
+        *sim.native_unique_ids =
             Some(build_noncampaign_fresh_id_prefix(0, 0, 0, 0, 0, 0, 1, 1).into_cursor());
         let native_before = sim
             .native_unique_ids

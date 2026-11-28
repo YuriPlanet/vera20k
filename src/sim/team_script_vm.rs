@@ -18,6 +18,7 @@
 //! - `actions`: the script step and the ported script actions.
 //! - `super_actions`: the superweapon script actions 55 and 57.
 //! - `orders`: the member virtuals team code calls.
+//! - `team_array`: the live teams, with the index of the objects they name.
 //!
 //! Each submodule lists its residuals. The TeamType's Tag (`+0xD0`, created
 //! by the constructor `0x006E4DE0`) is not ported; no retail TeamType names
@@ -35,6 +36,7 @@ use crate::rules::ruleset::{CountryIdx, GeneralRules};
 use crate::rules::team_ai_ini::TeamAiDefinitionSource;
 use crate::sim::intern::InternedId;
 use crate::sim::timer::CdTimer;
+use crate::util::lookup_hash::LookupMap;
 use crate::util::native_x87::{MaskedX87Chop53, MaskedX87Ordering, NativeF64Bits};
 
 mod actions;
@@ -47,6 +49,9 @@ mod registry_install;
 mod reinforcements;
 mod super_actions;
 mod team_ai;
+mod team_array;
+
+use team_array::TeamArray;
 
 #[cfg(all(test, tests_sim_t_z))]
 mod ground_strike_tests;
@@ -754,14 +759,16 @@ impl TeamScriptState {
 ///
 /// VERA-only: every infantryman asks for its team on every step
 /// (`InfantryClass::AI 0x0051BE3E`), and most objects are in no team, so the
-/// bit answers "none" without walking the map. The map is the source of
+/// bit answers "none" without asking the map. The map is the source of
 /// truth and all that is saved; [`Self::insert`] sets a bit, a removal
 /// leaves it set (a set bit only means "ask the map"), and a load rebuilds
 /// the bits. Debug builds under the live-read check compare each "none"
 /// with the map.
 #[derive(Debug, Clone, Default)]
 struct MemberTeams {
-    teams: BTreeMap<u64, u64>,
+    /// Hashed: a battle's members ask for their teams many times a frame.
+    /// Only looked up, never walked, and saved in id order.
+    teams: LookupMap<u64, u64>,
     /// Bit `id` of word `id / 64`, for ids below [`Self::LISTED_IDS`].
     listed: Vec<u64>,
 }
@@ -814,13 +821,17 @@ impl MemberTeams {
 
 impl Serialize for MemberTeams {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        self.teams.serialize(serializer)
+        // In id order, whatever order the hashed map holds them in.
+        self.teams
+            .iter()
+            .collect::<BTreeMap<_, _>>()
+            .serialize(serializer)
     }
 }
 
 impl<'de> Deserialize<'de> for MemberTeams {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let teams = BTreeMap::<u64, u64>::deserialize(deserializer)?;
+        let teams = LookupMap::<u64, u64>::deserialize(deserializer)?;
         let mut members = Self {
             teams,
             listed: Vec::new(),
@@ -856,7 +867,7 @@ pub struct TeamScriptVm {
     ai_trigger_order: Vec<InternedId>,
     /// Live teams by id, which increases with construction, so key order is
     /// TeamClass::Array order.
-    teams: BTreeMap<u64, TeamScriptState>,
+    teams: TeamArray,
     next_team_id: u64,
     /// Each AI trigger's running weight and track record, set at its
     /// registration.
@@ -1164,10 +1175,16 @@ impl TeamScriptVm {
         }
     }
 
+    /// `entity_id`'s team (`FootClass+0x5D4`).
+    pub(crate) fn team_of(&self, entity_id: u64) -> Option<u64> {
+        self.member_team.get(&entity_id).copied()
+    }
+
     /// `entity_id`'s team (`FootClass+0x5D4`) and whether its TeamType is
-    /// `IsBaseDefense=` (`+0xF6`).
+    /// `IsBaseDefense=` (`+0xF6`). [`Self::team_of`] answers the team alone
+    /// without reading the TeamType.
     pub(crate) fn team_for_member(&self, entity_id: u64) -> Option<(u64, bool)> {
-        let team_id = *self.member_team.get(&entity_id)?;
+        let team_id = self.team_of(entity_id)?;
         let is_base_defense = self
             .teams
             .get(&team_id)
@@ -1212,14 +1229,32 @@ impl TeamScriptVm {
     /// consumed by the empty-team event23 predicate. InfantryAI51BE3E..51BE52
     /// writes it from retained playfield membership; Fly's latch also writes
     /// it for retreating aircraft/passengers (`0x004CD59F`, `0x004CD5CC`).
+    ///
+    /// Every infantryman in the playfield latches it on every step, so a
+    /// team that already has the byte is only read: a team handed out for
+    /// writing is one the teams' index of named objects reads again. Such a
+    /// caller asks [`Self::member_team_leaving_map`] first, so that the VM
+    /// itself is written only for a new latch (`util::forked`).
     pub(crate) fn mark_member_team_leaving_map(&mut self, entity_id: u64) {
-        if let Some(team) = self
-            .member_team
-            .get(&entity_id)
-            .and_then(|team_id| self.teams.get_mut(team_id))
+        let Some(team_id) = self.member_team.get(&entity_id) else {
+            return;
+        };
+        if self
+            .teams
+            .get(team_id)
+            .is_some_and(|team| !team.leaving_map)
+            && let Some(team) = self.teams.get_mut(team_id)
         {
             team.leaving_map = true;
         }
+    }
+
+    /// Whether `entity_id`'s team (Foot+0x5D4) has latched TeamClass+0x82,
+    /// or `None` outside a team: [`Self::mark_member_team_leaving_map`]
+    /// writes only for `Some(false)`.
+    pub(crate) fn member_team_leaving_map(&self, entity_id: u64) -> Option<bool> {
+        let team_id = self.member_team.get(&entity_id)?;
+        Some(self.teams.get(team_id)?.leaving_map)
     }
 
     /// HasOccurred23 at71EEA9 scans Team+24, head+54 and leaving byte+82.
@@ -1368,44 +1403,25 @@ impl TeamScriptVm {
 
     /// `TeamClass::PointerExpired @ 0x006EAE60` for every team, as the
     /// pointer-expired broadcast (`0x007258D0`) reaches each through its
-    /// listener vector: a team forgets `expired` as its centre, closest
-    /// member, mission target and move target, and with `all` drops it from
-    /// the head of its list (a member leaves through `Remove_Member` first,
-    /// so only a list the removal missed has it there). The team's own
+    /// listener vector ([`TeamScriptState::forget`]). The team's own
     /// update is the only reader of what it clears, so the teams' place in
     /// the listener order does not matter. Answers whether any team named
     /// `expired`.
+    ///
+    /// VERA-only: only the teams that name `expired` are visited, which
+    /// their index lists ([`TeamArray::naming`]); natively every other team
+    /// compares its five fields and changes nothing.
     pub(crate) fn pointer_expired(&mut self, expired: u64, all: bool) -> bool {
-        let object = Some(TeamTarget::Object(expired));
         let mut named = false;
-        for team in self.teams.values_mut() {
-            if all
-                && team
-                    .members
-                    .first()
-                    .is_some_and(|member| member.id == expired)
-            {
-                named = true;
-                team.members.remove(0);
-                if self.member_team.get(&expired) == Some(&team.id) {
-                    self.member_team.remove(&expired);
-                }
-            }
-            if team.focus == object {
-                named = true;
-                team.focus = None;
-            }
-            if team.mission_target == object {
-                named = true;
-                team.mission_target = None;
-            }
-            if team.zone == object {
-                named = true;
-                team.zone = None;
-            }
-            if team.closest_member == Some(expired) {
-                named = true;
-                team.closest_member = None;
+        for team_id in self.teams.naming(expired, all) {
+            let Some(team) = self.teams.get_mut(&team_id) else {
+                continue;
+            };
+            let (team_named, left_list) = team.forget(expired, all);
+            let id = team.id;
+            named |= team_named;
+            if left_list && self.member_team.get(&expired) == Some(&id) {
+                self.member_team.remove(&expired);
             }
         }
         named
@@ -1467,6 +1483,61 @@ impl TeamScriptState {
         }
     }
 
+    /// `TeamClass::PointerExpired @ 0x006EAE60`: the team forgets `expired`
+    /// as its centre, closest member, mission target and move target, and
+    /// with `all` drops it from the head of its list (a member leaves
+    /// through `Remove_Member` first, so only a list the removal missed has
+    /// it there). Answers whether the team named `expired`, and whether it
+    /// left the list. [`team_array`]'s index of the objects a team names
+    /// reads the same five fields.
+    fn forget(&mut self, expired: u64, all: bool) -> (bool, bool) {
+        let object = Some(TeamTarget::Object(expired));
+        let left_list = all
+            && self
+                .members
+                .first()
+                .is_some_and(|member| member.id == expired);
+        let mut named = left_list;
+        if left_list {
+            self.members.remove(0);
+        }
+        if self.focus == object {
+            named = true;
+            self.focus = None;
+        }
+        if self.mission_target == object {
+            named = true;
+            self.mission_target = None;
+        }
+        if self.zone == object {
+            named = true;
+            self.zone = None;
+        }
+        if self.closest_member == Some(expired) {
+            named = true;
+            self.closest_member = None;
+        }
+        (named, left_list)
+    }
+
+    /// Whether member `id` has joined up (`+0x689`). A walk over a copy of
+    /// the list passes the `position` it met `id` at, which is still its
+    /// place unless the list changed since; any other position is searched
+    /// for. A list holds an id once (`Can_Add` refuses a member), so the
+    /// record at `position` is the one a search finds; debug builds under
+    /// the live-read check compare the two.
+    fn member_initiated(&self, position: usize, id: u64) -> bool {
+        let met = self.members.get(position).filter(|record| record.id == id);
+        debug_assert!(
+            !crate::sim::touch_log::live_read_check_enabled()
+                || met.is_none()
+                || self.members.iter().position(|record| record.id == id) == Some(position),
+            "member {id} is listed before position {position} too"
+        );
+        met.or_else(|| self.members.iter().find(|record| record.id == id))
+            .is_some_and(|record| record.initiated)
+    }
+
     /// Whether any state the recruitment chain added is off its constructor
     /// value (see [`TeamScriptVm::hash_state`]).
     fn recruitment_state_moved(&self, current_frame: i32) -> bool {
@@ -1512,7 +1583,7 @@ impl TeamScriptVm {
         // source registry or allocator. Action-49's +0x84 success flag is not
         // included by the captured YR 1.001 CRC sequence.
         self.teams.len().hash(hasher);
-        for (id, team) in &self.teams {
+        for (id, team) in self.teams.iter() {
             id.hash(hasher);
             team.team_type_id.hash(hasher);
             // Retained type gates change the Foot getter and future member
@@ -1579,7 +1650,7 @@ impl TeamScriptVm {
         }
         if self.teams.values().any(|team| team.retarget) {
             b"team-retarget-v1".hash(hasher);
-            for (id, team) in &self.teams {
+            for (id, team) in self.teams.iter() {
                 if team.retarget {
                     id.hash(hasher);
                 }
@@ -1850,7 +1921,8 @@ mod tests {
 
     /// The bits beside the member map answer "none" only for an id the map
     /// does not hold: a removal leaves the bit, a load rebuilds the bits,
-    /// and an id past the bits is asked of the map.
+    /// and an id past the bits is asked of the map. A save lists the members
+    /// in id order, whatever order the hashed map holds them in.
     #[test]
     fn member_teams_answer_as_their_map_does() {
         let mut members = super::MemberTeams::default();
@@ -1859,13 +1931,19 @@ mod tests {
         members.insert(7, 100);
         members.insert(700, 101);
         members.insert(far, 102);
+        for id in [5000, 3, 2_000_000, 64] {
+            members.insert(id, id + 1);
+        }
         assert_eq!(members.get(&7), Some(&100));
         assert_eq!(members.get(&8), None);
         assert_eq!(members.get(&far), Some(&102));
         assert_eq!(members.remove(&7), Some(100));
         assert_eq!(members.get(&7), None);
         let saved = serde_json::to_string(&members).unwrap();
-        assert_eq!(saved, serde_json::to_string(&members.teams).unwrap());
+        assert_eq!(
+            saved,
+            r#"{"3":4,"64":65,"700":101,"5000":5001,"2000000":2000001,"16777221":102}"#
+        );
         let loaded: super::MemberTeams = serde_json::from_str(&saved).unwrap();
         assert_eq!(loaded.get(&700), Some(&101));
         assert_eq!(loaded.get(&far), Some(&102));
@@ -2118,6 +2196,69 @@ mod tests {
             serde_json::from_str(&serde_json::to_string(&vm).unwrap()).unwrap();
         assert_eq!(restored.team_for_member(9), Some((first, false)));
         assert_eq!(restored.team_for_member(11), Some((second, false)));
+    }
+
+    /// `PointerExpired` reaches the teams that name the object through their
+    /// index, which follows a team's later writes, a list's next head, more
+    /// teams than an object's entry lists, a removed team and a load.
+    #[test]
+    fn pointer_expired_reaches_the_teams_that_name_the_object() {
+        let owner = InternedId::from_index(1);
+        let script = InternedId::from_index(2);
+        let mut vm = TeamScriptVm::default();
+        let first = vm.create_team(owner, script, vec![7, 9], 0);
+        let second = vm.create_team(owner, script, vec![11], 0);
+        let third = vm.create_team(owner, script, vec![], 0);
+        let object = Some(TeamTarget::Object(50));
+        vm.teams.get_mut(&first).unwrap().focus = object;
+        vm.teams.get_mut(&third).unwrap().zone = object;
+        vm.teams.get_mut(&third).unwrap().closest_member = Some(50);
+        assert!(!vm.pointer_expired(51, true), "no team names 51");
+        assert!(vm.pointer_expired(50, false));
+        assert_eq!(vm.team(first).unwrap().focus, None);
+        let state = vm.team(third).unwrap();
+        assert_eq!((state.zone, state.closest_member), (None, None));
+        assert!(!vm.pointer_expired(50, false), "already forgotten");
+
+        // A write after the index has read every team.
+        vm.teams.get_mut(&second).unwrap().mission_target = object;
+        assert!(vm.pointer_expired(50, true));
+        assert_eq!(vm.team(second).unwrap().mission_target, None);
+
+        // Only a list's head leaves, and the next member then heads it.
+        assert!(!vm.pointer_expired(9, true), "9 does not head its list");
+        assert!(!vm.pointer_expired(7, false), "a head stays without `all`");
+        assert!(vm.pointer_expired(7, true));
+        assert!(vm.pointer_expired(9, true));
+        assert_eq!(vm.team(first).unwrap().member_count(), 0);
+
+        // More teams name one object than its entry lists, then fewer.
+        let crowd: Vec<u64> = (0..5)
+            .map(|_| vm.create_team(owner, script, vec![], 0))
+            .collect();
+        let shared = Some(TeamTarget::Object(60));
+        for team in crowd.iter().chain([&second]) {
+            vm.teams.get_mut(team).unwrap().focus = shared;
+        }
+        assert!(!vm.pointer_expired(61, false));
+        vm.teams.get_mut(&crowd[0]).unwrap().focus = None;
+        vm.teams.remove(&crowd[4]);
+        assert!(vm.pointer_expired(60, false));
+        for team in crowd[..4].iter().chain([&second]) {
+            assert_eq!(vm.team(*team).unwrap().focus, None);
+        }
+
+        // A removed team names nothing; a loaded one names what it holds.
+        vm.teams.get_mut(&third).unwrap().focus = object;
+        vm.teams.remove(&third);
+        assert!(!vm.pointer_expired(50, false));
+        vm.teams.get_mut(&second).unwrap().focus = object;
+        let mut restored: TeamScriptVm =
+            serde_json::from_str(&serde_json::to_string(&vm).unwrap()).unwrap();
+        assert!(restored.pointer_expired(50, false));
+        assert_eq!(restored.team(second).unwrap().focus, None);
+        assert!(restored.pointer_expired(11, true));
+        assert_eq!(restored.team_for_member(11), None);
     }
 
     #[test]

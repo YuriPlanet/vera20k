@@ -10,9 +10,16 @@ use anyhow::Result;
 use winit::dpi::PhysicalSize;
 
 use crate::app::AppState;
+use crate::app::PlatformState;
+use crate::app::diagnostics::state::DiagnosticsState;
 use crate::app::diagnostics::tactical_capture::session::TacticalCaptureSession;
+use crate::app::frontend::state::FrontendState;
 use crate::app::map_picture::session::MapPictureSession;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
 use crate::app::presentation::render::GameRenderOutput;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
 use crate::util::time::{Duration, Instant};
 
 /// A run only a desktop process starts (`crate::entry`'s capture and
@@ -92,19 +99,40 @@ impl HiddenRun {
     pub(crate) fn drive_before_render(&mut self, state: &mut AppState) -> Result<()> {
         match self {
             Self::Capture(session) => session.drive_before_render(state),
-            Self::Picture(session) => session.drive_before_render(state),
+            Self::Picture(session) => session.drive_before_render(
+                &state.platform,
+                &state.renderer,
+                &state.frontend.screen,
+                &mut state.match_state,
+                &state.persistence,
+            ),
         }
     }
 
     /// Whether to read this frame back.
     pub(crate) fn observe_after_render(
         &mut self,
-        state: &AppState,
+        platform: &PlatformState,
+        renderer: &RendererState,
+        diag: &DiagnosticsState,
+        frontend: &FrontendState,
+        match_state: &mut MatchState,
+        process_assets: &ProcessAssets,
+        persistence: &PersistenceState,
         output: &GameRenderOutput,
     ) -> Result<bool> {
         match self {
-            Self::Capture(session) => session.observe_after_render(state, output),
-            Self::Picture(session) => session.observe_after_render(state, output),
+            Self::Capture(session) => session.observe_after_render(
+                platform,
+                renderer,
+                diag,
+                frontend,
+                match_state,
+                process_assets,
+                persistence,
+                output,
+            ),
+            Self::Picture(session) => session.observe_after_render(frontend, match_state, output),
         }
     }
 
@@ -118,15 +146,36 @@ impl HiddenRun {
     /// Take the frame read back; true once the run is over.
     pub(crate) fn complete_after_readback(
         &mut self,
-        state: &AppState,
+        platform: &PlatformState,
+        renderer: &RendererState,
+        frontend: &FrontendState,
+        match_state: &MatchState,
+        process_assets: &ProcessAssets,
+        persistence: &PersistenceState,
         format: wgpu::TextureFormat,
         pixels: &[u8],
     ) -> Result<bool> {
         match self {
             Self::Capture(session) => session
-                .complete_after_readback(state, format, pixels)
+                .complete_after_readback(
+                    platform,
+                    renderer,
+                    frontend,
+                    match_state,
+                    process_assets,
+                    persistence,
+                    format,
+                    pixels,
+                )
                 .map(|()| true),
-            Self::Picture(session) => session.complete_after_readback(state, format, pixels),
+            Self::Picture(session) => session.complete_after_readback(
+                renderer,
+                frontend,
+                match_state,
+                process_assets,
+                format,
+                pixels,
+            ),
         }
     }
 

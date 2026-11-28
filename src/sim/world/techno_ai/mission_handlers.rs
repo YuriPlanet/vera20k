@@ -78,7 +78,9 @@ fn foot_mission_handler_due(sim: &Simulation, id: u64, now: u32) -> bool {
 /// returns its delay through this same epilogue. The committed selector alone
 /// chooses the handler for miners as for every other Foot. Unrepresented
 /// acquisition and approach branches remain
-/// explicit residuals rather than guessed AI.
+/// explicit residuals rather than guessed AI. A Wasm module's `MissionStep`
+/// may replace a Guard, Area Guard, Hunt or Attack body's outcome before the
+/// epilogue (`ext_modules::unit_ai`).
 pub(crate) fn dispatch_foot_mission(
     sim: &mut Simulation,
     id: u64,
@@ -784,7 +786,15 @@ pub(crate) fn dispatch_foot_mission(
                     .substrate
                     .entities
                     .get(id)
-                    .is_some_and(|actor| !sim.owner_is_human(actor.owner())) =>
+                    .is_some_and(|actor| {
+                        // VERA: not for a house whose `Abilities` a Wasm
+                        // module claimed (RFC 0001 6i).
+                        !sim.owner_is_human(actor.owner())
+                            && !sim.module_claims(
+                                actor.owner(),
+                                vera20k_wasm_ext::DOMAIN_ABILITIES,
+                            )
+                    }) =>
         {
             if let Err(cause) = sim.infantry_do_action(
                 id,
@@ -804,7 +814,13 @@ pub(crate) fn dispatch_foot_mission(
             evaluate_foot_hunt(sim, id, rules, ctx)
         }
         (EntityCategory::Unit | EntityCategory::Infantry, Some(MissionType::Rescue)) => {
-            evaluate_foot_rescue(sim, id, rules, ctx)
+            MissionHandlerEvaluation::cadence(crate::sim::mission::rescue::mission_rescue(
+                sim,
+                rules,
+                ctx.overlay_registry,
+                id,
+                &mut ctx.effects,
+            ))
         }
         // Foot Mission_Eaten4D4CB0, dispatched through vt+218.
         (EntityCategory::Unit | EntityCategory::Infantry, Some(MissionType::Eaten)) => {
@@ -873,6 +889,30 @@ pub(crate) fn dispatch_foot_mission(
         }
     } else {
         evaluation
+    };
+
+    // Wasm module `MissionStep` (`ext_modules::unit_ai`): the Guard, Area
+    // Guard, Hunt or Attack body's outcome, at MissionClass::AI's commit,
+    // after the body and all its draws.
+    let evaluation = match input.mission {
+        Some(
+            mission @ (MissionType::Guard
+            | MissionType::Sticky
+            | MissionType::AreaGuard
+            | MissionType::Hunt
+            | MissionType::Attack),
+        ) => {
+            let (queue, delay) = sim.module_mission_step(
+                rules,
+                id,
+                mission,
+                evaluation.queue,
+                evaluation.delay,
+                &mut ctx.effects,
+            );
+            MissionHandlerEvaluation { delay, queue }
+        }
+        _ => evaluation,
     };
 
     if let Some(queued_mission) = evaluation.queue {
@@ -996,7 +1036,10 @@ fn infantry_automatic_guard_delay(
     ) else {
         return -1;
     };
+    // VERA: a house whose `Abilities` a Wasm module claimed deploys by order
+    // (RFC 0001 6i, `sim::ext_modules::claims`).
     if house.is_controlled_by_human(sim.session.rule_policy())
+        || sim.module_claims(actor.owner(), vera20k_wasm_ext::DOMAIN_ABILITIES)
         || !object.deployer
         || !object.deploy_fire
         || object.undeploy_delay > -1
@@ -1040,8 +1083,9 @@ fn infantry_automatic_guard_delay(
         return -1;
     };
     if !moving {
-        //521631..521659 returns raw signed Count27 even when DoAction refuses.
-        let _ = sim.infantry_do_action(id, 27, false, rules, effects);
+        //521631..521659 returns raw signed Count27 even when DoAction refuses
+        // (or the Wasm module `DeployAllowed` does).
+        let _ = sim.infantry_request_deploy(id, false, rules, effects);
         return rules
             .animation_sequence_in_category(
                 crate::rules::object_type::ObjectCategory::Infantry,
@@ -1104,9 +1148,12 @@ fn infantry_idle_guard_pick(sim: &Simulation, id: u64, rules: &RuleSet) -> Missi
     };
     let house = sim.houses.get(&entity.owner());
     let human = house.is_none_or(|house| house.is_controlled_by_human(sim.session.rule_policy()));
-    let teamed = sim.team_script_vm.team_for_member(id).is_some();
+    let teamed = sim.team_script_vm.team_of(id).is_some();
     let object = sim.entity_object_type(entity, rules);
-    let area_guard = if !human && !teamed {
+    // A house whose `Forces` a Wasm module claims (RFC 0001 6i) leaves the
+    // computer's stance pick: its infantry take the units' own rule.
+    let claimed = sim.module_claims(entity.owner(), vera20k_wasm_ext::DOMAIN_FORCES);
+    let area_guard = if !human && !teamed && !claimed {
         house.is_some_and(|house| house.current_iq() >= rules.general.iq_guard_area)
             && entity.seldom.slave.owner().is_none()
             && object.is_some_and(|object| {
@@ -1137,6 +1184,12 @@ fn infantry_idle_guard_pick(sim: &Simulation, id: u64, rules: &RuleSet) -> Missi
 }
 
 impl Simulation {
+    /// [`infantry_idle_guard_pick`] for `id`, for the Wasm module tests.
+    #[cfg(test)]
+    pub(crate) fn infantry_idle_guard_pick_for_test(&self, id: u64, rules: &RuleSet) -> MissionType {
+        infantry_idle_guard_pick(self, id, rules)
+    }
+
     /// Infantry EnterIdle51CBA0 after the sole Foot4D82B0 base.
     /// P2/P5 actual human E1 controls execute constructor-empty planning and
     /// stock-false DefaultToGuardArea/GUARD_AREA; the guard pick is
@@ -1180,13 +1233,16 @@ impl Simulation {
             FootIdleSelection::KeepBaseReturn => {}
             FootIdleSelection::ReturnFalse => return false,
             FootIdleSelection::Queue(mission) => {
-                let _ = self.mission_queue_exact(
-                    id,
-                    MissionId::from_known(mission),
-                    0,
-                    self.session.binary_frame(),
-                    &LiveReadyInputProvider { rules },
-                );
+                // Wasm module `IdleMission` (`ext_modules::unit_ai`).
+                if let Some(mission) = self.module_idle_mission(rules, id, Some(mission)) {
+                    let _ = self.mission_queue_exact(
+                        id,
+                        MissionId::from_known(mission),
+                        0,
+                        self.session.binary_frame(),
+                        &LiveReadyInputProvider { rules },
+                    );
+                }
             }
         }
         saved_base_return
@@ -1508,6 +1564,16 @@ fn hunt_march_on_player(
     else {
         return;
     };
+    // A house whose `Forces` a Wasm module claims (RFC 0001 6i) does not
+    // march its hunters on the player.
+    if sim
+        .substrate
+        .entities
+        .get(id)
+        .is_some_and(|entity| sim.module_claims(entity.owner(), vera20k_wasm_ext::DOMAIN_FORCES))
+    {
+        return;
+    }
     sim.reset_slave_manager(id, rules, &mut ctx.effects);
     let (rx, ry) = sim.resolved_terrain.as_ref().map_or(cell, |terrain| {
         let identity = terrain.native_cell_identity((cell.0 as i16, cell.1 as i16));
@@ -1729,7 +1795,12 @@ fn infantry_computer_capture(
 /// ([`Simulation::infiltrator_target_building`]).
 fn computer_capture_building(sim: &Simulation, id: u64, rules: &RuleSet) -> Option<u64> {
     let entity = sim.substrate.entities.get(id)?;
-    if sim.owner_is_human(entity.owner()) {
+    // VERA: nor for a house whose `Abilities` a Wasm module claimed: its
+    // module captures, infiltrates and garrisons by order (RFC 0001 6i,
+    // `sim::ext_modules::claims`).
+    if sim.owner_is_human(entity.owner())
+        || sim.module_claims(entity.owner(), vera20k_wasm_ext::DOMAIN_ABILITIES)
+    {
         return None;
     }
     let crate::sim::combat::TargetKind::Entity(building) = entity.attack_target.target()? else {
@@ -1789,6 +1860,8 @@ fn area_guard_post_off_building(sim: &mut Simulation, id: u64) {
         owner,
         building_owner,
     ) || sim.owner_is_human(owner)
+        // A house whose `Forces` a Wasm module claims (RFC 0001 6i).
+        || sim.module_claims(owner, vera20k_wasm_ext::DOMAIN_FORCES)
         || (entity.category() == EntityCategory::Unit && entity.is_harvester())
     {
         return;
@@ -1825,49 +1898,6 @@ fn area_guard_post_off_building(sim: &mut Simulation, id: u64) {
     }
 }
 
-/// Archive the raw physical Map565730 Cell receiver, never Foot's HeadTo.
-/// Real map cells retain their canonical coordinates. The tagged Cell adapter
-/// does not yet preserve a retained Dummy pointer across subsequent stamps.
-fn foot_physical_cell_target(sim: &Simulation, id: u64) -> Option<crate::sim::combat::TargetKind> {
-    let actor = sim.substrate.entities.get(id)?;
-    let coord = crate::sim::movement::ground_pose::position_world_coord(&actor.position);
-    let cell = sim.resolved_terrain.as_ref().map_or(
-        ((coord.x / 256) as i16, (coord.y / 256) as i16),
-        |terrain| {
-            let query = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
-            terrain.native_cell_coord(query.lookup_world(coord.x, coord.y))
-        },
-    );
-    Some(crate::sim::combat::TargetKind::Cell(
-        cell.0 as u16,
-        cell.1 as u16,
-    ))
-}
-
-fn foot_threat_range(sim: &Simulation, id: u64, rules: &RuleSet) -> i32 {
-    let Some(actor) = sim.substrate.entities.get(id) else {
-        return 0;
-    };
-    let Some(object) = sim.object_type(actor.type_ref(), rules) else {
-        return 0;
-    };
-    let ranges = if object.guard_range.is_none_or(|range| range.to_bits() == 0) {
-        std::array::from_fn(|index| {
-            crate::sim::combat::combat_weapon::weapon_range(
-                actor,
-                object,
-                index as i32,
-                &sim.substrate.entities,
-                rules,
-                &sim.interner,
-            )
-        })
-    } else {
-        [0, 0]
-    };
-    crate::sim::combat::threat_range::threat_range_leptons(object, 1, ranges)
-}
-
 fn scaled_area_guard_leash(range: i32) -> i32 {
     use crate::util::native_x87::{MaskedX87Chop53 as X87, NativeF64Bits};
     //4D6E55..4D6E5F multiplies whole leptons by double7E9258 (1.1),
@@ -1876,136 +1906,6 @@ fn scaled_area_guard_leash(range: i32) -> i32 {
         X87::load_i32(range),
         X87::load_f64(NativeF64Bits::from_bits(0x3ff1_9999_9999_999a)),
     ))
-}
-
-/// `FootClass::Mission_Rescue @ 0x004DDF90`, ordinary Unit/Infantry.
-/// Its direct Greatest_Threat uses the archive's+48 XYZ, no passive timer or
-/// health debit. Admission is strict distance < mode1 range*1.5. Empty results
-/// clear688, set status1, use the House500200 home owner, assign a destination,
-/// then clear the archive before the current-mission cadence draw. Status1
-/// without NavCom queues AreaGuard and calls Commence directly.
-/// Native execution: foot_missions Rescue rows and house_base_return.
-/// With a Target in state 0 it approaches through
-/// [`Simulation::approach_target`] (`0x004DDFEB`).
-fn evaluate_foot_rescue(
-    sim: &mut Simulation,
-    id: u64,
-    rules: &RuleSet,
-    ctx: &mut super::ObjectAiCtx<'_>,
-) -> MissionHandlerEvaluation {
-    let Some(actor) = sim.substrate.entities.get(id) else {
-        return MissionHandlerEvaluation::cadence(1);
-    };
-    let state = actor.mission.handler_state();
-    if state == 1 && actor.navigation.nav_com().is_none() {
-        sim.substrate
-            .entities
-            .get_mut(id)
-            .expect("Rescue receiver")
-            .set_archive_target(None);
-        let _ = sim.mission_queue_exact(
-            id,
-            MissionId::from_known(MissionType::AreaGuard),
-            0,
-            sim.session.binary_frame(),
-            &LiveReadyInputProvider { rules },
-        );
-        let _ = sim
-            .substrate
-            .mission_commence_exact(id, sim.session.binary_frame());
-    } else if state == 0 && actor.attack_target.target().is_none() {
-        if actor.archive_target().is_none() {
-            let post = foot_physical_cell_target(sim, id);
-            sim.substrate
-                .entities
-                .get_mut(id)
-                .expect("Rescue receiver")
-                .set_archive_target(post);
-        }
-        sim.substrate
-            .entities
-            .get_mut(id)
-            .expect("Rescue receiver")
-            .seldom
-            .foot_retarget_after_stop
-            .clear_for_rescue();
-        let archive = sim
-            .substrate
-            .entities
-            .get(id)
-            .and_then(|actor| actor.archive_target());
-        let coords = |sim: &Simulation, target| {
-            crate::sim::movement::ground_pose::target_get_coords(
-                target,
-                sim,
-                sim.resolved_terrain
-                    .as_ref()
-                    .map(crate::map::resolved_terrain::NativeCellQuery::canonical)
-                    .as_ref(),
-            )
-            .map(|coord| [coord.x, coord.y, coord.z])
-        };
-        let point = archive.and_then(|post| coords(sim, post));
-        let pick = point.and_then(|point| {
-            sim.greatest_threat_represented(
-                rules,
-                ctx.overlay_registry,
-                id,
-                crate::sim::combat::ScanMission::Hunt,
-                Some(point),
-            )
-        });
-        if let (Some(point), Some(pick)) = (point, pick)
-            && let Some(target) = coords(sim, pick)
-        {
-            //1.5 is exact for the native integer range, so this signed
-            //scaled comparison preserves its strict FCOMP result without
-            //rounding a fractional threshold or discounting foundations.
-            let distance = crate::util::native_x87::object_distance(point, target, None);
-            if i64::from(distance) * 2 < i64::from(foot_threat_range(sim, id, rules)) * 3 {
-                let _ = sim.assign_target_represented(id, Some(pick), rules, &mut ctx.effects);
-            }
-        }
-        if sim
-            .substrate
-            .entities
-            .get(id)
-            .is_some_and(|actor| actor.attack_target.target().is_some())
-        {
-            return MissionHandlerEvaluation::cadence(1);
-        }
-        sim.substrate
-            .entities
-            .get_mut(id)
-            .expect("Rescue receiver")
-            .mission
-            .set_handler_state(1);
-        let owner = sim
-            .substrate
-            .entities
-            .get(id)
-            .expect("Rescue receiver")
-            .owner();
-        let destination = sim
-            .house_return_cell(owner, id)
-            .map(|(rx, ry)| crate::sim::components::NavTargetRef::cell(rx, ry));
-        let _ = sim.assign_destination_represented(id, destination, rules, &mut ctx.effects);
-        sim.substrate
-            .entities
-            .get_mut(id)
-            .expect("Rescue receiver")
-            .set_archive_target(None);
-    } else if state == 0 {
-        // `0x004DDFDB..0x004DDFEB`: with a Target, approach it.
-        sim.approach_target(id, rules, ctx.overlay_registry, &mut ctx.effects);
-    }
-    let mission = sim
-        .substrate
-        .entities
-        .get(id)
-        .and_then(|actor| actor.mission.current().known())
-        .unwrap_or(MissionType::Rescue);
-    MissionHandlerEvaluation::cadence(rate_epilogue(rules, mission, &mut sim.scenario_rng))
 }
 
 /// Where Area Guard's Retaliate_And_Scan looks for an object holding no
@@ -2151,7 +2051,7 @@ pub(super) fn evaluate_foot_area_guard(
         entity.archive_target().is_none() && entity.mission.queued() == MissionId::NONE
     });
     if needs_post {
-        let post = foot_physical_cell_target(sim, id);
+        let post = crate::sim::movement::ground_pose::physical_cell_target(sim, id);
         if let Some(entity) = sim.substrate.entities.get_mut(id) {
             entity.set_archive_target(post);
         }
@@ -2166,7 +2066,9 @@ pub(super) fn evaluate_foot_area_guard(
         .entities
         .get(id)
         .and_then(|entity| entity.archive_target());
-    let mut leash = scaled_area_guard_leash(foot_threat_range(sim, id, rules));
+    let mut leash = scaled_area_guard_leash(crate::sim::combat::threat_range::object_threat_range(
+        sim, id, rules,
+    ));
     if let Some(crate::sim::combat::TargetKind::Entity(post)) = archive
         && sim.substrate.entities.get(post).is_some_and(|entity| {
             matches!(
@@ -2422,6 +2324,8 @@ fn guard_queues_sabotage(sim: &Simulation, id: u64, rules: &RuleSet) -> bool {
     };
     if entity.category() != EntityCategory::Infantry
         || sim.owner_is_human(entity.owner())
+        // A house whose `Abilities` a Wasm module claims (RFC 0001 6i).
+        || sim.module_claims(entity.owner(), vera20k_wasm_ext::DOMAIN_ABILITIES)
         || entity.mission.current().known() == Some(MissionType::Sabotage)
         || !sim
             .object_type(entity.type_ref(), rules)
@@ -2547,6 +2451,11 @@ fn harvester_guard_override_requeues_harvest(sim: &Simulation, id: u64, rules: &
         .get(&entity.owner())
         .filter(|house| !house.is_controlled_by_human(sim.session.rule_policy()))
     {
+        // A house whose `Production` (its economy) a Wasm module claims
+        // (RFC 0001 6i) leaves its idle harvesters to the module.
+        if sim.module_claims(entity.owner(), vera20k_wasm_ext::DOMAIN_PRODUCTION) {
+            return false;
+        }
         // Arm (ii), `0x00740880..0x0074092C`.
         return house.tracking().owns_any_building(
             unit_type
@@ -2953,7 +2862,7 @@ mod guard_rearm_tests {
                     .collect(),
             );
             sim.substrate.entities.insert(entity);
-            sim.scenario_rng = crate::sim::rng::SimRng::from_native_state_hex_for_test(
+            *sim.scenario_rng = crate::sim::rng::SimRng::from_native_state_hex_for_test(
                 row["rng_before_hex"].as_str().unwrap(),
             );
             let main = sim.main_rng.state();

@@ -14,17 +14,8 @@
 //! [`tests`] replays every `estimator` row.
 
 use super::attacker::{FireDamageStages, fire_damage};
-use super::kernel::apply_warhead_damage;
+use super::kernel::{DamageWarhead, apply_warhead_damage};
 use super::{DefenceDivisors, receive::defence_divides};
-use crate::util::native_x87::NativeF64Bits;
-
-/// The warhead the estimate detonates, as the kernel reads it.
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct EstimateWarhead {
-    pub cell_spread: f64,
-    pub percent_at_max: f64,
-    pub armor_multiplier: NativeF64Bits,
-}
 
 /// Everything `0x006FDB80` reads besides its callees' tables.
 #[derive(Debug, Clone, Copy)]
@@ -41,7 +32,7 @@ pub(crate) struct EstimateInputs {
     /// rank holds STRONGER (`0x006FDC87..0x006FDCFE`).
     pub divisors: DefenceDivisors,
     /// `Warhead=` (`+0xAC`); `None` returns 0, as the kernel's null arm does.
-    pub warhead: Option<EstimateWarhead>,
+    pub warhead: Option<DamageWarhead>,
     /// `ScenarioClass` flag `0x20` (no damage).
     pub scenario_no_damage: bool,
     /// `[CombatDamage] MaxDamage=`.
@@ -174,7 +165,7 @@ mod tests {
                     ae_armor: 1.0,
                     rank_armor: stronger.then(|| f64_bits(&input["rules_veteran_armor"])),
                 },
-                warhead: (input["warhead_present"] == true).then_some(EstimateWarhead {
+                warhead: (input["warhead_present"] == true).then_some(DamageWarhead {
                     cell_spread: widened_f32(&input["warhead_cell_spread"]),
                     percent_at_max: widened_f32(&input["warhead_percent_at_max"]),
                     armor_multiplier: NativeF64Bits::from_bits(

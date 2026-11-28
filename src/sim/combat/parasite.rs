@@ -51,16 +51,6 @@
 //!   nothing: the drone's Unlimbo border (`0x006F6D61`, from its cell out
 //!   to the radius + 3) has just refreshed that disc, and the UpdateReveal
 //!   between (`0x0062A40B`) reveals nothing new.
-//! - GetReleaseCoords' PlaceInfantryInCell finding no spot writes the zero
-//!   coordinate (`0x0089E778`), which a Unit owner turns into map cell
-//!   (0,0)'s GetCoords (`0x0062AE09..0x0062AE3E`); that is no longer the
-//!   invalid `0x00AC4948`, so PointerExpired unlimboes the owner there under
-//!   `0x00A8E7AC`, outside the map. VERA has no off-map Unlimbo and deletes
-//!   the owner. Trigger: a drone's victim dies where the drone cannot take
-//!   its place (in the air, on a building or terrain object, on water) and
-//!   the cell ahead of the victim holds a vehicle or a closed object.
-//!   Effect: the drone is lost instead of standing off the map's corner.
-//!   Frequency: rare. Risk: the owner's unit count only.
 //! - Paralysis in some movers: Fly `0x004CCD00`/`0x004CF96E`, Mech Move_To
 //!   `0x005B0099` and Tunnel Move_To `0x00728B10` refuse a paralyzed Foot;
 //!   VERA's ports of those do not read [`FootParasite::is_paralyzed`] yet
@@ -268,6 +258,7 @@ impl FootParasite {
 #[cfg(any(test, feature = "test-support"))]
 impl FootParasite {
     pub(crate) fn set_eater_for_test(&mut self, eater: Option<u64>) {
+        crate::sim::game_entity::NameNote::fixture();
         self.eater = eater;
     }
 
@@ -305,9 +296,7 @@ fn weapon_zero<'r>(
     object: &ObjectType,
     veterancy: u16,
 ) -> Option<&'r crate::rules::weapon_type::WeaponType> {
-    super::combat_weapon::weapon_for_index(object, veterancy, 0)
-        .and_then(|record| record.weapon_id)
-        .and_then(|name| rules.weapon(name))
+    super::combat_weapon::weapon_for_index(object, veterancy, 0)?.weapon(rules)
 }
 
 impl Simulation {
@@ -383,12 +372,10 @@ impl Simulation {
             Some(rules.overlay_registry()),
             effects,
         );
-        self.substrate
-            .entities
-            .get_mut(victim)
-            .unwrap()
-            .parasite
-            .eater = Some(owner);
+        let victim_entity = self.substrate.entities.get_mut(victim).unwrap();
+        // The eater is a holding any expiry reaches (the pointer-expiry index).
+        let _ = victim_entity.note_names();
+        victim_entity.parasite.eater = Some(owner);
         if let Some(state) = self
             .substrate
             .entities
@@ -453,6 +440,7 @@ impl Simulation {
         effects: &mut FrameEffects<'_>,
     ) {
         if !self.mega_mission(owner).is_attack_move() {
+            let before = self.module_target_before(owner);
             if let Some(entity) = self.substrate.entities.get_mut(owner) {
                 if clear_archive {
                     entity.set_archive_target(None);
@@ -463,6 +451,8 @@ impl Simulation {
                     rules.ares_form(),
                 );
             }
+            // Wasm module `TargetChanged` (`ext_modules::control`).
+            self.raise_module_target_changed(rules, effects, owner, before);
             self.assign_null_destination(owner, rules, Some(rules.overlay_registry()), effects);
         }
         crate::sim::world::enter_idle_mode(
@@ -956,65 +946,49 @@ impl Simulation {
         if !naval_owner && self.land_blocks_release(adjacent, victim_cell) {
             return None;
         }
-        // CellClass::PlaceInfantryInCell 0x00481180 (`0x0062ADCF..0x0062ADE9`)
-        // on the ground plane, at the adjacent cell's GetCoords, for every
-        // owner class; Unit owners then take the centre (`0x0062AE09..0x0062AE3E`).
-        let mut coords = target_cell_coord(
-            adjacent.0 as u16,
-            adjacent.1 as u16,
-            self.resolved_terrain
-                .as_ref()
-                .map(NativeCellQuery::canonical)
-                .as_ref(),
-        );
-        let spot = Self::place_infantry_in_ground_cell(
+        // ParasiteClass::GetReleaseCoords 0x62ADCF..0x62AE42. A failed
+        // PlaceInfantryInCell supplies the zero coordinate. A Unit converts
+        // even that point to its cell center before the final sentinel check.
+        let center = target_cell_coord(adjacent.0 as u16, adjacent.1 as u16, cells.as_ref());
+        let empty = DriveCoord { x: 0, y: 0, z: 0 };
+        let mut coords = Self::place_infantry_in_ground_cell(
             &self.interner,
             &mut self.scenario_rng,
             &self.substrate,
             &self.resolved_terrain,
             rules,
-            coords,
-        )?;
-        if !owner_is_unit {
-            let (sub_x, sub_y) = crate::util::lepton::subcell_lepton_offset(Some(spot));
-            coords.x = i32::from(adjacent.0) * 256 + sub_x.to_num::<i32>();
-            coords.y = i32::from(adjacent.1) * 256 + sub_y.to_num::<i32>();
+            center,
+        )
+        .map_or(empty, |spot| {
+            crate::sim::movement::walk_head::selected_head(center, spot, center.z, false)
+        });
+        if owner_is_unit {
+            coords =
+                crate::sim::cell_rect::get_cellclass_fallback_leptons(terrain, coords.x, coords.y)
+                    .get_coords();
         }
-        let bridge = self.cell_has_bridge(adjacent);
-        let adjacent_fixed_deck = bridge.then(|| fixed_deck_at(adjacent)).flatten();
-        let on_bridge = if victim_on_bridge {
-            if bridge {
-                coords.z = adjacent_fixed_deck
-                    .unwrap_or_else(|| ground_pose::z_at_height(coords.z, 0, true));
-            }
-            bridge
-        } else if bridge {
-            // 0x0062AE63: only a deck below the victim's own height counts.
-            let victim_z = target_cell_coord(
-                victim_cell.0 as u16,
-                victim_cell.1 as u16,
-                self.resolved_terrain
-                    .as_ref()
-                    .map(NativeCellQuery::canonical)
-                    .as_ref(),
-            )
-            .z;
-            if victim_z > adjacent_fixed_deck.unwrap_or(coords.z) {
-                coords.z = adjacent_fixed_deck
-                    .unwrap_or_else(|| ground_pose::z_at_height(coords.z, 0, true));
-                true
-            } else {
-                false
-            }
-        } else {
-            false
-        };
+        // 0x62AEA0..0x62AED0 compares the candidate's ground Z to the host
+        // cell's Z. The deck height is applied only after choosing its layer.
+        let release_cell = ((coords.x / 256) as i16, (coords.y / 256) as i16);
+        let on_bridge = self.cell_has_bridge(release_cell)
+            && (victim_on_bridge
+                || coords.z
+                    < target_cell_coord(
+                        victim_cell.0 as u16,
+                        victim_cell.1 as u16,
+                        cells.as_ref(),
+                    )
+                    .z);
+        if on_bridge {
+            coords.z = fixed_deck_at(release_cell)
+                .unwrap_or_else(|| ground_pose::z_at_height(coords.z, 0, true));
+        }
         self.substrate
             .entities
             .get_mut(owner)?
             .on_bridge
             .store(on_bridge);
-        Some(coords)
+        (coords != empty).then_some(coords)
     }
 
     /// CanPlaceAtVictim `0x0062AB40`.
@@ -1366,12 +1340,17 @@ impl Simulation {
             .is_some_and(|w| w.sonic);
         if sonic {
             self.parasite_exit_unit(eater, rules, effects);
+            let before = source.and_then(|id| self.module_target_before(id));
             if let Some(source) = source.and_then(|id| self.substrate.entities.get_mut(id)) {
                 crate::sim::mission::concrete_effects::represented_assign_target(
                     source,
                     None,
                     rules.ares_form(),
                 );
+            }
+            // Wasm module `TargetChanged` (`ext_modules::control`).
+            if let Some(source) = source {
+                self.raise_module_target_changed(rules, effects, source, before);
             }
             return;
         }

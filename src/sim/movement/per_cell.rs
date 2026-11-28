@@ -145,8 +145,11 @@ impl Simulation {
             if restore && let Some(unit) = self.substrate.entities.get_mut(id) {
                 // Unit73A4E9 restores only the raw NavCom; unlike the Foot
                 // setter this does not clear NavComAux or change movement.
-                unit.navigation
-                    .store_nav_com(Some(crate::sim::components::NavTargetRef::object(contact)));
+                let note = unit.note_names();
+                unit.navigation.store_nav_com(
+                    Some(crate::sim::components::NavTargetRef::object(contact)),
+                    note,
+                );
             }
             self.foot_per_cell_process(id, PerCellReason::Arrival, rules, registry, effects);
             crate::sim::radio::transmit_to_contact(
@@ -496,6 +499,11 @@ impl Simulation {
             ) {
                 continue;
             }
+            // Wasm module `CrushAllowed` (veto): a refused victim stays, as
+            // one `crushes` refuses does (`ext_modules::control`).
+            if !self.module_allows_crush(rules, id, victim) {
+                continue;
+            }
             if ares {
                 self.ares_crush_damage(id, victim, rules, registry, effects);
             }
@@ -523,6 +531,8 @@ impl Simulation {
                 self.unit_death_explosion(rules, victim, &mut Vec::new(), registry, effects);
             }
             self.free_all_captures(victim, rules, registry, effects);
+            // Wasm module `Crushed` on the victim, before its kill.
+            self.raise_module_crushed(rules, effects, victim, id);
             // `UnitClass::Crush_Or_Prescatter_Cell @ 0x007416A0`: the
             // victim records its kill by the crusher (vtable `+0xE0`,
             // `0x007418F0`) and is UnInit (vtable `+0xF8`, `0x00741910`),
@@ -2035,7 +2045,7 @@ mod discovery_tests {
             .register(HouseState::new(player, 0, None, true, 0, 10));
         sim.houses
             .register(HouseState::new(enemy, 1, None, false, 0, 10));
-        sim.fog = crate::sim::vision::FogState::new(32, 32);
+        *sim.fog = crate::sim::vision::FogState::new(32, 32);
         let type_ref = sim.interner.intern("TEST");
         sim.substrate
             .entities

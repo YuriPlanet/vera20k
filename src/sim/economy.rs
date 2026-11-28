@@ -173,6 +173,12 @@ impl Economy {
         self.score = self.score.wrapping_add(points);
     }
 
+    /// A Wasm module's `SetScore` action (RFC 0001 appendix 5.3; VERA's own,
+    /// no native body): `+0x54E8` takes the value.
+    pub(crate) fn set_score(&mut self, score: i32) {
+        self.score = score;
+    }
+
     /// `HouseClass::Add_Tiberium_Credits @ 0x004F9610` for `amount` units
     /// of a tiberium: the stock GiveTiberium body, which its callers reach
     /// through `Simulation::tiberium_gift`. Each operation follows

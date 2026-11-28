@@ -115,7 +115,7 @@ fn stop_leaves_a_miner_on_a_hidden_flat_cell_harvesting() {
         let mut sim = Simulation::new();
         // The projection probe from (20, 20) meets (21, 21) four levels
         // up, which covers (20, 20) on screen.
-        sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(32, 32, |rx, ry| {
+        *sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(32, 32, |rx, ry| {
             let mut cell = crate::map::resolved_terrain::test_flat_cell(rx, ry);
             if hidden && (rx, ry) == (21, 21) {
                 cell.level = 4;
@@ -153,7 +153,14 @@ fn lockstep_subject_gate_refuses_an_unrecognized_native_opcode() {
     let command = Command::SynchronizedRecord {
         record: CommandRecord::encode(0xff, 0, 0, &[]).unwrap(),
     };
-    assert!(sim.network_command_actor_foreign("Americans", None, &command, rules, None));
+    assert!(sim.network_command_actor_foreign(
+        "Americans".into(),
+        None,
+        &command,
+        rules,
+        None,
+        false
+    ));
 }
 
 /// Event IDLE admits its actor on `+0x90` and `+0x81` alone
@@ -169,7 +176,7 @@ fn stop_admits_a_live_actor_at_zero_strength() {
     ))
     .expect("HARV rules");
     let mut sim = Simulation::new();
-    sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(
+    *sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(
         32,
         32,
         crate::map::resolved_terrain::test_flat_cell,
@@ -340,17 +347,18 @@ fn network_match_refuses_selling_another_houses_wall() {
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Wol);
     let mut grid = crate::sim::overlay_grid::OverlayGrid::new(3, 3);
     grid.place_owned_wall(1, 1, 2, 0, owner);
-    sim.overlay_grid = Some(grid);
+    *sim.overlay_grid = Some(grid);
     let sale = Command::SellWallAtCell { x: 1, y: 1 };
     let sell = |sim: &mut Simulation, house: &str| {
         sim.apply_command_with_overlays(
-            None,
+            CommandSender::Player(None),
             house,
             &sale,
             &rules,
             Some(&overlays),
             &mut FrameEffects::default(),
         )
+        .is_ok()
     };
     let wall = |sim: &Simulation| sim.overlay_grid.as_ref().unwrap().cell(1, 1).overlay_id;
 
@@ -1247,8 +1255,8 @@ fn bunker_full_lifecycle_enter_install_then_eject() {
             .unwrap()
             .state();
         saw_track_step |= state == BunkerState::TrackStep;
-        sim.session
-            .set_binary_frame_for_test(sim.session.binary_frame() + 1);
+        let session = &mut *sim.session;
+        session.set_binary_frame_for_test(session.binary_frame() + 1);
         if state == BunkerState::Occupied {
             break;
         }
@@ -1375,8 +1383,8 @@ fn bunker_full_lifecycle_enter_install_then_eject() {
     for _ in 0..600 {
         sim.process_ground_locomotor_stats_for_test(1, Some(&rules), None)
             .expect("normal release reaches the production movement corridor");
-        sim.session
-            .set_binary_frame_for_test(sim.session.binary_frame() + 1);
+        let session = &mut *sim.session;
+        session.set_binary_frame_for_test(session.binary_frame() + 1);
         let unit = sim.substrate.entities.get(1).unwrap();
         if (unit.position.rx(), unit.position.ry()) == exit
             && crate::sim::movement::track_head::committed_track_head(unit).is_none()

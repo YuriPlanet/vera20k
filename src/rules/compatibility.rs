@@ -12,9 +12,10 @@
 //! must keep working when the others are compiled in — the modes differ in what
 //! they read, never in whether a feature is available.
 //!
-//! Ares was such a capability until every build played it (`RuleSet::ares`).
-//! Its variants stay, so a save from an `ares` build still reads and is
-//! refused; no build records them any more.
+//! Ares and NPatch were such capabilities until every build played them
+//! (`RuleSet::ares`, `RuleSet::npatch`). Their variants stay, so a save from
+//! an `ares` or `npatch` build still reads and is refused; no build records
+//! them any more.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum RulesCompatibility {
@@ -55,10 +56,14 @@ pub enum RulesCompatibility {
 
 impl Default for RulesCompatibility {
     fn default() -> Self {
+        // NPatch is a per-game switch now (`rules::npatch_switch`), like Ares:
+        // every build carries its code, so it is not a build capability. The
+        // variants below stay for saves a build with the old `npatch` feature
+        // wrote.
         Self::from_capabilities(
             false,
             super::PHOBOS_ENABLED,
-            super::NPATCH_ENABLED,
+            false,
             super::VERAX_ENABLED,
             super::NPBUG_ENABLED,
         )
@@ -159,7 +164,8 @@ impl RulesCompatibility {
         )
     }
 
-    /// Whether this recorded mode includes the NPatch capability.
+    /// Whether this recorded mode includes the NPatch capability (only a
+    /// build from before NPatch became a per-game switch records it).
     pub const fn has_npatch(self) -> bool {
         matches!(
             self,

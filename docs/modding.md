@@ -13,7 +13,7 @@ extension features VERA20k supports.
 | Game files | MIX, INI, SHP, VXL, CSF and maps | The same files, searched in the same order |
 | DLL mods and exe patches | Run inside the game | Can't run |
 | Map size | Width plus height up to 512 | Up to 1024 |
-| Players | 8 | Up to 30, on maps made for it |
+| Players | 8 | Up to 120 player slots in offline Skirmish and up to 30 in LAN or online matches, on maps with enough starts |
 | Player colours | 8 | 30, and a mod can [list its own](skirmish-colors.md) |
 | Playing online | With the original game | Only with other VERA20k players |
 
@@ -31,7 +31,7 @@ to 512 and `[AI] AIBaseSpacing` to −16 through 16 cells.
 - Add new units, buildings and weapons.
 - Replace pictures, models, sounds and music.
 - Change the AI, the game modes and the game's text.
-- Make your own maps, including bigger ones and maps for up to 30 players.
+- Make larger maps with up to 120 starting positions. Offline Skirmish can use all 120. LAN and online matches can use up to 30.
 - Play your mod online, if everyone has the same files.
 
 **Only partly:**
@@ -50,12 +50,14 @@ to 512 and `[AI] AIBaseSpacing` to −16 through 16 cells.
   See [More detail](#more-detail).
 - Large conversions. Selecting their data does not establish support for all their
   extension features.
+- New behaviour in code. A mod or map can carry a [Wasm module](wasm-modules/guide.md), a
+  sandboxed program that changes the game through its own rules. It is a preview.
 
 **You can't:**
 
 - Load DLLs, Syringe or a patched `gamemd.exe`.
-- Add new behaviour with a script or plugin. VERA20k has neither, so that means changing
-  its code.
+- Add new behaviour with a DLL, script or plugin outside the [Wasm modules](wasm-modules/guide.md),
+  which have no files, network or clock.
 - Play without the original game.
 
 ## Where things go
@@ -104,6 +106,11 @@ Later parts replace files at the same path.
 **Install & Play** makes one ready-to-use folder in `Mods` and restarts into it.
 **Install Only** adds the mod to the list for later. Both keep the original downloads.
 
+To extend an installed mod, select it and choose **Add Mod → Add parts**.
+Pick the patch ZIPs or folders and confirm **Append**. Existing filenames match
+regardless of letter case. The mod keeps its own `mod.ini` and Android shortcut.
+If you are already playing that mod, restart the game to load the added files.
+
 You can also install a mod manually.
 
 1. Make a folder inside `Mods` and give it your mod's name, such as `Mods/MyMod`.
@@ -148,6 +155,7 @@ check a mod's terms before you use it here. VERA20k doesn't support such mods.
 | Only INI files the game doesn't read, such as an AI another author made | Adds them to the map of every Skirmish and online match. See [Add to every map](#add-to-every-map). |
 | `veraui.ini` | Lays out the match screen: which edge the sidebar and the command bar sit on, where the sidebar's parts sit, which it has, and how big it is. See [interface layout](interface-layout.md). |
 | `mod.ini` | Supplies display information, resource filenames and extension requirements. Optional. |
+| An `hd_art` folder | An HD art pack: 2x pictures the game draws instead of the original art when HD art is on. Players need not share it. See [HD art](hd-art.md). |
 | `mod-files.txt` | Lists the mod's files, so players can check their copy. The game writes it for you: see [Check a mod's files](#check-a-mods-files). Optional. |
 
 #### Mods distributed in parts
@@ -215,6 +223,8 @@ Ares=yes
   Without the section, the mod inherits the host's `[ini]` settings.
 - `[Archives]` replaces names in existing startup slots, preserving their order and
   fallback rules. Omitted keys keep stock names. It does not scan for other archives.
+- `[Extensions] Kratos=yes` makes this launch play Kratos, as if the mod shipped it. With the
+  player's Kratos setting Off, VERA20k refuses the mod and says how to turn Kratos back on.
 - `[Extensions] Ares=yes` requires Ares reading from startup. With the player's Ares
   setting on Auto, it enables that reading for this launch without changing the saved
   setting. With Off, VERA20k refuses the mod and tells the player how to enable it.
@@ -391,7 +401,8 @@ mod's.
 Put your version in your mod's folder under the same name, such as `rulesmd.ini` or
 `aimd.ini`. To add new units, buildings or weapons, add them to `rulesmd.ini` and
 `artmd.ini` as in the original, and put their art in the same folder. A mod using other
-root names declares them in `[Files]`.
+root names declares them in `[Files]`. A sound or music track can also be replaced by an
+Ogg Opus file named after it, such as `igisea.opus`; see [Opus sounds and music](opus-audio.md).
 
 ### Add to every map
 
@@ -433,11 +444,14 @@ map can change any rule for that match.
 New map exports and downloads use `.map`. If you already have an identical
 copy, VERA20k reuses it under its existing name, including `.yrm` and `.mpr` files.
 
-VERA20k adds two things. Open the map in a text editor to set them:
+VERA20k also supports these map settings:
 
 - **Bigger maps:** under `[Map]`, the width and height in `Size=` can add up to 1024.
 - **More players:** under `[Basic]`, add `MaxPlayers=` with a number from 9 to 30. The
   map needs a start waypoint for every player, numbered from 0.
+- **Breakable ice.** Set `VeraIce=yes` under `[Map]` on a snow map, then paint
+  the crossing with the bundled ice tiles. Players only need your map file.
+  See [ice tile numbers, editor setup and Ice Lake](ts-ice.md#use-the-bundled-ice-in-a-map).
 
 If you write a map editor or tool, the [map format](map-format.md) has the details.
 
@@ -500,9 +514,14 @@ don't matter: its matches read the original terrain.
 
 - [INI roots and archive names](ini-roots.md): select your own resource filenames.
 - [Interface layout](interface-layout.md): lay out the match screen with `veraui.ini`.
-- [Ares](ares.md), [Phobos](phobos.md), [NPatch](npatch.md) and [VeraX](verax.md): what
-  each extension covers and how to turn it on or build VERA20k with it. The official
-  downloads hold all of Ares, which a game's data turns on, and none of the others.
+- [Wasm modules](wasm-modules/guide.md): build a `rules.wasm` or a `ui.wasm`, put it in a mod
+  or a map, and declare its triggers in `rulesmd.ini`; tutorials for
+  [simulation](wasm-modules/rust-tutorial.md) and [client](wasm-modules/rust-ui-tutorial.md) modules
+  and the [Rust SDK reference](wasm-modules/rust-sdk.md).
+- [Ares](ares.md), [Phobos](phobos.md), [NPatch](npatch.md), [VeraX](verax.md) and
+  [Kratos](kratos.md): what each extension covers and how to turn it on or build VERA20k with
+  it. The official downloads hold all of Ares, which a game's data turns on, and none of the
+  others. Kratos is at its first pieces: the per-game switch and the prone firing offset.
 
 ## Something wrong?
 

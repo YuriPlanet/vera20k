@@ -550,6 +550,13 @@ pub const TARGET_HOUSE_OPCODE: u8 = 0x33;
 pub const TARGET_HOUSE_PAYLOAD_LEN: u8 = 2 + VERA_PAID_SUPER_PAYLOAD_LEN;
 /// `CycleProducerRecord`'s one category byte.
 pub const VERA_CYCLE_PRODUCER_PAYLOAD_LEN: u8 = 1;
+/// VERA-only: a Wasm client module's message (RFC 0001 section 10,
+/// [`ModuleMessageRecord`]).
+pub const VERA_MODULE_MESSAGE_OPCODE: u8 = 0x34;
+/// Its fixed body: source, length, then [`MODULE_MESSAGE_BYTES`] bytes.
+pub const VERA_MODULE_MESSAGE_PAYLOAD_LEN: u8 = 2 + MODULE_MESSAGE_BYTES as u8;
+/// The largest message (RFC 0001 15.4).
+pub const MODULE_MESSAGE_BYTES: usize = vera20k_wasm_ext::MAX_MESSAGE_BYTES;
 
 /// Original byte table8208EC, indexed by the 47 Event opcodes (0..2E).
 /// RESPONSE_TIME1B starts at Event+0D; ADDPLAYER1F carries external storage.
@@ -569,6 +576,7 @@ pub(crate) fn event_body_len(opcode: u8) -> Option<u8> {
         VERA_EJECT_BUNKER_OPCODE => event_body_len(ObjectAction::Sell.opcode()),
         VERA_CYCLE_PRODUCER_OPCODE => Some(VERA_CYCLE_PRODUCER_PAYLOAD_LEN),
         TARGET_HOUSE_OPCODE => Some(TARGET_HOUSE_PAYLOAD_LEN),
+        VERA_MODULE_MESSAGE_OPCODE => Some(VERA_MODULE_MESSAGE_PAYLOAD_LEN),
         // Ares 3.0 1006A130: TrenchRedirectClick (0x60) carries 10 bytes. Only
         // a game Ares plays in raises one (`context_order`'s trench Enter).
         ARES_TRENCH_REDIRECT_OPCODE => Some(ARES_TRENCH_REDIRECT_PAYLOAD_LEN),
@@ -847,6 +855,59 @@ impl CycleProducerRecord {
             house_id: record.house_id(),
             frame: record.frame_stamp(),
             category,
+        })
+    }
+}
+
+/// A Wasm client module's message for the same source's simulation module
+/// (`client_send_message`, RFC 0001 section 10): VERA opcode 0x34 with a
+/// fixed body of the source (0 mod, 1 map), the length, and the bytes
+/// zero-padded to [`MODULE_MESSAGE_BYTES`]. The header's sender is the
+/// sending player, which the engine fills: a module cannot name another.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModuleMessageRecord {
+    pub house_id: i8,
+    pub frame: i32,
+    pub source: u8,
+    pub data: Vec<u8>,
+}
+
+impl ModuleMessageRecord {
+    /// `None` for an unknown source or a message longer than
+    /// [`MODULE_MESSAGE_BYTES`].
+    pub fn encode(&self) -> Option<CommandRecord> {
+        if self.source > 1 || self.data.len() > MODULE_MESSAGE_BYTES {
+            return None;
+        }
+        let mut payload = [0u8; VERA_MODULE_MESSAGE_PAYLOAD_LEN as usize];
+        payload[0] = self.source;
+        payload[1] = self.data.len() as u8;
+        payload[2..2 + self.data.len()].copy_from_slice(&self.data);
+        CommandRecord::encode(
+            VERA_MODULE_MESSAGE_OPCODE,
+            i32::from(self.house_id),
+            self.frame,
+            &payload,
+        )
+        .ok()
+    }
+
+    /// `None` for another opcode, an unknown source, a length past
+    /// [`MODULE_MESSAGE_BYTES`] or padding that is not zero.
+    pub fn decode(record: &CommandRecord) -> Option<Self> {
+        if record.opcode() != VERA_MODULE_MESSAGE_OPCODE {
+            return None;
+        }
+        let payload = &record.payload()[..usize::from(VERA_MODULE_MESSAGE_PAYLOAD_LEN)];
+        let (source, len) = (payload[0], usize::from(payload[1]));
+        if source > 1 || len > MODULE_MESSAGE_BYTES || payload[2 + len..].iter().any(|&b| b != 0) {
+            return None;
+        }
+        Some(Self {
+            house_id: record.house_id(),
+            frame: record.frame_stamp(),
+            source,
+            data: payload[2..2 + len].to_vec(),
         })
     }
 }
@@ -1553,6 +1614,54 @@ impl TryFrom<&[u8]> for CommandRecord {
     }
 }
 
+/// Who sent a command the receiver
+/// ([`crate::sim::world::Simulation::apply_command_with_overlays`]) executes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CommandSender {
+    /// A player's command (or a module write acting as a player's click):
+    /// the network source of its DoList entry, if it has one.
+    Player(Option<i8>),
+    /// A Wasm module's order for a house no player controls (RFC 0001 6g),
+    /// accepted as that house's own sender whatever the control grants.
+    HouseOrder,
+}
+
+/// Why the command receiver refused a command: the VERA-only reason a Wasm
+/// module's `OrderRefused` carries (`RefuseReason`, RFC 0001 appendix 8.3
+/// enum 26; the discriminants are its values). gamemd's receiver
+/// (`EventClass::Execute @ 0x004C6CB0`) refuses silently; the reason changes
+/// nothing the receiver does. `IgnoresOrders` and `CannotAfford` have no
+/// refusal here yet (no unit keeps `IgnoreOrders`, and no receiver refuses
+/// for credits: a short wallet stalls a build instead).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CommandRefusal {
+    Other = 0,
+    /// The acting object is gone, dead or in limbo.
+    Gone = 1,
+    /// The target object is gone, dead or in limbo.
+    IllegalTarget = 3,
+    /// No factory may build the type, or the house lacks its prerequisites
+    /// or the superweapon.
+    Prerequisite = 4,
+    /// The factory queue is full, the type is at its build limit, or a
+    /// building factory is busy.
+    QueueFull = 6,
+    /// The building cannot be placed there, or the product cannot leave its
+    /// factory.
+    CannotPlace = 7,
+    /// No finished product waits, or the superweapon is not charged.
+    NotReady = 8,
+    /// A module's `CommandAllowed` or `ProductionQueued` refused it.
+    Vetoed = 9,
+}
+
+impl CommandRefusal {
+    /// `Ok` when the receiver applied the command, else this refusal.
+    pub(crate) fn unless(self, applied: bool) -> Result<(), Self> {
+        if applied { Ok(()) } else { Err(self) }
+    }
+}
+
 /// One gameplay command payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Command {
@@ -1805,6 +1914,14 @@ pub enum Command {
     /// player's regrouping no longer changes what that player's own teams
     /// recruit or which group an action 84 wakes.
     AssignControlGroup { group: i32, entity_ids: Vec<u64> },
+    /// VERA extension: a Wasm client module's message for the simulation
+    /// module of the same `source` (0 mod, 1 map), from the command's house
+    /// (RFC 0001 section 10, `client_send_message`). It travels as
+    /// [`ModuleMessageRecord`]; the receiver checks the sender, the size and
+    /// the rate (`sim::ext_modules::messages`) and queues it for that
+    /// module's next `on_message`. Appended to preserve existing serialized
+    /// variant indices.
+    ModuleMessage { source: u8, data: Vec<u8> },
 }
 
 impl Command {
@@ -1869,7 +1986,8 @@ impl Command {
             | Self::OpenOptions
             | Self::SetLatencyFudge { .. }
             | Self::SynchronizedRecord { .. }
-            | Self::AssignControlGroup { .. } => [None, None],
+            | Self::AssignControlGroup { .. }
+            | Self::ModuleMessage { .. } => [None, None],
         };
         ids.into_iter().flatten()
     }
@@ -1926,7 +2044,8 @@ impl Command {
             | Self::ArchiveObject { .. }
             | Self::OpenOptions
             | Self::SetLatencyFudge { .. }
-            | Self::SynchronizedRecord { .. } => true,
+            | Self::SynchronizedRecord { .. }
+            | Self::ModuleMessage { .. } => true,
         }
     }
 

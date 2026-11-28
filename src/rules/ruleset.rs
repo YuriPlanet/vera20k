@@ -819,6 +819,11 @@ pub struct RuleSet {
     country_ids: Vec<String>,
     /// Uppercase country identity -> source-order index; only looked up.
     country_indices: LookupMap<String, CountryIdx>,
+    /// Uppercase `Name=` alias or identity -> the first Country in source
+    /// order that carries it, as `HouseTypeClass__FindIndexOfName @
+    /// 0x005117D0`'s scan finds it ([`Self::country_index_of_name`]). Built
+    /// with `countries` and `country_ids`, its sources; only looked up.
+    country_name_indices: LookupMap<String, CountryIdx>,
     /// Side identities in native `[Sides]` registration order, including
     /// sides allocated later by a per-country `Side=` override.
     side_ids: Vec<String>,
@@ -880,6 +885,11 @@ pub struct RuleSet {
     /// house-color producer (loading-bar backing, lobby swatch, map `Color=`,
     /// skirmish slot priority).
     pub color_schemes: Vec<crate::rules::color_scheme::ColorSchemeEntry>,
+    /// The warm colours enemies draw in under VERA's team-colour view
+    /// (Alt+T), team A first, taken from the colours a lobby already offers
+    /// ([`crate::rules::team_colors`]). Empty when the rules list no warm
+    /// colour, which leaves every enemy on the relation view's red.
+    pub enemy_team_palette: crate::rules::team_colors::EnemyTeamPalette,
     /// Per-`[Colors]`-entry team-color ramps (palette indices 16..31), built once
     /// from `color_schemes`. Indexed by `HouseColorIndex` (= `[Colors]` entry
     /// index). Consumed by unit/building atlas bake, the voxel GPU ramp texture,
@@ -983,6 +993,14 @@ pub struct RuleSet {
     /// Whether Phobos plays in this game, decided once from its Rules
     /// projection by `rules::phobos_switch`. Read through [`Self::phobos`].
     phobos: bool,
+    /// Whether Kratos plays in this game, decided once from the reads its
+    /// processed rules and projection made by `rules::kratos_switch`. Read
+    /// through [`Self::kratos`].
+    kratos: bool,
+    /// Whether NPatch plays in this game, decided once from the reads its
+    /// processed rules and projection made by `rules::npatch_switch`. Read
+    /// through [`Self::npatch`].
+    npatch: bool,
     /// VERA: whether this game plays RA2 Mode (docs/ra2-mode.md), decided once
     /// at load from the launch's choice (`util::ra2_launch`). Read through
     /// [`Self::ra2`].

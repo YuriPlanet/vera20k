@@ -326,7 +326,7 @@ fn spawn_standing_blocker(sim: &mut Simulation, rules: &RuleSet, cell: (u16, u16
     let id = sim
         .spawn_object("BLOCKER", "Russians", cell.0, cell.1, 0, rules)
         .expect("fixture blocker spawns");
-    sim.resolved_terrain = terrain;
+    *sim.resolved_terrain = terrain;
     id
 }
 
@@ -360,7 +360,7 @@ fn install_refinery_test_terrain_on(
     }));
     sim.set_playfield_size_height_for_test(Some(64));
     let terrain = resolved_clear_grid_with_override(64, 64, override_cell);
-    sim.zone_grid = Some(
+    *sim.zone_grid = Some(
         crate::sim::pathfinding::zone_map::ZoneGrid::build_with_terrain(
             &PathGrid::from_resolved_terrain(&terrain),
             &terrain,
@@ -370,7 +370,7 @@ fn install_refinery_test_terrain_on(
         )
         .into(),
     );
-    sim.resolved_terrain = Some(terrain);
+    *sim.resolved_terrain = Some(terrain);
 }
 
 fn naval_yard_placement_rules() -> RuleSet {
@@ -754,10 +754,14 @@ fn place_building(
         sim,
         rules,
         owner,
-        ProductionPlacement::Building { type_id, cell },
+        ProductionPlacement::Building {
+            type_id: type_id.into(),
+            cell,
+        },
         overlays,
         &mut crate::sim::world::FrameEffects::default(),
     )
+    .is_ok()
 }
 
 /// The placement cursor's preview of `owner`'s `type_id` at `cell`.
@@ -1854,7 +1858,7 @@ fn refinery_without_free_unit_spawns_nothing_on_completion() {
 fn place_ready_building_rejects_blocked_or_overlapping_cells() {
     let mut sim = placement_sim();
     let rules = build_catalog_rules();
-    sim.resolved_terrain = Some(resolved_clear_grid_with_override(64, 64, |cell| {
+    *sim.resolved_terrain = Some(resolved_clear_grid_with_override(64, 64, |cell| {
         if (cell.rx, cell.ry) == (31, 31) {
             cell.land_type = LandType::Rock.as_index();
         }
@@ -1997,7 +2001,7 @@ fn placement_command_rejects_nonblocking_overlay_and_preserves_ready_building() 
 
     let mut overlay_grid = OverlayGrid::new(64, 64);
     overlay_grid.place_overlay(13, 11, 7, 4);
-    sim.overlay_grid = Some(overlay_grid);
+    *sim.overlay_grid = Some(overlay_grid);
     ready_building(&mut sim, &rules, "Americans", "GAPOWR");
 
     let preview = preview_at(&sim, &rules, "Americans", "GAPOWR", (12, 10), None);
@@ -2061,7 +2065,7 @@ fn empty_cell_wall_placement_still_works_but_wall_on_overlay_rejects() {
 
     let mut clear_sim = placement_sim();
     spawn_structure(&mut clear_sim, &rules, 1, "Americans", "GACNST", 10, 10);
-    clear_sim.overlay_grid = Some(OverlayGrid::new(64, 64));
+    *clear_sim.overlay_grid = Some(OverlayGrid::new(64, 64));
     ready_building(&mut clear_sim, &rules, "Americans", "GAWALL");
     let preview = preview_at(
         &clear_sim,
@@ -2091,10 +2095,10 @@ fn empty_cell_wall_placement_still_works_but_wall_on_overlay_rejects() {
 
     let mut overlay_sim = placement_sim();
     spawn_structure(&mut overlay_sim, &rules, 1, "Americans", "GACNST", 10, 10);
-    overlay_sim.resolved_terrain = Some(resolved_clear_grid_with_override(64, 64, |_| {}));
+    *overlay_sim.resolved_terrain = Some(resolved_clear_grid_with_override(64, 64, |_| {}));
     let mut overlay_grid = OverlayGrid::new(64, 64);
     overlay_grid.place_overlay(12, 10, 7, 4);
-    overlay_sim.overlay_grid = Some(overlay_grid);
+    *overlay_sim.overlay_grid = Some(overlay_grid);
     ready_building(&mut overlay_sim, &rules, "Americans", "GAWALL");
     let placement_credits = 1_337;
     super::house_for_test(&mut overlay_sim, "Americans")
@@ -2230,8 +2234,8 @@ fn gsi_04_07_command_places_authoritative_owned_wall_without_entity() {
         .economy_mut()
         .set_credits_for_test(50_000);
     spawn_structure(&mut sim, &rules, 1, "Americans", "GACNST", 10, 10);
-    sim.overlay_grid = Some(OverlayGrid::new(64, 64));
-    sim.resolved_terrain = Some(resolved_clear_grid_with_override(64, 64, |_| {}));
+    *sim.overlay_grid = Some(OverlayGrid::new(64, 64));
+    *sim.resolved_terrain = Some(resolved_clear_grid_with_override(64, 64, |_| {}));
     ready_building(&mut sim, &rules, "Americans", "GAWALL");
     let owner = sim.interner.get("Americans").expect("owner");
     let type_id = sim.interner.get("GAWALL").expect("wall type");
@@ -2370,8 +2374,8 @@ fn gsi_04_07_regular_wall_autofill_is_cardinal_ordered_bounded_and_consumes_once
     let (rules, registry) = gsi_04_07_wall_placement_contract();
     let mut sim = placement_sim();
     spawn_structure(&mut sim, &rules, 1, "Americans", "GACNST", 10, 10);
-    sim.overlay_grid = Some(OverlayGrid::new(64, 64));
-    sim.resolved_terrain = Some(resolved_clear_grid_with_override(64, 64, |_| {}));
+    *sim.overlay_grid = Some(OverlayGrid::new(64, 64));
+    *sim.resolved_terrain = Some(resolved_clear_grid_with_override(64, 64, |_| {}));
     ready_building(&mut sim, &rules, "Americans", "GAWALL");
     let placement_credits = 1_337;
     super::house_for_test(&mut sim, "Americans")
@@ -2436,7 +2440,7 @@ fn gsi_04_07_regular_wall_autofill_is_cardinal_ordered_bounded_and_consumes_once
         expected
     );
 
-    sim.dirty_cells = Default::default();
+    *sim.dirty_cells = Default::default();
 
     let placed = place_building(
         &mut sim,
@@ -2533,7 +2537,7 @@ fn gsi_04_07_regular_wall_autofill_rejects_out_of_range_and_foreign_endpoints() 
 
     let mut out_of_range = placement_sim();
     spawn_structure(&mut out_of_range, &rules, 1, "Americans", "GACNST", 10, 10);
-    out_of_range.overlay_grid = Some(OverlayGrid::new(64, 64));
+    *out_of_range.overlay_grid = Some(OverlayGrid::new(64, 64));
     ready_building(&mut out_of_range, &rules, "Americans", "GAWALL");
     let owner = out_of_range.interner.get("Americans").expect("owner");
     out_of_range
@@ -2564,7 +2568,7 @@ fn gsi_04_07_regular_wall_autofill_rejects_out_of_range_and_foreign_endpoints() 
         10,
         10,
     );
-    foreign_blocker.overlay_grid = Some(OverlayGrid::new(64, 64));
+    *foreign_blocker.overlay_grid = Some(OverlayGrid::new(64, 64));
     ready_building(&mut foreign_blocker, &rules, "Americans", "GAWALL");
     let owner = foreign_blocker.interner.get("Americans").expect("owner");
     let enemy = foreign_blocker.interner.intern("Russians");
@@ -2609,7 +2613,7 @@ fn gsi_04_07_wall_placement_resolves_art_tooverlay_not_building_id() {
     let (rules, registry) = gsi_04_07_wall_placement_contract();
     let mut sim = placement_sim();
     spawn_structure(&mut sim, &rules, 1, "Americans", "GACNST", 10, 10);
-    sim.overlay_grid = Some(OverlayGrid::new(64, 64));
+    *sim.overlay_grid = Some(OverlayGrid::new(64, 64));
     ready_building(&mut sim, &rules, "Americans", "WALLKIT");
     assert!(registry.id_for_name("WALLKIT").is_none());
 
@@ -2636,7 +2640,7 @@ fn gsi_04_07_wall_execution_recomputes_preview_gap_after_a_blocker_appears() {
     let (rules, registry) = gsi_04_07_wall_placement_contract();
     let mut sim = placement_sim();
     spawn_structure(&mut sim, &rules, 1, "Americans", "GACNST", 10, 10);
-    sim.overlay_grid = Some(OverlayGrid::new(64, 64));
+    *sim.overlay_grid = Some(OverlayGrid::new(64, 64));
     ready_building(&mut sim, &rules, "Americans", "GAWALL");
     let owner = sim.interner.get("Americans").expect("owner");
     let overlay_id = registry.id_for_name("GAWALL").expect("wall overlay");
@@ -2690,8 +2694,8 @@ fn gsi_04_07_wall_placement_publishes_connectivity_neighbor_auto_destruction() {
     let (rules, registry) = gsi_04_07_wall_placement_contract();
     let mut sim = placement_sim();
     spawn_structure(&mut sim, &rules, 1, "Americans", "GACNST", 10, 10);
-    sim.overlay_grid = Some(OverlayGrid::new(64, 64));
-    sim.resolved_terrain = Some(resolved_clear_grid_with_override(64, 64, |_| {}));
+    *sim.overlay_grid = Some(OverlayGrid::new(64, 64));
+    *sim.resolved_terrain = Some(resolved_clear_grid_with_override(64, 64, |_| {}));
     ready_building(&mut sim, &rules, "Americans", "GAWALL");
     let owner = sim.interner.get("Americans").expect("owner");
     sim.overlay_grid
@@ -2711,7 +2715,7 @@ fn gsi_04_07_wall_placement_publishes_connectivity_neighbor_auto_destruction() {
         .expect("construction yard listener")
         .attack_target
         .set_for_test(Some(TargetKind::Cell(13, 10)));
-    sim.dirty_cells = Default::default();
+    *sim.dirty_cells = Default::default();
 
     let placed = place_building(
         &mut sim,
@@ -2786,7 +2790,7 @@ fn gsi_04_07_placement_command_places_only_its_own_houses_production() {
     let mut sim = placement_sim();
     sim.hash_state_every(std::num::NonZeroU64::MIN);
     spawn_structure(&mut sim, &rules, 1, "Russians", "GACNST", 10, 10);
-    sim.overlay_grid = Some(OverlayGrid::new(64, 64));
+    *sim.overlay_grid = Some(OverlayGrid::new(64, 64));
     ready_building(&mut sim, &rules, "Russians", "GAWALL");
     let event_owner = sim.interner.intern("Americans");
     sim.houses
@@ -2835,7 +2839,7 @@ fn gsi_04_07_wall_replacement_requires_damaged_same_type_and_owner_and_stays_loc
     let (rules, registry) = gsi_04_07_wall_placement_contract();
     let mut sim = placement_sim();
     spawn_structure(&mut sim, &rules, 1, "Americans", "GACNST", 10, 10);
-    sim.overlay_grid = Some(OverlayGrid::new(64, 64));
+    *sim.overlay_grid = Some(OverlayGrid::new(64, 64));
     ready_building(&mut sim, &rules, "Americans", "GAWALL");
     let owner = sim.interner.get("Americans").expect("owner");
     let enemy = sim.interner.intern("Russians");
@@ -2914,7 +2918,7 @@ fn owned_wall_replacement_rechecks_building_admission_after_removal() {
             .terrain_rules;
     let mut sim = placement_sim();
     spawn_structure(&mut sim, &rules, 1, "Americans", "GACNST", 10, 10);
-    sim.overlay_grid = Some(OverlayGrid::new(64, 64));
+    *sim.overlay_grid = Some(OverlayGrid::new(64, 64));
     ready_building(&mut sim, &rules, "Americans", "GAWALL");
     let owner = sim.interner.get("Americans").unwrap();
     let wall_type = sim.interner.get("GAWALL").unwrap();
@@ -3154,7 +3158,7 @@ fn place_ready_building_rejects_bridge_deck_cells() {
 
     spawn_structure(&mut sim, &rules, 1, "Americans", "GACNST", 10, 10);
     ready_building(&mut sim, &rules, "Americans", "GAPOWR");
-    sim.resolved_terrain = Some(resolved_clear_grid_with_override(64, 64, |cell| {
+    *sim.resolved_terrain = Some(resolved_clear_grid_with_override(64, 64, |cell| {
         if cell.rx == 12 && cell.ry == 10 {
             cell.has_bridge_deck = true;
             cell.bridge_walkable = true;
@@ -3235,7 +3239,7 @@ fn place_ready_building_rejects_canonical_ramp_cells() {
 
     spawn_structure(&mut sim, &rules, 1, "Americans", "GACNST", 10, 10);
     ready_building(&mut sim, &rules, "Americans", "GAPOWR");
-    sim.resolved_terrain = Some(resolved_clear_grid_with_override(64, 64, |cell| {
+    *sim.resolved_terrain = Some(resolved_clear_grid_with_override(64, 64, |cell| {
         if cell.rx == 12 && cell.ry == 10 {
             cell.has_ramp = true;
             cell.canonical_ramp = Some(RampDirection::West);
@@ -3278,10 +3282,10 @@ fn place_ready_building_rejects_destroyed_bridge_over_blocked_ground() {
             cell.bridge_facts.raw_flags = crate::map::bridge_facts::BRIDGE_FLAG_DESTROYED_OR_RAMP;
         }
     });
-    sim.bridge_state = Some(
+    *sim.bridge_state = Some(
         crate::sim::bridge_state::BridgeRuntimeState::from_resolved_terrain(&resolved, true, 5),
     );
-    sim.resolved_terrain = Some(resolved);
+    *sim.resolved_terrain = Some(resolved);
     let deck = sim.overlay_cell_mut_for_test(12, 10);
     deck.overlay_id = Some(0x18);
     deck.overlay_data = 0;
@@ -3307,7 +3311,7 @@ fn gsi_04_04_water_bound_building_accepts_water_but_not_beach_zone() {
         let mut sim = placement_sim();
         spawn_structure(&mut sim, &rules, 1, "Americans", "GACNST", 10, 10);
         ready_building(&mut sim, &rules, "Americans", "GAYARD");
-        sim.resolved_terrain = Some(resolved_clear_grid_with_override(64, 64, |cell| {
+        *sim.resolved_terrain = Some(resolved_clear_grid_with_override(64, 64, |cell| {
             if cell.rx == 20 && cell.ry == 20 {
                 cell.land_type = land_type.as_index();
                 cell.zone_type = zone_type;
@@ -3404,16 +3408,19 @@ fn blocked_active_war_factory_does_not_spawn_from_second_factory() {
             .factories_mut()
             .test_arm_ready(americans, ProductionCategory::Vehicle)
     );
-    assert!(place_production_with_overlays(
-        &mut sim,
-        &rules,
-        "Americans",
-        ProductionPlacement::Mobile {
-            category: ProductionCategory::Vehicle
-        },
-        None,
-        &mut crate::sim::world::FrameEffects::default(),
-    ));
+    assert!(
+        place_production_with_overlays(
+            &mut sim,
+            &rules,
+            "Americans",
+            ProductionPlacement::Mobile {
+                category: ProductionCategory::Vehicle
+            },
+            None,
+            &mut crate::sim::world::FrameEffects::default(),
+        )
+        .is_ok()
+    );
     let produced = sim.substrate.entities.get(held).unwrap();
 
     assert_eq!(
@@ -3762,7 +3769,7 @@ fn wall_mark_rejects_buildable_ground_that_track_cannot_enter() {
         None,
     );
     let mut sim = placement_sim();
-    sim.overlay_grid = Some(OverlayGrid::new(64, 64));
+    *sim.overlay_grid = Some(OverlayGrid::new(64, 64));
     let before = sim.state_hash();
     assert_eq!(
         sim.mark_overlay_for_test(&rules, &registry, (12, 12), 0),
@@ -3787,8 +3794,8 @@ fn retained_wall_plane_runtime_placement_and_damage_update_once() {
     let registry = OverlayTypeRegistry::from_ini(&ini, Some(&art));
     let rules = RuleSet::from_ini(&IniFile::from_str("[Clear]\nTrack=100%\n")).unwrap();
     let mut sim = placement_sim();
-    sim.resolved_terrain = Some(resolved_clear_grid_with_override(5, 5, |_| {}));
-    sim.overlay_grid = Some(OverlayGrid::new(5, 5));
+    *sim.resolved_terrain = Some(resolved_clear_grid_with_override(5, 5, |_| {}));
+    *sim.overlay_grid = Some(OverlayGrid::new(5, 5));
     assert_eq!(
         sim.mark_overlay_for_test(&rules, &registry, (2, 2), 0),
         OverlayMarkOutcome::Marked
@@ -3856,8 +3863,8 @@ fn retained_wall_plane_placement_reaches_fixed_stride_alias() {
     );
     let rules = RuleSet::from_ini(&IniFile::from_str("[Clear]\nTrack=100%\n")).unwrap();
     let mut sim = placement_sim();
-    sim.resolved_terrain = Some(resolved_clear_grid_with_override(512, 2, |_| {}));
-    sim.overlay_grid = Some(OverlayGrid::new(512, 2));
+    *sim.resolved_terrain = Some(resolved_clear_grid_with_override(512, 2, |_| {}));
+    *sim.overlay_grid = Some(OverlayGrid::new(512, 2));
     sim.overlay_grid
         .as_mut()
         .unwrap()
@@ -3993,14 +4000,17 @@ fn stock_infantry_fallback_unit_ready_uses_producer_getcoords() {
     let center = ground_pose::object_get_coords(producer_entity, sim.resolved_terrain.as_ref());
     assert_eq!([center.x, center.y, center.z], [3968, 3840, 0]);
 
-    assert!(super::enqueue_by_type(
-        &mut sim,
-        &rules,
-        "Americans",
-        "E1",
-        &mut crate::sim::world::FrameEffects::default(),
-        false,
-    ));
+    assert!(
+        super::enqueue_by_type(
+            &mut sim,
+            &rules,
+            "Americans",
+            "E1",
+            &mut crate::sim::world::FrameEffects::default(),
+            false,
+        )
+        .is_ok()
+    );
     let category = ProductionCategory::Infantry;
     let held = super::lifecycle_tests::held_id(&sim, owner, category);
     let cost = sim.cost_of(owner, rules.object("E1").unwrap(), &rules);
@@ -4189,14 +4199,17 @@ fn stock_yuri_cloning_vat_duplicates_a_successfully_placed_infantry() {
     )
     .expect("the other house's vat is registered to that house only");
 
-    assert!(super::enqueue_by_type(
-        &mut sim,
-        &rules,
-        "YuriCountry",
-        "E1",
-        &mut crate::sim::world::FrameEffects::default(),
-        false,
-    ));
+    assert!(
+        super::enqueue_by_type(
+            &mut sim,
+            &rules,
+            "YuriCountry",
+            "E1",
+            &mut crate::sim::world::FrameEffects::default(),
+            false,
+        )
+        .is_ok()
+    );
     let category = ProductionCategory::Infantry;
     let held = super::lifecycle_tests::held_id(&sim, owner, category);
     let cost = sim.cost_of(owner, rules.object("E1").unwrap(), &rules);
@@ -4303,14 +4316,17 @@ fn cloning_vat_keeps_a_refused_copy_in_limbo() {
         .radio_contacts
         .set_slot(0, barracks);
 
-    assert!(super::enqueue_by_type(
-        &mut sim,
-        &rules,
-        "YuriCountry",
-        "E1",
-        &mut crate::sim::world::FrameEffects::default(),
-        false,
-    ));
+    assert!(
+        super::enqueue_by_type(
+            &mut sim,
+            &rules,
+            "YuriCountry",
+            "E1",
+            &mut crate::sim::world::FrameEffects::default(),
+            false,
+        )
+        .is_ok()
+    );
     let category = ProductionCategory::Infantry;
     let held = super::lifecycle_tests::held_id(&sim, owner, category);
     let cost = sim.cost_of(owner, rules.object("E1").unwrap(), &rules);
@@ -4386,14 +4402,17 @@ fn cloning_vats_do_not_duplicate_yuri_vehicle_factory_output() {
     )
     .expect("stock Yuri Cloning Vats");
 
-    assert!(super::enqueue_by_type(
-        &mut sim,
-        &rules,
-        "YuriCountry",
-        "YTNK",
-        &mut crate::sim::world::FrameEffects::default(),
-        false,
-    ));
+    assert!(
+        super::enqueue_by_type(
+            &mut sim,
+            &rules,
+            "YuriCountry",
+            "YTNK",
+            &mut crate::sim::world::FrameEffects::default(),
+            false,
+        )
+        .is_ok()
+    );
     let category = ProductionCategory::Vehicle;
     let cost = sim.cost_of(owner, rules.object("YTNK").unwrap(), &rules);
     sim.houses
@@ -4456,14 +4475,17 @@ fn cloning_vat_copies_wait_for_the_source_dock_cell() {
     )
     .expect("stock Yuri Cloning Vats");
 
-    assert!(super::enqueue_by_type(
-        &mut sim,
-        &rules,
-        "YuriCountry",
-        "E1",
-        &mut crate::sim::world::FrameEffects::default(),
-        false,
-    ));
+    assert!(
+        super::enqueue_by_type(
+            &mut sim,
+            &rules,
+            "YuriCountry",
+            "E1",
+            &mut crate::sim::world::FrameEffects::default(),
+            false,
+        )
+        .is_ok()
+    );
     let category = ProductionCategory::Infantry;
     let held = super::lifecycle_tests::held_id(&sim, owner, category);
     let cost = sim.cost_of(owner, rules.object("E1").unwrap(), &rules);
@@ -4540,7 +4562,7 @@ fn successful_placement_requests_building_slam_once() {
     let (wall_rules, registry) = gsi_04_07_wall_placement_contract();
     let mut wall_sim = placement_sim();
     spawn_structure(&mut wall_sim, &rules, 1, "Americans", "GACNST", 10, 10);
-    wall_sim.overlay_grid = Some(OverlayGrid::new(64, 64));
+    *wall_sim.overlay_grid = Some(OverlayGrid::new(64, 64));
     ready_building(&mut wall_sim, &wall_rules, "Americans", "GAWALL");
     let wall = place_building(
         &mut wall_sim,
@@ -4594,14 +4616,17 @@ fn an_airfield_puts_each_aircraft_it_builds_on_its_own_pad() {
         sim.resolved_terrain.as_ref(),
     );
     for (slot, [dx, dy]) in [[0, -128], [0, 128]].into_iter().enumerate() {
-        assert!(super::enqueue_by_type(
-            &mut sim,
-            &rules,
-            "Americans",
-            "ORCA",
-            &mut crate::sim::world::FrameEffects::default(),
-            false,
-        ));
+        assert!(
+            super::enqueue_by_type(
+                &mut sim,
+                &rules,
+                "Americans",
+                "ORCA",
+                &mut crate::sim::world::FrameEffects::default(),
+                false,
+            )
+            .is_ok()
+        );
         let built = super::lifecycle_tests::held_id(&sim, owner, ProductionCategory::Aircraft);
         let cost = sim.cost_of(owner, rules.object("ORCA").unwrap(), &rules);
         sim.houses
@@ -4687,14 +4712,17 @@ fn ares_kick_out_clones_follow_cloneable_cloned_as_and_delete_refusals() {
                 .radio_contacts
                 .set_slot(0, barracks);
         }
-        assert!(super::enqueue_by_type(
-            &mut sim,
-            &rules,
-            "YuriCountry",
-            "E1",
-            &mut crate::sim::world::FrameEffects::default(),
-            false,
-        ));
+        assert!(
+            super::enqueue_by_type(
+                &mut sim,
+                &rules,
+                "YuriCountry",
+                "E1",
+                &mut crate::sim::world::FrameEffects::default(),
+                false,
+            )
+            .is_ok()
+        );
         let category = ProductionCategory::Infantry;
         let cost = sim.cost_of(owner, rules.object("E1").unwrap(), &rules);
         sim.houses

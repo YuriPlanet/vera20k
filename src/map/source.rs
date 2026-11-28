@@ -25,6 +25,14 @@ mod cache;
 mod saved_path;
 pub use cache::CacheLease;
 
+/// The built-in Ice Lake scenario is the last fallback after files and archives.
+pub(super) const ICE_LAKE: &str = "vera-ice-lake.map";
+
+pub fn bundled_map_bytes(name: &str) -> Option<&'static [u8]> {
+    name.eq_ignore_ascii_case(ICE_LAKE)
+        .then_some(include_bytes!("bundled/vera-ice-lake.map").as_slice())
+}
+
 /// Exact source whose bytes were parsed into the active map.
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -45,6 +53,11 @@ pub enum LoadedMapSource {
         entry_id: i32,
         payload_len: usize,
         /// Hash of the extracted entry bytes passed to the map INI parser.
+        source_sha256: String,
+    },
+    Bundled {
+        logical_name: String,
+        payload_len: usize,
         source_sha256: String,
     },
     Generated {
@@ -90,6 +103,14 @@ impl LoadedMapSource {
         (saved_path::basename(path), None)
     }
 
+    /// Fixed authored map bytes, as opposed to a seed or a legacy fallback.
+    pub fn is_authored(&self) -> bool {
+        matches!(
+            self,
+            Self::Loose { .. } | Self::Mix { .. } | Self::Bundled { .. }
+        )
+    }
+
     pub fn physical_identity(&self) -> Option<(usize, &str)> {
         match self {
             Self::Loose {
@@ -98,6 +119,11 @@ impl LoadedMapSource {
                 ..
             }
             | Self::Mix {
+                payload_len,
+                source_sha256,
+                ..
+            }
+            | Self::Bundled {
                 payload_len,
                 source_sha256,
                 ..
@@ -517,7 +543,8 @@ fn expand_map_ini(
 ) -> Result<IniFile> {
     let name = match source {
         LoadedMapSource::Loose { path, .. } => path.to_string_lossy(),
-        LoadedMapSource::Mix { logical_name, .. } => Cow::Borrowed(logical_name.as_str()),
+        LoadedMapSource::Mix { logical_name, .. }
+        | LoadedMapSource::Bundled { logical_name, .. } => Cow::Borrowed(logical_name.as_str()),
         _ => Cow::Borrowed("<map>"),
     };
     expand_map_ini_with_options(ini, &name, assets, false)
@@ -643,9 +670,10 @@ fn load_map_input_with_assets<T>(
     match local {
         Ok(value) => Ok(value),
         Err(local_err) => {
-            for candidate in asset_map_candidates(map_name) {
+            let candidates = asset_map_candidates(map_name);
+            for candidate in &candidates {
                 let file = assets
-                    .resolve_file_with_limit(&candidate, limit)
+                    .resolve_file_with_limit(candidate, limit)
                     .map_err(|error| match error {
                         AssetError::ReadLimitExceeded { .. } => {
                             anyhow::anyhow!("map exceeds transfer size limit")
@@ -653,8 +681,25 @@ fn load_map_input_with_assets<T>(
                         error => error.into(),
                     })?;
                 if let Some(file) = file {
-                    return decode(MapInput::from_asset(candidate, file));
+                    return decode(MapInput::from_asset(candidate.to_owned(), file));
                 }
+            }
+            if let Some((name, bytes)) = candidates
+                .iter()
+                .find_map(|name| bundled_map_bytes(name).map(|bytes| (name, bytes)))
+            {
+                anyhow::ensure!(
+                    limit.is_none_or(|max| bytes.len() <= max),
+                    "map exceeds transfer size limit"
+                );
+                return decode(MapInput {
+                    bytes: Cow::Borrowed(bytes),
+                    source: LoadedMapSource::Bundled {
+                        logical_name: name.to_owned(),
+                        payload_len: bytes.len(),
+                        source_sha256: sha256_hex(bytes),
+                    },
+                });
             }
             Err(local_err)
         }
@@ -680,6 +725,41 @@ pub fn map_source_identity(
     assets: &AssetManager,
 ) -> Result<LoadedMapSource> {
     load_map_input_with_assets(ra2_dir, map_name, assets, None, |input| Ok(input.source))
+}
+
+/// The INI of the map a restored save was played on, read again for what
+/// the save does not carry: the client modules' `ui.wasm`, `[VeraUI]` and
+/// storage key (RFC 0001 section 10). The file is found as the restored
+/// world finds it ([`LoadedMapSource::restored_loose_lookup`], then the
+/// ordinary loose-before-MIX lookup), and counts only when its length and
+/// SHA-256 are the saved ones. `Ok(None)` for a source without authored
+/// bytes (a generated map, a fallback), which embeds nothing.
+pub fn reread_saved_map_ini(
+    source: &LoadedMapSource,
+    ra2_dir: &Path,
+    launch_dir: Option<&Path>,
+    assets: &AssetManager,
+) -> Result<Option<IniFile>> {
+    let Some((length, digest)) = source.physical_identity().filter(|_| source.is_authored()) else {
+        return Ok(None);
+    };
+    let name = match source {
+        LoadedMapSource::Loose { .. } => source
+            .restored_loose_lookup(Some(ra2_dir), launch_dir)
+            .0
+            .ok_or_else(|| anyhow::anyhow!("the saved map path has no file name"))?,
+        LoadedMapSource::Mix { logical_name, .. }
+        | LoadedMapSource::Bundled { logical_name, .. } => logical_name.as_str(),
+        _ => return Ok(None),
+    };
+    load_map_input_with_assets(ra2_dir, name, assets, None, |input| {
+        anyhow::ensure!(
+            input.source.physical_identity() == Some((length, digest)),
+            "the map file {name} is not the one the game was saved on"
+        );
+        decode_metadata_with_assets(input, assets)
+    })
+    .map(|loaded| Some(loaded.ini))
 }
 
 pub fn load_map_ini_by_name_or_path_with_assets(
@@ -722,6 +802,11 @@ pub fn prepare_transfer_map_source(
                 "map exceeds transfer size limit"
             );
             Ok(TransferMapSource::Memory(resolved.bytes.to_vec()))
+        }
+        LoadedMapSource::Bundled { logical_name, .. } => {
+            let bytes = bundled_map_bytes(logical_name)
+                .ok_or_else(|| anyhow::anyhow!("selected bundled map is unavailable"))?;
+            Ok(TransferMapSource::Memory(bytes.to_vec()))
         }
         _ => anyhow::bail!("selected map has no transferable file"),
     }
@@ -2129,6 +2214,35 @@ mod tests {
                 .section_or_empty("Basic")
                 .read_name("Name", 128),
             Some("Base arena")
+        );
+    }
+
+    #[test]
+    fn a_saved_map_is_read_again_only_when_its_bytes_are_the_saved_ones() {
+        use crate::assets::asset_manager::MediaArchiveMode;
+
+        let base = crate::assets::asset_manager::test_support::audio_test_install("map-reread");
+        let map = [SOURCE_TEST_MAP, b"[VeraUI]\nParts=Score\n"].concat();
+        std::fs::write(base.path().join("Arena.map"), &map).unwrap();
+        let assets = AssetManager::new(base.path(), MediaArchiveMode::STOCK_DIGITAL).unwrap();
+        let saved = map_source_identity(base.path(), "Arena.map", &assets).unwrap();
+
+        let ini = reread_saved_map_ini(&saved, base.path(), None, &assets)
+            .unwrap()
+            .expect("an authored map");
+        assert!(ini.section("VeraUI").is_some());
+
+        std::fs::write(base.path().join("Arena.map"), SOURCE_TEST_MAP).unwrap();
+        assert!(reread_saved_map_ini(&saved, base.path(), None, &assets).is_err());
+
+        let generated = LoadedMapSource::Generated {
+            seed_name: "RandMap.Sed".into(),
+            seed_source: None,
+        };
+        assert!(
+            reread_saved_map_ini(&generated, base.path(), None, &assets)
+                .unwrap()
+                .is_none()
         );
     }
 

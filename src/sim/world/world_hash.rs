@@ -110,7 +110,7 @@ impl Simulation {
             (
                 "navigation_history",
                 digest(|h| {
-                    if let Some(zones) = &self.zone_grid {
+                    if let Some(zones) = &*self.zone_grid {
                         zones.fold_navigation_history(h);
                     }
                 }),
@@ -186,7 +186,7 @@ impl Simulation {
             (
                 "burrowing",
                 digest(|h| {
-                    if let Some(terrain) = &self.resolved_terrain {
+                    if let Some(terrain) = &*self.resolved_terrain {
                         terrain.hash_burrowing_permissions(h);
                     }
                 }),
@@ -341,6 +341,10 @@ impl Simulation {
         // YR LogicClass trigger latches are save/lockstep state, even though
         // their camera/message outcomes stay app-owned and are not hashed.
         self.trigger_runtime.hash_state(hasher);
+        // Wasm extension modules; absent from stock play.
+        if !self.ext_modules.is_empty() {
+            self.ext_modules.hash_state(hasher);
+        }
         // ObjectClass+0x64, written by trigger action 99 and saved with the object.
         if !self.object_custom_sounds.is_empty() {
             b"object-custom-sounds-v1".hash(hasher);
@@ -368,13 +372,19 @@ impl Simulation {
         }
         self.load_objects.hash_state(hasher);
         // Path searches waiting for the next frame's batch.
-        if let Some(batch) = &self.path_batch {
+        if let Some(batch) = &*self.path_batch {
             b"path-batch-v2".hash(hasher);
             batch.hash(hasher);
         }
-        // Whether target scans are batched; their answers live within a pass.
+        // Whether target scans are batched, which also spreads the patrol
+        // scans and updates teams on their own turns; the scans' answers live
+        // within a pass.
         if self.scan_batch.is_some() {
             b"scan-batch-v1".hash(hasher);
+        }
+        // Whether turns draw from their own streams (`turn_streams`).
+        if *self.turn_streams {
+            b"turn-streams-v1".hash(hasher);
         }
 
         self.substrate.fold_raw_cell_occupation(hasher);
@@ -399,7 +409,7 @@ impl Simulation {
         // when the current terrain and House threat values are identical.
         // Ordinary native load rebuilds the hierarchy through581F50; its
         // resulting hash may intentionally differ from the live pre-save hash.
-        if let Some(zones) = &self.zone_grid {
+        if let Some(zones) = &*self.zone_grid {
             b"retained-navigation-history-v1".hash(hasher);
             zones.fold_navigation_history(hasher);
         }
@@ -411,7 +421,7 @@ impl Simulation {
         self.dynamic_terrain_cells.hash_simulation(hasher);
         self.hash_ice_cracks(hasher);
         self.hash_terrain_dent(hasher);
-        if let Some(terrain) = &self.resolved_terrain {
+        if let Some(terrain) = &*self.resolved_terrain {
             terrain.hash_burrowing_permissions(hasher);
         }
         self.hash_overlay_grid(hasher);
@@ -570,14 +580,14 @@ impl Simulation {
     fn hash_playfield_authority(&self, hasher: &mut impl Hasher) {
         if self.playfield_bounds.is_none()
             && self.playfield_size_height.is_none()
-            && self.playfield_revision == 0
+            && *self.playfield_revision == 0
         {
             // Preserve the historical headless-fixture stream while still
             // distinguishing every configured authority from absence.
             return;
         }
         b"playfield-authority-v2".hash(hasher);
-        match self.playfield_bounds {
+        match *self.playfield_bounds {
             None => 0u8.hash(hasher),
             Some(bounds) => {
                 1u8.hash(hasher);
@@ -714,7 +724,7 @@ impl Simulation {
 
     fn hash_waves(&self, hasher: &mut impl Hasher) {
         self.active_wave_links.len().hash(hasher);
-        for (&owner_id, &wave_id) in &self.active_wave_links {
+        for (&owner_id, &wave_id) in &*self.active_wave_links {
             owner_id.hash(hasher);
             wave_id.hash(hasher);
         }
@@ -797,7 +807,7 @@ impl Simulation {
 
     /// Hash per-player house state (BTreeMap = deterministic order).
     fn hash_houses(&self, hasher: &mut impl Hasher) {
-        for (owner, house) in &self.houses {
+        for (owner, house) in &*self.houses {
             owner.hash(hasher);
             if !house.permanent_factory_plans().is_empty() {
                 b"ares-permanent-factory-plans-v1".hash(hasher);
@@ -1078,7 +1088,7 @@ impl Simulation {
     }
 
     fn hash_bridge_state(&self, hasher: &mut impl Hasher) {
-        let Some(bridge_state) = &self.bridge_state else {
+        let Some(bridge_state) = &*self.bridge_state else {
             0u8.hash(hasher);
             return;
         };
@@ -1099,7 +1109,7 @@ impl Simulation {
     }
 
     fn hash_overlay_grid(&self, hasher: &mut impl Hasher) {
-        let Some(overlay_grid) = &self.overlay_grid else {
+        let Some(overlay_grid) = &*self.overlay_grid else {
             0u8.hash(hasher);
             return;
         };
@@ -1137,7 +1147,7 @@ impl Simulation {
     /// Hash persistent cell marks and transient Smudge identities. Constructor
     /// IDs and pending order affect later object identity and expiry consumers.
     fn hash_smudge_grid(&self, hasher: &mut impl Hasher) {
-        let Some(grid) = &self.smudge_grid else {
+        let Some(grid) = &*self.smudge_grid else {
             0u8.hash(hasher);
             return;
         };
@@ -1215,14 +1225,14 @@ impl Simulation {
         }
         // The Lightning Storm's globals; a match that never launched one hashes
         // the established `false`.
-        let storm_touched = self.lightning_storm != Default::default();
+        let storm_touched = *self.lightning_storm != Default::default();
         storm_touched.hash(hasher);
         if storm_touched {
             self.lightning_storm.hash(hasher);
         }
         // The Psychic Dominator's globals; the tag keeps a match that never
         // launched one on its established stream.
-        if self.psychic_dominator != Default::default() {
+        if *self.psychic_dominator != Default::default() {
             b"psychic-dominator-v1".hash(hasher);
             self.psychic_dominator.hash(hasher);
         }

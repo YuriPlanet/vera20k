@@ -342,12 +342,25 @@ impl MixArchive {
         self.get_by_id(mix_hash(name))
     }
 
+    /// `MixFileSystem__Resolve_First` @ `0x005B4430` (`0x005B44CB..0x005B44FB`)
+    /// probes the midpoint of a signed-ID sorted index and stops at equality.
+    /// The midpoint rule also decides which entry a repeated ID selects.
+    fn entry_by_id(&self, id: i32) -> Option<&MixEntry> {
+        let mut entries = self.entries.as_slice();
+        loop {
+            let mid = entries.len() / 2;
+            let entry = entries.get(mid)?;
+            match entry.id.cmp(&id) {
+                std::cmp::Ordering::Less => entries = &entries[mid + 1..],
+                std::cmp::Ordering::Greater => entries = &entries[..mid],
+                std::cmp::Ordering::Equal => return Some(entry),
+            }
+        }
+    }
+
     /// Look up a file by its pre-computed hash ID.
-    ///
-    /// Uses binary search on the sorted index for O(log n) lookup.
     pub fn get_by_id(&self, id: i32) -> Option<&[u8]> {
-        let index: usize = self.entries.binary_search_by_key(&id, |e| e.id).ok()?;
-        let entry: &MixEntry = &self.entries[index];
+        let entry = self.entry_by_id(id)?;
         let data = self.data.as_slice();
 
         let start = self.body_offset.checked_add(entry.offset as usize)?;
@@ -363,22 +376,21 @@ impl MixArchive {
 
     /// Whether the index lists `id`, readable or not.
     pub fn contains_id(&self, id: i32) -> bool {
-        self.entries.binary_search_by_key(&id, |e| e.id).is_ok()
+        self.entry_by_id(id).is_some()
     }
 
     /// [`Self::get_by_id`] as a share of the archive storage.
     pub fn get_shared_by_id(&self, id: i32) -> Option<SharedBytes> {
-        let index: usize = self.entries.binary_search_by_key(&id, |e| e.id).ok()?;
-        self.entry_view(&self.entries[index]).map(SharedBytes)
+        let entry = self.entry_by_id(id)?;
+        self.entry_view(entry).map(SharedBytes)
     }
 
     /// Parse a child MIX archive directly from an entry without copying its bytes.
     pub fn nested_archive_by_id(&self, id: i32) -> Result<Option<Self>, AssetError> {
-        let index: usize = match self.entries.binary_search_by_key(&id, |e| e.id) {
-            Ok(index) => index,
-            Err(_) => return Ok(None),
+        let Some(entry) = self.entry_by_id(id) else {
+            return Ok(None);
         };
-        let Some(data) = self.entry_view(&self.entries[index]) else {
+        let Some(data) = self.entry_view(entry) else {
             return Ok(None);
         };
         let mut archive = Self::from_data(data)?;
@@ -671,5 +683,61 @@ impl MixArchive {
             return None;
         }
         self.data.subrange(start, end)
+    }
+}
+
+#[cfg(all(test, tests_assets))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn encrypted_index_discards_each_rsa_blocks_high_byte() {
+        // PKey::Decrypt (0x632870) on little-endian blocks 2 and 1 gives the
+        // key for this one-entry index. Block 2 decrypts with a high byte of 9.
+        let mut archive = vec![0, 0, 2, 0];
+        let mut key_block = [0; 80];
+        key_block[0] = 2;
+        key_block[40] = 1;
+        archive.extend_from_slice(&key_block);
+        archive.extend_from_slice(&[
+            0x21, 0x20, 0xf1, 0x93, 0x17, 0x54, 0x51, 0xba, 0x43, 0x5f, 0xd8, 0x94, 0xf8, 0xc5,
+            0x33, 0xbc, 0xbe, 0x16, 0x3b, 0x8b, 0x09, 0x96, 0x1f, 0x21,
+        ]);
+        archive.extend_from_slice(b"ok");
+
+        let archive = MixArchive::from_bytes(archive).unwrap();
+        assert_eq!(archive.get_by_id(42), Some(b"ok".as_slice()));
+    }
+
+    /// An archive whose index lists one id four times. The native resolver
+    /// (`MixFileSystem__Resolve_First` @ `0x005B4430`) probes the midpoint of
+    /// the sorted index and stops at equality, so the repeated id resolves to
+    /// the entry the midpoint lands on, not the first or the last.
+    #[test]
+    fn a_repeated_id_resolves_to_the_midpoint_the_native_probe_finds() {
+        let mut entries = vec![MixEntry {
+            id: 7,
+            offset: 6,
+            size: 2,
+        }];
+        entries.extend((0..4).map(|index| MixEntry {
+            id: 42,
+            offset: index * 2,
+            size: 2,
+        }));
+        entries.sort_by_key(|entry| entry.id);
+        let archive = MixArchive {
+            entries,
+            body_offset: 0,
+            body_size: 8,
+            flags: 0,
+            data: MixData::from_owned(b"aabbccdd".to_vec()),
+            container_path: None,
+        };
+        // Five entries: the probe lands on index 2, the third of the four.
+        assert_eq!(archive.get_by_id(42), Some(b"bb".as_slice()));
+        assert_eq!(archive.get_by_id(7), Some(b"dd".as_slice()));
+        assert!(archive.contains_id(42));
+        assert!(!archive.contains_id(43));
     }
 }

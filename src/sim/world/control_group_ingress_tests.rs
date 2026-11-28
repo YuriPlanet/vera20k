@@ -55,9 +55,9 @@ fn pending_group_assignment_survives_save_and_commits_as_local_ingress() {
     assert_eq!(loaded.projected_control_groups()[1], [second, enemy]);
     let pending = loaded.take_due_commands();
     assert_eq!(pending, [command]);
-    let rng_before = loaded.scenario_rng.clone();
+    let rng_before = (*loaded.scenario_rng).clone();
     let checksum_before = loaded.compute_retail_multiplayer_checksum().unwrap().value;
-    loaded.scenario_rng = rng_before;
+    *loaded.scenario_rng = rng_before;
     let hash_before = loaded.state_hash();
     assert_eq!(
         loaded.apply_due_frame_ingress_commands(&pending, &rules, 1, &mut FrameEffects::default()),

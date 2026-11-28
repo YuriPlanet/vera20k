@@ -323,9 +323,9 @@ fn command_paid_fv(
             .game_options_mut_for_test()
             .apply_in_game_speed(game_speed)
     );
-    sim.main_rng = crate::sim::rng::SimRng::new(0);
-    sim.mapgen_rng = crate::sim::rng::SimRng::new(0);
-    sim.scenario_rng = crate::sim::rng::SimRng::new(scenario_seed);
+    *sim.main_rng = crate::sim::rng::SimRng::new(0);
+    *sim.mapgen_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(scenario_seed);
     let id = spawn_fv(scene, xyz);
     // Native states[0] is the original Event receiver at frame1, before
     // its first Logic visit. Apply the same command owner at that boundary;
@@ -334,8 +334,8 @@ fn command_paid_fv(
     let sim = &mut runtime.simulation;
     sim.session.set_binary_frame_for_test(1);
     let owner = sim.resolve(sim.session.current_house().unwrap()).to_owned();
-    assert!(sim.apply_command_with_overlays(
-        None,
+    assert!((sim.apply_command_with_overlays(
+        crate::sim::command::CommandSender::Player(None),
         &owner,
         &Command::ForceAttackCell {
             attacker_id: id,
@@ -345,7 +345,7 @@ fn command_paid_fv(
         &runtime.resources.rules,
         Some(runtime.resources.rules.overlay_registry()),
         &mut crate::sim::world::FrameEffects::default(),
-    ));
+    )).is_ok());
     id
 }
 
@@ -425,14 +425,14 @@ fn retail_fv_paid_pursuit_fire_impacts_and_cleanup_match_native() {
                         let owner = sim
                             .resolve(sim.substrate.entities.get(id).unwrap().owner())
                             .to_owned();
-                        assert!(sim.apply_command_with_overlays(
-                            None,
+                        assert!((sim.apply_command_with_overlays(
+                            crate::sim::command::CommandSender::Player(None),
                             &owner,
                             &Command::Stop { entity_id: id },
                             &runtime.resources.rules,
                             Some(runtime.resources.rules.overlay_registry()),
                             &mut crate::sim::world::FrameEffects::default(),
-                        ));
+                        )).is_ok());
                     }
                     let calls = &outside_frames[frame as usize - 1];
                     assert_eq!(calls["logic_frame"], frame);
@@ -569,7 +569,7 @@ fn retail_fv_approach_matches_native_candidates_admission_and_queue() {
                 .simulation
                 .session
                 .set_binary_frame_for_test(173);
-            scene.runtime.simulation.scenario_rng = crate::sim::rng::SimRng::new(31);
+            *scene.runtime.simulation.scenario_rng = crate::sim::rng::SimRng::new(31);
             let xyz = serde_json::from_value(row["source_xyz"].clone()).unwrap();
             let id = spawn_fv(&mut scene, xyz);
             let overridden_rules = if let Some(values) = row["input"].get("type_ini") {

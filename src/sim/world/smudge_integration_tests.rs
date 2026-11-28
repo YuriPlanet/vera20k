@@ -43,11 +43,11 @@ fn signed_empty_smudge_footprints_still_construct_on_an_occupied_cell() {
             ..SmudgeCell::default()
         };
         let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 23);
-        sim.overlay_grid = Some(OverlayGrid::new(32, 32));
+        *sim.overlay_grid = Some(OverlayGrid::new(32, 32));
         let mut marks = SmudgeGrid::new(32, 32);
         marks.test_force_set(10, 10, occupied);
         let _ = marks.drain_dirty();
-        sim.smudge_grid = Some(marks);
+        *sim.smudge_grid = Some(marks);
         *sim.native_unique_ids_mut_for_test() =
             Some(NativeUniqueIdCursor::for_synthetic_simulation());
         let rng = sim.scenario_rng.native_state_hex();
@@ -120,7 +120,7 @@ fn build_test_sim_with_seed(seed: u64) -> Simulation {
         }
     }
 
-    sim.smudge_grid = Some(grid);
+    *sim.smudge_grid = Some(grid);
     sim
 }
 
@@ -178,7 +178,7 @@ fn smudge_grid_survives_snapshot_roundtrip() {
 
     // Native in-scenario load resets Scenario RNG; isolate smudge persistence
     // by comparing against that same post-load baseline.
-    sim_orig.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim_orig.scenario_rng = crate::sim::rng::SimRng::new(0);
     let hash_at_save = sim_orig.state_hash();
     let bytes = GameSnapshot::save(&sim_orig, 0, 0, "smudge_roundtrip_test", 0);
     let snap = GameSnapshot::load(&bytes).expect("snapshot load must succeed");
@@ -236,7 +236,7 @@ fn gsi_04_11_smudge_dirty_flush_publishes_tactical_then_radar_per_cell() {
             },
         );
     }
-    sim.smudge_grid = Some(grid);
+    *sim.smudge_grid = Some(grid);
     Simulation::flush_smudge_dirty(&mut sim.smudge_grid, &mut sim.dirty_cells);
 
     let expected = vec![(3, 4), (4, 4), (3, 5), (4, 5)];
@@ -319,7 +319,7 @@ fn action118_matches_original_smudge_fields_dummy_and_first_null_controls() {
             );
         }
         let _ = grid.drain_dirty();
-        sim.smudge_grid = Some(grid);
+        *sim.smudge_grid = Some(grid);
         sim.install_resolved_terrain_for_new_map(terrain);
         sim.install_playfield_from_map_header(&crate::map::map_file::MapHeader {
             theater: "TEMPERATE".into(),

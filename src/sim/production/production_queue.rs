@@ -196,10 +196,9 @@ pub fn publish_production_changes_for_tests(
 /// publish_production_changes plus the world's existing scheduled tail.
 #[cfg(any(test, feature = "test-support"))]
 pub fn dispatch_production_changes_for_tests(sim: &mut Simulation, rules: &RuleSet) -> bool {
-    sim.session
-        .set_tick_for_test(sim.session.tick().saturating_add(1));
-    sim.session
-        .set_binary_frame_for_test(sim.session.binary_frame().wrapping_add(1));
+    let session = &mut *sim.session;
+    session.set_tick_for_test(session.tick().saturating_add(1));
+    session.set_binary_frame_for_test(session.binary_frame().wrapping_add(1));
     let owners: Vec<_> = sim.houses.iter().map(|(&owner, _)| owner).collect();
     for owner in owners {
         publish_production_changes_for_tests(sim, rules, owner);
@@ -270,7 +269,8 @@ pub(in crate::sim) fn exit_produced_object(
     };
     // NPSE 2.0 Exit_Object C33940..C33998 reads the producer's Naval,
     // unlike capped starts and abandonment, which read the product's type.
-    let Some(kind) = UnitChoiceKind::of(product_type.category, producer_type.naval) else {
+    let Some(kind) = UnitChoiceKind::of(product_type.category, producer_type.naval, rules.npatch())
+    else {
         return BuildingExit::Failed;
     };
     //444096..4440D7 skips FreeRadio65ADC0 for Hospital, Armory and WeaponsFactory.
@@ -329,10 +329,11 @@ pub(in crate::sim) fn exit_produced_object(
             // NPSE 2.0 C2EF95 (aircraft), C3395E/C3397F (vehicle),
             // C2F184 (infantry): release at this prefix, before later
             // placement/FreeRadio retries can leave the object held.
-            #[cfg(feature = "npatch")]
-            house
-                .ai_production_mut()
-                .release_parallel(product_type.category, producer_type.naval);
+            if rules.npatch() {
+                house
+                    .ai_production_mut()
+                    .release_parallel(product_type.category, producer_type.naval);
+            }
         }
     }
     if kind == UnitChoiceKind::Aircraft {
@@ -820,6 +821,10 @@ fn kick_out_ares_clones(
     else {
         return;
     };
+    // A copy of the House's Building vector, as `vat_ids` below: each
+    // clone's constructor and exit run through the whole simulation, whose
+    // callbacks (a Unlimbo's triggers among them) can add or remove buildings
+    // while it is walked.
     let sources: Vec<u64> = sim
         .houses
         .get(&owner)

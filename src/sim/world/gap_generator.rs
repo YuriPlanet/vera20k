@@ -153,7 +153,7 @@ impl Simulation {
             emp_remaining: entity.emp_remaining(),
             health: entity.health.current(),
             powered: object.powered,
-            power_drain: power_system::native_building_power_drain(object.power),
+            power_drain: object.power_drain(),
             powered_special: object.powered_special,
             owner_outage: self.building_power_outage(id),
             needs_engineer: object.needs_engineer,

@@ -11,6 +11,8 @@
 
 use std::collections::{HashMap, HashSet};
 
+use anyhow::Context;
+
 use crate::assets::asset_manager::{AssetManager, PinnedNames};
 use crate::assets::mix_hash::mix_hash;
 use crate::assets::pal_file::Palette;
@@ -20,6 +22,12 @@ use crate::map::map_file::MapError;
 use crate::rules::ini_parser::{IniFile, IniSection};
 use crate::rules::object_image::ImageTheater;
 use crate::rules::retail_sources::{RetailArchive, registered_retail, retail_archive};
+
+/// VERA's drawing key in a theater INI's tilesets (`PictureFileName=`, the
+/// tile pictures, docs/picture-model-art.md): it changes no cell's land or
+/// height, so the theater INI's multiplayer digest leaves it out and a
+/// picture pack agrees with the original theater online.
+pub const VERA_THEATER_KEYS: &[&str] = &["PictureFileName"];
 
 /// Marker for "no tile" after raw Pack5 compatibility translation.
 ///
@@ -346,6 +354,10 @@ pub struct TilesetLookup {
     /// Existing suffix siblings are discovered after theater archive activation.
     /// Empty means that this tile has only its pristine file.
     variant_filenames: Vec<Vec<String>>,
+    /// VERA-only, experimental (`docs/picture-model-art.md`): tile_id → the
+    /// stem of its template picture, `{PictureFileName}{NN:02}`, when its
+    /// tileset declares `PictureFileName=`; None draws the TMP's pixels.
+    picture_stems: Vec<Option<String>>,
     /// Tileset index → bounds (start tile_id and count).
     /// Index 0 corresponds to [TileSet0000], etc.
     tileset_bounds: Vec<TilesetBounds>,
@@ -448,6 +460,19 @@ impl TilesetLookup {
             .get(tile_id as usize)
             .map(|v| v.as_slice())
             .unwrap_or(&[])
+    }
+
+    /// VERA-only, experimental (`docs/picture-model-art.md`): the picture
+    /// that draws template `tile_id`'s file `variant` in place of its TMP's
+    /// pixels: `{stem}.png` for the pristine file, `{stem}a.png`, `b`, ...
+    /// for its suffix siblings. None when its tileset declares no
+    /// `PictureFileName=`.
+    pub fn picture_filename(&self, tile_id: u16, variant: u8) -> Option<String> {
+        let stem = self.picture_stems.get(usize::from(tile_id))?.as_deref()?;
+        Some(match variant {
+            0 => format!("{stem}.png"),
+            v => format!("{stem}{}.png", char::from(b'a' + (v - 1).min(25))),
+        })
     }
 
     /// Exact independent TMP filename for a resolved file index.
@@ -570,6 +595,7 @@ pub fn parse_tileset_ini(ini_data: &[u8], extension: &str) -> Result<TilesetLook
 fn parse_tileset_sections(ini: &IniFile, extension: &str) -> Result<TilesetLookup, MapError> {
     let mut entries: Vec<Option<String>> = Vec::new();
     let mut variant_filenames: Vec<Vec<String>> = Vec::new();
+    let mut picture_stems: Vec<Option<String>> = Vec::new();
     let mut tileset_bounds: Vec<TilesetBounds> = Vec::new();
     let mut set_names: Vec<String> = Vec::new();
     let mut morphable_flags: Vec<bool> = Vec::new();
@@ -591,6 +617,9 @@ fn parse_tileset_sections(ini: &IniFile, extension: &str) -> Result<TilesetLooku
         // blank instead (every retail tileset names its file).
         let filename: &str = section.read_name("FileName", 0x40).unwrap_or("");
         let set_name: &str = section.read_name("SetName", 0x40).unwrap_or("No Name");
+        // VERA-only, experimental (docs/picture-model-art.md): the set's
+        // templates draw from `{PictureFileName}{NN:02}.png`.
+        let picture_name = section.read_name("PictureFileName", 0x40);
         let last_tiles_in_set = section.read_int("LastTilesInSet", -1);
         if last_tiles_in_set != -1 && last_tiles_in_set != tiles_in_set {
             let boundary = legacy_cursor.wrapping_add(last_tiles_in_set);
@@ -667,6 +696,7 @@ fn parse_tileset_sections(ini: &IniFile, extension: &str) -> Result<TilesetLooku
             for _ in 0..usize::from(tiles_in_set) {
                 entries.push(None);
                 variant_filenames.push(Vec::new());
+                picture_stems.push(None);
                 tile_anims.push(None);
             }
         } else {
@@ -677,6 +707,7 @@ fn parse_tileset_sections(ini: &IniFile, extension: &str) -> Result<TilesetLooku
                 let main_name = format!("{}{:02}.{}", filename, i, extension);
                 entries.push(Some(main_name));
                 variant_filenames.push(Vec::new());
+                picture_stems.push(picture_name.map(|name| format!("{name}{i:02}")));
                 tile_anims.push(anim_section.and_then(|section| parse_tile_anim(section, i)));
             }
         }
@@ -690,6 +721,7 @@ fn parse_tileset_sections(ini: &IniFile, extension: &str) -> Result<TilesetLooku
     Ok(TilesetLookup {
         entries,
         variant_filenames,
+        picture_stems,
         tileset_bounds,
         set_names,
         morphable_flags,
@@ -813,9 +845,15 @@ pub struct TheaterData {
     /// First tiles of `[General] Ice1Set`/`Ice2Set`/`Ice3Set`, the Firestorm
     /// ice chain's three families (docs/ts-ice.md). `None` keeps ice off.
     pub ice_sets: Option<[u16; 3]>,
+    pub(crate) terrain_files: TerrainFiles,
 }
 
 impl TheaterData {
+    /// The map selected VERA's built-in snow tiles. A mod can supply its own ice separately.
+    pub fn uses_bundled_ice(&self) -> bool {
+        self.terrain_files == TerrainFiles::BundledIce
+    }
+
     /// `BridgeMiddle1/2` as tile-index offsets: the NS (EW) bridgehead variant
     /// block occupies `BridgeSet_start + {N-1, N, N+1, N+2}`. Negative and
     /// oversized signed keys have no u16 tile identity and are None.
@@ -867,7 +905,7 @@ impl BridgeMiddleTiles {
 /// stock INI before a suffix was selected loading.
 fn theater_ini_name(asset_manager: &AssetManager, control_name: &str) -> String {
     let selected = asset_manager.ini_roots().theater_ini(control_name);
-    if asset_manager.resolve_ref(&selected).is_some() {
+    if asset_manager.installed_file(&selected).is_some() {
         return selected;
     }
     crate::util::ini_roots::IniRoots::default().theater_ini(control_name)
@@ -923,8 +961,8 @@ pub fn changed_tiles(asset_manager: &AssetManager) -> ChangedTiles {
     let mut digest: Option<crate::util::sha256::Sha256> = None;
     for (_, def) in THEATER_DEFS {
         let Some(lookup) = asset_manager
-            .get_with_source_ref(&theater_ini_name(asset_manager, def.control_name))
-            .and_then(|(bytes, _)| IniFile::from_bytes(bytes).ok())
+            .installed_file(&theater_ini_name(asset_manager, def.control_name))
+            .and_then(|(_, bytes)| IniFile::from_bytes(bytes).ok())
             .and_then(|ini| parse_tileset_sections(&ini, def.extension).ok())
         else {
             continue;
@@ -1040,6 +1078,18 @@ pub enum TerrainFiles {
     /// the game folder adds or changes. Players whose folders differ in
     /// terrain files then load one world.
     Original,
+    /// The original Yuri's Revenge snow terrain with VERA's map-authoring extension.
+    BundledIce,
+}
+
+impl TerrainFiles {
+    fn ini_name(self, assets: &AssetManager, def: &TheaterDef) -> String {
+        if self == Self::BundledIce {
+            "snowmd.ini".to_owned()
+        } else {
+            theater_ini_name(assets, def.control_name)
+        }
+    }
 }
 
 /// VERA: the terrain files network play of the original game reads: the
@@ -1064,12 +1114,45 @@ pub fn load_theater_for_play(
     network: bool,
 ) -> Option<TheaterData> {
     if network_terrain_files(asset_manager, network) == TerrainFiles::Original
-        && let Some(theater) =
-            load_theater_with(asset_manager, theater_name, TerrainFiles::Original)
+        && let Ok(theater) = load_theater_with(asset_manager, theater_name, TerrainFiles::Original)
     {
         return Some(theater);
     }
     load_theater(asset_manager, theater_name)
+}
+
+/// A map opts into the bundled tiles independently of the rules layers and of
+/// IceGrowthEnabled, which controls refreezing in an existing ice theater.
+pub fn map_requests_bundled_ice(theater_name: &str, ini: &IniFile) -> bool {
+    ImageTheater::from_name(theater_name) == ImageTheater::Snow
+        && ini.section_or_empty("Map").read_bool("VeraIce", false)
+}
+
+/// Resolve the terrain requested by a particular scenario. Ordinary scenarios
+/// can launch without a complete theater where their caller permits it. An
+/// ice map needs the installed pack and its stock snow base to play.
+pub fn load_scenario_theater(
+    asset_manager: &mut AssetManager,
+    theater_name: &str,
+    map_ini: &IniFile,
+    network: bool,
+) -> anyhow::Result<Option<TheaterData>> {
+    let enabled = map_requests_bundled_ice(theater_name, map_ini);
+    load_theater_with_bundled_ice(asset_manager, theater_name, enabled, network)
+}
+
+/// Rebind the same terrain for a fresh map or a saved world.
+pub fn load_theater_with_bundled_ice(
+    asset_manager: &mut AssetManager,
+    theater_name: &str,
+    enabled: bool,
+    network: bool,
+) -> anyhow::Result<Option<TheaterData>> {
+    if enabled && ImageTheater::from_name(theater_name) == ImageTheater::Snow {
+        load_theater_with(asset_manager, theater_name, TerrainFiles::BundledIce).map(Some)
+    } else {
+        Ok(load_theater_for_play(asset_manager, theater_name, network))
+    }
 }
 
 /// Load tileset data for a theater.
@@ -1081,44 +1164,40 @@ pub fn load_theater_for_play(
 /// The AssetManager is mutable because theater MIX archives are loaded on demand.
 pub fn load_theater(asset_manager: &mut AssetManager, theater_name: &str) -> Option<TheaterData> {
     load_theater_with(asset_manager, theater_name, TerrainFiles::GameFolder)
+        .inspect_err(|error| log::warn!("Theater {theater_name}: {error:#}"))
+        .ok()
 }
 
 /// VERA: [`load_theater`] reading the theater's INI and tile files as `files`
 /// says. The choice holds for every later read of those names, the tiles a
-/// match loads after this included, until the next theater load. `None` also
-/// when `Original` finds no retail copy of the INI.
+/// match loads after this included, until the next theater load.
 pub fn load_theater_with(
     asset_manager: &mut AssetManager,
     theater_name: &str,
     files: TerrainFiles,
-) -> Option<TheaterData> {
+) -> anyhow::Result<TheaterData> {
     asset_manager.pin_names(None);
-    let def: &TheaterDef = theater_def(theater_name)?;
-    if let Err(err) = asset_manager.activate_theater_archives(theater_name, def.mix_archives) {
-        log::warn!(
-            "Theater {}: archive activation failed: {}",
-            theater_name,
-            err
-        );
-        return None;
-    }
-    if files == TerrainFiles::Original {
-        let Some(pinned) = original_terrain_names(asset_manager, def) else {
-            log::warn!("Theater {theater_name}: no retail copy of its INI");
-            return None;
-        };
+    let def =
+        theater_def(theater_name).with_context(|| format!("Unknown map theater {theater_name}"))?;
+    asset_manager
+        .activate_theater_archives(theater_name, def.mix_archives)
+        .with_context(|| format!("Could not open the {theater_name} terrain archives"))?;
+    let ini_name = files.ini_name(asset_manager, def);
+    let pinned_table = if files == TerrainFiles::GameFolder {
+        None
+    } else {
+        let (pinned, ini, lookup) = original_terrain_names(asset_manager, def, files, &ini_name)?;
         asset_manager.pin_names(Some(pinned));
-    }
+        Some((ini, lookup))
+    };
 
     let selected = asset_manager.ini_roots().theater_ini(def.control_name);
-    let ini_name = theater_ini_name(asset_manager, def.control_name);
-    if ini_name != selected {
+    if files != TerrainFiles::BundledIce && ini_name != selected {
         log::warn!("Theater {theater_name}: INI '{selected}' not found; reading '{ini_name}'");
     }
-    let Some((ini_data, ini_source)) = asset_manager.get_with_source(&ini_name) else {
-        log::warn!("Theater {theater_name}: INI '{ini_name}' not found");
-        return None;
-    };
+    let (ini_data, ini_source) = asset_manager
+        .get_with_source(&ini_name)
+        .with_context(|| format!("Could not find {ini_name} for the {theater_name} theater"))?;
     log::info!(
         "Theater {}: INI '{}' from {}",
         theater_name,
@@ -1129,8 +1208,13 @@ pub fn load_theater_with(
     // TileSet rows and General metadata share the native INI parser. Original
     // 545535..545C3F uses exact-case General keys and ReadInt5276D0 syntax;
     // tools/rules_oracle/theater_general_reader.md preserves executed results.
-    let ini = IniFile::from_bytes(&ini_data).ok()?;
-    let mut lookup = parse_tileset_sections(&ini, def.extension).ok()?;
+    let (ini, mut lookup) = if let Some(table) = pinned_table {
+        table
+    } else {
+        let ini = IniFile::from_bytes(&ini_data)?;
+        let lookup = parse_tileset_sections(&ini, def.extension)?;
+        (ini, lookup)
+    };
     // Diagnostic: log first 15 tilesets for debugging tile mapping.
     for (idx, (bounds, name)) in lookup
         .tileset_bounds
@@ -1167,7 +1251,8 @@ pub fn load_theater_with(
     );
 
     let (unit_palette, iso_palette) =
-        load_theater_unit_and_iso_palettes(asset_manager, theater_name)?;
+        load_theater_unit_and_iso_palettes(asset_manager, theater_name)
+            .with_context(|| format!("Could not find the {theater_name} theater palettes. Check your game data folder in Options and try again."))?;
     let tiberium_palette = load_exact_palette(
         asset_manager,
         def.theater_palette_name,
@@ -1203,6 +1288,13 @@ pub fn load_theater_with(
         &mut rmg_tiles,
     );
     let ice_sets = resolve_ice_sets(theater_name, &lookup, general);
+    // The published map format assigns fixed numbers to these tiles. Never
+    // silently play an ice map on a different layout of the base snow theater.
+    if files == TerrainFiles::BundledIce && ice_sets != Some([4096, 4160, 4224]) {
+        anyhow::bail!(
+            "This map needs the original Yuri’s Revenge snow terrain. Check your game data folder in Options and try again."
+        );
+    }
     let high_bridge_rim_tiles = HighBridgeRimTiles::read(
         bridge_set
             .and_then(|set| lookup.bounds().get(usize::from(set)))
@@ -1232,6 +1324,7 @@ pub fn load_theater_with(
         cliff_ranges,
         rmg_tiles,
         ice_sets,
+        terrain_files: files,
     };
     let [bridge_middle_1, bridge_middle_2] = theater.bridge_middles();
     if bridge_set.is_some() || wood_bridge_set.is_some() {
@@ -1264,7 +1357,7 @@ pub fn load_theater_with(
         );
     }
 
-    Some(theater)
+    Ok(theater)
 }
 
 /// VERA: a theater's INI, its isometric palette and the tile files its
@@ -1276,20 +1369,35 @@ pub fn load_theater_with(
 /// every variant suffix a load can probe ([`contiguous_variant_filenames`]),
 /// so a tile or variant that only the game folder has reads as absent, and
 /// the palette that draws those tiles. Called with the theater's archives
-/// active; `None` when no retail archive holds an INI that reads.
-fn original_terrain_names(asset_manager: &AssetManager, def: &TheaterDef) -> Option<PinnedNames> {
+/// active. The returned table is also the one the scenario uses.
+fn original_terrain_names(
+    asset_manager: &AssetManager,
+    def: &TheaterDef,
+    files: TerrainFiles,
+    ini_name: &str,
+) -> anyhow::Result<(PinnedNames, IniFile, TilesetLookup)> {
     let unmounted = asset_manager.theater_archives_unmounted(def.mix_archives);
     let mut archives = registered_retail(asset_manager);
     archives.extend(unmounted_retail(asset_manager, &unmounted));
-    let ini_name = theater_ini_name(asset_manager, def.control_name);
-    let ini_id = mix_hash(&ini_name);
-    let ini = archives
+    let ini_id = mix_hash(ini_name);
+    let bytes = archives
         .iter()
         .find(|(_, _, archive)| archive.contains_id(ini_id))
         .and_then(|(_, _, archive)| archive.get_by_id(ini_id))
-        .and_then(|bytes| IniFile::from_bytes(bytes).ok())?;
-    let lookup = parse_tileset_sections(&ini, def.extension).ok()?;
-    let mut names = vec![ini_name, def.iso_palette_name.to_owned()];
+        .with_context(|| format!("Could not find retail {ini_name}. Check your game data folder in Options and try again."))?;
+    let mut ini = IniFile::from_bytes(bytes)?;
+    if files == TerrainFiles::BundledIce {
+        // The loose files belong to one release. Pin the checked MIX and merge
+        // its companion definitions into the same table used for all tile reads.
+        let (mix, definitions) = crate::assets::ice_pack::load().context(
+            "This map needs VERA’s ice tiles. Reinstall VERA20K to restore its Terrain folder.",
+        )?;
+        let ice = crate::assets::mix_archive::MixArchive::from_bytes(mix)?;
+        ini.merge(&IniFile::from_bytes(&definitions)?);
+        archives.insert(0, ("vera_ice.mix", None, std::borrow::Cow::Owned(ice)));
+    }
+    let lookup = parse_tileset_sections(&ini, def.extension)?;
+    let mut names = vec![ini_name.to_owned(), def.iso_palette_name.to_owned()];
     for pristine in lookup.entries.iter().flatten() {
         names.push(pristine.clone());
         if let Some((stem, extension)) = pristine.rsplit_once('.') {
@@ -1299,12 +1407,13 @@ fn original_terrain_names(asset_manager: &AssetManager, def: &TheaterDef) -> Opt
                 }));
         }
     }
-    Some(PinnedNames::new(
+    let pinned = PinnedNames::new(
         names.iter().map(String::as_str),
         archives
             .into_iter()
             .map(|(source, _, archive)| (source.to_owned(), archive)),
-    ))
+    );
+    Ok((pinned, ini, lookup))
 }
 
 /// A game folder for terrain tests, as a tile pack leaves one. `ra2md.mix`
@@ -1690,6 +1799,102 @@ pub fn inject_template_tiles(
     Ok(())
 }
 
+/// VERA-only, experimental (`docs/picture-model-art.md`): a template's
+/// picture, one frame per TMP cell slot in file order (empty slots
+/// included), each cell's canvas (`pixel_width` x `pixel_height`, the
+/// diamond and its extra data) at the frame's top-left corner, the frames as
+/// large as the largest cell canvas times a whole `scale` (1 to 8). Only the
+/// colour comes from it; height, ramp, land, Z data, extra-data placement and
+/// radar colours stay the TMP's, so the simulation and the tile's Z and
+/// occlusion are unchanged.
+struct TilePicture {
+    frames: crate::assets::picture_file::PictureFrames,
+    scale: u32,
+}
+
+impl TilePicture {
+    /// `name` for `tmp`, else its WebP twin
+    /// (`crate::assets::picture_file::find_picture`); None, reported in the
+    /// game, when it is missing, unreadable or does not fit the TMP's cells.
+    /// The TMP's pixels then draw.
+    fn load(asset_manager: &AssetManager, name: &str, tmp: &TmpFile) -> Option<Self> {
+        let max = tmp.tiles.iter().flatten().fold([1u32, 1u32], |max, tile| {
+            [max[0].max(tile.pixel_width), max[1].max(tile.pixel_height)]
+        });
+        let found =
+            crate::assets::picture_file::find_picture(name, |name| asset_manager.get_ref(name));
+        let file = found.as_ref().map_or(name, |(file, _)| &**file);
+        let loaded = found
+            .as_ref()
+            .map(|&(_, bytes)| bytes)
+            .ok_or_else(|| "the file is not found".to_owned())
+            .and_then(|bytes| {
+                crate::assets::picture_file::PictureFrames::decode(bytes)
+                    .map_err(|error| error.to_string())
+            })
+            .and_then(|frames| {
+                let scale = frames.width / max[0];
+                if scale == 0
+                    || scale > 8
+                    || [frames.width, frames.height] != [max[0] * scale, max[1] * scale]
+                    || frames.frames.len() != tmp.tiles.len()
+                {
+                    return Err(format!(
+                        "{}x{} with {} frames is not {} frames of a whole multiple of {}x{}",
+                        frames.width,
+                        frames.height,
+                        frames.frames.len(),
+                        tmp.tiles.len(),
+                        max[0],
+                        max[1]
+                    ));
+                }
+                Ok(Self { frames, scale })
+            });
+        match loaded {
+            Ok(picture) => {
+                log::info!(
+                    "Tile picture {file}: {} cells at {}x",
+                    picture.frames.frames.len(),
+                    picture.scale
+                );
+                Some(picture)
+            }
+            Err(error) => {
+                log::warn!("Tile picture {file} cannot be drawn: {error}");
+                crate::rules::art_problems::report(
+                    file,
+                    "PictureFileName=",
+                    &format!("{file} cannot be drawn ({error})"),
+                    "the tile's TMP pixels are drawn",
+                );
+                None
+            }
+        }
+    }
+}
+
+/// Cell `index`'s RGBA: from its template picture when one loaded
+/// ([`TilePicture`]), else the TMP's own pixels through `palette`.
+fn tile_rgba(
+    tmp: &TmpFile,
+    index: usize,
+    palette: &Palette,
+    picture: Option<&TilePicture>,
+) -> Result<Vec<u8>, crate::assets::error::AssetError> {
+    if let Some(picture) = picture
+        && let Some(tile) = tmp.tiles.get(index).and_then(Option::as_ref)
+        && let Some(rgba) = picture.frames.shrunk_region(
+            index,
+            picture.scale,
+            [tile.pixel_width, tile.pixel_height],
+        )
+    {
+        return Ok(rgba);
+    }
+    tmp.tile_to_rgba(index, palette)
+}
+
 /// Load RGBA tile images for tiles needed by the map. Groups by tile_id
 /// to batch-load TMP files. Skips missing or unparseable TMP files.
 pub fn load_tile_images(
@@ -1766,6 +1971,9 @@ pub fn load_tile_images(
             }
         };
 
+        let picture = lookup
+            .picture_filename(*tile_id, 0)
+            .and_then(|file| TilePicture::load(asset_manager, &file, &tmp));
         // Log tile dimensions from first successfully parsed TMP file.
         if images.is_empty() {
             log::info!(
@@ -1790,7 +1998,7 @@ pub fn load_tile_images(
                 empty_cell_count += 1;
                 continue;
             };
-            match tmp.tile_to_rgba(source_sub, palette) {
+            match tile_rgba(&tmp, source_sub, palette, picture.as_ref()) {
                 Ok(rgba) => {
                     images.insert(
                         TileKey {
@@ -1831,6 +2039,9 @@ pub fn load_tile_images(
             let Ok(var_tmp) = TmpFile::from_bytes(var_data) else {
                 break;
             };
+            let picture = lookup
+                .picture_filename(*tile_id, (var_idx + 1) as u8)
+                .and_then(|file| TilePicture::load(asset_manager, &file, &var_tmp));
             for &sub in sub_tiles {
                 let Some(source_sub) =
                     wrapped_subtile_index(sub, var_tmp.template_width, var_tmp.template_height)
@@ -1841,7 +2052,7 @@ pub fn load_tile_images(
                 else {
                     continue;
                 };
-                if let Ok(rgba) = var_tmp.tile_to_rgba(source_sub, palette) {
+                if let Ok(rgba) = tile_rgba(&var_tmp, source_sub, palette, picture.as_ref()) {
                     images.insert(
                         TileKey {
                             tile_id: *tile_id,

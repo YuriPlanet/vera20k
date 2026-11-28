@@ -197,7 +197,7 @@ fn failed_hover_attack_reanchor_keeps_the_original_jumpjet_handoff() {
                 None,
                 "{kind}: actual search must fail, including the occupied centre"
             );
-            sim.scenario_rng = crate::sim::rng::SimRng::new(1);
+            *sim.scenario_rng = crate::sim::rng::SimRng::new(1);
             let rng = sim.scenario_rng.native_state_hex();
             // Compare exactly the native prefix's setter-return boundary,
             // before either mission performs later targeting/cadence work.
@@ -268,7 +268,7 @@ fn failed_reanchor_on_guard_lifts_the_stock_unit_and_survives_save() {
         .unwrap()
         .sim;
     restored.retain_process_state_for_load(SnapshotProcessState::Live(&sim));
-    restored.resolved_terrain = sim.resolved_terrain.clone();
+    *restored.resolved_terrain = (*sim.resolved_terrain).clone();
     restored.restore_after_snapshot_load().unwrap();
     restored.rebuild_caches_after_load(
         sim.resolved_terrain.as_ref().unwrap().clone(),
@@ -283,7 +283,7 @@ fn failed_reanchor_on_guard_lifts_the_stock_unit_and_survives_save() {
             .effective_shared_cell_dummy()
             .same_identity(&control_dummy)
     );
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     // Player load clears planning tokens (6370B0 / 70BF79).
     sim.reset_planning_after_player_load();
     for id in sim.substrate.entities.keys_sorted() {

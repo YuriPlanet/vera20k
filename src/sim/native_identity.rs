@@ -226,7 +226,7 @@ impl Simulation {
         {
             return Err(NativeIdentityError::AcceptedPrefixRequiresPreMapWorld);
         }
-        self.native_unique_ids = Some(NativeUniqueIdCursor::from_saved_prefix(checkpoint));
+        *self.native_unique_ids = Some(NativeUniqueIdCursor::from_saved_prefix(checkpoint));
         Ok(())
     }
 
@@ -415,7 +415,7 @@ mod tests {
 
     fn simulation_with_saved_prefix(saved: u32) -> Simulation {
         let mut simulation = Simulation::with_seed(0);
-        simulation.native_unique_ids = Some(NativeUniqueIdCursor::from_saved_prefix(saved));
+        *simulation.native_unique_ids = Some(NativeUniqueIdCursor::from_saved_prefix(saved));
         simulation
     }
 
@@ -475,7 +475,7 @@ mod tests {
         .unwrap();
         for case in corpus["cases"].as_array().unwrap() {
             let mut sim = Simulation::with_seed(0);
-            sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(
+            *sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(
                 case["input"].as_u64().unwrap() as u32,
             ));
             let hash = sim.state_hash();

@@ -2,9 +2,16 @@
 //! the locked units' move cells.
 
 use super::{context_order_receiver, finish_order, move_click_command, push_move_flash};
-use crate::app::AppState;
+use crate::app::PlatformState;
+use crate::app::diagnostics::state::DiagnosticsState;
+use crate::app::frontend::state::FrontendState;
 use crate::app::input::commands::preferred_local_owner;
 use crate::app::input::dispatch::selected_stable_ids_in_order;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
+use crate::audio::sfx::SfxPlayer;
 use crate::map::entities::EntityCategory;
 use crate::sim::combat::TargetKind;
 use crate::sim::command::CommandEnvelope;
@@ -32,15 +39,15 @@ fn formation_units(
 
 /// How many of the selection's units a VERA formation line or block would
 /// order: one dot each.
-pub(crate) fn formation_unit_count(state: &AppState) -> usize {
-    let Some(rt) = state.match_state.sim_runtime.runtime() else {
+pub(crate) fn formation_unit_count(frontend: &FrontendState, match_state: &MatchState) -> usize {
+    let Some(rt) = match_state.sim_runtime.runtime() else {
         return 0;
     };
     let current_objects = selected_stable_ids_in_order(
         Some(&rt.simulation),
-        state.rules(),
-        &state.match_state.input.selection_order,
-        state.match_state.input.selection_order_pending,
+        crate::app::state::active_rules(frontend, match_state),
+        &match_state.input.selection_order,
+        match_state.input.selection_order_pending,
     );
     formation_units(
         &rt.simulation,
@@ -89,27 +96,30 @@ fn heading_cell(entity: &crate::sim::game_entity::GameEntity) -> (i32, i32) {
 /// Returns `false`, having ordered nothing, in Planning Mode and when fewer
 /// than two units can take a point; the release is then an ordinary click.
 pub(crate) fn queue_formation_line(
-    state: &mut AppState,
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
     path: &crate::app::input::formation_line::FormationPath,
 ) -> bool {
-    let order_mode = state.match_state.input.queued_order_mode;
-    let Some(owner) = preferred_local_owner(state) else {
+    let order_mode = match_state.input.queued_order_mode;
+    let Some(owner) = preferred_local_owner(match_state) else {
         return false;
     };
     let current_objects = selected_stable_ids_in_order(
-        state
-            .match_state
-            .sim_runtime
-            .runtime()
-            .map(|rt| &rt.simulation),
-        state.rules(),
-        &state.match_state.input.selection_order,
-        state.match_state.input.selection_order_pending,
+        match_state.sim_runtime.runtime().map(|rt| &rt.simulation),
+        crate::app::state::active_rules(frontend, match_state),
+        &match_state.input.selection_order,
+        match_state.input.selection_order_pending,
     );
-    if state.match_state.input.planning.active() {
+    if match_state.input.planning.active() {
         return false;
     }
-    let Some(rt) = state.match_state.sim_runtime.runtime() else {
+    let Some(rt) = match_state.sim_runtime.runtime() else {
         return false;
     };
     let resources = &rt.resources;
@@ -177,7 +187,20 @@ pub(crate) fn queue_formation_line(
     if queued.is_empty() {
         return false;
     }
-    finish_order(state, queued, current_objects.first().copied(), false, None)
+    finish_order(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        sfx_player,
+        persistence,
+        queued,
+        current_objects.first().copied(),
+        false,
+        None,
+    )
 }
 
 /// A locked unit's place as a map cell: one off the map's low edges becomes the
@@ -193,18 +216,23 @@ fn clamp_to_cell(cell: (i32, i32)) -> (u16, u16) {
 /// heading for; pressed on units that are one locked formation already, it
 /// unlocks them. Says which happened in the message list. Fewer than two
 /// units cannot be locked.
-pub(crate) fn toggle_formation_lock(state: &mut AppState) {
+pub(crate) fn toggle_formation_lock(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
+) {
     let current_objects = selected_stable_ids_in_order(
-        state
-            .match_state
-            .sim_runtime
-            .runtime()
-            .map(|rt| &rt.simulation),
-        state.rules(),
-        &state.match_state.input.selection_order,
-        state.match_state.input.selection_order_pending,
+        match_state.sim_runtime.runtime().map(|rt| &rt.simulation),
+        crate::app::state::active_rules(frontend, match_state),
+        &match_state.input.selection_order,
+        match_state.input.selection_order_pending,
     );
-    let Some(rt) = state.match_state.sim_runtime.runtime() else {
+    let Some(rt) = match_state.sim_runtime.runtime() else {
         return;
     };
     let sim = &rt.simulation;
@@ -215,7 +243,7 @@ pub(crate) fn toggle_formation_lock(state: &mut AppState) {
         rt.resources.rules.ares(),
     );
     let ids: Vec<u64> = units.iter().map(|&(id, _)| id).collect();
-    let locks = &mut state.match_state.input.formation_locks;
+    let locks = &mut match_state.input.formation_locks;
     locks.retain(|id| sim.entities().get(id).is_some());
     let locked = if locks.is_one_formation(&ids) {
         locks.unlock(&ids);
@@ -226,7 +254,18 @@ pub(crate) fn toggle_formation_lock(state: &mut AppState) {
     } else {
         return;
     };
-    crate::app::input::messages::post_formation_lock(state, locked, units.len());
+    crate::app::input::messages::post_formation_lock(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        sfx_player,
+        persistence,
+        locked,
+        units.len(),
+    );
 }
 
 /// VERA formation lock: each receiver's own cell for a plain move click on

@@ -1,0 +1,4 @@
+node_modules/
+build/
+# Written by `vera20k build` from vera.json.
+examples/**/src/generated/

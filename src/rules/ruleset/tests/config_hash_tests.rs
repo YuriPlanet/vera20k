@@ -687,6 +687,7 @@ fn file_inputs_hash_follows_what_the_simulation_reads_from_files() {
         shp: shp.to_owned(),
         body_frame: crate::rules::building_rubble::RUBBLE_BODY_FRAME,
         shadow_frame,
+        picture: None,
     };
     let scorch_frame = |width: u16, height: u16| {
         move |rules: &mut RuleSet| {

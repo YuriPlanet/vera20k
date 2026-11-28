@@ -5,6 +5,7 @@
 //! Find_Attack_Cell's `include_self = false`, aircraft_move.{py,json}.
 
 use super::Simulation;
+use crate::map::cell_index::NativeCellIdentity;
 use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::combat_weapon;
@@ -23,16 +24,43 @@ mod approach_tests;
 /// Is_Cell_Free_For_Landing419B00 is an any-match over marked objects, so one
 /// pass answers every candidate of one search; nothing mutates between them.
 /// One search passes one `include_self`, which the pass already applied.
-/// VERA-only: the sets are bitmaps, built from every live object and asked
-/// about a few cells.
+/// VERA-only: the sets are built from every live object and asked about a
+/// few cells.
 pub(super) struct LandingCellClaims {
     occupied: CellSet,
-    /// Reserved fixed cells: real cells by index, and whether the shared
-    /// Dummy is reserved; or raw reserved coordinates when no terrain is
-    /// loaded.
-    reserved: Vec<u64>,
+    /// Real fixed cells reserved by a Cell NavCom, by native cell index.
+    /// The set holds the reservations themselves, so its size follows the
+    /// objects that hold one and not the size of the map.
+    reserved: Vec<usize>,
     reserved_dummy: bool,
     reserved_cells: CellSet,
+}
+
+/// Live aircraft NavCom reservations read once per attack-cell search.
+/// `FootClass::IsLandZoneClear @ 0x004DDC60` refuses a cell another live
+/// aircraft holds (its NavCom names the same cell, or the same object), and
+/// the attack-cell search asks it about every candidate cell. The set is
+/// built once per search and the search mutates nothing while it runs, so
+/// no stale answer survives it.
+pub(super) struct AircraftNavClaims {
+    /// The cells an aircraft's Cell NavCom holds, as the native cell
+    /// identity of the fixed-cell lookup: a real cell by index, or the
+    /// shared Dummy every non-real cell names.
+    cells: Vec<NativeCellIdentity>,
+    /// The objects an aircraft's Object NavCom holds.
+    objects: Vec<u64>,
+}
+
+impl AircraftNavClaims {
+    /// Whether another live aircraft holds the zone: a Cell NavCom on the
+    /// same cell identity for a cell destination, an Object NavCom on the
+    /// same object for an object destination.
+    pub(super) fn holds(&self, object: Option<u64>, cell: NativeCellIdentity) -> bool {
+        match object {
+            Some(object) => self.objects.binary_search(&object).is_ok(),
+            None => self.cells.binary_search(&cell).is_ok(),
+        }
+    }
 }
 
 /// A set of cells built once and then only asked: a bitmap over the box its
@@ -182,7 +210,7 @@ impl Simulation {
                 let cell = ((xy[0] / 256) as i16, (xy[1] / 256) as i16);
                 if !crate::sim::cell_rect::cell_is_in_playfield_height_aware(
                     (i32::from(cell.0), i32::from(cell.1)),
-                    self.playfield_bounds,
+                    *self.playfield_bounds,
                     self.resolved_terrain.as_ref(),
                 ) {
                     continue;
@@ -246,7 +274,7 @@ impl Simulation {
     ) -> bool {
         if !crate::sim::cell_rect::cell_is_in_playfield_height_aware(
             (i32::from(cell.0), i32::from(cell.1)),
-            self.playfield_bounds,
+            *self.playfield_bounds,
             self.resolved_terrain.as_ref(),
         ) {
             return true;
@@ -302,10 +330,8 @@ impl Simulation {
             return false;
         }
         match identity {
-            Some(crate::map::cell_index::NativeCellIdentity::Real(index)) => {
-                claims.reserved[index / 64] >> (index % 64) & 1 == 0
-            }
-            Some(crate::map::cell_index::NativeCellIdentity::Dummy) => !claims.reserved_dummy,
+            Some(NativeCellIdentity::Real(index)) => claims.reserved.binary_search(&index).is_err(),
+            Some(NativeCellIdentity::Dummy) => !claims.reserved_dummy,
             None => !claims.reserved_cells.contains(cell),
         }
     }
@@ -313,10 +339,18 @@ impl Simulation {
     /// Do not use occupancy: air, limbo and Cell NavCom are distinct here.
     /// `carried` is a Carryall's Unit NavCom (`0x00419BF1`), `own` the
     /// aircraft itself when the call excludes it (`0x00419C05`).
+    ///
+    /// The pass is rebuilt per search and is not shared between them: an
+    /// object moves and re-nav-comes inside a frame, so a set kept across
+    /// searches would answer with an occupancy the frame has already left
+    /// behind and pick another cell.
     fn landing_cell_claims(&self, carried: Option<u64>, own: Option<u64>) -> LandingCellClaims {
         let terrain = self.resolved_terrain.as_ref();
         let mut occupied = Vec::new();
-        let mut reserved = vec![0u64; terrain.map_or(0, |t| t.cells().len().div_ceil(64))];
+        // The reservations themselves, not a bitmap over the map: the set
+        // grows with the objects that hold a Cell NavCom, so a search does
+        // not allocate a map-sized buffer.
+        let mut reserved: Vec<usize> = Vec::new();
         let mut reserved_dummy = false;
         let mut reserved_cells = Vec::new();
         for other in self.substrate.entities.values() {
@@ -339,18 +373,61 @@ impl Simulation {
                 match terrain {
                     // Pointer equality must not restamp the shared Dummy.
                     Some(t) => match t.native_fixed_cell_index(rx as i16, ry as i16) {
-                        Some(index) => reserved[index / 64] |= 1 << (index % 64),
+                        Some(index) => reserved.push(index),
                         None => reserved_dummy = true,
                     },
                     None => reserved_cells.push((rx as i16, ry as i16)),
                 }
             }
         }
+        reserved.sort_unstable();
+        reserved.dedup();
         LandingCellClaims {
             occupied: CellSet::new(occupied),
             reserved,
             reserved_dummy,
             reserved_cells: CellSet::new(reserved_cells),
         }
+    }
+
+    /// The NavCom reservations the live aircraft hold, for one search.
+    /// `id` is the aircraft asking: `0x004DDC60` compares the other
+    /// aircraft against itself, so the asking aircraft is left out.
+    /// `terrain` is the loaded grid the cell identities come from.
+    pub(super) fn aircraft_nav_claims(
+        &self,
+        id: u64,
+        terrain: &crate::map::resolved_terrain::ResolvedTerrainGrid,
+    ) -> AircraftNavClaims {
+        let mut cells = Vec::new();
+        let mut objects = Vec::new();
+        for other in self
+            .substrate
+            .entities
+            .values_of_category(EntityCategory::Aircraft)
+        {
+            if other.stable_id() == id
+                || !other.lifecycle.object_alive()
+                || other.lifecycle.in_limbo()
+            {
+                continue;
+            }
+            match other.navigation.nav_com() {
+                Some(NavTargetRef::Cell { rx, ry }) => {
+                    // Pointer equality must not restamp the shared Dummy.
+                    let reserved = terrain
+                        .native_fixed_cell_index(rx as i16, ry as i16)
+                        .map_or(NativeCellIdentity::Dummy, NativeCellIdentity::Real);
+                    cells.push(reserved);
+                }
+                Some(NavTargetRef::Object { id }) => objects.push(id),
+                None => {}
+            }
+        }
+        cells.sort_unstable();
+        cells.dedup();
+        objects.sort_unstable();
+        objects.dedup();
+        AircraftNavClaims { cells, objects }
     }
 }

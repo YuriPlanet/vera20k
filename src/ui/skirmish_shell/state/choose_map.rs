@@ -18,6 +18,7 @@ use crate::ui::shell::static_reveal::DialogStatics;
 use vera20k_gui::shell::list::{ListMetrics, ShellListGeometry};
 
 use super::super::layout::{ChooseMapModalButton, ChooseMapModalLayout, RectPx};
+use super::super::online_map_folders::OnlineMapFolders;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SkirmishModeSelection {
@@ -183,9 +184,37 @@ pub const FAVORITES_ROW: i32 = i32::MIN + 1;
 /// The folder of seeds saved from Create Random Map.
 pub const RANDOM_MAPS_ROW: i32 = i32::MIN + 2;
 
+// The website's gallery category IDs. These chooser rows are local navigation;
+// Use Map still returns the actual game type admitted by the selected map.
+const FIRST_ONLINE_CATEGORY: i32 = RANDOM_MAPS_ROW + 1;
+const ONLINE_CATEGORIES: [(&str, &str); 8] = [
+    ("missions", "VERA:OnlineMapMissions"),
+    ("survival", "VERA:OnlineMapSurvival"),
+    ("duels", "VERA:OnlineMapDuels"),
+    ("small", "VERA:OnlineMapSmall"),
+    ("large", "VERA:OnlineMapLarge"),
+    ("oil", "VERA:OnlineMapOil"),
+    ("megawealth", "VERA:OnlineMapMegawealth"),
+    ("navalwar", "VERA:OnlineMapNavalWar"),
+];
+
+impl SkirmishModeSelection {
+    fn online_category(self) -> Option<(&'static str, &'static str)> {
+        let index = self.id.checked_sub(FIRST_ONLINE_CATEGORY)?;
+        ONLINE_CATEGORIES.get(usize::try_from(index).ok()?).copied()
+    }
+
+    pub(crate) fn online_category_label(self) -> Option<&'static str> {
+        self.online_category().map(|(_, label)| label)
+    }
+}
+
 /// Whether `mode_id` is a row VERA fills itself, not a game type.
 fn is_own_row(mode_id: i32) -> bool {
     matches!(mode_id, ONLINE_MAPS_ROW | FAVORITES_ROW | RANDOM_MAPS_ROW)
+        || SkirmishModeSelection::from(mode_id)
+            .online_category()
+            .is_some()
 }
 
 /// VERA: what a star is kept under: an online map's SHA-256, any other
@@ -211,6 +240,7 @@ pub struct ChooseMapModalState {
     /// FillModeList binds the mode object to the row (`0x005D6298`),
     /// and Use Map keeps that object as the current mode (`0x005E7367`).
     mode_rows: Vec<SkirmishModeSelection>,
+    online_folders: OnlineMapFolders,
     /// The game type whose maps are listed; the list cursor is on its row
     /// when it has one.
     pub selected_mode: SkirmishModeSelection,
@@ -345,6 +375,7 @@ impl ChooseMapModalState {
                 })
                 .collect(),
             selected_mode: selected_mode_id.into(),
+            online_folders: OnlineMapFolders::default(),
             random_maps_allowed: false,
             official_only: context.official_only(),
             filtered_record_indices: Vec::new(),
@@ -493,6 +524,36 @@ impl ChooseMapModalState {
         }
     }
 
+    pub(crate) fn set_online_categories(&mut self, folders: OnlineMapFolders) {
+        self.online_folders = folders;
+    }
+
+    fn sync_online_category_rows(&mut self, layout: &ChooseMapModalLayout) {
+        let expanded = self
+            .mode_rows
+            .last()
+            .is_some_and(|row| row.online_category().is_some());
+        let show = self.online_maps_selected() && self.online_folders.has_categories();
+        if expanded == show {
+            return;
+        }
+        if show {
+            // Bring Online Maps up the list so its newly opened folders are visible.
+            let parent = self.mode_rows.len().saturating_sub(1);
+            self.mode_rows.extend(
+                (0..ONLINE_CATEGORIES.len())
+                    .map(|i| SkirmishModeSelection::from(FIRST_ONLINE_CATEGORY + i as i32)),
+            );
+            self.mode_top_index = parent.min(self.mode_geometry(layout).max_top);
+        } else {
+            self.mode_rows.retain(|row| row.online_category().is_none());
+            if self.selected_mode.online_category().is_some() {
+                self.selected_mode = ONLINE_MAPS_ROW.into();
+            }
+            self.mode_top_index = self.mode_top_index.min(self.mode_geometry(layout).max_top);
+        }
+    }
+
     /// Whether the Favorites row is the selected one.
     pub fn favorites_selected(&self) -> bool {
         self.selected_mode.id == FAVORITES_ROW
@@ -506,14 +567,15 @@ impl ChooseMapModalState {
         records: &[SkirmishScenarioRecord],
         layout: &ChooseMapModalLayout,
     ) {
+        self.sync_online_category_rows(layout);
         if self.row_labels.is_none() {
             self.rebuild_keeping_highlight(modes, records, layout);
         }
     }
 
-    /// Whether the Online Maps row is the selected one.
+    /// Whether Online Maps or one of its categories is selected.
     pub fn online_maps_selected(&self) -> bool {
-        self.selected_mode.id == ONLINE_MAPS_ROW
+        self.selected_mode.id == ONLINE_MAPS_ROW || self.selected_mode.online_category().is_some()
     }
 
     fn matches_search(&self, record: &SkirmishScenarioRecord) -> bool {
@@ -586,6 +648,7 @@ impl ChooseMapModalState {
             // Online Maps lists its starred maps first. Catalog order
             // otherwise.
             let favorites = self.favorites_selected();
+            let category = self.selected_mode.online_category().map(|(slug, _)| slug);
             let online_listed = self.mode_rows.contains(&ONLINE_MAPS_ROW.into());
             let listed: Vec<_> = self
                 .mode_rows
@@ -599,7 +662,7 @@ impl ChooseMapModalState {
                     let listed = if favorites {
                         self.is_favorite(record) && (online_listed || !record.is_online())
                     } else {
-                        record.is_online()
+                        self.online_folders.includes(record, category)
                     };
                     listed && self.matches_search(record)
                 })
@@ -656,6 +719,7 @@ impl ChooseMapModalState {
             .map(|record| record.display_name.clone())
             .unwrap_or_default();
         self.selected_mode = mode;
+        self.sync_online_category_rows(layout);
         self.random_maps_mode = self.random_maps_game_mode(modes);
         self.build_map_list(modes, records);
         self.reselect(records, layout);
@@ -1443,6 +1507,60 @@ mod tests {
         );
         modal.add_online_maps_row();
         assert!(!modal.mode_rows().contains(&ONLINE_MAPS_ROW.into()));
+    }
+
+    #[test]
+    fn online_folders_filter_search_and_use_the_maps_real_game_type() {
+        let layout = compute_choose_map_modal_layout(800, 600);
+        let modes = stock_skirmish_modes();
+        let sha = "a".repeat(64);
+        let mut sea = record_for("Open Sea", &["teamgame"]);
+        sea.source = SkirmishScenarioSource::Online(sha.clone());
+        let mut land = record_for("Mainland", &["standard"]);
+        land.source = SkirmishScenarioSource::Online("b".repeat(64));
+        let records = [sea, land];
+        let mut modal = ChooseMapModalState::open(
+            ChooseMapContext::Network {
+                observer: false,
+                clan_room: false,
+                tournament_room: false,
+            },
+            1,
+            None,
+            &modes,
+            &records,
+            &layout,
+        );
+        modal.add_online_maps_row();
+        assert!(modal.select_mode(ONLINE_MAPS_ROW, &modes, &records, &layout));
+        assert_eq!(modal.filtered_record_indices, [0, 1]);
+        let root_rows = modal.mode_rows().len();
+
+        // Memberships can arrive while the host already has Online Maps open.
+        modal.set_online_categories(OnlineMapFolders::from_memberships(
+            [(sha, vec!["megawealth".into(), "navalwar".into()])].into(),
+        ));
+        modal.refresh(&modes, &records, &layout);
+        assert_eq!(modal.mode_rows().len(), root_rows + ONLINE_CATEGORIES.len());
+        for category in ["megawealth", "navalwar"] {
+            let row = modal
+                .mode_rows()
+                .iter()
+                .position(|row| {
+                    row.online_category()
+                        .is_some_and(|(slug, _)| slug == category)
+                })
+                .unwrap();
+            assert!(modal.click_mode_row(row, &layout, &modes, &records, &mut None));
+            assert_eq!(modal.filtered_record_indices, [0]);
+            assert_eq!(modal.accept_selection().unwrap().mode.id, 9);
+        }
+        modal.set_search("Mainland".into(), &modes, &records, &layout);
+        assert!(modal.accept_selection().is_none());
+        assert!(modal.select_mode(ONLINE_MAPS_ROW, &modes, &records, &layout));
+        assert_eq!(modal.filtered_record_indices, [1]);
+        assert!(modal.select_mode(1, &modes, &records, &layout));
+        assert_eq!(modal.mode_rows().len(), root_rows);
     }
 
     #[test]

@@ -55,7 +55,7 @@ pub(super) fn adjusted_speed(
 /// `UnitClass::AttachFlag @ 0x00740DF0` sets it, through `Flag_Attach_Unit
 /// @ 0x004FC060` from `Generate_Random_Units @ 0x00688C02`, gated on
 /// Scenario special-flag bit 0x10 (`0x00688BF8`). `SpecialClass::Init @
-/// 0x006B8AE0` clears that bit at startup; skirmish setup (`PregameSetup`
+/// 0x006B8AE0` clears that bit at startup; network setup (`PregameSetup`
 /// `0x005E74D4`) keeps it and the map's `[SpecialFlags]` reader
 /// (`0x006B8CB0`) never writes it. Only modem setup (`0x005B8B22`, from
 /// `CaptureTheFlag=`) or a peer's options event (`0x004C6E59`) set it. Not
@@ -135,7 +135,7 @@ pub fn owner_current_speed(
     owner_current_speed_from_native_fraction(
         adjusted_speed(entity, object, veteran_speed, houses),
         entity.foot_speed.native_applied_fraction(),
-        entity.phobos_speed_multiplier(),
+        entity.effect_speed_multiplier(),
     )
 }
 

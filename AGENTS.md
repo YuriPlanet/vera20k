@@ -151,6 +151,14 @@ named for players, so a refused start says what differs and not only that someth
 does. A new part or setting keeps the parts' old form for a game without it (left
 out while off), and its PR says what the launcher's `src/lib/rulesDiff.ts` must add
 to name it; `every_personal_rules_switch_is_a_setting` holds `PersonalRules` to this.
+A VERA.INI key whose value changes that digest (a launch setting such as `Ares` or
+`Kratos`, or a switch the player's own network match plays) is also named, in the
+same PR, in `rules_parts::agreed_ini` with the value as VERA.INI writes it: a launcher
+copies the host's `settings.ini` into its player's VERA.INI and names a differing key
+by itself, so it needs no change to follow the host's game, and a key left out is
+one players can differ on with nothing to fix it.
+`agreed_ini_values_read_back_as_the_settings_they_name` holds the values to reading
+back as the settings they name.
 
 ## Architecture and delivery
 
@@ -166,6 +174,11 @@ within one object's update, only for a profiled hot spot. Record each order chan
 its PR for side-by-side play, and next to its code as a sim-scale deviation. Keep them:
 moving one back toward native needs a `--release` sim-bench run at 20,000 units and 30
 houses showing frames are no slower, or the maintainer's agreement to the cost.
+
+The live object pass is being restructured into systems, one at a time: each kind of
+work decides for all units side by side from the world as its phase began, then applies
+in order what touches shared things. Per-frame unit state lives in arrays its system
+owns.
 
 Preserve state authority, lifecycle, tick phase order, timers, same-tick effects,
 persistence and numeric semantics under the policy below. Document and validate
@@ -194,6 +207,13 @@ state or decision logic, find existing writers and name the owner in the PR. Kee
 authoritative state private to its owning module and expose mutations through the
 owner. Extend or fix that owner instead of introducing competing state or duplicated
 decision logic, or widening visibility to reach its state or raw data.
+
+A function takes the owners it uses, not the whole `Simulation` or `AppState`, and takes
+one for writing only where it writes. Simulation state holds nothing only this player's
+game knows (selection, the local house, discovery). A unit's update that changes what it
+does not own says so as data, and that owner carries it out; no statics, thread-locals
+or interior mutability carry simulation state. Hot loops allocate nothing per unit per
+frame.
 
 Write Rust, not C++ or Java in Rust syntax. When the borrow checker refuses code, fix
 who borrows what (split the borrow, pass a reference or an index, end a borrow sooner,
@@ -286,9 +306,8 @@ Rust, plus native execution only where Exactness and evidence calls for it, and
 Never run gamemd as a whole game under Wine to compare.
 
 Performance work: find waste by reading the code, starting where existing profiles
-point, and fix it. Measure once per chain, at the end: one `--release` before/after,
-with sim-bench's final state hash unchanged for a simulation change. No timing per
-step.
+point, and fix it. Run one `--release` before/after comparison at the end of the chain.
+No timing per step.
 
 A check counts only if it ran: the test filter matched tests, no retail test printed
 `SKIPPED`, each build printed `Finished`, and an empty search counts only after the

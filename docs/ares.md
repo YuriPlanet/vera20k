@@ -59,10 +59,10 @@ started with.
 A save records no Ares capability; a save from an older build with the retired `ares`
 feature does not load.
 
-Ares combines with the `phobos` and `npatch` build features, and every implemented feature
-must keep working when they are compiled in. The rule and the pattern for two extensions
-touching one native site are in
-[NPatch placeholder](npatch.md#cross-extension-compatibility).
+Ares combines with the `phobos` build feature and with NPatch, which every build holds and whose
+game data switches on, and every implemented feature must keep working when they are present.
+The rule and the pattern for two extensions touching one native site are in
+[NPatch](npatch.md#cross-extension-compatibility).
 
 For ordinary selected-map offline loading, Ares Country loading fields are read
 from the retained Country identity. `File.LoadScreenPAL` and the loading text

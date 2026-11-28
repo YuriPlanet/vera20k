@@ -24,6 +24,14 @@ use crate::util::fixed_math::SimFixed;
 /// derive from this constant instead of re-declaring the literal.
 pub const LEPTONS_PER_CELL_I32: i32 = 256;
 
+/// The double at `0x00B1D008`: model units (voxels) per lepton. Static
+/// initializers `0x00735180`, `0x007351B0` and `0x007351D0` form
+/// `1 / (sqrt(2 * 256^2) / 60)`, a cell's 60-pixel width over its lepton
+/// diagonal, but take the root with the table square root `0x004CAC40`, so the
+/// value is not the exact quotient. Executed in
+/// `tools/voxel_oracle/barrel_pitch.py`.
+pub const MODEL_UNITS_PER_LEPTON_BITS: u64 = 0x3FC5_3694_862E_9021;
+
 /// Lepton offset for the center of a cell (128). Default sub-cell position.
 pub const CELL_CENTER_LEPTON: SimFixed = SimFixed::lit("128");
 

@@ -35,7 +35,6 @@ use crate::audio::music::MusicPlayer;
 use crate::audio::sfx::SfxPlayer;
 use crate::map::basic::BasicSection;
 use crate::map::houses::HouseRoster;
-use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::render::batch::BatchRenderer;
 use crate::render::bit_font::BitFont;
 use crate::render::gpu::GpuContext;
@@ -73,6 +72,11 @@ mod hidden_run;
 mod in_game;
 mod initialize;
 pub(crate) mod input;
+
+/// Android's hardware pointing-device bridge (the JNI entry point in the
+/// `vera20k-android` cdylib).
+#[cfg(target_os = "android")]
+pub use input::android_mouse;
 pub(crate) mod lan_service;
 pub(crate) mod loading;
 #[cfg(target_os = "macos")]
@@ -85,7 +89,7 @@ pub(crate) mod match_diagnostics;
 pub(crate) mod match_runtime;
 pub(crate) mod mod_additions;
 pub(crate) mod mod_files;
-#[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+#[cfg(any(windows, target_os = "macos", target_os = "linux", target_os = "android"))]
 mod mod_import_picker;
 pub(crate) mod mods;
 pub(crate) mod movie_playback;
@@ -114,7 +118,7 @@ pub(crate) mod shell_lan;
 mod shell_load_saved_game;
 mod shell_main_menu;
 mod shell_menu;
-#[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+#[cfg(any(windows, target_os = "macos", target_os = "linux", target_os = "android"))]
 mod shell_mod_import;
 mod shell_mods;
 mod shell_movies_credits;
@@ -130,6 +134,7 @@ mod shell_wol;
 pub(crate) mod sidebar_projection;
 #[cfg(all(test, tests_app))]
 mod sidebar_projection_tests;
+pub(crate) mod spawn_frame_cost;
 pub(crate) mod spawn_probe;
 mod state;
 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
@@ -141,6 +146,7 @@ pub(crate) mod telemetry_capture;
 #[cfg(feature = "telemetry-dashboard")]
 pub(crate) mod telemetry_server;
 pub(crate) mod types;
+pub(crate) mod ui_modules;
 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 pub(crate) mod updater;
 pub(crate) mod web_link;
@@ -150,19 +156,11 @@ pub(crate) mod worker;
 /// Main window title. The single-instance gate finds a running copy's window by
 /// this exact title, so `main` hands the same constant to
 /// `util::single_instance::acquire`.
-pub const WINDOW_TITLE: &str = match (
-    crate::rules::PHOBOS_ENABLED,
-    crate::rules::NPATCH_ENABLED,
-    crate::rules::NPBUG_ENABLED,
-) {
-    (true, true, false) => "VERA20K [Phobos+NPatch]",
-    (true, false, false) => "VERA20K [Phobos]",
-    (false, true, false) => "VERA20K [NPatch]",
-    (false, false, false) => "VERA20K",
-    (true, true, true) => "VERA20K [Phobos+NPatch+NPBug]",
-    (true, false, true) => "VERA20K [Phobos+NPBug]",
-    (false, true, true) => "VERA20K [NPatch+NPBug]",
-    (false, false, true) => "VERA20K [NPBug]",
+pub const WINDOW_TITLE: &str = match (crate::rules::PHOBOS_ENABLED, crate::rules::NPBUG_ENABLED) {
+    (true, false) => "VERA20K [Phobos]",
+    (false, false) => "VERA20K",
+    (true, true) => "VERA20K [Phobos+NPBug]",
+    (false, true) => "VERA20K [NPBug]",
 };
 
 /// Identity stamp shared by the status screen and the telemetry capture. Not a
@@ -203,6 +201,8 @@ pub struct App {
     /// (`input::touch`). A synthetic `CursorMoved` must not pass for the OS
     /// pointer, which is what clears the touch-parked cursor.
     dispatching_touch: bool,
+    #[cfg(target_os = "android")]
+    android_pointer: input::android_mouse::PointerTracker,
     /// docs/sim-thread.md: window events that came while a tick was on the
     /// simulation thread, in order, for the pass that finds it back
     /// ([`Self::release_held_events`]).
@@ -265,6 +265,8 @@ impl App {
             mod_switch: None,
             ask_for_game_folder: false,
             dispatching_touch: false,
+            #[cfg(target_os = "android")]
+            android_pointer: Default::default(),
             held_window_events: Vec::new(),
             #[cfg(not(target_arch = "wasm32"))]
             sim_wake: None,
@@ -291,6 +293,8 @@ impl App {
             mod_switch: None,
             ask_for_game_folder: false,
             dispatching_touch: false,
+            #[cfg(target_os = "android")]
+            android_pointer: Default::default(),
             held_window_events: Vec::new(),
             #[cfg(not(target_arch = "wasm32"))]
             sim_wake: None,
@@ -319,6 +323,8 @@ impl App {
             mod_switch: None,
             ask_for_game_folder: false,
             dispatching_touch: false,
+            #[cfg(target_os = "android")]
+            android_pointer: Default::default(),
             held_window_events: Vec::new(),
             #[cfg(not(target_arch = "wasm32"))]
             sim_wake: None,
@@ -347,6 +353,8 @@ impl App {
             mod_switch: None,
             ask_for_game_folder: false,
             dispatching_touch: false,
+            #[cfg(target_os = "android")]
+            android_pointer: Default::default(),
             held_window_events: Vec::new(),
             #[cfg(not(target_arch = "wasm32"))]
             sim_wake: None,
@@ -419,7 +427,9 @@ impl App {
     /// skips. The panic hook has already written the log and `except.txt`.
     pub fn save_replay_after_panic(&mut self) {
         if let Some(state) = self.state.as_mut() {
-            crate::app::match_runtime::sim_tick::preserve_replay_after_panic(state);
+            crate::app::match_runtime::sim_tick::preserve_replay_after_panic(
+                &mut state.match_state,
+            );
         }
     }
 }

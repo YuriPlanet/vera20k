@@ -247,11 +247,11 @@ fn original_can_auto_cloak_matches_retail_inputs_and_retained_target_controls() 
                 .then_some(TargetKind::Entity(target)),
         );
         let retained = actor.cloak.clone();
-        sim.scenario_rng =
+        *sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["scenario"].as_str().unwrap());
-        sim.main_rng =
+        *sim.main_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap());
-        sim.mapgen_rng =
+        *sim.mapgen_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["mapgen"].as_str().unwrap());
         let rng = sim.rng_state();
         let facts = super::stock_cloak_tick_facts(&sim, source, rules, None).unwrap();

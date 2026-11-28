@@ -1332,10 +1332,15 @@ impl FogState {
 
     /// Rebuild the derived current-sight projection without emitting another
     /// native reveal or changing Cell cache bytes.
-    pub(crate) fn mark_sight_admission(&mut self, viewer: InternedId, admission: &SightAdmission) {
-        let vis = self
-            .by_owner
-            .get_or_insert_with(viewer, || OwnerVisibility::new(self.width, self.height));
+    /// An associated function over the planes, so that the caller can walk
+    /// the admissions, a separate field, while it marks.
+    fn mark_sight_admission(
+        by_owner: &mut Planes,
+        (width, height): (u16, u16),
+        viewer: InternedId,
+        admission: &SightAdmission,
+    ) {
+        let vis = by_owner.get_or_insert_with(viewer, || OwnerVisibility::new(width, height));
         for &(x, y) in &admission.cells {
             let Some(index) = vis.index(x, y) else {
                 continue;
@@ -1356,14 +1361,13 @@ impl FogState {
         if untracked.is_empty() {
             return;
         }
-        let retained: Vec<_> = self
+        let size = (self.width, self.height);
+        for (&(_, viewer), admission) in self
             .sight_admissions
             .iter()
             .filter(|&(&(_, viewer), source)| source.latched && untracked.contains(&viewer))
-            .map(|(&(_, viewer), admission)| (viewer, admission.clone()))
-            .collect();
-        for (viewer, admission) in retained {
-            self.mark_sight_admission(viewer, &admission);
+        {
+            Self::mark_sight_admission(&mut self.by_owner, size, viewer, admission);
         }
     }
 
@@ -1898,18 +1902,11 @@ impl FogState {
     /// outer-Y/inner-X circle the sensor deposit walks, incrementing
     /// `CellClass+0xAC[house]` (`CellClass::IncrementDisguiseDetectCount`).
     /// The caller owns the Is_Operational gate (native vt+0x350).
-    pub fn disguise_detect_add_at(
-        &mut self,
-        house: InternedId,
-        center: (u16, u16),
-        radius: u16,
-    ) -> Vec<(u16, u16)> {
-        let touched: Vec<_> = self.sensor_circle_cells(center, radius).collect();
-        for &(rx, ry) in &touched {
+    pub fn disguise_detect_add_at(&mut self, house: InternedId, center: (u16, u16), radius: u16) {
+        for (rx, ry) in self.sensor_circle_cells(center, radius) {
             let counter = self.disguise_detect_counter_mut(house, rx, ry);
             *counter = counter.wrapping_add(1);
         }
-        touched
     }
 
     /// `BuildingClass::RemoveDetectDisguiseAt @ 0x00455980`. Unlike the sensor
@@ -1921,13 +1918,11 @@ impl FogState {
         house: InternedId,
         center: (u16, u16),
         radius: u16,
-    ) -> Vec<(u16, u16)> {
-        let touched: Vec<_> = self.sensor_circle_cells(center, radius).collect();
-        for &(rx, ry) in &touched {
+    ) {
+        for (rx, ry) in self.sensor_circle_cells(center, radius) {
             let counter = self.disguise_detect_counter_mut(house, rx, ry);
             *counter = counter.wrapping_sub(1);
         }
-        touched
     }
 
     /// `FUN_004870F0` — `CellClass+0xAC[house] > 0`. The observer-side half of
@@ -2042,6 +2037,28 @@ impl FogState {
         self.by_owner
             .get(&owner)
             .is_some_and(|s| s.is_gap_covered(rx, ry))
+    }
+
+    /// Does `viewer` see another house's objects on this cell? Explored (with
+    /// `current_sight_only`, currently seen) and not covered by a hostile gap.
+    /// With `current_sight_only == false` this is the A plane's own admission
+    /// (`render::shroud_buffer::cell_fill`), so overlays whose material reads
+    /// no A can ask it instead of inventing a second fog interpretation. The
+    /// draw plan, the pickers and the extension modules' `Visible` read it.
+    pub fn shows_objects_to(
+        &self,
+        viewer: InternedId,
+        rx: u16,
+        ry: u16,
+        current_sight_only: bool,
+    ) -> bool {
+        let lit = if current_sight_only {
+            self.is_cell_visible(viewer, rx, ry)
+        } else {
+            // Standard YR has no fog-of-war layer: explored ground stays visible.
+            self.is_cell_revealed(viewer, rx, ry)
+        };
+        lit && !self.is_cell_gap_covered(viewer, rx, ry)
     }
 
     /// Returns true if the cell is covered by a friendly gap generator for this owner.

@@ -46,7 +46,7 @@ fn player_at_thirtieth_slot_resolves_team_owner_through_start_mapping() {
         .insert(29, owner);
     let (vm, diagnostics) = TeamScriptVm::from_ini_registry(&registry, &mut sim.interner, &rules);
     assert!(diagnostics.is_empty(), "{diagnostics:?}");
-    sim.team_script_vm = vm;
+    *sim.team_script_vm = vm;
     let team_type = sim.interner.get("TT").unwrap();
     assert_eq!(sim.house_by_trigger_selector(0x1198, &rules), Some(owner));
     assert_eq!(sim.house_by_trigger_selector(0x1199, &rules), None);
@@ -984,6 +984,43 @@ fn reinforcement_exit_breaks_slot_zero_instead_of_the_new_members_contact() {
 }
 
 #[test]
+fn vehicle_reinforcement_commences_guard_on_a_war_factory_exit() {
+    use crate::sim::mission::{MissionId, MissionType};
+
+    let Some((ini, art)) = retail_rules_and_art() else {
+        return;
+    };
+    let rules =
+        crate::rules::retail_ini_fixture::retail_unlayered_rules_with_art().expect("retail rules");
+    let terrain_rules = TerrainRules::from_ini(&ini);
+    let overlay = OverlayTypeRegistry::from_ini(&ini, Some(&art));
+    let input = serde_json::json!({"entries": [["MTNK", 1]], "origin": [85, 50]});
+    let mut sim = reinforcement_world(&rules, &terrain_rules, &input);
+    sim.spawn_object_at_height("GAWEAP", "Americans", 85, 49, 4, 0, &rules)
+        .unwrap();
+    let team_type = sim.interner.get("TT").unwrap();
+    let (placed, review_cell) = sim.spawn_team_reinforcements(
+        team_type,
+        -1,
+        &rules,
+        Some(&overlay),
+        &mut FrameEffects::default(),
+    );
+    assert!(placed);
+    assert_eq!(review_cell, Some((85, 50)));
+    let tank = sim
+        .entities()
+        .values()
+        .find(|e| e.category() == EntityCategory::Unit)
+        .unwrap();
+    assert_eq!(
+        tank.mission.current(),
+        MissionId::from_known(MissionType::Guard)
+    );
+    assert_eq!(tank.mission.queued(), MissionId::NONE);
+}
+
+#[test]
 fn mixed_reinforcements_bypass_the_building_exit_branch() {
     let Some((ini, art)) = retail_rules_and_art() else {
         return;
@@ -1301,15 +1338,15 @@ fn droppod_reinforcement_carrier_matches_original_constructor_cargo_and_orders()
     for row in rows {
         let input = &row["input"];
         let mut sim = reinforcement_world(&rules, &terrain_rules, input);
-        sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(int(
+        *sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(int(
             &row["id_before"],
         )
             as u32));
-        sim.scenario_rng =
+        *sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["scenario"].as_str().unwrap());
-        sim.main_rng =
+        *sim.main_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap());
-        sim.mapgen_rng =
+        *sim.mapgen_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["mapgen"].as_str().unwrap());
         let team_type = sim.interner.get("TT").unwrap();
         let (returned, review) = sim.spawn_team_reinforcements(
@@ -1678,15 +1715,15 @@ fn full_reinforcement_members_cargo_and_scalar_cleanup_match_original() {
     for row in rows {
         let input = &row["input"];
         let mut sim = reinforcement_world(&rules, &terrain_rules, input);
-        sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(int(
+        *sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(int(
             &row["id_before"],
         )
             as u32));
-        sim.scenario_rng =
+        *sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["scenario"].as_str().unwrap());
-        sim.main_rng =
+        *sim.main_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap());
-        sim.mapgen_rng =
+        *sim.mapgen_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["mapgen"].as_str().unwrap());
         let team_type = sim.interner.get("TT").unwrap();
         let placement_members = sim
@@ -1845,15 +1882,15 @@ fn action7_real_members_match_original_identity_rng_placement_and_cleanup() {
     for row in rows("reinforcement", 10) {
         let input = &row["input"];
         let mut sim = reinforcement_world(&rules, &terrain_rules, input);
-        sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(int(
+        *sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(int(
             &row["id_before"],
         )
             as u32));
-        sim.scenario_rng =
+        *sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["scenario"].as_str().unwrap());
-        sim.main_rng =
+        *sim.main_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap());
-        sim.mapgen_rng =
+        *sim.mapgen_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["mapgen"].as_str().unwrap());
         let team_type = sim.interner.get("TT").unwrap();
         let (spawned, review) = sim.spawn_team_reinforcements(
@@ -2090,7 +2127,7 @@ fn script3_real_members_match_original_outside_move_and_rng_continuation() {
         .map(|member| int(&member["native_id"]))
         .min()
         .unwrap();
-    sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(
+    *sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(
         first_id.wrapping_sub(1) as u32,
     ));
     let team_type = sim.interner.get("TT").unwrap();
@@ -2135,11 +2172,11 @@ fn script3_real_members_match_original_outside_move_and_rng_continuation() {
     );
     assert_eq!(prior.cursor, int(&native_prior["cursor"]));
     waypoint(&mut sim, 4, (127, 127));
-    sim.scenario_rng =
+    *sim.scenario_rng =
         SimRng::from_native_state_hex_for_test(row["rng_before"]["scenario"].as_str().unwrap());
-    sim.main_rng =
+    *sim.main_rng =
         SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap());
-    sim.mapgen_rng =
+    *sim.mapgen_rng =
         SimRng::from_native_state_hex_for_test(row["rng_before"]["mapgen"].as_str().unwrap());
     sim.run_team_ai_pass(&rules, Some(&overlay), &mut FrameEffects::default());
     assert_eq!(
@@ -2370,7 +2407,7 @@ fn place_full_team(
     sim.intern_rule_type_ids(rules);
     sim.resolve_type_handles(rules);
     crate::sim::arena_fixture::flat_arena(&mut sim, rules);
-    sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
+    *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
     let owner = sim.interner.intern("Americans");
     sim.houses
         .register(HouseState::new(owner, 0, Some(owner), true, 0, 10));
@@ -2552,5 +2589,55 @@ fn a_tunnel_team_arrives_underground_and_digs_out_at_its_cell() {
     assert_eq!(
         (location.x / 256, location.y / 256, location.z),
         (15, 15, 0)
+    );
+}
+
+/// #4974: action 107 placed a Team whose only member is a Unit with a Jumpjet
+/// locomotor and no `Speed=` (its type speed stays 0). The specific Foot
+/// constructor still creates the instance (`0x007354CE..0x00735566`), so
+/// 65EC30 can begin its Teleport piggyback and Move_To instead of panicking.
+#[test]
+fn chrono_reinforcement_places_a_zero_speed_jumpjet_unit() {
+    use crate::rules::locomotor_type::LocomotorKind;
+
+    let ini = IniFile::from_str(
+        "[Countries]\n0=Americans\n[VehicleTypes]\n0=YANH\n\
+         [YANH]\nStrength=100\nImage=MTNK\nMovementZone=Fly\n\
+         Locomotor={92612C46-F71F-11d1-AC9F-006008055BB5}\n",
+    );
+    let rules = RuleSet::from_ini(&ini).unwrap();
+    let terrain_rules = TerrainRules::from_ini(&ini);
+    let input = serde_json::json!({"entries": [["YANH", 1]], "origin": [40, 20]});
+    let mut sim = reinforcement_world(&rules, &terrain_rules, &input);
+    let team_type = sim.interner.get("TT").unwrap();
+    let (placed, _) = sim.spawn_chrono_team_reinforcements(
+        team_type,
+        4,
+        &rules,
+        None,
+        &mut FrameEffects::default(),
+    );
+    assert!(placed, "65EC30 places the zero-speed Jumpjet Unit");
+    let member = sim
+        .entities()
+        .values()
+        .find(|entity| sim.interner.resolve(entity.type_ref()) == "YANH")
+        .map(|entity| entity.stable_id())
+        .expect("the placed member");
+    let (speed, kind) = {
+        let entity = sim.substrate.entities.get(member).unwrap();
+        (
+            sim.object_type(entity.type_ref(), &rules).unwrap().speed,
+            entity
+                .locomotor
+                .as_ref()
+                .map(|locomotor| locomotor.effective_kind()),
+        )
+    };
+    assert_eq!(speed, 0);
+    assert_eq!(
+        kind,
+        Some(LocomotorKind::Jumpjet),
+        "the Foot keeps its constructed Jumpjet under the Teleport piggyback"
     );
 }

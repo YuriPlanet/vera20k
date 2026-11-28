@@ -4,7 +4,9 @@
 use super::{FrameEffects, Simulation};
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
+use crate::rules::weapon_type::WeaponType;
 use crate::sim::combat::{CombatLightRequest, RAD_NO_ATTACKER, detonation_anim, world_receiver};
+use crate::sim::intern::InternedId;
 use crate::sim::projectile::ProjectileCoord;
 
 impl Simulation {
@@ -26,11 +28,35 @@ impl Simulation {
         overlays: Option<&OverlayTypeRegistry>,
         frame_effects: &mut FrameEffects<'_>,
     ) -> Option<bool> {
+        let cell = self.session.waypoint_cell(waypoint)?;
+        let weapon = rules.weapon_by_array_index(weapon_index)?;
+        self.trigger_explosion_at_cell(
+            rules,
+            weapon,
+            cell,
+            (RAD_NO_ATTACKER, None),
+            overlays,
+            frame_effects,
+        )
+    }
+
+    /// [`Self::trigger_explosion_at_waypoint`] after the waypoint's cell and
+    /// the weapon are resolved. A Wasm module's `DetonateWeapon` passes its
+    /// cell and an optional `source` (object, house) for kill credit, which
+    /// the trigger action never has.
+    pub(crate) fn trigger_explosion_at_cell(
+        &mut self,
+        rules: &RuleSet,
+        weapon: &WeaponType,
+        cell: (i16, i16),
+        source: (u64, Option<InternedId>),
+        overlays: Option<&OverlayTypeRegistry>,
+        frame_effects: &mut FrameEffects<'_>,
+    ) -> Option<bool> {
         // 6E23A8..6E2426: signed centre, ground, then separate raw bridge
         // flag queries. Share their existing owner, including Dummy writes.
-        let [x, y, z] = self.trigger_waypoint_coord(waypoint)?;
+        let [x, y, z] = self.trigger_cell_coord(cell)?;
         let coordinate = ProjectileCoord::new(x, y, z);
-        let weapon = rules.weapon_by_array_index(weapon_index)?;
         let damage = weapon.damage;
         // A null Warhead makes SelectAnim (48A4FF), Flash (48A652) and
         // AreaDamage (4892D7) each return early; 6E2513 still succeeds.
@@ -58,6 +84,7 @@ impl Simulation {
             force_create: false,
             flags: 0,
         });
+        let (attacker, attacker_house) = source;
         Some(
             world_receiver::apply_area_damage(
                 self,
@@ -67,7 +94,7 @@ impl Simulation {
                 damage,
                 warhead,
                 true,
-                (RAD_NO_ATTACKER, None, warhead_ref),
+                (attacker, attacker_house, warhead_ref),
                 frame_effects,
             )
             .bridge_state_changed,

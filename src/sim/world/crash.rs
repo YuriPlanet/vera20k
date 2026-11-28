@@ -37,6 +37,7 @@ use crate::sim::movement::air_movement::current_fly_height;
 use crate::sim::rocking::RockingState;
 use crate::sim::world::FrameEffects;
 use crate::util::fixed_math::SimFixed;
+use crate::util::forked::Forked;
 use crate::util::native_x87::{NativeF64Bits, X87Chop53};
 
 use super::{Simulation, UninitContext};
@@ -623,6 +624,7 @@ impl Simulation {
             &self.resolved_terrain,
             id,
             rules,
+            None,
         )
         .is_some_and(|detonation| {
             self.commit_logic_projectile_detonations(
@@ -685,11 +687,12 @@ impl Simulation {
     ///
     /// Nothing on the Fly path lowers the latch; besides the constructor only
     /// the Jumpjet Descend touchdown clears it (`0x0054CA12`, a Magnetron drop
-    /// that lands).
+    /// that lands). `sound_events` is written only for an event
+    /// (`util::forked`).
     pub(crate) fn crash_edge_sounds(
         interner: &StringInterner,
         substrate: &mut ObjectSubstrate,
-        sound_events: &mut FrameChannel<SimSoundEvent>,
+        sound_events: &mut Forked<FrameChannel<SimSoundEvent>>,
         session: &ScenarioSession,
         houses: &Houses,
         id: u64,

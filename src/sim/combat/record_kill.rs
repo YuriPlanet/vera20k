@@ -44,6 +44,7 @@ fn award_kill_experience(
     victim_id: u64,
     points: i32,
     victim_house: Option<&HouseCostFactors>,
+    gained: Option<&mut Vec<(u64, i64)>>,
 ) {
     if killer_id == RAD_NO_ATTACKER || killer_id == victim_id {
         return;
@@ -85,6 +86,7 @@ fn award_kill_experience(
         return;
     };
     if let Some(recipient) = entities.get_mut(recipient_id) {
+        let before = experience_points(&recipient.veterancy);
         recipient.veterancy.award_kill(
             recipient_cost,
             points,
@@ -92,6 +94,30 @@ fn award_kill_experience(
             rules.general.veteran_ratio,
             rules.general.veteran_cap,
         );
+        note_experience(gained, recipient_id, before, &recipient.veterancy);
+    }
+}
+
+/// The `Experience` property's reading of `veterancy` (appendix 7.1:
+/// hundredths of a rank).
+fn experience_points(veterancy: &super::veterancy::Veterancy) -> i64 {
+    (f64::from(f32::from_bits(veterancy.raw().bits())) * 100.0) as i64
+}
+
+/// Notes `recipient`'s experience gain since `before` for the Wasm module
+/// `ExperienceGained` (`Simulation::record_the_kill_by_warhead`), when the
+/// caller collects them.
+fn note_experience(
+    gained: Option<&mut Vec<(u64, i64)>>,
+    recipient: u64,
+    before: i64,
+    veterancy: &super::veterancy::Veterancy,
+) {
+    let gain = experience_points(veterancy) - before;
+    if let Some(gained) = gained
+        && gain > 0
+    {
+        gained.push((recipient, gain));
     }
 }
 
@@ -135,6 +161,7 @@ fn award_ares_kill_experience(
     killer_id: u64,
     victim_id: u64,
     points: i32,
+    mut gained: Option<&mut Vec<(u64, i64)>>,
 ) -> Option<u64> {
     use crate::sim::combat::veterancy::VeterancyRank;
     use crate::util::native_x87::{MaskedX87Chop53 as X87, NativeF64Bits};
@@ -252,7 +279,7 @@ fn award_ares_kill_experience(
         spawn = Some(recipient);
         recipient = spawner;
     }
-    let add = |entities: &mut EntityStore, id: u64, factor: NativeF64Bits| {
+    let mut add = |entities: &mut EntityStore, id: u64, factor: NativeF64Bits| {
         let Some(entity) = entities.get(id) else {
             return;
         };
@@ -267,12 +294,14 @@ fn award_ares_kill_experience(
         let weighted =
             X87::ftol_i32_low_masked(X87::mul(X87::load_i32(points), X87::load_f64(factor)));
         if let Some(entity) = entities.get_mut(id) {
+            let before = experience_points(&entity.veterancy);
             entity.veterancy.add_ares_kill_experience(
                 cost,
                 weighted,
                 rules.general.veteran_ratio,
                 rules.general.veteran_cap,
             );
+            note_experience(gained.as_deref_mut(), id, before, &entity.veterancy);
         }
     };
     // 1004F1E1..1004F25F: a mind controller the victim's House is not
@@ -373,6 +402,7 @@ fn record_the_kill(
     victim_cost: i32,
     callback: KillCallback,
     rules: &RuleSet,
+    gained: Option<&mut Vec<(u64, i64)>>,
 ) -> Option<u64> {
     let Some(victim) = entities.get(victim_id) else {
         return None;
@@ -430,7 +460,7 @@ fn record_the_kill(
     let promote_now = if rules.ares() {
         killer_id.and_then(|killer_id| {
             award_ares_kill_experience(
-                entities, houses, interner, alliances, rules, killer_id, victim_id, points,
+                entities, houses, interner, alliances, rules, killer_id, victim_id, points, gained,
             )
         })
     } else {
@@ -446,6 +476,7 @@ fn record_the_kill(
                 victim_id,
                 points,
                 victim_house.as_ref(),
+                gained,
             );
         }
         None
@@ -473,11 +504,76 @@ impl crate::sim::world::Simulation {
     /// Source/control flow: active Steam gamemd instruction bodies; existing
     /// object_health/house_statistics/veterancy corpora own the arithmetic.
     /// No own RNG, timer or detach; nested Tag actions use their existing owners.
+    ///
+    /// Every caller of this entry is a death without a damage commit (a
+    /// crush, a Temporal erase, a crash's live prefix, a passenger or slave
+    /// dying inside, a Magnetron drop, a warp sink) or a callback that
+    /// leaves the victim alive; the receiver's kill takes
+    /// [`Self::record_the_kill_by_warhead`] and a sale passes it as well,
+    /// as a sale is no death. A terminal one first raises the Wasm module
+    /// `FatalDamage` (RFC 0001 appendix 4.3) on a victim that still has
+    /// Strength: `value` that Strength, `id` −1, `other` the killer.
     pub(crate) fn record_the_kill(
         &mut self,
         victim_id: u64,
         source: KillSource,
         callback: KillCallback,
+        mut context: crate::sim::world::UninitContext<'_>,
+    ) {
+        if matches!(callback, KillCallback::Terminal) {
+            self.raise_module_fatal_without_damage(victim_id, source, &mut context);
+        }
+        self.record_the_kill_by_warhead(victim_id, source, callback, -1, context);
+    }
+
+    /// The Wasm module `FatalDamage` of [`Self::record_the_kill`]: one flag
+    /// check without a listener; nothing for a victim whose Strength a
+    /// damage commit already zeroed (that commit raised it).
+    fn raise_module_fatal_without_damage(
+        &mut self,
+        victim_id: u64,
+        source: KillSource,
+        context: &mut crate::sim::world::UninitContext<'_>,
+    ) {
+        use vera20k_wasm_ext::triggers::EVENT_FATAL_DAMAGE;
+        if !self.trigger_runtime.module_listens(EVENT_FATAL_DAMAGE) {
+            return;
+        }
+        let Some(health) = self
+            .substrate
+            .entities
+            .get(victim_id)
+            .map(|victim| victim.health.current())
+            .filter(|&health| health > 0)
+        else {
+            return;
+        };
+        let killer = match source {
+            KillSource::Techno(Some(killer)) => killer,
+            _ => 0,
+        };
+        let rules = context.rules();
+        self.raise_module_event(
+            rules,
+            context.effects(),
+            crate::sim::ext_modules::ModuleEvent {
+                other: killer,
+                value: i64::from(health),
+                at_subject: true,
+                ..crate::sim::ext_modules::ModuleEvent::new(EVENT_FATAL_DAMAGE, victim_id)
+            },
+        );
+    }
+
+    /// [`Self::record_the_kill`] from a kill path that knows the lethal
+    /// warhead (its warhead ID, RFC 0001 appendix 8.1), which only the Wasm
+    /// module `Killed` record reads; −1 for none.
+    pub(crate) fn record_the_kill_by_warhead(
+        &mut self,
+        victim_id: u64,
+        source: KillSource,
+        callback: KillCallback,
+        lethal_warhead: i32,
         mut context: crate::sim::world::UninitContext<'_>,
     ) {
         let rules = context.rules();
@@ -544,6 +640,12 @@ impl crate::sim::world::Simulation {
             .object_type(victim.type_ref(), rules)
             .map_or(0, |object| rules.cost_of(object, victim_house.as_ref()));
         self.record_kill_tag_prefix(victim_id, source, context.reborrow());
+        // The experience each recipient gained, for the Wasm module
+        // `ExperienceGained`; nothing is collected without a listener.
+        let mut gained = self
+            .trigger_runtime
+            .module_listens(vera20k_wasm_ext::triggers::EVENT_EXPERIENCE_GAINED)
+            .then(Vec::new);
         let promote_now = record_the_kill(
             &mut self.substrate.entities,
             &mut self.houses,
@@ -554,12 +656,56 @@ impl crate::sim::world::Simulation {
             victim_cost,
             callback,
             rules,
+            gained.as_mut(),
         );
+        // Wasm module `ExperienceGained` on each recipient, `other` the
+        // victim, `value` the gain in hundredths of a rank (the
+        // `Experience` property's unit), after the award and before the
+        // promotion it may cause.
+        for (recipient, gain) in gained.into_iter().flatten() {
+            self.raise_module_event(
+                rules,
+                context.effects(),
+                crate::sim::ext_modules::ModuleEvent {
+                    other: victim_id,
+                    value: gain,
+                    ..crate::sim::ext_modules::ModuleEvent::new(
+                        vera20k_wasm_ext::triggers::EVENT_EXPERIENCE_GAINED,
+                        recipient,
+                    )
+                },
+            );
+        }
         // Ares1004F2C7: a gunner or an occupant cannot reach its own AI
         // promotion sample, so the hook updates its rank now, without flash.
         // Without Ares nobody is handed back.
         if let Some(recipient) = promote_now {
             self.update_ares_veterancy(recipient, false, false, rules, context.effects());
+        }
+        // Wasm module `Killed` (RFC 0001 appendix 4.3), after the kill is
+        // recorded, with the lethal warhead the kill path named.
+        if matches!(callback, KillCallback::Terminal)
+            && self
+                .trigger_runtime
+                .module_listens(vera20k_wasm_ext::triggers::EVENT_KILLED)
+        {
+            let killer = match source {
+                KillSource::Techno(Some(killer)) => killer,
+                _ => 0,
+            };
+            self.raise_module_event(
+                rules,
+                context.effects(),
+                crate::sim::ext_modules::ModuleEvent {
+                    other: killer,
+                    id: lethal_warhead,
+                    at_subject: true,
+                    ..crate::sim::ext_modules::ModuleEvent::new(
+                        vera20k_wasm_ext::triggers::EVENT_KILLED,
+                        victim_id,
+                    )
+                },
+            );
         }
         #[cfg(any(test, feature = "test-support"))]
         self.trace_lifecycle_for_test(
@@ -777,14 +923,11 @@ fn record_kill_credit(
         {
             house.stats_mut().record_loss(victim.category());
         }
-        let victim_house = houses.index_of(victim.owner());
         if count_killer
             && let Some(killer) = killer_owner
             && let Some(house) = houses.get_mut(&killer)
         {
-            house
-                .stats_mut()
-                .record_kill(victim.category(), victim_house);
+            house.stats_mut().record_kill(victim.category());
         }
     }
 }

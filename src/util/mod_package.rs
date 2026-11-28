@@ -19,8 +19,13 @@ use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
-#[cfg(any(windows, target_os = "linux", target_os = "macos"))]
-pub use native::import::{ModImport, PreparedModImport};
+#[cfg(any(
+    windows,
+    target_os = "linux",
+    target_os = "macos",
+    target_os = "android"
+))]
+pub use native::import::{ModImport, PreparedModAppend, PreparedModImport};
 
 #[derive(Debug, Clone)]
 pub struct ModFolder(Storage);
@@ -193,7 +198,8 @@ mod native {
     }
 
     fn asset_directory(name: &str) -> bool {
-        ["ini", "resources", "maps", "mixfiles", "taunts"]
+        // `hd_art`: an HD art pack (`render::hd_art`), alone or in a mod.
+        ["ini", "resources", "maps", "mixfiles", "taunts", "hd_art"]
             .iter()
             .any(|asset| asset.eq_ignore_ascii_case(name))
     }
@@ -230,7 +236,12 @@ mod native {
         Ok(false)
     }
 
-    pub(super) fn prepare(dir: &Path, stop: Option<&AtomicBool>) -> io::Result<Option<TempDir>> {
+    struct Package {
+        parts: Vec<Part>,
+        metadata: Vec<(PathBuf, PathBuf)>,
+    }
+
+    fn package(dir: &Path, stop: Option<&AtomicBool>) -> io::Result<Option<Package>> {
         let mut metadata = Vec::new();
         let mut parts = Vec::new();
         let mut contains_zip = false;
@@ -287,15 +298,27 @@ mod native {
             }
         }
         order_parts(&mut parts)?;
-        let prepared = staging_directory("vera20k-mod-").tempdir()?;
-        let mut merge = Merge::new(prepared.path(), stop);
-        merge.apply(&parts)?;
-        merge.in_part.clear();
-        for (source, relative) in metadata {
-            merge.entry()?;
-            merge.loose_file(&source, &relative)?;
+        Ok(Some(Package { parts, metadata }))
+    }
+
+    impl Package {
+        fn expand(&self, merge: &mut Merge<'_>) -> io::Result<()> {
+            merge.apply(&self.parts)?;
+            merge.in_part.clear();
+            for (source, relative) in &self.metadata {
+                merge.entry()?;
+                merge.loose_file(source, relative)?;
+            }
+            check_stop(merge.stop)
         }
-        check_stop(stop)?;
+    }
+
+    pub(super) fn prepare(dir: &Path, stop: Option<&AtomicBool>) -> io::Result<Option<TempDir>> {
+        let Some(package) = package(dir, stop)? else {
+            return Ok(None);
+        };
+        let prepared = staging_directory("vera20k-mod-").tempdir()?;
+        package.expand(&mut Merge::new(prepared.path(), stop))?;
         Ok(Some(prepared))
     }
 
@@ -620,7 +643,12 @@ mod native {
         Ok(())
     }
 
-    #[cfg(any(windows, target_os = "linux", target_os = "macos"))]
+    #[cfg(any(
+        windows,
+        target_os = "linux",
+        target_os = "macos",
+        target_os = "android"
+    ))]
     pub(super) mod import {
         use super::*;
 
@@ -636,6 +664,18 @@ mod native {
         pub struct PreparedModImport {
             staged: TempDir,
             name: String,
+        }
+
+        /// A replacement tree or a final package layer, prepared under the same
+        /// import lock as a new installation. Only the still-open dialog publishes it.
+        #[derive(Debug)]
+        pub struct PreparedModAppend {
+            staged: TempDir,
+            target: PathBuf,
+            package_layer: Option<OsString>,
+            root_modified: std::time::SystemTime,
+            files: usize,
+            _lock: File,
         }
 
         fn read_part(path: &Path) -> io::Result<Part> {
@@ -738,6 +778,107 @@ mod native {
                 mods_dir: &Path,
                 stop: &AtomicBool,
             ) -> io::Result<PreparedModImport> {
+                self.stage(mods_dir, stop, true)
+            }
+
+            pub fn prepare_append(
+                self,
+                mods_dir: &Path,
+                folder: &str,
+                stop: &AtomicBool,
+            ) -> io::Result<PreparedModAppend> {
+                let mut components = Path::new(folder).components();
+                if !matches!(components.next(), Some(std::path::Component::Normal(_)))
+                    || components.next().is_some()
+                    || folder.contains(['/', '\\'])
+                {
+                    return Err(invalid("choose an installed mod folder"));
+                }
+                let incoming = self.stage(mods_dir, stop, false)?;
+                let mods = incoming.mods_dir()?;
+                let lock = install_lock(mods)?;
+                let target = mods.join(folder);
+                plain_directory(&target)?;
+                let root_modified = fs::symlink_metadata(&target)?.modified()?;
+                let stop = Some(stop);
+                let (staged, package_layer, files) = if let Some(package) = package(&target, stop)?
+                {
+                    // Keep the original packaged sources in place. A new ordinary
+                    // directory part ordered after all of them is a single rename.
+                    check_part_count(package.parts.len() + 1)?;
+                    let last = package
+                        .parts
+                        .last()
+                        .ok_or_else(|| invalid("empty package"))?;
+                    let name = format!("{} + Parts", last.name);
+                    portable_component(&name)?;
+                    if crate::util::case_insensitive_path::find(&target, &name).is_some() {
+                        return Err(invalid(
+                            "no available name for another part; rename the last package part and try again",
+                        ));
+                    }
+                    let validation = staging_directory("vera20k-mod-").tempdir()?;
+                    let mut merge = Merge::new(validation.path(), stop);
+                    package.expand(&mut merge)?;
+                    if merge.paths.contains_key(Path::new("mod.ini")) {
+                        preserve_manifest(incoming.staged.path())?;
+                    }
+                    for (_, relative) in &package.metadata {
+                        if let Some(name) = relative.to_str()
+                            && crate::util::case_insensitive_path::find(
+                                incoming.staged.path(),
+                                name,
+                            )
+                            .is_some()
+                        {
+                            return Err(invalid(format!(
+                                "The package already overrides {name} in its top folder. Move that override into an earlier part before adding these files."
+                            )));
+                        }
+                    }
+                    // Prove the new layered package still fits the loader's limits.
+                    merge.in_part.clear();
+                    merge.directory(incoming.staged.path(), Path::new(""), 0)?;
+                    (
+                        incoming.staged,
+                        Some(OsString::from(name)),
+                        merge.in_part.len(),
+                    )
+                } else {
+                    let staged = staging_directory(".vera20k-import-").tempdir_in(mods)?;
+                    let mut originals = Vec::new();
+                    snapshot(&target, staged.path(), 0, stop, &mut originals)?;
+                    if crate::util::case_insensitive_path::find(staged.path(), "mod.ini").is_some()
+                    {
+                        preserve_manifest(incoming.staged.path())?;
+                    }
+                    let files = overlay(incoming.staged.path(), staged.path(), stop)?;
+                    fs::set_permissions(staged.path(), fs::metadata(&target)?.permissions())?;
+                    // Editors commonly save by replacing a file. Check the containing
+                    // directories on the worker before handing the candidate to the UI.
+                    for (path, modified) in originals {
+                        check_stop(stop)?;
+                        check_original(&path, modified)?;
+                    }
+                    (staged, None, files)
+                };
+                check_stop(stop)?;
+                Ok(PreparedModAppend {
+                    staged,
+                    target,
+                    package_layer,
+                    root_modified,
+                    files,
+                    _lock: lock,
+                })
+            }
+
+            fn stage(
+                self,
+                mods_dir: &Path,
+                stop: &AtomicBool,
+                standalone: bool,
+            ) -> io::Result<PreparedModImport> {
                 let stop = Some(stop);
                 check_stop(stop)?;
                 fs::create_dir_all(mods_dir)?;
@@ -755,7 +896,7 @@ mod native {
                 // Stage next to the install so publishing is a single rename.
                 let staged = staging_directory(".vera20k-import-").tempdir_in(mods_dir)?;
                 Merge::new(staged.path(), stop).apply(&self.parts)?;
-                if !is_game_root(staged.path())? {
+                if standalone && !is_game_root(staged.path())? {
                     return Err(invalid(
                         "No game files found at the top level. Choose the folder that contains the mod's game files",
                     ));
@@ -769,29 +910,16 @@ mod native {
         }
 
         impl PreparedModImport {
-            pub fn install(self) -> io::Result<String> {
-                let mods_dir = self
-                    .staged
+            fn mods_dir(&self) -> io::Result<&Path> {
+                self.staged
                     .path()
                     .parent()
-                    .ok_or_else(|| invalid("missing Mods folder"))?;
-                // Serialize name selection across VERA processes, which look up
-                // mods ignoring ASCII case even on a case-sensitive filesystem.
-                let lock = OpenOptions::new()
-                    .write(true)
-                    .create(true)
-                    .truncate(false)
-                    .open(mods_dir.join(".vera20k-import.lock"))?;
-                match lock.try_lock() {
-                    Ok(()) => {}
-                    Err(fs::TryLockError::WouldBlock) => {
-                        return Err(io::Error::new(
-                            io::ErrorKind::WouldBlock,
-                            "another copy of VERA20K is adding a mod; try again",
-                        ));
-                    }
-                    Err(fs::TryLockError::Error(error)) => return Err(error),
-                }
+                    .ok_or_else(|| invalid("missing Mods folder"))
+            }
+
+            pub fn install(self) -> io::Result<String> {
+                let mods_dir = self.mods_dir()?;
+                let _lock = install_lock(mods_dir)?;
                 for number in 1..=999 {
                     let folder = if number == 1 {
                         self.name.clone()
@@ -819,6 +947,199 @@ mod native {
             }
         }
 
+        fn install_lock(mods_dir: &Path) -> io::Result<File> {
+            let lock = OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(false)
+                .open(mods_dir.join(".vera20k-import.lock"))?;
+            match lock.try_lock() {
+                Ok(()) => {}
+                Err(fs::TryLockError::WouldBlock) => {
+                    return Err(io::Error::new(
+                        io::ErrorKind::WouldBlock,
+                        "another copy of VERA20K is adding a mod; try again",
+                    ));
+                }
+                Err(fs::TryLockError::Error(error)) => return Err(error),
+            }
+            Ok(lock)
+        }
+
+        fn plain_directory(path: &Path) -> io::Result<()> {
+            let metadata = fs::symlink_metadata(path)?;
+            if is_link(&metadata) || !metadata.is_dir() {
+                return Err(invalid(format!(
+                    "{} is not a plain mod directory",
+                    path.display()
+                )));
+            }
+            Ok(())
+        }
+
+        fn preserve_manifest(incoming: &Path) -> io::Result<()> {
+            if let Some(path) = crate::util::case_insensitive_path::find(incoming, "mod.ini") {
+                // A directory masquerading as the manifest is a conflict.
+                fs::remove_file(path)?;
+            }
+            Ok(())
+        }
+
+        /// Snapshot installed files without writing through hard links. Unrelated
+        /// files, including the Android shortcut id and the player's hidden files,
+        /// stay in the replacement. Filesystems without hard links use copies.
+        fn snapshot(
+            from: &Path,
+            into: &Path,
+            depth: usize,
+            stop: Option<&AtomicBool>,
+            originals: &mut Vec<(PathBuf, std::time::SystemTime)>,
+        ) -> io::Result<()> {
+            originals.push((from.to_owned(), fs::symlink_metadata(from)?.modified()?));
+            if depth >= MAX_DEPTH {
+                return Err(invalid(
+                    "installed mod exceeds the supported directory depth",
+                ));
+            }
+            for entry in fs::read_dir(from)? {
+                check_stop(stop)?;
+                let entry = entry?;
+                let source = entry.path();
+                let target = into.join(entry.file_name());
+                let metadata = fs::symlink_metadata(&source)?;
+                if is_link(&metadata) || !(metadata.is_dir() || metadata.is_file()) {
+                    return Err(invalid(format!(
+                        "{} is a link or special file",
+                        source.display()
+                    )));
+                }
+                if metadata.is_dir() {
+                    fs::create_dir(&target)?;
+                    snapshot(&source, &target, depth + 1, stop, originals)?;
+                    fs::set_permissions(&target, metadata.permissions())?;
+                } else if fs::hard_link(&source, &target).is_err() {
+                    // In-place edits follow a hard link, but not a copied file.
+                    originals.push((source.clone(), metadata.modified()?));
+                    fs::copy(&source, &target)?;
+                }
+            }
+            Ok(())
+        }
+
+        /// Install one staged part into a private snapshot, preserving the first
+        /// spelling in byte order used by case_insensitive_path::find.
+        fn overlay(from: &Path, into: &Path, stop: Option<&AtomicBool>) -> io::Result<usize> {
+            let mut names = HashMap::<OsString, OsString>::new();
+            for entry in fs::read_dir(into)? {
+                let name = entry?.file_name();
+                let slot = names
+                    .entry(name.to_ascii_lowercase())
+                    .or_insert_with(|| name.clone());
+                if name < *slot {
+                    *slot = name;
+                }
+            }
+            let mut files = 0;
+            for entry in fs::read_dir(from)? {
+                check_stop(stop)?;
+                let entry = entry?;
+                let name = entry.file_name();
+                let existing = names.get(&name.to_ascii_lowercase());
+                let destination = into.join(existing.unwrap_or(&name));
+                if entry.file_type()?.is_dir() {
+                    if existing.is_none() {
+                        fs::create_dir(&destination)?;
+                    }
+                    files += overlay(&entry.path(), &destination, stop)?;
+                } else {
+                    if existing.is_some() {
+                        fs::remove_file(&destination)?;
+                    }
+                    rename_new(&entry.path(), &destination)?;
+                    files += 1;
+                }
+            }
+            Ok(files)
+        }
+
+        fn check_original(path: &Path, modified: std::time::SystemTime) -> io::Result<()> {
+            let current = fs::symlink_metadata(path)?;
+            if is_link(&current) || current.modified()? != modified {
+                return Err(invalid(format!(
+                    "{} changed while adding files; try again",
+                    path.display()
+                )));
+            }
+            Ok(())
+        }
+
+        impl PreparedModAppend {
+            pub fn publish(self) -> io::Result<usize> {
+                plain_directory(&self.target)?;
+                check_original(&self.target, self.root_modified)?;
+                if self.files == 0 {
+                    return Ok(0);
+                }
+                if let Some(name) = &self.package_layer {
+                    rename_new(self.staged.path(), &self.target.join(name))?;
+                } else {
+                    replace_directory(&self.staged, &self.target)?;
+                }
+                Ok(self.files)
+            }
+        }
+
+        #[cfg(unix)]
+        fn replace_directory(staged: &TempDir, target: &Path) -> io::Result<()> {
+            use std::ffi::CString;
+            use std::os::unix::ffi::OsStrExt;
+            let from = CString::new(staged.path().as_os_str().as_bytes())?;
+            let to = CString::new(target.as_os_str().as_bytes())?;
+            // Exchange the live and prepared directories in one filesystem operation.
+            // SAFETY: both arguments are NUL-terminated and live for the call.
+            #[cfg(target_os = "macos")]
+            let result = unsafe { libc::renamex_np(from.as_ptr(), to.as_ptr(), libc::RENAME_SWAP) };
+            // SAFETY: both paths are valid C strings and both dirfds refer to cwd.
+            #[cfg(any(target_os = "linux", target_os = "android"))]
+            let result = unsafe {
+                libc::syscall(
+                    libc::SYS_renameat2,
+                    libc::AT_FDCWD,
+                    from.as_ptr(),
+                    libc::AT_FDCWD,
+                    to.as_ptr(),
+                    libc::RENAME_EXCHANGE,
+                )
+            };
+            if result == 0 {
+                Ok(())
+            } else {
+                Err(io::Error::last_os_error())
+            }
+        }
+
+        #[cfg(windows)]
+        fn replace_directory(staged: &TempDir, target: &Path) -> io::Result<()> {
+            let mods = target
+                .parent()
+                .ok_or_else(|| invalid("missing Mods folder"))?;
+            let backup = staging_directory(".vera20k-backup-").tempdir_in(mods)?;
+            let saved = backup.path().join("original");
+            rename_new(target, &saved)?;
+            if let Err(error) = rename_new(staged.path(), target) {
+                if let Err(restore) = rename_new(&saved, target) {
+                    let kept = backup.keep();
+                    return Err(io::Error::other(format!(
+                        "Install failed: {error}. Restore {} from {}: {restore}",
+                        target.display(),
+                        kept.join("original").display()
+                    )));
+                }
+                return Err(error);
+            }
+            Ok(())
+        }
+
         #[cfg(unix)]
         fn rename_new(from: &Path, to: &Path) -> io::Result<()> {
             use std::ffi::CString;
@@ -840,6 +1161,12 @@ mod native {
                     libc::RENAME_NOREPLACE,
                 )
             };
+            // Android: bionic has no exclusive rename. The folder sits in the
+            // app's private storage, which no other program writes, and the
+            // name was looked up under the import lock.
+            // SAFETY: both arguments are NUL-terminated and live for the call.
+            #[cfg(target_os = "android")]
+            let result = unsafe { libc::rename(from.as_ptr(), to.as_ptr()) };
             if result == 0 {
                 Ok(())
             } else {
@@ -1019,6 +1346,104 @@ mod tests {
             fs::read(downloads.path().join("a Base/Rules.INI")).unwrap(),
             b"base"
         );
+    }
+
+    #[cfg(any(
+        windows,
+        target_os = "linux",
+        target_os = "macos",
+        target_os = "android"
+    ))]
+    #[test]
+    fn append_preserves_the_installed_mod_and_its_identity() {
+        let root = tempfile::tempdir().unwrap();
+        let mods = root.path().join("Mods");
+        let incoming = root.path().join("New");
+        let target = mods.join("Selected");
+        write_files(
+            &target,
+            &[
+                ("maps01.mix", b"old"),
+                ("mod.ini", b"identity"),
+                (".vera20k-mod-id", b"id"),
+            ],
+        );
+        write_files(
+            &incoming,
+            &[
+                ("MAPS01.MIX", b"new"),
+                ("MOD.INI", b"other"),
+                (".vera20k-mod-id", b"other"),
+            ],
+        );
+        let prepare = || {
+            ModImport::plan(std::slice::from_ref(&incoming))
+                .unwrap()
+                .prepare_append(&mods, "Selected", &AtomicBool::new(false))
+        };
+
+        drop(prepare().unwrap());
+        assert_eq!(fs::read(target.join("maps01.mix")).unwrap(), b"old");
+        assert_eq!(prepare().unwrap().publish().unwrap(), 1);
+        assert_eq!(fs::read(target.join("maps01.mix")).unwrap(), b"new");
+        assert_eq!(fs::read(target.join("mod.ini")).unwrap(), b"identity");
+        assert_eq!(fs::read(target.join(".vera20k-mod-id")).unwrap(), b"id");
+    }
+
+    #[cfg(any(
+        windows,
+        target_os = "linux",
+        target_os = "macos",
+        target_os = "android"
+    ))]
+    #[test]
+    fn appended_part_loads_after_the_original_package() {
+        let root = tempfile::tempdir().unwrap();
+        let mods = root.path().join("Mods");
+        let target = mods.join("Selected");
+        fs::create_dir_all(&target).unwrap();
+        write_zip(
+            &target.join("base.zip"),
+            &[
+                ("base.mix", b"base"),
+                ("art.ini", b"old"),
+                ("mod.ini", b"identity"),
+            ],
+            zip::CompressionMethod::Stored,
+        );
+        let incoming = root.path().join("New");
+        write_files(&incoming, &[("ART.INI", b"new"), ("MOD.INI", b"other")]);
+        let staged = ModImport::plan(&[incoming])
+            .unwrap()
+            .prepare_append(&mods, "Selected", &AtomicBool::new(false))
+            .unwrap();
+        assert_eq!(staged.publish().unwrap(), 1);
+        let opened = ModFolder::open(&target, None).unwrap();
+        assert!(target.join("base.zip").is_file());
+        assert_eq!(fs::read(opened.join("base.mix")).unwrap(), b"base");
+        assert_eq!(fs::read(opened.join("art.ini")).unwrap(), b"new");
+        assert_eq!(fs::read(opened.join("mod.ini")).unwrap(), b"identity");
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "android"))]
+    #[test]
+    fn append_refuses_a_link_in_the_installed_mod() {
+        let root = tempfile::tempdir().unwrap();
+        let mods = root.path().join("Mods");
+        let target = mods.join("Selected");
+        let outside = root.path().join("outside");
+        let incoming = root.path().join("New");
+        write_files(&target, &[("base.mix", b"base")]);
+        write_files(&outside, &[("first.map", b"original")]);
+        std::os::unix::fs::symlink(&outside, target.join("maps")).unwrap();
+        write_files(&incoming, &[("maps/first.map", b"incoming")]);
+        let result = ModImport::plan(&[incoming]).unwrap().prepare_append(
+            &mods,
+            "Selected",
+            &AtomicBool::new(false),
+        );
+        assert!(result.is_err());
+        assert_eq!(fs::read(outside.join("first.map")).unwrap(), b"original");
     }
 
     #[cfg(any(windows, target_os = "linux", target_os = "macos"))]

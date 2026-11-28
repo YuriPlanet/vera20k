@@ -613,7 +613,6 @@ impl SlotScene {
             &self.scene.runtime,
             &Default::default(),
             false,
-            None,
         );
         let record = frame.object(self.plant).unwrap();
         let viewer_id = sim.session().current_house();
@@ -639,7 +638,7 @@ impl SlotScene {
             .resolved_terrain()
             .map(crate::map::resolved_terrain::NativeCellQuery::isolated);
         let extra = crate::app::presentation::lighting::body_extra_light(
-            building,
+            record,
             rules,
             sim,
             cells.as_ref(),

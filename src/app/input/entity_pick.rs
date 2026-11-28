@@ -8,6 +8,10 @@
 //! ## Dependency rules
 //! - Part of the app layer — may depend on everything.
 
+use crate::app::PlatformState;
+use crate::app::frontend::state::FrontendState;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::presentation::unit_motion::UnitMotion;
 use crate::app::types::HoverTargetKind;
 use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::RuleSet;
@@ -21,6 +25,10 @@ use crate::sim::world::ControlProjection;
 /// mutation of authoritative entities. Native callers/tests retain raw geometry.
 pub(crate) trait PickSource: Copy {
     fn entities(&self) -> &EntityStore;
+    /// Last displayed unit anchor in projected world pixels, independent of camera motion.
+    fn painted_anchor(&self, _id: u64) -> Option<[f32; 2]> {
+        None
+    }
     /// Type facts are supplied by the live presentation view. Bare stores used
     /// for Tactical6DA380 fixtures have no rules and leave Display's gate open.
     fn type_invisible(&self, _entity: &crate::sim::game_entity::GameEntity) -> bool {
@@ -121,10 +129,14 @@ impl PickWorld for &crate::sim::world::Simulation {
 pub(crate) struct PresentedWorld<'a> {
     pub sim: &'a crate::sim::world::Simulation,
     pub rules: Option<&'a RuleSet>,
+    pub unit_motion: Option<&'a UnitMotion>,
     /// [`crate::app::presentation::instances::translucent_fog_viewer`].
     pub translucent_viewer: Option<InternedId>,
 }
 impl PickSource for PresentedWorld<'_> {
+    fn painted_anchor(&self, id: u64) -> Option<[f32; 2]> {
+        self.unit_motion?.painted_anchor(id)
+    }
     fn type_invisible(&self, entity: &crate::sim::game_entity::GameEntity) -> bool {
         self.rules
             .and_then(|rules| self.sim.object_type(entity.type_ref(), rules))
@@ -141,6 +153,9 @@ impl PickSource for PresentedWorld<'_> {
         self.sim.entities()
     }
     fn screen_position(&self, entity: &crate::sim::game_entity::GameEntity) -> (f32, f32) {
+        if let Some([x, y]) = self.painted_anchor(entity.stable_id()) {
+            return (x, y);
+        }
         let (x, y) = crate::render::locomotor_visual::screen_position(entity);
         (x, y - f32::from(entity.ion_blast_lift_pixels()))
     }
@@ -173,13 +188,20 @@ impl PickWorld for PresentedWorld<'_> {
     }
 }
 pub(crate) fn presented<'a>(
-    state: &'a crate::app::AppState,
+    platform: &'a PlatformState,
+    frontend: &'a FrontendState,
+    match_state: &'a MatchState,
     sim: &'a crate::sim::world::Simulation,
 ) -> PresentedWorld<'a> {
     PresentedWorld {
         sim,
-        rules: state.rules(),
-        translucent_viewer: crate::app::presentation::instances::translucent_fog_viewer(state, sim),
+        rules: crate::app::state::active_rules(frontend, match_state),
+        unit_motion: Some(&match_state.match_presentation.unit_motion),
+        translucent_viewer: crate::app::presentation::instances::translucent_fog_viewer(
+            platform,
+            match_state,
+            sim,
+        ),
     }
 }
 
@@ -278,7 +300,15 @@ fn hover_object_in_frame(
                     .objects()
                     .iter()
                     .filter(|member| match member.kind {
-                        ObjectKind::Record { span, .. } => may_pick(span, world_x, world_y),
+                        ObjectKind::Record { span, .. } => {
+                            // The committed span can already be past a unit the player
+                            // still sees under the cursor. Keep native encounter order.
+                            may_pick(span, world_x, world_y)
+                                || source.painted_anchor(member.id).is_some_and(|[x, y]| {
+                                    pick_distance_sq(x - world_x, y - world_y)
+                                        < PICK_DISTANCE_THRESHOLD
+                                })
+                        }
                         ObjectKind::Bullet | ObjectKind::Debris => false,
                     })
                     .map(|member| &member.id),
@@ -319,24 +349,28 @@ fn may_pick(span: crate::app::presentation::display_members::ScreenSpan, x: f32,
 /// TacticalPick of a frame, whose target both the cursor's action and the
 /// hover health bar read. With the world home the frame is the home
 /// world's, so the pick asks only the objects near the cursor.
-pub(crate) fn cursor_hover_object(state: &crate::app::AppState) -> Option<HoverObject> {
-    let host = &state.match_state.sim_runtime;
+pub(crate) fn cursor_hover_object(
+    platform: &PlatformState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+) -> Option<HoverObject> {
+    let host = &match_state.sim_runtime;
     let sim = &host.runtime()?.simulation;
     let frame = (!host.is_lent()).then(|| host.frame()).flatten();
-    let owner = crate::app::input::commands::preferred_local_owner_name(state)?;
+    let owner = crate::app::input::commands::preferred_local_owner_name(match_state)?;
     let (world_x, world_y) = crate::app::match_runtime::sim_tick::screen_point_to_world(
-        state,
-        state.match_state.input.cursor_x,
-        state.match_state.input.cursor_y,
+        &match_state.input,
+        match_state.input.cursor_x,
+        match_state.input.cursor_y,
     );
     tactical_hover_object_at_point(
-        presented(state, sim),
+        presented(platform, frontend, match_state, sim),
         frame,
         world_x,
         world_y,
         &owner,
-        state.match_state.sandbox_full_visibility,
-        crate::app::input::campaign_input::is_locked(state),
+        match_state.sandbox_full_visibility,
+        crate::app::input::campaign_input::is_locked(match_state),
     )
 }
 
@@ -2119,6 +2153,7 @@ mod tests {
                 let source = PresentedWorld {
                     sim: &sim,
                     rules: None,
+                    unit_motion: None,
                     translucent_viewer,
                 };
                 let (bx, by) = source.screen_position(sim.entities().get(1).unwrap());
@@ -2234,6 +2269,7 @@ mod tests {
                 let source = PresentedWorld {
                     sim: &sim,
                     rules: None,
+                    unit_motion: None,
                     translucent_viewer,
                 };
                 let case = format!("{id} {translucent_viewer:?}");
@@ -2347,6 +2383,135 @@ mod tests {
         ] {
             assert_eq!(picked(Some(&frame), dx, dy), found, "{dx}, {dy}");
             assert_eq!(picked(None, dx, dy), found, "{dx}, {dy}");
+        }
+    }
+
+    #[test]
+    fn hover_click_and_band_reach_units_at_their_last_presented_position() {
+        use crate::app::presentation::frame::PresentationFrame;
+        use crate::app::presentation::instances::EntityDrawBand;
+        use crate::rules::locomotor_type::LocomotorKind;
+        use crate::sim::components::DriveCoord;
+        use crate::sim::movement::locomotor::LocomotorState;
+        use crate::sim::world::Simulation;
+
+        for (type_name, category, locomotor, band, height) in [
+            (
+                "E1",
+                EntityCategory::Infantry,
+                LocomotorKind::Walk,
+                EntityDrawBand::Ground,
+                0,
+            ),
+            (
+                "JUMPJET",
+                EntityCategory::Infantry,
+                LocomotorKind::Jumpjet,
+                EntityDrawBand::Air,
+                400,
+            ),
+            (
+                "DLPH",
+                EntityCategory::Unit,
+                LocomotorKind::Ship,
+                EntityDrawBand::Ground,
+                0,
+            ),
+            (
+                "LCRF",
+                EntityCategory::Unit,
+                LocomotorKind::Hover,
+                EntityDrawBand::Ground,
+                0,
+            ),
+            (
+                "MTNK",
+                EntityCategory::Unit,
+                LocomotorKind::Drive,
+                EntityDrawBand::Ground,
+                0,
+            ),
+            (
+                "SHAD",
+                EntityCategory::Unit,
+                LocomotorKind::Jumpjet,
+                EntityDrawBand::Air,
+                400,
+            ),
+            (
+                "ORCA",
+                EntityCategory::Aircraft,
+                LocomotorKind::Fly,
+                EntityDrawBand::Air,
+                1500,
+            ),
+        ] {
+            let mut sim = Simulation::new();
+            let owner = sim.intern("viewer");
+            let typ = sim.intern(type_name);
+            let mut unit = item83_entity(1, 10, 10, owner, typ, category, false);
+            unit.set_is_voxel_for_test(category != EntityCategory::Infantry && type_name != "DLPH");
+            unit.locomotor = Some(LocomotorState::for_test_kind(locomotor));
+            unit.position.put_location(DriveCoord::cell(10, 10, height));
+            sim.entities_mut_for_test().insert(unit);
+            sim.resubmit_entity_display_for_test(1);
+            let rules = RuleSet::empty_for_test();
+            let mut motion = UnitMotion::default();
+            let mut paint = |sim: &Simulation, tick, phase| {
+                let frame = PresentationFrame::of_test(sim, rules);
+                let record = frame.object(1).unwrap();
+                motion.begin_draw(tick, Some(phase), 1.0);
+                let body_offset_y = if locomotor == LocomotorKind::Fly && tick == 1 {
+                    4.
+                } else {
+                    0.
+                };
+                let air = crate::app::presentation::unit_motion::AirPose {
+                    body_offset_y,
+                    ..Default::default()
+                };
+                let sampled = motion.sample(record, band, air).unwrap();
+                motion.drawn(1, sampled);
+                motion.commit_presented();
+                [record.pose.screen[0], record.pose.screen[1] + body_offset_y]
+            };
+            let start = paint(&sim, 0, 1.0);
+            sim.entity_mut_for_test(1)
+                .unwrap()
+                .position
+                .put_location(DriveCoord::cell(11, 9, height));
+            let end = paint(&sim, 1, 0.5);
+            let (x, y) = ((start[0] + end[0]) * 0.5, (start[1] + end[1]) * 0.5);
+            let frame = PresentationFrame::of_test(&sim, rules);
+            let source = PresentedWorld {
+                sim: &sim,
+                rules: None,
+                unit_motion: Some(&motion),
+                translucent_viewer: None,
+            };
+
+            // The current frame's span is outside the pick ellipse at the halfway point.
+            assert_eq!(
+                hover_object_in_frame(&sim, Some(&frame), x, y, "viewer", true),
+                None
+            );
+            assert_eq!(
+                hover_object_in_frame(source, Some(&frame), x, y, "viewer", true)
+                    .map(HoverObject::id),
+                Some(1)
+            );
+            assert_eq!(
+                pick_entity_at_point(source, &[1], None, None, x, y, None, None),
+                Some(1)
+            );
+            assert!(band_rect_contains_drawn_object(
+                source,
+                &[1],
+                x - 1.,
+                y - 1.,
+                x + 1.,
+                y + 1.
+            ));
         }
     }
 

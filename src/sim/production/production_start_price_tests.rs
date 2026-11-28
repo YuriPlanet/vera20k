@@ -161,14 +161,17 @@ fn begin_refinery(runtime: &mut SimRuntime, owner: InternedId) -> u64 {
             .any(|option| option.type_id == type_id && option.enabled),
         "the admitted stock base meets the refinery's actual build prerequisites"
     );
-    assert!(enqueue_by_type(
-        &mut runtime.simulation,
-        &runtime.resources.rules,
-        OWNER,
-        "GAREFN",
-        &mut FrameEffects::default(),
-        false,
-    ));
+    assert!(
+        enqueue_by_type(
+            &mut runtime.simulation,
+            &runtime.resources.rules,
+            OWNER,
+            "GAREFN",
+            &mut FrameEffects::default(),
+            false,
+        )
+        .is_ok()
+    );
     runtime
         .simulation
         .production
@@ -269,17 +272,20 @@ fn finish_history(start_before_plants: bool) {
         0
     );
     assert_eq!(sim.houses[&owner].economy().spent_credits(), price);
-    assert!(place_production_with_overlays(
-        &mut runtime.simulation,
-        &runtime.resources.rules,
-        OWNER,
-        ProductionPlacement::Building {
-            type_id: "GAREFN",
-            cell: (12, 13)
-        },
-        Some(runtime.resources.rules.overlay_registry()),
-        &mut FrameEffects::default(),
-    ));
+    assert!(
+        place_production_with_overlays(
+            &mut runtime.simulation,
+            &runtime.resources.rules,
+            OWNER,
+            ProductionPlacement::Building {
+                type_id: "GAREFN".into(),
+                cell: (12, 13)
+            },
+            Some(runtime.resources.rules.overlay_registry()),
+            &mut FrameEffects::default(),
+        )
+        .is_ok()
+    );
     for _ in 0..600 {
         if runtime
             .simulation

@@ -19,6 +19,7 @@ use crate::sim::movement::ground_pose::{ground_surface_z_at, position_world_coor
 use crate::sim::world::FrameChannel;
 use crate::sim::world::FrameEffects;
 use crate::sim::world::ObjectSubstrate;
+use crate::util::forked::Forked;
 
 /// Native callers of a living, still-marked hull's sink transition.
 pub(crate) enum LivingSinkTrigger {
@@ -140,10 +141,11 @@ impl Simulation {
     /// Foot4DABC7..4DACD7: voice first (no local-player gate), then the type
     /// SinkingSound or Rules+208 on Foot's existing sound handle. The falling
     /// edge releases that handle only when MoveSoundActive+53C is clear.
+    /// `sound_events` is written only for an event (`util::forked`).
     pub(crate) fn sinking_edge_sounds(
         interner: &StringInterner,
         substrate: &mut ObjectSubstrate,
-        sound_events: &mut FrameChannel<SimSoundEvent>,
+        sound_events: &mut Forked<FrameChannel<SimSoundEvent>>,
         id: u64,
         rules: &RuleSet,
     ) {

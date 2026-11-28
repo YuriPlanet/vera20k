@@ -287,7 +287,11 @@ pub(super) fn build_particle_instance(
     else {
         return;
     };
-    if let (Some(rows), Some(system)) = (observations.as_mut(), system) {
+    // The map observation lists the simulation's systems, so it observes
+    // no presentation particle's draw (`ParticleSystemStore::presented_systems`).
+    if let (Some(rows), Some(system)) = (observations.as_mut(), system)
+        && !crate::sim::particles::is_presented_particle_id(system.stable_id())
+    {
         rows.push(ParticleDrawObservation {
             system_id: system.stable_id(),
             particle_id: parent.id,
@@ -405,8 +409,15 @@ pub(super) fn build_ares_particle_draws(
         return;
     }
     let sim = input.sim;
-    let systems = sim.particle_systems();
-    if systems.is_empty() || input.detail_level == 0 {
+    let store = sim.particle_systems();
+    // A presentation system's records draw as a shared one's do, after them
+    // (`ParticleSystemStore::presented_systems`).
+    let mut systems = store
+        .iter()
+        .map(|(_, system)| system)
+        .chain(store.presented_systems().map(|(_, system)| system))
+        .peekable();
+    if systems.peek().is_none() || input.detail_level == 0 {
         return;
     }
     let enabled = {
@@ -437,7 +448,7 @@ pub(super) fn build_ares_particle_draws(
         sequence += 1;
         parent
     };
-    for (_, system) in systems.iter() {
+    for system in systems {
         let Some(ext) = system.ares() else {
             continue;
         };
@@ -592,6 +603,7 @@ mod tests {
                 crate::app::presentation::render::draw_plan_lowering::PlannedObjects::default();
             build_display_effect_instances(
                 &DisplayEffectInputs {
+                    unit_motion: None,
                     sim: &sim,
                     frame: &frame,
                     rules,

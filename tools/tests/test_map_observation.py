@@ -310,9 +310,16 @@ class MapObservationTests(unittest.TestCase):
         for bad in ({'zoom': 125, 'sidebar': 100}, {'zoom': 50, 'sidebar': 100},
                     {'zoom': 100, 'sidebar': 120}, {'zoom': 100},
                     {'zoom': 100, 'sidebar': 100, 'hd_radar': 1},
-                    {'zoom': 100, 'sidebar': 100, 'smooth_sidebar': 'yes'}):
+                    {'zoom': 100, 'sidebar': 100, 'smooth_sidebar': 'yes'},
+                    {'zoom': 100, 'sidebar': 100, 'wheel_zoom': 3},
+                    {'zoom': 100, 'sidebar': 100, 'wheel_zoom': 0.2},
+                    {'zoom': 100, 'sidebar': 100, 'wheel_zoom': True},
+                    {'zoom': 100, 'sidebar': 100, 'wheel_zoom': '1.5'}):
             with self.subTest(bad=bad), self.assertRaises(ValidationError):
                 observation._profile_extensions(dict(self.profile, presentation=bad))
+        for wheel_zoom in (0.25, 0.8, 1, 1.1, 1.5, 2):
+            observation._profile_extensions(dict(self.profile, presentation={
+                'zoom': 100, 'sidebar': 100, 'wheel_zoom': wheel_zoom}))
         with self.assertRaises(ValidationError):
             observation._profile_extensions(dict(self.profile, cursor_position=[1, 1]))
         del self.profile['presentation']
@@ -775,6 +782,21 @@ class MapObservationTests(unittest.TestCase):
         for phase in ('press', 'release'):
             bar['thumb'][phase]['dispatch'] = None
         self.assertEqual(observation._command_bar_gesture(bar, 'Thumb', 'thumb', (8, 8)), 5)
+
+    def test_gui_thumb_dispatch_records_whether_the_control_fired(self):
+        self.thumb_profile()
+        bar = self.gesture_receipts[0]['command_bar']
+        press = bar['thumb']['press']
+        release = bar['thumb']['release']
+        press['dispatch'] = {'fired': False, 'right': False}
+        release['dispatch'] = {'fired': True, 'right': False}
+        report = self.run_capture()
+        self.assertEqual(report['status'], 'VALID', report['errors'])
+        for invalid in ({'fired': 1, 'right': False}, {'fired': False, 'right': True},
+                        {'fired': True}, {'fired': True, 'right': False, 'key_after': 0}):
+            with self.subTest(dispatch=invalid), self.assertRaises(ValidationError):
+                release['dispatch'] = invalid
+                observation._command_bar_gesture(bar, 'Thumb', 'thumb', (8, 8))
 
     def test_locked_thumb_refusal_retains_physical_edges_without_stale_dispatch(self):
         self.thumb_profile(locked=True)

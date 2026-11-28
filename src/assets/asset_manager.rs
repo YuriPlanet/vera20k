@@ -51,6 +51,7 @@ struct LooseAsset {
     source_name: String,
     bytes: OnceLock<Option<Arc<[u8]>>>,
     installation_copy: Option<Box<LooseAsset>>,
+    case_collision: bool,
 }
 
 impl LooseAsset {
@@ -66,33 +67,33 @@ impl LooseAsset {
         })
     }
 
-    fn read_snapshot(&self, maximum: Option<usize>) -> Result<Option<Arc<[u8]>>, AssetError> {
-        let read = || -> Result<Vec<u8>, AssetError> {
-            let Some(maximum) = maximum else {
-                return Ok(crate::util::file_system::read(&self.path)?);
-            };
-            #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
-            {
-                let bytes = crate::util::file_system::read_shared(&self.path)?;
-                check_asset_read_limit(bytes.len() as u64, maximum)?;
-                Ok(bytes.to_vec())
-            }
-            #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
-            {
-                use std::io::Read;
-                let file = std::fs::File::open(&self.path)?;
-                check_asset_read_limit(file.metadata()?.len(), maximum)?;
-                let mut bytes = Vec::new();
-                // A file can grow after metadata inspection. Never allocate or
-                // read the rest of that growth before refusing the source.
-                file.take((maximum as u64).saturating_add(1))
-                    .read_to_end(&mut bytes)?;
-                check_asset_read_limit(bytes.len() as u64, maximum)?;
-                Ok(bytes)
-            }
+    fn read(&self, maximum: Option<usize>) -> Result<Arc<[u8]>, AssetError> {
+        let Some(maximum) = maximum else {
+            return Ok(crate::util::file_system::read(&self.path)?.into());
         };
-        match read() {
-            Ok(bytes) => Ok(Some(bytes.into())),
+        #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+        {
+            let bytes = crate::util::file_system::read_shared(&self.path)?;
+            check_asset_read_limit(bytes.len() as u64, maximum)?;
+            Ok(bytes)
+        }
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+        {
+            use std::io::Read;
+            let file = std::fs::File::open(&self.path)?;
+            check_asset_read_limit(file.metadata()?.len(), maximum)?;
+            let mut bytes = Vec::new();
+            // The file can grow after metadata inspection, so bound the read.
+            file.take((maximum as u64).saturating_add(1))
+                .read_to_end(&mut bytes)?;
+            check_asset_read_limit(bytes.len() as u64, maximum)?;
+            Ok(bytes.into())
+        }
+    }
+
+    fn read_snapshot(&self, maximum: Option<usize>) -> Result<Option<Arc<[u8]>>, AssetError> {
+        match self.read(maximum) {
+            Ok(bytes) => Ok(Some(bytes)),
             Err(AssetError::Io(err)) => {
                 log::debug!("Skipping loose {}: {}", self.path.display(), err);
                 Ok(None)
@@ -419,6 +420,10 @@ pub struct AssetManager {
     /// VERA: the player's Ares setting this game opened with
     /// (`util::ares_launch::AresSetting`).
     ares_setting: crate::util::ares_launch::AresSetting,
+    /// VERA: the player's Kratos setting this game opened with
+    /// (`util::kratos_launch::KratosSetting`). It decides `RuleSet::kratos`
+    /// in every game whose rules this manager selects.
+    kratos_setting: crate::util::kratos_launch::KratosSetting,
     /// VERA: names every lookup reads from fixed archives alone
     /// ([`Self::pin_names`]); `None` reads all names as found.
     pinned_names: Option<PinnedNames>,
@@ -454,6 +459,7 @@ impl Clone for AssetManager {
             mod_dir: self.mod_dir.clone(),
             client_install: self.client_install.clone(),
             ares_setting: self.ares_setting,
+            kratos_setting: self.kratos_setting,
             pinned_names: self.pinned_names.clone(),
         }
     }
@@ -462,6 +468,7 @@ impl Clone for AssetManager {
 /// Reversible current-resolution authority for a fallible VERA save candidate.
 /// Archive bytes remain shared through MixArchive's retained backing storage.
 struct SavedLoadLookupAuthority {
+    pinned_names: Option<PinnedNames>,
     archives: Vec<NamedArchive>,
     active_theater: Option<String>,
     active_theater_archives: Vec<String>,
@@ -685,10 +692,28 @@ impl AssetManager {
     /// or an archive, `retail_sources::game_folder_file`), is read from the
     /// selected mod's folder rather than the installation's.
     pub fn from_mod_folder(&self, file: &str) -> bool {
-        self.mod_dir.as_deref().is_some_and(|dir| {
-            self.loose_asset(file)
-                .is_some_and(|asset| asset.path.starts_with(dir))
-        })
+        self.mod_loose_asset(file).is_some()
+    }
+
+    /// Read a loose file from the selected mod using the asset catalogue's
+    /// case-insensitive lookup. Ambiguous spellings, unreadable files and
+    /// oversized files are errors.
+    pub fn read_mod_file_bounded(
+        &self,
+        name: &str,
+        maximum: usize,
+    ) -> Result<Option<Arc<[u8]>>, AssetError> {
+        let Some(asset) = self.mod_loose_asset(name) else {
+            return Ok(None);
+        };
+        // Room agreement ignores ASCII case. If two spellings exist, the
+        // same digest can cover different bytes at the winning spelling.
+        if asset.case_collision {
+            return Err(AssetError::AmbiguousLooseName {
+                name: name.to_owned(),
+            });
+        }
+        asset.read(Some(maximum)).map(Some)
     }
 
     /// The selected overlay for this provider, including asset tools that do
@@ -722,6 +747,18 @@ impl AssetManager {
     /// The player's Ares setting this game opened with.
     pub fn ares_setting(&self) -> crate::util::ares_launch::AresSetting {
         self.ares_setting
+    }
+
+    /// The player's Kratos setting this game opened with.
+    pub fn kratos_setting(&self) -> crate::util::kratos_launch::KratosSetting {
+        self.kratos_setting
+    }
+
+    /// Read the launch's Kratos setting before the game's rules are selected.
+    /// A launch does this once, from the Options profile, as it sets the Ares
+    /// setting when it opens its archives.
+    pub fn set_kratos_setting(&mut self, setting: crate::util::kratos_launch::KratosSetting) {
+        self.kratos_setting = setting;
     }
 
     /// Whether the Ares setting Auto mounts `ares.mix` for this game: a mod
@@ -779,6 +816,7 @@ impl AssetManager {
                 .map(|dir| crate::util::mod_package::ModFolder::loose(dir.to_path_buf())),
             client_install: None,
             ares_setting: Default::default(),
+            kratos_setting: Default::default(),
             pinned_names: None,
         })
     }
@@ -1518,6 +1556,7 @@ impl AssetManager {
         prepare: impl FnOnce(&mut Self) -> Result<T, E>,
     ) -> Result<T, E> {
         let previous = SavedLoadLookupAuthority {
+            pinned_names: self.pinned_names.clone(),
             archives: self.archives.clone(),
             active_theater: self.active_theater.clone(),
             active_theater_archives: self.active_theater_archives.clone(),
@@ -1553,6 +1592,7 @@ impl AssetManager {
             }
             self.archive_catalog
                 .retain(|cached| !previous.archives.iter().any(|old| old.name == cached.name));
+            self.pinned_names = previous.pinned_names;
             self.archives = previous.archives;
             self.active_theater = previous.active_theater;
             self.active_theater_archives = previous.active_theater_archives;
@@ -1740,19 +1780,27 @@ impl AssetManager {
         found
     }
 
-    /// VERA: what [`Self::resolve_ref`] would read for `name` with `unmounted`
-    /// (from [`Self::theater_archives_unmounted`]) mounted after the registered
-    /// archives: a loose file, else the first archive whose index lists the
-    /// name, even one that cannot read it, as `lookup_index` decides.
+    /// The installed file (mod folders included), independent of the active
+    /// map's terrain pins. Lobby agreement compares this same installation
+    /// before and after a map preview or match.
+    pub fn installed_file(&self, name: &str) -> Option<(&str, &[u8])> {
+        self.resolve_ref_with_unmounted(name, &[])
+    }
+
+    /// VERA: compare installed files with this theater's archives searched
+    /// after the registered archives. A loose file wins, else the first MIX
+    /// whose index lists the name, even one that cannot read it.
     pub fn resolve_ref_with_unmounted<'a>(
         &'a self,
         name: &str,
         unmounted: &'a [UnmountedArchive<'a>],
     ) -> Option<(&'a str, &'a [u8])> {
-        if let Some((loose, bytes)) = self.loose_bytes(name) {
+        if let Some(loose) = self.installed_loose_asset(name)
+            && let Some(bytes) = loose.bytes()
+        {
             return Some((loose.source_name.as_str(), bytes));
         }
-        if let Some((named, entry_id)) = self.lookup_asset_entry(name) {
+        if let Some((named, entry_id)) = self.lookup_registered_entry(name) {
             return named
                 .archive
                 .get_by_id(entry_id)
@@ -1829,6 +1877,10 @@ impl AssetManager {
         if let Some((pinned, id)) = self.pinned(name) {
             return Some((&pinned.archives[*pinned.found.get(&id)?], id));
         }
+        self.lookup_registered_entry(name)
+    }
+
+    fn lookup_registered_entry(&self, name: &str) -> Option<(&NamedArchive, i32)> {
         let location = self.lookup_location_for_name(name)?;
         let archive = self.archives.get(location.archive_index)?;
         Some((archive, location.entry_id))
@@ -2336,7 +2388,7 @@ impl AssetManager {
     }
 
     fn open_loose_root(ra2_dir: &Path) -> Result<HashMap<String, LooseAsset>, AssetError> {
-        let mut files = HashMap::new();
+        let mut files: HashMap<String, LooseAsset> = HashMap::new();
 
         for entry in crate::util::file_system::read_dir(ra2_dir)? {
             let entry = entry?;
@@ -2350,12 +2402,15 @@ impl AssetManager {
             let key = file_name.to_ascii_lowercase();
             // Two spellings of one name exist only on a case-sensitive file
             // system: keep the first in byte order, not in directory order.
-            if files
-                .get(&key)
-                .is_some_and(|kept: &LooseAsset| kept.path.file_name() <= path.file_name())
-            {
-                continue;
-            }
+            let case_collision = if let Some(kept) = files.get_mut(&key) {
+                if kept.path.file_name() <= path.file_name() {
+                    kept.case_collision = true;
+                    continue;
+                }
+                true
+            } else {
+                false
+            };
 
             files.insert(
                 key,
@@ -2364,6 +2419,7 @@ impl AssetManager {
                     source_name: format!("loose:{}", path.display()),
                     bytes: OnceLock::new(),
                     installation_copy: None,
+                    case_collision,
                 },
             );
         }
@@ -2375,8 +2431,18 @@ impl AssetManager {
         if self.pinned(name).is_some() {
             return None;
         }
+        self.installed_loose_asset(name)
+    }
+
+    fn installed_loose_asset(&self, name: &str) -> Option<&LooseAsset> {
         let key = loose_lookup_key(name)?;
         self.loose_files.get(&key)
+    }
+
+    fn mod_loose_asset(&self, name: &str) -> Option<&LooseAsset> {
+        let directory = self.mod_dir()?;
+        self.installed_loose_asset(name)
+            .filter(|asset| asset.path.parent() == Some(directory))
     }
 
     /// Unreadable catalogued files must not hide a readable MIX fallback.
@@ -2837,6 +2903,60 @@ mod tests {
     }
 
     #[test]
+    fn mod_file_reads_match_case_and_refuse_oversized_files() {
+        let install = TestDirectory::new("bounded-mod-install");
+        let mod_dir = TestDirectory::new("bounded-mod");
+        std::fs::write(install.path().join("rules.wasm"), b"base").unwrap();
+        let assets = AssetManager::from_roots(install.path(), Some(mod_dir.path())).unwrap();
+        assert!(
+            assets
+                .read_mod_file_bounded("rules.wasm", 4)
+                .unwrap()
+                .is_none()
+        );
+
+        std::fs::write(mod_dir.path().join("Rules.WASM"), b"module").unwrap();
+        let assets = AssetManager::from_roots(install.path(), Some(mod_dir.path())).unwrap();
+        assert!(matches!(
+            assets.read_mod_file_bounded("rules.wasm", 5),
+            Err(AssetError::ReadLimitExceeded {
+                maximum: 5,
+                actual: 6
+            })
+        ));
+        assert_eq!(
+            assets
+                .read_mod_file_bounded("rules.wasm", 6)
+                .unwrap()
+                .as_deref(),
+            Some(b"module".as_slice())
+        );
+    }
+
+    #[test]
+    fn mod_file_read_refuses_multiple_case_spellings() {
+        let install = TestDirectory::new("ambiguous-mod-install");
+        let mod_dir = TestDirectory::new("ambiguous-mod");
+        std::fs::write(mod_dir.path().join("Rules.WASM"), b"first").unwrap();
+        let second = std::fs::File::create_new(mod_dir.path().join("rules.wasm"));
+        match second {
+            Ok(mut file) => {
+                use std::io::Write;
+                file.write_all(b"second").unwrap();
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => return,
+            Err(error) => panic!("create lowercase spelling: {error}"),
+        }
+
+        let assets = AssetManager::from_roots(install.path(), Some(mod_dir.path())).unwrap();
+        assert!(matches!(
+            assets.read_mod_file_bounded("rules.wasm", 64),
+            Err(AssetError::AmbiguousLooseName { name }) if name == "rules.wasm"
+        ));
+        assert_eq!(assets.get_ref("rules.wasm"), Some(b"first".as_slice()));
+    }
+
+    #[test]
     fn loose_payloads_are_lazy_stable_and_do_not_lock_writable_files() {
         let dir = TestDirectory::new("mutable-loose");
         for name in ["SAVE0001.SED", "RandMap.Sed", "RandMap.img", "RandMap.PCX"] {
@@ -3271,6 +3391,7 @@ mod tests {
             mod_dir: None,
             client_install: None,
             ares_setting: Default::default(),
+            kratos_setting: Default::default(),
             pinned_names: None,
         };
         manager.rebuild_indexes();
@@ -3360,6 +3481,7 @@ mod tests {
             mod_dir: None,
             client_install: None,
             ares_setting: Default::default(),
+            kratos_setting: Default::default(),
             pinned_names: None,
         };
         manager.rebuild_indexes();
@@ -3439,6 +3561,7 @@ mod tests {
             mod_dir: None,
             client_install: None,
             ares_setting: Default::default(),
+            kratos_setting: Default::default(),
             pinned_names: None,
         };
         manager.rebuild_indexes();
@@ -3486,6 +3609,7 @@ mod tests {
             mod_dir: None,
             client_install: None,
             ares_setting: Default::default(),
+            kratos_setting: Default::default(),
             pinned_names: None,
         };
         manager.rebuild_indexes();
@@ -3531,6 +3655,7 @@ mod tests {
             mod_dir: None,
             client_install: None,
             ares_setting: Default::default(),
+            kratos_setting: Default::default(),
             pinned_names: None,
         };
         manager.rebuild_indexes();
@@ -3577,6 +3702,7 @@ mod tests {
             mod_dir: None,
             client_install: None,
             ares_setting: Default::default(),
+            kratos_setting: Default::default(),
             pinned_names: None,
         };
         manager.rebuild_indexes();
@@ -3607,6 +3733,7 @@ mod tests {
                     source_name: "loose:RA2MD.CSF".to_string(),
                     bytes: OnceLock::from(Some(Arc::from(&b"loose"[..]))),
                     installation_copy: None,
+                    case_collision: false,
                 },
             )]),
             audio_pairs: Vec::new(),
@@ -3619,6 +3746,7 @@ mod tests {
             mod_dir: None,
             client_install: None,
             ares_setting: Default::default(),
+            kratos_setting: Default::default(),
             pinned_names: None,
         };
         manager.rebuild_indexes();
@@ -3681,6 +3809,7 @@ mod tests {
             mod_dir: None,
             client_install: None,
             ares_setting: Default::default(),
+            kratos_setting: Default::default(),
             pinned_names: None,
         };
         manager.rebuild_indexes();

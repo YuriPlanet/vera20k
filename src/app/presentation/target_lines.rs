@@ -44,6 +44,24 @@ pub(crate) struct SelectedActionLine {
     start: ScreenPoint,
     end: ScreenPoint,
     kind: SelectedLineKind,
+    /// The live object the line ends at. A cell retains its world point.
+    target: Option<u64>,
+}
+
+impl SelectedActionLine {
+    fn at_draw(mut self, source: u64, motion: Option<&super::unit_motion::UnitMotion>) -> Self {
+        if let Some(motion) = motion {
+            let [dx, dy] = motion.offset(source);
+            self.start.x += dx;
+            self.start.y += dy;
+            if let Some(target) = self.target {
+                let [dx, dy] = motion.offset(target);
+                self.end.x += dx;
+                self.end.y += dy;
+            }
+        }
+        self
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -113,6 +131,7 @@ impl TargetLineState {
 /// Build selected unit action-line strokes from live simulation state.
 /// The psychic detection line's dashed stroke carries its A gate for the GPU.
 pub(crate) fn build_target_line_strokes(
+    motion: Option<&super::unit_motion::UnitMotion>,
     line_state: &TargetLineState,
     planning_active: bool,
     sim: Option<&Simulation>,
@@ -156,6 +175,7 @@ pub(crate) fn build_target_line_strokes(
         let Some(line) = entity.place.action_line else {
             return;
         };
+        let line = line.at_draw(entity.stable_id(), motion);
         let owner = sim.interner().resolve(entity.owner());
         let color = house_colors.get(owner).copied().unwrap_or(NO_REMAP);
         let rgb = crate::render::palette_light::house_color_rgb(&rules.house_color_ramps, color);
@@ -197,11 +217,13 @@ pub(crate) fn build_target_line_strokes(
         return Vec::new();
     }
     let line_for = |entity: &ObjectRecord| {
-        selected_action_line_for_entity(entity, sim).map(|line| ProjectedActionLine {
-            start: project(line.start),
-            end: project(line.end),
-            kind: line.kind,
-        })
+        selected_action_line_for_entity(entity, sim)
+            .map(|line| line.at_draw(entity.stable_id(), motion))
+            .map(|line| ProjectedActionLine {
+                start: project(line.start),
+                end: project(line.end),
+                kind: line.kind,
+            })
     };
     // Tactical6D4750 walks the construction-ordered Techno array, not the
     // CurrentObjects selection vector or the Logic active-object order.
@@ -272,8 +294,9 @@ fn emit_psychic_detection_line(
 }
 
 /// The integer logical viewport the line producers draw on. Native rally
-/// 6DA9D0 and action7049C0 operate in unzoomed surface pixels; wheel zoom
-/// scales the finished world surface (`WorldZoomPass`), never their strokes.
+/// 6DA9D0 and action7049C0 operate in unzoomed surface pixels; the zoom
+/// scales each of them to a block of the world camera's zoom when it stores
+/// them (`docs/zoom-one-pass.md`), never their strokes.
 ///
 /// `camera` is the world point at the battlefield's corner, gamemd's tactical
 /// position, and `clip` the battlefield on its surface. The match's view
@@ -394,12 +417,16 @@ pub(crate) fn action_line_endpoints(
     cells: Option<&NativeCellQuery<'_>>,
 ) -> Option<SelectedActionLine> {
     let project = |x, y, z| crate::util::lepton::absolute_leptons_to_screen(x, y, z).into();
-    if entity.attack_target.target().is_some() {
+    if let Some(target) = entity.attack_target.target() {
         let [start, end] = attack_line_points(entity, sim, rules?)?;
         return Some(SelectedActionLine {
             start,
             end,
             kind: SelectedLineKind::Attack,
+            target: match target {
+                TargetKind::Entity(id) => Some(id),
+                TargetKind::Cell(..) => None,
+            },
         });
     }
 
@@ -430,6 +457,10 @@ pub(crate) fn action_line_endpoints(
         start: project(start.x, start.y, start.z),
         end: project(end.x, end.y, end.z),
         kind: SelectedLineKind::Move,
+        target: match TargetKind::from(nav_target) {
+            TargetKind::Entity(id) => Some(id),
+            TargetKind::Cell(..) => None,
+        },
     })
 }
 
@@ -507,6 +538,7 @@ const TARGET_LASER_PATTERN: [u8; 16] = [1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0
 /// Residual: IsHumanPlayer is read now, not at the shot, so an owner change
 /// within the 15 frames after a shot shows or hides the rest of that laser.
 pub(crate) fn target_laser_draws<'a>(
+    motion: Option<&super::unit_motion::UnitMotion>,
     entity: &ObjectRecord,
     sim: &Simulation,
     rules: &RuleSet,
@@ -514,11 +546,12 @@ pub(crate) fn target_laser_draws<'a>(
     view: crate::render::surface_line::SurfaceLineViewport,
 ) -> Vec<crate::render::surface_line::SurfaceDraw> {
     let frame = sim.session().binary_frame();
-    target_laser_draws_at(entity, sim, rules, palette, view, frame)
+    target_laser_draws_at(motion, entity, sim, rules, palette, view, frame)
 }
 
 /// [`target_laser_draws`] at native frame `frame`.
 fn target_laser_draws_at<'a>(
+    motion: Option<&super::unit_motion::UnitMotion>,
     entity: &ObjectRecord,
     sim: &Simulation,
     rules: &RuleSet,
@@ -544,6 +577,7 @@ fn target_laser_draws_at<'a>(
         .place
         .action_line
         .filter(|line| line.kind == SelectedLineKind::Attack)
+        .map(|line| line.at_draw(entity.stable_id(), motion))
         .map(|line| [line.start, line.end]);
     let (Some(points), Some(palette)) = (points, palette()) else {
         return draws;
@@ -754,6 +788,7 @@ mod tests {
         };
         assert!(
             build_target_line_strokes(
+                None,
                 &state,
                 false,
                 Some(&sim),
@@ -776,6 +811,7 @@ mod tests {
         let mut callback = |id, _: &mut Vec<SurfaceStroke>| visits.push(id);
         assert!(
             build_target_line_strokes(
+                None,
                 &state,
                 true,
                 Some(&sim),

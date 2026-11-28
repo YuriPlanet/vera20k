@@ -411,7 +411,7 @@ fn gsi_04_06_simulation_rebuild_initializes_zone_grid() {
     let terrain = terrain_from_zone_classes(1, 1, &[zone_class::GROUND], &[0]);
     let path_grid = PathGrid::from_resolved_terrain(&terrain);
     let mut sim = crate::sim::world::Simulation::new();
-    sim.resolved_terrain = Some(terrain);
+    *sim.resolved_terrain = Some(terrain);
 
     sim.rebuild_zone_grid(&path_grid);
 
@@ -468,7 +468,7 @@ fn gsi_04_06_simulation_detects_class_only_change_with_identical_pathgrid() {
     let terrain = terrain_from_zone_classes(1, 1, &[zone_class::GROUND], &[0]);
     let path_grid = PathGrid::from_resolved_terrain(&terrain);
     let mut sim = crate::sim::world::Simulation::new();
-    sim.resolved_terrain = Some(terrain);
+    *sim.resolved_terrain = Some(terrain);
     sim.rebuild_zone_grid(&path_grid);
     assert_ne!(
         sim.zone_grid

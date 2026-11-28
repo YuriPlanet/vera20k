@@ -438,6 +438,7 @@ impl RetailBridgeFixture {
             self.theater.extension,
             "TEMPERATE",
             &self.registry,
+            self.rules.art(),
             &rubble_arts,
         )
         .unwrap()

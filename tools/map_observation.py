@@ -67,6 +67,15 @@ KEYBOARD_GESTURE_POLICY = 'map-local-gesture-v3'
 COMMAND_BAR_GESTURE_POLICY = 'map-local-gesture-v4'
 RIGHT_BUTTON_GESTURE_POLICY = 'map-local-right-gesture-v5'
 SIDEBAR_POLICY = 'map-retained-sidebar-observation-v1'
+# The mouse wheel's continuous view-distance range: 1 / the camera zoom, which the
+# wheel holds in Rust `camera::MIN_ZOOM`..=`camera::MAX_ZOOM` (0.5 to 4).
+WHEEL_ZOOM_RANGE = (0.25, 2)
+
+
+def wheel_zoom_in_range(value):
+    """Whether `value` is a view distance the wheel can reach (a number, not a bool)."""
+    return (type(value) in (int, float)
+            and WHEEL_ZOOM_RANGE[0] <= value <= WHEEL_ZOOM_RANGE[1])
 AUDIO_POLICY = 'map-device-pulled-player-pcm-v2'
 PRIOR_AUDIO_POLICY = 'map-device-pulled-player-pcm-v1'
 AUDIO_FINISH_FIELDS = ('event_serial', 'event_live_at_finish', 'channel_live_at_finish',
@@ -541,12 +550,15 @@ def _profile_extensions(profile: Mapping[str, Any], *, production_commands: bool
     if 'allow_load_segments' in profile and type(profile['allow_load_segments']) is not bool:
         raise ValidationError('profile.allow_load_segments must be a boolean')
     if 'presentation' in profile:
-        # The `[VERA]` Zoom/Sidebar/HdRadar/SmoothSidebar values; Rust owns their
-        # effect on the frame.
+        # The `[VERA]` Zoom/Sidebar/HdRadar/SmoothSidebar values and the wheel's
+        # view distance; Rust owns their effect on the frame.
         presentation = require_object(profile['presentation'], 'profile.presentation')
-        optional = tuple(key for key in ('hd_radar', 'smooth_sidebar') if key in presentation)
+        optional = tuple(key for key in ('hd_radar', 'smooth_sidebar', 'wheel_zoom')
+                         if key in presentation)
         require_exact_keys(presentation, ('zoom', 'sidebar') + optional, 'profile.presentation')
-        for key in optional:
+        if 'wheel_zoom' in presentation and not wheel_zoom_in_range(presentation['wheel_zoom']):
+            raise ValidationError('profile.presentation.wheel_zoom must be a number from 0.25 to 2')
+        for key in set(optional) - {'wheel_zoom'}:
             if type(presentation[key]) is not bool:
                 raise ValidationError(f'profile.presentation.{key} must be a boolean')
         zoom = _bounded_int(presentation['zoom'], 'profile.presentation.zoom', 0, 10_000)
@@ -2274,9 +2286,18 @@ def _command_bar_thumb(value: Any, label: str) -> int:
         if edge['dispatch'] is not None:
             dispatch_label = f'{edge_label}.dispatch'
             dispatch = require_object(edge['dispatch'], dispatch_label)
-            require_exact_keys(dispatch, ('masked_flags', 'modifier', 'key_after', 'action_result'), dispatch_label)
-            for key, bits in (('masked_flags', 16), ('modifier', 8), ('key_after', 16), ('action_result', 32)):
-                _bounded_int(dispatch[key], f'{dispatch_label}.{key}', 0, (1 << bits) - 1)
+            if 'fired' in dispatch or 'right' in dispatch:
+                require_exact_keys(dispatch, ('fired', 'right'), dispatch_label)
+                for key in ('fired', 'right'):
+                    if type(dispatch[key]) is not bool:
+                        raise ValidationError(f'{dispatch_label}.{key} must be boolean')
+                if dispatch['right'] and not dispatch['fired']:
+                    raise ValidationError(f'{dispatch_label}.right requires a fired control')
+            else:
+                # Captures from before the GUI migration store native gadget dispatch.
+                require_exact_keys(dispatch, ('masked_flags', 'modifier', 'key_after', 'action_result'), dispatch_label)
+                for key, bits in (('masked_flags', 16), ('modifier', 8), ('key_after', 16), ('action_result', 32)):
+                    _bounded_int(dispatch[key], f'{dispatch_label}.{key}', 0, (1 << bits) - 1)
             samples += 1
     # The driver restores physical input even when the Scenario guard prevents
     # gadget entry. These are input observations, not expected bar outcomes.
@@ -3211,8 +3232,11 @@ def validate_capture(directory: Path, profile: Mapping[str, Any],
                 if not require_string(source.get(name), f'map_source.{name}'):
                     raise ValidationError(f'empty map_source.{name}')
             require_int(source.get('entry_id'), 'map_source.entry_id')
+        elif source.get('kind') == 'bundled':
+            if not require_string(source.get('logical_name'), 'map_source.logical_name'):
+                raise ValidationError('empty bundled map name')
         else:
-            raise ValidationError('map source must be loaded loose, MIX, or consumed .SED bytes')
+            raise ValidationError('map source must be a loose, MIX, bundled, or consumed .SED file')
     lifecycle = require_object(manifest.get('lifecycle'), 'lifecycle')
     for key, expected in (('window_hidden', True), ('window_focused', False),
                           ('focus_violations', 0), ('input_violations', 0)):

@@ -203,18 +203,14 @@ pub(crate) struct MatchInputState {
     pub(crate) cursor_visibility: crate::app::input::cursor::CursorVisibility,
     /// The cursor the last drawn frame showed. Native's SetCursor writes are
     /// retained state, and over the sidebar only a LEFTUP dispatch writes one.
-    /// A `Cell` for the reason at `software_cursor_animation`: the draw that
-    /// chooses the cursor notes it there.
-    shown_cursor: std::cell::Cell<Option<crate::app::types::CursorFeedbackKind>>,
+    shown_cursor: Option<crate::app::types::CursorFeedbackKind>,
     /// The drawn software cursor's phase (`MouseClass` `CurrentCursor` /
-    /// `CursorFrame`). A `Cell` because the phase steps where the frame is
-    /// chosen, inside the shell and match draws (`shell_pass`,
-    /// `ui_overlays::build_software_cursor_instances`), and those hold the app
-    /// state by `&`: the sprite they build borrows the cursor's texture and
-    /// the rest of the frame's draw state from it until the frame is drawn.
-    /// Stepping it before the draw under `&mut` would choose the frame apart
-    /// from the targets and planning-node test that pick the sequence.
-    software_cursor_animation: std::cell::Cell<crate::app::input::cursor::CursorAnimation>,
+    /// `CursorFrame`). The phase steps where the frame is chosen, inside the
+    /// shell and match draws (`shell_pass`,
+    /// `ui_overlays::build_software_cursor_instances`), which take the match
+    /// state for writing. Stepping it before the draw would choose the frame
+    /// apart from the targets and planning-node test that pick the sequence.
+    software_cursor_animation: crate::app::input::cursor::CursorAnimation,
     /// The cursor's targets and feedback as last read with the world home
     /// (`sim_host::home_answer`): both walk the live objects, which a draw
     /// beside a lent tick may not read. Cells, like `tactical_tip_seen` and
@@ -247,7 +243,7 @@ pub(crate) struct MatchInputState {
     pub(crate) cursor_x: f32,
     pub(crate) cursor_y: f32,
     /// The match zoom `cursor_x`/`cursor_y` are in; `None` is window pixels.
-    /// `AppState::sync_cursor_space` keeps it matching the current screen.
+    /// [`MatchInputState::sync_cursor_space`] keeps it matching the current screen.
     pub(crate) cursor_zoom: Option<crate::ui::main_menu_dialogs::options::ZoomGeometry>,
     /// Last physical window event, used only to measure confined cursor motion.
     /// The source cursor above remains authoritative; this anchor is neither
@@ -280,6 +276,10 @@ pub(crate) struct MatchInputState {
     pub(crate) primary_rotation: super::primary_rotation::PrimaryRotationState,
     pub(crate) category_navigation:
         crate::app::input::dispatch::selection_navigation::CategoryNavigation,
+    /// Android: when this match's one-shot touch-chat hint is due; `None`
+    /// until the first network frame arms it. Presentation only.
+    #[cfg(target_os = "android")]
+    pub(crate) chat_hint_due: Option<crate::util::time::Instant>,
     /// Original CursorCheat toggle A8F7D8, consumed by tactical tooltips.
     pub(crate) cursor_coordinates: bool,
     /// One-shot Shift+S request, consumed at the next render submission.
@@ -498,6 +498,35 @@ impl MatchInputState {
         self.last_cursor_window = Some(point);
     }
 
+    /// The pointer in the pixels the current screen paints and hit-tests in:
+    /// the match frame's during a match (source pixels when zoomed), the
+    /// window's elsewhere.
+    pub(crate) fn cursor_position(&self) -> (f32, f32) {
+        (self.cursor_x, self.cursor_y)
+    }
+
+    /// The pointer in window pixels, where the status cards paint even over
+    /// a zoomed match; `zoom` is the match zoom in use.
+    pub(crate) fn window_cursor_position(&self, zoom: Option<ZoomGeometry>) -> (f32, f32) {
+        zoom.map_or((self.cursor_x, self.cursor_y), |zoom| {
+            zoom.source_to_window(self.cursor_x, self.cursor_y)
+        })
+    }
+
+    /// The building-placement section name while targeting places one.
+    pub(crate) fn armed_building_type(&self) -> Option<&str> {
+        self.targeting_mode
+            .as_ref()
+            .and_then(crate::app::types::TargetingMode::as_building_placement)
+    }
+
+    /// The super weapon section name while targeting fires one.
+    pub(crate) fn armed_super_weapon_type(&self) -> Option<&str> {
+        self.targeting_mode
+            .as_ref()
+            .and_then(crate::app::types::TargetingMode::as_super_weapon)
+    }
+
     /// The OS pointer's last position in window pixels, while one is known.
     pub(crate) fn pointer_in_window(&self) -> Option<(f32, f32)> {
         self.last_cursor_window
@@ -561,41 +590,40 @@ impl MatchInputState {
     }
 
     /// Record the cursor a drawn frame shows (`None` is the normal arrow).
-    pub(crate) fn note_shown_cursor(&self, kind: Option<crate::app::types::CursorFeedbackKind>) {
-        self.shown_cursor.set(kind);
+    pub(crate) fn note_shown_cursor(
+        &mut self,
+        kind: Option<crate::app::types::CursorFeedbackKind>,
+    ) {
+        self.shown_cursor = kind;
     }
 
     /// The index of the frame of `sequence` the software cursor draws for
     /// `id` right now, stepping its phase
     /// ([`crate::app::input::cursor::CursorAnimation::frame_index`]).
     pub(crate) fn software_cursor_frame_index(
-        &self,
+        &mut self,
         id: crate::app::types::CursorId,
         sequence: &crate::app::types::SoftwareCursorSequence,
     ) -> Option<usize> {
-        let mut animation = self.software_cursor_animation.get();
-        let index = animation.frame_index(id, sequence);
-        self.software_cursor_animation.set(animation);
-        index
+        self.software_cursor_animation.frame_index(id, sequence)
     }
 
     /// Whether the drawn software cursor's next frame is due.
     pub(crate) fn software_cursor_step_due(&self) -> bool {
-        self.software_cursor_animation.get().step_due()
+        self.software_cursor_animation.step_due()
     }
 
     /// DisplayCancel4AEAD0 resets the cursor shape through its animation
     /// owner (its `SetDefaultCursor(0, 0)`, `0x005BDA80`). The next ordinary
     /// draw starts the default shape at frame 0.
     pub(crate) fn reset_cursor_shape(&mut self) {
-        *self.software_cursor_animation.get_mut() =
-            crate::app::input::cursor::CursorAnimation::new();
+        self.software_cursor_animation = crate::app::input::cursor::CursorAnimation::new();
     }
 
     /// The cursor the last drawn frame showed, which stays where nothing
     /// writes one.
     pub(crate) fn shown_cursor(&self) -> Option<crate::app::types::CursorFeedbackKind> {
-        self.shown_cursor.get()
+        self.shown_cursor
     }
 
     /// The cursor over the sidebar. SBGadget::Action 6ABA40 (flags 8,
@@ -604,7 +632,7 @@ impl MatchInputState {
     /// nothing writes one and the last cursor stays.
     pub(crate) fn sidebar_cursor(&self) -> Option<crate::app::types::CursorFeedbackKind> {
         if self.tactical_mouse.left_held() {
-            self.shown_cursor.get()
+            self.shown_cursor
         } else {
             None
         }
@@ -626,18 +654,18 @@ impl MatchInputState {
         Some(if self.selection_state.is_band_box_active() {
             None
         } else {
-            self.shown_cursor.get()
+            self.shown_cursor
         })
     }
 
     /// Construct the match input owner with the ordinary startup defaults.
     pub(crate) fn new(hotkey_bindings: crate::app::input::hotkeys::HotkeyBindings) -> Self {
         Self {
+            #[cfg(target_os = "android")]
+            chat_hint_due: None,
             cursor_visibility: Default::default(),
             shown_cursor: Default::default(),
-            software_cursor_animation: std::cell::Cell::new(
-                crate::app::input::cursor::CursorAnimation::new(),
-            ),
+            software_cursor_animation: crate::app::input::cursor::CursorAnimation::new(),
             cursor_targets_seen: Default::default(),
             tactical_tip_seen: Default::default(),
             cursor_feedback_seen: Default::default(),

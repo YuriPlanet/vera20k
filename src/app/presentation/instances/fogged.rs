@@ -3,10 +3,13 @@
 //! Original constructor4D0EF0 and DrawAll4D1890 retain only type/frame records,
 //! house, and XYZ. Neither a source entity nor its current art state is read.
 
-use crate::app::AppState;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
 use crate::app::presentation::render::draw_plan_lowering::{
     ObjectLayerPass, ObjectPieceInstance, ObjectTexture, lower_fogged_object_pieces,
 };
+use crate::app::renderer_state::RendererState;
+use crate::app::state::PlatformState;
 use crate::map::houses::HouseColorMap;
 use crate::map::lighting::CellLightGrid;
 use crate::render::batch::{DepthAxis, SpriteInstance};
@@ -20,51 +23,62 @@ use crate::sim::intern::{InternedId, StringInterner};
 use crate::sim::vision::{
     FoggedDrawKind, FoggedObjectFootprintRecord, FoggedObjectId, FrozenBuilding,
 };
+use crate::ui::game_screen::GameScreen;
 use smol_str::StrExt;
 
-pub(crate) fn build_fogged_instances(state: &AppState) -> ObjectLayerPass {
+pub(crate) fn build_fogged_instances(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    screen: &GameScreen,
+    match_state: &MatchState,
+    persistence: &PersistenceState,
+) -> ObjectLayerPass {
     let (Some(runtime), Some(atlas)) = (
-        state.match_state.sim_runtime.presentation(),
-        state.match_state.match_presentation.sprite_atlas.as_ref(),
+        match_state.sim_runtime.presentation(),
+        match_state.match_presentation.sprite_atlas.as_ref(),
     ) else {
         return ObjectLayerPass::default();
     };
-    if state.match_state.sandbox_full_visibility {
+    if match_state.sandbox_full_visibility {
         return ObjectLayerPass::default();
     }
     let sim = &runtime.simulation;
-    let Some(viewer) = crate::app::input::commands::preferred_local_owner_name(state)
+    let Some(viewer) = crate::app::input::commands::preferred_local_owner_name(match_state)
         .and_then(|owner| sim.interner().get(&owner))
     else {
         return ObjectLayerPass::default();
     };
-    let presentation = &state.match_state.match_presentation;
+    let presentation = &match_state.match_presentation;
     let input = FrozenDrawInputs {
         interner: sim.interner(),
         rules: &runtime.resources.rules,
         atlas,
         lighting: presentation.lighting.grid(),
         house_colors: presentation.effective_house_color_map(),
-        axis: super::depth_axis(state),
+        axis: super::depth_axis(&match_state.match_presentation),
         building_zshape: presentation
             .building_zshape
             .as_ref()
             .map(|zshape| zshape.frame_offset),
-        view_left: crate::app::presentation::render::tactical_world_view(state).camera[0],
+        view_left: crate::app::presentation::render::tactical_world_view(
+            platform,
+            renderer,
+            screen,
+            match_state,
+            persistence,
+        )
+        .camera[0],
         zshape_skips: &presentation.zshape_skips,
         detail_level: presentation.in_game_options.detail_level as i32,
     };
     // A saved picture far off the view puts no pixel on it: its cell passes
     // it by before its pieces are built and uploaded. DrawAll4D1890's order
     // among the rest stands.
-    let zoom = state.match_state.input.zoom_level;
-    let camera = [
-        state.match_state.input.camera_x,
-        state.match_state.input.camera_y,
-    ];
+    let zoom = match_state.input.zoom_level;
+    let camera = [match_state.input.camera_x, match_state.input.camera_y];
     let viewport = [
-        state.render_width() as f32 / zoom,
-        state.render_height() as f32 / zoom,
+        renderer.render_width(screen) as f32 / zoom,
+        renderer.render_height(screen) as f32 / zoom,
     ];
     let window = frozen_building_window(sim.resolved_terrain(), camera, viewport);
     let near_view = |draw: &FrozenBuilding| {

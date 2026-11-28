@@ -95,10 +95,10 @@ fn original_area_receipt_selects_nullify_after_em_effect_rng_and_before_return()
         };
         world.intern_rule_type_ids(&rules);
         world.resolve_type_handles(&rules);
-        world.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(
+        *world.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(
             row["native_cursor_before"].as_u64().unwrap() as u32,
         ));
-        world.scenario_rng = SimRng::new(input["scenario_rng_seed"].as_u64().unwrap());
+        *world.scenario_rng = SimRng::new(input["scenario_rng_seed"].as_u64().unwrap());
         let coordinate = ProjectileCoord::new(2688, 5248, 624);
         assert_eq!(
             serde_json::json!([coordinate.x, coordinate.y, coordinate.z]),

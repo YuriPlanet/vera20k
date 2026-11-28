@@ -198,8 +198,11 @@ pub fn initialize() {
     // The page's first status lines come before the engine reads its
     // settings: they follow the browser's languages until then.
     crate::i18n::init(None, None);
-    // Fetched while the player picks the game folder; `fonts_ready` waits.
-    let _ = crate::render::text_engine::web_fonts::preload();
+    // Pool workers share the files imported by the page. Fetch once while
+    // the player picks the game folder; the host awaits fonts_ready().
+    if web_sys::window().is_some() {
+        let _ = fonts_ready();
+    }
     crate::util::file_system::set_persistence_callbacks(
         |path, bytes, modified_ms| {
             WRITE.with(|slot| {
@@ -543,12 +546,55 @@ pub(crate) fn take_sfx_output() -> Option<crate::audio::sfx::SfxPlayer> {
     SFX.with(|slot| slot.borrow_mut().take())
 }
 
-/// Resolves once the fonts the engine's first text draws with have been
-/// fetched from `pkg/fonts/` (`render::text_engine::web_fonts`); rejects if
-/// one cannot be. Await it before `start_game` or `start_spawn`.
+// The snippet lives in pkg/snippets/<crate>-<hash>/. Resolve beside the
+// bindings even when a launcher serves its own page at another URL.
+#[wasm_bindgen(
+    inline_js = "export async function veraFetchPackageFile(path, revalidate) {
+    const url = new URL(`../../${path}`, import.meta.url);
+    const response = await fetch(url, revalidate ? {cache: 'no-cache'} : undefined);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return new Uint8Array(await response.arrayBuffer());
+}"
+)]
+extern "C" {
+    #[wasm_bindgen(js_name = veraFetchPackageFile)]
+    pub(crate) fn fetch_package_file(path: &str, revalidate: bool) -> js_sys::Promise;
+}
+
+/// Wait for launch resources, including the fonts used for the first draw
+/// and the packaged ice terrain. A missing font rejects the promise. A
+/// missing terrain file affects only a map that requests the ice tiles.
 #[wasm_bindgen]
 pub fn fonts_ready() -> js_sys::Promise {
-    crate::render::text_engine::web_fonts::preload()
+    use crate::assets::ice_pack::{DIRECTORY, FILE_NAMES};
+    use wasm_bindgen_futures::JsFuture;
+    thread_local! {
+        static READY: std::cell::OnceCell<js_sys::Promise> = const { std::cell::OnceCell::new() };
+    }
+    READY.with(|ready| {
+        ready
+            .get_or_init(|| {
+                let fonts = crate::render::text_engine::web_fonts::preload();
+                let terrain = FILE_NAMES.map(|name| {
+                    let path = format!("{DIRECTORY}/{name}");
+                    let response = JsFuture::from(fetch_package_file(&path, true));
+                    (path, response)
+                });
+                wasm_bindgen_futures::future_to_promise(async move {
+                    for (path, response) in terrain {
+                        match response.await {
+                            Ok(data) => crate::util::file_system::import_file(
+                                format!("/{path}"),
+                                data.unchecked_into::<js_sys::Uint8Array>().to_vec(),
+                            ),
+                            Err(error) => log::warn!("Could not fetch packaged {path}: {error:?}"),
+                        }
+                    }
+                    fonts.await
+                })
+            })
+            .clone()
+    })
 }
 
 #[wasm_bindgen]
@@ -634,9 +680,8 @@ pub fn probe(map_name: Option<String>) -> Result<String, JsValue> {
         None => None,
     };
     let config = crate::util::config::GameConfig::load().map_err(error)?;
-    let personal_rules =
-        crate::app::spawn_probe::existing_personal_rules(config.paths.settings_dir())
-            .map_err(error)?;
+    let profile = crate::app::spawn_probe::existing_profile(config.paths.settings_dir());
+    let personal_rules = crate::app::spawn_probe::existing_personal_rules(&profile);
     let report = crate::app::spawn_probe::probe(
         &config,
         personal_rules,
@@ -646,7 +691,8 @@ pub fn probe(map_name: Option<String>) -> Result<String, JsValue> {
         crate::app::mods::launch_mod(&config.paths, None)
             .map_err(|message| JsValue::from_str(&message))?,
         // The Ares setting the browser's VERA.INI holds, as its start reads it.
-        crate::app::spawn_probe::existing_ares_setting(config.paths.settings_dir()),
+        profile.ares,
+        profile.kratos,
     )
     .map_err(error)?;
     serde_json::to_string(&report).map_err(|error| JsValue::from_str(&error.to_string()))

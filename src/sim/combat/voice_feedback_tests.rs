@@ -93,11 +93,11 @@ fn stock_e1_feedback_matches_whole_native_receiver_before_audio_service() {
                 z: coordinate[2],
             });
         let warhead = sim.interner.intern(weapon.warhead.as_deref().unwrap());
-        sim.main_rng =
+        *sim.main_rng =
             SimRng::from_native_state_hex_for_test(rng_state(&hits[0], "rng_before", "main"));
-        sim.scenario_rng =
+        *sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(rng_state(&hits[0], "rng_before", "scenario"));
-        sim.mapgen_rng =
+        *sim.mapgen_rng =
             SimRng::from_native_state_hex_for_test(rng_state(&hits[0], "rng_before", "mapgen"));
         for (index, hit) in hits.iter().enumerate() {
             let phase = format!("{label}/receiver_{index}");
@@ -283,7 +283,7 @@ fn damage_feedback_matches_original_draws_house_admission_coordinates_and_contin
             z: coordinate[2].as_i64().unwrap() as i32,
         });
         let mut sim = Simulation::new();
-        sim.interner = test_interner();
+        *sim.interner = test_interner();
         let owner = target.owner();
         let other = sim.interner.intern("OtherHouse");
         let mut house = HouseState::new(owner, 0, None, input["human"].as_bool().unwrap(), 0, 10);
@@ -303,10 +303,10 @@ fn damage_feedback_matches_original_draws_house_admission_coordinates_and_contin
         ));
         sim.substrate.entities.insert(target);
         let warhead = sim.interner.intern("FeedbackWH");
-        sim.main_rng = SimRng::from_native_state_hex_for_test(boundary(row, "before", "main"));
-        sim.scenario_rng =
+        *sim.main_rng = SimRng::from_native_state_hex_for_test(boundary(row, "before", "main"));
+        *sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(boundary(row, "before", "scenario"));
-        sim.mapgen_rng = SimRng::from_native_state_hex_for_test(boundary(row, "before", "mapgen"));
+        *sim.mapgen_rng = SimRng::from_native_state_hex_for_test(boundary(row, "before", "mapgen"));
         let (result, actual_draws) = crate::sim::rng::trace_draws(|| {
             world_receiver::commit_entities(
                 &mut sim,

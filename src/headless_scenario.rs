@@ -35,7 +35,7 @@ use crate::sim::scenario_bootstrap::{
     AuthoredCampaignStart, FreshScenarioPrefix, FreshScenarioPrefixError, MatchLaunchDescriptor,
     ScenarioBootstrapRng,
 };
-use crate::sim::scenario_session::{ScenarioDescriptor, ScenarioGameMode};
+use crate::sim::scenario_session::{ScenarioDescriptor, ScenarioGameMode, TiberiumFlags};
 use crate::sim::world::Simulation;
 use crate::skirmish_launch::{AiDifficulty, LaunchCountry, SkirmishLaunchSession};
 
@@ -144,10 +144,11 @@ impl HeadlessScenario {
     }
 }
 
-/// Native logic-frame cadence (66 ms). NOTE: this does NOT match the
-/// client, which steps the sim at `app::types::SIM_TICK_MS` = 22 ms — a
-/// recorded 3x tooling divergence; headless digests are not tick-comparable
-/// to client runs until it is resolved.
+/// Native logic-frame cadence (66 ms), the step headless tools hand each
+/// frame. The client paces its frames at `app::types::SIM_TICK_MS` = 22 ms
+/// instead, and a relay paces them at `1000 / FPS`: a frame is one native
+/// logic frame either way, so frame counts, state hashes and
+/// `scenario_session::ScenarioSession::total_sim_ms` agree across all three.
 pub const SIM_TICK_MS: u32 = 1000 / crate::util::fixed_math::RA2_LOGIC_FRAMES_PER_SECOND;
 
 /// Load `map_file_name` from the retail install at `retail_dir` with a pinned seed.
@@ -228,6 +229,48 @@ pub fn load_with_launch_and_ini(
         process_rules,
     )
     .map_err(|error| error.to_string())
+}
+
+/// Rebuild an authored map from the values recorded at frame zero.
+pub(crate) fn load_replay_start(
+    retail_dir: &Path,
+    map: &str,
+    startup: &crate::sim::replay::ReplayStartup,
+) -> anyhow::Result<HeadlessScenario> {
+    let mode = startup.game_mode();
+    let descriptor;
+    let launch = if let Some(start) = startup.authored_campaign() {
+        HeadlessLaunch::Campaign {
+            launch: crate::sim::scenario_bootstrap::AuthoredCampaignLaunch {
+                start,
+                mode,
+                local_source: Some(0),
+            },
+            manifest: None,
+            game_speed: Some(startup.game_speed()),
+            logical_map: Some(startup.map_name()),
+        }
+    } else {
+        descriptor = startup.launch_descriptor(map)?;
+        HeadlessLaunch::Slots(&descriptor)
+    };
+    let mut assets = AssetManager::new(retail_dir, MediaArchiveMode::STOCK_DIGITAL)?;
+    if matches!(launch, HeadlessLaunch::Slots(_)) {
+        assets = assets.with_ini_roots(&Default::default())?;
+    }
+    load_with_inputs(
+        retail_dir,
+        map,
+        startup.seed(),
+        launch,
+        &mut assets,
+        mode,
+        Some(startup.native_id_prefix()?),
+        None,
+        None,
+        Some(startup.tiberium_flags()),
+    )
+    .map_err(anyhow::Error::from)
 }
 
 /// Load a lockstep campaign from the map's own Houses and the accepted role
@@ -349,7 +392,11 @@ pub fn check_campaign_stage(
         .physical_identity()
         .context("campaign stage does not have an authored map digest")?;
     let map_sha256 = map_sha256.to_owned();
-    let log = ReplayRunner::record_campaign_stage(&mut scene, &start, frames)?;
+    let log = ReplayRunner::record_authored_match(
+        &mut scene,
+        crate::sim::replay::ReplayLaunchInput::MapHouses(&start),
+        frames,
+    )?;
     let mut bytes = Vec::new();
     log.write_json(&mut bytes)?;
     let recorded = ReplayLog::decode_json(&bytes)?;
@@ -414,6 +461,69 @@ pub(crate) fn load_with_registered_scenario_assets(
     .map_err(|error| error.to_string())
 }
 
+/// Test builds: [`load_session`] with `module` as the selected mod's
+/// `rules.wasm` (RFC 0001), its `on_rules` run while the rules are processed.
+#[cfg(any(test, feature = "test-support"))]
+pub fn load_with_mod_module(
+    retail_dir: &Path,
+    map_file_name: &str,
+    seed: u32,
+    session: SkirmishLaunchSession,
+    module: &[u8],
+) -> Result<HeadlessScenario, String> {
+    let launch = crate::sim::scenario_bootstrap::MatchLaunchDescriptor::from_resolved(session)
+        .map_err(|error| format!("resolve Battle launch: {error}"))?;
+    let mut assets = AssetManager::new(retail_dir, MediaArchiveMode::STOCK_DIGITAL)
+        .and_then(|assets| assets.with_ini_roots(&Default::default()))
+        .map_err(|error| format!("open retail MIX archives: {error}"))?;
+    load_with_inputs(
+        retail_dir,
+        map_file_name,
+        seed,
+        HeadlessLaunch::Slots(&launch),
+        &mut assets,
+        crate::sim::scenario_session::ScenarioGameMode::Skirmish,
+        None,
+        None,
+        Some(module),
+        None,
+    )
+    .map_err(|error| error.to_string())
+}
+
+/// Test builds: [`load_session`] with the mod folder `mod_dir` selected, its
+/// files read as if copied on top of the installation (`docs/modding.md`):
+/// its `rulesmd.ini` is the rules root, its `rules.wasm` the mod's module
+/// (`on_rules` runs while the rules are processed) and a map file in it is
+/// found by name before the installation's.
+#[cfg(any(test, feature = "test-support"))]
+pub fn load_with_mod_folder(
+    retail_dir: &Path,
+    map_file_name: &str,
+    seed: u32,
+    session: SkirmishLaunchSession,
+    mod_dir: &Path,
+) -> Result<HeadlessScenario, String> {
+    let launch = crate::sim::scenario_bootstrap::MatchLaunchDescriptor::from_resolved(session)
+        .map_err(|error| format!("resolve Battle launch: {error}"))?;
+    let mut assets =
+        AssetManager::with_mod(retail_dir, Some(mod_dir), MediaArchiveMode::STOCK_DIGITAL)
+            .and_then(|assets| assets.with_ini_roots(&Default::default()))
+            .map_err(|error| format!("open retail MIX archives with the mod: {error}"))?;
+    load_with_assets(
+        retail_dir,
+        map_file_name,
+        seed,
+        HeadlessLaunch::Slots(&launch),
+        &mut assets,
+        crate::sim::scenario_session::ScenarioGameMode::Skirmish,
+        None,
+        None,
+    )
+    .map_err(|error| error.to_string())
+}
+
+#[allow(clippy::too_many_arguments)]
 fn load_with_assets(
     retail_dir: &Path,
     map_file_name: &str,
@@ -423,6 +533,35 @@ fn load_with_assets(
     game_mode: crate::sim::scenario_session::ScenarioGameMode,
     accepted_native_id_prefix: Option<u32>,
     process_rules: Option<&mut crate::rules::process_owner::NativeRulesProcessOwner>,
+) -> Result<HeadlessScenario, HeadlessLoadError> {
+    load_with_inputs(
+        retail_dir,
+        map_file_name,
+        seed,
+        launch,
+        assets,
+        game_mode,
+        accepted_native_id_prefix,
+        process_rules,
+        None,
+        None,
+    )
+}
+
+/// Fresh map construction. A replay supplies the ore flags admitted before
+/// its first frame. Tests can supply the selected mod's rules.wasm bytes.
+#[allow(clippy::too_many_arguments)]
+fn load_with_inputs(
+    retail_dir: &Path,
+    map_file_name: &str,
+    seed: u32,
+    launch: HeadlessLaunch<'_>,
+    assets: &mut AssetManager,
+    game_mode: crate::sim::scenario_session::ScenarioGameMode,
+    accepted_native_id_prefix: Option<u32>,
+    process_rules: Option<&mut crate::rules::process_owner::NativeRulesProcessOwner>,
+    mod_module: Option<&[u8]>,
+    recorded_tiberium: Option<TiberiumFlags>,
 ) -> Result<HeadlessScenario, HeadlessLoadError> {
     let (slot_launch, campaign, manifest, campaign_speed, logical_map) = match launch {
         HeadlessLaunch::Slots(launch) => (Some(launch), None, None, None, None),
@@ -513,10 +652,38 @@ fn load_with_assets(
     // This headless entry has no MainMenuTypedCodes owner or THETEAM input.
     // It shares the process Rules owner; this no-mod entry skips LANGRULE
     // and cannot admit Full_Init's mode-5 TMCJ4F route.
-    let (mut rules, _, art_ini, native_rules_receipt) = native_rules_owner
-        .load_scenario(rules_prefix, &map.ini)
-        .map_err(|error| format!("load native scenario rules: {error}"))?
-        .into_parts();
+    // Wasm extension modules (RFC 0001): the mod's rules.wasm, then the
+    // map's. Their `on_rules` runs at their layers of this rules load.
+    let mod_file;
+    let mod_module = match mod_module {
+        Some(bytes) => Some(bytes),
+        None => {
+            mod_file = crate::sim::ext_modules::PreparedExtModules::read_mod_file(&assets)?;
+            mod_file.as_deref()
+        }
+    };
+    let mut ext_modules = crate::sim::ext_modules::PreparedExtModules::load(
+        native_rules_owner.selected_rules_root(),
+        mod_module,
+        &map.ini,
+        native_rules_owner.personal_rules().wasm_budget(),
+        slot_launch.map_or(0, |launch| launch.session().mod_ai_slots.len()),
+    )
+    .map_err(|error| format!("Wasm extension module: {error}"))?;
+    ext_modules.set_automation_allowed(native_rules_owner.personal_rules().automation_allowed());
+    let (scenario_rules, _) = native_rules_owner
+        .load_scenario_with_ext_rules(
+            rules_prefix,
+            &map.ini,
+            None::<(
+                &crate::rules::ini_parser::IniFile,
+                fn(crate::rules::ruleset::RuleSet),
+            )>,
+            &mut ext_modules,
+        )
+        .map_err(|error| format!("load native scenario rules: {error}"))?;
+    let (mut rules, processed_rules_ini, art_ini, native_rules_receipt) =
+        scenario_rules.into_parts();
     // The game's later readers (ARTMD, the asset closures) follow the way its
     // Rules were read (`ares_switch::ares_way`).
     let _ares_way = crate::rules::ares_switch::read_ares_way(rules.reads_ares_way());
@@ -533,7 +700,8 @@ fn load_with_assets(
     };
     let team_ai_registry =
         crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(&assets, &map.ini, rule_policy)?;
-    let theater = theater::load_theater(assets, &map.header.theater)
+    let theater = theater::load_scenario_theater(assets, &map.header.theater, &map.ini, false)
+        .map_err(|error| format!("{error:#}"))?
         .ok_or_else(|| format!("load theater {}", map.header.theater))?;
     rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art_ini));
     let house_roster = crate::map::houses::parse_house_roster(
@@ -607,6 +775,8 @@ fn load_with_assets(
     .with_authored_special_flags(
         &map.special_flags,
         slot_launch.is_some_and(|launch| launch.session().options.harvester_truce),
+        game_mode,
+        recorded_tiberium,
     );
     let bootstrap_rng = ScenarioBootstrapRng::new(seed);
     let (mut sim, scenario_prefix_projection) = bootstrap_rng
@@ -657,6 +827,8 @@ fn load_with_assets(
         Some(audio_definitions.sounds().as_ref()),
         Some(&themes),
     );
+    // The Wasm modules prepared with the rules (RFC 0001).
+    sim.install_scenario_ext_modules(&rules, ext_modules, processed_rules_ini)?;
     let (mut scenario_fill_rng, variant_main_rng) = sim.terrain_load_draws();
     let mut scenario_fill_ranged =
         |low, high| scenario_fill_rng.next_range_u32_inclusive(low, high);
@@ -723,8 +895,7 @@ fn load_with_assets(
         crate::rules::terrain_asset_catalog::TerrainAssetLoadPhase::Fresh,
     );
     rules.bind_alpha_images(&assets);
-    let overlay_shp_ids = crate::rules::effect_asset_catalog::resolved_overlay_shp_ids(
-        rules.overlay_registry(),
+    let overlay_shp_ids = rules.resolved_overlay_shp_ids(
         &assets,
         theater.extension,
         &map.header.theater,
@@ -894,7 +1065,7 @@ mod retail_construction_tests {
         };
         let mut sim = ScenarioBootstrapRng::new(descriptor.seed).into_simulation(&descriptor);
         // This synthetic fixture omits the production native Rules prefix.
-        sim.native_unique_ids =
+        *sim.native_unique_ids =
             Some(crate::sim::native_identity::NativeUniqueIdCursor::for_synthetic_simulation());
         let resolved = {
             let (mut scenario_fill_rng, variant_main_rng) = sim.terrain_load_draws();
@@ -3948,6 +4119,71 @@ mod retail_construction_tests {
 #[cfg(all(test, tests_scenario))]
 mod launch_special_flags_tests {
     use super::*;
+
+    #[test]
+    fn fresh_offline_battle_uses_the_unaccelerated_retail_ore_timers() {
+        let Some((retail, _)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        let map = "XMP03T4.MAP";
+        let launch = battle_session(
+            map,
+            &[(
+                crate::skirmish_launch::LaunchCountry::Russia,
+                crate::skirmish_launch::AiDifficulty::Easy,
+            )],
+        );
+        let mut battle = load_session(&retail, map, 1, launch).expect("stock Anytown Battle");
+        battle.tick();
+
+        let types = &battle.runtime.resources.rules.tiberium_types;
+        let state = battle.sim().ore_growth_state.native_tiberium_state();
+        let durations = ["Riparius", "Cruentus"].map(|name| {
+            let id = types.id_by_name(name).expect("stock resource type");
+            state.classes[id.0 as usize].growth_timer.duration()
+        });
+        assert_eq!(durations, [2200, 10000]);
+        assert!(battle.sim().session().tiberium_spreads_flag());
+    }
+
+    #[test]
+    fn replay_restores_the_ore_cadence_of_an_accelerated_solo_start() {
+        use crate::sim::replay::{ReplayLaunchInput, ReplayLog, ReplayRunner};
+
+        let Some((retail, mut assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        let map = "XMP03T4.MAP";
+        let launch = battle_session(map, &[(LaunchCountry::Russia, AiDifficulty::Easy)]);
+        let slots = MatchLaunchDescriptor::from_resolved(launch.clone()).unwrap();
+        // A solo Battle following a network game has the same flags as a v6
+        // solo recording made before fresh offline staging was distinguished.
+        let mut battle = load_with_inputs(
+            &retail,
+            map,
+            1,
+            HeadlessLaunch::Slots(&slots),
+            &mut assets,
+            ScenarioGameMode::Skirmish,
+            None,
+            None,
+            None,
+            Some(TiberiumFlags::NETWORK_PREGAME),
+        )
+        .unwrap();
+        let log =
+            ReplayRunner::record_authored_match(&mut battle, ReplayLaunchInput::Slots(&launch), 1)
+                .unwrap();
+        let mut bytes = Vec::new();
+        log.write_json(&mut bytes).unwrap();
+        let recorded = ReplayLog::decode_json(&bytes).unwrap();
+        assert_eq!(
+            ReplayRunner::verify(&retail, &recorded, None)
+                .unwrap()
+                .checked_hashes,
+            1
+        );
+    }
 
     /// The nonzero game mode's session-flags replacement (`0x00687C16..
     /// 0x00687C29`) for Scenario bit `0x800`: `PregameSetup` stores the

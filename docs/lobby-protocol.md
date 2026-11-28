@@ -471,6 +471,8 @@ Generated capacity equals the staged start count (2–30); observers consume onl
 transport slots. Start admission also compares the canonical staging digest, so clients cannot
 agree on seed bytes while using different generated start cells.
 
+<a id="map-library"></a>
+
 The service may keep a map library: custom maps its operator adds, each kept once under
 its SHA-256. Players never add maps; room uploads stay out of it. When the host selects
 a map the library holds (same `source_sha256` and length, not `map_metadata.official`,
@@ -503,14 +505,23 @@ when the library's storage fails. All three are public, and the search is limite
 network; the service keeps no player, session or address with a map. The game reads the catalog
 when the player goes online and keeps it for the run once it arrives; a failed read is
 tried once more in that visit, and again on the next. In an online room (not one that
-takes only official maps), Choose Map lists under its Online Maps row each map the
-player does not have, starred maps first. An existing custom map in the selected mod,
+takes only official maps), Choose Map lists its library members under Online Maps, starred maps first. An existing custom map in the selected mod,
 game folder or VERA's `Maps` folder is identified by its length and SHA-256,
 including files the player renamed. Use Map on a missing map asks
 to download it, checks its length and SHA-256, and saves it in VERA's `Maps` folder,
 where it is an ordinary map in the applicable game types. The game saves a new
 file as `<stem>.map`, or `<stem>-<first 8 hex of its SHA-256>.map` when the name
 is taken. Identical files keep their existing name and extension.
+
+For the official lobby, desktop games also fetch
+`https://vera20k.org/maps/categories.json` in a separate background request on
+the online visit. The website supplies `{"categories":{"<sha256>":["survival", …]}}`;
+a hash can have several category IDs. Unknown IDs are ignored. Category entries
+are joined by SHA-256 to the lobby's map records and their byte-matched local
+copies. Category data never selects a game mode or changes room rules. On feed
+failure, the full Online Maps list remains usable. Custom lobbies skip the
+website request. Browser builds use their existing room transfer path and do
+not open the desktop library picker.
 
 The match admission is retained independently of channel membership until
 finish/timeout. The original-style shell leaves its game room at the start and
@@ -734,7 +745,7 @@ not know.
   for that tag, else for its language alone (`zh`), else for another region of that
   language, else the operator's `text`, which a missing or malformed tag gets.
 - `Vera-Changes: <percent-encoded JSON>`: what the game changes from the original game,
-  which a room's rules line names: an object with `mod` (the mod's title), `ini_roots:
+  which a room's rules line names: an object with `mod` (the mod's title), optional `kratos: true` when the startup rules enable Kratos, `ini_roots:
   true` (config.toml names other Rules, Art, AI, mode roster or map catalog files, or
   another theater suffix, or [RA2 Mode](ra2-mode.md) is on), `ares` (`on` or `off`, the player's Ares setting where it
   decides which game opens: On unless a selected mod mounts `ares.mix` anyway, Off only

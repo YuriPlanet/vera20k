@@ -1,7 +1,13 @@
 //! Developer diagnostics: the black-cell report, the `dev-overlays` overlay
 //! toggles, debug pause and frame step, and the Ctrl+Shift dev hotkey chord.
 
+#[cfg(feature = "dev-overlays")]
 use crate::app::AppState;
+#[cfg(feature = "dev-overlays")]
+use crate::app::diagnostics::state::DiagnosticsState;
+#[cfg(feature = "dev-overlays")]
+use crate::app::match_runtime::frame_pacer::LocalFramePacer;
+use crate::app::match_runtime::state::MatchState;
 #[cfg(feature = "dev-overlays")]
 use crate::app::types::OrderMode;
 // Only the dev chord matches on bare `KeyCode`; the retail path below keeps
@@ -15,30 +21,26 @@ use winit::keyboard::KeyCode;
 /// fixes: the vision system never revealed it, or it was revealed but its tile key is
 /// missing from the atlas. Both look identical on screen, so this counts them separately
 /// instead of leaving the diagnosis to guesswork.
-pub(crate) fn report_black_cell_causes(state: &mut AppState) {
-    let Some(grid) = state.match_state.match_presentation.terrain_grid.as_ref() else {
+pub(crate) fn report_black_cell_causes(match_state: &MatchState) {
+    let Some(grid) = match_state.match_presentation.terrain_grid.as_ref() else {
         log::info!("Black-cell report: no terrain grid loaded");
         return;
     };
 
-    let owner = crate::app::input::commands::preferred_local_owner_name(state).and_then(|name| {
-        state
-            .match_state
-            .sim_runtime
-            .runtime()
-            .map(|rt| &rt.simulation)?
-            .interner()
-            .get(&name)
-    });
+    let owner =
+        crate::app::input::commands::preferred_local_owner_name(match_state).and_then(|name| {
+            match_state
+                .sim_runtime
+                .runtime()
+                .map(|rt| &rt.simulation)?
+                .interner()
+                .get(&name)
+        });
     let fog = match (
-        state
-            .match_state
-            .sim_runtime
-            .runtime()
-            .map(|rt| &rt.simulation),
+        match_state.sim_runtime.runtime().map(|rt| &rt.simulation),
         owner,
     ) {
-        _ if state.match_state.sandbox_full_visibility => None,
+        _ if match_state.sandbox_full_visibility => None,
         (Some(sim), Some(id)) => Some((id, sim.fog())),
         _ => None,
     };
@@ -53,7 +55,7 @@ pub(crate) fn report_black_cell_causes(state: &mut AppState) {
     let mut unrevealed_samples: Vec<(u16, u16)> = Vec::new();
 
     for cell in &grid.cells {
-        if let Some(atlas) = state.match_state.match_presentation.tile_atlas.as_ref() {
+        if let Some(atlas) = match_state.match_presentation.tile_atlas.as_ref() {
             let key = crate::map::theater::TileKey {
                 tile_id: cell.tile_id,
                 sub_tile: cell.sub_tile,
@@ -73,7 +75,7 @@ pub(crate) fn report_black_cell_causes(state: &mut AppState) {
             // An unrevealed cell is never drawn, so its tile is irrelevant.
             continue;
         }
-        if let Some(atlas) = state.match_state.match_presentation.tile_atlas.as_ref() {
+        if let Some(atlas) = match_state.match_presentation.tile_atlas.as_ref() {
             let key = crate::map::theater::TileKey {
                 tile_id: cell.tile_id,
                 sub_tile: cell.sub_tile,
@@ -109,18 +111,18 @@ pub(crate) fn report_black_cell_causes(state: &mut AppState) {
 
 /// Toggle the PathGrid / terrain-cost debug overlay.
 ///
-/// Beyond flipping `state.diag.debug_show_pathgrid`, this resets the per-overlay
+/// Beyond flipping `diag.debug_show_pathgrid`, this resets the per-overlay
 /// SpeedType override to None when the overlay turns off, so reopening
 /// the overlay defaults back to "auto from selected unit".
 #[cfg(feature = "dev-overlays")]
-pub(crate) fn toggle_pathgrid_overlay(state: &mut AppState) {
-    state.diag.debug_show_pathgrid = !state.diag.debug_show_pathgrid;
-    if !state.diag.debug_show_pathgrid {
-        state.diag.debug_terrain_cost_speed_type = None;
+pub(crate) fn toggle_pathgrid_overlay(diag: &mut DiagnosticsState) {
+    diag.debug_show_pathgrid = !diag.debug_show_pathgrid;
+    if !diag.debug_show_pathgrid {
+        diag.debug_terrain_cost_speed_type = None;
     }
     log::info!(
         "Debug terrain cost overlay: {}",
-        if state.diag.debug_show_pathgrid {
+        if diag.debug_show_pathgrid {
             "ON"
         } else {
             "OFF"
@@ -134,11 +136,11 @@ pub(crate) fn toggle_pathgrid_overlay(state: &mut AppState) {
 /// numbered route answer different questions, and the route is useful with the
 /// cost grid off.
 #[cfg(feature = "dev-overlays")]
-pub(crate) fn toggle_foot_path_overlay(state: &mut AppState) {
-    state.diag.debug_show_foot_path = !state.diag.debug_show_foot_path;
+pub(crate) fn toggle_foot_path_overlay(diag: &mut DiagnosticsState) {
+    diag.debug_show_foot_path = !diag.debug_show_foot_path;
     log::info!(
         "Debug foot-path step overlay: {}",
-        if state.diag.debug_show_foot_path {
+        if diag.debug_show_foot_path {
             "ON (blue=route, magenta=next step, yellow=arrival)"
         } else {
             "OFF"
@@ -147,11 +149,11 @@ pub(crate) fn toggle_foot_path_overlay(state: &mut AppState) {
 }
 
 #[cfg(feature = "dev-overlays")]
-pub(crate) fn toggle_cell_grid_overlay(state: &mut AppState) {
-    state.diag.debug_show_cell_grid = !state.diag.debug_show_cell_grid;
+pub(crate) fn toggle_cell_grid_overlay(diag: &mut DiagnosticsState) {
+    diag.debug_show_cell_grid = !diag.debug_show_cell_grid;
     log::info!(
         "Debug cell grid overlay: {}",
-        if state.diag.debug_show_cell_grid {
+        if diag.debug_show_cell_grid {
             "ON (blue=terrain, yellow=overlay)"
         } else {
             "OFF"
@@ -160,11 +162,11 @@ pub(crate) fn toggle_cell_grid_overlay(state: &mut AppState) {
 }
 
 #[cfg(feature = "dev-overlays")]
-pub(crate) fn toggle_heightmap_overlay(state: &mut AppState) {
-    state.diag.debug_show_heightmap = !state.diag.debug_show_heightmap;
+pub(crate) fn toggle_heightmap_overlay(diag: &mut DiagnosticsState) {
+    diag.debug_show_heightmap = !diag.debug_show_heightmap;
     log::info!(
         "Debug height map overlay: {}",
-        if state.diag.debug_show_heightmap {
+        if diag.debug_show_heightmap {
             "ON (brighter = higher elevation, blue = bridge deck)"
         } else {
             "OFF"
@@ -173,23 +175,30 @@ pub(crate) fn toggle_heightmap_overlay(state: &mut AppState) {
 }
 
 #[cfg(feature = "dev-overlays")]
-pub(crate) fn cycle_terrain_cost_speed_type(state: &mut AppState, forward: bool) {
-    if state.diag.debug_show_pathgrid {
-        let current = crate::app::diagnostics::debug_overlays::resolve_debug_speed_type(state);
+pub(crate) fn cycle_terrain_cost_speed_type(
+    diag: &mut DiagnosticsState,
+    match_state: &MatchState,
+    forward: bool,
+) {
+    if diag.debug_show_pathgrid {
+        let current = crate::app::diagnostics::debug_overlays::resolve_debug_speed_type(
+            diag,
+            &match_state.sim_runtime,
+        );
         let next = if forward {
             current.cycle_next()
         } else {
             current.cycle_prev()
         };
-        state.diag.debug_terrain_cost_speed_type = Some(next);
+        diag.debug_terrain_cost_speed_type = Some(next);
         log::info!("Terrain cost overlay: {}", next.name());
     }
 }
 
 #[cfg(feature = "dev-overlays")]
-pub(crate) fn request_debug_frame_step(state: &mut AppState) {
-    if state.match_state.paused() {
-        state.diag.debug_frame_step_requested = true;
+pub(crate) fn request_debug_frame_step(diag: &mut DiagnosticsState, match_state: &MatchState) {
+    if match_state.paused() {
+        diag.debug_frame_step_requested = true;
     }
 }
 
@@ -198,18 +207,14 @@ pub(crate) fn request_debug_frame_step(state: &mut AppState) {
 /// On resume, local frame admission is re-anchored so elapsed modal time
 /// cannot cause a catch-up frame.
 #[cfg(feature = "dev-overlays")]
-pub(crate) fn toggle_debug_pause(state: &mut AppState) {
-    state.match_state.debug_pause = !state.match_state.paused();
-    if !state.match_state.paused() {
-        state.platform.frame_pacer.reset_for_immediate_frame();
+pub(crate) fn toggle_debug_pause(frame_pacer: &mut LocalFramePacer, match_state: &mut MatchState) {
+    match_state.debug_pause = !match_state.paused();
+    if !match_state.paused() {
+        frame_pacer.reset_for_immediate_frame();
     }
     log::info!(
         "Debug pause: {}",
-        if state.match_state.paused() {
-            "ON"
-        } else {
-            "OFF"
-        }
+        if match_state.paused() { "ON" } else { "OFF" }
     );
 }
 
@@ -221,15 +226,30 @@ pub(crate) fn toggle_debug_pause(state: &mut AppState) {
 pub(super) fn handle_dev_hotkey_pressed(state: &mut AppState, code: winit::keyboard::KeyCode) {
     match code {
         KeyCode::KeyM => {
-            crate::app::persistence::commands::quicksave(state);
+            crate::app::persistence::commands::quicksave(
+                &state.platform,
+                &state.renderer,
+                &state.frontend.screen,
+                &mut state.match_state,
+                &state.persistence,
+                &state.audio,
+                &state.diag,
+                &state.process_assets,
+            );
         }
         KeyCode::KeyN => {
-            crate::app::persistence::commands::quickload(state);
+            crate::app::persistence::commands::quickload(&state.platform, &mut state.persistence);
         }
         KeyCode::F5 => {
             // Diagnostic shortcut shares the retail browser and modal owner.
             crate::app::App::open_saved_game_browser(
-                state,
+                &mut state.platform,
+                &state.renderer,
+                &mut state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                &mut state.audio,
+                &mut state.persistence,
                 crate::ui::skirmish_shell::SavedSeedMode::Load,
             );
         }
@@ -243,22 +263,22 @@ pub(super) fn handle_dev_hotkey_pressed(state: &mut AppState, code: winit::keybo
             state.match_state.input.queued_order_mode = OrderMode::Move;
         }
         KeyCode::KeyL => {
-            toggle_cell_grid_overlay(state);
+            toggle_cell_grid_overlay(&mut state.diag);
         }
         KeyCode::KeyK => {
-            toggle_heightmap_overlay(state);
+            toggle_heightmap_overlay(&mut state.diag);
         }
         KeyCode::F9 | KeyCode::KeyP => {
-            toggle_pathgrid_overlay(state);
+            toggle_pathgrid_overlay(&mut state.diag);
         }
         KeyCode::KeyO => {
-            toggle_foot_path_overlay(state);
+            toggle_foot_path_overlay(&mut state.diag);
         }
         KeyCode::BracketRight => {
-            cycle_terrain_cost_speed_type(state, true);
+            cycle_terrain_cost_speed_type(&mut state.diag, &state.match_state, true);
         }
         KeyCode::BracketLeft => {
-            cycle_terrain_cost_speed_type(state, false);
+            cycle_terrain_cost_speed_type(&mut state.diag, &state.match_state, false);
         }
         KeyCode::F10 | KeyCode::KeyV => {
             #[cfg(feature = "debug-tools")]
@@ -278,23 +298,30 @@ pub(super) fn handle_dev_hotkey_pressed(state: &mut AppState, code: winit::keybo
             }
         }
         #[cfg(feature = "debug-tools")]
-        KeyCode::KeyX => crate::app::debug_tools::toggle_inspector(state),
+        KeyCode::KeyX => {
+            crate::app::debug_tools::toggle_inspector(&mut state.match_state.sim_runtime)
+        }
         KeyCode::F8 => {
-            report_black_cell_causes(state);
+            report_black_cell_causes(&state.match_state);
         }
         KeyCode::KeyJ => {
-            toggle_debug_pause(state);
+            toggle_debug_pause(&mut state.platform.frame_pacer, &mut state.match_state);
         }
         KeyCode::Period if state.match_state.paused() => {
-            request_debug_frame_step(state);
+            request_debug_frame_step(&mut state.diag, &state.match_state);
         }
         KeyCode::Equal | KeyCode::NumpadAdd | KeyCode::Minus | KeyCode::NumpadSubtract
-            if crate::app::match_runtime::sim_tick::debug_speed_allowed(state) =>
+            if crate::app::match_runtime::sim_tick::debug_speed_allowed(&state.match_state) =>
         {
             let faster = matches!(code, KeyCode::Equal | KeyCode::NumpadAdd);
             let speed = state.platform.frame_pacer.change_debug_speed(faster);
             crate::app::input::messages::post_selection_navigation_text(
-                state,
+                &state.platform,
+                &state.renderer,
+                &state.diag,
+                &state.frontend,
+                &mut state.match_state,
+                &state.persistence,
                 &format!("Debug speed {speed}x"),
             );
         }

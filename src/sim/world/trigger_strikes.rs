@@ -29,7 +29,7 @@ impl Simulation {
         let Some(location) = self.direct_strike_coord(cell) else {
             return false;
         };
-        let Some(bounds) = self.playfield_bounds else {
+        let Some(bounds) = *self.playfield_bounds else {
             return false;
         };
         let edge = crate::map::playfield::playfield_edge_cell(
@@ -111,10 +111,8 @@ impl Simulation {
     /// attached to the new bullet before Fire. Both use null bullet owner,
     /// Bright=false, structural bridge100, height20000 and scale-100.
     /// Returns the strike coordinate on a launch: the one-time Super's
-    /// DigSound plays there (`0x006CDCAE`). RESIDUAL: when the one-time
-    /// Super's bullet creation returns null (`0x006CDB93`), native skips the
-    /// PSIWARN, Fire, EVA line and DigSound; VERA still plays them. Only a
-    /// failed bullet creation reaches it.
+    /// DigSound plays there (6CDCAE). SetWeaponType (46B260, write through
+    /// ECX at 46B264) dereferences the bullet before the later test at 6CDB93.
     pub(crate) fn launch_nuke_payload_at_cell(
         &mut self,
         rules: &RuleSet,

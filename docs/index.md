@@ -59,12 +59,15 @@ simulation, session and network command owners.
 
 - [Campaign manifests](campaign-manifest.md) covers stages, roles, carry-over, local checks and room setup.
 - [Auto Repair](auto-repair.md): tick it in Options and your damaged buildings start repairing by themselves.
+- [Autosave](autosave.md): `[VERA] AutosaveMinutes=` saves an offline match every few minutes.
 - [Colour-vision filter](color-vision-config.md): the `[VERA] ColorVisionMode=` whole-viewport daltonization option.
+- [HD art](hd-art.md): the `[VERA] HdArt=` switch, AI-upscaled art over the wheel-zoomed battlefield and an HD sidebar (Page Up flips it).
+- [Opus sounds and music](opus-audio.md): a `<name>.opus` file plays in place of a sound, a music track or a taunt.
 - [End-game screens](ini-end-game-screens.md): the verdict card, its theme and the score page's own art.
 - [Ferry order](ferry.md): press J and click a drop spot to have a transport carry units there and come back for more.
 - [Formation line](formation-line.md): hold F and drag with the left button to line a group up along a drawn line.
 - [Health-strip modes](health-bars.md): the `[VERA] HealthBars=` client option.
-- [RA2 Mode](ra2-mode.md): tick it in Options to play original Red Alert 2 from the next start.
+- [RA2 Mode](ra2-mode.md): switch between original Red Alert 2 and Yuri’s Revenge.
 - [Lobby player colours](skirmish-colors.md): the thirty colours a lobby lists, and `[SkirmishColors]` for a mod's own.
 - [Interface layout](interface-layout.md): `veraui.ini`, a mod's own places for the sidebar, the command bar and the sidebar's parts.
 - [Computer players pick the nearest enemy](ai-nearest-enemy.md): the `[General] AINearestEnemy=` rules key that stops every computer player in a free-for-all from choosing the human as its enemy.
@@ -77,14 +80,15 @@ simulation, session and network command owners.
 - [Primary rotation](primary-rotation.md): select several factories and press I to have them take turns being the primary.
 - [Random map Extras](random-map-extras.md): share codes, presets and choices that add to a generated map, and `RMGMD.INI [Extras]` for a mod's own.
 - [External launches](spawn.md): `vera20k --probe` and `--generate-map`, which a launcher runs before a `-SPAWN` match, and the browser's `probe()` and `generate_map()`.
-- [Relation colours](relation-colours.md): press Alt+A to draw your side blue, your allies green and your enemies red.
+- [Relation colours](relation-colours.md): press Alt+A to draw your side blue, your allies green and your enemies red, or Alt+T to give each enemy team a colour of its own.
 - [SHP building turrets](ini-shp-turret-anims.md): the rules keys for a building turret drawn as a 32-frame animation.
 - [Sidebar build-list columns](sidebar-columns.md): the Options list that lays three to five build pictures a row inside the sidebar's own width.
 - [Skirmish cheat codes](skirmish-cheats.md) let you grant credits, reveal the map and spawn vehicles in an offline match.
 - [Terrain deformation](terrain-deformation.md): the skirmish Game Options box that lets explosions dent the ground and nukes leave craters.
 - [Superweapon Limit](superweapon-limit.md): the skirmish Game Options slider that allows up to 20 of each superweapon, each charging its own shot, and the `SuperWeaponPerBuilding=` key.
-- [Tiberian Sun ice](ts-ice.md): Firestorm's ice that heavy units crack and break, for a snow theater that ships the ice tiles.
+- [Tiberian Sun ice](ts-ice.md): Ice Lake, the bundled ice tiles for snow maps, and Firestorm's ice mechanics.
 - [Stock rules retail leaves off](dormant-stock-rules.md): `Assaulter=`, `CanDetonateTimeBomb=` and other gamemd keys only a mod or map switches on.
 - [Tiberian Sun Ion Cannon](ts-ion-cannon.md): `Type=IonCannon`, the Tiberian Sun superweapon that fires an ion blast at a cell, which a mod or map switches on by listing it.
 - [Tiberian Sun limpets](ts-limpets.md): `LimpetFactor=`, `AV=`, `IsLimpetMine=` and `IsLimpetDrone=`, Firestorm's limpet mines that slow a vehicle and let its attacker see through it.
 - [Tiberian Sun debris sounds](ts-anim-sounds.md): the `BounceSound=` and `ExpireSound=` keys Yuri's Revenge dropped, for bouncing debris and `[VoxelAnims]`.
+- [Tiberian Sun webs](ts-webs.md): Firestorm's `Webby=` warheads, which pin infantry in place, with `IsWebImmune=` and the `Struggle` sequence.

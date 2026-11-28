@@ -56,6 +56,7 @@ pub(crate) mod tactical_composite;
 pub(crate) mod talk_bubble;
 pub(crate) mod target_lines;
 pub(crate) mod ui_overlays;
+pub(crate) mod unit_motion;
 pub(crate) mod window_ui;
 
 #[cfg(all(test, any(tests_app_presentation, tests_app_presentation_render)))]

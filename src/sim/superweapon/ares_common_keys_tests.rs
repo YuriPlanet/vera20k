@@ -65,8 +65,8 @@ fn fire(
     cell: (u16, u16),
 ) -> bool {
     let name = sim.interner.resolve(owner).to_owned();
-    sim.apply_command_with_overlays(
-        None,
+    (sim.apply_command_with_overlays(
+        crate::sim::command::CommandSender::Player(None),
         &name,
         &Command::LaunchSuperWeapon {
             sw_type_id: sw,
@@ -76,7 +76,7 @@ fn fire(
         rules,
         None,
         &mut FrameEffects::default(),
-    )
+    )).is_ok()
 }
 
 #[test]
@@ -210,6 +210,55 @@ fn show_cameo_hides_only_an_auto_fire_super_from_the_strip() {
         shown,
         [("Guard".to_string(), false), ("Manual".to_string(), true)]
     );
+}
+
+#[test]
+fn iron_curtain_uses_the_ares_invoke_animation_for_vehicles_and_buildings() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let mut rules = rules(
+        "[General]\nIronCurtainInvokeAnim=FALLBACK\n\
+         [Animations]\n0=INVOKE\n1=FALLBACK\n\
+         [SuperWeaponTypes]\n0=Iron\n[Iron]\nType=IronCurtain\nIsPowered=no\n\
+         SW.Animation=INVOKE\nSW.AffectsHouse=team\nProtect.Duration=200\n",
+    );
+    let mut art = crate::rules::art_data::ArtRegistry::from_ini(&IniFile::from_str(
+        "[PLANT]\nFoundation=1x1\n[INVOKE]\nEnd=4\nRate=1\n[FALLBACK]\nEnd=4\nRate=1\n",
+    ));
+    for name in ["INVOKE", "FALLBACK"] {
+        art.bind_anim_frame_count_for_test(name, 4);
+    }
+    rules.install_art_data(art);
+    let (mut sim, owner, iron) = scene(&rules, "Iron");
+    let vehicle = sim
+        .spawn_object("TANK", "Americans", 10, 10, 0, &rules)
+        .unwrap();
+    let building = sim
+        .spawn_object("PLANT", "Americans", 11, 10, 0, &rules)
+        .unwrap();
+    grant(&mut sim, &rules, owner, iron);
+    sim.super_weapons
+        .instance_mut(&owner, &iron)
+        .unwrap()
+        .is_ready = true;
+    assert!(fire(&mut sim, &rules, owner, iron, (10, 10)));
+
+    let launched: Vec<_> = sim
+        .anims()
+        .map(|(_, anim)| sim.interner.resolve(anim.type_id()))
+        .collect();
+    assert_eq!(
+        launched,
+        ["INVOKE"],
+        "the selected art supplies its own Report sound"
+    );
+    for id in [vehicle, building] {
+        let entity = sim.substrate.entities.get(id).unwrap();
+        let remaining = entity
+            .invulnerability
+            .as_ref()
+            .map(|v| v.timer().remaining(sim.session.binary_frame() as i32));
+        assert_eq!(remaining, Some(200));
+    }
 }
 
 #[test]

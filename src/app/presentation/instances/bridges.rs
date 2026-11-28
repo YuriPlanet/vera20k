@@ -8,11 +8,15 @@
 //!
 //! ## Dependency rules
 //! - Part of the app layer — may depend on everything.
-//! - Read-only access to sim state via `AppState`.
+//! - Read-only access to sim state via `MatchState`.
 
 use std::collections::BTreeMap;
 
-use crate::app::AppState;
+use crate::app::frontend::state::FrontendState;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
+use crate::app::renderer_state::RendererState;
+use crate::app::state::PlatformState;
 use crate::map::lighting::CellLightGrid;
 use crate::map::overlay::OverlayEntry;
 use crate::map::resolved_terrain::{ResolvedTerrainCell, ResolvedTerrainGrid};
@@ -89,7 +93,7 @@ pub(super) fn cell_overlay_y_offset(overlay: u8, flags: u32, state: u8) -> f32 {
 /// pass 1). Reads the live CellClass identity and state byte post-tick from
 /// `live_grid`; without one no body draws.
 ///
-/// Takes only the fields the body builder actually needs from `AppState`
+/// Takes only the fields the body builder actually needs from `MatchState`
 /// so the function is exercisable in unit tests with a pure-data mock atlas
 /// (`BridgeAtlasLookup` trait). The shadow builder uses the same lookup seam.
 pub(crate) fn build_bridge_body_instances_inner(
@@ -200,16 +204,15 @@ pub(crate) fn build_bridge_body_instances_inner(
     }
 }
 
-/// Thin `AppState` wrapper around `build_bridge_body_instances_inner`. Pulls
-/// the live fields the inner function needs out of `state` and forwards.
+/// Thin `MatchState` wrapper around `build_bridge_body_instances_inner`. Pulls
+/// the live fields the inner function needs out of `match_state` and forwards.
 pub(crate) fn build_bridge_body_instances(
-    state: &AppState,
+    match_state: &MatchState,
     sw: f32,
     sh: f32,
     out: &mut Vec<CellBody>,
 ) {
-    let Some(sim) = state
-        .match_state
+    let Some(sim) = match_state
         .sim_runtime
         .presentation()
         .map(|rt| &rt.simulation)
@@ -219,11 +222,10 @@ pub(crate) fn build_bridge_body_instances(
     let Some(terrain) = sim.resolved_terrain() else {
         return;
     };
-    let Some(atlas) = state.match_state.match_presentation.bridge_atlas.as_ref() else {
+    let Some(atlas) = match_state.match_presentation.bridge_atlas.as_ref() else {
         return;
     };
-    let (origin_y, world_height) = state
-        .match_state
+    let (origin_y, world_height) = match_state
         .match_presentation
         .terrain_grid
         .as_ref()
@@ -233,12 +235,12 @@ pub(crate) fn build_bridge_body_instances(
         terrain,
         sim.overlay_grid(),
         atlas,
-        &state.match_state.match_presentation.overlay_names,
-        state.match_state.match_presentation.lighting.grid(),
+        &match_state.match_presentation.overlay_names,
+        match_state.match_presentation.lighting.grid(),
         origin_y,
         world_height,
-        state.match_state.input.camera_x,
-        state.match_state.input.camera_y,
+        match_state.input.camera_x,
+        match_state.input.camera_y,
         sw,
         sh,
         out,
@@ -459,9 +461,15 @@ pub(crate) fn build_bridge_shadow_instances_inner(
     }
 }
 
-pub(crate) fn build_bridge_shadow_instances(state: &AppState, out: &mut Vec<SpriteInstance>) {
-    let Some(sim) = state
-        .match_state
+pub(crate) fn build_bridge_shadow_instances(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    persistence: &PersistenceState,
+    out: &mut Vec<SpriteInstance>,
+) {
+    let Some(sim) = match_state
         .sim_runtime
         .presentation()
         .map(|rt| &rt.simulation)
@@ -471,36 +479,37 @@ pub(crate) fn build_bridge_shadow_instances(state: &AppState, out: &mut Vec<Spri
     let Some(terrain) = sim.resolved_terrain() else {
         return;
     };
-    let Some(atlas) = state.match_state.match_presentation.bridge_atlas.as_ref() else {
+    let Some(atlas) = match_state.match_presentation.bridge_atlas.as_ref() else {
         return;
     };
-    let (origin_y, world_height) = state
-        .match_state
+    let (origin_y, world_height) = match_state
         .match_presentation
         .terrain_grid
         .as_ref()
         .map(|g| (g.origin_y, g.world_height))
         .unwrap_or((0.0, 1.0));
-    let (cam_x, cam_y) = (
-        state.match_state.input.camera_x,
-        state.match_state.input.camera_y,
-    );
+    let (cam_x, cam_y) = (match_state.input.camera_x, match_state.input.camera_y);
     // The shadow window is cut from the camera, the frame's corner, so it
     // takes the centring size: the battlefield and its offset on both sides.
-    let (width, height) = crate::app::input::camera::tactical_centring_size(state);
-    let zoom = state.match_state.input.zoom_level.max(f32::EPSILON);
+    let (width, height) = crate::app::input::camera::tactical_centring_size(
+        platform,
+        renderer,
+        &frontend.screen,
+        &match_state.match_presentation,
+        persistence,
+    );
+    let zoom = match_state.input.zoom_level.max(f32::EPSILON);
     let (sw, sh) = (width as f32 / zoom, height as f32 / zoom);
     let window = bridge_shadow_window(terrain, atlas.shadow_extent(), cam_x, cam_y, sw, sh);
     // Translucent fog: the shadow sweep is a second overlay pass, so it needs
     // the same wall-cell concealment as the body sweep.
-    let concealment = (state.translucent_fog_enabled()
-        && !state.match_state.sandbox_full_visibility)
+    let concealment = (platform.translucent_fog_enabled() && !match_state.sandbox_full_visibility)
         .then(|| {
             (
-                crate::app::input::commands::preferred_local_owner_name(state)
+                crate::app::input::commands::preferred_local_owner_name(match_state)
                     .as_deref()
                     .and_then(|name| sim.interner().get(name)),
-                state.overlay_registry(),
+                crate::app::state::active_overlay_registry(frontend, match_state),
                 sim.session().game_options().fog_of_war,
             )
         });
@@ -526,17 +535,18 @@ pub(crate) fn build_bridge_shadow_instances(state: &AppState, out: &mut Vec<Spri
                 fog_of_war,
             ))
     };
-    let overlays = &state.match_state.match_presentation.overlays;
+    let overlays = &match_state.match_presentation.overlays;
     let build = |window: CellWindow, entries: &[OverlayEntry], out: &mut Vec<SpriteInstance>| {
         build_bridge_shadow_instances_inner(
             window,
             terrain,
             atlas,
-            &state.match_state.match_presentation.overlay_names,
+            &match_state.match_presentation.overlay_names,
             entries,
             sim.overlay_grid(),
-            state.overlay_registry(),
-            state.rules().map(|rules| (rules, sim.interner())),
+            crate::app::state::active_overlay_registry(frontend, match_state),
+            crate::app::state::active_rules(frontend, match_state)
+                .map(|rules| (rules, sim.interner())),
             origin_y,
             world_height,
             cam_x,
@@ -607,6 +617,7 @@ mod tests {
                 shp: "CTHSE05.SHP".into(),
                 body_frame: 3,
                 shadow_frame: 7,
+                picture: None,
             },
         );
         let mut grid = crate::sim::overlay_grid::OverlayGrid::new(8, 8);

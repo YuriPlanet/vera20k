@@ -19,8 +19,8 @@ use crate::app::shell_network_setup::{HostOptions, NetworkSetupEvent};
 use crate::net::lan_messages::game_name_hash;
 use crate::net::lan_messages::setup;
 use crate::skirmish_launch::{
-    AiDifficulty, LaunchCountry, LaunchStartPosition, LaunchTeam, NETWORK_PLAYER_SLOT_COUNT,
-    SkirmishAiSlot, SkirmishLaunchMode, SkirmishLaunchOptions, SkirmishLocalSlot,
+    AiDifficulty, NETWORK_PLAYER_SLOT_COUNT, SkirmishAiSlot, SkirmishLaunchMode,
+    SkirmishLaunchOptions,
 };
 
 pub(super) fn publish_options(state: &mut AppState) -> Result<bool> {
@@ -37,15 +37,26 @@ pub(super) fn publish_options(state: &mut AppState) -> Result<bool> {
     {
         return Ok(false);
     }
-    let campaign = campaign_room::publication(state)?;
+    let campaign = campaign_room::publication(
+        state.platform.game_config.as_ref(),
+        &state.match_state.session,
+    )?;
     if let Some(room) = &campaign {
-        campaign_room::verify_current(state, room)?;
+        campaign_room::verify_current(
+            state.platform.game_config.as_ref(),
+            &state.process_assets,
+            room,
+        )?;
     }
-    let agreement = crate::app::shell_network_setup::agreement::local(state)?;
+    let agreement = crate::app::shell_network_setup::agreement::local(
+        state.platform.game_config.as_ref(),
+        &state.match_state.session,
+        &mut state.process_assets,
+    )?;
     // The room carries the applied speed, the world's while one is installed:
     // another player's speed event in the last match changed only the world.
     // Build_Options_String reads that global, [0xA8EB60], at 0x005DBC68.
-    crate::app::loading::transitions::sync_in_game_options_speed_from_sim(state);
+    crate::app::loading::transitions::sync_in_game_options_speed_from_sim(&mut state.match_state);
     let session = &state.match_state.session;
     ensure!(session.host(), "only the host publishes full LAN options");
     let current_speed = state
@@ -66,7 +77,11 @@ pub(super) fn publish_options(state: &mut AppState) -> Result<bool> {
                 .ok_or_else(|| anyhow!("host seed is not initialized"))?,
         },
         None => TaggedOptionsBody::Stock {
-            random_map: crate::app::shell_network_setup::maps::host_generated_manifest(state)?,
+            random_map: crate::app::shell_network_setup::maps::host_generated_manifest(
+                state.platform.game_config.as_ref(),
+                &state.frontend.multiplayer_shell_runtime,
+                &state.match_state.session,
+            )?,
             room: projected_room(
                 session,
                 state
@@ -100,12 +115,15 @@ pub(super) fn publish_options(state: &mut AppState) -> Result<bool> {
         body: body.clone(),
     })?;
     let admitted = queue_payload(
-        state,
+        &mut state.match_state,
         crate::net::lan_messages::extended_setup::SetupKind::Options,
         payload,
     )?;
     if admitted {
-        crate::app::shell_network_setup::invalidate_network_agreement(state)?;
+        crate::app::shell_network_setup::invalidate_network_agreement(
+            &mut state.frontend.network_setup_protocol,
+            &mut state.match_state.session,
+        )?;
         let service = state
             .match_state
             .lan_service
@@ -129,8 +147,14 @@ pub(super) fn publish_options(state: &mut AppState) -> Result<bool> {
                     .match_state
                     .session
                     .accept_campaign_room(Some(room), game_speed)?;
-                super::maps::clear_campaign_transfer(state);
-                campaign_room::report_local_files(state, true)?;
+                super::maps::clear_campaign_transfer(&mut state.frontend, &mut state.match_state);
+                campaign_room::report_local_files(
+                    &state.renderer,
+                    &mut state.frontend,
+                    &mut state.match_state,
+                    &state.process_assets,
+                    true,
+                )?;
             }
         }
     }
@@ -317,19 +341,18 @@ pub(super) fn reapply_received_options(state: &mut AppState) -> Result<()> {
 }
 
 fn queue_payload(
-    state: &mut AppState,
+    match_state: &mut crate::app::match_runtime::state::MatchState,
     kind: crate::net::lan_messages::extended_setup::SetupKind,
     payload: Vec<u8>,
 ) -> Result<bool> {
-    let endpoints = super::remote_sources(state)
+    let endpoints = super::remote_sources(&match_state.session)
         .into_iter()
-        .filter_map(|source| state.match_state.session.network_endpoint(source))
+        .filter_map(|source| match_state.session.network_endpoint(source))
         .collect::<Vec<_>>();
-    let game = super::active_game_name(state).ok_or_else(|| anyhow!("no active LAN game"))?;
+    let game = super::active_game_name(match_state).ok_or_else(|| anyhow!("no active LAN game"))?;
     let mut scoped = game_name_hash(&game).to_le_bytes().to_vec();
     scoped.extend_from_slice(&payload);
-    let service = state
-        .match_state
+    let service = match_state
         .lan_service
         .as_mut()
         .ok_or_else(|| anyhow!("no LAN service"))?;
@@ -392,11 +415,21 @@ fn apply_host_room(
                 .session
                 .accept_campaign_room(Some(room.clone()), envelope.game_speed)?;
             state.match_state.session.set_network_start_seed(*seed)?;
-            let verified = campaign_room::verify_current(state, room);
+            let verified = campaign_room::verify_current(
+                state.platform.game_config.as_ref(),
+                &state.process_assets,
+                room,
+            );
             if let Err(error) = &verified {
                 log::info!("Campaign room files refused: {error:#}");
             }
-            campaign_room::report_local_files(state, verified.is_ok())?;
+            campaign_room::report_local_files(
+                &state.renderer,
+                &mut state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                verified.is_ok(),
+            )?;
         }
         _ => anyhow::bail!("LAN host setup projection does not match its options body"),
     }
@@ -404,8 +437,10 @@ fn apply_host_room(
     Ok(())
 }
 
-pub(super) fn publish_roster(state: &mut AppState) -> Result<bool> {
-    let session = &state.match_state.session;
+pub(super) fn publish_roster(
+    match_state: &mut crate::app::match_runtime::state::MatchState,
+) -> Result<bool> {
+    let session = &match_state.session;
     ensure!(session.host(), "only the host publishes a LAN roster");
     // A VERA room's spectator rows may lie past the native eight.
     let rows = if session.network_several_observers()
@@ -420,7 +455,7 @@ pub(super) fn publish_roster(state: &mut AppState) -> Result<bool> {
     let names = projected_roster(session)?;
     let names = &names[..rows];
     queue_payload(
-        state,
+        match_state,
         crate::net::lan_messages::extended_setup::SetupKind::Roster,
         serde_json::to_vec(names)?,
     )
@@ -467,7 +502,8 @@ pub(super) fn receive_extended(
     let Some((kind, bytes)) = complete else {
         return Ok(());
     };
-    let game = super::active_game_name(state).ok_or_else(|| anyhow!("no active LAN game"))?;
+    let game =
+        super::active_game_name(&state.match_state).ok_or_else(|| anyhow!("no active LAN game"))?;
     ensure!(
         bytes.len() >= 4 && bytes[..4] == game_name_hash(&game).to_le_bytes(),
         "different LAN game"
@@ -488,10 +524,14 @@ pub(super) fn receive_extended(
                 .map_err(anyhow::Error::from)
                 .and_then(|options| receive_host_options(state, scope, options, host));
             if result.is_err() {
-                super::reject_setup_compatibility(
-                    state,
+                let step = super::reject_setup_compatibility(
+                    &state.renderer,
+                    &mut state.frontend,
+                    &state.match_state,
+                    &state.process_assets,
                     &crate::i18n::tr("VERA:LanOptionsInvalid"),
                 );
+                super::App::apply_step(state, step);
             }
             result
         }
@@ -540,13 +580,18 @@ fn receive_host_options(
             )?;
         }
     }
-    crate::app::shell_network_setup::invalidate_network_agreement(state)?;
+    crate::app::shell_network_setup::invalidate_network_agreement(
+        &mut state.frontend.network_setup_protocol,
+        &mut state.match_state.session,
+    )?;
     apply_host_room(state, &options, host_setup)?;
     match &options.body {
         TaggedOptionsBody::Stock { random_map, .. } => {
             super::maps::received_options(state, scope, random_map.clone())?
         }
-        TaggedOptionsBody::Campaign { .. } => super::maps::clear_campaign_transfer(state),
+        TaggedOptionsBody::Campaign { .. } => {
+            super::maps::clear_campaign_transfer(&mut state.frontend, &mut state.match_state)
+        }
     }
     state
         .match_state
@@ -781,7 +826,7 @@ fn host_options(
             .iter_mut()
             .find(|human| human.name.eq_ignore_ascii_case(&choices.name))
         {
-            human.slot = decoded_choices(
+            human.slot = super::picks::decoded_pick(
                 &human.slot,
                 choices.country,
                 choices.color,
@@ -799,7 +844,7 @@ fn host_options(
         let old = session
             .network_row_choices(row)
             .ok_or_else(|| anyhow!("no setup row {row}"))?;
-        let choices = decoded_choices(&old, ai.country, ai.color, ai.start, ai.team)?;
+        let choices = super::picks::decoded_pick(&old, ai.country, ai.color, ai.start, ai.team)?;
         opponents.push(SkirmishAiSlot {
             raw_slot_index: row,
             country: choices.country,
@@ -826,53 +871,6 @@ fn host_options(
         cooperative_difficulty: room.cooperative_difficulty,
         seed: Some(room.seed),
     })
-}
-
-pub(super) fn decoded_choices(
-    old: &SkirmishLocalSlot,
-    country: i32,
-    color: i32,
-    start: i32,
-    team: i32,
-) -> Result<SkirmishLocalSlot> {
-    let mut slot = old.clone();
-    ensure!(
-        country == -3 || country == -2 || (0..=i32::from(u16::MAX)).contains(&country),
-        "country outside native registry domain"
-    );
-    slot.country_random = country == -2;
-    if country >= 0 {
-        slot.country = LaunchCountry::from_country_index(country as u32);
-    } else if country == -2 {
-        //696F99 clears the concrete country when SetCountry receives Random.
-        //The AI-array parser5E5BAB..5E5C3C likewise replaces its word with -2; there
-        //is no previous display-row country to retain in that representation.
-        slot.country = LaunchCountry::America;
-    }
-    ensure!(
-        color == -2 || (0..=i32::from(u8::MAX)).contains(&color),
-        "color outside native slot domain"
-    );
-    slot.color_random = color == -2;
-    if color >= 0 {
-        slot.color_index = color as u8;
-    } else {
-        //696FC9 sets the concrete color to -1 for Random. The Rust slot
-        //represents that sentinel with color_random; its unused u8 payload
-        //has canonical value0, independent of whichever row was displayed.
-        slot.color_index = 0;
-    }
-    slot.start_position = match start {
-        -2 | -1 => LaunchStartPosition::Auto,
-        0..=29 => LaunchStartPosition::Position(start as u8),
-        _ => anyhow::bail!("start outside supported waypoint domain"),
-    };
-    slot.team = match team {
-        -2 | -1 => LaunchTeam::None,
-        0..=255 => LaunchTeam::Team(team as u8),
-        _ => anyhow::bail!("team outside native slot domain"),
-    };
-    Ok(slot)
 }
 
 pub(super) fn decoded_difficulty(value: i32) -> Result<AiDifficulty> {
@@ -954,7 +952,9 @@ fn parsed_roster(
 mod tests {
     use super::*;
     use crate::app::match_runtime::session::{NetworkReturnContext, NetworkRowKind};
-    use crate::skirmish_launch::SkirmishLaunchSession;
+    use crate::skirmish_launch::{
+        LaunchCountry, LaunchStartPosition, LaunchTeam, SkirmishLaunchSession,
+    };
     use std::net::Ipv4Addr;
 
     fn fixture(host: bool) -> MatchSession {

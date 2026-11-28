@@ -85,7 +85,7 @@ fn supplied_fixture(rules: &RuleSet, fixture: &Value, row: &Value) -> (Simulatio
             }),
         ));
     }
-    sim.scenario_rng =
+    *sim.scenario_rng =
         SimRng::from_native_state_hex_for_test(row["scenario_rng_before_hex"].as_str().unwrap());
     (sim, id)
 }

@@ -14,6 +14,7 @@
 use winit::event::{ElementState, MouseButton};
 
 use crate::app::AppState;
+use crate::app::frontend::state::FrontendState;
 use crate::app::input::commands::{place_ready_building_at_cell, preferred_local_owner_name};
 use crate::app::input::context_order::{ContextClick, ContextOrderTarget, try_queue_context_order};
 use crate::app::input::entity_pick::{
@@ -25,6 +26,9 @@ use crate::app::input::entity_pick::{
     pick_entity_at_point,
 };
 use crate::app::input::precedence::{ModalPage, modal_page};
+use crate::app::input::state::MatchInputState;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::options_profile::RetailOptionsProfile;
 use crate::app::types::OrderMode;
 #[cfg(test)]
 use crate::sim::command::Command;
@@ -52,6 +56,12 @@ mod unit_orders;
 // Sibling input modules the parts reach as `super::<module>`.
 use super::{build_repeat, commands, context_order, superweapon_cameo, transport_orders};
 
+use crate::app::PlatformState;
+use crate::app::diagnostics::state::DiagnosticsState;
+use crate::app::persistence::PersistenceState;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
+use crate::audio::sfx::SfxPlayer;
 pub(crate) use control_groups::GroupPressAction;
 use control_groups::{GroupPress, handle_control_group_command, queue_control_group_assignment};
 #[cfg(all(test, tests_app_input_d_z))]
@@ -75,12 +85,10 @@ pub(crate) use hotkey_dispatch::{
 };
 pub(crate) use selection::{
     CommittedSelection, KeyModifiers, is_alt_held, is_ctrl_held, is_shift_held,
-    reconcile_selection_order_after_sim, selected_in_order, selected_stable_ids_in_order,
-    selection_order_for_world,
+    queue_selection_snapshot_command, reconcile_selection_order_after_sim, selected_in_order,
+    selected_stable_ids_in_order, selection_order_for_world,
 };
-use selection::{
-    apply_selection_action_line_policy, apply_selection_mutation, queue_selection_snapshot_command,
-};
+use selection::{apply_selection_action_line_policy, apply_selection_mutation};
 #[cfg(all(test, tests_app_input_d_z))]
 use selection::{
     apply_selection_action_line_policy_at_frame, insert_selected_id_by_role, logic_selects,
@@ -88,8 +96,6 @@ use selection::{
     selection_voice_recipients,
 };
 pub(super) use sidebar::local_has_manageable_building;
-#[cfg(test)]
-pub(super) use {hotkey_dispatch::ready_tab_factory, sidebar::ready_cameo_factory};
 #[cfg(test)]
 pub(crate) use sidebar::wheel_action;
 pub(crate) use sidebar::{
@@ -106,6 +112,8 @@ use unit_orders::{
     queue_deploy_undeploy_for_selected, queue_guard_for_selected, queue_scatter_for_selected,
     queue_stop_for_selected,
 };
+#[cfg(test)]
+pub(super) use {hotkey_dispatch::ready_tab_factory, sidebar::ready_cameo_factory};
 
 /// Handle mouse button press/release for selection and move commands.
 ///
@@ -126,12 +134,28 @@ pub(crate) fn handle_mouse_input(
 ) {
     // The window path routes these pages in its own handler from the same
     // decision (`input::precedence`); captures enter here directly.
-    if modal_page(state) == Some(ModalPage::NetworkFailure) {
-        crate::app::match_runtime::network_failure::mouse(state, button, btn_state.is_pressed());
+    if modal_page(
+        &state.platform,
+        &state.renderer,
+        &state.frontend,
+        &state.match_state,
+        &state.persistence,
+    ) == Some(ModalPage::NetworkFailure)
+    {
+        crate::app::match_runtime::network_failure::mouse(
+            &state.platform,
+            &state.renderer,
+            &mut state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            &mut state.audio.sfx_player,
+            button,
+            btn_state.is_pressed(),
+        );
         return;
     }
     handle_mouse_input_inner(state, button, btn_state);
-    super::commands::reconcile_paid_super_weapon_cursor(state);
+    super::commands::reconcile_paid_super_weapon_cursor(&mut state.match_state);
 }
 
 fn handle_mouse_input_inner(state: &mut AppState, button: MouseButton, btn_state: ElementState) {
@@ -142,14 +166,30 @@ fn handle_mouse_input_inner(state: &mut AppState, button: MouseButton, btn_state
         .input
         .tactical_mouse
         .record_physical_button(button, pressed);
-    match modal_page(state) {
+    match modal_page(
+        &state.platform,
+        &state.renderer,
+        &state.frontend,
+        &state.match_state,
+        &state.persistence,
+    ) {
         // 0xEA is pushed over the game and any open page.
         Some(ModalPage::NetworkWait) => {
             if !pressed {
                 state.match_state.input.cancel_tactical_drag();
-                crate::app::input::chrome_input::cancel(state);
+                crate::app::input::chrome_input::cancel(&mut state.match_state.match_presentation);
             }
-            crate::app::input::connection::mouse(state, button, pressed);
+            crate::app::input::connection::mouse(
+                &state.platform,
+                &state.renderer,
+                &state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                &mut state.audio.sfx_player,
+                &state.persistence,
+                button,
+                pressed,
+            );
             return;
         }
         Some(ModalPage::Keyboard) => {
@@ -162,8 +202,21 @@ fn handle_mouse_input_inner(state: &mut AppState, button: MouseButton, btn_state
     }
     // VERA: in the layout edit mode the mouse moves the interface's parts and
     // reaches nothing else in the match.
-    if crate::app::input::layout_edit::active(state) && !state.match_state.paused() {
-        crate::app::input::layout_edit::mouse(state, button, pressed);
+    if crate::app::input::layout_edit::active(&state.match_state.match_presentation)
+        && !state.match_state.paused()
+    {
+        crate::app::input::layout_edit::mouse(
+            &state.platform,
+            &state.renderer,
+            &state.diag,
+            &state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            &mut state.audio,
+            &state.persistence,
+            button,
+            pressed,
+        );
         return;
     }
     // Paused in-game Options overlay owns the mouse: route press/release/checkbox/
@@ -183,21 +236,27 @@ fn handle_mouse_input_inner(state: &mut AppState, button: MouseButton, btn_state
         // pause with neither drops it here.
         if !pressed {
             state.match_state.input.cancel_tactical_drag();
-            crate::app::input::chrome_input::cancel(state);
+            crate::app::input::chrome_input::cancel(&mut state.match_state.match_presentation);
         }
         match state.match_state.match_presentation.in_game_menu {
-            crate::ui::pause_menu::InGameMenuState::Page => {
-                if button == MouseButton::Left {
-                    crate::app::shell_wol::page::mouse(state, pressed);
-                }
-            }
             crate::ui::pause_menu::InGameMenuState::SavedGame(_) => {
                 if button == MouseButton::Left {
                     crate::app::App::saved_game_mouse(state, pressed);
                 }
             }
             menu if button == MouseButton::Left => {
-                crate::app::input::dialog_page::in_game_pointer(state, menu, Some(pressed));
+                crate::app::input::dialog_page::in_game_pointer(
+                    &mut state.platform,
+                    &mut state.renderer,
+                    &state.diag,
+                    &mut state.frontend,
+                    &mut state.match_state,
+                    &mut state.process_assets,
+                    &mut state.audio,
+                    &mut state.persistence,
+                    menu,
+                    Some(pressed),
+                );
             }
             _ => {}
         }
@@ -205,14 +264,26 @@ fn handle_mouse_input_inner(state: &mut AppState, button: MouseButton, btn_state
     }
     // ScrollHandleMouse6930A0 refuses ordinary pointer messages while the
     // Scenario input lock is active; capture cancellation already ran in46.
-    if crate::app::input::campaign_input::is_locked(state) {
+    if crate::app::input::campaign_input::is_locked(&state.match_state) {
+        return;
+    }
+    // Client module nodes lie over the match: a press on a clickable one, a
+    // press that dismisses one, or a map click a module captures never
+    // reaches the chrome or the battlefield (RFC 0001 section 10).
+    if crate::app::ui_modules::pointer_button(state, button, pressed) {
         return;
     }
     // The stock tactical handler has no middle-button case. VERA's optional
     // wheel zoom takes a press over the battlefield as its reset.
     if button == MouseButton::Middle {
         if pressed {
-            crate::app::input::camera::middle_press_resets_view_distance(state);
+            crate::app::input::camera::middle_press_resets_view_distance(
+                &state.platform,
+                &state.renderer,
+                &state.frontend.screen,
+                &mut state.match_state,
+                &state.persistence,
+            );
         }
         return;
     }
@@ -225,14 +296,45 @@ fn handle_mouse_input_inner(state: &mut AppState, button: MouseButton, btn_state
         return;
     }
     match crate::app::input::chrome_input::mouse_button(state, button, pressed) {
-        ChromeRoute::Tactical => tactical_mouse(state, button, btn_state),
-        ChromeRoute::Minimap => minimap_mouse(state, button, btn_state),
+        ChromeRoute::Tactical => tactical_mouse(
+            &state.platform,
+            &state.renderer,
+            &state.diag,
+            &state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            &mut state.audio.sfx_player,
+            &state.persistence,
+            button,
+            btn_state,
+        ),
+        ChromeRoute::Minimap => minimap_mouse(
+            &state.platform,
+            &mut state.renderer,
+            &state.diag,
+            &state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            &mut state.audio.sfx_player,
+            &state.persistence,
+            button,
+            btn_state,
+        ),
         // Consumed (chrome/cameo/control button) → handled by the chrome.
         // NotConsumed → the click hit no live control; nothing to do (every
         // in-game surface is on the chrome).
         ChromeRoute::Consumed | ChromeRoute::NotConsumed => {}
     }
-    crate::app::presentation::sidebar_render::refresh_sidebar_projection(state);
+    crate::app::presentation::sidebar_render::refresh_sidebar_projection(
+        &state.platform,
+        &state.renderer,
+        &state.diag,
+        &state.frontend,
+        &mut state.match_state,
+        &state.process_assets,
+        &mut state.audio,
+        &state.persistence,
+    );
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -290,11 +392,14 @@ fn route_click_action_before_type_select<T>(
 
 /// VERA-only input mapping. Explicit attack-move and force-command chords
 /// still accept a left-click target; an ordinary left click only selects.
-fn left_click_can_issue_orders(state: &AppState) -> bool {
-    !state.persistence.options_profile.right_click_orders
-        || state.match_state.input.queued_order_mode == OrderMode::AttackMove
-        || is_ctrl_held(state)
-        || is_alt_held(state)
+fn left_click_can_issue_orders(
+    input: &MatchInputState,
+    options_profile: &RetailOptionsProfile,
+) -> bool {
+    !options_profile.right_click_orders
+        || input.queued_order_mode == OrderMode::AttackMove
+        || is_ctrl_held(input)
+        || is_alt_held(input)
 }
 
 /// Tactical-viewport mouse body (routed here when the full-tactical ClickRegion
@@ -302,14 +407,33 @@ fn left_click_can_issue_orders(state: &AppState) -> bool {
 /// that started there). Logic is the legacy handler's tactical path, unchanged;
 /// the minimap-drag-end and minimap-begin checks moved to `minimap_mouse`. The
 /// stock tactical path has no middle-button case, so the Rust dispatcher ignores it.
-pub(crate) fn tactical_mouse(state: &mut AppState, button: MouseButton, btn_state: ElementState) {
-    if crate::app::input::campaign_input::is_locked(state) {
+pub(crate) fn tactical_mouse(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
+    button: MouseButton,
+    btn_state: ElementState,
+) {
+    if crate::app::input::campaign_input::is_locked(match_state) {
         return;
     }
     match button {
         MouseButton::Left => {
             if btn_state.is_pressed() {
-                if crate::app::input::planning_mode::refuse_press_at_cursor(state) {
+                if crate::app::input::planning_mode::refuse_press_at_cursor(
+                    platform,
+                    renderer,
+                    diag,
+                    frontend,
+                    match_state,
+                    process_assets,
+                    persistence,
+                ) {
                     return;
                 }
                 // PlanMgr's press 0x0063A5A0 also takes a press inside the
@@ -317,8 +441,14 @@ pub(crate) fn tactical_mouse(state: &mut AppState, button: MouseButton, btn_stat
                 // 1 (0x0063A736), so LeftDown never arms a band. RESIDUAL:
                 // natively it skips the capture too; here the capture is kept
                 // so the release still reaches `connect_at_cursor`.
-                let press_on_hover_node =
-                    crate::app::input::planning_mode::hover_node(state).is_some();
+                let press_on_hover_node = crate::app::input::planning_mode::hover_node(
+                    platform,
+                    renderer,
+                    frontend,
+                    match_state,
+                    persistence,
+                )
+                .is_some();
                 // gamemd takes the mouse capture on the press edge whether or
                 // not the band drag arms: the modal gates live inside the
                 // drag-arm helper 0x004AC310, not around the capture. The
@@ -327,27 +457,24 @@ pub(crate) fn tactical_mouse(state: &mut AppState, button: MouseButton, btn_stat
                 // It refuses to arm at all when the shared capture byte is
                 // already held, so a left press landing mid right-drag records
                 // only the physical button. See `TacticalMouseState`.
-                if !state.match_state.input.tactical_mouse.begin_left_press() {
+                if !match_state.input.tactical_mouse.begin_left_press() {
                     return;
                 }
                 // LeftDown 0x004AC310 has no planning test, so a drag off the
                 // hover node in Planning Mode makes a band box.
                 if press_on_hover_node
-                    || state.match_state.input.targeting_mode.is_some()
-                    || state
-                        .match_state
+                    || match_state.input.targeting_mode.is_some()
+                    || match_state
                         .match_presentation
                         .sidebar_gadget_state
                         .repair_mode_on
-                    || state
-                        .match_state
+                    || match_state
                         .match_presentation
                         .sidebar_gadget_state
                         .sell_mode_on
                     // LeftDown 0x004AC310 also refuses the band in power mode
                     // (+0x11B2, 0x004AC31A).
-                    || state
-                        .match_state
+                    || match_state
                         .match_presentation
                         .sidebar_gadget_state
                         .power_mode_on
@@ -357,21 +484,21 @@ pub(crate) fn tactical_mouse(state: &mut AppState, button: MouseButton, btn_stat
                     // the release takes the band path over the last band's
                     // rectangle and places no beacon when that stale rectangle
                     // catches an object.
-                    || crate::app::input::beacon::mode_active(state)
+                    || crate::app::input::beacon::mode_active(&match_state.match_presentation)
                     // VERA ferry: the armed click names the drop spot.
-                    || state.match_state.input.ferry.armed()
+                    || match_state.input.ferry.armed()
                 {
                     return; // suppress selection drag while a targeting / repair / sell / power / beacon mode is active
                 }
                 // VERA formation line: with its key held and a group
                 // selected, the drag draws a line and no band box.
-                if begin_formation_line(state) {
+                if begin_formation_line(frontend, match_state) {
                     return;
                 }
-                state.match_state.input.selection_state.begin_drag(
-                    state.match_state.input.cursor_x,
-                    state.match_state.input.cursor_y,
-                );
+                match_state
+                    .input
+                    .selection_state
+                    .begin_drag(match_state.input.cursor_x, match_state.input.cursor_y);
             } else {
                 // Case 0x202 gates the whole release on the same shared capture
                 // byte and does NOT test which button set it. With the byte
@@ -380,52 +507,87 @@ pub(crate) fn tactical_mouse(state: &mut AppState, button: MouseButton, btn_stat
                 // holding it. See `TacticalMouseState::end_left_press`.
                 // VERA formation line: the drag ends with the button,
                 // whether or not the capture below is still held.
-                let formation = state.match_state.input.formation_line.finish();
-                if !state.match_state.input.tactical_mouse.end_left_press() {
+                let formation = match_state.input.formation_line.finish();
+                if !match_state.input.tactical_mouse.end_left_press() {
                     return;
                 }
                 // A drawn line or block orders the group; a line too short
                 // to be one is the ordinary click below.
                 if let Some(path) = formation
                     && path.is_order()
-                    && crate::app::input::context_order::queue_formation_line(state, &path)
+                    && crate::app::input::context_order::queue_formation_line(
+                        platform,
+                        renderer,
+                        diag,
+                        frontend,
+                        match_state,
+                        process_assets,
+                        sfx_player,
+                        persistence,
+                        &path,
+                    )
                 {
                     // As BandBox_LeftUp ends the attack-move mode (`0x00731CF0`).
-                    state.match_state.input.queued_order_mode = OrderMode::Move;
+                    match_state.input.queued_order_mode = OrderMode::Move;
                     return;
                 }
-                band_box_left_up(state, LeftUp::Tactical);
+                band_box_left_up(
+                    platform,
+                    renderer,
+                    diag,
+                    frontend,
+                    match_state,
+                    process_assets,
+                    sfx_player,
+                    persistence,
+                    LeftUp::Tactical,
+                );
             }
         }
         MouseButton::Right => {
             if btn_state.is_pressed() {
                 // PlanMgr's right press 0x0063AAC0 runs first (0x006932D0).
-                crate::app::input::planning_mode::right_press(state);
+                crate::app::input::planning_mode::right_press(
+                    platform,
+                    renderer,
+                    frontend,
+                    match_state,
+                    persistence,
+                );
                 // Otherwise the native right press has no game effect: it
                 // records the pan anchor and takes the capture, and only does
                 // that when no other button already holds it. Everything the
                 // player sees happens on the release edge.
-                if state.match_state.input.tactical_mouse.press_may_arm() {
-                    state.match_state.input.tactical_mouse.begin_right_drag((
-                        state.match_state.input.cursor_x,
-                        state.match_state.input.cursor_y,
-                    ));
+                if match_state.input.tactical_mouse.press_may_arm() {
+                    match_state
+                        .input
+                        .tactical_mouse
+                        .begin_right_drag((match_state.input.cursor_x, match_state.input.cursor_y));
                 }
             } else {
                 // 0x0069338A: PlanMgr's release 0x0063AB00 precedes the
                 // capture test.
-                crate::app::input::planning_mode::right_release(state);
-                if let Some(is_click) = state.match_state.input.tactical_mouse.end_right_press() {
+                crate::app::input::planning_mode::right_release(frontend, match_state);
+                if let Some(is_click) = match_state.input.tactical_mouse.end_right_press() {
                     // Dispatch a click only when the drag threshold was never
                     // crossed. A right drag that panned the map ends silently;
                     // the selection survives it.
                     if is_click {
-                        handle_tactical_right_click(state);
+                        handle_tactical_right_click(
+                            platform,
+                            renderer,
+                            diag,
+                            frontend,
+                            match_state,
+                            process_assets,
+                            sfx_player,
+                            persistence,
+                        );
                     }
                     // The native release tears the band rectangle down too.
-                    state.match_state.input.selection_state.cancel_drag();
+                    match_state.input.selection_state.cancel_drag();
                     // VERA formation line: and a line being drawn.
-                    state.match_state.input.formation_line.cancel();
+                    match_state.input.formation_line.cancel();
                 }
             }
         }
@@ -437,23 +599,22 @@ pub(crate) fn tactical_mouse(state: &mut AppState, button: MouseButton, btn_stat
 /// when its key is held and at least two units that take a point are
 /// selected ([`crate::app::input::context_order::formation_unit_count`]). Fewer leave
 /// the press to the band box, so the key alone never blocks selecting.
-fn begin_formation_line(state: &mut AppState) -> bool {
-    if !state.match_state.input.formation_line.key_held() {
+fn begin_formation_line(frontend: &FrontendState, match_state: &mut MatchState) -> bool {
+    if !match_state.input.formation_line.key_held() {
         return false;
     }
-    let selected = crate::app::input::context_order::formation_unit_count(state);
+    let selected = crate::app::input::context_order::formation_unit_count(frontend, match_state);
     if selected < 2 {
         return false;
     }
     let world = crate::app::match_runtime::sim_tick::screen_point_to_world(
-        state,
-        state.match_state.input.cursor_x,
-        state.match_state.input.cursor_y,
+        &match_state.input,
+        match_state.input.cursor_x,
+        match_state.input.cursor_y,
     );
     // Shift held as well: the drag is a block's front row.
-    let block = state.match_state.input.hotkey_modifiers.shift_key();
-    state
-        .match_state
+    let block = match_state.input.hotkey_modifiers.shift_key();
+    match_state
         .input
         .formation_line
         .begin(world, selected, block);
@@ -481,24 +642,65 @@ pub(crate) enum LeftUp {
 /// `DisplayClass::BandBox_LeftUp @ 0x004AB9B0`. `0x00731CF0` ends the
 /// attack-move mode (`0x00B0FE58`) before each of its returns
 /// (`0x004ABC67`, `0x004ABC85`, `0x004AC294`), whatever the release did.
-pub(crate) fn band_box_left_up(state: &mut AppState, click: LeftUp) {
-    left_up_branches(state, click);
-    state.match_state.input.queued_order_mode = OrderMode::Move;
+pub(crate) fn band_box_left_up(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
+    click: LeftUp,
+) {
+    left_up_branches(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        sfx_player,
+        persistence,
+        click,
+    );
+    match_state.input.queued_order_mode = OrderMode::Move;
 }
 
-fn left_up_branches(state: &mut AppState, click: LeftUp) {
+fn left_up_branches(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
+    click: LeftUp,
+) {
     // A pending placement takes the clicked Cell, whatever the action
     // (`0x004ABA16..0x004ABC67`).
-    if let Some(type_id) = state.armed_building_type().map(str::to_owned) {
+    if let Some(type_id) = match_state.input.armed_building_type().map(str::to_owned) {
         let cell = match click {
             LeftUp::Tactical => crate::app::match_runtime::sim_tick::screen_point_to_world_cell(
-                state,
-                state.match_state.input.cursor_x,
-                state.match_state.input.cursor_y,
+                match_state,
+                match_state.input.cursor_x,
+                match_state.input.cursor_y,
             ),
             LeftUp::Radar { target, .. } => target.cell,
         };
-        place_ready_building_at_cell(state, &type_id, cell);
+        place_ready_building_at_cell(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            sfx_player,
+            persistence,
+            &type_id,
+            cell,
+        );
         return;
     }
     let LeftUp::Radar {
@@ -507,13 +709,32 @@ fn left_up_branches(state: &mut AppState, click: LeftUp) {
         beacon,
     } = click
     else {
-        tactical_left_up(state);
+        tactical_left_up(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            sfx_player,
+            persistence,
+        );
         return;
     };
     // VERA minimap beacons: the beacon action places at the pick, as the
     // tactical release's 0x3C arm does at its Cell (0x004AC033).
     if beacon {
-        crate::app::input::beacon::place_at_cell(state, target.cell);
+        crate::app::input::beacon::place_at_cell(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            sfx_player,
+            persistence,
+            target.cell,
+        );
         return;
     }
     // The selection's dispatch, each object asking its own What_Action
@@ -531,12 +752,27 @@ fn left_up_branches(state: &mut AppState, click: LeftUp) {
     // only into a Planning Mode record (`0x006FFC30`); VERA has no second
     // Cell. Trigger: a kept superweapon, or a Cell Harvest, Guard or Attack,
     // in Planning Mode. Effect: that record's third target. Frequency: rare.
-    try_queue_context_order(state, ContextOrderTarget::Radar(target), true);
+    try_queue_context_order(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        sfx_player,
+        persistence,
+        ContextOrderTarget::Radar(target),
+        true,
+    );
     if let Some(action) = super_weapon
-        && let Some(armed) = state.armed_super_weapon_type().map(str::to_owned)
+        && let Some(armed) = match_state
+            .input
+            .armed_super_weapon_type()
+            .map(str::to_owned)
     {
         crate::app::input::commands::launch_super_weapon_at_cell(
-            state,
+            frontend,
+            match_state,
             &armed,
             action,
             target.cell,
@@ -546,82 +782,132 @@ fn left_up_branches(state: &mut AppState, click: LeftUp) {
 
 /// The tactical release past the placement branch: the superweapon's
 /// SPECIAL_PLACE, a planning node's connection, the band box and the click.
-fn tactical_left_up(state: &mut AppState) {
+fn tactical_left_up(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
+) {
     // DetermineAction answers the armed superweapon's action only with
     // nothing selected (`0x00692610..0x00692673`); with a selection it is the
     // best object's What_Action, which the click below dispatches. With
     // nothing selected the dispatch has no receiver, so SPECIAL_PLACE alone
     // remains.
     let selection_empty = selected_stable_ids_in_order(
-        state
-            .match_state
-            .sim_runtime
-            .runtime()
-            .map(|rt| &rt.simulation),
-        state.rules(),
-        &state.match_state.input.selection_order,
-        state.match_state.input.selection_order_pending,
+        match_state.sim_runtime.runtime().map(|rt| &rt.simulation),
+        crate::app::state::active_rules(frontend, match_state),
+        &match_state.input.selection_order,
+        match_state.input.selection_order_pending,
     )
     .is_empty();
-    match state.match_state.input.tactical_pointer_mode(
-        &state.match_state.match_presentation.sidebar_gadget_state,
+    match match_state.input.tactical_pointer_mode(
+        &match_state.match_presentation.sidebar_gadget_state,
         selection_empty,
     ) {
         super::state::TacticalPointerMode::SuperWeapon(section) => {
             let section = section.to_owned();
-            crate::app::input::commands::launch_super_weapon_at_cursor(state, &section);
+            crate::app::input::commands::launch_super_weapon_at_cursor(
+                platform,
+                renderer,
+                frontend,
+                match_state,
+                persistence,
+                &section,
+            );
             return;
         }
         super::state::TacticalPointerMode::RepairSell => {
-            crate::app::input::commands::try_repair_sell_mode_click(state);
+            crate::app::input::commands::try_repair_sell_mode_click(
+                platform,
+                renderer,
+                diag,
+                frontend,
+                match_state,
+                process_assets,
+                sfx_player,
+                persistence,
+            );
             return;
         }
         super::state::TacticalPointerMode::Power => {
-            crate::app::input::power_mode::click(state);
+            crate::app::input::power_mode::click(
+                platform,
+                renderer,
+                diag,
+                frontend,
+                match_state,
+                process_assets,
+                sfx_player,
+                persistence,
+            );
             return;
         }
         super::state::TacticalPointerMode::Ordinary => {}
     }
     // VERA ferry: the armed click sets the selected transports' route, a
     // left-button tool in both control schemes like the ones around it.
-    if crate::app::input::ferry::drop_click(state) {
+    if crate::app::input::ferry::drop_click(match_state) {
         return;
     }
     // Planning-node editing stays a left-button tool in both control schemes,
     // like explicit placement and targeting above; ordinary planned missions
     // use the configured order button through the context owner below.
-    if crate::app::input::planning_mode::connect_at_cursor(state) {
+    if crate::app::input::planning_mode::connect_at_cursor(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        persistence,
+    ) {
         return;
     }
     // Past PlanMgr's release (0x00693225), DetermineAction answers 0x3C in
     // beacon mode with nothing selected (0x006929AF); the release places
     // the beacon (0x004AC033).
-    if selection_empty && crate::app::input::beacon::mode_active(state) {
+    if selection_empty && crate::app::input::beacon::mode_active(&match_state.match_presentation) {
         let cell = crate::app::match_runtime::sim_tick::screen_point_to_world_cell(
-            state,
-            state.match_state.input.cursor_x,
-            state.match_state.input.cursor_y,
+            match_state,
+            match_state.input.cursor_x,
+            match_state.input.cursor_y,
         );
-        crate::app::input::beacon::place_at_cell(state, cell);
+        crate::app::input::beacon::place_at_cell(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            sfx_player,
+            persistence,
+            cell,
+        );
         return;
     }
     // Only an active band box owns a clamped tactical endpoint.
     // A pending press is still an ordinary click at the actual
     // release point, including after sticky capture routing.
-    let release_point = if state.match_state.input.selection_state.is_band_box_active() {
+    let release_point = if match_state.input.selection_state.is_band_box_active() {
         clamp_tactical_drag_endpoint(
-            state.match_state.input.cursor_x,
-            state.match_state.input.cursor_y,
-            crate::app::input::camera::tactical_viewport_px(state),
+            match_state.input.cursor_x,
+            match_state.input.cursor_y,
+            crate::app::input::camera::tactical_viewport_px(
+                platform,
+                renderer,
+                &frontend.screen,
+                &match_state.match_presentation,
+                persistence,
+            ),
         )
     } else {
-        (
-            state.match_state.input.cursor_x,
-            state.match_state.input.cursor_y,
-        )
+        (match_state.input.cursor_x, match_state.input.cursor_y)
     };
-    let mut action: SelectAction = state
-        .match_state
+    let mut action: SelectAction = match_state
         .input
         .selection_state
         .end_drag(release_point.0, release_point.1);
@@ -631,7 +917,7 @@ fn tactical_left_up(state: &mut AppState) {
         // empty-catch bail and click fallthrough. The old
         // selection therefore flashes even when the box is empty.
         // Evidence: tools/procedural_drawing_oracle/action_lines.
-        apply_selection_action_line_policy(state, ORDINARY_SELECTION_ACTION_LINE_POLICY);
+        apply_selection_action_line_policy(match_state, ORDINARY_SELECTION_ACTION_LINE_POLICY);
     }
     // BandBox_LeftUp 0x004AB9B0 does not early-return when nothing
     // was armed: with the band flag clear it falls straight through
@@ -642,7 +928,7 @@ fn tactical_left_up(state: &mut AppState) {
     if matches!(action, SelectAction::None) {
         action = SelectAction::Click(release_point.0, release_point.1);
     }
-    let shift = is_shift_held(state);
+    let shift = is_shift_held(&match_state.input);
     // A band box that caught no drawn object leaves the selection
     // exactly as it was, and the release is handled as an ordinary
     // click at the release point — the native release only clears
@@ -659,9 +945,22 @@ fn tactical_left_up(state: &mut AppState) {
     {
         let order =
             crate::app::presentation::instances::tactical_band_preflight_entity_encounter_order(
-                state,
+                platform,
+                renderer,
+                &frontend.screen,
+                match_state,
+                persistence,
             );
-        if band_caught_drawn_object(state, &order, min_x, min_y, max_x, max_y) {
+        if band_caught_drawn_object(
+            platform,
+            frontend,
+            match_state,
+            &order,
+            min_x,
+            min_y,
+            max_x,
+            max_y,
+        ) {
             band_preflight_order = Some(order);
         } else {
             action = SelectAction::Click(release_point.0, release_point.1);
@@ -672,25 +971,43 @@ fn tactical_left_up(state: &mut AppState) {
     if let SelectAction::Click(sx, sy) = action
         && selection_empty
     {
-        let cell = crate::app::match_runtime::sim_tick::screen_point_to_world_cell(state, sx, sy);
-        if crate::app::input::beacon::beacon_at_cell(state, cell) {
-            crate::app::input::beacon::select_at_cell(state, cell);
+        let cell =
+            crate::app::match_runtime::sim_tick::screen_point_to_world_cell(match_state, sx, sy);
+        if crate::app::input::beacon::beacon_at_cell(match_state, cell) {
+            crate::app::input::beacon::select_at_cell(
+                platform,
+                renderer,
+                diag,
+                frontend,
+                match_state,
+                process_assets,
+                sfx_player,
+                persistence,
+                cell,
+            );
             return;
         }
     }
     // TypeSelect modifies only actions that already resolved as
     // selection/toggle. Ground move, attack, and every other
     // context action keep their ordinary priority while T is held.
-    let type_select_held = state.match_state.input.type_select.held();
+    let type_select_held = match_state.input.type_select.held();
     // A resolved context dispatch consumes the click even when its receiver
     // admits no command. A release that answered Select or 0 takes the pick
     // without Shift's toggle.
     let pick_toggles = match route_click_action_before_type_select(
         action,
-        left_click_can_issue_orders(state),
+        left_click_can_issue_orders(&match_state.input, &persistence.options_profile),
         |sx, sy| {
             Some(try_queue_context_order(
-                state,
+                platform,
+                renderer,
+                diag,
+                frontend,
+                match_state,
+                process_assets,
+                sfx_player,
+                persistence,
                 ContextOrderTarget::ScreenPoint(sx, sy),
                 true,
             ))
@@ -710,48 +1027,66 @@ fn tactical_left_up(state: &mut AppState) {
     if let SelectAction::Click(sx, sy) = action {
         let ordinary = !type_select_held
             && !shift
-            && !is_ctrl_held(state)
-            && !is_alt_held(state)
-            && state.match_state.input.queued_order_mode == OrderMode::Move;
-        let window_point = state
-            .tactical_zoom()
+            && !is_ctrl_held(&match_state.input)
+            && !is_alt_held(&match_state.input)
+            && match_state.input.queued_order_mode == OrderMode::Move;
+        let window_point = renderer
+            .tactical_zoom(&frontend.screen)
             .map_or((sx, sy), |zoom| zoom.source_to_window(sx, sy));
-        let admitted = ordinary && state.persistence.options_profile.right_click_orders;
-        let now = state.frontend.shell_controller.now();
-        let double_click = state.match_state.input.note_tactical_selection_click(
+        let admitted = ordinary && persistence.options_profile.right_click_orders;
+        let now = frontend.shell_controller.now();
+        let double_click = match_state.input.note_tactical_selection_click(
             admitted,
             now,
             (window_point.0.round() as i32, window_point.1.round() as i32),
         );
-        if double_click && let Some(mutation) = double_click_type_select(state, sx, sy) {
-            apply_selection_mutation(state, mutation, ORDINARY_SELECTION_VOICE_POLICY);
-            apply_selection_action_line_policy(state, TYPE_SELECT_TAP_ACTION_LINE_POLICY);
+        if double_click
+            && let Some(mutation) = double_click_type_select(
+                platform,
+                renderer,
+                frontend,
+                match_state,
+                persistence,
+                sx,
+                sy,
+            )
+        {
+            apply_selection_mutation(
+                platform,
+                renderer,
+                diag,
+                frontend,
+                match_state,
+                process_assets,
+                sfx_player,
+                persistence,
+                mutation,
+                ORDINARY_SELECTION_VOICE_POLICY,
+            );
+            apply_selection_action_line_policy(match_state, TYPE_SELECT_TAP_ACTION_LINE_POLICY);
             return;
         }
     }
     let mut queued_selection: Option<SelectionMutation> = None;
     let mut held_type_select_batch = false;
-    if let Some(sim) = state
-        .match_state
-        .sim_runtime
-        .runtime()
-        .map(|rt| &rt.simulation)
-    {
+    if let Some(sim) = match_state.sim_runtime.runtime().map(|rt| &rt.simulation) {
         let screen_order =
-            crate::app::presentation::instances::tactical_screen_entity_encounter_order(state);
+            crate::app::presentation::instances::tactical_screen_entity_encounter_order(
+                platform,
+                renderer,
+                &frontend.screen,
+                match_state,
+                persistence,
+            );
         let current_selection = selected_stable_ids_in_order(
-            state
-                .match_state
-                .sim_runtime
-                .runtime()
-                .map(|rt| &rt.simulation),
-            state.rules(),
-            &state.match_state.input.selection_order,
-            state.match_state.input.selection_order_pending,
+            match_state.sim_runtime.runtime().map(|rt| &rt.simulation),
+            crate::app::state::active_rules(frontend, match_state),
+            &match_state.input.selection_order,
+            match_state.input.selection_order_pending,
         );
         let map_order = map_entity_creation_order(sim.entities());
         let held_type_select = type_select_held;
-        let scope_order = if state.match_state.input.type_select.across_map {
+        let scope_order = if match_state.input.type_select.across_map {
             map_order.as_slice()
         } else {
             screen_order.as_slice()
@@ -765,23 +1100,26 @@ fn tactical_left_up(state: &mut AppState) {
                 let click_order =
                     crate::app::presentation::instances::tactical_entity_encounter_order(
                         sim,
-                        state.rules(),
+                        crate::app::state::active_rules(frontend, match_state),
                     );
-                let world_x: f32 =
-                    sx / state.match_state.input.zoom_level + state.match_state.input.camera_x;
-                let world_y: f32 =
-                    sy / state.match_state.input.zoom_level + state.match_state.input.camera_y;
-                let fog_ref = if state.match_state.sandbox_full_visibility {
+                let world_x: f32 = sx / match_state.input.zoom_level + match_state.input.camera_x;
+                let world_y: f32 = sy / match_state.input.zoom_level + match_state.input.camera_y;
+                let fog_ref = if match_state.sandbox_full_visibility {
                     None
                 } else {
                     Some(sim.fog())
                 };
                 if held_type_select {
                     let picked = pick_entity_at_point(
-                        crate::app::input::entity_pick::presented(state, sim),
+                        crate::app::input::entity_pick::presented(
+                            platform,
+                            frontend,
+                            match_state,
+                            sim,
+                        ),
                         &click_order,
                         fog_ref,
-                        preferred_local_owner_name(state).as_deref(),
+                        preferred_local_owner_name(match_state).as_deref(),
                         world_x,
                         world_y,
                         Some(sim.interner()),
@@ -794,22 +1132,27 @@ fn tactical_left_up(state: &mut AppState) {
                             &current_selection,
                             clicked_id,
                             pick_toggles,
-                            preferred_local_owner_name(state).as_deref(),
-                            state.rules(),
+                            preferred_local_owner_name(match_state).as_deref(),
+                            crate::app::state::active_rules(frontend, match_state),
                             Some(sim.interner()),
                             sim.playfield_bounds().is_some(),
                         ))
                     } else {
                         compute_click_selection_snapshot_with_playfield(
-                            crate::app::input::entity_pick::presented(state, sim),
+                            crate::app::input::entity_pick::presented(
+                                platform,
+                                frontend,
+                                match_state,
+                                sim,
+                            ),
                             &click_order,
                             &current_selection,
                             fog_ref,
-                            preferred_local_owner_name(state).as_deref(),
+                            preferred_local_owner_name(match_state).as_deref(),
                             world_x,
                             world_y,
                             pick_toggles,
-                            state.rules(),
+                            crate::app::state::active_rules(frontend, match_state),
                             Some(sim.interner()),
                             sim.playfield_bounds().is_some(),
                             sim.resolved_terrain(),
@@ -818,15 +1161,20 @@ fn tactical_left_up(state: &mut AppState) {
                     held_type_select_batch = true;
                 } else {
                     queued_selection = compute_click_selection_snapshot_with_playfield(
-                        crate::app::input::entity_pick::presented(state, sim),
+                        crate::app::input::entity_pick::presented(
+                            platform,
+                            frontend,
+                            match_state,
+                            sim,
+                        ),
                         &click_order,
                         &current_selection,
                         fog_ref,
-                        preferred_local_owner_name(state).as_deref(),
+                        preferred_local_owner_name(match_state).as_deref(),
                         world_x,
                         world_y,
                         pick_toggles,
-                        state.rules(),
+                        crate::app::state::active_rules(frontend, match_state),
                         Some(sim.interner()),
                         sim.playfield_bounds().is_some(),
                         sim.resolved_terrain(),
@@ -834,32 +1182,37 @@ fn tactical_left_up(state: &mut AppState) {
                 }
             }
             SelectAction::BoxSelect(min_x, min_y, max_x, max_y) => {
-                let fog_ref = if state.match_state.sandbox_full_visibility {
+                let fog_ref = if match_state.sandbox_full_visibility {
                     None
                 } else {
                     Some((sim.fog(), sim.house_alliances().as_map()))
                 };
-                let z = state.match_state.input.zoom_level;
+                let z = match_state.input.zoom_level;
                 let (min_x, min_y, max_x, max_y) = (
-                    min_x / z + state.match_state.input.camera_x,
-                    min_y / z + state.match_state.input.camera_y,
-                    max_x / z + state.match_state.input.camera_x,
-                    max_y / z + state.match_state.input.camera_y,
+                    min_x / z + match_state.input.camera_x,
+                    min_y / z + match_state.input.camera_y,
+                    max_x / z + match_state.input.camera_x,
+                    max_y / z + match_state.input.camera_y,
                 );
                 if held_type_select {
                     queued_selection = Some(compute_type_select_box_mutation_with_playfield(
-                        crate::app::input::entity_pick::presented(state, sim),
+                        crate::app::input::entity_pick::presented(
+                            platform,
+                            frontend,
+                            match_state,
+                            sim,
+                        ),
                         &screen_order,
                         scope_order,
                         &current_selection,
                         fog_ref.map(|(fog, _)| fog),
-                        preferred_local_owner_name(state).as_deref(),
+                        preferred_local_owner_name(match_state).as_deref(),
                         min_x,
                         min_y,
                         max_x,
                         max_y,
                         shift,
-                        state.rules(),
+                        crate::app::state::active_rules(frontend, match_state),
                         Some(sim.interner()),
                         sim.playfield_bounds().is_some(),
                     ));
@@ -869,18 +1222,23 @@ fn tactical_left_up(state: &mut AppState) {
                         .as_deref()
                         .unwrap_or(screen_order.as_slice());
                     queued_selection = compute_box_selection_snapshot_with_playfield(
-                        crate::app::input::entity_pick::presented(state, sim),
+                        crate::app::input::entity_pick::presented(
+                            platform,
+                            frontend,
+                            match_state,
+                            sim,
+                        ),
                         preflight_order,
                         &screen_order,
                         &current_selection,
                         fog_ref,
-                        preferred_local_owner_name(state).as_deref(),
+                        preferred_local_owner_name(match_state).as_deref(),
                         min_x,
                         min_y,
                         max_x,
                         max_y,
                         shift,
-                        state.rules(),
+                        crate::app::state::active_rules(frontend, match_state),
                         Some(sim.houses()),
                         Some(sim.interner()),
                         sim.playfield_bounds().is_some(),
@@ -893,20 +1251,53 @@ fn tactical_left_up(state: &mut AppState) {
     if let Some(mutation) = queued_selection {
         if held_type_select_batch {
             if mutation.select.is_empty() {
-                apply_selection_mutation(state, mutation, ORDINARY_SELECTION_VOICE_POLICY);
+                apply_selection_mutation(
+                    platform,
+                    renderer,
+                    diag,
+                    frontend,
+                    match_state,
+                    process_assets,
+                    sfx_player,
+                    persistence,
+                    mutation,
+                    ORDINARY_SELECTION_VOICE_POLICY,
+                );
             } else {
-                let prior = state.match_state.input.selection_voice_enabled;
-                state.match_state.input.selection_voice_enabled = false;
-                apply_selection_mutation(state, mutation, HELD_TYPE_SELECT_VOICE_POLICY);
-                state.match_state.input.selection_voice_enabled = prior;
+                let prior = match_state.input.selection_voice_enabled;
+                match_state.input.selection_voice_enabled = false;
+                apply_selection_mutation(
+                    platform,
+                    renderer,
+                    diag,
+                    frontend,
+                    match_state,
+                    process_assets,
+                    sfx_player,
+                    persistence,
+                    mutation,
+                    HELD_TYPE_SELECT_VOICE_POLICY,
+                );
+                match_state.input.selection_voice_enabled = prior;
             }
         } else {
-            apply_selection_mutation(state, mutation, ORDINARY_SELECTION_VOICE_POLICY);
+            apply_selection_mutation(
+                platform,
+                renderer,
+                diag,
+                frontend,
+                match_state,
+                process_assets,
+                sfx_player,
+                persistence,
+                mutation,
+                ORDINARY_SELECTION_VOICE_POLICY,
+            );
         }
         // Click-select4ABE83 starts separately. A band release
         // already started before its empty-catch decision above.
         if !band_release {
-            apply_selection_action_line_policy(state, ORDINARY_SELECTION_ACTION_LINE_POLICY);
+            apply_selection_action_line_policy(match_state, ORDINARY_SELECTION_ACTION_LINE_POLICY);
         }
     }
 }
@@ -915,34 +1306,45 @@ fn tactical_left_up(state: &mut AppState) {
 /// click found no locally controlled object (ground, an enemy, a refused
 /// object), which leaves the ordinary click to decide. The screen list is the
 /// T key's screen pass; there is no map-wide fallback.
-fn double_click_type_select(state: &AppState, sx: f32, sy: f32) -> Option<SelectionMutation> {
-    let sim = state
-        .match_state
-        .sim_runtime
-        .runtime()
-        .map(|rt| &rt.simulation)?;
+fn double_click_type_select(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    persistence: &PersistenceState,
+    sx: f32,
+    sy: f32,
+) -> Option<SelectionMutation> {
+    let sim = match_state.sim_runtime.runtime().map(|rt| &rt.simulation)?;
     // TypeSelect's defeat guard `0x00732961` (`A8B538`): a defeated local
     // player's shortcut leaves the plain click in charge.
     if !selection_navigation::selection_navigation_allowed(sim) {
         return None;
     }
-    let click_order =
-        crate::app::presentation::instances::tactical_entity_encounter_order(sim, state.rules());
-    let screen_order =
-        crate::app::presentation::instances::tactical_screen_entity_encounter_order(state);
-    let world_x = sx / state.match_state.input.zoom_level + state.match_state.input.camera_x;
-    let world_y = sy / state.match_state.input.zoom_level + state.match_state.input.camera_y;
-    let fog = (!state.match_state.sandbox_full_visibility)
+    let click_order = crate::app::presentation::instances::tactical_entity_encounter_order(
+        sim,
+        crate::app::state::active_rules(frontend, match_state),
+    );
+    let screen_order = crate::app::presentation::instances::tactical_screen_entity_encounter_order(
+        platform,
+        renderer,
+        &frontend.screen,
+        match_state,
+        persistence,
+    );
+    let world_x = sx / match_state.input.zoom_level + match_state.input.camera_x;
+    let world_y = sy / match_state.input.zoom_level + match_state.input.camera_y;
+    let fog = (!match_state.sandbox_full_visibility)
         .then_some((sim.fog(), sim.house_alliances().as_map()));
     compute_double_click_type_select_with_playfield(
-        crate::app::input::entity_pick::presented(state, sim),
+        crate::app::input::entity_pick::presented(platform, frontend, match_state, sim),
         &click_order,
         &screen_order,
         fog,
-        preferred_local_owner_name(state).as_deref(),
+        preferred_local_owner_name(match_state).as_deref(),
         world_x,
         world_y,
-        state.rules(),
+        crate::app::state::active_rules(frontend, match_state),
         Some(sim.interner()),
         sim.playfield_bounds().is_some(),
         sim.resolved_terrain(),
@@ -953,81 +1355,144 @@ fn double_click_type_select(state: &AppState, sx: f32, sy: f32) -> Option<Select
 ///
 /// Display4AAD30's represented cursor rungs belong to MatchInputState.
 /// This existing selection owner handles its final UnselectAll48DC90 rung.
-fn cancel_armed_pointer_mode(state: &mut AppState) -> bool {
-    if state
-        .match_state
+fn cancel_armed_pointer_mode(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
+) -> bool {
+    if match_state
         .input
-        .cancel_pointer_mode(&mut state.match_state.match_presentation.sidebar_gadget_state)
+        .cancel_pointer_mode(&mut match_state.match_presentation.sidebar_gadget_state)
     {
         return true;
     }
     // RightUp4AAE47: beacon mode is the last rung before Unselect_All.
-    if crate::app::input::beacon::mode_active(state) {
+    if crate::app::input::beacon::mode_active(&match_state.match_presentation) {
         crate::app::input::beacon::set_place_beacon_mode(
-            state,
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            sfx_player,
+            persistence,
             crate::app::input::beacon::BeaconModeRequest::Off,
         );
         return true;
     }
     // VERA ferry: the armed drop click is one more mode a right click ends.
-    state.match_state.input.ferry.disarm()
+    match_state.input.ferry.disarm()
 }
 
-fn handle_tactical_right_click(state: &mut AppState) {
-    if cancel_armed_pointer_mode(state) {
+fn handle_tactical_right_click(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
+) {
+    if cancel_armed_pointer_mode(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        sfx_player,
+        persistence,
+    ) {
         return;
     }
     // VERA-only alternative to Display4AAD30's final Unselect_All rung.
     // Reuse the same context owner as retail left-click orders, including
     // admission, modifiers, audio, feedback and network scheduling. Never
     // fall through to selection on a refused right-click command.
-    if state.persistence.options_profile.right_click_orders {
+    if persistence.options_profile.right_click_orders {
         try_queue_context_order(
-            state,
-            ContextOrderTarget::ScreenPoint(
-                state.match_state.input.cursor_x,
-                state.match_state.input.cursor_y,
-            ),
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            sfx_player,
+            persistence,
+            ContextOrderTarget::ScreenPoint(match_state.input.cursor_x, match_state.input.cursor_y),
             true,
         );
-        state.match_state.input.queued_order_mode = OrderMode::Move;
+        match_state.input.queued_order_mode = OrderMode::Move;
     } else {
-        unselect_all(state);
+        unselect_all(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            sfx_player,
+            persistence,
+        );
     }
 }
 
 /// `Unselect_All_With_Mode_Reset 0x0048DC90`: the selection's clear, whose
 /// mutation also clears beacon selection.
-pub(crate) fn unselect_all(state: &mut AppState) {
-    queue_selection_snapshot_command(state, Vec::new(), false);
+pub(crate) fn unselect_all(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
+) {
+    queue_selection_snapshot_command(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        sfx_player,
+        persistence,
+        Vec::new(),
+        false,
+    );
 }
 
 /// Did the band rectangle cover any drawn object? Screen-space rectangle in, the
 /// native "is the box empty" answer out.
 fn band_caught_drawn_object(
-    state: &AppState,
+    platform: &PlatformState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
     encounter_order: &[u64],
     min_x: f32,
     min_y: f32,
     max_x: f32,
     max_y: f32,
 ) -> bool {
-    let Some(sim) = state
-        .match_state
-        .sim_runtime
-        .runtime()
-        .map(|rt| &rt.simulation)
-    else {
+    let Some(sim) = match_state.sim_runtime.runtime().map(|rt| &rt.simulation) else {
         return false;
     };
-    let z = state.match_state.input.zoom_level;
+    let z = match_state.input.zoom_level;
     crate::app::input::entity_pick::band_rect_contains_drawn_object(
-        crate::app::input::entity_pick::presented(state, sim),
+        crate::app::input::entity_pick::presented(platform, frontend, match_state, sim),
         encounter_order,
-        min_x / z + state.match_state.input.camera_x,
-        min_y / z + state.match_state.input.camera_y,
-        max_x / z + state.match_state.input.camera_x,
-        max_y / z + state.match_state.input.camera_y,
+        min_x / z + match_state.input.camera_x,
+        min_y / z + match_state.input.camera_y,
+        max_x / z + match_state.input.camera_x,
+        max_y / z + match_state.input.camera_y,
     )
 }
 
@@ -1036,43 +1501,108 @@ fn band_caught_drawn_object(
 /// action (or centres the camera without one), right centres the camera.
 /// VERA's alternative scheme uses right for orders and ordinary left for the
 /// camera. Explicit left-button targeting still uses the context action.
-pub(crate) fn minimap_mouse(state: &mut AppState, button: MouseButton, btn_state: ElementState) {
-    if crate::app::input::campaign_input::is_locked(state) {
+pub(crate) fn minimap_mouse(
+    platform: &PlatformState,
+    renderer: &mut RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
+    button: MouseButton,
+    btn_state: ElementState,
+) {
+    if crate::app::input::campaign_input::is_locked(match_state) {
         return;
     }
-    let right_click_orders = state.persistence.options_profile.right_click_orders;
+    let right_click_orders = persistence.options_profile.right_click_orders;
     match (button, btn_state.is_pressed()) {
         (MouseButton::Left, true)
-            if right_click_orders && state.match_state.input.minimap_press_active() => {}
+            if right_click_orders && match_state.input.minimap_press_active() => {}
         (MouseButton::Left, true)
-            if left_click_can_issue_orders(state)
-                || state.match_state.input.targeting_mode.is_some()
+            if left_click_can_issue_orders(&match_state.input, &persistence.options_profile)
+                || match_state.input.targeting_mode.is_some()
                 // VERA minimap beacons: the beacon click stays on the left
                 // button, as on the battlefield, in both schemes. RESIDUAL:
                 // the release asks the radar again, so a team key pressed
                 // while the left button is held can turn it into the team's
                 // order, as a targeting press cancelled mid-press already can.
-                || crate::app::input::radar::minimap_beacon_armed(state) =>
+                || crate::app::input::radar::minimap_beacon_armed(
+                    platform,
+                    renderer,
+                    frontend,
+                    match_state,
+                    persistence,
+                ) =>
         {
-            crate::app::input::radar::begin_context_press(state);
+            crate::app::input::radar::begin_context_press(
+                platform,
+                renderer,
+                frontend,
+                match_state,
+                persistence,
+            );
         }
         (MouseButton::Right, true) if right_click_orders => {
-            crate::app::input::radar::begin_order_press(state, MouseButton::Right);
+            crate::app::input::radar::begin_order_press(
+                platform,
+                renderer,
+                frontend,
+                match_state,
+                persistence,
+                MouseButton::Right,
+            );
         }
         (MouseButton::Left | MouseButton::Right, true) => {
-            crate::app::input::radar::centre_view_at_cursor(state);
+            crate::app::input::radar::centre_view_at_cursor(
+                platform,
+                renderer,
+                frontend,
+                match_state,
+                persistence,
+            );
         }
         (MouseButton::Left, false) => {
-            crate::app::input::radar::finish_order_press(state, MouseButton::Left);
+            crate::app::input::radar::finish_order_press(
+                platform,
+                renderer,
+                diag,
+                frontend,
+                match_state,
+                process_assets,
+                sfx_player,
+                persistence,
+                MouseButton::Left,
+            );
         }
         (MouseButton::Right, false)
             if right_click_orders
-                && state.match_state.input.minimap_press_button() == Some(MouseButton::Right) =>
+                && match_state.input.minimap_press_button() == Some(MouseButton::Right) =>
         {
-            if cancel_armed_pointer_mode(state) {
-                state.match_state.input.cancel_minimap_press();
+            if cancel_armed_pointer_mode(
+                platform,
+                renderer,
+                diag,
+                frontend,
+                match_state,
+                process_assets,
+                sfx_player,
+                persistence,
+            ) {
+                match_state.input.cancel_minimap_press();
             } else {
-                crate::app::input::radar::finish_order_press(state, MouseButton::Right);
+                crate::app::input::radar::finish_order_press(
+                    platform,
+                    renderer,
+                    diag,
+                    frontend,
+                    match_state,
+                    process_assets,
+                    sfx_player,
+                    persistence,
+                    MouseButton::Right,
+                );
             }
         }
         _ => {}
@@ -1097,13 +1627,34 @@ fn clamp_tactical_drag_endpoint(
 }
 
 pub(crate) fn handle_cursor_moved_in_game(state: &mut AppState) {
-    match modal_page(state) {
+    match modal_page(
+        &state.platform,
+        &state.renderer,
+        &state.frontend,
+        &state.match_state,
+        &state.persistence,
+    ) {
         Some(ModalPage::NetworkFailure) => {
-            crate::app::match_runtime::network_failure::cursor_moved(state);
+            crate::app::match_runtime::network_failure::cursor_moved(
+                &state.platform,
+                &state.renderer,
+                &mut state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                &mut state.audio.sfx_player,
+            );
             return;
         }
         Some(ModalPage::NetworkWait) => {
-            crate::app::input::connection::cursor_moved(state);
+            crate::app::input::connection::cursor_moved(
+                &state.platform,
+                &state.renderer,
+                &state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                &mut state.audio.sfx_player,
+                &state.persistence,
+            );
             return;
         }
         Some(ModalPage::Keyboard) => {
@@ -1115,11 +1666,29 @@ pub(crate) fn handle_cursor_moved_in_game(state: &mut AppState) {
     // The chrome's hover and its held button's pushed look follow the
     // cursor (G7, G22 rows 2/3), the layout edit mode included.
     if !state.match_state.paused() {
-        crate::app::input::chrome_input::refresh_pointer(state);
+        crate::app::input::chrome_input::refresh_pointer(
+            &state.platform,
+            &state.renderer,
+            &state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            &state.persistence,
+        );
     }
     // VERA: a part grabbed in the layout edit mode follows the cursor.
-    if crate::app::input::layout_edit::active(state) && !state.match_state.paused() {
-        crate::app::input::layout_edit::cursor_moved(state);
+    if crate::app::input::layout_edit::active(&state.match_state.match_presentation)
+        && !state.match_state.paused()
+    {
+        crate::app::input::layout_edit::cursor_moved(
+            &state.platform,
+            &state.renderer,
+            &state.diag,
+            &state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            &mut state.audio,
+            &state.persistence,
+        );
         return;
     }
     // Paused in-game Options overlay: drive a live slider drag (visual/stored only —
@@ -1127,16 +1696,26 @@ pub(crate) fn handle_cursor_moved_in_game(state: &mut AppState) {
     // selection drag or camera pan behind the overlay.
     if state.match_state.paused() {
         match state.match_state.match_presentation.in_game_menu {
-            crate::ui::pause_menu::InGameMenuState::Page => {
-                crate::app::shell_wol::page::cursor_moved(state);
-            }
             crate::ui::pause_menu::InGameMenuState::SavedGame(_) => {
                 crate::app::App::update_saved_game_browser(state, true);
             }
-            menu => crate::app::input::dialog_page::in_game_pointer(state, menu, None),
+            menu => crate::app::input::dialog_page::in_game_pointer(
+                &mut state.platform,
+                &mut state.renderer,
+                &state.diag,
+                &mut state.frontend,
+                &mut state.match_state,
+                &mut state.process_assets,
+                &mut state.audio,
+                &mut state.persistence,
+                menu,
+                None,
+            ),
         }
         return;
     }
+    // Client module nodes follow the pointer (`Hover`) before the game does.
+    crate::app::ui_modules::pointer_moved(state);
     // Minimap: gamemd re-centers only on press edges and ignores held motion
     // (decompile 0x006539D0: `param_1 & 0x22` early-out). While a minimap press
     // is held we do NOT follow the cursor — but still swallow the move so it
@@ -1145,20 +1724,26 @@ pub(crate) fn handle_cursor_moved_in_game(state: &mut AppState) {
         return;
     }
     // Clamp drag position to the tactical viewport (exclude sidebar area).
-    if crate::app::input::campaign_input::is_locked(state) {
+    if crate::app::input::campaign_input::is_locked(&state.match_state) {
         return;
     }
     let clamped_endpoint = clamp_tactical_drag_endpoint(
         state.match_state.input.cursor_x,
         state.match_state.input.cursor_y,
-        crate::app::input::camera::tactical_viewport_px(state),
+        crate::app::input::camera::tactical_viewport_px(
+            &state.platform,
+            &state.renderer,
+            &state.frontend.screen,
+            &state.match_state.match_presentation,
+            &state.persistence,
+        ),
     );
 
     // VERA formation line: the drag adds to the line, clamped to the
     // battlefield like the band box's corner.
     if state.match_state.input.formation_line.drawing() {
         let world = crate::app::match_runtime::sim_tick::screen_point_to_world(
-            state,
+            &state.match_state.input,
             clamped_endpoint.0,
             clamped_endpoint.1,
         );

@@ -6,18 +6,24 @@ use std::borrow::Cow;
 
 use anyhow::Result;
 
-use crate::app::AppState;
 use crate::app::frontend::menu_page_render::{
     FamilyFrame, encode_family_page, family_art_ready, page_panel_state, page_tree,
 };
 use crate::app::frontend::movies_credits_render::family_list_hovered;
-use crate::app::frontend::skirmish_shell_render::gui_paint::{CellRow, GuiStyle, paint_gui_into};
 use crate::app::frontend::shell_transition::ShellSlideKind;
+use crate::app::frontend::skirmish_shell_render::gui_paint::{CellRow, GuiStyle, paint_gui_into};
+use crate::app::frontend::state::FrontendState;
+use crate::app::match_runtime::state::MatchState;
 use crate::app::mods::Listed;
+use crate::app::persistence::PersistenceState;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
+use crate::app::state::PlatformState;
 use crate::render::hud_paint::Material;
 use crate::render::shell_paint::SHELL_TEXT_RGB_ENABLED;
 use crate::ui::mods_shell::{self, PAGE};
 use crate::ui::movies_credits_shell::{family_list_selected, find_family_list};
+use crate::ui::shell::controller::DialogController;
 use crate::ui::shell::geom::ShellAlign;
 use crate::ui::shell::menu_page;
 use vera20k_gui::{NodeId, Prop, Value};
@@ -56,12 +62,12 @@ fn detail_lines(row: &Listed, in_use: bool) -> [Option<String>; 5] {
 
 /// The page's statics take their texts, written only on a change: the
 /// empty folder's hint and the selected row's lines, or none.
-fn sync_texts(state: &mut AppState, selected: Option<usize>) {
+fn sync_texts(frontend: &mut FrontendState, selected: Option<usize>) {
     let dialog = PAGE.dialog;
-    let Some(root) = state.frontend.shell_controller.root_in(dialog) else {
+    let Some(root) = frontend.shell_controller.root_in(dialog) else {
         return;
     };
-    let mods = &state.frontend.mods;
+    let mods = &frontend.mods;
     // The hint, then the five lines.
     let mut texts: [Option<String>; 6] = Default::default();
     if let Some(page) = mods.page.as_ref() {
@@ -73,10 +79,15 @@ fn sync_texts(state: &mut AppState, selected: Option<usize>) {
             }
         }
     }
-    let gui = state.frontend.shell_controller.gui_mut();
+    let gui = frontend.shell_controller.gui_mut();
     let count = gui.tree().children(root).map_or(0, <[NodeId]>::len);
     for index in 0..count {
-        let Some(child) = gui.tree().children(root).ok().and_then(|c| c.get(index).copied()) else {
+        let Some(child) = gui
+            .tree()
+            .children(root)
+            .ok()
+            .and_then(|c| c.get(index).copied())
+        else {
             break;
         };
         let id = gui.id_of(child).and_then(|id| u16::try_from(id).ok());
@@ -94,12 +105,12 @@ fn sync_texts(state: &mut AppState, selected: Option<usize>) {
 }
 
 /// Hover help for the page's status line.
-fn mods_status_key(state: &AppState) -> Option<&'static str> {
-    let controller = &state.frontend.shell_controller;
+fn mods_status_key(shell_controller: &DialogController) -> Option<&'static str> {
+    let controller = shell_controller;
     if controller.top_id() != Some(PAGE.dialog) {
         return None;
     }
-    if family_list_hovered(state, PAGE.dialog) {
+    if family_list_hovered(shell_controller, PAGE.dialog) {
         return Some(mods_shell::PROMPT_KEY);
     }
     PAGE.button(menu_page::hovered_id(controller, PAGE.dialog)?)
@@ -108,37 +119,75 @@ fn mods_status_key(state: &AppState) -> Option<&'static str> {
 
 /// Paint the Mods page. Returns `false` when the shell chrome is missing.
 pub(crate) fn render_mods_page(
-    state: &mut AppState,
+    platform: &mut PlatformState,
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    persistence: &PersistenceState,
     encoder: &mut wgpu::CommandEncoder,
     destination: &wgpu::Texture,
 ) -> Result<bool> {
-    if !family_art_ready(state) {
+    if !family_art_ready(
+        renderer,
+        frontend,
+        process_assets,
+        &persistence.options_profile,
+    ) {
         return Ok(false);
     }
-    let layout = crate::app::frontend::shell_layout::mods_layout(state);
+    let layout = crate::app::frontend::shell_layout::mods_layout(&renderer.gpu);
     let (scale, dialog) = (layout.page.scale, PAGE.dialog);
     // Use This Mod is dark while the selection is nothing to change to, Check
     // Files while it is the original game.
-    let mods = &state.frontend.mods;
-    let selected = family_list_selected(&state.frontend.shell_controller, dialog);
+    let mods = &frontend.mods;
+    let selected = family_list_selected(&frontend.shell_controller, dialog);
     let enabled = [
         (mods_shell::USE, mods.switch_to(selected).is_some()),
         (mods_shell::CHECK, mods.picked_is_mod(selected)),
     ];
     let rect_of = |id| layout.rect_of(id);
-    let tree = page_tree(state, dialog, mods_shell::nodes, rect_of, &enabled);
-    sync_texts(state, selected);
-    let status = |state: &AppState| mods_status_key(state).map(str::to_owned);
+    let tree = page_tree(
+        &mut frontend.shell_controller,
+        dialog,
+        mods_shell::nodes,
+        rect_of,
+        &enabled,
+    );
+    // Android: the name dialog's widgets; the dialog itself is drawn after
+    // the page, in `App::draw_name_dialog_over`.
+    #[cfg(target_os = "android")]
+    crate::app::App::sync_name_dialog(&renderer.gpu, frontend);
+    sync_texts(frontend, selected);
+    let status =
+        |frontend: &FrontendState| mods_status_key(&frontend.shell_controller).map(str::to_owned);
     let kind = ShellSlideKind::Mods;
-    let panel = page_panel_state(state, kind, true, status, layout.page.status_help);
+    let panel = page_panel_state(
+        frontend,
+        process_assets,
+        kind,
+        true,
+        status,
+        layout.page.status_help,
+    );
     // As for the movie list: the teardown slide repaints the dialog over its
     // children, and nothing draws them again before it is gone.
     let leaving = panel.leaving;
-    let mut frame = FamilyFrame::new("Mods Shell", &layout.page, panel, PAGE.title_key)
-        .on(state, dialog, &tree);
+    let mut frame = FamilyFrame::new("Mods Shell", &layout.page, panel, PAGE.title_key).on(
+        &frontend.shell_controller,
+        dialog,
+        &tree,
+    );
     frame.backdrop = true;
-    let mods = &state.frontend.mods;
-    let controller = &state.frontend.shell_controller;
+    // Android: the name dialog is painted over the finished page, so the
+    // page's pass must not draw the cursor under the dialog's art; the
+    // dialog's own pass draws it last.
+    #[cfg(target_os = "android")]
+    {
+        frame.cursor = frontend.mods.name_dialog.is_none();
+    }
+    let mods = &frontend.mods;
+    let controller = &frontend.shell_controller;
     let gui = controller.gui();
     if let Some(page) = mods.page.as_ref().filter(|_| !leaving)
         && let Some(node) = find_family_list(controller, dialog)
@@ -181,10 +230,23 @@ pub(crate) fn render_mods_page(
             ..Default::default()
         };
         // Without the control art none of it paints.
-        let atlas = state.frontend.skirmish_shell_chrome.as_ref();
+        let atlas = frontend.skirmish_shell_chrome.as_ref();
         if let Some(atlas) = atlas {
             let over = &mut frame.over;
-            paint_gui_into(over, state, Some(atlas), gui, node, scale, &[], style);
+            paint_gui_into(
+                over,
+                &platform.ime,
+                &renderer.bit_font,
+                frontend,
+                match_state,
+                process_assets,
+                Some(atlas),
+                gui,
+                node,
+                scale,
+                &[],
+                style,
+            );
         }
         frame.list_boxes.push((layout.list, geometry.scrollbar));
         frame.list_boxes.push((layout.details, None));
@@ -201,9 +263,44 @@ pub(crate) fn render_mods_page(
         // statics.
         if let (Some((gui, root)), Some(atlas)) = (frame.buttons, atlas) {
             let (over, style) = (&mut frame.over, GuiStyle::default());
-            paint_gui_into(over, state, Some(atlas), gui, root, scale, &[], style);
+            paint_gui_into(
+                over,
+                &platform.ime,
+                &renderer.bit_font,
+                frontend,
+                match_state,
+                process_assets,
+                Some(atlas),
+                gui,
+                root,
+                scale,
+                &[],
+                style,
+            );
         }
     }
-    encode_family_page(state, encoder, destination, frame);
+    encode_family_page(
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        process_assets,
+        persistence,
+        encoder,
+        destination,
+        frame,
+    );
+    // Android: New Mod's dialog goes over the finished page, as a message box
+    // would, so the page's own text cannot cover it.
+    #[cfg(target_os = "android")]
+    crate::app::App::draw_name_dialog_over(
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        persistence,
+        encoder,
+        destination,
+    );
     Ok(true)
 }

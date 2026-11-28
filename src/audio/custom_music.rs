@@ -29,6 +29,8 @@ pub(crate) const CUSTOM_STEM_PREFIX: &str = "\u{1}vera:";
 struct CustomTrack {
     /// The file's bytes, shared with the streaming decoder.
     bytes: SharedBytes,
+    /// A `.opus` file (Ogg Opus) rather than WAV or AUD.
+    opus: bool,
     /// A catalog-shaped view so the Theme runtime can reuse `entry(index)`,
     /// `is_allowed` and `entry_repeats` for these tracks.
     entry: ThemeEntry,
@@ -66,10 +68,12 @@ impl CustomMusicLibrary {
         self.tracks.get(index).map(|track| &track.entry)
     }
 
-    /// Bytes for a virtual custom index, used by the Theme AI's prepare
-    /// closure when a custom track was selected.
-    pub(crate) fn bytes_at(&self, index: usize) -> Option<&SharedBytes> {
-        self.tracks.get(index).map(|track| &track.bytes)
+    /// Bytes for a virtual custom index, and whether they are Ogg Opus, used
+    /// by the Theme AI's prepare closure when a custom track was selected.
+    pub(crate) fn file_at(&self, index: usize) -> Option<(&SharedBytes, bool)> {
+        self.tracks
+            .get(index)
+            .map(|track| (&track.bytes, track.opus))
     }
 
     /// Build a library of empty, decodable-free entries for selection tests.
@@ -79,6 +83,7 @@ impl CustomMusicLibrary {
         let tracks = (0..count)
             .map(|index| CustomTrack {
                 bytes: Arc::<[u8]>::from([]).into(),
+                opus: false,
                 entry: ThemeEntry {
                     key: format!("custom{index}"),
                     sound: format!("{CUSTOM_STEM_PREFIX}{index}"),
@@ -96,7 +101,7 @@ impl CustomMusicLibrary {
     }
 }
 
-/// Read `musics/music.ini` and index every loadable WAV/AUD file.
+/// Read `musics/music.ini` and index every loadable WAV/AUD/Opus file.
 ///
 /// Returns `None` when the config is absent, `enable` is off, no file is
 /// loadable, or the browser VFS has nothing indexed. Any such failure keeps
@@ -109,21 +114,21 @@ pub(crate) fn load(dir: &Path) -> Option<Arc<CustomMusicLibrary>> {
     }
     let exclusive = read_switch(&ini, "ExclusiveMode", false);
 
-    let mut found: Vec<(String, SharedBytes)> = Vec::new();
+    let mut found: Vec<(String, SharedBytes, bool)> = Vec::new();
     let listing = crate::util::file_system::read_dir(dir).ok()?;
     for entry in listing.flatten() {
         let path = entry.path();
-        let Some(stem) = music_stem(&path) else {
+        let Some((stem, opus)) = music_stem(&path) else {
             continue;
         };
         let Ok(data) = crate::util::file_system::read(&path) else {
             continue;
         };
         let bytes: SharedBytes = Arc::<[u8]>::from(data).into();
-        if !crate::audio::theme::track_bytes_loadable(&bytes) {
+        if !crate::audio::theme::track_bytes_loadable(&bytes, opus) {
             continue;
         }
-        found.push((stem, bytes));
+        found.push((stem, bytes, opus));
     }
     found.sort_by(|left, right| left.0.cmp(&right.0));
     found.dedup_by(|left, right| left.0.eq_ignore_ascii_case(&right.0));
@@ -133,8 +138,9 @@ pub(crate) fn load(dir: &Path) -> Option<Arc<CustomMusicLibrary>> {
     let tracks = found
         .into_iter()
         .enumerate()
-        .map(|(index, (stem, bytes))| CustomTrack {
+        .map(|(index, (stem, bytes, opus))| CustomTrack {
             bytes,
+            opus,
             entry: ThemeEntry {
                 key: stem.clone(),
                 sound: format!("{CUSTOM_STEM_PREFIX}{index}"),
@@ -148,10 +154,7 @@ pub(crate) fn load(dir: &Path) -> Option<Arc<CustomMusicLibrary>> {
             },
         })
         .collect();
-    Some(Arc::new(CustomMusicLibrary {
-        exclusive,
-        tracks,
-    }))
+    Some(Arc::new(CustomMusicLibrary { exclusive, tracks }))
 }
 
 /// A VERA-owned switch; scan sections so the player may place the keys under
@@ -159,21 +162,26 @@ pub(crate) fn load(dir: &Path) -> Option<Arc<CustomMusicLibrary>> {
 /// keeps the same `1/T/Y` / `0/F/N` first-byte decision gamemd uses.
 fn read_switch(ini: &IniFile, key: &str, default: bool) -> bool {
     for name in ini.section_names() {
-        if let Some(value) = ini.section(name).and_then(|section| section.read_bool_value(key)) {
+        if let Some(value) = ini
+            .section(name)
+            .and_then(|section| section.read_bool_value(key))
+        {
             return value;
         }
     }
     default
 }
 
-/// `.wav` and `.aud` are the two encodings the engine already decodes.
-fn music_stem(path: &Path) -> Option<String> {
+/// `.wav` and `.aud`, the engine's own encodings, and VERA's `.opus` (Ogg
+/// Opus, decoded by `assets::opus_file`); the flag says which kind.
+fn music_stem(path: &Path) -> Option<(String, bool)> {
     let extension = path.extension()?.to_str()?;
-    if !extension.eq_ignore_ascii_case("wav") && !extension.eq_ignore_ascii_case("aud") {
+    let opus = extension.eq_ignore_ascii_case("opus");
+    if !opus && !extension.eq_ignore_ascii_case("wav") && !extension.eq_ignore_ascii_case("aud") {
         return None;
     }
     let stem = path.file_stem()?.to_str()?;
-    (!stem.is_empty()).then(|| stem.to_string())
+    (!stem.is_empty()).then(|| (stem.to_string(), opus))
 }
 
 #[cfg(all(test, tests_audio))]
@@ -196,8 +204,10 @@ mod tests {
 
     #[test]
     fn music_stem_accepts_engine_formats_only() {
-        assert_eq!(music_stem(Path::new("Rock.WAV")).as_deref(), Some("Rock"));
-        assert_eq!(music_stem(Path::new("Theme.aud")).as_deref(), Some("Theme"));
+        let stem = |name: &str| music_stem(Path::new(name));
+        assert_eq!(stem("Rock.WAV"), Some(("Rock".to_string(), false)));
+        assert_eq!(stem("Theme.aud"), Some(("Theme".to_string(), false)));
+        assert_eq!(stem("Calm.Opus"), Some(("Calm".to_string(), true)));
         assert_eq!(music_stem(Path::new("notes.mp3")), None);
         assert_eq!(music_stem(Path::new("noextension")), None);
     }
@@ -230,7 +240,10 @@ mod tests {
 
         // Disabled: no library even though files are present.
         std::fs::write(dir.join("music.ini"), "[Music]\nenable=no\n").expect("write ini");
-        assert!(load(&dir).is_none(), "disabled config keeps retail playlist");
+        assert!(
+            load(&dir).is_none(),
+            "disabled config keeps retail playlist"
+        );
 
         // Enabled: only the playable WAV is indexed, with an encoded stem.
         std::fs::write(
@@ -244,13 +257,13 @@ mod tests {
         let entry = library.entry(0).expect("first entry");
         assert_eq!(entry.key, "Track");
         assert_eq!(entry.sound, format!("{CUSTOM_STEM_PREFIX}0"));
-        assert!(library.bytes_at(0).is_some(), "bytes retained for streaming");
-        assert!(library.bytes_at(1).is_none(), "past the end");
+        assert!(library.file_at(0).is_some(), "bytes retained for streaming");
+        assert!(library.file_at(1).is_none(), "past the end");
 
         // The retained bytes decode through the same path the AI prepare
         // closure uses, so a selected custom track yields real PCM.
-        let bytes = library.bytes_at(0).expect("custom bytes");
-        assert!(crate::audio::theme::track_bytes_loadable(bytes));
+        let (bytes, opus) = library.file_at(0).expect("custom bytes");
+        assert!(crate::audio::theme::track_bytes_loadable(bytes, opus));
 
         let _ = std::fs::remove_dir_all(&dir);
     }

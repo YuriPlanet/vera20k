@@ -70,6 +70,10 @@ pub(crate) struct ProbeReport {
     /// (`SKIRMISH_MAX_SLOT_COUNT`); every other launch seats at most thirty.
     /// An older build's report lacks the field, and that build seats thirty.
     pub max_offline_houses: u8,
+    /// This build reads players who share an explicit `[SpawnLocations]`
+    /// start as one House (docs/spawn.md, "Shared starts"). An older build's
+    /// report lacks the field, and that build refuses a shared start.
+    pub shared_starts: bool,
 }
 
 /// One `[Battles]` campaign of the game data, as the campaign startup reads it.
@@ -216,7 +220,8 @@ pub(crate) fn build_identity() -> BuildIdentity {
         package_version: env!("CARGO_PKG_VERSION").to_owned(),
         network_build: env!("VERA20K_NETWORK_BUILD").to_owned(),
         phobos: crate::rules::PHOBOS_ENABLED,
-        npatch: crate::rules::NPATCH_ENABLED,
+        // Every build carries NPatch; the game's data decides whether it plays.
+        npatch: true,
         verax: crate::rules::VERAX_ENABLED,
         target: if cfg!(all(target_arch = "wasm32", target_os = "unknown")) {
             "wasm32"
@@ -240,15 +245,20 @@ pub(crate) fn load_process_sources(
     media_archive_mode: MediaArchiveMode,
     active_mod: Option<crate::app::mods::ActiveMod>,
     ares_setting: crate::util::ares_launch::AresSetting,
+    kratos_setting: crate::util::kratos_launch::KratosSetting,
     load_audio_index: bool,
 ) -> Result<(
     ProcessAssets,
     Option<crate::rules::ruleset::RuleSet>,
     Option<crate::rules::ini_parser::IniFile>,
 )> {
-    let (resources, ares_setting) =
-        crate::app::mods::resources_for(active_mod.as_ref(), &config.ini, ares_setting)
-            .map_err(anyhow::Error::msg)?;
+    let (resources, ares_setting, kratos_setting) = crate::app::mods::resources_for(
+        active_mod.as_ref(),
+        &config.ini,
+        ares_setting,
+        kratos_setting,
+    )
+    .map_err(anyhow::Error::msg)?;
     let mut assets = AssetManager::with_mod_and_ares(
         &config.paths.ra2_dir,
         resources.mod_folder.as_deref(),
@@ -258,11 +268,13 @@ pub(crate) fn load_process_sources(
     )
     .and_then(|assets| assets.with_resource_config(&resources))
     .context("could not load the game archives")?;
+    assets.set_kratos_setting(kratos_setting);
     let mut process = ProcessAssets::new(media_archive_mode, load_audio_index)
         .with_resources(resources)
         .with_mod_name(active_mod.map(|active| active.folder))
         .with_personal_rules(personal_rules)
-        .with_ares_setting(ares_setting);
+        .with_ares_setting(ares_setting)
+        .with_kratos_setting(kratos_setting);
     // Startup reads this game's INIs as its launch does
     // (`rules::ares_switch::ares_way`); a caller that plays the game says so
     // after (`AssetManager::open_for_play`).
@@ -288,6 +300,7 @@ pub(crate) fn probe(
     map: Option<&str>,
     active_mod: Option<crate::app::mods::ActiveMod>,
     ares_setting: crate::util::ares_launch::AresSetting,
+    kratos_setting: crate::util::kratos_launch::KratosSetting,
 ) -> Result<ProbeReport> {
     let root = &config.paths.ra2_dir;
     let (mut process, mut startup_rules, projection) = load_process_sources(
@@ -296,6 +309,7 @@ pub(crate) fn probe(
         media_archive_mode,
         active_mod,
         ares_setting,
+        kratos_setting,
         true,
     )?;
     let assets = process.manager().context("retail sources missing")?;
@@ -386,6 +400,7 @@ pub(crate) fn probe(
         campaigns,
         generate_map: true,
         max_offline_houses: crate::skirmish_launch::SKIRMISH_MAX_SLOT_COUNT as u8,
+        shared_starts: true,
     })
 }
 
@@ -612,9 +627,10 @@ pub(crate) fn run_desktop(
         None => config,
     };
     // RA2 mode as startup takes it: `-ra2` or VERA.INI's choice.
-    config.use_ra2_mode(existing_ra2_mode(config.paths.settings_dir()));
-    let personal_rules = existing_personal_rules(config.paths.settings_dir())?;
-    let ares = ares.unwrap_or_else(|| existing_ares_setting(config.paths.settings_dir()));
+    let profile = existing_profile(config.paths.settings_dir());
+    config.use_ra2_mode(profile.ra2_mode);
+    let personal_rules = existing_personal_rules(&profile);
+    let ares = ares.unwrap_or(profile.ares);
     let map = map
         .map(|path| {
             ensure_file(path)?;
@@ -631,6 +647,7 @@ pub(crate) fn run_desktop(
         map.as_deref(),
         crate::app::mods::launch_mod(&config.paths, mod_switch).map_err(anyhow::Error::msg)?,
         ares,
+        profile.kratos,
     )
 }
 
@@ -644,43 +661,31 @@ fn ensure_file(path: &Path) -> Result<()> {
     Ok(())
 }
 
-/// The player's Ares setting as startup reads it from VERA.INI.
-pub(crate) fn existing_ares_setting(settings_dir: &Path) -> crate::util::ares_launch::AresSetting {
-    crate::app::persistence::options_profile::RetailOptionsLoad::from_settings(
-        settings_dir,
-        &Default::default(),
-    )
-    .retained_profile
-    .ares
-}
-
-/// The player's RA2 Mode choice as startup reads it from VERA.INI.
-#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-pub(crate) fn existing_ra2_mode(settings_dir: &Path) -> bool {
-    crate::app::persistence::options_profile::RetailOptionsLoad::from_settings(
-        settings_dir,
-        &Default::default(),
-    )
-    .retained_profile
-    .ra2_mode
-}
-
-/// The player's Options switches as startup reads them from VERA.INI.
-pub(crate) fn existing_personal_rules(
+/// The options the normal startup and the launcher's probes play.
+pub(crate) fn existing_profile(
     settings_dir: &Path,
-) -> Result<crate::rules::personal_rules::PersonalRules> {
-    let mut rules = crate::rules::personal_rules::PersonalRules::default();
-    let profile = crate::app::persistence::options_profile::RetailOptionsLoad::from_settings(
+) -> crate::app::persistence::options_profile::RetailOptionsProfile {
+    crate::app::persistence::options_profile::RetailOptionsLoad::from_settings(
         settings_dir,
         &Default::default(),
     )
-    .retained_profile;
+    .retained_profile
+}
+
+/// Options shared by a launcher's network match.
+pub(crate) fn existing_personal_rules(
+    profile: &crate::app::persistence::options_profile::RetailOptionsProfile,
+) -> crate::rules::personal_rules::PersonalRules {
+    let mut rules = crate::rules::personal_rules::PersonalRules::default();
     rules.set_terrain_deformation(profile.terrain_deformation);
     rules.set_superweapon_limit(i32::from(profile.superweapon_limit));
+    // That match plays the player's own Wasm budget too (`cncnet`, which
+    // shares the player's own rules), so its digest counts it.
+    rules.set_wasm_budget(profile.wasm_budget);
     // Building Production Queue stays off: the probe reports the digest a
     // launcher's network match agrees on, which plays without it
     // (`App::start_spawn_session`).
-    Ok(rules)
+    rules
 }
 
 #[cfg(all(test, tests_app))]
@@ -696,6 +701,49 @@ mod tests {
                 hsv: [0; 3],
             })
             .collect()
+    }
+
+    fn agreed_ini_of(directory: &Path) -> crate::app::rules_parts::AgreedIni {
+        let profile = existing_profile(directory);
+        crate::app::rules_parts::agreed_ini(
+            profile.ares,
+            profile.kratos,
+            profile.ra2_mode,
+            &existing_personal_rules(&profile),
+        )
+    }
+
+    /// The rules parts' `ini` values are what a launcher writes into its
+    /// player's VERA.INI to play a host's game: written back, they read as
+    /// the same settings, and the probe's rules play them.
+    #[test]
+    fn agreed_ini_values_read_back_as_the_settings_they_name() {
+        use crate::map::source::test_support::TestDirectory;
+
+        let host = TestDirectory::new("agreed-ini-host");
+        let guest = TestDirectory::new("agreed-ini-guest");
+        host.write(
+            "VERA.INI",
+            b"[VERA]\nAres=yes\nKratos=on\nTerrainDeformation=true\nSuperweaponLimit=7\nWasmBudget=5000\n",
+        );
+        let ini = agreed_ini_of(host.path());
+        assert_eq!(
+            serde_json::to_string(&ini).unwrap(),
+            r#"{"VERA":{"Ares":"On","Kratos":"On","RA2Mode":"no","SuperweaponLimit":"7","TerrainDeformation":"yes","WasmBudget":"5000"}}"#
+        );
+        let written: String = ini["VERA"]
+            .iter()
+            .map(|(key, value)| format!("{key}={value}\n"))
+            .collect();
+        guest.write(
+            "VERA.INI",
+            format!("[VERA]\nFullScreen=yes\n{written}").as_bytes(),
+        );
+        assert_eq!(agreed_ini_of(guest.path()), ini);
+        assert_eq!(
+            existing_personal_rules(&existing_profile(guest.path())).wasm_budget(),
+            5000
+        );
     }
 
     #[test]
@@ -856,6 +904,7 @@ mod tests {
             }],
             generate_map: true,
             max_offline_houses: 120,
+            shared_starts: true,
         };
         let value = serde_json::to_value(&report).unwrap();
         let mut keys: Vec<_> = value.as_object().unwrap().keys().cloned().collect();
@@ -874,6 +923,7 @@ mod tests {
                 "max_start_waypoints",
                 "rules_digest",
                 "rules_parts",
+                "shared_starts",
                 "version"
             ]
         );
@@ -901,6 +951,7 @@ mod tests {
         );
         assert!(value["version"].is_string());
         assert_eq!(value["generate_map"], true);
+        assert_eq!(value["shared_starts"], true);
         let none = ProbeReport {
             map: None,
             max_start_waypoints: None,
@@ -1006,6 +1057,7 @@ mod tests {
             None,
             selected(),
             crate::util::ares_launch::AresSetting::Auto,
+            crate::util::kratos_launch::KratosSetting::Auto,
         )
         .unwrap();
         let (process, _, _) = load_process_sources(
@@ -1014,6 +1066,7 @@ mod tests {
             MediaArchiveMode::STOCK_DIGITAL,
             selected(),
             crate::util::ares_launch::AresSetting::Auto,
+            crate::util::kratos_launch::KratosSetting::Auto,
             false,
         )
         .unwrap();

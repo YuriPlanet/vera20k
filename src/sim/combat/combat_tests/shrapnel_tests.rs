@@ -245,13 +245,13 @@ fn shrapnel_world(rules: &RuleSet, entities: Vec<GameEntity>) -> Simulation {
         store.insert(entity);
     }
     let mut sim = Simulation::with_seed(1);
-    sim.interner = test_interner();
-    sim.substrate.occupancy = OccupancyGrid::rebuild(&store);
-    sim.substrate.entities = store;
+    *sim.interner = test_interner();
+    *sim.substrate.occupancy = OccupancyGrid::rebuild(&store);
+    *sim.substrate.entities = store;
     sim.set_next_stable_object_id_for_test(next_id);
     sim.intern_rule_type_ids(rules);
     sim.resolve_type_handles(rules);
-    sim.native_unique_ids =
+    *sim.native_unique_ids =
         Some(crate::sim::native_identity::NativeUniqueIdCursor::for_synthetic_simulation());
     sim
 }
@@ -576,10 +576,10 @@ fn projectile_shrapnel_is_refused_in_a_missing_cell() {
     );
     let mut terrain = super::impact_height_tests::terrain_at_level(0);
     terrain.test_set_native_allocated_cells(&[(5, 5)]);
-    sim.resolved_terrain = Some(terrain.clone());
+    *sim.resolved_terrain = Some(terrain.clone());
     assert_eq!(commit_shrapnel_at_5_5(&mut sim, &rules).len(), 1);
     terrain.test_set_native_allocated_cells(&[(2, 2)]);
-    sim.resolved_terrain = Some(terrain);
+    *sim.resolved_terrain = Some(terrain);
     assert!(commit_shrapnel_at_5_5(&mut sim, &rules).is_empty());
 }
 
@@ -727,11 +727,11 @@ fn gsi_04_01_projectile_shrapnel_captures_each_shared_dummy_lookup() {
         expected_target(expected_cells[2], true),
     ];
     let mut sim = Simulation::with_seed(0x46_a310);
-    sim.substrate.entities = entities;
-    sim.substrate.occupancy = occupancy;
+    *sim.substrate.entities = entities;
+    *sim.substrate.occupancy = occupancy;
     sim.set_next_stable_object_id_for_test(2);
-    sim.interner = interner;
-    sim.native_unique_ids =
+    *sim.interner = interner;
+    *sim.native_unique_ids =
         Some(crate::sim::native_identity::NativeUniqueIdCursor::for_synthetic_simulation());
     sim.install_resolved_terrain_for_new_map(terrain.clone());
     emit_projectile_shrapnel(&mut sim, &rules, &detonation, detonation.impact);

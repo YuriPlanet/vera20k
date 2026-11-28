@@ -357,6 +357,8 @@ pub struct CloakTickResult {
     /// still-admitted targeters, runs `Detach_All(false)` again, then
     /// re-`Assign_Target`s each saved one.
     pub completed_cloak: bool,
+    /// The state 3 → 0 completion: the object is wholly visible again.
+    pub completed_uncloak: bool,
 }
 
 impl CloakRuntime {
@@ -502,6 +504,7 @@ impl CloakRuntime {
             play_cloak_sound: false,
             began_cloaking: false,
             completed_cloak: false,
+            completed_uncloak: false,
         };
         if self.state == 0 {
             if !facts.state_zero_head_allows || !facts.can_auto_cloak {
@@ -591,6 +594,7 @@ impl CloakRuntime {
                     self.recloak_delay =
                         CdTimer::started(facts.current_frame, facts.cloak_delay_frames);
                     result.transitioned = true;
+                    result.completed_uncloak = true;
                 }
                 1 if facts.can_auto_cloak => {
                     let start =
@@ -957,6 +961,14 @@ impl DisguiseRuntime {
         modified_damage: i32,
         category: crate::map::entities::EntityCategory,
     ) {
+        self.clear(category);
+        self.block_reacquisition(current_frame, modified_damage.wrapping_shl(1));
+    }
+
+    /// The class ClearDisguise of a disguised object: Unit746720 clears
+    /// identity as well as the raw flag; Infantry5227E5 and the base41C030
+    /// arm drop only the flag. An undisguised object is left as it is.
+    pub(crate) fn clear(&mut self, category: crate::map::entities::EntityCategory) {
         if self.disguised {
             if category == crate::map::entities::EntityCategory::Unit {
                 self.clear_unit();
@@ -964,7 +976,6 @@ impl DisguiseRuntime {
                 self.disguised = false;
             }
         }
-        self.block_reacquisition(current_frame, modified_damage.wrapping_shl(1));
     }
 
     /// Whether the re-disguise block is still running.
@@ -1454,5 +1465,98 @@ mod tests {
         }
         state.tick(facts(5), &mut rng);
         assert_eq!(state.depth, 1);
+    }
+
+    /// `TechnoClass::VisualCharacter @ 0x00703860` answers an opaque 0 for a
+    /// fully decloaked (state 0) object and for a transition frame whose
+    /// progress is still zero. A screen observer whose sensors cover the cell
+    /// must not turn either window into the Ghost Miner's 50% ghost: both are
+    /// fully visible and attackable. Found in real-machine play of a mod with
+    /// `[General] CloakingStages=1` and `CloakDelay=0`, where a unit that
+    /// gained cloak at elite rank fired (state 0) and then sat at depth 0 for
+    /// its type's `CloakingSpeed` window.
+    #[test]
+    fn decloaked_and_zero_progress_windows_are_opaque_under_a_sensor_grid() {
+        let screen = |senses| {
+            VisualCharacterQuery::screen(true, true, senses, false, false, false)
+        };
+        for owned in [true, false] {
+            assert_eq!(
+                visual_character(0, 0, 1, false, false, owned, true, screen(true)),
+                0,
+                "a decloaked (state-0) unit is opaque even under a sensor grid (owned={owned})"
+            );
+        }
+        for state in [1, 3] {
+            assert_eq!(
+                visual_character(state, 0, 1, false, false, false, true, screen(true)),
+                0,
+                "state {state} at progress 0 is opaque (the CloakingSpeed window)"
+            );
+        }
+        assert_eq!(
+            visual_character(2, 0, 1, false, false, false, true, screen(true)),
+            3,
+            "a fully cloaked sensed unit keeps its 50% ghost"
+        );
+    }
+
+    /// Drive the reported tuning through production code: a custom unit type
+    /// (MYUNIT) sets `CloakingSpeed=150`, the rules set `[General]
+    /// CloakingStages=1` and `CloakDelay=0`. After firing, the single-stage
+    /// uncloak reaches state 0 in one frame and auto-cloak reopens state 1
+    /// with depth 0. The step timer holds that window for 150 frames; every
+    /// frame must draw an opaque body, and only the completed state 2 may
+    /// become the sensed 50% ghost.
+    #[test]
+    fn a_zero_progress_cloaking_speed_window_stays_opaque_until_state_2() {
+        let mut cloak = CloakRuntime::new(0);
+        let mut rng = SimRng::new(1);
+        let screen =
+            |senses| VisualCharacterQuery::screen(true, true, senses, false, false, false);
+        let facts = |frame, can_auto| CloakTickFacts {
+            current_frame: frame,
+            state_zero_head_allows: true,
+            can_auto_cloak: can_auto,
+            should_uncloak: false,
+            health_above_red: true,
+            cloaking_speed: 150,
+            cloak_delay_frames: 0,
+            cloaking_stages: 1,
+            invisible: false,
+            owned_by_current_house: false,
+            is_building: false,
+        };
+        let body = |c: &CloakRuntime| {
+            visual_character(
+                c.state(),
+                c.depth() as i32,
+                1,
+                false,
+                false,
+                false,
+                true,
+                screen(true),
+            )
+        };
+        cloak.establish_unlimbo_fully_cloaked();
+        assert_eq!(cloak.state(), 2);
+        assert_eq!(body(&cloak), 3, "a fully cloaked sensed unit is a ghost");
+        assert!(cloak.start_uncloaking(0, 150, 1, false).transitioned);
+        cloak.tick(facts(1, false), &mut rng);
+        assert_eq!(cloak.state(), 0, "single-stage uncloak completes in one frame");
+        assert_eq!(body(&cloak), 0, "decloaked to fire: opaque");
+        cloak.tick(facts(2, true), &mut rng);
+        assert_eq!(cloak.state(), 1);
+        assert_eq!(cloak.depth(), 0);
+        for frame in 3..152 {
+            cloak.tick(facts(frame, true), &mut rng);
+            assert_eq!(cloak.state(), 1, "frame {frame}: still cloaking");
+            assert_eq!(cloak.depth(), 0, "frame {frame}: no step yet");
+            assert_eq!(body(&cloak), 0, "frame {frame}: opaque under sensors");
+        }
+        cloak.tick(facts(152, true), &mut rng);
+        assert_eq!(cloak.state(), 2, "cloak completed after 150 frames");
+        assert_eq!(body(&cloak), 3, "completed cloak is a sensed ghost again");
     }
 }

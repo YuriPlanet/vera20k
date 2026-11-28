@@ -132,6 +132,25 @@ impl RuleSet {
             b"infantry-theft-flags-v1".hash(&mut hasher);
             theft_flags.hash(&mut hasher);
         }
+        // Firestorm's web keys (docs/ts-webs.md) keep their values across
+        // passes (WarheadWeb::read_pass), as the theft bytes do. Left out
+        // while no rules set them.
+        let webs = Self::by_upper_id(
+            self.warhead_entries()
+                .filter_map(|(id, warhead)| warhead.web.map(|web| (id, web))),
+        );
+        let web_immune = Self::by_upper_id(
+            self.object_list
+                .iter()
+                .filter(|object| object.is_web_immune)
+                .map(|object| (&object.id, object.category)),
+        );
+        if !webs.is_empty() || !web_immune.is_empty() || self.general.webbed_infantry.is_some() {
+            b"ts-webs-v1".hash(&mut hasher);
+            webs.hash(&mut hasher);
+            web_immune.hash(&mut hasher);
+            self.general.webbed_infantry.hash(&mut hasher);
+        }
         // OverlayRead5FE8BE / InitTheater5FE620 retain typed history that a
         // flattened Image key cannot recover; saved resource plans matter too.
         self.overlay_registry.hash_configuration(&mut hasher);
@@ -247,6 +266,18 @@ impl RuleSet {
         {
             b"phobos-super-availability-v1".hash(&mut hasher);
             self.phobos_super_weapon_metadata.hash(&mut hasher);
+        }
+        if self.kratos {
+            b"kratos-infantry-flh-v1".hash(&mut hasher);
+            Self::by_upper_id(
+                self.object_list
+                    .iter()
+                    .filter(|object| {
+                        object.category == ObjectCategory::Infantry && !object.fearless
+                    })
+                    .map(|object| (&object.id, object.kratos_crawling().arrays())),
+            )
+            .hash(&mut hasher);
         }
         if self.phobos {
             self.parallel_ai_queues.hash_into(&mut hasher);
@@ -1322,7 +1353,7 @@ impl RuleSet {
             }
         }
         let general = &self.general;
-        if crate::rules::NPATCH_ENABLED {
+        if self.npatch() {
             general.vehicle_parachute.hash(&mut hasher);
         }
         (
@@ -1426,6 +1457,7 @@ impl RuleSet {
             self.general.ai_fire_sale_delay.hash(&mut hasher);
             self.general.ai_all_to_hunt.hash(&mut hasher);
             self.general.gather_when_mcv_deploy.hash(&mut hasher);
+            self.general.art_image_swap.hash(&mut hasher);
             b"phobos-power-surplus-v1".hash(&mut hasher);
             self.general.enable_power_surplus.hash(&mut hasher);
             self.general.power_surplus.hash(&mut hasher);
@@ -1519,6 +1551,7 @@ impl RuleSet {
         self.buildup_assets.hash(&mut hasher);
         self.rubble_assets.hash(&mut hasher);
         self.terrain_assets.hash(&mut hasher);
+        self.alpha_images.hash_declared_pictures(&mut hasher);
         b"art-smudge-config-v2".hash(&mut hasher);
         self.art_registry.fold_smudge_anim_dims(&mut hasher);
         // These effective Bullet values feed FireAt and drawing after load. Hash
@@ -1719,8 +1752,11 @@ impl RuleSet {
     /// sizes, the frame count, bounds and middle frame of each animation that
     /// affects play or that a simulation owner waits on, the first weather
     /// bolt's image height, whether a scorching or cratering animation's
-    /// frame is large, and in an Ares game which particle AlphaImage SHPs
-    /// loaded. A file that changes only how something looks (other pixels,
+    /// frame is large, which overlay types without a CellAnim have an image,
+    /// and in an Ares game which particle AlphaImage SHPs loaded. Each is
+    /// the fact itself, whichever file gave it (an SHP, a VXL, a picture or
+    /// a model), so equal facts fold equally whether or not the retail file
+    /// is there. A file that changes only how something looks (other pixels,
     /// another palette, a model's other parts, the file that supplied an
     /// image, the frames of an effect animation that changes nothing but its
     /// picture) leaves the number as it is, so players with such files play
@@ -1742,6 +1778,9 @@ impl RuleSet {
         self.buildup_assets.hash(&mut hasher);
         self.terrain_assets.hash(&mut hasher);
         self.rubble_assets.fold_admissions(&mut hasher);
+        // Which overlays authored placement admits (`authored_overlay`),
+        // from an SHP or a picture alike.
+        self.effect_assets.fold_overlay_admission(&mut hasher);
         // IsVoxel and the tilt matrix behind a shot's origin
         // (`combat::area_rocker`, `combat::fire_coord`).
         self.voxel_assets.fold_loaded(&mut hasher);
@@ -1810,6 +1849,7 @@ impl RuleSet {
         files.extend(self.buildup_assets.folder_files());
         files.extend(self.terrain_assets.folder_files());
         files.extend(self.rubble_assets.folder_files());
+        files.extend(self.effect_assets.overlay_picture_files());
         files.extend(self.voxel_assets.folder_files());
         if self.ares {
             files.extend(

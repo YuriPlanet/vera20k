@@ -2,9 +2,16 @@
 //! Stop, Guard, area Guard, Scatter and Deploy/Undeploy.
 
 use super::selected_stable_ids_in_order;
-use crate::app::AppState;
+use crate::app::PlatformState;
+use crate::app::diagnostics::state::DiagnosticsState;
+use crate::app::frontend::state::FrontendState;
 use crate::app::input::commands::{preferred_command_owner, schedule_command};
 use crate::app::match_runtime::sim_host::SimWrite;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
+use crate::audio::sfx::SfxPlayer;
 use crate::map::entities::EntityCategory;
 use crate::sim::command::Command;
 use crate::sim::world::ControlProjection;
@@ -13,19 +20,24 @@ use crate::sim::world::ControlProjection;
 /// (`0x00536B80`) and the command bar. Planning refusal at730EF5 ->6FFE00
 /// ->639FD0 ends the walk with ScoldSound and no StopSound; it is only
 /// reached for a qualifying object.
-pub(super) fn queue_stop_for_selected(state: &mut AppState) {
-    let sim = state
-        .match_state
-        .sim_runtime
-        .runtime()
-        .map(|rt| &rt.simulation);
+pub(super) fn queue_stop_for_selected(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
+) {
+    let sim = match_state.sim_runtime.runtime().map(|rt| &rt.simulation);
     let selected_ids = selected_stable_ids_in_order(
         sim,
-        state.rules(),
-        &state.match_state.input.selection_order,
-        state.match_state.input.selection_order_pending,
+        crate::app::state::active_rules(frontend, match_state),
+        &match_state.input.selection_order,
+        match_state.input.selection_order_pending,
     );
-    let qualifies = match (sim, state.rules()) {
+    let qualifies = match (sim, crate::app::state::active_rules(frontend, match_state)) {
         (Some(sim), Some(rules)) => {
             let control = sim.control_projection();
             selected_ids
@@ -34,20 +46,36 @@ pub(super) fn queue_stop_for_selected(state: &mut AppState) {
         }
         _ => false,
     };
-    if qualifies && state.match_state.input.planning.active() {
+    if qualifies && match_state.input.planning.active() {
         crate::app::input::planning_mode::refuse_clicked_event(
-            state,
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            persistence,
             crate::app::input::planning_mode::PlanningRefusal::Stop,
             1,
         );
         return;
     }
-    if !super::commands::selection_input_has_capacity(state, selected_ids.len()) {
+    if !super::commands::selection_input_has_capacity(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        sfx_player,
+        persistence,
+        selected_ids.len(),
+    ) {
         return;
     }
     // VERA ferry: Stop also ends the selected transports' routes.
-    crate::app::input::ferry::stop_selected(state, &selected_ids);
-    let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Command) else {
+    crate::app::input::ferry::stop_selected(&mut match_state.input, &selected_ids);
+    let Some(runtime) = match_state.sim_runtime.write_sim(SimWrite::Command) else {
         return;
     };
     for sound in queue_stop_orders(
@@ -55,7 +83,7 @@ pub(super) fn queue_stop_for_selected(state: &mut AppState) {
         &runtime.resources.rules,
         selected_ids,
     ) {
-        state.match_state.match_audio.sound_events.push(sound);
+        match_state.match_audio.sound_events.push(sound);
     }
 }
 
@@ -121,87 +149,125 @@ pub(super) fn queue_stop_orders(
 /// GuardObject536D00 and command-bar slot6 both execute730D60 immediately.
 /// The input ledger already contains pending selection order; never sort it
 /// or require that the selected bits have reached the simulation yet.
-pub(super) fn queue_guard_for_selected(state: &mut AppState) {
-    if state.match_state.input.planning.active() {
+pub(super) fn queue_guard_for_selected(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
+) {
+    if match_state.input.planning.active() {
         crate::app::input::planning_mode::refuse(
-            state,
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            persistence,
             crate::app::input::planning_mode::PlanningRefusal::Guard,
         );
         return;
     }
     let selected = selected_stable_ids_in_order(
-        state
-            .match_state
-            .sim_runtime
-            .runtime()
-            .map(|rt| &rt.simulation),
-        state.rules(),
-        &state.match_state.input.selection_order,
-        state.match_state.input.selection_order_pending,
+        match_state.sim_runtime.runtime().map(|rt| &rt.simulation),
+        crate::app::state::active_rules(frontend, match_state),
+        &match_state.input.selection_order,
+        match_state.input.selection_order_pending,
     );
-    if !super::commands::selection_input_has_capacity(state, selected.len()) {
+    if !super::commands::selection_input_has_capacity(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        sfx_player,
+        persistence,
+        selected.len(),
+    ) {
         return;
     }
-    let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Command) else {
+    let Some(runtime) = match_state.sim_runtime.write_sim(SimWrite::Command) else {
         return;
     };
     for event in queue_area_guard_orders(
         &mut runtime.simulation,
         &runtime.resources.rules,
         &selected,
-        state.match_state.input.selection_voice_enabled,
+        match_state.input.selection_voice_enabled,
     ) {
-        state.match_state.match_audio.sound_events.push(event);
+        match_state.match_audio.sound_events.push(event);
     }
 }
 
 /// ScatterCommand536D80 ->730FE0 uses the same pending selection-order
 /// owner as Guard. No per-object voice or selection-voice latch is involved.
-pub(super) fn queue_scatter_for_selected(state: &mut AppState) {
+pub(super) fn queue_scatter_for_selected(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
+) {
     let selected = selected_stable_ids_in_order(
-        state
-            .match_state
-            .sim_runtime
-            .runtime()
-            .map(|rt| &rt.simulation),
-        state.rules(),
-        &state.match_state.input.selection_order,
-        state.match_state.input.selection_order_pending,
+        match_state.sim_runtime.runtime().map(|rt| &rt.simulation),
+        crate::app::state::active_rules(frontend, match_state),
+        &match_state.input.selection_order,
+        match_state.input.selection_order_pending,
     );
     //730FE0 only reaches6FFE00 for a controllable Techno. Use the
     // existing Scatter producer admission; an empty/refused selection
     // produces neither a HUD row nor an ordinary event.
-    if state.match_state.input.planning.active() {
-        let eligible = state
-            .match_state
-            .sim_runtime
-            .runtime()
-            .is_some_and(|runtime| {
-                selected.iter().any(|&id| {
-                    runtime
-                        .simulation
-                        .scatter_key_command(id, &runtime.resources.rules)
-                        .is_some()
-                })
-            });
+    if match_state.input.planning.active() {
+        let eligible = match_state.sim_runtime.runtime().is_some_and(|runtime| {
+            selected.iter().any(|&id| {
+                runtime
+                    .simulation
+                    .scatter_key_command(id, &runtime.resources.rules)
+                    .is_some()
+            })
+        });
         if eligible {
             crate::app::input::planning_mode::refuse_clicked_event(
-                state,
+                platform,
+                renderer,
+                diag,
+                frontend,
+                match_state,
+                process_assets,
+                persistence,
                 crate::app::input::planning_mode::PlanningRefusal::Scatter,
                 1,
             );
         }
         return;
     }
-    if !super::commands::selection_input_has_capacity(state, selected.len()) {
+    if !super::commands::selection_input_has_capacity(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        sfx_player,
+        persistence,
+        selected.len(),
+    ) {
         return;
     }
-    let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Command) else {
+    let Some(runtime) = match_state.sim_runtime.write_sim(SimWrite::Command) else {
         return;
     };
     for sound in queue_scatter_orders(&mut runtime.simulation, &runtime.resources.rules, &selected)
     {
-        state.match_state.match_audio.sound_events.push(sound);
+        match_state.match_audio.sound_events.push(sound);
     }
 }
 
@@ -295,43 +361,64 @@ pub(super) fn queue_area_guard_orders(
 }
 
 /// The deploy key over the selection ([`deploy_key_commands`]).
-pub(super) fn queue_deploy_undeploy_for_selected(state: &mut AppState) {
+pub(super) fn queue_deploy_undeploy_for_selected(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
+) {
     let selected_ids = selected_stable_ids_in_order(
-        state
-            .match_state
-            .sim_runtime
-            .runtime()
-            .map(|rt| &rt.simulation),
-        state.rules(),
-        &state.match_state.input.selection_order,
-        state.match_state.input.selection_order_pending,
+        match_state.sim_runtime.runtime().map(|rt| &rt.simulation),
+        crate::app::state::active_rules(frontend, match_state),
+        &match_state.input.selection_order,
+        match_state.input.selection_order_pending,
     );
-    if !super::commands::selection_input_has_capacity(state, selected_ids.len()) {
+    if !super::commands::selection_input_has_capacity(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        sfx_player,
+        persistence,
+        selected_ids.len(),
+    ) {
         return;
     }
-    let Some(sim) = state
-        .match_state
-        .sim_runtime
-        .runtime()
-        .map(|rt| &rt.simulation)
-    else {
+    let Some(sim) = match_state.sim_runtime.runtime().map(|rt| &rt.simulation) else {
         return;
     };
     if selected_ids.is_empty() {
         return;
     }
     // Collect commands first to avoid borrow conflict with schedule_command.
-    let Some(owner) = preferred_command_owner(state) else {
+    let Some(owner) = preferred_command_owner(&match_state.sim_runtime) else {
         return;
     };
     let local_owner = sim.interner().get(&owner);
-    let commands = deploy_key_commands(sim, state.rules(), &selected_ids, local_owner);
+    let commands = deploy_key_commands(
+        sim,
+        crate::app::state::active_rules(frontend, match_state),
+        &selected_ids,
+        local_owner,
+    );
     // Selection730AF0 sends DEPLOY9 through Techno6FFE00. During
     // Planning Mode that reaches639FD0 and the NoDeploy refusal at638238,
     // rather than executing an immediate deployment or adding a mission.
-    if !commands.is_empty() && state.match_state.input.planning.active() {
+    if !commands.is_empty() && match_state.input.planning.active() {
         crate::app::input::planning_mode::refuse_clicked_event(
-            state,
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            persistence,
             crate::app::input::planning_mode::PlanningRefusal::Deploy,
             commands.len(),
         );
@@ -343,7 +430,7 @@ pub(super) fn queue_deploy_undeploy_for_selected(state: &mut AppState) {
         let cmd = if let Command::DeployMcv { entity_id }
         | Command::ToggleInfantryDeploy { entity_id } = cmd
         {
-            let Some(record) = state.match_state.sim_runtime.runtime().and_then(|runtime| {
+            let Some(record) = match_state.sim_runtime.runtime().and_then(|runtime| {
                 let sim = &runtime.simulation;
                 sim.encode_deploy_record(sim.interner().get(&owner)?, entity_id)
             }) else {
@@ -353,7 +440,18 @@ pub(super) fn queue_deploy_undeploy_for_selected(state: &mut AppState) {
         } else {
             cmd
         };
-        schedule_command(state, &owner, cmd);
+        schedule_command(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            sfx_player,
+            persistence,
+            &owner,
+            cmd,
+        );
     }
 }
 

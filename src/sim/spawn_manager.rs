@@ -107,6 +107,7 @@ impl SpawnOwner {
     /// Install a fixture's owner.
     #[cfg(any(test, feature = "test-support"))]
     pub fn set_for_test(&mut self, owner: Option<u64>) {
+        crate::sim::game_entity::NameNote::fixture();
         self.owner = owner;
     }
 }
@@ -157,7 +158,7 @@ pub enum SpawnSlotState {
 }
 
 /// One pool slot (native `SpawnControl`, 0x18 bytes).
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct SpawnSlot {
     /// Stable id of the child, or `None` while regenerating.
     spawn: Option<u64>,
@@ -199,6 +200,7 @@ impl SpawnSlot {
         timer: CdTimer,
         is_missile_spawn: bool,
     ) -> Self {
+        crate::sim::game_entity::NameNote::fixture();
         Self {
             spawn,
             state,
@@ -210,6 +212,7 @@ impl SpawnSlot {
     /// Install a fixture's child.
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_spawn_for_test(&mut self, spawn: Option<u64>) {
+        crate::sim::game_entity::NameNote::fixture();
         self.spawn = spawn;
     }
 
@@ -257,6 +260,13 @@ pub struct SpawnManagerState {
 }
 
 impl SpawnManagerState {
+    /// SpawnManagerClass::Load 0x6B7F4A..0x6B7F5A restarts both manager
+    /// timers. The subsequent stream reads restore the individual spawn slots.
+    pub(crate) fn restart_timers_after_load(&mut self, frame: i32) {
+        self.update_timer.start(frame, 0);
+        self.spawn_timer.start(frame, 0);
+    }
+
     /// Ares capture10045D76..10045D8B resumes the manager's +50 AI gate
     /// only from its -1 start sentinel, preserving the retained duration.
     pub(crate) fn resume_update_timer(&mut self, frame: i32) {
@@ -338,6 +348,7 @@ impl SpawnManagerState {
     /// A fixture's idle pool of `slots` with zero rates and timers.
     #[cfg(any(test, feature = "test-support"))]
     pub fn for_test(spawn_type: InternedId, slots: Vec<SpawnSlot>) -> Self {
+        crate::sim::game_entity::NameNote::fixture();
         Self {
             spawn_type,
             missile_family: None,
@@ -369,12 +380,14 @@ impl SpawnManagerState {
     /// Install a fixture's current target.
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_current_target_for_test(&mut self, current_target: Option<TargetKind>) {
+        crate::sim::game_entity::NameNote::fixture();
         self.current_target = current_target;
     }
 
     /// Install a fixture's queued target.
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_queued_target_for_test(&mut self, queued_target: Option<TargetKind>) {
+        crate::sim::game_entity::NameNote::fixture();
         self.queued_target = queued_target;
     }
 
@@ -387,6 +400,7 @@ impl SpawnManagerState {
     /// A fixture's slots.
     #[cfg(any(test, feature = "test-support"))]
     pub fn slots_mut_for_test(&mut self) -> &mut Vec<SpawnSlot> {
+        crate::sim::game_entity::NameNote::fixture();
         &mut self.slots
     }
 
@@ -450,10 +464,20 @@ impl SpawnManagerState {
     /// `SpawnManagerClass::SetTarget` (`0x006B7B90`): a target that differs
     /// from the live one is queued, never written straight through. The next AI
     /// pass promotes it.
-    pub fn set_target(&mut self, target: Option<TargetKind>) {
+    pub(crate) fn queue_target(
+        &mut self,
+        target: Option<TargetKind>,
+        _: crate::sim::game_entity::NameNote,
+    ) {
         if target != self.current_target {
             self.queued_target = target;
         }
+    }
+
+    /// [`Self::queue_target`] for a fixture.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_target(&mut self, target: Option<TargetKind>) {
+        self.queue_target(target, crate::sim::game_entity::NameNote::fixture());
     }
 
     /// Promote the queued target, as every state branch does before reading
@@ -644,7 +668,10 @@ fn ai(host: &mut impl SpawnHost) {
 /// The per-node switch (jump table `0x006B7B6C`).
 fn visit_slot(host: &mut impl SpawnHost, index: usize, frame: i32) {
     use SpawnSlotState::*;
-    let slot = host.manager_ref().slots[index].clone();
+    // The slot as the visit read it: the arms below write the live slot
+    // through `host`, and their callbacks (launch, recall, pointer expiry)
+    // write it too.
+    let slot = host.manager_ref().slots[index];
     let Some(child) = slot.spawn else {
         // Only a regenerating node is without a unit.
         if slot.state == Regenerating && slot.timer.expired(frame) {
@@ -831,7 +858,8 @@ fn manager_status(host: &mut impl SpawnHost, frame: i32) {
             let mut pushed = false;
             let mut index = 0;
             while index < host.manager_ref().slots.len() {
-                let slot = host.manager_ref().slots[index].clone();
+                // Read before the host's calls below rewrite this slot.
+                let slot = host.manager_ref().slots[index];
                 index += 1;
                 let Some(child) = slot.spawn.filter(|_| slot.state == InFlight) else {
                     continue;
@@ -946,7 +974,8 @@ fn pointer_expired(host: &mut impl SpawnHost, expired: u64) {
 fn clear_all_targets(host: &mut impl SpawnHost) {
     let mut index = 0;
     while index < host.manager_ref().slots.len() {
-        let slot = host.manager_ref().slots[index].clone();
+        // Read before the host's calls below rewrite this slot.
+        let slot = host.manager_ref().slots[index];
         index += 1;
         let Some(child) = slot
             .spawn
@@ -993,7 +1022,8 @@ fn kill_all_spawns(host: &mut impl SpawnHost) {
         host.manager_ref().regen_rate as i32
     };
     for index in (0..host.manager_ref().slots.len()).rev() {
-        let slot = host.manager_ref().slots[index].clone();
+        // Read before the arms below rewrite this slot.
+        let slot = host.manager_ref().slots[index];
         match (slot.state, slot.spawn) {
             (Regenerating, _) => continue,
             (ReadyDocked | Reloading, child) => {
@@ -1184,7 +1214,12 @@ impl SpawnHost for WorldSpawn<'_, '_> {
             .substrate
             .entities
             .get_mut(self.owner_id)
-            .and_then(|owner| owner.spawn_manager.as_mut())
+            .and_then(|owner| {
+                // A slot's child and the targets are names the
+                // pointer-expiry index reads.
+                let _ = owner.note_names();
+                owner.spawn_manager.as_mut()
+            })
             .expect("a spawn manager keeps its owner for the call")
     }
 
@@ -1565,6 +1600,8 @@ impl SpawnHost for WorldSpawn<'_, '_> {
 
     fn adopt(&mut self, child: u64) {
         if let Some(entity) = self.sim.substrate.entities.get_mut(child) {
+            // The SpawnOwner is a name the pointer-expiry index reads.
+            let _ = entity.note_names();
             entity.seldom.spawn_owner_id.owner = Some(self.owner_id);
         }
     }

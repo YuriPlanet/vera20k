@@ -243,6 +243,32 @@ pub enum RulesLayerKind {
     Tmcj4f,
 }
 
+/// Where Wasm extension modules change rules (RFC 0001 section 2): the mod's
+/// modules after `RULESMD.INI`, `LANGRULE.INI` and the mode layer, the map's
+/// after the map layer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExtRulesLayer {
+    Mod,
+    Map,
+}
+
+/// The modules' `on_rules` (`sim::ext_modules::rules`). Rules do not depend
+/// on modules; the scenario loader hands this in.
+pub trait ExtRulesHook {
+    /// Whether a module runs at `layer`; without one, nothing is projected.
+    fn runs_at(&self, layer: ExtRulesLayer) -> bool;
+    /// Runs the modules of `layer` against the rules processed so far:
+    /// `merged` is the merged rules text, `rules` its projection. Returns the
+    /// INI text they wrote, which is processed as one more pass. An error
+    /// names the module and refuses the scenario.
+    fn on_rules(
+        &mut self,
+        layer: ExtRulesLayer,
+        merged: &IniFile,
+        rules: &RuleSet,
+    ) -> Result<Option<IniFile>, String>;
+}
+
 /// Whether these passes continue a live registry or enter Full_Init's reset.
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum RulesProcessContext {
@@ -276,6 +302,9 @@ pub struct RulesLayerStack {
     /// VERA: the player's Ares setting is Off, so no Ares key turns Ares on
     /// (`AssetManager::ares_setting`).
     ares_keys_off: bool,
+    /// VERA: the player's Kratos setting (`AssetManager::kratos_setting`);
+    /// Auto lets the game's data decide (`rules::kratos_switch`).
+    kratos_setting: crate::util::kratos_launch::KratosSetting,
 }
 
 impl RulesLayerStack {
@@ -291,6 +320,7 @@ impl RulesLayerStack {
             // (`ares_switch::ares_way`), with the Ares setting Auto.
             ships_ares: crate::rules::ares_switch::ares_way(),
             ares_keys_off: false,
+            kratos_setting: crate::util::kratos_launch::KratosSetting::Auto,
         }
     }
 
@@ -310,6 +340,18 @@ impl RulesLayerStack {
     /// saying reads as Auto.
     pub fn with_ares_keys_off(mut self, off: bool) -> Self {
         self.ares_keys_off = off;
+        self
+    }
+
+    /// VERA: the stack of a launch whose player chose a Kratos setting
+    /// (`util::kratos_launch::KratosSetting`). The game's owner sets it from
+    /// the launch (`NativeRulesProcessOwner::startup_layers`); a stack built
+    /// without saying reads as Auto.
+    pub fn with_kratos_setting(
+        mut self,
+        setting: crate::util::kratos_launch::KratosSetting,
+    ) -> Self {
+        self.kratos_setting = setting;
         self
     }
 
@@ -433,39 +475,40 @@ impl RulesLayerStack {
             fixed_eva,
             None::<fn(RuleSet)>,
             fixed_sounds,
+            None,
         )
         .map(|(processed, _)| processed)
     }
 
-    /// Execute a read that native Full_Init places after map Rules and before
-    /// its optional TMCJ4F Rules Process. The callback takes ownership of the
-    /// map-stage RuleSet projection to retain read-time identities; the
-    /// original processor remains the single authority and continues into
-    /// TMCJ4F before producing the final Rules.
-    pub(crate) fn process_with_fixed_art_and_registry_state_recovering_after_map<F, T>(
+    /// A scenario's passes with the Wasm modules' `on_rules` at their layers
+    /// ([`ExtRulesHook`]). `after_map` executes a read that native Full_Init
+    /// places after map Rules and before its optional TMCJ4F Rules Process.
+    /// The callback takes ownership of the map-stage RuleSet projection to
+    /// retain read-time identities; the original processor remains the single
+    /// authority and continues into TMCJ4F before producing the final Rules.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn process_scenario_with_ext_rules<F, T>(
         &self,
         fixed_art: &IniFile,
         registry_state: NativeRulesRegistryState,
         context: RulesProcessContext,
         fixed_eva: &EvaRegistry,
-        after_map: F,
+        after_map: Option<F>,
         fixed_sounds: &SoundRegistry,
-    ) -> Result<(ProcessedRulesLayers, T), NativeRulesProcessingFailure>
+        ext_rules: Option<&mut dyn ExtRulesHook>,
+    ) -> Result<(ProcessedRulesLayers, Option<T>), NativeRulesProcessingFailure>
     where
         F: FnOnce(RuleSet) -> T,
     {
-        let (processed, after_map_result) = self.process_internal(
+        self.process_internal(
             fixed_art,
             registry_state,
             context,
             fixed_eva,
-            Some(after_map),
+            after_map,
             fixed_sounds,
-        )?;
-        Ok((
-            processed,
-            after_map_result.expect("scenario Rules stack must contain its map pass"),
-        ))
+            ext_rules,
+        )
     }
 
     fn process_internal<F, T>(
@@ -476,10 +519,14 @@ impl RulesLayerStack {
         fixed_eva: &EvaRegistry,
         mut after_map: Option<F>,
         fixed_sounds: &SoundRegistry,
+        mut ext_rules: Option<&mut dyn ExtRulesHook>,
     ) -> Result<(ProcessedRulesLayers, Option<T>), NativeRulesProcessingFailure>
     where
         F: FnOnce(RuleSet) -> T,
     {
+        // The content hashes of the modules' rules writes, folded into the
+        // stack's hash only when there are any, so stock rules hash as before.
+        let mut ext_hashes = Vec::new();
         let (registry_state, mut root_color_add_reread, reset_color_add_after_root, theater) =
             match context {
                 RulesProcessContext::Ordinary => {
@@ -509,13 +556,35 @@ impl RulesLayerStack {
                 // particular, LANG's AudioVisual selectors stay current.
                 processor.rules_color_add.apply_pass(root);
             }
-            if let Err(error) = processor.apply_pass(
-                ini,
-                fixed_art,
-                fixed_eva,
-                kind == RulesLayerKind::RulesMd,
-                fixed_sounds,
-            ) {
+            let mut result = Ok(());
+            if kind == RulesLayerKind::Scenario {
+                result = self.run_ext_rules(
+                    &mut processor,
+                    &mut ext_rules,
+                    ExtRulesLayer::Mod,
+                    (fixed_art, fixed_eva, fixed_sounds),
+                    &mut ext_hashes,
+                );
+            }
+            if result.is_ok() {
+                result = processor.apply_pass(
+                    ini,
+                    fixed_art,
+                    fixed_eva,
+                    kind == RulesLayerKind::RulesMd,
+                    fixed_sounds,
+                );
+            }
+            if result.is_ok() && kind == RulesLayerKind::Scenario {
+                result = self.run_ext_rules(
+                    &mut processor,
+                    &mut ext_rules,
+                    ExtRulesLayer::Map,
+                    (fixed_art, fixed_eva, fixed_sounds),
+                    &mut ext_hashes,
+                );
+            }
+            if let Err(error) = result {
                 let (_, partial_trace) = processor.finish();
                 return Err(NativeRulesProcessingFailure {
                     error,
@@ -531,18 +600,11 @@ impl RulesLayerStack {
             if kind == RulesLayerKind::Scenario
                 && let Some(after_map) = after_map.take()
             {
-                let ares_inputs = crate::rules::ares_switch::AresInputs::from_passes(
-                    &processor.ares_reads,
-                    self.ships_ares,
-                    self.ares_keys_off,
+                let prefix = self.finish_rules(
+                    processor.clone(),
+                    fixed_art,
+                    self.content_hash_with_ext(index + 1, &ext_hashes),
                 );
-                let (ini, native_type_construction_trace) = processor.clone().finish();
-                let prefix = ProcessedRulesLayers {
-                    ini,
-                    content_hash: self.content_hash_for_layers(index + 1),
-                    native_type_construction_trace,
-                    ares_inputs,
-                };
                 let rules = match RuleSet::from_processed_rules(&prefix) {
                     Ok(rules) => rules,
                     Err(error) => {
@@ -566,21 +628,101 @@ impl RulesLayerStack {
             processor.init_overlay_theater();
             processor.init_anim_theater();
         }
+        Ok((
+            self.finish_rules(
+                processor,
+                fixed_art,
+                self.content_hash_with_ext(self.layers.len(), &ext_hashes),
+            ),
+            after_map_result,
+        ))
+    }
+
+    fn finish_rules(
+        &self,
+        mut processor: RulesPassProcessor,
+        fixed_art: &IniFile,
+        content_hash: u64,
+    ) -> ProcessedRulesLayers {
+        // Kratos reads an eligible infantry's final Image when its component
+        // first updates. Earlier Images or a type the map made Fearless cannot
+        // contribute ART keys to Auto. This also applies to the map prefix.
+        let (_, reads) = crate::rules::ares_switch::record(|| {
+            if let Some(infantry) = processor.families.get_mut(&RulesTypeFamily::Infantry) {
+                for kind in infantry {
+                    if !kind.body.read_bool("Fearless", false) {
+                        let image = kind
+                            .body
+                            .read_name("Image", 2048)
+                            .unwrap_or(&kind.native_stored_id);
+                        kind.weapon_slots
+                            .offsets
+                            .read_kratos_infantry_flh(fixed_art.section_or_empty(image));
+                    }
+                }
+            }
+        });
+        processor.ares_reads.absorb(reads);
         let ares_inputs = crate::rules::ares_switch::AresInputs::from_passes(
             &processor.ares_reads,
             self.ships_ares,
             self.ares_keys_off,
         );
+        let kratos_inputs = crate::rules::kratos_switch::KratosInputs::from_passes(
+            &processor.ares_reads,
+            self.kratos_setting,
+        );
+        let npatch_inputs =
+            crate::rules::npatch_switch::NPatchInputs::from_passes(&processor.ares_reads);
         let (ini, native_type_construction_trace) = processor.finish();
-        Ok((
-            ProcessedRulesLayers {
-                ini,
-                content_hash: self.content_hash(),
-                native_type_construction_trace,
-                ares_inputs,
-            },
-            after_map_result,
-        ))
+        ProcessedRulesLayers {
+            ini,
+            content_hash,
+            native_type_construction_trace,
+            ares_inputs,
+            kratos_inputs,
+            npatch_inputs,
+        }
+    }
+
+    /// The modules' `on_rules` at `layer`: they see the rules processed so
+    /// far, and the text they write is processed as one more pass, as INI
+    /// text would be (RFC 0001 section 8).
+    fn run_ext_rules(
+        &self,
+        processor: &mut RulesPassProcessor,
+        hook: &mut Option<&mut dyn ExtRulesHook>,
+        layer: ExtRulesLayer,
+        (fixed_art, fixed_eva, fixed_sounds): (&IniFile, &EvaRegistry, &SoundRegistry),
+        ext_hashes: &mut Vec<u64>,
+    ) -> Result<(), RulesError> {
+        let Some(hook) = hook.as_deref_mut().filter(|hook| hook.runs_at(layer)) else {
+            return Ok(());
+        };
+        // The rules so far, as the map prefix projects them.
+        let prefix = self.finish_rules(processor.clone(), fixed_art, 0);
+        let rules = RuleSet::from_processed_rules(&prefix)?;
+        let Some(overlay) = hook
+            .on_rules(layer, &prefix.ini, &rules)
+            .map_err(RulesError::ExtModule)?
+        else {
+            return Ok(());
+        };
+        ext_hashes.push(overlay.content_hash());
+        processor.apply_pass(&overlay, fixed_art, fixed_eva, false, fixed_sounds)
+    }
+
+    /// [`Self::content_hash_for_layers`], with the modules' rules writes.
+    fn content_hash_with_ext(&self, layer_count: usize, ext_hashes: &[u64]) -> u64 {
+        let layers = self.content_hash_for_layers(layer_count);
+        if ext_hashes.is_empty() {
+            return layers;
+        }
+        let mut hasher = crate::util::state_hasher::StateHasher::new();
+        "VERA20K_EXT_RULES_V1".hash(&mut hasher);
+        layers.hash(&mut hasher);
+        ext_hashes.hash(&mut hasher);
+        hasher.finish()
     }
 }
 
@@ -883,6 +1025,16 @@ pub struct ProcessedRulesLayers {
     /// What the passes give the per-game Ares switch; saved with the rules,
     /// so a loaded game projects the same answer.
     ares_inputs: crate::rules::ares_switch::AresInputs,
+    /// What the passes give the per-game Kratos switch (the ART keys they
+    /// read); saved with the rules for the same reason. A rules set saved
+    /// before the switch existed reads as no Kratos key.
+    #[serde(default)]
+    kratos_inputs: crate::rules::kratos_switch::KratosInputs,
+    /// What the passes give the per-game NPatch switch (the extension keys
+    /// they read); saved with the rules for the same reason. A rules set
+    /// saved before the switch existed reads as no NPatch key.
+    #[serde(default)]
+    npatch_inputs: crate::rules::npatch_switch::NPatchInputs,
 }
 
 #[cfg(all(test, tests_rules_a_n))]

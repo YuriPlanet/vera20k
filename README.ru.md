@@ -6,16 +6,16 @@
 <p align="center" dir="ltr">
   <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/linux.yml?query=branch%3Amain" title="Последний запуск тестов библиотеки на Linux (запускаются вручную)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/linux.yml/badge.svg?branch=main" alt="Тесты библиотеки на Linux" height="23" align="middle"></a>
   <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/windows.yml?query=branch%3Amain" title="Последний запуск тестов библиотеки на Windows (запускаются вручную)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/windows.yml/badge.svg?branch=main" alt="Тесты библиотеки на Windows" height="23" align="middle"></a>
-  <a href="https://discord.gg/kmjRUn5m5F"><img src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fdiscord.com%2Fapi%2Fv10%2Finvites%2FkmjRUn5m5F%3Fwith_counts%3Dtrue&amp;query=%24.approximate_presence_count&amp;suffix=%20online&amp;label=VERA20K%20Discord&amp;color=5865F2&amp;style=flat&amp;logo=discord&amp;logoColor=white" alt="Присоединиться к Discord" height="23" align="middle"></a>
+  <a href="https://discord.gg/kmjRUn5m5F"><img src="https://raster.shields.io/badge/dynamic/xml.png?url=https://badgen.net/discord/online-members/kmjRUn5m5F&amp;query=substring-after%28/%2A/%40aria-label%2C%20%27%3A%20%27%29&amp;label=VERA20K%20Discord&amp;style=flat&amp;color=5865F2&amp;logo=discord&amp;logoColor=white&amp;cacheSeconds=3600" alt="Присоединиться к Discord" height="23" align="middle"></a>
   <img src="https://img.shields.io/badge/VERA20K_QQ-1097193563-1EBAFC?style=flat&amp;logo=qq&amp;logoColor=white" alt="QQ-группа (VERA20K)" height="23" align="middle">
-  <img src="https://img.shields.io/badge/ra20k.com_QQ-319832195-1EBAFC?style=flat&amp;logo=qq&amp;logoColor=white" alt="QQ-группа (ra20k.com)" height="23" align="middle">
+  <img src="https://img.shields.io/badge/RA20K.com_QQ-319832195-1EBAFC?style=flat&amp;logo=qq&amp;logoColor=white" alt="QQ-группа (RA20K.com)" height="23" align="middle">
 </p>
 
 # VERA20K
 
 VERA20K — новый движок для Red Alert 2: Yuri's Revenge. Игра идёт так же, как в оригинале: те же
-юниты, карты и графика. Работает на Windows, macOS и Linux. Он рассчитан на большие сражения: до 30
-игроков и 20 000 юнитов на одной карте.
+юниты, карты и графика. Работает на Windows, macOS и Linux. Он рассчитан на большие сражения с участием до 20 000 юнитов на одной карте.
+В одиночной схватке доступно до 120 мест для игроков, а в матчах по локальной сети или через интернет — до 30.
 
 VERA20K делают игроки для игроков, и последнее слово в том, куда движется проект, остаётся за
 игроками.
@@ -33,17 +33,21 @@ VERA20K делают игроки для игроков, и последнее �
 ## Цели проекта
 
 1. Сохранить игровой процесс, графику и атмосферу оригинальной Red Alert 2: Yuri's Revenge.
-2. Поддерживать более крупные сражения: до **30 игроков** и **20 000 юнитов** на картах 500×500.
+2. Поддерживать крупные сражения на картах 500×500 с участием до **20 000 юнитов**. В одиночной схватке доступно до **120 мест для игроков**, а в матчах по локальной сети или через интернет — до **30**.
 3. Добавлять известные возможности RTS, а также такие, каких ещё не было.
 4. Встроенный клиент для мультиплеера
 
 ## Как помочь
+
+**PR, которые мы ценим** — рефакторинг, производительность, поиск пути, UI/UX, генератор случайных карт.
 
 Участники могут брать на себя ответственность за отдельные части движка и с большой свободой
 вносить изменения, которые двигают VERA20K вперёд.
 
 Мейнтейнеры помогут с ревью, интеграцией и слиянием. Авторство вклада полностью остаётся
 за тобой.
+
+Администраторы: [Halvor Nikolai Rusten](https://github.com/hrusten), [风雨声](https://github.com/996666925), [Kironix](https://github.com/EncoreAlpha), [Randerion(HaoJun0823)](https://github.com/HaoJun0823), [libi](https://github.com/libi), [zzzzzzh123](https://github.com/zzzzzzh123), [八音盒](https://github.com/1372704087)
 
 Обсуждение идёт в [Discord](https://discord.gg/kmjRUn5m5F) и в QQ-группе (1097193563).
 
@@ -88,12 +92,21 @@ Ghidra, затем переносят его поведение на Rust и п�
 
 ## Настройка
 
+Можно добавлять свои моды, карты, музыку и не только. Их кладут в папку VERA20K: в Windows это
+папка установки, в macOS — `~/Library/Application Support/VERA20k`, в Linux — `~/.local/share/VERA20k`.
+
 По умолчанию в VERA20K действуют правила оригинальной Yuri's Revenge. В меню **Options** можно
 настроить звук, графику и управление или включить функции VERA. Игра сохраняет настройки в
 `VERA.INI`. Параметры самой VERA находятся в разделе `[VERA]`.
 
+- **Моды:** в **Options → Mods** кнопка **Add Mod** устанавливает скачанный мод, а **New Mod** создаёт новый. У каждого мода своя папка в `Mods`.
+- **Карты:** положи файлы `.map`, `.mpr` или `.yrm` в `Maps`, чтобы играть на них в схватке. Карты, скачанные онлайн, тоже сохраняются туда.
+- **Музыка:** положи файлы WAV или AUD в `musics` и добавь туда `music.ini` с `enable=yes` в разделе `[Music]`. Тогда твои треки будут звучать в матчах вместе с музыкой игры, а с `ExclusiveMode=yes` — только они.
+- **HD-графика:** [пакет HD-графики](docs/hd-art.md) устанавливается и выбирается как мод. Затем включи **HD art** в **Options**.
+- **Языки:** файл `vera20k.<language>.ini` добавляет язык или меняет тексты игры. Подробнее — в [руководстве по переводу](src/i18n/README.md).
+
 Настройки лобби, моды и карты могут менять правила матча. Через свои INI-файлы моды и карты
-могут включать поддерживаемые функции [Ares](docs/ares.md) и [Phobos](docs/phobos.md).
+могут включать поддерживаемые функции [Ares](docs/ares.md), [Phobos](docs/phobos.md) и [Kratos](docs/kratos.md).
 Мод также может включить Ares, если в его состав входит `ares.mix`. Для некоторых функций
 Phobos по-прежнему нужна версия игры, собранная с флагом `--features phobos`.
 
@@ -111,6 +124,21 @@ Phobos по-прежнему нужна версия игры, собранна�
 
 <p><img src="https://img.shields.io/badge/PayPal-003087?style=flat&amp;logo=paypal&amp;logoColor=white" alt="PayPal" height="23"> <img src="https://img.shields.io/badge/China_UnionPay-E21836?style=flat&amp;logo=data:image/svg%2Bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9Ii02IC02IDI2OCAxNzIiPjxwYXRoIGQ9Ik01MC4wNDE2MzEsMC4wMDA2Njc1NjMzMDUgTDExMy44MjAyMTEsMC4wMDA2Njc1NjMzMDUgQzEyMi43MjMxMjcsMC4wMDA2Njc1NjMzMDUgMTI4LjI2MDQzOCw3LjI1NzMxMzQ1IDEyNi4xODM1NTgsMTYuMTg5NzY1NyBMOTYuNDkwMDcxNSwxNDMuNjc1NDE2IEM5NC4zOTQ1MzY1LDE1Mi41NzY3NzcgODUuNDgwNzM5LDE1OS44Mzk2NDEgNzYuNTcxNjA1LDE1OS44Mzk2NDEgTDEyLjc5OTI0MzMsMTU5LjgzOTY0MSBDMy45MDg3NjQsMTU5LjgzOTY0MSAtMS42NDA5ODQ0NCwxNTIuNTc2Nzc3IDAuNDM1ODk2MjA4LDE0My42NzU0MTYgTDMwLjE0MTgxODYsMTYuMTg5NzY1NyBDMzIuMjE4Njk5Myw3LjI1NzMxMzQ1IDQxLjEyNzgzMzMsMC4wMDA2Njc1NjMzMDUgNTAuMDQxNjMxLDAuMDAwNjY3NTYzMzA1IiBmaWxsPSIjRTIxODM2IiBzdHJva2U9IiNmZmYiIHN0cm9rZS13aWR0aD0iOCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIvPjxwYXRoIGQ9Ik0xMDguNTEzMjgzLDAuMDAwNjY3NTYzMzA1IEwxODEuODU3MDE4LDAuMDAwNjY3NTYzMzA1IEMxOTAuNzU4Mzc4LDAuMDAwNjY3NTYzMzA1IDE4Ni43NDQ1MjcsNy4yNTczMTM0NSAxODQuNjUwNTQ2LDE2LjE4OTc2NTcgTDE1NC45NjE3MjQsMTQzLjY3NTQxNiBDMTUyLjg3ODYyNSwxNTIuNTc2Nzc3IDE1My41Mjg0MjcsMTU5LjgzOTY0MSAxNDQuNjA4NDExLDE1OS44Mzk2NDEgTDcxLjI2NDY3NzUsMTU5LjgzOTY0MSBDNjIuMzQ0NjYxNSwxNTkuODM5NjQxIDU2LjgyNDQ0OTUsMTUyLjU3Njc3NyA1OC45MTk5ODUsMTQzLjY3NTQxNiBMODguNjA3MjUyNSwxNi4xODk3NjU3IEM5MC43MTUyMjQsNy4yNTczMTM0NSA5OS42MDU3MDM1LDAuMDAwNjY3NTYzMzA1IDEwOC41MTMyODMsMC4wMDA2Njc1NjMzMDUiIGZpbGw9IiMwMDQ0N0MiIHN0cm9rZT0iI2ZmZiIgc3Ryb2tlLXdpZHRoPSI4IiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8%2BPHBhdGggZD0iTTE3OC45NDc4MywwLjAwMDY2NzU2MzMwNSBMMjQyLjcyNjQwOSwwLjAwMDY2NzU2MzMwNSBDMjUxLjY0MTc2MiwwLjAwMDY2NzU2MzMwNSAyNTcuMTc5MDc0LDcuMjU3MzEzNDUgMjU1LjA4NTA5MywxNi4xODk3NjU3IEwyMjUuMzk2MjcxLDE0My42NzU0MTYgQzIyMy4zMDA3MzYsMTUyLjU3Njc3NyAyMTQuMzgwNzE5LDE1OS44Mzk2NDEgMjA1LjQ2NjkyMiwxNTkuODM5NjQxIEwxNDEuNzE3ODc5LDE1OS44Mzk2NDEgQzEzMi43OTc4NjMsMTU5LjgzOTY0MSAxMjcuMjY1MjE1LDE1Mi41NzY3NzcgMTI5LjM1NDUzMiwxNDMuNjc1NDE2IEwxNTkuMDQ4MDE3LDE2LjE4OTc2NTcgQzE2MS4xMjQ4OTksNy4yNTczMTM0NSAxNzAuMDI3ODE0LDAuMDAwNjY3NTYzMzA1IDE3OC45NDc4MywwLjAwMDY2NzU2MzMwNSIgZmlsbD0iIzAwN0I4NCIgc3Ryb2tlPSIjZmZmIiBzdHJva2Utd2lkdGg9IjgiIHN0cm9rZS1saW5lam9pbj0icm91bmQiLz48L3N2Zz4%3D" alt="China UnionPay" height="23"> <img src="https://img.shields.io/badge/Alipay-1677FF?style=flat&amp;logo=alipay&amp;logoColor=white" alt="Alipay" height="23"> <img src="https://img.shields.io/badge/Vipps-FF5B24?style=flat&amp;logo=data:image/svg%2Bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjQzLjUgMjEuNSAyNyAyNyI%2BPHBhdGggZD0iTTU3LjMsNDAuNmMzLjcsMCw1LjgtMS44LDcuOC00LjRjMS4xLTEuNCwyLjUtMS43LDMuNS0wLjlzMS4xLDIuMywwLDMuN2MtMi45LDMuOC02LjYsNi4xLTExLjMsNi4xIGMtNS4xLDAtOS42LTIuOC0xMi43LTcuN2MtMC45LTEuMy0wLjctMi43LDAuMy0zLjRzMi41LTAuNCwzLjQsMUM1MC41LDM4LjMsNTMuNSw0MC42LDU3LjMsNDAuNnogTTY0LjIsMjguM2MwLDEuOC0xLjQsMy0zLDMgcy0zLTEuMi0zLTNzMS40LTMsMy0zQzYyLjgsMjUuMyw2NC4yLDI2LjYsNjQuMiwyOC4zeiIgZmlsbD0iI2ZmZiIvPjwvc3ZnPg%3D%3D" alt="Vipps" height="23"> <img src="https://img.shields.io/badge/SEPA-2D4B9A?style=flat&amp;logo=sepa&amp;logoColor=white" alt="SEPA" height="23"> <img src="https://img.shields.io/badge/Bitcoin-F7931A?style=flat&amp;logo=bitcoin&amp;logoColor=white" alt="Bitcoin" height="23"></p>
 
+## Медиа
+
+<p>
+  <a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="64" height="64" align="left" alt="Command &amp; Conquer Vietnam (YouTube)"></a>
+  Канал <a href="https://www.youtube.com/@cncvietnam-huydeptrai">Command &amp; Conquer Vietnam</a> показал VERA20K.<br>
+  <a href="https://www.youtube.com/watch?v=njpQRCTZ_MY">1 против 29 ИИ уровня Brutal на Arctic Circle 30</a><br>
+  <a href="https://www.youtube.com/watch?v=7r_z_7w0InA&amp;t=1440s">Survival Fortress 5.0</a><br clear="all">
+</p>
+
+<p>
+  <a href="https://www.youtube.com/@haojunyang2337"><img src="docs/images/haojun0823.webp" width="64" height="64" align="left" alt="HaoJun Yang"></a>
+  Канал <a href="https://www.youtube.com/@haojunyang2337">HaoJun Yang</a> показал VERA20K.<br>
+  <a href="https://www.youtube.com/watch?v=ucz-EiMeW88">Red Alert 2 в VERA20K 0.41</a><br clear="all">
+</p>
+
 ## Благодарности и правовая информация
 
 Спасибо OpenRA, XCC Mixer, вики ModEnc, Project Perfect Mod, EA за публикацию исходного кода
@@ -119,7 +147,8 @@ Phobos и многим другим.
 
 © 2026 Halvor Nikolai Rusten и участники проекта VERA20K.
 Проект распространяется под лицензией [GPLv3](LICENSE-GPL) с [дополнительными условиями](LEGAL.md#additional-terms).
-В этом репозитории нет файлов игры.
+Для игры нужны файлы из собственной копии
+Red Alert 2: Yuri's Revenge.
 Command & Conquer и Red Alert — товарные знаки Electronic Arts Inc., а на скриншотах и значке
 приложения (красной звезде из Red Alert 2) показана игровая графика, принадлежащая Electronic Arts.
 VERA20K не связан с Electronic Arts и не одобрен компанией.

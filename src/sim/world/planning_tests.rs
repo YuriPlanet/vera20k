@@ -103,8 +103,8 @@ fn edit_append_commit_preserves_missions_and_shares_same_frame_nodes() {
     let commit = sim.encode_plan_commit_record(owner).unwrap();
     apply(&mut sim, &rules, commit);
     assert!(sim.planning_paths(owner).iter().all(|view| !view.editing));
-    sim.session
-        .set_binary_frame_for_test(sim.session.binary_frame() + 1);
+    let session = &mut *sim.session;
+    session.set_binary_frame_for_test(session.binary_frame() + 1);
     append(&mut sim, &rules, owner, 1, (16, 15));
     assert_eq!(sim.planning.paths[&1].pending, 1);
     assert_eq!(sim.planning_paths(owner)[0].cells, vec![(12, 15), (16, 15)]);
@@ -448,14 +448,14 @@ fn retired_planning_sources_acknowledge_in_flight_orders_and_skip_unstarted_work
     assert!(sim.planning.paths[&1].executing);
 
     generated.set_frame_stamp(generated.frame_stamp() + 5);
-    assert!(!sim.apply_command_with_overlays(
-        Some(1),
+    assert!((sim.apply_command_with_overlays(
+        crate::sim::command::CommandSender::Player(Some(1)),
         "Americans",
         &Command::PlanningRecord { record: generated },
         &rules,
         None,
         &mut crate::sim::world::FrameEffects::default(),
-    ));
+    )).is_err());
     assert!(!sim.planning.paths[&1].executing);
     assert!(!sim.planning_start_actor(1, &rules));
     assert!(sim.planning.paths[&1].nodes.is_empty());
@@ -584,14 +584,14 @@ fn special_ordinary_retask_cancels_shared_route(kind: &str) {
         _ => unreachable!(),
     };
     assert!(
-        sim.apply_command_with_overlays(
-            None,
+        (sim.apply_command_with_overlays(
+            crate::sim::command::CommandSender::Player(None),
             "Americans",
             &command,
             &rules,
             Some(&registry),
             &mut crate::sim::world::FrameEffects::default()
-        ),
+        )).is_ok(),
         "accepted {kind} order"
     );
     assert!(
@@ -724,9 +724,9 @@ fn guard_commit_consumes_first_node_stages_deliberate_and_retains_next_node() {
     );
     assert_eq!(mission.queued(), crate::sim::mission::MissionId::NONE);
     assert!(sim.take_due_commands().is_empty());
-    sim.session.set_tick_for_test(sim.session.tick() + 1);
-    sim.session
-        .set_binary_frame_for_test(sim.session.binary_frame().wrapping_add(1));
+    let session = &mut *sim.session;
+    session.set_tick_for_test(session.tick() + 1);
+    session.set_binary_frame_for_test(session.binary_frame().wrapping_add(1));
     let due = sim.take_frame_commands_for_test();
     assert_eq!(due.len(), 1);
     assert_eq!(due[0].execute_tick, sim.session.tick() + 1);
@@ -739,7 +739,7 @@ fn planning_internal_checkpoint_restores_shared_nodes_loops_current_records_and_
     use crate::sim::snapshot::GameSnapshot;
     let (mut sim, rules, owner) = fixture();
     // Snapshot loading intentionally reseeds the unsaved Scenario RNG to zero.
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     let empty_hash = sim.state_hash();
     for actor in [1, 2] {
         append(&mut sim, &rules, owner, actor, (12, 15));
@@ -772,7 +772,7 @@ fn ownership_transfer_detaches_path_preserves_generated_event_and_restores_snaps
     use crate::sim::mission::{MissionId, MissionType};
     use crate::sim::snapshot::GameSnapshot;
     let (mut sim, rules, owner) = fixture();
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     for cell in [(12, 15), (16, 15), (20, 15)] {
         append(&mut sim, &rules, owner, 1, cell);
     }
@@ -829,9 +829,9 @@ fn ownership_transfer_detaches_path_preserves_generated_event_and_restores_snaps
     assert_eq!(restored.pending_command_snapshot(), generated);
     assert!(sim.planning.pending_publication.is_empty());
     assert_eq!(restored.state_hash(), sim.state_hash());
-    sim.session.set_tick_for_test(sim.session.tick() + 1);
-    sim.session
-        .set_binary_frame_for_test(sim.session.binary_frame().wrapping_add(1));
+    let session = &mut *sim.session;
+    session.set_tick_for_test(session.tick() + 1);
+    session.set_binary_frame_for_test(session.binary_frame().wrapping_add(1));
     let due = sim.take_frame_commands_for_test();
     assert_eq!(due, generated);
     sim.apply_due_commands(
@@ -899,9 +899,9 @@ fn same_batch_commit_precedes_staged_edit_and_next_batch_commit_starts_path() {
     assert_eq!(sim.planning.paths[&1].pending, -1);
     assert!(sim.planning.paths[&1].executing);
     assert!(sim.take_due_commands().is_empty());
-    sim.session.set_tick_for_test(sim.session.tick() + 1);
-    sim.session
-        .set_binary_frame_for_test(sim.session.binary_frame().wrapping_add(1));
+    let session = &mut *sim.session;
+    session.set_tick_for_test(session.tick() + 1);
+    session.set_binary_frame_for_test(session.binary_frame().wrapping_add(1));
     let due = sim.take_frame_commands_for_test();
     assert_eq!(due.len(), 1);
     assert!(
@@ -998,7 +998,7 @@ fn planning_restore_retains_stale_encounter_entries_after_member_detach() {
     sim.planning_detach_actor(1);
     assert_eq!(sim.planning.nodes[&0].member_order, vec![1, 2]);
     let bytes = save_codec::serialize(&sim.planning).unwrap();
-    sim.planning = save_codec::deserialize(&bytes).unwrap();
+    *sim.planning = save_codec::deserialize(&bytes).unwrap();
     let connect = sim.encode_plan_connect_record(owner, 3, (12, 15)).unwrap();
     apply(&mut sim, &rules, connect);
     assert_eq!(sim.planning.paths[&3].nodes, sim.planning.paths[&2].nodes);
@@ -1260,7 +1260,7 @@ fn planning_append_rejects_exact_sixteen_and_any_loop() {
         .unwrap();
     assert!(!sim.apply_planning_record(
         None,
-        "Americans",
+        "Americans".into(),
         &record,
         crate::rules::ruleset::RuleSet::empty_for_test()
     ));
@@ -1289,7 +1289,7 @@ fn planning_append_rejects_exact_sixteen_and_any_loop() {
         .unwrap();
     assert!(!sim.apply_planning_record(
         None,
-        "Americans",
+        "Americans".into(),
         &record,
         crate::rules::ruleset::RuleSet::empty_for_test()
     ));
@@ -1339,7 +1339,7 @@ fn connect_rotates_source_loop_suffix_and_preserves_auxiliary_provenance() {
             "connect rewrites only source, preserving native auxiliary provenance"
         );
         let bytes = save_codec::serialize(&sim.planning).unwrap();
-        sim.planning = save_codec::deserialize(&bytes).unwrap();
+        *sim.planning = save_codec::deserialize(&bytes).unwrap();
     }
 }
 
@@ -1411,7 +1411,7 @@ fn cell_attack_and_area_guard_tails_are_terminal_for_append() {
         sim.lifecycle_outputs.clear_for_test();
         assert!(!sim.apply_planning_record(
             None,
-            "Americans",
+            "Americans".into(),
             &record,
             crate::rules::ruleset::RuleSet::empty_for_test()
         ));
@@ -1471,7 +1471,7 @@ fn enter_tail_refuses_append_with_post_terminating_command() {
             None,
         )
         .unwrap();
-    assert!(!sim.apply_planning_record(None, "Americans", &record, &rules));
+    assert!(!sim.apply_planning_record(None, "Americans".into(), &record, &rules));
     assert_eq!(sim.planning.paths[&1].nodes.len(), 1);
     assert_eq!(
         sim.lifecycle_outputs.as_slice(),
@@ -1513,9 +1513,9 @@ fn planned_force_attack_preserves_admitted_friendly_target_through_native_dispat
     sim.session.set_binary_frame_for_test(4);
     let commit = sim.encode_plan_commit_record(owner).unwrap();
     apply(&mut sim, &rules, commit);
-    sim.session.set_tick_for_test(sim.session.tick() + 1);
-    sim.session
-        .set_binary_frame_for_test(sim.session.binary_frame().wrapping_add(1));
+    let session = &mut *sim.session;
+    session.set_tick_for_test(session.tick() + 1);
+    session.set_binary_frame_for_test(session.binary_frame().wrapping_add(1));
     let due = sim.take_frame_commands_for_test();
     assert_eq!(due.len(), 1);
     assert!(
@@ -1594,11 +1594,11 @@ fn captured_actor_path_commits_for_current_house_and_preserves_original_issuer()
         matches!(&generated[0].payload, Command::PlanningRecord { record } if record.house_id() == 0)
     );
     let bytes = save_codec::serialize(&sim.planning).unwrap();
-    sim.planning = save_codec::deserialize(&bytes).unwrap();
+    *sim.planning = save_codec::deserialize(&bytes).unwrap();
     sim.validate_planning_references().unwrap();
-    sim.session.set_tick_for_test(sim.session.tick() + 1);
-    sim.session
-        .set_binary_frame_for_test(sim.session.binary_frame().wrapping_add(1));
+    let session = &mut *sim.session;
+    session.set_tick_for_test(session.tick() + 1);
+    session.set_binary_frame_for_test(session.binary_frame().wrapping_add(1));
     let due = sim.take_frame_commands_for_test();
     assert!(sim.apply_command("Americans", &due[0].payload, Some(&rules)));
     assert_eq!(
@@ -1618,7 +1618,7 @@ fn append_and_connect_receivers_defer_actor_owner_and_lifetime_admission() {
         append(&mut sim, &rules, owner, 1, (12, 15));
         assert_eq!(sim.planning.paths[&1].nodes.len(), 1);
         let bytes = save_codec::serialize(&sim.planning).unwrap();
-        sim.planning = save_codec::deserialize(&bytes).unwrap();
+        *sim.planning = save_codec::deserialize(&bytes).unwrap();
         sim.validate_planning_references().unwrap();
     }
     {
@@ -1653,7 +1653,7 @@ fn overlapping_connect_delete_removes_each_occurrence_and_restores_graph() {
     apply(&mut sim, &rules, delete);
     assert_eq!(sim.planning.paths[&1].nodes, vec![0, 2]);
     let bytes = save_codec::serialize(&sim.planning).unwrap();
-    sim.planning = save_codec::deserialize(&bytes).unwrap();
+    *sim.planning = save_codec::deserialize(&bytes).unwrap();
 }
 
 #[test]
@@ -1707,7 +1707,7 @@ fn overlapping_connect_consumption_preserves_occurrences_and_loop_first_record()
                 );
             }
             let bytes = save_codec::serialize(&sim.planning).unwrap();
-            sim.planning = save_codec::deserialize(&bytes).unwrap();
+            *sim.planning = save_codec::deserialize(&bytes).unwrap();
             sim.planning_acknowledge(1);
         }
         if looped {

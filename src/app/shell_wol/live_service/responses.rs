@@ -8,8 +8,8 @@ use super::{
     restore_accepted_options, service_event, settings_dir, spawned_visit_mut, update_required_text,
     wire,
 };
-use crate::app::AppState;
 use crate::app::shell_network_setup::NetworkSetupEvent;
+use crate::app::{App, AppState};
 use crate::i18n::tr;
 use crate::ui::wol_account::AccountSuccess;
 use crate::util::time::Instant;
@@ -32,7 +32,15 @@ pub(super) fn apply_response(
         | http::Response::MapInstalled { .. }
         | http::Response::MapFailure { .. }
         | http::Response::MapPending { .. }) => {
-            maps::response(state, service, response);
+            maps::response(
+                &mut state.frontend,
+                &state.platform,
+                &mut state.match_state,
+                &state.process_assets,
+                &state.renderer,
+                service,
+                response,
+            );
         }
         http::Response::StartRejected { id, retryable } => {
             if !service
@@ -42,7 +50,7 @@ pub(super) fn apply_response(
             {
                 return;
             }
-            cancel_pending(state, service);
+            cancel_pending(&mut state.frontend, &mut state.match_state, service);
             let mut text = tr(if retryable {
                 "VERA:StartLobbyBusy"
             } else {
@@ -51,7 +59,12 @@ pub(super) fn apply_response(
             // VERA: the lobby does not say which player differs; this game
             // can say what it changes.
             if let Some(own) = (!retryable)
-                .then(|| crate::app::shell_network_setup::agreement::own_changes_text(state))
+                .then(|| {
+                    crate::app::shell_network_setup::agreement::own_changes_text(
+                        &state.frontend.mods,
+                        &state.process_assets,
+                    )
+                })
                 .flatten()
             {
                 text.push(' ');
@@ -80,9 +93,18 @@ pub(super) fn apply_response(
             // Only a still-awaited session can set the current name or saved credentials.
             if !generated_guest {
                 if let Some(token) = sign_in_token {
-                    remember_sign_in(settings_dir(state), service, &nickname, token);
+                    remember_sign_in(
+                        settings_dir(state.platform.game_config.as_ref()),
+                        service,
+                        &nickname,
+                        token,
+                    );
                 }
-                remember_online_name(state, &nickname);
+                remember_online_name(
+                    state.platform.game_config.as_ref(),
+                    &mut state.persistence.options_profile,
+                    &nickname,
+                );
             }
             service.player_id = player_id;
             state.frontend.wol_account.nickname = nickname;
@@ -105,7 +127,11 @@ pub(super) fn apply_response(
             service_event(state, WolServiceEvent::Login(Err(code)));
             // Code 0 is no answer or an unexpected one: TXT_CANT_CONNECT.
             if code == 0 {
-                super::service::replace_open_box_body(state, &tr(CANT_CONNECT_TEXT));
+                super::service::replace_open_box_body(
+                    state.frontend.wol.as_mut(),
+                    &state.platform.window,
+                    &tr(CANT_CONNECT_TEXT),
+                );
             }
         }
         http::Response::SignInRefused {
@@ -114,12 +140,23 @@ pub(super) fn apply_response(
             bad_credential,
         } if attempt == service.auth_attempt => {
             if bad_credential && service.signing_in_remembered {
-                forget_sign_in(settings_dir(state), service);
+                forget_sign_in(settings_dir(state.platform.game_config.as_ref()), service);
             }
             state.frontend.wol_account.password.clear();
             service_event(state, WolServiceEvent::Login(Err(0)));
-            if !super::service::replace_open_box_body(state, &message) {
-                notice(state, &message);
+            if !super::service::replace_open_box_body(
+                state.frontend.wol.as_mut(),
+                &state.platform.window,
+                &message,
+            ) {
+                notice(
+                    &mut state.frontend,
+                    &state.platform.window,
+                    &state.match_state,
+                    &state.process_assets,
+                    &state.renderer,
+                    &message,
+                );
             }
         }
         http::Response::UpgradeRequired { attempt, message } if attempt == service.auth_attempt => {
@@ -128,15 +165,33 @@ pub(super) fn apply_response(
             // The login has no lobby yet, so a chat line would be lost: the
             // failure's own box says why.
             let text = update_required_text(message.as_deref());
-            if !super::service::replace_open_box_body(state, &text) {
-                notice(state, &text);
+            if !super::service::replace_open_box_body(
+                state.frontend.wol.as_mut(),
+                &state.platform.window,
+                &text,
+            ) {
+                notice(
+                    &mut state.frontend,
+                    &state.platform.window,
+                    &state.match_state,
+                    &state.process_assets,
+                    &state.renderer,
+                    &text,
+                );
             }
-            lobby_says_outdated(state);
+            lobby_says_outdated(&mut state.frontend);
         }
         http::Response::Outdated { message } => {
             if let Some(text) = service.outdated_notice(message.as_deref()) {
-                notice(state, &text);
-                lobby_says_outdated(state);
+                notice(
+                    &mut state.frontend,
+                    &state.platform.window,
+                    &state.match_state,
+                    &state.process_assets,
+                    &state.renderer,
+                    &text,
+                );
+                lobby_says_outdated(&mut state.frontend);
             }
         }
         http::Response::Channels(list) => service_event(
@@ -147,7 +202,13 @@ pub(super) fn apply_response(
             },
         ),
         http::Response::WatchListFailed => {
-            super::lobby::watch_list_refresh(state, super::lobby::WatchListRefresh::Failed);
+            super::lobby::watch_list_refresh(
+                &mut state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                &state.renderer,
+                super::lobby::WatchListRefresh::Failed,
+            );
         }
         http::Response::Matches {
             list: matches,
@@ -161,7 +222,14 @@ pub(super) fn apply_response(
             // field in the options we originally sent.
             let legacy_refusal = refused_options.is_some_and(|id| {
                 service.take_legacy_refusal(id, watches, || {
-                    options(state).ok().map(|room| json!(room))
+                    options(
+                        &state.frontend,
+                        state.platform.game_config.as_ref(),
+                        &state.match_state,
+                        &state.process_assets,
+                    )
+                    .ok()
+                    .map(|room| json!(room))
                 })
             });
             let before = state
@@ -182,11 +250,28 @@ pub(super) fn apply_response(
                     .as_mut()
                     .is_some_and(|room| room.stop_legacy_watching())
                 {
-                    notice(state, &tr("VERA:WatchingNotTaken"));
+                    notice(
+                        &mut state.frontend,
+                        &state.platform.window,
+                        &state.match_state,
+                        &state.process_assets,
+                        &state.renderer,
+                        &tr("VERA:WatchingNotTaken"),
+                    );
                 } else if legacy_refusal
-                    && let Some(key) = crate::app::shell_network_setup::lobby_refused_option(state)
+                    && let Some(key) = crate::app::shell_network_setup::lobby_refused_option(
+                        &mut state.frontend,
+                        &mut state.match_state.session,
+                    )
                 {
-                    notice(state, &tr(key));
+                    notice(
+                        &mut state.frontend,
+                        &state.platform.window,
+                        &state.match_state,
+                        &state.process_assets,
+                        &state.renderer,
+                        &tr(key),
+                    );
                 }
             }
             service_event(
@@ -207,7 +292,13 @@ pub(super) fn apply_response(
                 } else {
                     super::lobby::WatchListRefresh::Unsupported
                 };
-                super::lobby::watch_list_refresh(state, refresh);
+                super::lobby::watch_list_refresh(
+                    &mut state.frontend,
+                    &state.match_state,
+                    &state.process_assets,
+                    &state.renderer,
+                    refresh,
+                );
             }
         }
         http::Response::Event(event) => {
@@ -218,7 +309,14 @@ pub(super) fn apply_response(
                     "Online lobby update rejected: kind={}: {error:#}",
                     event.kind
                 );
-                notice(state, &tr("VERA:InvalidLobbyUpdate"));
+                notice(
+                    &mut state.frontend,
+                    &state.platform.window,
+                    &state.match_state,
+                    &state.process_assets,
+                    &state.renderer,
+                    &tr("VERA:InvalidLobbyUpdate"),
+                );
             }
         }
         http::Response::CommandCompleted { id, operation } => match operation {
@@ -235,7 +333,7 @@ pub(super) fn apply_response(
             failure,
         } => match operation {
             "join" | "create" => {
-                if super::lobby::online_request_pending(state, id) {
+                if super::lobby::online_request_pending(state.frontend.wol.as_ref(), id) {
                     if let Some(switch) = service.switching_room.as_mut()
                         && switch.request_id == id
                         && failure == http::CommandFailure::Retryable
@@ -248,18 +346,48 @@ pub(super) fn apply_response(
                         // Acknowledge cleanup before binding another attempt.
                         service.begin_leave(Instant::now());
                     }
-                    super::lobby::online_request_failed(state, id, failure.wol_code());
+                    let step = super::lobby::online_request_failed(
+                        &mut state.frontend,
+                        &state.match_state,
+                        &state.process_assets,
+                        &state.renderer,
+                        id,
+                        failure.wol_code(),
+                    );
+                    if let Some(step) = step {
+                        App::apply_step(state, step);
+                    }
                 }
             }
             // VERA: a refused visit leaves the player in their room
             // (docs/lobby-protocol.md "Visiting the lobby").
             "visit_lobby" => {
-                super::lobby::online_request_failed(state, id, failure.wol_code());
+                let step = super::lobby::online_request_failed(
+                    &mut state.frontend,
+                    &state.match_state,
+                    &state.process_assets,
+                    &state.renderer,
+                    id,
+                    failure.wol_code(),
+                );
+                if let Some(step) = step {
+                    App::apply_step(state, step);
+                }
             }
             // A watch joins no room, so nothing needs leaving; a place it
             // took anyway frees itself once its grant runs out.
             "watch" => {
-                super::lobby::online_request_failed(state, id, failure.wol_code());
+                let step = super::lobby::online_request_failed(
+                    &mut state.frontend,
+                    &state.match_state,
+                    &state.process_assets,
+                    &state.renderer,
+                    id,
+                    failure.wol_code(),
+                );
+                if let Some(step) = step {
+                    App::apply_step(state, step);
+                }
             }
             "leave" => service.leave_failed(id, Instant::now()),
             "logout" => service.logout_failed(id, Instant::now()),
@@ -280,18 +408,41 @@ pub(super) fn apply_response(
                 if let Some(visit) = state.frontend.wol.as_mut() {
                     visit.lobby_campaign_rooms = false;
                 }
-                notice(state, &tr("VERA:CampaignRoomOnlineUnsupported"));
+                notice(
+                    &mut state.frontend,
+                    &state.platform.window,
+                    &state.match_state,
+                    &state.process_assets,
+                    &state.renderer,
+                    &tr("VERA:CampaignRoomOnlineUnsupported"),
+                );
             }
             "options" if failure == http::CommandFailure::InvalidOptions => {
                 if service.is_room_publication(id)
-                    && let Some(key) =
-                        crate::app::shell_network_setup::lobby_refused_building_queue(state)
+                    && let Some(key) = crate::app::shell_network_setup::lobby_refused_building_queue(
+                        &mut state.frontend.network_setup_protocol,
+                        &mut state.match_state.session,
+                    )
                 {
                     // The newest room rule first: a lobby from before it lists
                     // matches, so the capability check below cannot tell.
-                    notice(state, &tr(key));
+                    notice(
+                        &mut state.frontend,
+                        &state.platform.window,
+                        &state.match_state,
+                        &state.process_assets,
+                        &state.renderer,
+                        &tr(key),
+                    );
                 } else if service.is_room_publication(id) {
-                    notice(state, &tr("VERA:OnlineRequestRefused"));
+                    notice(
+                        &mut state.frontend,
+                        &state.platform.window,
+                        &state.match_state,
+                        &state.process_assets,
+                        &state.renderer,
+                        &tr("VERA:OnlineRequestRefused"),
+                    );
                     // Only a fresh 404 for this publication can confirm rollback.
                     let _ = service.requests.send(http::Request::Matches {
                         refused_options: Some(id),
@@ -307,14 +458,24 @@ pub(super) fn apply_response(
             {
                 service.room.pending_choices = None;
                 restore_accepted_options(state, service);
-                notice(state, &tr("VERA:ChoicesRefused"));
+                notice(
+                    &mut state.frontend,
+                    &state.platform.window,
+                    &state.match_state,
+                    &state.process_assets,
+                    &state.renderer,
+                    &tr("VERA:ChoicesRefused"),
+                );
             }
             "ready" if service.room.last_ready_request == Some((id, service.revision)) => {
                 if failure != http::CommandFailure::Retryable {
                     // The lobby refused these settings, usually because the
                     // room has already moved on: the guest's automatic
                     // Accept waits for the next ones.
-                    let _ = crate::app::shell_network_setup::refuse_local_acceptance(state);
+                    let _ = crate::app::shell_network_setup::refuse_local_acceptance(
+                        &mut state.frontend.network_setup_protocol,
+                        &mut state.match_state.session,
+                    );
                 } else if let Some(index) = state
                     .match_state
                     .session
@@ -344,9 +505,21 @@ pub(super) fn apply_response(
                     .is_some_and(|finish| finish.request_id == id && finish.failures == 0);
                 if service.finish_failed(id, failure, Instant::now()) {
                     // No room comes back: the waiting runner goes to the lobby.
-                    super::lobby::room_refused(state);
+                    super::lobby::room_refused(
+                        &mut state.frontend,
+                        &mut state.match_state,
+                        &state.process_assets,
+                        &state.renderer,
+                    );
                 } else if first_failure && failure != http::CommandFailure::AlreadyFinished {
-                    notice(state, &tr("VERA:FinishingPreviousMatch"));
+                    notice(
+                        &mut state.frontend,
+                        &state.platform.window,
+                        &state.match_state,
+                        &state.process_assets,
+                        &state.renderer,
+                        &tr("VERA:FinishingPreviousMatch"),
+                    );
                 }
             }
             // A refused ladder lookup leaves the tables as they were; the
@@ -361,21 +534,53 @@ pub(super) fn apply_response(
             "renew_watch" | "unwatch" => {}
             "relay_ready" | "latency_ready" => {
                 if !service.report_failed(id, failure, Instant::now()) {
-                    notice(state, &tr("VERA:OnlineRequestRefused"));
+                    notice(
+                        &mut state.frontend,
+                        &state.platform.window,
+                        &state.match_state,
+                        &state.process_assets,
+                        &state.renderer,
+                        &tr("VERA:OnlineRequestRefused"),
+                    );
                 }
             }
-            _ => notice(state, &tr("VERA:OnlineRequestRefused")),
+            _ => notice(
+                &mut state.frontend,
+                &state.platform.window,
+                &state.match_state,
+                &state.process_assets,
+                &state.renderer,
+                &tr("VERA:OnlineRequestRefused"),
+            ),
         },
         http::Response::Translated { id, outcome } => {
             if let Some((line, target, reply)) =
                 service.translations.reply(id, outcome, Instant::now())
             {
-                super::translation::show(state, line, target, &reply);
+                super::translation::show(
+                    &mut state.frontend,
+                    &state.platform,
+                    &mut state.match_state,
+                    &state.process_assets,
+                    &state.renderer,
+                    &state.diag,
+                    &mut state.audio.sfx_player,
+                    &state.persistence,
+                    line,
+                    target,
+                    &reply,
+                );
             }
         }
         http::Response::AccountAnswered { attempt, answer } => {
             if let Ok(AccountSuccess::Deleted(name)) = &answer {
-                forget_deleted_account(state, &service.lobby, name);
+                forget_deleted_account(
+                    &mut state.frontend,
+                    state.platform.game_config.as_ref(),
+                    &mut state.persistence.options_profile,
+                    &service.lobby,
+                    name,
+                );
             }
             if state
                 .frontend
@@ -386,13 +591,36 @@ pub(super) fn apply_response(
                 service_event(state, WolServiceEvent::Account(answer));
             }
         }
-        http::Response::Failure(label) => notice(state, &tr(label)),
-        http::Response::LobbyUnreachable => notice(state, &tr("VERA:OnlineNotResponding")),
-        http::Response::LobbyReachable => notice(state, &tr("VERA:OnlineRespondingAgain")),
+        http::Response::Failure(label) => notice(
+            &mut state.frontend,
+            &state.platform.window,
+            &state.match_state,
+            &state.process_assets,
+            &state.renderer,
+            &tr(label),
+        ),
+        http::Response::LobbyUnreachable => notice(
+            &mut state.frontend,
+            &state.platform.window,
+            &state.match_state,
+            &state.process_assets,
+            &state.renderer,
+            &tr("VERA:OnlineNotResponding"),
+        ),
+        http::Response::LobbyReachable => notice(
+            &mut state.frontend,
+            &state.platform.window,
+            &state.match_state,
+            &state.process_assets,
+            &state.renderer,
+            &tr("VERA:OnlineRespondingAgain"),
+        ),
         http::Response::LobbyLost => {
             // A match keeps its relay through a lobby outage; this asks
             // again after it.
-            if super::in_match(state) || crate::app::loading::pump::network_loading_active(state) {
+            if super::in_match(state.frontend.wol.as_ref())
+                || crate::app::loading::pump::network_loading_active(&state.frontend)
+            {
                 return;
             }
             // The worker keeps the bearer and logs it out at the next
@@ -406,16 +634,33 @@ pub(super) fn apply_response(
             {
                 return;
             }
-            end_room(state, service);
+            end_room(
+                &mut state.frontend,
+                &state.platform.window,
+                &mut state.match_state,
+                service,
+            );
             // The native disconnect: a box over the lobby, or none where the
             // runner has no lobby (Quick Match), which then gets one at the
             // welcome.
             service_event(state, WolServiceEvent::NetStatus(super::NET_STATUS_LOST));
             let text = tr(LOBBY_LOST_TEXT);
-            if !super::lobby::replace_box_body(state, &text)
-                && !super::service::show_text_box(state, &text)
+            if !super::lobby::replace_box_body(state.frontend.wol.as_mut(), &text)
+                && !super::service::show_text_box(
+                    &mut state.frontend,
+                    &state.platform.window,
+                    &state.process_assets,
+                    &text,
+                )
             {
-                notice(state, &text);
+                notice(
+                    &mut state.frontend,
+                    &state.platform.window,
+                    &state.match_state,
+                    &state.process_assets,
+                    &state.renderer,
+                    &text,
+                );
             }
         }
         http::Response::Offline => {
@@ -423,15 +668,20 @@ pub(super) fn apply_response(
                 state,
                 &tr("VERA:OnlineSessionEndedWhileLoading"),
             );
-            end_room(state, service);
+            end_room(
+                &mut state.frontend,
+                &state.platform.window,
+                &mut state.match_state,
+                service,
+            );
             // The bearer session is definitively gone; a new login has no
             // authority to retry cleanup for the old server session.
             service.clear_cleanup();
-            if let Some(spawned) = spawned_visit_mut(state) {
+            if let Some(spawned) = spawned_visit_mut(state.frontend.wol.as_mut()) {
                 // Nothing is left to finish or leave with this bearer. A
                 // running match continues on its relay; an admission ends.
                 spawned.cleanup_begun = true;
-                if !super::in_match(state) {
+                if !super::in_match(state.frontend.wol.as_ref()) {
                     crate::app::App::fail_external_launch(
                         state,
                         "the match service ended this session",

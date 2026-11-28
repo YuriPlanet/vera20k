@@ -84,7 +84,7 @@ fn world(row: &Value) -> Simulation {
     }
     let mut sim = Simulation::with_seed(0);
     sim.substrate.entities.insert(plane);
-    sim.interner = crate::sim::intern::test_interner();
+    *sim.interner = crate::sim::intern::test_interner();
     let playfield = &row["playfield"];
     sim.set_playfield_bounds_for_test(Some(PlayfieldBounds {
         base: int(&playfield["base"]),

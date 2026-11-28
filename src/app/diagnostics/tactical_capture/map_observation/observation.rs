@@ -34,10 +34,8 @@ pub(super) struct MapClock {
 }
 
 impl MapClock {
-    pub(super) fn capture(state: &AppState) -> Result<Self> {
-        let session = &state
-            .match_state
-            .sim_runtime
+    pub(super) fn capture(sim_runtime: &SimHost) -> Result<Self> {
+        let session = &sim_runtime
             .runtime()
             .context("clock simulation absent")?
             .simulation
@@ -60,10 +58,12 @@ pub(super) struct MapLoadSegment {
     pub(super) restored_audio_state: Option<Value>,
 }
 
-pub(super) fn sound_state(state: &AppState, profile: &MapCaptureProfile) -> Result<Value> {
-    let sim = &state
-        .match_state
-        .sim_runtime
+pub(super) fn sound_state(
+    sim_runtime: &SimHost,
+    sfx_player: Option<&crate::audio::sfx::SfxPlayer>,
+    profile: &MapCaptureProfile,
+) -> Result<Value> {
+    let sim = &sim_runtime
         .runtime()
         .context("sound observation simulation absent")?
         .simulation;
@@ -77,11 +77,7 @@ pub(super) fn sound_state(state: &AppState, profile: &MapCaptureProfile) -> Resu
                 "active": entity.move_sound.is_active(), "countdown": entity.move_sound.countdown(),
                 "gattling_stage": entity.gattling.stage(), "gattling_value": entity.gattling.value()}))
     }).collect::<Vec<_>>();
-    let mut coordinate_requests = state
-        .audio
-        .sfx_player
-        .as_ref()
-        .map(|sfx| sfx.coordinate_sound_observation());
+    let mut coordinate_requests = sfx_player.map(|sfx| sfx.coordinate_sound_observation());
     if let (Some(audio), Some(rows)) = (&profile.observe_audio, &mut coordinate_requests) {
         audio.retain_coordinate_requests(rows);
     }
@@ -123,8 +119,8 @@ pub(super) struct MapDrawTime {
 
 /// Read the actual post-render service and its existing coordinate/fog owners.
 /// No hit-test, tooltip update, canonical Dummy stamp or presentation mutation.
-pub(super) fn capture_tooltip(state: &AppState) -> Result<Value> {
-    let view = state
+pub(super) fn capture_tooltip(match_state: &MatchState) -> Result<Value> {
+    let view = match_state
         .sim_view()
         .context("tooltip observation lost simulation")?;
     let terrain = view
@@ -134,24 +130,19 @@ pub(super) fn capture_tooltip(state: &AppState) -> Result<Value> {
         .session()
         .current_house()
         .context("tooltip observation lost current House")?;
-    let input = &state.match_state.input;
+    let input = &match_state.input;
     let world = crate::app::match_runtime::sim_tick::screen_point_to_world(
-        state,
+        &match_state.input,
         input.cursor_x,
         input.cursor_y,
     );
     let point = crate::map::terrain::screen_to_plane_leptons(world.0, world.1);
     let cells = crate::map::resolved_terrain::NativeCellQuery::isolated(terrain);
     let cell = cells.lookup_world(point.x, point.y);
-    let active = state
-        .match_state
-        .match_presentation
-        .tooltips
-        .active()
-        .map(|tip| {
-            json!({"id": tip.id, "text": tip.text, "cursor_px": [tip.x, tip.y],
+    let active = match_state.match_presentation.tooltips.active().map(|tip| {
+        json!({"id": tip.id, "text": tip.text, "cursor_px": [tip.x, tip.y],
                "shown_at_ms": tip.shown_at_ms})
-        });
+    });
     Ok(json!({
         "cursor_px": input.cursor_px(),
         "camera_top_left": [input.camera_x, input.camera_y],

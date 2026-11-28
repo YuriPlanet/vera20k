@@ -151,14 +151,17 @@ fn wallet_survives_prepared_load_and_active_cancellation_body() {
         .set_buildings_for_test(1);
     // Execute the build start before saving: it constructs the held graph and
     // arms its timer. A queue kernel alone is intentionally not a running build.
-    assert!(crate::sim::production::enqueue_by_type(
-        &mut saved,
-        &rules,
-        "Americans",
-        "PARENT",
-        &mut crate::sim::world::FrameEffects::default(),
-        false,
-    ));
+    assert!(
+        crate::sim::production::enqueue_by_type(
+            &mut saved,
+            &rules,
+            "Americans",
+            "PARENT",
+            &mut crate::sim::world::FrameEffects::default(),
+            false,
+        )
+        .is_ok()
+    );
     // Seed a partially paid held object, then exercise a different live credit
     // writer before saving. The old factory balance could be stale at this edge.
     for _ in 0..5 {
@@ -243,7 +246,7 @@ fn wallet_survives_prepared_load_and_active_cancellation_body() {
         &runtime.resources.rules,
         "Americans",
         crate::sim::production::ProductionCancellation::Type {
-            type_id: "PARENT",
+            type_id: "PARENT".into(),
             naval: false
         },
         false,

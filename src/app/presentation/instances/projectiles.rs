@@ -3,10 +3,14 @@
 //! read-only adapter resolves the current bridge surface and emits draw pieces.
 
 use super::helpers::{TacticalAdmission, projection_admitted};
-use crate::app::AppState;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
 use crate::app::presentation::render::draw_plan_lowering::{
     NativeDisplayOrder, ObjectPieceInstance, ObjectTexture, PlannedObjects,
 };
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
+use crate::app::state::PlatformState;
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::render::batch::{DepthAxis, SpriteInstance};
 use crate::render::palette_light::PaletteLight;
@@ -16,6 +20,7 @@ use crate::render::terrain_draw::TerrainPiece;
 use crate::rules::house_colors::HouseColorIndex;
 use crate::rules::projectile_type::ProjectileType;
 use crate::sim::projectile::{Projectile, ProjectileCoord};
+use crate::ui::game_screen::GameScreen;
 use crate::util::lepton::absolute_leptons_to_screen;
 use crate::util::native_x87::adjust_for_z_standard;
 
@@ -66,26 +71,29 @@ fn geometry(
 /// visits the members in Display order, so a voxel Bullet's render meets
 /// the buffers the render before it left.
 pub(crate) fn projectile_visitor<'a>(
-    state: &'a AppState,
+    platform: &'a PlatformState,
+    renderer: &'a RendererState,
+    screen: &'a GameScreen,
+    match_state: &'a MatchState,
+    process_assets: &'a ProcessAssets,
+    persistence: &'a PersistenceState,
     order: &'a NativeDisplayOrder,
 ) -> Option<impl FnMut(&mut PlannedObjects, u64) + 'a> {
-    let rt = state.match_state.sim_runtime.presentation()?;
-    let frame = state.match_state.sim_runtime.frame()?;
-    let atlas = state.match_state.match_presentation.sprite_atlas.as_ref();
-    let assets = state.process_assets.manager();
+    let rt = match_state.sim_runtime.presentation()?;
+    let frame = match_state.sim_runtime.frame()?;
+    let atlas = match_state.match_presentation.sprite_atlas.as_ref();
+    let assets = process_assets.manager();
     let sim = &rt.simulation;
     let terrain = sim.resolved_terrain()?;
     let rules = &rt.resources.rules;
     let ares = rules.ares_form();
-    let admission = TacticalAdmission::of_state(state);
-    let axis = super::helpers::depth_axis(state);
+    let admission =
+        TacticalAdmission::of_state(platform, renderer, screen, match_state, persistence);
+    let axis = super::helpers::depth_axis(&match_state.match_presentation);
     // Bullet468090's FirersPalette arm (`0x004683A1..0x004683D1`): the
     // retained +114 House's scheme, else the local player's.
-    let house_colors = state
-        .match_state
-        .match_presentation
-        .effective_house_color_map();
-    let local_owner = crate::app::input::commands::preferred_local_owner_name(state);
+    let house_colors = match_state.match_presentation.effective_house_color_map();
+    let local_owner = crate::app::input::commands::preferred_local_owner_name(match_state);
     let local_scheme = local_owner
         .as_deref()
         .and_then(|owner| house_colors.get(owner).copied())
@@ -93,8 +101,7 @@ pub(crate) fn projectile_visitor<'a>(
     let viewer = local_owner
         .as_deref()
         .and_then(|name| sim.interner().get(name));
-    let scheme_rgb = state
-        .match_state
+    let scheme_rgb = match_state
         .match_presentation
         .lighting
         .grid()
@@ -132,8 +139,8 @@ pub(crate) fn projectile_visitor<'a>(
         // VERA's translucent fog: enemy bullets and their trails would outline
         // an unseen firing position. Superweapon impact visuals are separate
         // effect owners and stay visible.
-        if state.translucent_fog_enabled()
-            && !state.match_state.sandbox_full_visibility
+        if platform.translucent_fog_enabled()
+            && !match_state.sandbox_full_visibility
             && super::helpers::translucent_fog_conceals_bullet(
                 sim,
                 frame,
@@ -146,6 +153,13 @@ pub(crate) fn projectile_visitor<'a>(
         {
             return;
         }
+        // VERA-only, experimental (docs/picture-model-art.md): a type whose
+        // `Image=` art declares `Model=` draws the model and never opens its
+        // VXL; a refused model draws nothing.
+        let model = kind
+            .voxel
+            .then(|| rules.projectile_model(&kind.id))
+            .flatten();
         projectile_draw_instance_for_frame(
             projectile,
             sim.session().binary_frame(),
@@ -162,12 +176,17 @@ pub(crate) fn projectile_visitor<'a>(
             objects,
             // Bullet46B0C0 draws uncached in the style 0xB43180 holds.
             |image, matrix| {
-                let mut images = state
-                    .match_state
-                    .match_presentation
-                    .voxel_images
-                    .borrow_mut();
-                let mut cache = state.renderer.vxl_pose_frame_cache.borrow_mut();
+                if let Some(model) = model {
+                    return super::model_art::projectile_model_entry(
+                        &renderer.model_frame,
+                        rules,
+                        model?,
+                        matrix,
+                        kind.color_scheme(),
+                    );
+                }
+                let mut images = match_state.match_presentation.voxel_images.borrow_mut();
+                let mut cache = renderer.vxl_pose_frame_cache.borrow_mut();
                 let mut render = |depth_tested, depth| {
                     cache.render_matrix(
                         assets?,
@@ -181,10 +200,12 @@ pub(crate) fn projectile_visitor<'a>(
                     )
                 };
                 let clean = render(images.part_style(false), None)?;
-                if !images.render_part(false, clean.native_size()).stale {
-                    return Some(clean);
-                }
-                render(true, Some(images.depth_map()))
+                let entry = if !images.render_part(false, clean.native_size()).stale {
+                    clean
+                } else {
+                    render(true, Some(images.depth_map()))?
+                };
+                Some((ObjectTexture::UnitPosePage(entry.page), entry))
             },
         );
     })
@@ -226,7 +247,10 @@ pub(crate) fn projectile_draw_instance(
         axis,
         order,
         &mut objects,
-        render_voxel,
+        |image, matrix| {
+            render_voxel(image, matrix)
+                .map(|entry| (ObjectTexture::UnitPosePage(entry.page), entry))
+        },
     )?;
     objects.into_owned().pop()
 }
@@ -241,7 +265,9 @@ fn projectile_in_view(projectile: &Projectile, admission: TacticalAdmission) -> 
 
 /// Plans `projectile`'s draw into `objects`; `None` when it draws nothing.
 /// `ares`: the Rules were read the Ares way (`RuleSet::ares_form`), which
-/// picks Ares' SHP frame getter.
+/// picks Ares' SHP frame getter. `render_voxel` places a voxel body on a
+/// texture of its choosing: the pose page for a VXL, the model page for a
+/// declared model (`docs/picture-model-art.md`).
 pub(crate) fn projectile_draw_instance_for_frame(
     projectile: &Projectile,
     logic_frame: u32,
@@ -256,7 +282,11 @@ pub(crate) fn projectile_draw_instance_for_frame(
     axis: DepthAxis,
     order: &NativeDisplayOrder,
     objects: &mut PlannedObjects,
-    render_voxel: impl FnOnce(&str, glam::Mat4) -> Option<crate::render::unit_atlas::UnitSpriteEntry>,
+    render_voxel: impl FnOnce(
+        &str,
+        glam::Mat4,
+    )
+        -> Option<(ObjectTexture, crate::render::unit_atlas::UnitSpriteEntry)>,
 ) -> Option<()> {
     let encoding = if kind.voxel {
         SpriteEncoding::Voxel
@@ -286,7 +316,7 @@ pub(crate) fn projectile_draw_instance_for_frame(
         // frame0, diffuse lighting, type Color and no owner/cell lighting.
         let image = kind.voxel_image_load()?;
         let matrix = crate::render::vxl_raster::projectile_voxel_matrix(projectile.velocity())?;
-        let entry = render_voxel(image, matrix)?;
+        let (target, entry) = render_voxel(image, matrix)?;
         let runtime_scheme = u32::try_from(kind.color_scheme()).ok()?;
         let remap_row = runtime_scheme / 2 + 1;
         let shades = if runtime_scheme & 1 == 0 { 1 } else { 53 };
@@ -313,7 +343,7 @@ pub(crate) fn projectile_draw_instance_for_frame(
         };
         parent.policy = policy;
         let piece = ObjectPieceInstance {
-            target: ObjectTexture::UnitPosePage(entry.page),
+            target,
             render_z: policy.render_z,
             instance: SpriteInstance {
                 position: [point[0] + entry.offset_x, point[1] + entry.offset_y],

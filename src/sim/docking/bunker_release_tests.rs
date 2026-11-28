@@ -212,7 +212,7 @@ fn sell_release_picks_up_a_crate_on_the_forced_head_cell() {
     let wood = registry.id_for_name("WOOD").unwrap();
     let mut overlays = crate::sim::overlay_grid::OverlayGrid::new(64, 64);
     overlays.place_overlay(10, 12, wood, 0);
-    sim.overlay_grid = Some(overlays);
+    *sim.overlay_grid = Some(overlays);
     release_sell_destroy(
         &mut sim,
         2,

@@ -23,10 +23,14 @@
 use glam::IVec3;
 
 use super::helpers::{TacticalAdmission, projection_admitted};
-use crate::app::AppState;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
 use crate::app::presentation::render::draw_plan_lowering::{
     NativeDisplayOrder, ObjectPieceInstance, ObjectTexture, PlannedObjects,
 };
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
+use crate::app::state::PlatformState;
 use crate::map::houses::HouseColorMap;
 use crate::map::lighting::CellLightGrid;
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
@@ -40,6 +44,7 @@ use crate::rules::house_colors::NO_REMAP;
 use crate::rules::voxel_anim_type::VoxelAnimType;
 use crate::sim::voxel_anim::VoxelAnimObject;
 use crate::sim::world::Simulation;
+use crate::ui::game_screen::GameScreen;
 use crate::util::lepton::absolute_leptons_to_screen;
 use crate::util::native_x87::adjust_for_z_standard;
 
@@ -145,12 +150,17 @@ impl DebrisView<'_> {
 /// One Display member's piece, if `id` names one that draws. The caller
 /// visits the members in Display order.
 pub(crate) fn voxel_anim_visitor<'a>(
-    state: &'a AppState,
+    platform: &'a PlatformState,
+    renderer: &'a RendererState,
+    screen: &'a GameScreen,
+    match_state: &'a MatchState,
+    process_assets: &'a ProcessAssets,
+    persistence: &'a PersistenceState,
     order: &'a NativeDisplayOrder,
 ) -> Option<impl FnMut(&mut PlannedObjects, u64) + 'a> {
     let (Some(rt), Some(assets)) = (
-        state.match_state.sim_runtime.presentation(),
-        state.process_assets.manager(),
+        match_state.sim_runtime.presentation(),
+        process_assets.manager(),
     ) else {
         return None;
     };
@@ -162,10 +172,16 @@ pub(crate) fn voxel_anim_visitor<'a>(
     let rules = &rt.resources.rules;
     let view = DebrisView {
         terrain,
-        admission: TacticalAdmission::of_state(state),
-        axis: super::helpers::depth_axis(state),
+        admission: TacticalAdmission::of_state(
+            platform,
+            renderer,
+            screen,
+            match_state,
+            persistence,
+        ),
+        axis: super::helpers::depth_axis(&match_state.match_presentation),
     };
-    let presentation = &state.match_state.match_presentation;
+    let presentation = &match_state.match_presentation;
     Some(move |objects: &mut PlannedObjects, id: u64| {
         // A piece off the view is passed by before its type, palette and
         // floor are looked up.
@@ -173,6 +189,44 @@ pub(crate) fn voxel_anim_visitor<'a>(
             return;
         };
         let kind = rules.voxel_anim_type(piece.type_id());
+        // VERA-only, experimental (docs/picture-model-art.md): a type whose
+        // own `Image=` art declares `Model=`, or that shares a part of a
+        // type whose art does, draws the model and its shadow and has no
+        // VXL; a refused model draws nothing.
+        if let Some(debris) = rules.voxel_anim_declared_model(piece.type_id()) {
+            let Some(declared) = debris.model.as_ref() else {
+                return;
+            };
+            let palette = piece_palette(
+                piece,
+                kind,
+                sim,
+                presentation.effective_house_color_map(),
+                presentation.lighting.grid(),
+            );
+            let remap_row = palette.0;
+            voxel_anim_draw_instance(
+                id,
+                piece,
+                kind,
+                palette,
+                &view,
+                order,
+                objects,
+                |section, matrix| {
+                    super::model_art::voxel_anim_model_entry(
+                        &renderer.model_frame,
+                        rules,
+                        declared,
+                        debris.shared,
+                        section,
+                        matrix,
+                        remap_row,
+                    )
+                },
+            );
+            return;
+        }
         let Some(model) = rules.voxel_anim_model(piece.type_id()) else {
             return;
         };
@@ -195,15 +249,16 @@ pub(crate) fn voxel_anim_visitor<'a>(
             // shadow renders, then its body (`0x00749CBE`, `0x00749DA8`).
             |section, matrix| {
                 let mut images = presentation.voxel_images.borrow_mut();
-                let mut cache = state.renderer.vxl_pose_frame_cache.borrow_mut();
+                let mut cache = renderer.vxl_pose_frame_cache.borrow_mut();
                 let depth_tested = images.part_style(false);
                 let (body, shadow) =
                     cache.render_tumble(assets, model, section, matrix, depth_tested, None)?;
                 if let Some(shadow) = shadow {
                     images.render_shadow(None, false, 0, shadow.native_size());
                 }
+                let page = |entry: UnitSpriteEntry| (ObjectTexture::UnitPosePage(entry.page), entry);
                 if !images.render_part(false, body.native_size()).stale {
-                    return Some((body, shadow));
+                    return Some((page(body), shadow.map(page)));
                 }
                 let (body, _) = cache.render_tumble(
                     assets,
@@ -213,7 +268,7 @@ pub(crate) fn voxel_anim_visitor<'a>(
                     true,
                     Some(images.depth_map()),
                 )?;
-                Some((body, shadow))
+                Some((page(body), shadow.map(page)))
             },
         );
     })
@@ -222,8 +277,10 @@ pub(crate) fn voxel_anim_visitor<'a>(
 /// One admitted piece's draw ([`DebrisView::admits`]). Display membership is
 /// admission: storage alone never draws a piece. `render` rasterizes the
 /// bound physical model at the drawing matrix and places its body and shadow
-/// on the pose page. Plans the draw into `objects`; `None` when it draws
-/// nothing.
+/// on a texture of its choosing: the pose page for a VXL, the model page for
+/// a declared model (`docs/picture-model-art.md`), which samples its RGBA
+/// texels (`source_palette` 0). Plans the draw into `objects`; `None` when it
+/// draws nothing.
 fn voxel_anim_draw_instance(
     id: u64,
     piece: &VoxelAnimObject,
@@ -232,7 +289,7 @@ fn voxel_anim_draw_instance(
     view: &DebrisView<'_>,
     order: &NativeDisplayOrder,
     objects: &mut PlannedObjects,
-    render: impl FnOnce(i32, glam::Mat4) -> Option<(UnitSpriteEntry, Option<UnitSpriteEntry>)>,
+    render: impl FnOnce(i32, glam::Mat4) -> Option<(PieceImage, Option<PieceImage>)>,
 ) -> Option<()> {
     let parent = order.object_draw(id, SpriteEncoding::Voxel)?;
     let location = piece.world_coord();
@@ -248,10 +305,15 @@ fn voxel_anim_draw_instance(
         view.axis.world_height,
     );
     let shadow = shadow.map(|shadow| {
-        // `0x2001`: the shadow blitter darkens what lies beneath.
-        let draw_state = DrawState {
-            fx_flags: FX_SHADOW,
-            ..DrawState::default()
+        // `0x2001`: the shadow blitter darkens what lies beneath. A model's
+        // shadow mask is an SHP shadow edit, whose darkening is its target's
+        // (docs/picture-model-art.md).
+        let draw_state = match shadow.0 {
+            ObjectTexture::SpriteAtlasEdit(..) => DrawState::default(),
+            _ => DrawState {
+                fx_flags: FX_SHADOW,
+                ..DrawState::default()
+            },
         };
         pose_piece(
             shadow,
@@ -283,16 +345,24 @@ fn voxel_anim_draw_instance(
     Some(())
 }
 
+/// A body (and shadow) image on the texture it was placed on.
+type PieceImage = super::model_art::DebrisImage;
+
 fn pose_piece(
-    entry: UnitSpriteEntry,
+    (target, entry): PieceImage,
     at: PieceGeometry,
     depth: f32,
     draw_state: DrawState,
     palette_light: PaletteLight,
     source_palette: u32,
 ) -> ObjectPieceInstance {
+    // A model page is RGBA: the blitters' RGBA source mode reads it.
+    let source_palette = match target {
+        ObjectTexture::ShpPage(_) | ObjectTexture::SpriteAtlasEdit(..) => 0,
+        _ => source_palette,
+    };
     ObjectPieceInstance {
-        target: ObjectTexture::UnitPosePage(entry.page),
+        target,
         render_z: RenderZPolicy::ReadOnly,
         instance: SpriteInstance {
             position: [at.point[0] + entry.offset_x, at.point[1] + entry.offset_y],

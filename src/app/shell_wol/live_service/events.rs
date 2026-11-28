@@ -75,7 +75,7 @@ pub(super) fn apply_event(
             }
             let grant = decode_relay_grant(&renewed.relay, &renewed.match_id, &service.player_id)?;
             crate::app::lan_service::renew_online_relay(
-                state,
+                &mut state.match_state,
                 renewed.relay.address,
                 &grant.ticket,
                 grant.key,
@@ -89,9 +89,16 @@ pub(super) fn apply_event(
                 .context("missing watch match")?
                 .to_owned();
             relay_uuid(&id)?;
-            let awaited = super::lobby::awaits_watch(state, &id);
+            let awaited = super::lobby::awaits_watch(state.frontend.wol.as_ref(), &id);
             if let Err(error) = service.receive_watch_start(&id, awaited, || {
-                let start = prepare_watch(state, decode(payload)?)?;
+                let start = prepare_watch(
+                    &mut state.frontend,
+                    state.platform.game_config.as_ref(),
+                    &mut state.match_state,
+                    &state.process_assets,
+                    &state.renderer,
+                    decode(payload)?,
+                )?;
                 if let Some(lobby) = state
                     .frontend
                     .wol
@@ -103,7 +110,14 @@ pub(super) fn apply_event(
                 Ok(start)
             }) {
                 log::warn!("Could not watch the match: {error:#}");
-                fail_watch(state, service, "VERA:WatchCouldNotStart");
+                fail_watch(
+                    &mut state.frontend,
+                    &state.platform.window,
+                    &mut state.match_state,
+                    &state.process_assets,
+                    service,
+                    "VERA:WatchCouldNotStart",
+                );
             }
         }
         "watch_renewed" => {
@@ -123,7 +137,7 @@ pub(super) fn apply_event(
             }
             let grant = decode_watch_grant(&renewed.relay, &renewed.match_id)?;
             crate::app::lan_service::renew_online_relay(
-                state,
+                &mut state.match_state,
                 renewed.relay.address,
                 &grant.ticket,
                 grant.key,
@@ -182,7 +196,12 @@ pub(super) fn apply_event(
                     &tr("VERA:OnlineRoomClosedWhileLoading"),
                 );
             }
-            end_room(state, service);
+            end_room(
+                &mut state.frontend,
+                &state.platform.window,
+                &mut state.match_state,
+                service,
+            );
             service.room = RoomAgreement::default();
             if state
                 .frontend
@@ -231,7 +250,12 @@ pub(super) fn apply_event(
             let p: Payload = decode(payload)?;
             service.room = RoomAgreement::default();
             service.start_preparation = None;
-            maps::cancel(state, service);
+            maps::cancel(
+                &mut state.frontend,
+                &state.platform.window,
+                &state.match_state.session,
+                service,
+            );
             service_event(
                 state,
                 WolServiceEvent::HostChanged {
@@ -301,13 +325,16 @@ pub(super) fn apply_event(
             let authored = p.options.campaign.is_some();
             if changed {
                 service.room.last_ready_request = None;
-                crate::app::shell_network_setup::invalidate_network_agreement(state)?;
+                crate::app::shell_network_setup::invalidate_network_agreement(
+                    &mut state.frontend.network_setup_protocol,
+                    &mut state.match_state.session,
+                )?;
             }
             let generated = p.options.random_map.clone();
             if !state.match_state.session.host() {
                 // VERA: Quick Match plays the original game, whatever rules
                 // its host sends.
-                if super::lobby::quick_match_runner(state) {
+                if super::lobby::quick_match_runner(state.frontend.wol.as_ref()) {
                     p.options.launch.options.host_rules = Default::default();
                 }
                 let names = p
@@ -336,21 +363,48 @@ pub(super) fn apply_event(
                 }
             }
             if authored {
-                maps::cancel(state, service);
+                maps::cancel(
+                    &mut state.frontend,
+                    &state.platform.window,
+                    &state.match_state.session,
+                    service,
+                );
             } else {
-                maps::received_options(state, service, generated)?;
+                maps::received_options(
+                    &mut state.frontend,
+                    &mut state.match_state.session,
+                    service,
+                    generated,
+                )?;
                 // VERA: a guest checks the map these options name before
                 // reporting on it, or one that has it reports 0 first and the
                 // host's room says it lacks the map. The host's own upload
                 // still waits for the poll, after the lobby's `map_available`.
                 if !state.match_state.session.host() {
-                    poll_maps(state, service);
+                    poll_maps(
+                        &mut state.frontend,
+                        &state.platform,
+                        &mut state.match_state,
+                        &state.process_assets,
+                        &state.renderer,
+                        service,
+                    );
                 }
             }
             // The owner is ready without a guest Accept button, but still proves its
             // own local map and rules to the same server admission gate.
-            let agreement = local_agreement(state, service.revision)?;
-            let status = local_map_status(state, service);
+            let agreement = local_agreement(
+                &state.frontend,
+                state.platform.game_config.as_ref(),
+                &state.match_state.session,
+                &mut state.process_assets,
+                service.revision,
+            )?;
+            let status = local_map_status(
+                &state.match_state.session,
+                state.frontend.wol.as_ref(),
+                service,
+            );
             service.publish_options_agreement(agreement, status, state.match_state.session.host());
         }
         "choices" => {
@@ -431,7 +485,16 @@ pub(super) fn apply_event(
             let total = payload["byte_length"]
                 .as_u64()
                 .ok_or_else(|| anyhow!("missing map length"))?;
-            maps::available(state, service, digest, usize::try_from(total)?);
+            maps::available(
+                &mut state.frontend,
+                &state.platform.window,
+                &mut state.match_state,
+                &state.process_assets,
+                &state.renderer,
+                service,
+                digest,
+                usize::try_from(total)?,
+            );
         }
         "chat" => {
             let p: Chat = decode(payload)?;
@@ -450,11 +513,17 @@ pub(super) fn apply_event(
                 );
                 return Ok(());
             }
-            let options = p
-                .hosted_pairing(&local)
-                .and_then(|pairing| super::quick_match::online_start_options(state, pairing));
+            let options = p.hosted_pairing(&local).and_then(|pairing| {
+                super::quick_match::online_start_options(
+                    &state.frontend,
+                    state.platform.game_config.as_ref(),
+                    &state.match_state,
+                    &state.process_assets,
+                    pairing,
+                )
+            });
             if p.announces_release() {
-                lobby_says_outdated(state);
+                lobby_says_outdated(&mut state.frontend);
             }
             let warning = p.warns_of_other_game();
             service_event(
@@ -538,7 +607,13 @@ pub(super) fn apply_event(
         "game_started" => {
             let admitted = service.receive_lobby_start(payload, |service, start| {
                 // The lobby ended a visit to the public lobby for the match.
-                super::lobby::visit_ends(state);
+                super::lobby::visit_ends(
+                    &mut state.frontend,
+                    &state.platform.window,
+                    &state.match_state,
+                    &state.process_assets,
+                    &state.renderer,
+                );
                 begin_start(state, service, start)
             });
             if let Err(error) = admitted {
@@ -558,7 +633,14 @@ pub(super) fn apply_event(
                 } else {
                     // A delayed callback after leaving its setup may finish
                     // only its match. Never leave the player's current room.
-                    notice(state, &tr(line));
+                    notice(
+                        &mut state.frontend,
+                        &state.platform.window,
+                        &state.match_state,
+                        &state.process_assets,
+                        &state.renderer,
+                        &tr(line),
+                    );
                 }
             }
         }
@@ -575,7 +657,7 @@ pub(super) fn apply_event(
                 "unadmitted start"
             );
             if !pending.probes_started {
-                crate::app::lan_service::begin_online_latency_probe(state)?;
+                crate::app::lan_service::begin_online_latency_probe(&mut state.match_state)?;
                 pending.probes_started = true;
                 pending.deadline = Instant::now() + service.relay_timeout;
             }
@@ -600,7 +682,7 @@ pub(super) fn apply_event(
             );
             let grant = decode_relay_grant(&timing.relay, &timing.match_id, &service.player_id)?;
             crate::app::lan_service::renew_online_relay(
-                state,
+                &mut state.match_state,
                 timing.relay.address,
                 &grant.ticket,
                 grant.key,
@@ -624,22 +706,32 @@ pub(super) fn apply_event(
                 names.as_deref().unwrap_or_default()
             );
             if service.pending.is_none()
-                && crate::app::shell_network_setup::verify(state).is_none()
+                && crate::app::shell_network_setup::verify(
+                    state.frontend.network_setup_protocol.as_ref(),
+                )
+                .is_none()
                 && state.frontend.network_setup_protocol.is_none()
             {
                 // This game already failed the start and left the room: only
                 // the lobby's names are new.
                 if let Some(names) = names {
-                    crate::app::shell_wol::add_problem_line(state, names);
+                    crate::app::shell_wol::add_problem_line(state.frontend.wol.as_mut(), names);
                 }
                 return Ok(());
             }
             let line = tr(service.start_rejected_line(reason));
             let text = names.map_or_else(|| line.clone(), |names| format!("{line} {names}"));
-            cancel_pending(state, service);
+            cancel_pending(&mut state.frontend, &mut state.match_state, service);
             fail_start(state, &text);
         }
-        "error" => notice(state, &tr("VERA:OnlineServiceRefused")),
+        "error" => notice(
+            &mut state.frontend,
+            &state.platform.window,
+            &state.match_state,
+            &state.process_assets,
+            &state.renderer,
+            &tr("VERA:OnlineServiceRefused"),
+        ),
         _ => {}
     }
     Ok(())

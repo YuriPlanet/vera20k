@@ -181,7 +181,10 @@ impl Simulation {
     /// placed at once rather than one neighbour per frame. Without `rules` a
     /// Building's key leaves out its type terms (`entity_sort_key`).
     pub fn ground_draw_order(&self, rules: Option<&RuleSet>) -> Vec<u64> {
-        self.layer_draw_order(DisplayLayer::GROUND, rules, &[])
+        let mut order =
+            Vec::with_capacity(self.substrate.display.members(DisplayLayer::GROUND).len());
+        self.visit_layer_draws(DisplayLayer::GROUND, rules, &[], |id, _| order.push(id));
+        order
     }
 
     /// Every Display member in draw order: the five layers in index order,
@@ -196,13 +199,37 @@ impl Simulation {
     /// (`Simulation::presentation_anims`) where gamemd's Display would hold
     /// it as an ordinary anim: at the place in submission order it took when
     /// it was placed (`AnimObject::presentation_order`), Ground by its
-    /// GetYSort key first (Anim422BC0). What the picture draws.
+    /// GetYSort key first (Anim422BC0). The presentation particle systems
+    /// and their particles take their places the same way
+    /// (`ParticleSystemStore::presented_systems`). What the picture draws.
     pub fn picture_draw_order(&self, rules: Option<&RuleSet>) -> Vec<(DisplayLayer, u64)> {
         self.draw_order(rules, true)
     }
 
+    /// Visit the same picture in draw order, carrying the already computed
+    /// Ground GetYSort key. The client can retain it in the frame before the
+    /// simulation lends its entity store. Other layers sort by submission.
+    pub fn visit_picture_draw_order(
+        &self,
+        rules: Option<&RuleSet>,
+        visit: impl FnMut(DisplayLayer, u64, i32),
+    ) {
+        self.visit_draw_order(rules, true, visit);
+    }
+
     fn draw_order(&self, rules: Option<&RuleSet>, presentation: bool) -> Vec<(DisplayLayer, u64)> {
-        let display = &self.substrate.display;
+        let mut order =
+            Vec::with_capacity(self.substrate.display.members(DisplayLayer::GROUND).len());
+        self.visit_draw_order(rules, presentation, |layer, id, _| order.push((layer, id)));
+        order
+    }
+
+    fn visit_draw_order(
+        &self,
+        rules: Option<&RuleSet>,
+        presentation: bool,
+        mut visit: impl FnMut(DisplayLayer, u64, i32),
+    ) {
         let mut unshared: [Vec<(u64, u64)>; 5] = Default::default();
         if presentation {
             for (&id, anim) in self.substrate.anims.presentation_iter() {
@@ -212,29 +239,35 @@ impl Simulation {
                     unshared[usize::from(layer.index())].push((anim.presentation_order(), id));
                 }
             }
+            // A presentation particle system draws where Ground would hold
+            // it (ParticleSystem VT7EFB9C+78 ->62FE80), and each of its
+            // particles where Air would (GetLayer62D770).
+            for (id, system) in self.substrate.particle_systems.presented_systems() {
+                unshared[usize::from(DisplayLayer::GROUND.index())]
+                    .push((system.presentation_order(), id));
+                unshared[usize::from(DisplayLayer::AIR.index())].extend(
+                    system
+                        .particles()
+                        .iter()
+                        .map(|particle| (particle.presentation_order(), particle.stable_id())),
+                );
+            }
         }
-        let mut order = Vec::with_capacity(
-            display.ordered_ids().size_hint().0 + unshared.iter().map(Vec::len).sum::<usize>(),
-        );
-        for index in 0..5 {
-            let layer = DisplayLayer::from_index(index).expect("native Display layer index");
-            order.extend(
-                self.layer_draw_order(layer, rules, &unshared[usize::from(index)])
-                    .into_iter()
-                    .map(|id| (layer, id)),
-            );
+        for (index, unshared) in unshared.iter().enumerate() {
+            let layer = DisplayLayer::from_index(index as u8).expect("native Display layer index");
+            self.visit_layer_draws(layer, rules, unshared, |id, key| visit(layer, id, key));
         }
-        order
     }
 
     /// `layer`'s members and `unshared` draws (`(place, id)`) in draw order:
     /// by submission order, Ground by GetYSort key first.
-    fn layer_draw_order(
+    fn visit_layer_draws(
         &self,
         layer: DisplayLayer,
         rules: Option<&RuleSet>,
         unshared: &[(u64, u64)],
-    ) -> Vec<u64> {
+        mut visit: impl FnMut(u64, i32),
+    ) {
         let display = &self.substrate.display;
         let members = display.members(layer);
         let local: &[u64] = if layer == DisplayLayer::GROUND {
@@ -244,7 +277,10 @@ impl Simulation {
         };
         // The other layers already hold their members in submission order.
         if layer != DisplayLayer::GROUND && unshared.is_empty() {
-            return members.to_vec();
+            for &id in members {
+                visit(id, 0);
+            }
+            return;
         }
         let view = GroundSortView {
             entities: &self.substrate.entities,
@@ -270,7 +306,9 @@ impl Simulation {
             .collect();
         // Each id appears once, so the order is total.
         keyed.sort_unstable();
-        keyed.into_iter().map(|(_, _, id)| id).collect()
+        for (key, _, id) in keyed {
+            visit(id, key);
+        }
     }
 
     pub(super) fn submit_entity_display(

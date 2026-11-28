@@ -17,22 +17,26 @@
 use anyhow::Result;
 use vera20k_gui::Prop;
 
-use crate::app::AppState;
 use crate::app::frontend::main_menu_shell_render::shell_reveal_path_a;
 use crate::app::frontend::menu_page_render::{
     FamilyFrame, encode_family_page, family_art_ready, page_panel_state, page_tree,
 };
 use crate::app::frontend::shell_pass::TexturedDraw;
-use crate::render::hud_paint::{HudPaint, Material};
 use crate::app::frontend::shell_transition::ShellSlideKind;
-use crate::app::frontend::skirmish_shell_render::gui_paint::{
-    GuiStyle, PageArt, paint_gui_into,
-};
+use crate::app::frontend::skirmish_shell_render::gui_paint::{GuiStyle, PageArt, paint_gui_into};
+use crate::app::frontend::state::FrontendState;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
+use crate::app::state::PlatformState;
+use crate::render::hud_paint::{HudPaint, Material};
 use crate::render::shell_paint::{
     PARENT_BACKGROUND_DEPTH, SHELL_TEXT_RGB_ENABLED, push_entry_crop, push_entry_native,
     push_entry_scaled, push_entry_window_crop,
 };
 use crate::render::shell_text_reveal::PathAReveal;
+use crate::ui::score_shell::ScorePage;
 use crate::ui::score_shell::{
     BAND_IDS, CONTINUE_BUTTON, HEADING, NEXT_PAGE, PREVIOUS_PAGE, SCORE_PAGE, ScoreStatics,
     sync_static_texts,
@@ -58,43 +62,60 @@ pub(crate) fn static_reveal(statics: &ScoreStatics, id: u16) -> Option<PathAReve
 }
 
 /// The heading `0x694` the proc sets (`0x005C9BEC..0x005C9C34`).
-pub(crate) fn score_title_text(state: &AppState) -> String {
-    state
-        .frontend
-        .score_page
+pub(crate) fn score_title_text(
+    score_page: &Option<ScorePage>,
+    process_assets: &ProcessAssets,
+) -> String {
+    score_page
         .as_ref()
-        .map(|page| state.csf_text(page.model.title_key))
+        .map(|page| process_assets.csf_text(page.model.title_key))
         .unwrap_or_default()
 }
 
 /// Paint dialog `0x108`. Returns `false` when its chrome or art is missing.
 pub(crate) fn render_score_page(
-    state: &mut AppState,
+    platform: &mut PlatformState,
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    persistence: &PersistenceState,
     encoder: &mut wgpu::CommandEncoder,
     destination: &wgpu::Texture,
 ) -> Result<bool> {
-    if state.frontend.score_page.is_none()
-        || state.frontend.score_art.is_none()
-        || !family_art_ready(state)
+    if frontend.score_page.is_none()
+        || frontend.score_art.is_none()
+        || !family_art_ready(
+            renderer,
+            frontend,
+            process_assets,
+            &persistence.options_profile,
+        )
     {
         return Ok(false);
     }
-    let layout = crate::app::frontend::shell_layout::score_layout(state);
+    let layout = crate::app::frontend::shell_layout::score_layout(&renderer.gpu);
     let (screen, scale, dialog) = (layout.page.screen, layout.page.scale, SCORE_PAGE.dialog);
-    let paged = state
-        .frontend
+    let paged = frontend
         .score_page
         .as_ref()
         .is_some_and(|page| page.page_count() > 1);
     let rect_of = |id| layout.node_rect(id, paged);
-    let mut tree = page_tree(state, dialog, crate::ui::score_shell::nodes, rect_of, &[]);
+    let mut tree = page_tree(
+        &mut frontend.shell_controller,
+        dialog,
+        crate::ui::score_shell::nodes,
+        rect_of,
+        &[],
+    );
     // Only Continue has status help; the paging pair has none.
     let mut panel = page_panel_state(
-        state,
+        frontend,
+        process_assets,
         ShellSlideKind::Score,
         true,
-        |state| {
-            let controller = &state.frontend.shell_controller;
+        |frontend| {
+            let controller = &frontend.shell_controller;
             (controller.top_id() == Some(dialog))
                 .then(|| menu_page::hovered_help(controller, dialog))
                 .flatten()
@@ -108,11 +129,7 @@ pub(crate) fn render_score_page(
     let title = panel.title.take().map(shell_reveal_path_a);
     let column = panel.column.is_some();
     {
-        let frontend = &mut state.frontend;
-        let page = frontend
-            .score_page
-            .as_mut()
-            .expect("checked before render");
+        let page = frontend.score_page.as_mut().expect("checked before render");
         page.statics.paint(Instant::now(), !leaving);
         let page = &*page;
         // The statics carry the template windows `0x0060B950` keeps; on a
@@ -133,16 +150,8 @@ pub(crate) fn render_score_page(
             }
         }
     }
-    let page = state
-        .frontend
-        .score_page
-        .as_ref()
-        .expect("checked before render");
-    let art = state
-        .frontend
-        .score_art
-        .as_ref()
-        .expect("checked before render");
+    let page = frontend.score_page.as_ref().expect("checked before render");
+    let art = frontend.score_art.as_ref().expect("checked before render");
     let rows = page.visible_range().len();
 
     // The heading, the statics while they show, the page counter beside
@@ -174,14 +183,29 @@ pub(crate) fn render_score_page(
         rgb: SHELL_TEXT_RGB_ENABLED,
         ..Default::default()
     };
-    let controller = &state.frontend.shell_controller;
+    let controller = &frontend.shell_controller;
     let nodes = match &tree {
         Some((gui, root)) => Some((gui, *root)),
-        None => controller.root_in(dialog).map(|root| (controller.gui(), root)),
+        None => controller
+            .root_in(dialog)
+            .map(|root| (controller.gui(), root)),
     };
     let mut paint = HudPaint::default();
     if let Some((gui, root)) = nodes {
-        paint_gui_into(&mut paint, state, None, gui, root, scale, &[], style);
+        paint_gui_into(
+            &mut paint,
+            &platform.ime,
+            &renderer.bit_font,
+            frontend,
+            match_state,
+            process_assets,
+            None,
+            gui,
+            root,
+            scale,
+            &[],
+            style,
+        );
     }
 
     // Paint mode 1 (`0x00621E90`): the right panel, then the dialog's own
@@ -232,8 +256,11 @@ pub(crate) fn render_score_page(
         instances: art_sprites,
     };
     let title = SCORE_PAGE.title_key;
-    let mut frame =
-        FamilyFrame::new("Score Shell", &layout.page, panel, title).on(state, dialog, &tree);
+    let mut frame = FamilyFrame::new("Score Shell", &layout.page, panel, title).on(
+        &frontend.shell_controller,
+        dialog,
+        &tree,
+    );
     frame.ids = vec![CONTINUE_BUTTON, PREVIOUS_PAGE, NEXT_PAGE];
     frame.over = paint;
     if page.model.background.is_some() {
@@ -241,6 +268,16 @@ pub(crate) fn render_score_page(
     } else {
         frame.over_panel_art.push(art_draw);
     }
-    encode_family_page(state, encoder, destination, frame);
+    encode_family_page(
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        process_assets,
+        persistence,
+        encoder,
+        destination,
+        frame,
+    );
     Ok(true)
 }

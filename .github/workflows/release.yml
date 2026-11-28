@@ -44,14 +44,17 @@ name: Release
 # `toolchain: stable` in place of its @stable branch. Refresh the pins about
 # once a year, to releases that have been out for a few weeks.
 #
+# Each native runner instruments the shipping game and sim-bench, trains on headless
+# retail gameplay and uses its own merged Rust LLVM profile to rebuild the game before
+# packaging (.github/release/pgo.py). Stable promotion keeps those exact bytes.
+#
 # Each installer holds the game program, its license (LICENSE-GPL), the
 # third-party notices (THIRD_PARTY_LICENSES.html) and a README.txt made from
 # .github/release/README.txt.in; the Windows one also config.toml.example. Each
 # also holds every language but English, and the fonts behind them
-# (.github/release/languages.sh). They
-# never hold game files (README.md, README.txt.in). Their one piece of game art
-# is the app icon, Red Alert 2's red star from retail game.exe
-# (.github/release/icon.png).
+# (.github/release/languages.sh). The installer README credits the app icon
+# (.github/release/icon.png) and the bundled terrain artwork. Players supply
+# their Yuri's Revenge installation.
 on:
   workflow_dispatch:
     inputs:
@@ -190,18 +193,21 @@ jobs:
     name: build (${{ matrix.target }})
     needs: prepare
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
+    # Two full shipping passes and the gameplay that trains this native target.
+    timeout-minutes: 240
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: windows-latest
             target: windows-x64
+            rust-target: x86_64-pc-windows-msvc
             program: vera20k.exe
           # The oldest supported Ubuntu runner, so the build also runs on
           # distributions with an older glibc.
           - os: ubuntu-22.04
             target: linux-x64
+            rust-target: x86_64-unknown-linux-gnu
             program: vera20k
           # Apple Silicon jobs here use macos-15, not macos-latest (macOS 26),
           # which dropped this job unstarted ("not acquired by Runner of type
@@ -209,11 +215,13 @@ jobs:
           # supported macOS stays MACOSX_DEPLOYMENT_TARGET on either image.
           - os: macos-15
             target: macos-arm64
+            rust-target: aarch64-apple-darwin
             program: vera20k
           # Intel Macs, built and started on GitHub's last Intel image, which
           # it supports until about August 2027.
           - os: macos-15-intel
             target: macos-x64
+            rust-target: x86_64-apple-darwin
             program: vera20k
     steps:
       # The program embeds text files (shaders, the capture contract); keep
@@ -222,15 +230,26 @@ jobs:
         if: runner.os == 'Windows'
         run: git config --global core.autocrlf false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # Both Mac runners default to Xcode 16.4. AppKit uses the linked SDK
+      # to choose the appearance of the game's window controls on newer Macs.
+      - name: Select Xcode 26.3 for the Mac build
+        if: runner.os == 'macOS'
+        run: sudo xcode-select --switch /Applications/Xcode_26.3.app/Contents/Developer
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
         with:
           toolchain: stable
+          components: llvm-tools-preview
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: '3.12'
       # The third-party notices the prepare job wrote, for the Package step.
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: third-party-licenses
           path: dist
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          cache-targets: false
       # The AppImage step also needs desktop-file-validate.
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
@@ -241,7 +260,15 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: .github/release/windows/install-inno.ps1
-      - name: Build the game
+      - name: Fetch the Windows shader compiler for packaging
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: .github/release/windows/fetch-dxc.ps1 -Package dist
+      - name: Fetch retail data for gameplay training
+        env:
+          RETAIL_GAME_DATA_URL: ${{ secrets.RETAIL_GAME_DATA_URL }}
+        run: python -m tools.ci_retail_data
+      - name: Train and build the PGO game
         # Shipped binaries leave out the default `dev-overlays` (the Ctrl+Shift dev chord),
         # and use the whole-program `shipping` profile (Cargo.toml). The splash's
         # license notice names the commit built, and the installers bring every
@@ -249,7 +276,7 @@ jobs:
         env:
           VERA20K_COMMIT: ${{ needs.prepare.outputs.sha }}
           VERA20K_LANGUAGE_FOLDER: '1'
-        run: cargo build --profile shipping --locked -p vera20k --no-default-features --bin vera20k
+        run: python .github/release/pgo.py ${{ matrix.rust-target }}
       - name: Package
         id: package
         shell: bash
@@ -264,15 +291,25 @@ jobs:
           # a downloaded installer traceable to its commit. A release drops both
           # (the promote job).
           name="vera20k-${VERSION}-${{ matrix.target }}-${STAMP}-${SHA7}"
-          mkdir -p "dist/$name"
+          mkdir -p "dist/$name/Maps" "dist/$name/Terrain"
           echo "name=$name" >> "$GITHUB_OUTPUT"
           # The files the platform's installer takes from this folder.
-          cp "target/shipping/${{ matrix.program }}" config.toml.example LICENSE-GPL \
+          cp "dist/pgo-optimized/${{ matrix.program }}" config.toml.example LICENSE-GPL \
             dist/THIRD_PARTY_LICENSES.html "dist/$name/"
+          cp maps/Arctic_Circle_16_Ice_Passages.map "dist/$name/Maps/"
+          cp Terrain/vera_ice.mix Terrain/vera_ice_tiles.ini "dist/$name/Terrain/"
+          python - "dist/$name/${{ matrix.program }}" <<'PYTHON'
+          from pathlib import Path
+          import sys
+          program = Path(sys.argv[1]).read_bytes()
+          for name in ('vera_ice.mix', 'vera_ice_tiles.ini'):
+              if (Path('Terrain') / name).read_bytes() in program:
+                  sys.exit(f'{name} is still embedded in the game executable')
+          PYTHON
           bash .github/release/languages.sh "dist/$name"
           # Windows also gets Microsoft's DirectX Shader Compiler beside the game.
           if [ "$RUNNER_OS" = Windows ]; then
-            pwsh -File .github/release/windows/fetch-dxc.ps1 -Package "dist/$name"
+            cp dist/dxcompiler.dll dist/LICENSE-DXC.txt "dist/$name/"
           fi
           # The README names the version, build and commit, which stay true when
           # a release republishes this installer.
@@ -414,6 +451,22 @@ jobs:
                          'languages\NotoSansThai-VF.ttf') {
             if (-not (Test-Path (Join-Path $app $f))) { throw "setup did not install $f" }
           }
+          if ((Get-FileHash (Join-Path $app 'vera20k.exe')).Hash -ne (Get-FileHash 'dist/pgo-optimized/vera20k.exe').Hash) {
+            throw 'setup installed a different executable from the PGO build'
+          }
+          foreach ($file in 'vera_ice.mix', 'vera_ice_tiles.ini') {
+            $path = "Terrain\$file"
+            if ((Get-FileHash (Join-Path $app $path)).Hash -ne (Get-FileHash $path).Hash) {
+              throw "setup did not install the release's $path"
+            }
+          }
+          $mapFile = 'Arctic_Circle_16_Ice_Passages.map'
+          $map = Join-Path $app "Maps\$mapFile"
+          $receipt = Join-Path $app 'Maps\.Arctic_Circle_16_Ice_Passages.installed'
+          if (-not (Test-Path $receipt -PathType Leaf)) { throw 'setup did not record the installed map' }
+          if ((Get-FileHash $map).Hash -ne (Get-FileHash "maps\$mapFile").Hash) {
+            throw 'setup did not install the release skirmish map'
+          }
           $config = Read-Config
           if (-not $config.Contains((Ra2Dir $first))) { throw "config.toml lacks $(Ra2Dir $first)" }
           if ($config -notmatch '(?m)^settings_dir = "\."\r?$') { throw 'config.toml lacks settings_dir = "."' }
@@ -434,9 +487,16 @@ jobs:
             "`n[profile]`nname = `"$commander`"`n", [Text.UTF8Encoding]::new($false))
           $droppedLanguage = Join-Path $app 'languages\vera20k.xx.ini'
           Set-Content $droppedLanguage 'A language a newer release no longer has.'
+          $tileIni = Join-Path $app 'Terrain\vera_ice_tiles.ini'
+          Set-Content $tileIni 'A terrain definition from an earlier release.'
+          Set-Content $map 'player edits'
           $second = New-Game $yuri
           $code = Install $second
           if ($code -ne 0) { Get-Content $log; throw "upgrade failed with exit code $code" }
+          if ((Get-Content $map) -ne 'player edits') { throw 'upgrade overwrote an edited map' }
+          if ((Get-FileHash $tileIni).Hash -ne (Get-FileHash 'Terrain\vera_ice_tiles.ini').Hash) {
+            throw 'upgrade left the previous terrain definition in place'
+          }
           if (Test-Path $droppedLanguage) { throw 'upgrade kept a language the release dropped' }
           $config = Read-Config
           if (-not $config.Contains((Ra2Dir $second))) { throw "upgrade did not write $(Ra2Dir $second)" }
@@ -459,7 +519,9 @@ jobs:
           }
           if (Test-Path (Join-Path $app 'unins000.exe')) { throw 'uninstall did not finish' }
           if (Test-Path (Join-Path $app 'vera20k.exe')) { throw 'uninstall left vera20k.exe behind' }
+          if ((Get-Content $map) -ne 'player edits') { throw 'uninstall removed an edited map' }
           if (Test-Path (Join-Path $app 'languages')) { throw 'uninstall left the languages behind' }
+          if (Test-Path (Join-Path $app 'Terrain')) { throw 'uninstall left the release terrain behind' }
           if (-not (Test-Path (Join-Path $app 'config.toml'))) { throw 'uninstall removed config.toml' }
 
           # With nothing from before, setup finds the game: in a Steam library
@@ -501,11 +563,13 @@ jobs:
           # even while another detected installation passes validation.
           if ((Install $steamGame) -eq 0) { throw 'setup ignored the invalid explicit /GAMEDIR' }
           Assert-Found $eaGame
+          Remove-Item $map
           # A damaged previous choice must not hide another valid install.
           Copy-Item '.github\release\windows\test-game\cameomd.mix' $steamGame
           Remove-Item (Join-Path $eaGame 'ra2.mix')
           $code = Install ''
           if ($code -ne 0) { Get-Content $log; throw "setup failed to recommend Steam: exit code $code" }
+          if (Test-Path $map) { throw 'upgrade restored a map the player deleted' }
           Assert-Found $steamGame
           Copy-Item '.github\release\windows\test-game\ra2.mix' $eaGame
           # Without the game there, setup recommends the EA app's folder.
@@ -553,16 +617,28 @@ jobs:
           # The window's arrow and layout (dmg_settings.py).
           test -f "$mount/.background.tiff"
           test -f "$mount/.DS_Store"
+          map=Arctic_Circle_16_Ice_Passages.map
+          cmp "maps/$map" "$app/Contents/Resources/Maps/$map"
+          for file in vera_ice.mix vera_ice_tiles.ini; do
+            cmp "Terrain/$file" "$app/Contents/Resources/Terrain/$file"
+          done
           test -f "$app/Contents/Resources/README.txt"
           test -f "$app/Contents/Resources/VERA20K.icns"
           test -f "$app/Contents/Resources/zh-Hans.lproj/InfoPlist.strings"
           codesign --verify --strict --verbose=2 "$app"
+          # Signing the bundle changes its signature but preserves the Mach-O build UUID.
+          pgo_uuid=$(dwarfdump --uuid dist/pgo-optimized/vera20k | awk '{print $2}')
+          app_uuid=$(dwarfdump --uuid "$app/Contents/MacOS/VERA20K" | awk '{print $2}')
+          test -n "$pgo_uuid" && test "$app_uuid" = "$pgo_uuid" || { echo 'unexpected app executable' >&2; exit 1; }
           # About VERA20K tells builds apart, and the program and its
           # Info.plist name the same oldest macOS.
           build="$(plutil -extract CFBundleVersion raw "$plist")"
           test "$build" = "${STAMP/-/.}" || { echo "CFBundleVersion is $build" >&2; exit 1; }
+          build_info="$(vtool -show-build "$app/Contents/MacOS/VERA20K")"
+          sdk="$(awk '$1 == "sdk" { print $2 }' <<< "$build_info")"
+          test "${sdk%%.*}" -ge 26 || { echo "Game linked against macOS SDK '$sdk', need 26 or newer" >&2; exit 1; }
           for minimum in "$(plutil -extract LSMinimumSystemVersion raw "$plist")" \
-            "$(vtool -show-build "$app/Contents/MacOS/VERA20K" | awk '$1 == "minos" { print $2 }')"; do
+            "$(awk '$1 == "minos" { print $2 }' <<< "$build_info")"; do
             test "$minimum" = "$MACOSX_DEPLOYMENT_TARGET" \
               || { echo "oldest macOS $minimum, not $MACOSX_DEPLOYMENT_TARGET" >&2; exit 1; }
           done
@@ -600,7 +676,12 @@ jobs:
           (cd "$work" && "$image" --appimage-extract > /dev/null)
           root="$work/squashfs-root"
           test "$(readlink "$root/AppRun")" = usr/bin/vera20k
-          cmp "$root/usr/bin/vera20k" "dist/$NAME/vera20k"
+          cmp "$root/usr/bin/vera20k" dist/pgo-optimized/vera20k
+          map=Arctic_Circle_16_Ice_Passages.map
+          cmp "maps/$map" "$root/usr/share/vera20k/Maps/$map"
+          for file in vera_ice.mix vera_ice_tiles.ini; do
+            cmp "Terrain/$file" "$root/usr/share/vera20k/Terrain/$file"
+          done
           test -f "$root/usr/share/doc/vera20k/README.txt"
           test -f "$root/vera20k.png"
           test -f "$root/.DirIcon"

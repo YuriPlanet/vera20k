@@ -4,8 +4,16 @@
 //! authority.
 
 use super::dialog_page::InGameDialog;
+use crate::app::App;
+use crate::app::PlatformState;
+use crate::app::audio_runtime::AppAudioRuntime;
+use crate::app::diagnostics::state::DiagnosticsState;
+use crate::app::frontend::state::FrontendState;
 use crate::app::match_runtime::session::SessionMode;
-use crate::app::{App, AppState};
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
 use crate::ui::pause_menu::{AbortConfirmAction, resolve_abort_action};
 use crate::ui::shell::abort::{self, AbortButton, AbortLayout, AbortSecondary, abort_layout};
 use crate::ui::shell::page::PageEvent;
@@ -14,12 +22,11 @@ use crate::ui::shell::page::PageEvent;
 /// Restart, 5 hides it, LAN/WOL show Observe with two or more live humans
 /// while the local House is not defeated. Saved campaigns recover their
 /// continuation inputs at successful load and also offer Restart.
-fn select_abort_secondary(state: &AppState) -> AbortSecondary {
+fn select_abort_secondary(match_state: &MatchState) -> AbortSecondary {
     secondary_for(
-        state.match_state.session_mode(),
-        state.match_state.startup.installed_campaign().is_some(),
-        state
-            .match_state
+        match_state.session_mode(),
+        match_state.startup.installed_campaign().is_some(),
+        match_state
             .sim_runtime
             .runtime()
             .map(|runtime| &runtime.simulation),
@@ -57,8 +64,8 @@ fn secondary_for(
 
 /// B6 init runs once per dialog: its stored results and control712 stay
 /// fixed until the dialog closes, whatever the match does meanwhile.
-pub(crate) fn on_open(state: &mut AppState) {
-    state.match_state.match_presentation.abort_secondary = select_abort_secondary(state);
+pub(crate) fn on_open(match_state: &mut MatchState) {
+    match_state.match_presentation.abort_secondary = select_abort_secondary(match_state);
 }
 
 /// B6: no title, Resume 0x686 as the lower right-panel button.
@@ -75,31 +82,70 @@ pub(crate) const DIALOG: InGameDialog = InGameDialog {
 };
 
 /// The open B6's geometry.
-pub(crate) fn current_abort_layout(state: &AppState) -> Option<AbortLayout> {
-    let secondary = state.match_state.match_presentation.abort_secondary;
-    super::dialog_page::layout(state, |w, h, shell, size| {
-        abort_layout(w, h, shell, size, secondary)
-    })
+pub(crate) fn current_abort_layout(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    persistence: &PersistenceState,
+) -> Option<AbortLayout> {
+    let secondary = match_state.match_presentation.abort_secondary;
+    super::dialog_page::layout(
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        persistence,
+        |w, h, shell, size| abort_layout(w, h, shell, size, secondary),
+    )
 }
 
 /// Makes B6's nodes current without input (rects, the hidden 712): its
 /// renderer's call every drawn frame before it paints from them.
-pub(crate) fn sync(state: &mut AppState) -> Option<AbortLayout> {
-    let layout = current_abort_layout(state)?;
+pub(crate) fn sync(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    persistence: &PersistenceState,
+) -> Option<AbortLayout> {
+    let layout = current_abort_layout(platform, renderer, frontend, match_state, persistence)?;
     let nodes = || abort::spec(layout.secondary_kind);
     let rect_of = |id| layout.rect(id);
-    DIALOG.sync(state, nodes, rect_of, super::dialog_page::no_sync);
+    DIALOG.sync(
+        &mut match_state.match_presentation,
+        nodes,
+        rect_of,
+        super::dialog_page::no_sync,
+    );
     Some(layout)
 }
 
 /// One pointer message on B6 (`down`: `None` moves).
-pub(super) fn pointer(state: &mut AppState, down: Option<bool>) {
-    let Some(layout) = current_abort_layout(state) else {
+pub(super) fn pointer(
+    platform: &mut PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    persistence: &mut PersistenceState,
+    down: Option<bool>,
+) {
+    let Some(layout) = current_abort_layout(platform, renderer, frontend, match_state, persistence)
+    else {
         return;
     };
     let nodes = || abort::spec(layout.secondary_kind);
     let events = DIALOG.route(
-        state,
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        process_assets,
+        &mut audio.sfx_player,
+        persistence,
         down,
         nodes,
         |id| layout.rect(id),
@@ -109,15 +155,36 @@ pub(super) fn pointer(state: &mut AppState, down: Option<bool>) {
         if let PageEvent::Activated(id) = event
             && let Some(button) = AbortButton::from_id(id)
         {
-            activate(state, button);
+            activate(
+                platform,
+                renderer,
+                diag,
+                frontend,
+                match_state,
+                process_assets,
+                audio,
+                persistence,
+                button,
+            );
         }
     }
 }
 
 /// Callback4F18B0 writes the result B6 init stored for the pressed button:
 /// Leave6C9 `[0xA8EE7C]` (2, or 3 beside Observe), 712 `[0xA8EE80]`.
-pub(crate) fn activate(state: &mut AppState, button: AbortButton) {
-    let Some(layout) = current_abort_layout(state) else {
+pub(crate) fn activate(
+    platform: &mut PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    persistence: &mut PersistenceState,
+    button: AbortButton,
+) {
+    let Some(layout) = current_abort_layout(platform, renderer, frontend, match_state, persistence)
+    else {
         return;
     };
     let action = match (button, layout.secondary_kind) {
@@ -128,7 +195,17 @@ pub(crate) fn activate(state: &mut AppState, button: AbortButton) {
         (AbortButton::Secondary, AbortSecondary::Hidden) => return,
         (AbortButton::Resume, _) => AbortConfirmAction::Cancel,
     };
-    App::apply_in_game_modal_outcome(state, resolve_abort_action(action));
+    App::apply_in_game_modal_outcome(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        audio,
+        persistence,
+        resolve_abort_action(action),
+    );
 }
 
 #[cfg(all(test, tests_app_input_a_c))]

@@ -497,8 +497,8 @@ fn remote_house_human_selector_and_reset_keep_drain_one_time_and_leaf_ready_guar
         assert_eq!(instance.charge_drain_state(), 1);
         let original_timer = (instance.charge_start_tick(), instance.charge_duration());
         sim.sound_events.clear_for_test();
-        assert!(sim.apply_command_with_overlays(
-            None,
+        assert!((sim.apply_command_with_overlays(
+            crate::sim::command::CommandSender::Player(None),
             "Russians",
             &Command::LaunchSuperWeapon {
                 sw_type_id: id,
@@ -508,7 +508,7 @@ fn remote_house_human_selector_and_reset_keep_drain_one_time_and_leaf_ready_guar
             &rules,
             None,
             &mut FrameEffects::default()
-        ));
+        )).is_ok());
         let instance = &sim.super_weapons[&remote][&id];
         assert!(instance.is_active() && instance.is_ready() && instance.one_time);
         if toggles {
@@ -521,8 +521,8 @@ fn remote_house_human_selector_and_reset_keep_drain_one_time_and_leaf_ready_guar
                 (2, 4100, 299)
             );
             sim.session.set_binary_frame_for_test(4200);
-            assert!(!sim.apply_command_with_overlays(
-                None,
+            assert!((sim.apply_command_with_overlays(
+                crate::sim::command::CommandSender::Player(None),
                 "Russians",
                 &Command::LaunchSuperWeapon {
                     sw_type_id: id,
@@ -532,7 +532,7 @@ fn remote_house_human_selector_and_reset_keep_drain_one_time_and_leaf_ready_guar
                 &rules,
                 None,
                 &mut FrameEffects::default()
-            ));
+            )).is_err());
             assert_eq!(sim.super_weapons[&remote][&id].charge_drain_state(), 1);
         } else {
             assert_eq!(instance.charge_drain_state(), 1);
@@ -563,8 +563,8 @@ fn remote_house_human_selector_and_reset_keep_drain_one_time_and_leaf_ready_guar
         let blackout = sim.power_states[&remote].blackout_remaining(sim.session.binary_frame());
         let anims = invoke_count(&sim);
         sim.sound_events.clear_for_test();
-        sim.apply_command_with_overlays(
-            None,
+        let _ = sim.apply_command_with_overlays(
+            crate::sim::command::CommandSender::Player(None),
             "Russians",
             &Command::LaunchSuperWeapon {
                 sw_type_id: id,

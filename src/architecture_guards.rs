@@ -654,6 +654,9 @@ fn engine_per_client_reads_have_pinned_callers() {
         (
             "is_observer_house",
             &[
+                // A client module's message from an observer is dropped;
+                // each peer holds the same observer list from the room.
+                ("sim/ext_modules/messages.rs", 1),
                 ("sim/scenario_session.rs", 1),
                 ("sim/score.rs", 1),
                 // The same offline command refuses a local observer.
@@ -1652,7 +1655,8 @@ const ROOTS: &[(&str, &str)] = &[
 /// owner: a struct whose fields are all private, so other modules change its
 /// state only through its operations. A raw container, primitive, enum or
 /// open struct in a root slot would let any module write that state directly.
-/// `Option`, `Box`, `Arc`, `Rc` and `Sparse` wrappers are looked through.
+/// `Option`, `Box`, `Arc`, `Rc`, `Sparse` and `Forked` wrappers are looked
+/// through.
 #[test]
 fn composition_root_slots_are_owner_types() {
     // Root slots that are not owner structs, each with its reason.
@@ -1770,6 +1774,7 @@ fn slot_type_scan_reads_wrappers_tuples_and_visibility() {
         .collect();
     assert!(owner_type_verdict(&structs, "Option<C>").is_ok());
     assert!(owner_type_verdict(&structs, "Sparse<crate::x::C>").is_ok());
+    assert!(owner_type_verdict(&structs, "Forked<Option<C>>").is_ok());
     assert!(owner_type_verdict(&structs, "crate::x::B").is_err());
     assert!(owner_type_verdict(&structs, "BTreeMap<u8, C>").is_err());
     assert!(owner_type_verdict(&structs, "SomeEnum").is_err());
@@ -1811,13 +1816,14 @@ fn owner_type_verdict(
     }
 }
 
-/// The type a slot names, through `Option`/`Box`/`Arc`/`Rc`/`Sparse` and paths.
+/// The type a slot names, through `Option`/`Box`/`Arc`/`Rc`/`Sparse`/`Forked`
+/// and paths.
 fn slot_base_type(ty: &str) -> &str {
     let mut ty = ty.trim();
     loop {
         let (path, generics) = ty.find('<').map_or((ty, ""), |at| ty.split_at(at));
         let last = path.rsplit("::").next().unwrap_or(path).trim();
-        if ["Option", "Box", "Arc", "Rc", "Sparse"].contains(&last)
+        if ["Option", "Box", "Arc", "Rc", "Sparse", "Forked"].contains(&last)
             && generics.starts_with('<')
             && generics.ends_with('>')
         {
@@ -2050,6 +2056,8 @@ fn mutable_handouts_and_setters_are_owner_operations() {
                           field of its owner";
     const SPARSE: &str = "a generic out-of-line holder for state most objects leave at its \
                           default; every Sparse is a field of its owner and holds an owner struct";
+    const FORKED: &str = "a generic copy-on-write holder for a world field (util::forked); every \
+                          Forked is a slot of a composition root and holds that slot's own type";
     const LASER: &str = "LaserDraw 0x0054FE60 returns the new laser for its caller's postprocessing \
                          (FireAt 0x006FF50A..0x006FF571); the caller finishes its own frame fact";
     const ANIM_OBJECT: &str = "AnimObject's fields are private to the `sim::anim_class` module, \
@@ -2139,13 +2147,14 @@ fn mutable_handouts_and_setters_are_owner_operations() {
             "sim/runtime.rs",
             "resources_mut",
             "SimRuntime's bound resources for a write; SimResources is the slot's own type, \
-             shared only with a presentation frame the host drops first (docs/sim-thread.md)",
+             shared only with a presentation copy the host drops first (docs/sim-thread.md)",
         ),
         (
             "sim/world/frame_channel.rs",
             "emit_and_finish",
             "a producer finishes the fact it just emitted, before the frame tail reads the channel",
         ),
+        ("util/forked.rs", "deref_mut", FORKED),
         ("util/synced.rs", "deref_mut", SHARED),
         ("util/synced.rs", "get_mut", SHARED),
         ("util/synced.rs", "iter_mut", SHARED),
@@ -2203,6 +2212,30 @@ fn mutable_handouts_and_setters_are_owner_operations() {
         ),
         (
             "rules/personal_rules.rs",
+            "set_wasm_budget",
+            "VERA's own switch with no native member: VERA.INI's [VERA] WasmBudget=, which the \
+             app passes in for the Wasm module budget the next scenario reads",
+        ),
+        (
+            "rules/personal_rules.rs",
+            "set_automation_allowed",
+            "VERA's own switch with no native member: the room switch \"Allow automation\" \
+             (Wasm client modules, RFC 0001 6i), which the app passes in for the next scenario",
+        ),
+        (
+            "sim/ext_modules/rules.rs",
+            "set_automation_allowed",
+            "VERA's own switch with no native member: the loader hands the room's \"Allow \
+             automation\" to the prepared Wasm modules (global AutomationAllowed, RFC 0001 7.8)",
+        ),
+        (
+            "sim/trigger_runtime.rs",
+            "set_client_forwarding",
+            "VERA-only presentation flag with no native member: whether event sites also build \
+             SimEvent payloads for Wasm client modules (sim::ext_modules::client_outbox)",
+        ),
+        (
+            "rules/personal_rules.rs",
             "set_terrain_deformation",
             "VERA's own switch with no native member: the skirmish Game Options' Terrain \
              Deformation box, which the app passes in for the rules the next scenario reads",
@@ -2239,20 +2272,9 @@ fn mutable_handouts_and_setters_are_owner_operations() {
              ordinary aircraft unload (0x00415548)",
         ),
         (
-            "sim/ammo.rs",
-            "set_dock",
-            "the +0x6CC writers and PointerExpired's clear",
-        ),
-        (
             "sim/building_entry.rs",
             "set_nearest_occupiable_seek",
             "Ares writes the +0x691 seek latch with its scan's answer (0x10046A8B/0x10046ACC)",
-        ),
-        (
-            "sim/combat/attack_target.rs",
-            "set",
-            "the TarCom class setter; callers port each native writer, such as \
-             PointerExpired's NULL store (0x00707A33)",
         ),
         (
             "sim/combat/base_defense_response.rs",
@@ -2275,6 +2297,11 @@ fn mutable_handouts_and_setters_are_owner_operations() {
             "set_attached",
             "Ares RecalculateStats 0x100460A0 derives Foot+580 from the attachment vector; \
              GameEntity::set_attached_speed records here whether it differs from the crate baseline",
+        ),
+        (
+            "sim/economy.rs",
+            "set_score",
+            "the module SetScore action assigns the house score outright (RFC 0001 appendix 5.3)",
         ),
         (
             "sim/game_entity.rs",
@@ -2464,6 +2491,16 @@ fn mutable_handouts_and_setters_are_owner_operations() {
             "SuperClass::SetRechargeTime (0x006CC280, TAction 132) changes only Super+24",
         ),
         (
+            "sim/movement/facing_class.rs",
+            "set_rate_word",
+            "the module ROTMultiplier writes the scaled body rate and restores the native rate word when it expires",
+        ),
+        (
+            "sim/trigger_runtime/module_triggers.rs",
+            "set_production_refusals",
+            "the ProductionAllowed step installs all its vetoes together after asking every decider",
+        ),
+        (
             "sim/vehicle_theft.rs",
             "set_killed_from_owner",
             "Ares copies the new owner's MultiplayPassive into the driver-killed flag \
@@ -2474,11 +2511,6 @@ fn mutable_handouts_and_setters_are_owner_operations() {
             "set_vehicle_seek",
             "the Ares vehicle-seek latch (Ext+0xB0), written by its scan and by script actions \
              64/67 (dispatcher 0x1003A110)",
-        ),
-        (
-            "sim/world/sim_map_services.rs",
-            "set_input_delay_ticks",
-            "the match's configured input delay, installed by the app at match start",
         ),
     ];
     let src_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");

@@ -411,6 +411,19 @@ impl LaunchStartPosition {
             Self::Position(index) => index as i32,
         }
     }
+
+    /// Reads the shell's start item data: -2 or -1 as Auto, and 0..=119 as a
+    /// waypoint index below [`SKIRMISH_MAX_SLOT_COUNT`], the shell's own
+    /// start list. Any other value is outside the domain and is refused.
+    pub fn from_shell_value(value: i32) -> Option<Self> {
+        match value {
+            -2 | -1 => Some(Self::Auto),
+            _ => u8::try_from(value)
+                .ok()
+                .filter(|&index| usize::from(index) < SKIRMISH_MAX_SLOT_COUNT)
+                .map(Self::Position),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
@@ -421,11 +434,12 @@ pub enum LaunchTeam {
 }
 
 impl LaunchTeam {
-    pub const fn from_shell_value(value: i32) -> Self {
-        if value < 0 {
-            Self::None
-        } else {
-            Self::Team(value as u8)
+    /// Reads the shell's team item data: -2 or -1 as no team, and 0..=255 as
+    /// a team index. Any other value is outside the domain and is refused.
+    pub fn from_shell_value(value: i32) -> Option<Self> {
+        match value {
+            -2 | -1 => Some(Self::None),
+            _ => u8::try_from(value).ok().map(Self::Team),
         }
     }
     /// The shell's team item data: -2 for no team.
@@ -536,6 +550,13 @@ pub struct HostRules {
     /// from before it cannot read options that carry it.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub building_production_queue: bool,
+    /// The host's `[VERA] WasmBudget=`, 0 while unset. Left out while unset.
+    #[serde(default, skip_serializing_if = "is_zero_u32")]
+    pub wasm_budget: u32,
+    /// The host's room switch "Allow automation" (Wasm client modules,
+    /// RFC 0001 6i). Left out while off.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub automation_allowed: bool,
     /// The host's VERARULES.INI in base64, which games sent until the file
     /// was retired for New Mod. Never sent now; read only so that a room or a
     /// replay from such a game is refused by [`Self::personal_rules`] with a
@@ -546,7 +567,11 @@ pub struct HostRules {
 
 impl HostRules {
     pub fn is_empty(&self) -> bool {
-        !self.terrain_deformation && self.superweapon_limit == 0 && !self.building_production_queue
+        !self.terrain_deformation
+            && self.superweapon_limit == 0
+            && !self.building_production_queue
+            && self.wasm_budget == 0
+            && !self.automation_allowed
     }
 
     /// The host's own rules as its room shares them: its Terrain Deformation
@@ -556,6 +581,8 @@ impl HostRules {
             terrain_deformation: own.terrain_deformation(),
             superweapon_limit: own.superweapon_limit(),
             building_production_queue: own.building_production_queue(),
+            wasm_budget: own.wasm_budget(),
+            automation_allowed: own.automation_allowed(),
             retired_personal_rules: None,
         }
     }
@@ -570,11 +597,17 @@ impl HostRules {
         rules.set_terrain_deformation(self.terrain_deformation);
         rules.set_superweapon_limit(i32::from(self.superweapon_limit));
         rules.set_building_production_queue(self.building_production_queue);
+        rules.set_wasm_budget(self.wasm_budget);
+        rules.set_automation_allowed(self.automation_allowed);
         Ok(rules)
     }
 }
 
 fn is_zero(value: &u8) -> bool {
+    *value == 0
+}
+
+fn is_zero_u32(value: &u32) -> bool {
     *value == 0
 }
 
@@ -964,6 +997,12 @@ pub struct SkirmishLaunchSession {
     /// do not describe. Ordinary setups always derive them from current rows.
     recorded_house_roster: Option<Box<RecordedHouseRoster>>,
     pub options: SkirmishLaunchOptions,
+    /// VERA: the computer seats (their `raw_slot_index`) the room gave to
+    /// the mod's AI module ("mod AI", RFC 0001 section 6i). Such a house
+    /// starts with every domain claimed by the mod module when the mod is a
+    /// controller; otherwise the native AI plays it. Left out while empty,
+    /// so a launch without such seats serializes as before.
+    pub mod_ai_slots: Vec<u8>,
 }
 
 #[derive(Debug, Clone)]
@@ -988,6 +1027,18 @@ struct LaunchSessionView<'a> {
     opponents: &'a [SkirmishAiSlot],
     pre_fill_house_roster: Cow<'a, PreFillHouseRoster>,
     options: &'a SkirmishLaunchOptions,
+    #[serde(skip_serializing_if = "no_mod_ai_slots")]
+    mod_ai_slots: &'a [u8],
+}
+
+fn no_mod_ai_slots(slots: &&[u8]) -> bool {
+    slots.is_empty()
+}
+
+/// The name the launch gives the house of opponent `index` (in
+/// [`SkirmishLaunchSession::opponents`] order): `Computer<index + 1>`.
+pub fn computer_house_name(index: usize) -> String {
+    format!("Computer{}", index + 1)
 }
 
 impl Serialize for SkirmishLaunchSession {
@@ -1024,6 +1075,8 @@ struct SkirmishLaunchSessionInput {
     opponents: Vec<SkirmishAiSlot>,
     pre_fill_house_roster: PreFillHouseRoster,
     options: SkirmishLaunchOptions,
+    #[serde(default)]
+    mod_ai_slots: Vec<u8>,
 }
 
 impl TryFrom<SkirmishLaunchSessionInput> for SkirmishLaunchSession {
@@ -1085,6 +1138,7 @@ impl TryFrom<SkirmishLaunchSessionInput> for SkirmishLaunchSession {
             session.ai_player_count = declared_ai;
         }
         session.retain_recorded_house_roster(input.pre_fill_house_roster);
+        session.mod_ai_slots = input.mod_ai_slots;
         Ok(session)
     }
 }
@@ -1247,6 +1301,7 @@ impl SkirmishLaunchSession {
             opponents,
             recorded_house_roster: None,
             options,
+            mod_ai_slots: Vec::new(),
         }
     }
 
@@ -1260,6 +1315,18 @@ impl SkirmishLaunchSession {
             || self.mode.class == crate::skirmish_modes::MpModeClass::Cooperative
     }
 
+    /// The houses of the "mod AI" seats ([`Self::mod_ai_slots`]), by the
+    /// name the launch gives each computer house (`Computer<n>`, in
+    /// opponent order).
+    pub fn mod_ai_house_names(&self) -> Vec<String> {
+        self.opponents
+            .iter()
+            .enumerate()
+            .filter(|(_, opponent)| self.mod_ai_slots.contains(&opponent.raw_slot_index))
+            .map(|(index, _)| computer_house_name(index))
+            .collect()
+    }
+
     fn view(&self) -> LaunchSessionView<'_> {
         LaunchSessionView {
             mode: &self.mode,
@@ -1270,6 +1337,7 @@ impl SkirmishLaunchSession {
             opponents: &self.opponents,
             pre_fill_house_roster: self.pre_fill_house_roster(),
             options: &self.options,
+            mod_ai_slots: &self.mod_ai_slots,
         }
     }
 

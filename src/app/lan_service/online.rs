@@ -12,7 +12,7 @@ use std::net::Ipv4Addr;
 use std::net::SocketAddrV4;
 
 use super::{
-    AppState, LOBBY_RETRY_TIMING, LanService, PeerAdmission, PeerAdmissionRecord,
+    AppState, ClientStep, LOBBY_RETRY_TIMING, LanService, PeerAdmission, PeerAdmissionRecord,
     online_retirement_pending,
 };
 
@@ -20,25 +20,24 @@ use super::{
 /// its UDP probe has completed, transfer that same socket/session owner to
 /// the shared loading/gameplay service. No synthetic connection succeeds here.
 pub(crate) fn install_online_transport(
-    state: &mut AppState,
+    match_state: &mut crate::app::match_runtime::state::MatchState,
     transport: LanUdpTransport,
     host_name: &str,
 ) -> anyhow::Result<()> {
     anyhow::ensure!(
-        !online_retirement_pending(state),
+        !online_retirement_pending(match_state),
         "Waiting to confirm departure from the previous online match."
     );
     anyhow::ensure!(
-        state.match_state.live_network.is_none(),
+        match_state.live_network.is_none(),
         "a match already owns its transport"
     );
     anyhow::ensure!(
-        state.match_state.session.network_return_context()
+        match_state.session.network_return_context()
             == Some(super::match_runtime::session::NetworkReturnContext::Wol),
         "online transport requires an online visit"
     );
-    let launch = state
-        .match_state
+    let launch = match_state
         .session
         .network_setup()
         .ok_or_else(|| anyhow::anyhow!("online transport requires an admitted roster"))?;
@@ -56,7 +55,7 @@ pub(crate) fn install_online_transport(
     for source in 0..launch.humans.len() {
         let endpoint = crate::net::udp::relay_peer_endpoint(u8::try_from(source)?)?;
         anyhow::ensure!(
-            state.match_state.session.network_endpoint(source) == Some(endpoint),
+            match_state.session.network_endpoint(source) == Some(endpoint),
             "online participant {source} has no matching relay identity"
         );
     }
@@ -65,14 +64,12 @@ pub(crate) fn install_online_transport(
         .iter()
         .position(|human| human.name == host_name)
         .ok_or_else(|| anyhow::anyhow!("online host is outside the admitted roster"))?;
-    let host_endpoint = state
-        .match_state
+    let host_endpoint = match_state
         .session
         .network_endpoint(host_source)
         .ok_or_else(|| anyhow::anyhow!("online host has no admitted endpoint"))?;
     if watching {
-        state
-            .match_state
+        match_state
             .session
             .admit_local_network_watcher(transport.primary_addr()?)?;
     }
@@ -80,7 +77,7 @@ pub(crate) fn install_online_transport(
     // The setup dialog is discarded before loading. Retain the same admitted
     // host binding as LAN so timing authority survives that handoff.
     service.admitted_host = Some((host_name.to_owned(), host_endpoint));
-    state.match_state.lan_service = Some(service);
+    match_state.lan_service = Some(service);
     Ok(())
 }
 
@@ -232,13 +229,16 @@ impl LanService {
 /// gameplay. Desktop only.
 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 pub(crate) fn begin_direct_spawn(
-    state: &mut AppState,
+    game_config: Option<&crate::util::config::GameConfig>,
+    frontend: &mut crate::app::frontend::state::FrontendState,
+    match_state: &mut crate::app::match_runtime::state::MatchState,
+    process_assets: &mut crate::app::process_assets::ProcessAssets,
     launch: crate::skirmish_launch::SkirmishLaunchSession,
     direct: crate::app::frontend::cncnet_spawn::DirectSpawn,
     seed: u32,
 ) -> anyhow::Result<()> {
     anyhow::ensure!(
-        state.match_state.lan_service.is_none() && state.match_state.live_network.is_none(),
+        match_state.lan_service.is_none() && match_state.live_network.is_none(),
         "a network service is already open"
     );
     let map_file = launch
@@ -254,59 +254,70 @@ pub(crate) fn begin_direct_spawn(
         .map(|human| human.name.clone())
         .collect();
     super::shell_network_setup::install_external_setup(
-        state,
+        game_config,
+        frontend,
+        match_state,
+        process_assets,
         launch,
         super::match_runtime::session::NetworkReturnContext::LanLobby,
     )?;
     for (name, peer) in names.iter().zip(&direct.peers) {
         if let Some(endpoint) = peer {
-            state
-                .match_state
-                .session
-                .bind_network_endpoint(name, *endpoint)?;
+            match_state.session.bind_network_endpoint(name, *endpoint)?;
         }
     }
-    state.match_state.session.set_network_start_seed(seed)?;
+    match_state.session.set_network_start_seed(seed)?;
     let mut service = LanService::open_direct(direct.local_port, &admission).map_err(|error| {
         anyhow::anyhow!("could not open UDP port {}: {error}", direct.local_port)
     })?;
     service.start_io_pump()?;
     // The agreement reads the installed setup, not the service, so it is
     // made first and installed with the service.
-    service.setup_agreement = Some(super::shell_network_setup::agreement::local(state)?);
-    state.match_state.lan_service = Some(service);
+    service.setup_agreement = Some(super::shell_network_setup::agreement::local(
+        game_config,
+        &match_state.session,
+        process_assets,
+    )?);
+    match_state.lan_service = Some(service);
     Ok(())
 }
 
 /// The direct spawn host starts the ordinary LAN GO once every guest is up.
 /// A failed launch never does: the participant that ended it is retired, so
-/// the rest may all have answered.
-pub(super) fn poll_direct_start(state: &mut AppState) {
-    if !state.match_state.session.host()
-        || state.frontend.external_launch_error.is_some()
-        || !super::shell_network_setup::external(state)
-        || !state
-            .frontend
+/// the rest may all have answered. A GO that cannot start returns the step
+/// that fails the launch.
+#[must_use]
+pub(super) fn poll_direct_start(
+    frontend: &mut crate::app::frontend::state::FrontendState,
+    match_state: &mut crate::app::match_runtime::state::MatchState,
+) -> Option<ClientStep> {
+    if !match_state.session.host()
+        || frontend.external_launch_error.is_some()
+        || !super::shell_network_setup::external(frontend.network_setup_protocol.as_ref())
+        || !frontend
             .network_setup_protocol
             .as_ref()
             .is_some_and(|protocol| protocol.editable())
-        || !state
-            .match_state
+        || !match_state
             .lan_service
             .as_ref()
             .is_some_and(LanService::direct_peers_heard)
     {
-        return;
+        return None;
     }
-    if let Err(error) = super::shell_network_setup::begin_external_lan_go(state) {
+    if let Err(error) = super::shell_network_setup::begin_external_lan_go(frontend, match_state) {
         log::warn!("Direct LAN start failed: {error:#}");
-        super::App::fail_external_launch(state, &crate::i18n::tr("VERA:StartRefusedSetup"));
+        return Some(ClientStep::Now(Box::new(|state: &mut AppState| {
+            super::App::fail_external_launch(state, &crate::i18n::tr("VERA:StartRefusedSetup"))
+        })));
     }
+    None
 }
 
-pub(crate) fn begin_online_latency_probe(state: &mut AppState) -> anyhow::Result<()> {
-    let launch = state
-        .match_state
+pub(crate) fn begin_online_latency_probe(
+    match_state: &mut crate::app::match_runtime::state::MatchState,
+) -> anyhow::Result<()> {
+    let launch = match_state
         .session
         .network_setup()
         .ok_or_else(|| anyhow::anyhow!("latency probe requires an admitted roster"))?;
@@ -314,8 +325,7 @@ pub(crate) fn begin_online_latency_probe(state: &mut AppState) -> anyhow::Result
         .filter(|source| *source != launch.local_player_index)
         .map(u8::try_from)
         .collect::<Result<Vec<_>, _>>()?;
-    state
-        .match_state
+    match_state
         .lan_service
         .as_mut()
         .and_then(|service| service.transport.as_mut())
@@ -324,9 +334,10 @@ pub(crate) fn begin_online_latency_probe(state: &mut AppState) -> anyhow::Result
     Ok(())
 }
 
-pub(crate) fn online_peer_round_trips(state: &AppState) -> Option<Vec<(u8, u32)>> {
-    state
-        .match_state
+pub(crate) fn online_peer_round_trips(
+    match_state: &crate::app::match_runtime::state::MatchState,
+) -> Option<Vec<(u8, u32)>> {
+    match_state
         .lan_service
         .as_ref()?
         .transport
@@ -334,12 +345,13 @@ pub(crate) fn online_peer_round_trips(state: &AppState) -> Option<Vec<(u8, u32)>
         .relay_peer_round_trips()
 }
 
-pub(crate) fn has_online_relay_route(state: &AppState) -> bool {
-    if let Some(live) = state.match_state.live_network.as_ref() {
+pub(crate) fn has_online_relay_route(
+    match_state: &crate::app::match_runtime::state::MatchState,
+) -> bool {
+    if let Some(live) = match_state.live_network.as_ref() {
         return live.relay_expires().is_some();
     }
-    state
-        .match_state
+    match_state
         .lan_service
         .as_ref()
         .and_then(|service| service.transport.as_ref())
@@ -347,17 +359,16 @@ pub(crate) fn has_online_relay_route(state: &AppState) -> bool {
 }
 
 pub(crate) fn renew_online_relay(
-    state: &mut AppState,
+    match_state: &mut crate::app::match_runtime::state::MatchState,
     address: SocketAddrV4,
     ticket: &[u8],
     key: [u8; 32],
     payload_key: [u8; 32],
 ) -> anyhow::Result<()> {
-    if let Some(live) = state.match_state.live_network.as_mut() {
+    if let Some(live) = match_state.live_network.as_mut() {
         return Ok(live.renew_relay(address, ticket, key, payload_key)?);
     }
-    let transport = state
-        .match_state
+    let transport = match_state
         .lan_service
         .as_mut()
         .and_then(|service| service.transport.as_mut())
@@ -366,9 +377,10 @@ pub(crate) fn renew_online_relay(
 }
 
 /// The installed online transport returns to a match under way.
-pub(crate) fn mark_online_restore(state: &mut AppState) -> anyhow::Result<()> {
-    state
-        .match_state
+pub(crate) fn mark_online_restore(
+    match_state: &mut crate::app::match_runtime::state::MatchState,
+) -> anyhow::Result<()> {
+    match_state
         .lan_service
         .as_mut()
         .ok_or_else(|| anyhow::anyhow!("online restore has no transport"))?
@@ -377,9 +389,8 @@ pub(crate) fn mark_online_restore(state: &mut AppState) -> anyhow::Result<()> {
 }
 
 /// Whether this process is returning to a match the others are already playing.
-pub(crate) fn online_restore(state: &AppState) -> bool {
-    state
-        .match_state
+pub(crate) fn online_restore(match_state: &crate::app::match_runtime::state::MatchState) -> bool {
+    match_state
         .lan_service
         .as_ref()
         .is_some_and(|service| service.online_restore)
@@ -388,9 +399,11 @@ pub(crate) fn online_restore(state: &AppState) -> bool {
 /// Apply the same agreed timing vector on every client before freezing the
 /// start. Native794F6F's outputs stay with their existing session/transport
 /// owners; construction of private channels later inherits this retry policy.
-pub(crate) fn apply_online_timing(state: &mut AppState, pings: &[i32]) -> anyhow::Result<()> {
-    let count = state
-        .match_state
+pub(crate) fn apply_online_timing(
+    match_state: &mut crate::app::match_runtime::state::MatchState,
+    pings: &[i32],
+) -> anyhow::Result<()> {
+    let count = match_state
         .session
         .network_setup()
         .ok_or_else(|| anyhow::anyhow!("online timing has no roster"))?
@@ -400,13 +413,11 @@ pub(crate) fn apply_online_timing(state: &mut AppState, pings: &[i32]) -> anyhow
         pings.len() == count && pings.iter().all(|ping| (0..=30000).contains(ping)),
         "online timing vector does not match the admitted roster"
     );
-    let host = state.match_state.session.host();
-    let timing = state
-        .match_state
+    let host = match_state.session.host();
+    let timing = match_state
         .session
         .prepare_wol_timing(pings.iter().copied(), host)?;
-    let service = state
-        .match_state
+    let service = match_state
         .lan_service
         .as_mut()
         .ok_or_else(|| anyhow::anyhow!("online timing has no transport"))?;

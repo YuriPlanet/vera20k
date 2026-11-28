@@ -145,36 +145,53 @@ impl MapPictureSession {
     }
 
     /// Wait for the battle, then put the camera where the next frame goes.
-    pub(crate) fn drive_before_render(&mut self, state: &mut AppState) -> Result<()> {
+    pub(crate) fn drive_before_render(
+        &mut self,
+        platform: &crate::app::PlatformState,
+        renderer: &crate::app::renderer_state::RendererState,
+        screen: &GameScreen,
+        match_state: &mut crate::app::match_runtime::state::MatchState,
+        persistence: &crate::app::persistence::PersistenceState,
+    ) -> Result<()> {
         ensure!(self.outcome.is_none(), "the map picture already ended");
         ensure!(
             self.started_at.elapsed() < TIMEOUT,
             "the map picture took longer than {} seconds",
             TIMEOUT.as_secs()
         );
-        match &state.frontend.screen {
+        match screen {
             GameScreen::Loading => return Ok(()),
             GameScreen::InGame => {}
             GameScreen::MissionResult { title, detail } => bail!("{title}: {detail}"),
             _ => bail!("{} did not load", self.request.map),
         }
         if self.plan.is_none() {
-            self.plan = Some(self.plan(state)?);
+            self.plan = Some(self.plan(platform, renderer, screen, match_state, persistence)?);
             // The battle starts with the cursor at the battlefield's centre
             // (`loading::transitions`); it rests on the sidebar instead,
             // outside every frame's battlefield.
-            state.match_state.input.cursor_x = (FRAME.0 - 80) as f32;
-            state.match_state.input.cursor_y = (FRAME.1 - 44) as f32;
+            match_state.input.cursor_x = (FRAME.0 - 80) as f32;
+            match_state.input.cursor_y = (FRAME.1 - 44) as f32;
         }
         let plan = self.plan.as_ref().expect("planned above");
         let camera = plan.tiles[self.next_tile].camera;
-        let (width, height) = (state.render_width() as f32, state.render_height() as f32);
+        let (width, height) = (
+            renderer.render_width(screen) as f32,
+            renderer.render_height(screen) as f32,
+        );
         crate::app::input::camera::set_camera_position(
-            &mut state.match_state.input,
+            &mut match_state.input,
             (camera.0 as f32, camera.1 as f32),
         );
         // Only the zoom: a map picture's camera stays where it is put.
-        crate::app::input::camera::clamp_camera_to_playable_area(state, width, height);
+        crate::app::input::camera::clamp_camera_to_playable_area(
+            platform,
+            renderer,
+            match_state,
+            persistence,
+            width,
+            height,
+        );
         Ok(())
     }
 
@@ -182,8 +199,15 @@ impl MapPictureSession {
     /// the menus every place the map's own preview may sit and `[Header]`'s
     /// rectangle, drawn at twice the picture's size so the part kept is as
     /// sharp as a picture of it alone.
-    fn plan(&self, state: &AppState) -> Result<Plan> {
-        let view = crate::app::input::camera::tactical_view_area(state)
+    fn plan(
+        &self,
+        platform: &crate::app::PlatformState,
+        renderer: &crate::app::renderer_state::RendererState,
+        screen: &GameScreen,
+        match_state: &crate::app::match_runtime::state::MatchState,
+        persistence: &crate::app::persistence::PersistenceState,
+    ) -> Result<Plan> {
+        let view = crate::app::input::camera::tactical_view_area(&match_state.sim_runtime)
             .and_then(WorldRect::of_view_area)
             .context("the loaded map has no visible area")?;
         let (fallback, candidates) = match (self.request.area, &self.own) {
@@ -202,7 +226,13 @@ impl MapPictureSession {
             ),
             None => (fallback, self.request.max_size),
         };
-        let battlefield = crate::app::input::camera::tactical_viewport_size(state);
+        let battlefield = crate::app::input::camera::tactical_viewport_size(
+            platform,
+            renderer,
+            screen,
+            &match_state.match_presentation,
+            persistence,
+        );
         let tiles = tiles(area, battlefield);
         let canvas = Canvas::new(area, largest).context("the picture's area is empty")?;
         log::info!(
@@ -254,19 +284,22 @@ impl MapPictureSession {
     /// Keep this frame once it has settled at its place and draws whole.
     pub(crate) fn observe_after_render(
         &mut self,
-        state: &AppState,
+        frontend: &crate::app::frontend::state::FrontendState,
+        match_state: &crate::app::match_runtime::state::MatchState,
         output: &GameRenderOutput,
     ) -> Result<bool> {
-        if self.plan.is_none() || state.frontend.screen != GameScreen::InGame {
+        if self.plan.is_none() || frontend.screen != GameScreen::InGame {
             return Ok(false);
         }
         if self.settle_frames < SETTLE_FRAMES {
             self.settle_frames += 1;
             return Ok(false);
         }
-        self.readback_armed = output.drawn_sidebar_view(state).is_some()
-            && !state.match_state.paused()
-            && !state.main_menu_dialog_open();
+        self.readback_armed = output
+            .drawn_sidebar_view(&match_state.match_presentation)
+            .is_some()
+            && !match_state.paused()
+            && !frontend.main_menu_dialog_open();
         Ok(self.readback_armed)
     }
 
@@ -281,7 +314,10 @@ impl MapPictureSession {
     /// the run is over.
     pub(crate) fn complete_after_readback(
         &mut self,
-        state: &AppState,
+        renderer: &crate::app::renderer_state::RendererState,
+        frontend: &crate::app::frontend::state::FrontendState,
+        match_state: &crate::app::match_runtime::state::MatchState,
+        process_assets: &crate::app::process_assets::ProcessAssets,
         format: wgpu::TextureFormat,
         pixels: &[u8],
     ) -> Result<bool> {
@@ -298,13 +334,13 @@ impl MapPictureSession {
         );
         let plan = self.plan.as_mut().context("no plan for the frame")?;
         // The renderer draws the world at the rounded camera (`update_camera`).
-        let input = &state.match_state.input;
+        let input = &match_state.input;
         let camera = (input.camera_x.round() as i32, input.camera_y.round() as i32);
         plan.canvas.add(
             plan.tiles[self.next_tile].fills,
             camera,
             pixels,
-            state.renderer.gpu.config.width,
+            renderer.gpu.config.width,
             plan.battlefield,
         );
         self.next_tile += 1;
@@ -326,7 +362,7 @@ impl MapPictureSession {
                 let (place, shape) = self.preview_place(&picture, &candidates, fallback);
                 // Marked after the match, which compares the map's own
                 // preview with the battlefield as drawn.
-                picture.mark_fields(&resource_fields(state));
+                picture.mark_fields(&resource_fields(frontend, match_state));
                 picture
                     .part(place, shape, self.request.max_size)
                     .context("the picture shows nothing of its place")?
@@ -334,7 +370,7 @@ impl MapPictureSession {
         };
         super::write_png(&self.request.output, width, height, &rgb)?;
         if let Some(path) = &self.request.markers {
-            write_markers(path, state, area, factor)?;
+            write_markers(path, match_state, process_assets, area, factor)?;
         }
         log::info!(
             "Wrote the {width}x{height} picture of {} in {:.1}s",
@@ -372,15 +408,18 @@ impl MapPictureSession {
 
 /// Each ore and gem cell the map starts with, as the radar tells them apart,
 /// at its centre on the terrain.
-fn resource_fields(state: &AppState) -> Vec<Field> {
+fn resource_fields(
+    frontend: &crate::app::frontend::state::FrontendState,
+    match_state: &crate::app::match_runtime::state::MatchState,
+) -> Vec<Field> {
     use crate::render::radar::minimap::{OverlayClassification, overlay_classification};
-    let Some(view) = state.sim_view() else {
+    let Some(view) = match_state.sim_view() else {
         return Vec::new();
     };
     let (Some(overlays), Some(terrain)) = (view.overlay_grid(), view.resolved_terrain()) else {
         return Vec::new();
     };
-    let registry = state.overlay_registry();
+    let registry = crate::app::state::active_overlay_registry(frontend, match_state);
     let (sub_x, sub_y) = crate::util::lepton::subcell_lepton_offset(None);
     overlays
         .iter_occupied()
@@ -407,13 +446,13 @@ fn resource_fields(state: &AppState) -> Vec<Field> {
 /// that pixel at `origin`.
 fn write_markers(
     path: &std::path::Path,
-    state: &AppState,
+    match_state: &crate::app::match_runtime::state::MatchState,
+    process_assets: &crate::app::process_assets::ProcessAssets,
     area: WorldRect,
     factor: u32,
 ) -> Result<()> {
     use base64::Engine;
-    let assets = state
-        .process_assets
+    let assets = process_assets
         .manager()
         .context("start markers need the process assets")?;
     let art = crate::render::skirmish_shell_chrome::start_marker_art(assets)
@@ -424,7 +463,7 @@ fn write_markers(
             .context("start marker font GAME.FNT is unavailable")?,
     )
     .context("GAME.FNT")?;
-    let view = state
+    let view = match_state
         .sim_view()
         .context("start markers lost the simulation")?;
     let terrain = view

@@ -24,9 +24,15 @@ use std::collections::HashMap;
 
 use winit::event_loop::ActiveEventLoop;
 
-use crate::app::AppState;
+use crate::app::PlatformState;
+use crate::app::frontend::state::FrontendState;
+use crate::app::input::state::MatchInputState;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
+use crate::app::renderer_state::RendererState;
 use crate::app::types::CursorId;
 use crate::render::cursor_atlas::OsCursorImage;
+use crate::ui::game_screen::GameScreen;
 
 /// Android and the browser have no cursor plane this reaches.
 const WINDOW_SYSTEM_DRAWS_CURSORS: bool =
@@ -72,7 +78,8 @@ pub(crate) struct HardwareCursor {
     /// This run reads its frames back, and they must hold the cursor.
     frames_read_back: bool,
     /// The shape this draw offered, until [`show`] takes it. A `Cell`: the
-    /// draw offers it through `&AppState`.
+    /// match draw (`ui_overlays::build_software_cursor_instances`) offers it
+    /// ([`takes_cursor`]) through `&PlatformState`.
     offered: Cell<Option<(CursorId, usize)>>,
     shown: Shown,
     /// Images made so far: one mouse.sha load at one size. A new image of
@@ -98,19 +105,26 @@ impl HardwareCursor {
 
 /// Whether the window system shows this draw's cursor, `frame` of `id`, so
 /// the draw paints no sprite for it. A true answer is remembered for [`show`].
-pub(crate) fn takes_cursor(state: &AppState, id: CursorId, frame: usize) -> bool {
-    let cursor = &state.platform.hardware_cursor;
+pub(crate) fn takes_cursor(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    screen: &GameScreen,
+    input: &MatchInputState,
+    id: CursorId,
+    frame: usize,
+) -> bool {
+    let cursor = &platform.hardware_cursor;
     let takes = WINDOW_SYSTEM_DRAWS_CURSORS
         && !cursor.frames_read_back
         && !cursor.failed
-        && !state.match_state.input.cursor_from_touch
-        && state
-            .match_state
-            .input
-            .pointer_in_window()
-            .is_none_or(|pointer| {
-                pointer_is_on_cursor(pointer, state.window_cursor_position(), zoom_scale(state))
-            });
+        && !input.cursor_from_touch
+        && input.pointer_in_window().is_none_or(|pointer| {
+            pointer_is_on_cursor(
+                pointer,
+                input.window_cursor_position(renderer.tactical_zoom(screen)),
+                zoom_scale(renderer, screen),
+            )
+        });
     if takes {
         cursor.offered.set(Some((id, frame)));
     }
@@ -127,36 +141,54 @@ fn pointer_is_on_cursor(pointer: (f32, f32), cursor: (f32, f32), scale: f32) -> 
     (pointer.0 - cursor.0).abs() <= slack && (pointer.1 - cursor.1).abs() <= slack
 }
 
-fn zoom_scale(state: &AppState) -> f32 {
-    state.tactical_zoom().map_or(1.0, |zoom| zoom.scale())
+fn zoom_scale(renderer: &RendererState, screen: &GameScreen) -> f32 {
+    renderer
+        .tactical_zoom(screen)
+        .map_or(1.0, |zoom| zoom.scale())
 }
 
 /// After a draw, put what it settled on at the pointer: the shape it offered,
 /// else the `arrow`, else nothing.
-pub(crate) fn show(state: &mut AppState, event_loop: &ActiveEventLoop, arrow: bool) {
-    let offered = state.platform.hardware_cursor.offered.take();
-    let next = match offered
-        .filter(|_| !arrow)
-        .and_then(|(id, frame)| prepare_image(state, event_loop, id, frame))
-    {
+pub(crate) fn show(
+    platform: &mut PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    persistence: &PersistenceState,
+    event_loop: &ActiveEventLoop,
+    arrow: bool,
+) {
+    let offered = platform.hardware_cursor.offered.take();
+    let next = match offered.filter(|_| !arrow).and_then(|(id, frame)| {
+        prepare_image(
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            persistence,
+            event_loop,
+            id,
+            frame,
+        )
+    }) {
         Some(shape) => Shown::Game(shape),
         None if arrow => Shown::Arrow,
         None => Shown::Hidden,
     };
-    apply(state, next);
+    apply(platform, next);
 }
 
 /// The window went to the background and may draw no frame that would give
 /// the arrow back.
-pub(crate) fn give_back_arrow(state: &mut AppState) {
-    apply(state, Shown::Arrow);
+pub(crate) fn give_back_arrow(platform: &mut PlatformState) {
+    apply(platform, Shown::Arrow);
 }
 
 /// A frame presented outside the ordinary draw, which paints no cursor (the
 /// saved-game load's progress dialog): take the game's image off the screen.
-pub(crate) fn hide_game_cursor(state: &mut AppState) {
-    if matches!(state.platform.hardware_cursor.shown, Shown::Game(_)) {
-        apply(state, Shown::Hidden);
+pub(crate) fn hide_game_cursor(platform: &mut PlatformState) {
+    if matches!(platform.hardware_cursor.shown, Shown::Game(_)) {
+        apply(platform, Shown::Hidden);
     }
 }
 
@@ -164,18 +196,24 @@ pub(crate) fn hide_game_cursor(state: &mut AppState) {
 /// first use. `None` leaves this draw without a cursor and the next ones with
 /// the sprite.
 fn prepare_image(
-    state: &mut AppState,
+    platform: &mut PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    persistence: &PersistenceState,
     event_loop: &ActiveEventLoop,
     id: CursorId,
     frame: usize,
 ) -> Option<Shape> {
-    let scale = crate::app::frontend::shell_layout::menu_cursor_scale(state) * zoom_scale(state);
-    let backing = state.platform.window.scale_factor();
-    let art = state
-        .match_state
-        .match_presentation
-        .software_cursor
-        .as_ref()?;
+    let scale = crate::app::frontend::shell_layout::menu_cursor_scale(
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        persistence,
+    ) * zoom_scale(renderer, &frontend.screen);
+    let backing = platform.window.scale_factor();
+    let art = match_state.match_presentation.software_cursor.as_ref()?;
     let shape = Shape {
         id,
         frame,
@@ -183,7 +221,7 @@ fn prepare_image(
         scale: scale.to_bits(),
         backing: backing.to_bits(),
     };
-    let cursor = &mut state.platform.hardware_cursor;
+    let cursor = &mut platform.hardware_cursor;
     if cursor.images.contains_key(&shape) {
         return Some(shape);
     }
@@ -220,14 +258,14 @@ fn make_image(event_loop: &ActiveEventLoop, image: &OsCursorImage, _backing: f64
     Some(event_loop.create_custom_cursor(source))
 }
 
-fn apply(state: &mut AppState, next: Shown) {
-    let cursor = &mut state.platform.hardware_cursor;
+fn apply(platform: &mut PlatformState, next: Shown) {
+    let cursor = &mut platform.hardware_cursor;
     let previous = std::mem::replace(&mut cursor.shown, next);
     #[cfg(target_os = "macos")]
     {
         let game = matches!(next, Shown::Game(_));
         if game != matches!(previous, Shown::Game(_)) {
-            super::mac_pointer::set_cursor_rects_enabled(&state.platform.window, !game);
+            super::mac_pointer::set_cursor_rects_enabled(&platform.window, !game);
         }
         match next {
             // Set on every draw: winit gives a window's cursor rectangle only
@@ -243,14 +281,10 @@ fn apply(state: &mut AppState, next: Shown) {
     #[cfg(not(target_os = "macos"))]
     match next {
         Shown::Game(shape) if previous != next => {
-            state
-                .platform
-                .window
-                .set_cursor(cursor.images[&shape].clone());
+            platform.window.set_cursor(cursor.images[&shape].clone());
         }
         Shown::Arrow | Shown::Hidden if matches!(previous, Shown::Game(_)) => {
-            state
-                .platform
+            platform
                 .window
                 .set_cursor(winit::window::CursorIcon::Default);
         }
@@ -270,9 +304,9 @@ fn apply(state: &mut AppState, next: Shown) {
     // `cursor_confined` down once per frame and let the pointer slip out of
     // the window between two re-asserts. Hand over only a transition, then
     // put the clip straight back.
-    if state.platform.os_cursor_visible != Some(window_visible) {
-        crate::app::input::cursor::set_os_cursor_visible(state, window_visible);
-        crate::app::input::cursor::reassert_cursor_confinement(state);
+    if platform.os_cursor_visible != Some(window_visible) {
+        crate::app::input::cursor::set_os_cursor_visible(platform, window_visible);
+        crate::app::input::cursor::reassert_cursor_confinement(platform);
     }
     #[cfg(target_os = "macos")]
     super::mac_pointer::set_arrow_hidden(next == Shown::Hidden);

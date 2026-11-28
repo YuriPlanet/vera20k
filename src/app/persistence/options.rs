@@ -3,7 +3,6 @@
 //! `RetailOptionsProfile` is the only persisted authority. The dialog state,
 //! window, render gates, and audio players are process-local projections of it.
 
-use crate::app::AppState;
 use crate::app::persistence::options_profile::RetailOptionsProfile;
 use crate::app::presentation::target_lines::TargetLineState;
 use crate::ui::shell::in_game_options_state::{
@@ -82,20 +81,13 @@ pub(crate) fn apply_presentation_option_gates(
 /// house's speed event, and the frame pacer reads the simulation's speed once
 /// that executes. The in-game menu's Game Controls page applies its slider
 /// through this too.
-pub(crate) fn apply_in_game_speed(state: &mut AppState) {
-    if state.match_state.sim_runtime.is_installed() {
-        let owner = crate::app::input::commands::preferred_local_owner_name(state);
-        let speed = u8::try_from(
-            state
-                .match_state
-                .match_presentation
-                .in_game_options
-                .game_speed,
-        )
-        .ok();
+pub(crate) fn apply_in_game_speed(match_state: &mut crate::app::match_runtime::state::MatchState) {
+    if match_state.sim_runtime.is_installed() {
+        let owner = crate::app::input::commands::preferred_local_owner_name(match_state);
+        let speed = u8::try_from(match_state.match_presentation.in_game_options.game_speed).ok();
         let command = speed.and_then(|speed| {
             in_game_speed_command(
-                &state.match_state.sim_runtime.runtime().unwrap().simulation,
+                &match_state.sim_runtime.runtime().unwrap().simulation,
                 speed,
             )
         });
@@ -103,36 +95,31 @@ pub(crate) fn apply_in_game_speed(state: &mut AppState) {
             && owner
                 .as_deref()
                 .and_then(|owner| {
-                    crate::app::input::commands::try_schedule_command(state, owner, command)
+                    crate::app::input::commands::try_schedule_command(match_state, owner, command)
                 })
                 .is_none()
         {
             log::warn!(
                 "In-game Options could not queue GameSpeed={} for the local house",
-                state
-                    .match_state
-                    .match_presentation
-                    .in_game_options
-                    .game_speed
+                match_state.match_presentation.in_game_options.game_speed
             );
         }
         // Native network Options retains the old speed when its OutList
         // insertion fails. Reflect only the accepted pending/current value.
-        crate::app::loading::transitions::sync_in_game_options_speed_from_sim(state);
+        crate::app::loading::transitions::sync_in_game_options_speed_from_sim(match_state);
     }
 }
 
 /// Commit the retained complete profile. A settings error is non-fatal for both
 /// dialog close and quit.
-pub(crate) fn persist_options_profile(state: &AppState) {
-    let Some(config) = state.platform.game_config.as_ref() else {
+pub(crate) fn persist_options_profile(
+    platform: &crate::app::PlatformState,
+    profile: &crate::app::persistence::options_profile::RetailOptionsProfile,
+) {
+    let Some(config) = platform.game_config.as_ref() else {
         return;
     };
-    if let Err(error) = state
-        .persistence
-        .options_profile
-        .commit_settings(config.paths.settings_dir())
-    {
+    if let Err(error) = profile.commit_settings(config.paths.settings_dir()) {
         log::warn!("Failed to persist Options profile to VERA.INI: {error}");
     }
 }

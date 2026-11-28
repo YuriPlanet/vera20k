@@ -113,7 +113,7 @@ pub(super) fn restored_retail(
     restored.restore_after_snapshot_load().unwrap();
     restored.rebuild_caches_after_load(
         pristine.clone(),
-        live.terrain_speed_config,
+        *live.terrain_speed_config,
         &resources.rules,
     );
     restored

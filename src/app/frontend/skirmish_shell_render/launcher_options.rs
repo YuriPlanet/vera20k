@@ -5,11 +5,18 @@
 //! (`0x006071E0`). Every control paints from the dialog's tree.
 
 use super::gui_paint::{ButtonArt, GuiStyle, SideButtons, paint_gui_styled};
-use crate::render::hud_paint::{HudPaint, Material};
 use super::{chrome::*, *};
-use crate::app::AppState;
-use crate::render::batch::SpriteInstance;
 use crate::app::frontend::menu_page_render::{PanelStatic, paint_panel_statics};
+use crate::app::frontend::state::FrontendState;
+use crate::app::input::ime::ImeState;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
+use crate::app::state::PlatformState;
+use crate::render::batch::SpriteInstance;
+use crate::render::bit_font::BitFont;
+use crate::render::hud_paint::{HudPaint, Material};
 use crate::ui::main_menu_dialogs::options::OptionsDialogState;
 use crate::ui::main_menu_dialogs::options::shell::{Control, LauncherOptionsLayout};
 use crate::ui::shell::geom::{RectPx, ShellAlign, ShellScale};
@@ -35,7 +42,11 @@ pub(crate) enum ColumnArt {
 /// Captions under `covered` are left out: a box draws all its art before its
 /// text, so that text would otherwise show through the list.
 pub(crate) fn paint_page(
-    state: &AppState,
+    ime: &ImeState,
+    bit_font: &BitFont,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
     dialog: &OptionsDialogState,
     scale: ShellScale,
     column: ColumnArt,
@@ -59,21 +70,48 @@ pub(crate) fn paint_page(
         },
         ..Default::default()
     };
-    if state.frontend.skirmish_shell_chrome.is_some() {
-        return paint_gui_styled(state, gui, panel, scale, covered, style);
+    if frontend.skirmish_shell_chrome.is_some() {
+        return paint_gui_styled(
+            ime,
+            bit_font,
+            frontend,
+            match_state,
+            process_assets,
+            gui,
+            panel,
+            scale,
+            covered,
+            style,
+        );
     }
     // Without the control art only the side's column paints: its art is
     // the sidebar's.
     let mut paint = HudPaint::default();
     if let ColumnArt::Side(_) = column {
-        let side = gui.tree().children(panel).unwrap_or_default().iter().copied();
+        let side = gui
+            .tree()
+            .children(panel)
+            .unwrap_or_default()
+            .iter()
+            .copied();
         for node in side.filter(|node| {
             gui.id_of(*node)
                 .and_then(|id| art(id))
                 .is_some_and(|art| art == ButtonArt::Side)
         }) {
             super::gui_paint::paint_gui_into(
-                &mut paint, state, None, gui, node, scale, covered, style,
+                &mut paint,
+                ime,
+                bit_font,
+                frontend,
+                match_state,
+                process_assets,
+                None,
+                gui,
+                node,
+                scale,
+                covered,
+                style,
             );
         }
     }
@@ -84,13 +122,21 @@ pub(crate) fn paint_page(
 /// them. They paint in submission order, after the box and its buttons.
 pub(crate) fn paint_options_settings(
     draw: &mut crate::render::shell_paint::ModalDraw,
-    state: &AppState,
+    ime: &ImeState,
+    bit_font: &BitFont,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
     layout: &LauncherOptionsLayout,
     settings: &OptionsDialogState,
 ) {
     let list = settings.shell_popup_rect();
     let page = paint_page(
-        state,
+        ime,
+        bit_font,
+        frontend,
+        match_state,
+        process_assets,
         settings,
         layout.scale,
         ColumnArt::Hidden,
@@ -135,20 +181,30 @@ pub(super) fn launcher_background_instances(
 }
 
 pub(crate) fn render_launcher_options(
-    state: &mut AppState,
+    platform: &mut PlatformState,
+    renderer: &mut RendererState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    persistence: &PersistenceState,
     encoder: &mut wgpu::CommandEncoder,
     destination: &wgpu::Texture,
 ) -> anyhow::Result<()> {
     use crate::app::frontend::shell_transition::ShellSlideKind;
     let now = Instant::now();
-    let category = state
-        .frontend
+    let category = frontend
         .options_dialog
         .as_ref()
         .expect("launcher active")
         .category();
-    let layout = crate::app::frontend::shell_layout::launcher_options_layout(state, category);
-    if let Some(dialog) = state.frontend.options_dialog.as_mut() {
+    let layout = crate::app::frontend::shell_layout::launcher_options_layout(
+        platform,
+        renderer,
+        &frontend.screen,
+        &persistence.options_profile,
+        category,
+    );
+    if let Some(dialog) = frontend.options_dialog.as_mut() {
         dialog.shell_sync(&layout);
     }
     let scale = layout.scale;
@@ -156,54 +212,53 @@ pub(crate) fn render_launcher_options(
     // pumps no messages until it ends: every child stays blank. The entry
     // slide suppresses the heading, status line, monitor and column buttons
     // (`0x00606800`); the left-side controls paint.
-    let exit_wave =
-        crate::app::frontend::shell_transition::shell_exit_wave(state, ShellSlideKind::Options)
-            .cloned();
+    let exit_wave = crate::app::frontend::shell_transition::shell_exit_wave(
+        &frontend.shell_exit,
+        ShellSlideKind::Options,
+    )
+    .cloned();
     let leaving = exit_wave.is_some();
-    let wave = exit_wave.or_else(|| state.frontend.shell_first_paint_slide.clone());
+    let wave = exit_wave.or_else(|| frontend.shell_first_paint_slide.clone());
     let sliding = wave.is_some();
     // Like the sibling family pages, the monitor shows its current frame
     // with no timer while the entry slide runs.
-    let frames = state
-        .frontend
+    let frames = frontend
         .skirmish_shell_chrome
         .as_ref()
         .map_or(0, |atlas| atlas.launcher_warning_frames.len());
     let monitor_frame = if leaving {
         None
     } else {
-        state.frontend.shell_monitor.paint(now, frames, !sliding)
+        frontend.shell_monitor.paint(now, frames, !sliding)
     };
     let (title, status_label) = if sliding {
         (None, None)
     } else {
-        let title = state.frontend.shell_page_title.paint(now);
-        let status_text = state
-            .frontend
+        let title = frontend.shell_page_title.paint(now);
+        let status_text = frontend
             .options_dialog
             .as_ref()
             .and_then(|dialog| dialog.shell_status_help())
-            .map(|key| state.csf_text(key))
+            .map(|key| process_assets.csf_text(key))
             .unwrap_or_default();
         let status = crate::app::frontend::menu_page_render::paint_shell_status_line(
-            state,
+            &mut frontend.shell_status_line,
             status_text,
             layout.status_help,
         );
         (title, status)
     };
-    let dialog = state
-        .frontend
-        .options_dialog
-        .as_ref()
-        .expect("launcher active");
-    let atlas = state
-        .frontend
+    let dialog = frontend.options_dialog.as_ref().expect("launcher active");
+    let atlas = frontend
         .skirmish_shell_chrome
         .as_ref()
         .expect("launcher atlas");
-    let mut instances =
-        launcher_background_instances(atlas, state.render_width(), state.render_height(), scale);
+    let mut instances = launcher_background_instances(
+        atlas,
+        renderer.render_width(&frontend.screen),
+        renderer.render_height(&frontend.screen),
+        scale,
+    );
     if let Some(frame) = monitor_frame.and_then(|frame| atlas.launcher_warning_frames.get(frame)) {
         push_flag_entry_clipped_centered(
             &mut instances,
@@ -217,8 +272,8 @@ pub(crate) fn render_launcher_options(
     if let Some(wave) = wave.as_ref() {
         let common = crate::ui::skirmish_shell::compute_layout_on(
             scale,
-            state.render_width(),
-            state.render_height(),
+            renderer.render_width(&frontend.screen),
+            renderer.render_height(&frontend.screen),
         );
         push_slide_column(
             &mut instances,
@@ -237,7 +292,15 @@ pub(crate) fn render_launcher_options(
     });
     let heading_draws = usize::from(heading.as_ref().is_some_and(|h| !h.text.is_empty()));
     let status = status_label.map(PanelStatic::status);
-    let mut statics = paint_panel_statics(state, [heading, status], scale);
+    let mut statics = paint_panel_statics(
+        &platform.ime,
+        &renderer.bit_font,
+        frontend,
+        match_state,
+        process_assets,
+        [heading, status],
+        scale,
+    );
     let status_texts = statics.split_off(heading_draws.min(statics.len()));
     texts.extend(statics);
     let column = if sliding {
@@ -245,14 +308,30 @@ pub(crate) fn render_launcher_options(
     } else {
         ColumnArt::Panel
     };
-    let page = (!leaving).then(|| paint_page(state, dialog, scale, column, &[]));
+    let page = (!leaving).then(|| {
+        paint_page(
+            &platform.ime,
+            &renderer.bit_font,
+            frontend,
+            match_state,
+            process_assets,
+            dialog,
+            scale,
+            column,
+            &[],
+        )
+    });
     let mut page = page.unwrap_or_default();
     instances.extend(page.lane(Material::Controls).copied());
     let popup = page.take_lane(Material::Popup);
     texts.extend(page.texts);
     texts.extend(status_texts);
     super::in_game_shell::render_shell_frame(
-        state,
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        persistence,
         encoder,
         destination,
         super::in_game_shell::InGameShellFrame {
@@ -269,7 +348,7 @@ pub(crate) fn render_launcher_options(
         },
         super::in_game_shell::ShellFrameCursor::Visible,
     )?;
-    state.platform.window.request_redraw();
+    platform.window.request_redraw();
     Ok(())
 }
 

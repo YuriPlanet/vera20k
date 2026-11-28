@@ -8,7 +8,7 @@ use crate::sim::command::{
     MegaMissionTarget, SpecialPlaceRecord,
 };
 use crate::sim::control_authority::{CommandCapability, ControlScope};
-use crate::sim::intern::InternedId;
+use crate::sim::intern::{InternKey, InternedId};
 use crate::sim::world::Simulation;
 
 impl Simulation {
@@ -16,7 +16,7 @@ impl Simulation {
     #[cfg(test)]
     pub(crate) fn entity_owned_by_id(&self, command_owner: &str, stable_id: u64) -> bool {
         self.command_entity_allowed(
-            command_owner,
+            command_owner.into(),
             None,
             stable_id,
             CommandCapability::PrimaryHouse,
@@ -27,11 +27,12 @@ impl Simulation {
     /// envelopes and local-view identity cannot select a grant row.
     pub(in crate::sim::world) fn resolve_command_grant_source(
         &self,
-        command_owner: &str,
+        command_owner: InternKey<'_>,
         source: i8,
     ) -> Option<(i8, InternedId)> {
         let primary = self.admitted_grant_source_owner(source)?;
-        command_owner
+        self.interner
+            .key_name(command_owner)
             .eq_ignore_ascii_case(self.interner.resolve(primary))
             .then_some((source, primary))
     }
@@ -66,7 +67,7 @@ impl Simulation {
         actor: u64,
     ) -> bool {
         self.command_entity_allowed(
-            self.interner.resolve(source.1),
+            source.1.into(),
             Some(source),
             actor,
             CommandCapability::Tactical,
@@ -74,14 +75,18 @@ impl Simulation {
     }
     pub(super) fn command_house_allowed(
         &self,
-        command_owner: &str,
+        command_owner: InternKey<'_>,
         granted_source: Option<(i8, InternedId)>,
         subject_house: InternedId,
         capability: CommandCapability,
     ) -> bool {
         let scope = match granted_source {
             Some((source, _)) => self.control_scope_for_source(source, subject_house),
-            None if command_owner.eq_ignore_ascii_case(self.interner.resolve(subject_house)) => {
+            None if self
+                .interner
+                .key_name(command_owner)
+                .eq_ignore_ascii_case(self.interner.resolve(subject_house)) =>
+            {
                 ControlScope::OwnFull
             }
             None => ControlScope::None,
@@ -91,7 +96,7 @@ impl Simulation {
 
     pub(super) fn command_entity_allowed(
         &self,
-        command_owner: &str,
+        command_owner: InternKey<'_>,
         granted_source: Option<(i8, InternedId)>,
         stable_id: u64,
         capability: CommandCapability,
@@ -109,9 +114,10 @@ impl Simulation {
             })
     }
 
-    /// Project lockstep control for a prospective command before encoding or
-    /// showing its feedback. The receiver rechecks the same subjects against
-    /// the live state and its independently admitted source.
+    /// Project lockstep control and the receiver's slave gate for a
+    /// prospective command before encoding or showing its feedback. The
+    /// receiver rechecks the same subjects against the live state and its
+    /// independently admitted source.
     pub fn can_issue_local_command(&self, command: &Command, rules: &RuleSet) -> bool {
         self.can_issue_local_command_with(&self.control_projection(), command, rules)
     }
@@ -130,7 +136,7 @@ impl Simulation {
                     | Command::AssignControlGroup { .. }
             )
         {
-            return true;
+            return self.command_subject_can_receive_order(command, rules, None);
         }
         let Some((source, primary)) = control.source() else {
             return false;
@@ -154,12 +160,13 @@ impl Simulation {
             command
         };
         !self.network_command_actor_foreign(
-            self.interner.resolve(primary),
+            primary.into(),
             Some((source, primary)),
             command,
             rules,
             Some(control),
-        )
+            false,
+        ) && self.command_subject_can_receive_order(command, rules, Some(source))
     }
 
     pub(super) fn command_delegates_yard_redeploy(
@@ -178,6 +185,49 @@ impl Simulation {
                         == ControlScope::FullControl
             })
         })
+    }
+
+    /// No player order may act on an enslaved object. An enslaved unit's
+    /// `TechnoClass::IsControllable @ 0x00700C40` (vt+0xA0) is false — the
+    /// producer side already drops a slave through `techno_controllable_for`
+    /// (`SlaveOwner +0x2DC`). A command that reaches the receiver without that
+    /// producer (a replayed native record, a synchronized record, a captured
+    /// object) must not slip past it: the action is refused here regardless of
+    /// House, mode or source. A freed slave (`SlaveOwner` cleared) is an
+    /// ordinary unit again and stays orderable.
+    ///
+    /// `resolve_command_subject` is the one mapping of a command to the
+    /// objects it acts on, so this gate rides every path that reaches the
+    /// receiver, including decoded native MEGAMISSION records.
+    pub(super) fn command_subject_can_receive_order(
+        &self,
+        cmd: &Command,
+        rules: &RuleSet,
+        sender: Option<i8>,
+    ) -> bool {
+        let enslaved = |actor| {
+            self.substrate
+                .entities
+                .get(actor)
+                .is_some_and(|entity| entity.seldom.slave.owner().is_some())
+        };
+        match self.resolve_command_subject(cmd, rules) {
+            CommandSubject::Actor(actor, _) => !enslaved(actor),
+            // EjectBunker acts on the occupant (`issue_order(unit_id, ..)`),
+            // not on the bunker that names it in the command.
+            CommandSubject::Bunker(bunker) => !self
+                .substrate
+                .entities
+                .get(bunker)
+                .and_then(|building| building.bunker.occupant())
+                .is_some_and(enslaved),
+            CommandSubject::Actors(actors, _) => !actors.iter().copied().any(enslaved),
+            // The Ares transfer owns the actual moving occupants and their permissions.
+            CommandSubject::Trench(_, event) => {
+                self.ares_trench_redirect_admits(sender, &event, rules)
+            }
+            _ => true,
+        }
     }
 
     /// VERA-only network admission: an existing actor's current House must
@@ -209,13 +259,17 @@ impl Simulation {
     ///   no bomb and belongs to another House, is dropped, where retail clears
     ///   the carrier's planning tokens and sets off whatever bomb it holds.
     ///
+    /// A Wasm module's `house_order` (RFC 0001 6g) is its house's own
+    /// sender: under custom control grants its house-wide commands
+    /// (production, placement, superweapons) need no granted source.
     pub(super) fn network_command_actor_foreign(
         &self,
-        command_owner: &str,
+        command_owner: InternKey<'_>,
         granted_source: Option<(i8, InternedId)>,
         cmd: &Command,
         rules: &RuleSet,
         control: Option<&super::super::ControlProjection<'_>>,
+        house_order: bool,
     ) -> bool {
         if !self.session.execution_topology().is_lockstep() {
             return false;
@@ -238,6 +292,7 @@ impl Simulation {
             CommandSubject::Local => false,
             CommandSubject::Primary(capability) => {
                 self.session.has_custom_control_grants()
+                    && !house_order
                     && granted_source.is_none_or(|(_, house)| house_refused(house, capability))
             }
             CommandSubject::House(house, capability) => house_refused(house, capability),
@@ -262,11 +317,8 @@ impl Simulation {
                                 actor_refused(occupant, CommandCapability::Tactical)
                             })
             }
-            CommandSubject::Trench(actor, event) => {
-                actor_refused(actor, CommandCapability::Tactical)
-                    || granted_source.is_some_and(|(source, _)| {
-                        !self.ares_trench_redirect_admits(source, &event, rules)
-                    })
+            CommandSubject::Trench(building, _) => {
+                actor_refused(building, CommandCapability::Tactical)
             }
         }
     }
@@ -283,7 +335,8 @@ impl Simulation {
             | Command::SetGameSpeed { .. }
             | Command::OpenOptions
             | Command::SetLatencyFudge { .. }
-            | Command::Cheer => CommandSubject::Primary(PrimaryHouse),
+            | Command::Cheer
+            | Command::ModuleMessage { .. } => CommandSubject::Primary(PrimaryHouse),
             Command::SellBuilding { entity_id }
             | Command::ToggleRepair { entity_id }
             | Command::SetBuildingOnLine { entity_id, .. }
@@ -411,7 +464,7 @@ impl Simulation {
     /// receiver checks handle missing actors and their existing side effects.
     pub(in crate::sim::world) fn command_actor_outside_scope(
         &self,
-        command_owner: &str,
+        command_owner: InternKey<'_>,
         granted_source: Option<(i8, InternedId)>,
         id: u64,
         capability: CommandCapability,

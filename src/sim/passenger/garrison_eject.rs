@@ -299,6 +299,9 @@ fn eject_garrison_passengers_at_edges(
             GarrisonEjectMode::Release | GarrisonEjectMode::Hunt => None,
         });
     let mut ejected: usize = 0;
+    // The occupants that left, LIFO, with how many stayed inside after each
+    // (Wasm module exit events, raised after the bracket).
+    let mut left: Vec<(u64, i32)> = Vec::new();
 
     let Some((exit_rx, exit_ry)) = exit_cell else {
         // 458180..458190: no exit and not interior -> KillOccupants(NULL),
@@ -333,12 +336,31 @@ fn eject_garrison_passengers_at_edges(
                 uninit_context.reborrow(),
             ) {
                 ejected += 1;
+                left.push((pax_id, index as i32));
             } else {
+                sim.raise_module_garrison_left(
+                    rules,
+                    uninit_context.effects(),
+                    building_id,
+                    pax_id,
+                    index as i32,
+                );
                 //458193..458197: failed Unlimbo is followed by UnInit.
                 uninit_garrison_passenger_without_exit(sim, pax_id, uninit_context.reborrow());
             }
         }
     });
+    // Wasm module `TransportExited` and `PassengerRemoved` (garrison form)
+    // for each placed occupant, outside the placement bracket.
+    for (pax_id, inside) in left {
+        sim.raise_module_garrison_left(
+            rules,
+            uninit_context.effects(),
+            building_id,
+            pax_id,
+            inside,
+        );
+    }
 
     Some(ejected)
 }
@@ -416,6 +438,15 @@ pub(crate) fn kill_building_occupants(
                 );
             }
         }
+        // Wasm module exit events (garrison form) while the occupant is
+        // still there to read.
+        sim.raise_module_garrison_left(
+            context.rules(),
+            context.effects(),
+            building_id,
+            id,
+            index as i32,
+        );
         uninit_garrison_passenger_without_exit(sim, id, context.reborrow());
     }
     if let Some(building) = sim.substrate.entities.get_mut(building_id) {
@@ -792,10 +823,11 @@ pub(crate) mod tests {
         let building_id = 9;
         insert_garrison_building(&mut sim, building_id);
         let before = &row["rng_full_before"];
-        sim.scenario_rng =
+        *sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(before["scenario"].as_str().unwrap());
-        sim.main_rng = SimRng::from_native_state_hex_for_test(before["main"].as_str().unwrap());
-        sim.mapgen_rng = SimRng::from_native_state_hex_for_test(before["mapgen"].as_str().unwrap());
+        *sim.main_rng = SimRng::from_native_state_hex_for_test(before["main"].as_str().unwrap());
+        *sim.mapgen_rng =
+            SimRng::from_native_state_hex_for_test(before["mapgen"].as_str().unwrap());
         let (_, draws) = crate::sim::rng::trace_draws(|| {
             sim.with_object_placement_scope(|sim| {
                 for &id in ids.iter().rev() {
@@ -1330,9 +1362,9 @@ pub(crate) mod tests {
                 );
                 occupants.push(id);
             }
-            sim.scenario_rng = SimRng::new(seed);
-            sim.main_rng = SimRng::new(seed);
-            sim.mapgen_rng = SimRng::new(seed);
+            *sim.scenario_rng = SimRng::new(seed);
+            *sim.main_rng = SimRng::new(seed);
+            *sim.mapgen_rng = SimRng::new(seed);
             let warhead = sim.interner.intern(&rules.bridge_warheads.c4_name);
             // Building Update440345's lethal C4 receiver bypasses the health
             // threshold which would eject occupants on an earlier nonfatal hit.

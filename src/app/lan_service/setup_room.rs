@@ -1,6 +1,11 @@
 //! The setup room's liveness and requests: setup leases, presence announcements,
 //! queued setup requests, host timing and the player-row projection.
 
+use crate::app::frontend::state::FrontendState;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
+use crate::audio::sfx::SfxPlayer;
 use crate::net::global::GlobalDestination;
 use crate::net::lan_messages::LanMessage;
 use crate::net::lan_messages::LanNamedMessage;
@@ -12,20 +17,22 @@ use super::{
     local_control_proof, local_name, options, send, verify_setup_agreement,
 };
 
-pub(super) fn setup_liveness_active(state: &AppState) -> bool {
-    state.match_state.session_mode() == SessionMode::Lan
-        && state.match_state.live_network.is_none()
-        && state.frontend.shell_exit.is_none()
-        && state.frontend.network_setup_protocol.is_some()
-        && state
-            .match_state
+pub(super) fn setup_liveness_active(
+    frontend: &crate::app::frontend::state::FrontendState,
+    match_state: &crate::app::match_runtime::state::MatchState,
+) -> bool {
+    match_state.session_mode() == SessionMode::Lan
+        && match_state.live_network.is_none()
+        && frontend.shell_exit.is_none()
+        && frontend.network_setup_protocol.is_some()
+        && match_state
             .lan_service
             .as_ref()
             .is_some_and(|service| service.departure.is_none())
 }
 
 pub(super) fn poll_setup_leases(state: &mut AppState, now: u32) {
-    if !setup_liveness_active(state)
+    if !setup_liveness_active(&state.frontend, &state.match_state)
         || !state
             .frontend
             .network_setup_protocol
@@ -48,7 +55,9 @@ pub(super) fn poll_setup_leases(state: &mut AppState, now: u32) {
         };
         let host_left = service.retire_setup_peer(endpoint);
         let event = if host_left {
-            super::shell_network_setup::lock_lan_departure(state);
+            super::shell_network_setup::lock_lan_departure(
+                &mut state.frontend.network_setup_protocol,
+            );
             super::shell_network_setup::NetworkSetupEvent::HostLeft
         } else {
             super::shell_network_setup::NetworkSetupEvent::ParticipantLeft { index }
@@ -68,15 +77,18 @@ pub(super) fn poll_setup_leases(state: &mut AppState, now: u32) {
     }
 }
 
-pub(super) fn announce(state: &mut AppState, now: u32) {
-    if state.match_state.live_network.is_some() {
+pub(super) fn announce(
+    frontend: &crate::app::frontend::state::FrontendState,
+    match_state: &mut crate::app::match_runtime::state::MatchState,
+    now: u32,
+) {
+    if match_state.live_network.is_some() {
         return;
     }
-    let host_setup =
-        state.match_state.session.host() && state.frontend.network_setup_protocol.is_some();
-    let in_setup = state.frontend.network_setup_protocol.is_some();
-    let lease_active = setup_liveness_active(state);
-    let Some(service) = state.match_state.lan_service.as_mut() else {
+    let host_setup = match_state.session.host() && frontend.network_setup_protocol.is_some();
+    let in_setup = frontend.network_setup_protocol.is_some();
+    let lease_active = setup_liveness_active(frontend, match_state);
+    let Some(service) = match_state.lan_service.as_mut() else {
         return;
     };
     let DueBroadcasts {
@@ -84,14 +96,14 @@ pub(super) fn announce(state: &mut AppState, now: u32) {
         query,
         presence,
     } = service.due_broadcasts(now, host_setup);
-    let name = local_name(state);
+    let name = local_name(frontend, &match_state.session);
     let broadcast = GlobalDestination::Broadcast { port_override: 0 };
     if discovery && let Ok(message) = LanMessage::named(LanNamedMessage::Discovery, &name) {
-        send(state, &message, broadcast, false);
+        send(match_state, &message, broadcast, false);
     }
     if query {
-        let game_name = active_game_name(state).or_else(|| {
-            let service = state.match_state.lan_service.as_ref()?;
+        let game_name = active_game_name(match_state).or_else(|| {
+            let service = match_state.lan_service.as_ref()?;
             service
                 .selected_game
                 .and_then(|id| service.game(id))
@@ -100,42 +112,39 @@ pub(super) fn announce(state: &mut AppState, now: u32) {
         if let Some(game_name) = game_name
             && let Ok(message) = LanMessage::named(LanNamedMessage::GameQuery, &game_name)
         {
-            send(state, &message, broadcast, false);
+            send(match_state, &message, broadcast, false);
         }
     }
     if presence && lease_active {
-        if let Some(service) = state.match_state.lan_service.as_mut()
-            && let Err(error) = service.send_setup_keepalives(&state.match_state.session)
+        if let Some(service) = match_state.lan_service.as_mut()
+            && let Err(error) = service.send_setup_keepalives(&match_state.session)
         {
             log::debug!("LAN setup keepalive unavailable: {error:#}");
         }
     } else if presence && !in_setup {
-        let human = state
-            .match_state
+        let human = match_state
             .session
             .network_setup()
             .map(|launch| launch.local_player().clone())
-            .unwrap_or_else(|| state.frontend.multiplayer_shell_runtime.local_participant());
+            .unwrap_or_else(|| frontend.multiplayer_shell_runtime.local_participant());
         if let Ok(message) = LanMessage::presence(
             &name,
             human.slot.country_shell_value(human.is_observer()),
             human.slot.color_shell_value(),
         ) {
-            send(state, &message, broadcast, false);
+            send(match_state, &message, broadcast, false);
         }
     }
 }
 
-pub(super) fn remote_sources(state: &AppState) -> Vec<usize> {
-    state
-        .match_state
-        .session
-        .network_setup()
-        .map_or_else(Vec::new, |launch| {
-            (0..launch.humans.len())
-                .filter(|source| *source != launch.local_player_index)
-                .collect()
-        })
+pub(super) fn remote_sources(
+    session: &crate::app::match_runtime::session::MatchSession,
+) -> Vec<usize> {
+    session.network_setup().map_or_else(Vec::new, |launch| {
+        (0..launch.humans.len())
+            .filter(|source| *source != launch.local_player_index)
+            .collect()
+    })
 }
 
 pub(super) fn drain_setup_requests(state: &mut AppState, now: u32) {
@@ -176,7 +185,9 @@ pub(super) fn drain_setup_requests(state: &mut AppState, now: u32) {
             Err(error) => {
                 log::warn!("LAN setup request failed: {error:#}");
                 // A direct spawn has no dialog to retry from.
-                if super::shell_network_setup::external(state) {
+                if super::shell_network_setup::external(
+                    state.frontend.network_setup_protocol.as_ref(),
+                ) {
                     super::App::fail_external_launch(
                         state,
                         &crate::i18n::tr("VERA:StartRefusedSetup"),
@@ -209,7 +220,9 @@ fn setup_request(
                 .kick_peer(&state.match_state.session, name, *keep_out, now);
         }
         NetworkSetupRequest::PublishOptions => return options::publish_options(state),
-        NetworkSetupRequest::PublishRoster => return options::publish_roster(state),
+        NetworkSetupRequest::PublishRoster => {
+            return options::publish_roster(&mut state.match_state);
+        }
         NetworkSetupRequest::Go {
             agreed_seed,
             max_ahead_frames,
@@ -222,7 +235,7 @@ fn setup_request(
             {
                 return Ok(true);
             }
-            let recipients = remote_sources(state).len();
+            let recipients = remote_sources(&state.match_state.session).len();
             if !state
                 .match_state
                 .lan_service
@@ -245,7 +258,7 @@ fn setup_request(
                 state.match_state.session.network_start_seed() == Some(*agreed_seed),
                 "GO seed differs from admitted options"
             );
-            let destinations = remote_sources(state)
+            let destinations = remote_sources(&state.match_state.session)
                 .into_iter()
                 .map(|source| {
                     state
@@ -268,18 +281,23 @@ fn setup_request(
             let now = super::match_runtime::frame_pacer::frame_bucket(
                 super::match_runtime::frame_pacer::wall_clock_ms(),
             );
-            super::shell_network_setup::mark_lan_go_packets_queued(state, now)?;
+            super::shell_network_setup::mark_lan_go_packets_queued(
+                &mut state.frontend.network_setup_protocol,
+                now,
+            )?;
             return Ok(true);
         }
-        NetworkSetupRequest::RequestAcceptance => LanMessage::start_prompt(&local_name(state))?,
+        NetworkSetupRequest::RequestAcceptance => {
+            LanMessage::start_prompt(&local_name(&state.frontend, &state.match_state.session))?
+        }
         NetworkSetupRequest::Chat(text) => chat_packet(
-            &local_name(state),
-            &active_game_name(state).unwrap_or_default(),
+            &local_name(&state.frontend, &state.match_state.session),
+            &active_game_name(&state.match_state).unwrap_or_default(),
             text,
         )?,
         NetworkSetupRequest::PlayerChoices { slot, observer, .. } => {
             let message = LanMessage::player_choices(
-                &local_name(state),
+                &local_name(&state.frontend, &state.match_state.session),
                 format!(
                     "R{},{},{},{}",
                     slot.country_shell_value(*observer),
@@ -330,15 +348,21 @@ fn setup_request(
                 // local acceptance while an older A1 waits in this FIFO.
                 return Ok(true);
             }
-            short_options(state, if *ready { "A1" } else { "A0" })?
+            short_options(
+                &state.frontend,
+                &state.match_state,
+                if *ready { "A1" } else { "A0" },
+            )?
         }
-        NetworkSetupRequest::MapStatus(status) => short_options(state, &format!("K{status}"))?,
+        NetworkSetupRequest::MapStatus(status) => {
+            short_options(&state.frontend, &state.match_state, &format!("K{status}"))?
+        }
         // +0x60's C0 (0x0049D680 through 0x005E3720) to every guest.
         NetworkSetupRequest::PublishCooperativeCampaign(text) => {
-            if remote_sources(state).is_empty() {
+            if remote_sources(&state.match_state.session).is_empty() {
                 return Ok(true);
             }
-            short_options(state, text)?
+            short_options(&state.frontend, &state.match_state, text)?
         }
         NetworkSetupRequest::PrepareMapForHandoff { .. } => {
             if !state
@@ -389,7 +413,10 @@ fn setup_request(
             let now = super::match_runtime::frame_pacer::frame_bucket(
                 super::match_runtime::frame_pacer::wall_clock_ms(),
             );
-            super::shell_network_setup::mark_lan_go_packets_queued(state, now)?;
+            super::shell_network_setup::mark_lan_go_packets_queued(
+                &mut state.frontend.network_setup_protocol,
+                now,
+            )?;
             return Ok(true);
         }
         // None of these reaches a LAN service. The rest are WOL's requests, and
@@ -438,7 +465,7 @@ fn setup_request(
     } else {
         message.with_session_proof(&proof)?
     };
-    let destinations = remote_sources(state)
+    let destinations = remote_sources(&state.match_state.session)
         .into_iter()
         .filter_map(|source| state.match_state.session.network_endpoint(source))
         .map(direct)
@@ -456,26 +483,30 @@ fn setup_request(
 }
 
 /// The name and discovery ID of the LAN host that admitted this guest.
-pub(crate) fn admitted_host_room(state: &AppState) -> Option<(String, u64)> {
-    let service = state.match_state.lan_service.as_ref()?;
+pub(crate) fn admitted_host_room(
+    match_state: &crate::app::match_runtime::state::MatchState,
+) -> Option<(String, u64)> {
+    let service = match_state.lan_service.as_ref()?;
     let (name, endpoint) = service.admitted_host.as_ref()?;
     Some((name.clone(), endpoint_id(*endpoint)))
 }
 
-pub(crate) fn force_presence(state: &mut AppState) {
-    if let Some(service) = state.match_state.lan_service.as_mut() {
+pub(crate) fn force_presence(match_state: &mut crate::app::match_runtime::state::MatchState) {
+    if let Some(service) = match_state.lan_service.as_mut() {
         service.force_presence = true;
     }
 }
 
-pub(super) fn ensure_host_source(state: &AppState, endpoint: SocketAddrV4) -> anyhow::Result<()> {
+pub(super) fn ensure_host_source(
+    match_state: &crate::app::match_runtime::state::MatchState,
+    endpoint: SocketAddrV4,
+) -> anyhow::Result<()> {
     anyhow::ensure!(
-        !state.match_state.session.host(),
+        !match_state.session.host(),
         "host cannot accept guest-authored host packet"
     );
     anyhow::ensure!(
-        state
-            .match_state
+        match_state
             .lan_service
             .as_ref()
             .and_then(|service| service.admitted_host.as_ref())
@@ -485,14 +516,17 @@ pub(super) fn ensure_host_source(state: &AppState, endpoint: SocketAddrV4) -> an
     Ok(())
 }
 
-fn short_options(state: &AppState, text: &str) -> anyhow::Result<LanMessage> {
-    let name = local_name(state);
-    let color = state
-        .match_state
+fn short_options(
+    frontend: &crate::app::frontend::state::FrontendState,
+    match_state: &crate::app::match_runtime::state::MatchState,
+    text: &str,
+) -> anyhow::Result<LanMessage> {
+    let name = local_name(frontend, &match_state.session);
+    let color = match_state
         .session
         .network_setup()
         .map_or(-2, |launch| launch.local_player().slot.color_shell_value());
-    let game = active_game_name(state)
+    let game = active_game_name(match_state)
         .ok_or_else(|| anyhow::anyhow!("options without an admitted game"))?;
     Ok(LanMessage::options(
         &name,
@@ -502,43 +536,54 @@ fn short_options(state: &AppState, text: &str) -> anyhow::Result<LanMessage> {
     )?)
 }
 
-pub(crate) fn prepare_host_timing(state: &mut AppState) -> anyhow::Result<()> {
-    if let Some(transport) = state
-        .match_state
+pub(crate) fn prepare_host_timing(
+    match_state: &mut crate::app::match_runtime::state::MatchState,
+) -> anyhow::Result<()> {
+    if let Some(transport) = match_state
         .lan_service
         .as_ref()
         .and_then(|service| service.transport.as_ref())
     {
         let response = transport.global().mean_response_time();
-        state
-            .match_state
-            .session
-            .prepare_network_timing(2, || response)?;
+        match_state.session.prepare_network_timing(2, || response)?;
     }
-    if let Some(service) = state.match_state.lan_service.as_mut() {
+    if let Some(service) = match_state.lan_service.as_mut() {
         service.apply_start_timing(true, false);
     }
     Ok(())
 }
 
 pub(super) fn observe_participant(
-    state: &mut AppState,
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
     endpoint: SocketAddrV4,
     message: LanMessage,
     now: u32,
 ) {
-    if message.name().eq_ignore_ascii_case(&local_name(state)) {
+    if message
+        .name()
+        .eq_ignore_ascii_case(&local_name(frontend, &match_state.session))
+    {
         return;
     }
-    let Some(service) = state.match_state.lan_service.as_mut() else {
+    let Some(service) = match_state.lan_service.as_mut() else {
         return;
     };
     service.record_observed_participant(endpoint, message, now);
-    project_players(state);
+    project_players(renderer, frontend, match_state, process_assets, sfx_player);
 }
 
-pub(super) fn project_players(state: &mut AppState) {
-    let Some(service) = state.match_state.lan_service.as_ref() else {
+pub(super) fn project_players(
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+) {
+    let Some(service) = match_state.lan_service.as_ref() else {
         return;
     };
     let game = service.selected_game.and_then(|id| service.game(id));
@@ -546,7 +591,10 @@ pub(super) fn project_players(state: &mut AppState) {
     let selected = service.selected_game;
     let mut players = Vec::new();
     if game.is_none() {
-        players.push(super::shell_lan::local_lobby_row(&local_name(state)));
+        players.push(super::shell_lan::local_lobby_row(&local_name(
+            frontend,
+            &match_state.session,
+        )));
     }
     for peer in &service.observed_participants {
         let color = match (game_name_hash, peer.message.payload()) {
@@ -568,7 +616,11 @@ pub(super) fn project_players(state: &mut AppState) {
         });
     }
     super::shell_lan::service_event(
-        state,
+        renderer,
+        frontend,
+        match_state,
+        process_assets,
+        sfx_player,
         super::shell_lan::LanServiceEvent::Players {
             game_id: selected,
             players,

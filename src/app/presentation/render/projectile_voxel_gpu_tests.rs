@@ -473,16 +473,18 @@ fn kirov_voxel_pose_upload_and_retained_replay_survive_a_changed_second_frame() 
                 &order,
                 &mut planned,
                 |image, matrix| {
-                    cache.render_matrix(
-                        &assets,
-                        image,
-                        matrix,
-                        0,
-                        true,
-                        VxlLighting::Diffuse,
-                        false,
-                        None,
-                    )
+                    cache
+                        .render_matrix(
+                            &assets,
+                            image,
+                            matrix,
+                            0,
+                            true,
+                            VxlLighting::Diffuse,
+                            false,
+                            None,
+                        )
+                        .map(|entry| (ObjectTexture::UnitPosePage(entry.page), entry))
                 },
             )
             .unwrap();

@@ -33,9 +33,11 @@ fn surface_origin(light: Light) -> vec2f {
     // CoordsToClient2 has already committed its signed integer projection;
     // conversion to float happens only for camera/zoom presentation.
     let screen_center = (vec2f(light.center) - camera.camera_pos) * camera.zoom;
-    // The BSurface footprint is screen-fixed. Only its projected centre follows
-    // the tactical camera; zoom must not scale the 256x128 byte surface itself.
-    return screen_center - vec2f(128.0, 64.0);
+    // The BSurface is 256x128 world pixels. A zoomed world camera
+    // (`docs/zoom-one-pass.md`, the battlefield drawn once at the wheel zoom)
+    // shows each of them as a `zoom`-sized block, so the surface covers
+    // `zoom` times the target pixels; at zoom 1 this is the native footprint.
+    return screen_center - vec2f(128.0, 64.0) * camera.zoom;
 }
 
 @vertex
@@ -46,7 +48,9 @@ fn vs_main(@builtin(vertex_index) vertex: u32, @builtin(instance_index) light: u
     );
     // One pixel beyond the surface on every side: each fragment's own surface
     // pixel decides coverage, as it does for the earlier lights it replays.
-    let screen = surface_origin(lights[light]) - vec2f(1.0) + quad[vertex] * vec2f(258.0, 130.0);
+    // One world pixel's block at a zoomed camera.
+    let screen = surface_origin(lights[light]) - vec2f(camera.zoom)
+        + quad[vertex] * vec2f(258.0, 130.0) * camera.zoom;
 
     var output: VertexOutput;
     output.position = vec4f(
@@ -59,9 +63,12 @@ fn vs_main(@builtin(vertex_index) vertex: u32, @builtin(instance_index) light: u
     return output;
 }
 
-// The light's mask byte at target pixel `pixel`; 0 outside its surface.
+// The light's mask byte at target pixel `pixel`; 0 outside its surface. A
+// zoomed camera's mask texel is the target pixel's world pixel,
+// `floor((pixel - origin) / zoom)`; zoom 1 skips the division.
 fn mask_at(light: Light, pixel: vec2f) -> u32 {
-    let local = vec2i(floor(pixel - surface_origin(light)));
+    let offset = pixel - surface_origin(light);
+    let local = vec2i(floor(select(offset / camera.zoom, offset, camera.zoom == 1.0)));
     if (local.x < 0 || local.y < 0 || local.x >= 256 || local.y >= 128) {
         return 0u;
     }

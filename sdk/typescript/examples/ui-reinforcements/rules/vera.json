@@ -1,0 +1,7 @@
+{
+  "kind": "rules",
+  "vars": [
+    { "name": "ReinforcementsBought", "scope": "house", "visibility": "private", "initial": 0 }
+  ],
+  "notify": ["Reinforced"]
+}

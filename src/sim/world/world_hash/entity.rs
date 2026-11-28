@@ -848,6 +848,14 @@ pub(super) fn hash_entity_owed(
         if infantry.cell_entry_blocked() {
             0x36DC_u32.hash(hasher);
         }
+        // Firestorm 2.0 Infantry+0x370, the web timer's end frame: tagged
+        // once a Webby warhead has set it, so streams without webs stay
+        // unchanged.
+        let web_end = entity.web_end();
+        if web_end != 0 {
+            0x5745_4253_u32.hash(hasher);
+            web_end.hash(hasher);
+        }
     } else {
         0u8.hash(hasher);
     }
@@ -1016,6 +1024,16 @@ pub(super) fn hash_entity_owed(
         // The victim's MindControlledBy (+2C0) and ring (+2C8).
         0x2c0_u32.hash(hasher);
         entity.seldom.mind_control.hash(hasher);
+    }
+    // The head, Teleport departure phase and Ares building flag are already
+    // hashed. Preserve their established stream while the shared +270 agrees,
+    // and distinguish the last-writer value when two effects overlap.
+    let previous_warp_out = entity.temporal.chain_head().is_some()
+        || entity.ares_chronoshifting()
+        || entity.chrono_warp().is_some_and(|warp| warp.is_departing());
+    if entity.is_warped_out() != previous_warp_out {
+        0x270_u32.hash(hasher);
+        entity.is_warped_out().hash(hasher);
     }
     // TemporalImUsing (+274) and TemporalTargetingMe (+278). Objects
     // with neither fold nothing, so worlds without a Temporal firer

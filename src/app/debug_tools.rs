@@ -85,17 +85,19 @@ impl CommandInbox {
 }
 
 /// A replaced world or a lost viewer invalidates every outstanding request.
-pub(crate) fn reset_session(state: &mut crate::app::AppState) {
-    state.diag.debug_session_epoch = state
-        .diag
+pub(crate) fn reset_session(
+    diag: &mut crate::app::diagnostics::state::DiagnosticsState,
+    sim_runtime: &mut crate::app::match_runtime::sim_host::SimHost,
+) {
+    diag.debug_session_epoch = diag
         .debug_session_epoch
         .checked_add(1)
         .filter(|epoch| *epoch <= 9_007_199_254_740_991)
         .unwrap_or(0);
-    if let Some(server) = state.diag.telemetry_server.as_ref() {
+    if let Some(server) = diag.telemetry_server.as_ref() {
         server.set_debug_session(None);
     }
-    if let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Debug) {
+    if let Some(runtime) = sim_runtime.write_sim(SimWrite::Debug) {
         runtime.simulation.clear_debug_tools();
     }
 }
@@ -153,7 +155,7 @@ pub(crate) fn service(state: &mut crate::app::AppState) {
         // A watcher on the observer's sidebar keeps the whole map whatever
         // the trainer says.
         state.match_state.sandbox_full_visibility =
-            reveal || crate::app::match_runtime::watching::whole_map(state);
+            reveal || crate::app::match_runtime::watching::whole_map(&state.match_state);
     }
 }
 
@@ -190,7 +192,7 @@ fn set_flags(state: &mut crate::app::AppState, flags: CheatFlags) {
         .apply_debug_tools(&runtime.resources.rules);
     let reveal = runtime.simulation.debug_reveal_map();
     state.match_state.sandbox_full_visibility =
-        reveal || crate::app::match_runtime::watching::whole_map(state);
+        reveal || crate::app::match_runtime::watching::whole_map(&state.match_state);
 }
 
 pub(crate) fn toggle_reveal(state: &mut crate::app::AppState) {
@@ -202,8 +204,8 @@ pub(crate) fn toggle_reveal(state: &mut crate::app::AppState) {
     set_flags(state, flags);
 }
 
-pub(crate) fn toggle_inspector(state: &mut crate::app::AppState) {
-    if let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Debug) {
+pub(crate) fn toggle_inspector(sim_runtime: &mut crate::app::match_runtime::sim_host::SimHost) {
+    if let Some(runtime) = sim_runtime.write_sim(SimWrite::Debug) {
         let enabled = !runtime.simulation.debug_event_logging();
         runtime.simulation.set_debug_event_logging(enabled);
     }
@@ -225,17 +227,22 @@ fn apply(state: &mut crate::app::AppState, command: DebugCommand) {
             }
         }
         DebugCommand::Toggle { switch } => match switch {
-            DebugSwitch::TerrainCosts => dispatch::toggle_pathgrid_overlay(state),
-            DebugSwitch::Heightmap => dispatch::toggle_heightmap_overlay(state),
-            DebugSwitch::CellGrid => dispatch::toggle_cell_grid_overlay(state),
-            DebugSwitch::FootPath => dispatch::toggle_foot_path_overlay(state),
-            DebugSwitch::DebugPause => dispatch::toggle_debug_pause(state),
-            DebugSwitch::UnitInspector => toggle_inspector(state),
+            DebugSwitch::TerrainCosts => dispatch::toggle_pathgrid_overlay(&mut state.diag),
+            DebugSwitch::Heightmap => dispatch::toggle_heightmap_overlay(&mut state.diag),
+            DebugSwitch::CellGrid => dispatch::toggle_cell_grid_overlay(&mut state.diag),
+            DebugSwitch::FootPath => dispatch::toggle_foot_path_overlay(&mut state.diag),
+            DebugSwitch::DebugPause => dispatch::toggle_debug_pause(
+                &mut state.platform.frame_pacer,
+                &mut state.match_state,
+            ),
+            DebugSwitch::UnitInspector => toggle_inspector(&mut state.match_state.sim_runtime),
         },
         DebugCommand::CycleSpeedType { forward } => {
-            dispatch::cycle_terrain_cost_speed_type(state, forward);
+            dispatch::cycle_terrain_cost_speed_type(&mut state.diag, &state.match_state, forward);
         }
-        DebugCommand::FrameStep {} => dispatch::request_debug_frame_step(state),
+        DebugCommand::FrameStep {} => {
+            dispatch::request_debug_frame_step(&mut state.diag, &state.match_state)
+        }
     }
 }
 

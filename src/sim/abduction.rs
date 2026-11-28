@@ -84,7 +84,7 @@ impl Simulation {
             entity.gattling.set_stage(0);
         }
         // TeamClass::LiberateMember (0x006EA870).
-        if let Some((team, _)) = self.team_script_vm.team_for_member(target) {
+        if let Some(team) = self.team_script_vm.team_of(target) {
             self.team_remove_member(team, target, false, rules, context.effects());
         }
         if let Some(controller) = self
@@ -300,7 +300,8 @@ impl Simulation {
     }
 
     /// HasAresAbility's `PSIONICSIMMUNE` or the type's `ImmuneToPsionics=`,
-    /// which keep an `Abductor.ChangeOwner` abductee's house.
+    /// which keep an `Abductor.ChangeOwner` abductee's house; a module's
+    /// `ImmunityFlags` bit 0 replaces them.
     fn ares_psionics_immune(&self, id: u64, rules: &RuleSet) -> bool {
         let Some(entity) = self.substrate.entities.get(id) else {
             return true;
@@ -308,10 +309,13 @@ impl Simulation {
         self.interner
             .object_type(entity.type_ref(), rules)
             .is_none_or(|object| {
-                object.immune_to_psionics
-                    || object
-                        .promotion_abilities()
-                        .is_some_and(|abilities| abilities.psionics_immune(entity.veterancy.raw()))
+                entity.module_immune(
+                    crate::sim::ext_modules::modifiers::Immunity::MindControl,
+                    object.immune_to_psionics
+                        || object.promotion_abilities().is_some_and(|abilities| {
+                            abilities.psionics_immune(entity.veterancy.raw())
+                        }),
+                )
             })
     }
 }

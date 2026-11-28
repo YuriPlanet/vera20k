@@ -7,8 +7,9 @@
 //! tabs 0 and 1, and ShapeButton StartFlashing 69DFC0 has no other live caller.
 //! Phase, catch-up and gadget state belong to `SidebarGadgetState`.
 
-use crate::app::AppState;
+use crate::app::frontend::state::FrontendState;
 use crate::app::input::commands::preferred_local_owner_name;
+use crate::app::match_runtime::state::MatchState;
 use crate::sim::intern::InternedId;
 use crate::sim::world::Simulation;
 use crate::ui::sidebar::gadget_flash::SidebarGadgetState;
@@ -48,16 +49,21 @@ pub(crate) fn exit_sell_mode_without_buildings(
     }
 }
 
-/// How many times Sidebar Action 6A7780 runs on this pass, for the per-visit
-/// work it drives: StripClass::AI's scroll step and tab poll, FlashAI 69E010
-/// (6A7A8C), PowerClass AnimationTick
-/// 63FEA0 (its only call, 6A7B0A) and, through TabClass::Action 6D099D,
-/// CreditsClass::AI 4A2600. GScreen Input 4F4320 reaches it, behind the gates
-/// of `RuntimePassDecision::sidebar_action`. Main_Tick polls Input once per
-/// frame (55D8AB); in g_GameMode 0 and 5 that is all, since ThrottleFrame
-/// skips its spin (55E1A5..55E1B6). The network modes' spin also polls Input,
-/// then draws a picture, while more than 10 ms of the frame remain
-/// (55E23A..55E271): one VERA pass stands for that poll.
+/// How many times the Sidebar Action 6A7780 clocks run on this pass, for the
+/// per-visit work they drive: StripClass::AI's scroll step and tab poll,
+/// FlashAI 69E010 (6A7A8C), PowerClass AnimationTick 63FEA0 (its only call,
+/// 6A7B0A) and, through TabClass::Action 6D099D, CreditsClass::AI 4A2600.
+///
+/// VERA keeps these UI clocks in step with the world: a deactivated window
+/// does not stop them (unlike gamemd's `A8ED80`-gated GScreen Input poll at
+/// 55D8AB). Only an offline focus
+/// freeze, a menu, a scenario pause or a Wait_For_Players dialog stops them,
+/// through `RuntimePassDecision::sidebar_action`. In g_GameMode 0 and 5
+/// Main_Tick polls Input once per frame (55D8AB) because ThrottleFrame skips
+/// its spin (55E1A5..55E1B6); the network modes' spin also polls Input while
+/// more than 10 ms of the frame remain (55E23A..55E271). One VERA pass stands
+/// for that poll. Offline the single-player world supplies one tick per frame,
+/// so `tick - last_tick` visits the clocks once per simulated frame.
 pub(crate) fn sidebar_action_visits(
     sidebar_action: bool,
     single_player: bool,
@@ -74,18 +80,16 @@ pub(crate) fn sidebar_action_visits(
 }
 
 /// [`sidebar_action_visits`] for the running match's current pass.
-pub(crate) fn current_sidebar_action_visits(state: &AppState, sidebar_action: bool) -> u64 {
-    let tick = state
-        .match_state
+pub(crate) fn current_sidebar_action_visits(match_state: &MatchState, sidebar_action: bool) -> u64 {
+    let tick = match_state
         .sim_runtime
         .presentation()
         .map_or(0, |rt| rt.simulation.session().tick());
     sidebar_action_visits(
         sidebar_action,
-        state.match_state.session_mode().is_single_player(),
+        match_state.session_mode().is_single_player(),
         tick,
-        state
-            .match_state
+        match_state
             .match_presentation
             .sidebar_gadget_state
             .last_sim_tick,
@@ -100,44 +104,50 @@ pub(crate) fn current_sidebar_action_visits(state: &AppState, sidebar_action: bo
 /// The scroll roll moves one row per Sidebar Action visit
 /// ([`sidebar_action_visits`]); the view is rebuilt from the moved row by the
 /// pass's republish that follows.
-pub(crate) fn update_sidebar_gadget_state(state: &mut AppState, visits: u64) {
+pub(crate) fn update_sidebar_gadget_state(
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    visits: u64,
+) {
     // TabClass::ReceiveNotice @ 0x006D1770 (the planning notice sink) turns the
     // PlanningMode button on for Planning__StartMode's 0x11C7 and off for
     // EndMode's 0x11C8, so its look follows the PlanMgr owner's mode every
     // frame, whatever ended or started it (hotkey, committed plan, focus loss).
-    let planning = state.match_state.input.planning.active();
-    state.match_state.match_presentation.sidebar_gadget_state.command_pressed[9] = planning;
+    let planning = match_state.input.planning.active();
+    match_state
+        .match_presentation
+        .sidebar_gadget_state
+        .command_pressed[9] = planning;
     // A ready tab's completed object is the frame's (`presentation::frame`).
-    state.match_state.sim_runtime.ensure_frame();
-    let Some(frame) = state.match_state.sim_runtime.frame() else {
+    match_state.sim_runtime.ensure_frame();
+    let Some(frame) = match_state.sim_runtime.frame() else {
         return;
     };
-    let Some(sim) = state
-        .match_state
+    let Some(sim) = match_state
         .sim_runtime
         .presentation()
         .map(|rt| &rt.simulation)
     else {
         return;
     };
-    let Some(rules) = state.rules() else {
+    let Some(rules) = crate::app::state::active_rules(frontend, match_state) else {
         return;
     };
-    let Some(owner) = preferred_local_owner_name(state) else {
+    let Some(owner) = preferred_local_owner_name(match_state) else {
         return;
     };
     let owner_iid = sim.interner().get(&owner).unwrap_or_default();
     let superweapon_views =
         crate::sim::superweapon::superweapon_views_for_owner(sim, rules, &owner_iid);
     let ready = sim.interner().get(&owner).map_or([false; 2], |owner| {
-        state
-            .match_state
+        match_state
             .match_presentation
             .sidebar_projection
-            .model.ready_building_tabs(sim, frame, owner)
+            .model
+            .ready_building_tabs(sim, frame, owner)
     });
     let (tick, frame) = (sim.session().tick(), sim.session().binary_frame() as i32);
-    let presentation = &mut state.match_state.match_presentation;
+    let presentation = &mut match_state.match_presentation;
     // StripClass::AI scrolls before its tab poll, once per Sidebar Action.
     if let Some(rows) = presentation
         .sidebar_projection
@@ -146,7 +156,8 @@ pub(crate) fn update_sidebar_gadget_state(state: &mut AppState, visits: u64) {
     {
         presentation
             .sidebar_projection
-            .model.step_pending_scroll(rows, visits);
+            .model
+            .step_pending_scroll(rows, visits);
     }
     update_tab_flashes_for_owner(
         &mut presentation.sidebar_gadget_state,

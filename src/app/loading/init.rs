@@ -57,7 +57,6 @@ use crate::render::tile_atlas::TileAtlas;
 use crate::render::unit_atlas::UnitAtlas;
 #[cfg(test)]
 use crate::rules::art_data::ArtRegistry;
-use crate::rules::effect_asset_catalog::resolved_overlay_shp_ids;
 #[cfg(test)]
 use crate::rules::ini_parser::IniFile;
 use crate::rules::overlay_types::OverlayTypeRegistry;
@@ -156,7 +155,8 @@ mod map_wall_owner_candidate_tests {
             EntityCategory::Structure,
         );
         entity
-            .seldom.type_facts
+            .seldom
+            .type_facts
             .set_foundation_for_test(foundation.to_string().into());
         entity.lifecycle.set_object_alive_for_test(true);
         entity.lifecycle.set_cell_marked_for_test(true);
@@ -1475,6 +1475,10 @@ pub struct ScenarioLoadInputs {
     /// transition, which knows the scaled sidebar width and the live zoom.
     pub camera_anchor_x: f32,
     pub camera_anchor_y: f32,
+    /// The match's client modules (`ui.wasm`) and the map's `[VeraUI]`
+    /// parts, read with the scenario; built once the world is installed
+    /// (`ui_modules::install`).
+    pub(crate) ui_modules: crate::app::ui_modules::UiModuleSources,
 }
 
 /// Presentation assets produced by loading a map (F11): atlases, chrome,
@@ -1548,6 +1552,7 @@ pub(crate) struct MapLoadInitial {
     retained_process_mapgen: Option<crate::rng_continuation::MapGenRngContinuation>,
     /// Inactive current-bit defaults from the outgoing Scenario's owners.
     retained_campaign_special_flags: Option<crate::map::basic::SpecialFlagsSection>,
+    pub(super) supplied_tiberium: Option<crate::sim::scenario_session::TiberiumFlags>,
     /// ClearScene retains local values across fresh Scenario reads.
     retained_local_variables: Option<crate::sim::trigger_runtime::RetainedLocalVariables>,
     /// Ordered launch-generation Building constructor effects. Preview traces
@@ -1562,27 +1567,57 @@ struct PreparedScenarioRules {
     native: crate::rules::process_owner::NativeScenarioRulesLoad,
     team_ai_registry: crate::rules::team_ai_ini::TeamAiIniRegistry,
     rules_at_ai_read: Option<RuleSet>,
+    /// The Wasm extension modules that ran `on_rules` in this load.
+    ext_modules: crate::sim::ext_modules::PreparedExtModules,
 }
 
+/// The rules, AI registry, AI-read rules, fixed Art, receipt, Wasm modules
+/// and merged rules text of one scenario rules load.
+type ScenarioRulesParts = (
+    RuleSet,
+    crate::rules::team_ai_ini::TeamAiIniRegistry,
+    Option<RuleSet>,
+    crate::rules::ini_parser::IniFile,
+    crate::rules::process_owner::NativeScenarioRulesReceipt,
+    crate::sim::ext_modules::PreparedExtModules,
+    crate::rules::ini_parser::IniFile,
+);
+
 impl PreparedScenarioRules {
-    fn into_parts(
-        self,
-    ) -> (
-        RuleSet,
-        crate::rules::team_ai_ini::TeamAiIniRegistry,
-        Option<RuleSet>,
-        crate::rules::ini_parser::IniFile,
-        crate::rules::process_owner::NativeScenarioRulesReceipt,
-    ) {
-        let (rules, _, art, receipt) = self.native.into_parts();
+    fn into_parts(self) -> ScenarioRulesParts {
+        let (rules, processed_ini, art, receipt) = self.native.into_parts();
         (
             rules,
             self.team_ai_registry,
             self.rules_at_ai_read,
             art,
             receipt,
+            self.ext_modules,
+            processed_ini,
         )
     }
+}
+
+/// The scenario's Wasm extension modules (RFC 0001): the selected mod's
+/// `rules.wasm`, then the map's, under the mod's `[VeraWasm]` policy.
+fn load_scenario_ext_modules(
+    owner: &crate::rules::process_owner::NativeRulesProcessOwner,
+    assets: &AssetManager,
+    map_ini: &crate::rules::ini_parser::IniFile,
+    mod_ai_seats: usize,
+) -> Result<crate::sim::ext_modules::PreparedExtModules> {
+    let mod_module = crate::sim::ext_modules::PreparedExtModules::read_mod_file(assets)
+        .map_err(anyhow::Error::msg)?;
+    let mut modules = crate::sim::ext_modules::PreparedExtModules::load(
+        owner.selected_rules_root(),
+        mod_module.as_deref(),
+        map_ini,
+        owner.personal_rules().wasm_budget(),
+        mod_ai_seats,
+    )
+    .map_err(|e| anyhow::anyhow!("Wasm extension module: {e}"))?;
+    modules.set_automation_allowed(owner.personal_rules().automation_allowed());
+    Ok(modules)
 }
 
 /// The shared Rules/AI ordering for ordinary Full_Init and its early .SED arm.
@@ -1597,28 +1632,43 @@ fn prepare_scenario_rules(
     tmcj4f: Option<&crate::rules::ini_parser::IniFile>,
     rule_policy: RulePolicy,
     ai_file: crate::rules::retail_sources::AiFile,
+    mod_ai_seats: usize,
 ) -> Result<PreparedScenarioRules> {
     if ai_file == crate::rules::retail_sources::AiFile::Original {
         log::info!("Network match AI file: the original game's; it seats no computer");
     }
+    let mut ext_modules = load_scenario_ext_modules(owner, assets, map_ini, mod_ai_seats)?;
     let (native, team_ai_registry, rules_at_ai_read) = if let Some(tmcj4f) = tmcj4f {
-        let (loaded, (ai, rules_at_read)) = owner
-            .load_scenario_with_post_map(prefix, map_ini, tmcj4f, |rules_at_read| {
-                (
-                    crate::rules::team_ai_ini::TeamAiIniRegistry::load_for_match(
-                        assets,
-                        map_ini,
-                        rule_policy,
-                        ai_file,
-                    ),
-                    rules_at_read,
-                )
-            })
+        let after_map = |rules_at_read| {
+            (
+                crate::rules::team_ai_ini::TeamAiIniRegistry::load_for_match(
+                    assets,
+                    map_ini,
+                    rule_policy,
+                    ai_file,
+                ),
+                rules_at_read,
+            )
+        };
+        let (loaded, after_map_result) = owner
+            .load_scenario_with_ext_rules(
+                prefix,
+                map_ini,
+                Some((tmcj4f, after_map)),
+                &mut ext_modules,
+            )
             .map_err(|error| anyhow::anyhow!("failed native scenario rules rebuild: {error}"))?;
+        let (ai, rules_at_read) =
+            after_map_result.expect("TMCJ4F Rules stack includes the map boundary");
         (loaded, ai.map_err(anyhow::Error::msg)?, Some(rules_at_read))
     } else {
-        let loaded = owner
-            .load_scenario(prefix, map_ini)
+        let (loaded, _) = owner
+            .load_scenario_with_ext_rules(
+                prefix,
+                map_ini,
+                None::<(&crate::rules::ini_parser::IniFile, fn(RuleSet))>,
+                &mut ext_modules,
+            )
             .map_err(|error| anyhow::anyhow!("failed native scenario rules rebuild: {error}"))?;
         let ai = crate::rules::team_ai_ini::TeamAiIniRegistry::load_for_match(
             assets,
@@ -1633,6 +1683,7 @@ fn prepare_scenario_rules(
         native,
         team_ai_registry,
         rules_at_ai_read,
+        ext_modules,
     })
 }
 
@@ -1645,12 +1696,11 @@ impl MapLoadInitial {
     /// the one process owner for this inactive attempt. Authored loading does
     /// not reset or advance MapGen before installation (ReadScenario684620 ->
     /// Full_Init/Fill); failures can discard this snapshot without losing it.
-    /// The same inactive transfer retains current SpecialFlags and offline local
-    /// values. ClearScene6851F0 clears globals, but ReadLocal689B20 retains
-    /// unassigned locals. VERA starts fresh LAN/WOL worlds from map assignments
-    /// only: peers cannot share prior-match locals. Replays and rejoins run in
-    /// a newly started process and never had any; a watch loads in the running
-    /// game and starts fresh too.
+    /// Offline campaigns keep omitted SpecialFlags (Read_SpecialFlags 0x006B8CA0)
+    /// and unassigned locals (ReadLocal 0x00689B20) from their resident world.
+    /// Fresh LAN/WOL campaigns use the map and the shared scenario defaults.
+    /// Each peer may have played a different match before entering the room.
+    /// Replays supply the ore flags recorded at frame zero.
     ///
     /// RESIDUAL (VERA network adaptation): a LAN/WOL co-op campaign's next
     /// mission and a retried mission are such starts too, so they drop the
@@ -1664,16 +1714,11 @@ impl MapLoadInitial {
         mut resident: Option<&mut crate::sim::world::Simulation>,
         topology: crate::sim::scenario_session::ExecutionTopology,
     ) {
-        self.retained_campaign_special_flags = resident
-            .as_deref()
-            .map(crate::sim::world::Simulation::retained_campaign_special_flags);
-        self.retained_local_variables = if topology.is_lockstep() {
-            None
-        } else {
-            resident
-                .as_deref()
-                .map(crate::sim::world::Simulation::retain_local_variables_for_fresh_load)
-        };
+        let offline_history = resident.as_deref().filter(|_| !topology.is_lockstep());
+        self.retained_campaign_special_flags =
+            offline_history.map(crate::sim::world::Simulation::retained_campaign_special_flags);
+        self.retained_local_variables = offline_history
+            .map(crate::sim::world::Simulation::retain_local_variables_for_fresh_load);
         if let Some(generated) = self.mapgen_rng_continuation.take() {
             retention.publish_mapgen_continuation(resident.as_deref_mut(), generated);
             self.mapgen_rng_continuation =
@@ -1709,76 +1754,6 @@ impl MapLoadInitial {
         Ok(self)
     }
 
-    /// `-ra2` translation of the retail Allied mission ALL02S ("Hail to the
-    /// Chief"): its Chapel trigger uses an RA2 event kind whose stock YR
-    /// descendant the engine evaluates differently.
-    ///
-    /// `Chapel Destroyed` uses event 57, "the trigger's House owns no
-    /// BuildingTypes[186]". An engineer capture moves the only Chapel out of
-    /// NeutralA's registration and zeroes that House-scoped count, which the
-    /// trigger cannot distinguish from the Chapel being destroyed. The YR
-    /// campaign master rewrites that trigger to event 61, "no TechnoType
-    /// named CACOLO01 exists anywhere" — still true when the Chapel is
-    /// destroyed, false while the captured building lives on.
-    ///
-    /// Tanya's `1,11,0,3` is deliberately left alone: event 11 is "the
-    /// trigger's House is destroyed", and Germans owns only TANY on this
-    /// map, so the stock event is already correct. Limboed passengers keep
-    /// their tracking count, so entering a transport does not fake her death.
-    ///
-    /// This is map data, applied after every other map source has been merged
-    /// and before anything reads the map's rules or triggers. It never runs in
-    /// YR mode, on another map, or on a network map.
-    pub(crate) fn with_ra2_campaign_fixups(mut self, map_file: &str) -> Result<Self> {
-        use crate::rules::ini_parser::{IniFile, IniSection};
-
-        if !crate::util::ra2_launch::enabled() {
-            return Ok(self);
-        }
-        let base_name = map_file.rsplit(['/', '\\']).next().unwrap_or(map_file);
-        if !base_name.eq_ignore_ascii_case("ALL02S.MAP") {
-            return Ok(self);
-        }
-        // Each entry as `map::events::parse_events` reads it, through the
-        // 512-byte buffer of TriggerType Read7274A6.
-        let edits: Vec<String> = self
-            .map_data
-            .ini
-            .section("Events")
-            .into_iter()
-            .flat_map(|section| {
-                section
-                    .keys()
-                    .map(move |key| (key, section.read_string(key, "", 512)))
-            })
-            .filter_map(|(key, value)| {
-                let translated = if value.eq_ignore_ascii_case("1,57,0,186") {
-                    Some("1,61,2,0,CACOLO01")
-                } else {
-                    None
-                };
-                translated.map(|value| format!("{key}={value}"))
-            })
-            .collect();
-        if edits.is_empty() {
-            return Ok(self);
-        }
-        let mut patch_events = IniSection::new("Events".to_owned());
-        for edit in &edits {
-            let (key, value) = edit.split_once('=').expect("built as key=value");
-            patch_events.set(key, value);
-        }
-        let patch = IniFile::from_sections([patch_events]);
-        let mut ini = std::mem::replace(&mut self.map_data.ini, IniFile::empty());
-        ini.merge(&patch);
-        self.map_data = crate::map::map_file::MapFile::from_ini(ini)?;
-        log::info!(
-            "-ra2 ALL02S campaign translation applied: {}",
-            edits.join(", ")
-        );
-        Ok(self)
-    }
-
     /// Physical cached .SED names must not become shared Scenario identity.
     /// ReadScenario684620 regenerates from the supplied path, while the
     /// accepted network record remains the common logical seed name.
@@ -1805,6 +1780,7 @@ impl MapLoadInitial {
             mapgen_rng_continuation: None,
             retained_process_mapgen: None,
             retained_campaign_special_flags: None,
+            supplied_tiberium: None,
             retained_local_variables: None,
             generated_construction_trace: None,
             generated_rules: None,
@@ -1886,15 +1862,21 @@ mod match_theater_tests {
         };
         // A cell without a tile names none.
         let original_tiles = [0, theater::NO_TILE, i32::from(u16::MAX)];
-        let original = load_match_theater(&mut assets, &map_naming(&original_tiles), true).unwrap();
+        let original = load_match_theater(&mut assets, &map_naming(&original_tiles), true)
+            .unwrap()
+            .unwrap();
         assert!(assets.names_pinned());
         assert!(!original.lookup.is_morphable(0));
 
-        let skirmish = load_match_theater(&mut assets, &map_naming(&[0]), false).unwrap();
+        let skirmish = load_match_theater(&mut assets, &map_naming(&[0]), false)
+            .unwrap()
+            .unwrap();
         assert!(!assets.names_pinned());
         assert!(skirmish.lookup.is_morphable(0));
 
-        let folder = load_match_theater(&mut assets, &map_naming(&[0, 1]), true).unwrap();
+        let folder = load_match_theater(&mut assets, &map_naming(&[0, 1]), true)
+            .unwrap()
+            .unwrap();
         assert!(!assets.names_pinned());
         assert!(folder.lookup.is_morphable(0));
     }
@@ -1986,6 +1968,46 @@ mod fresh_transport_tests {
         assert!(!after_history.trigger_runtime().local_variable_is_set(7));
         assert!(!after_history.trigger_runtime().local_variable_is_set(8));
         assert!(after_history.trigger_runtime().local_variable_is_set(9));
+    }
+
+    #[test]
+    fn fresh_campaign_ore_flags_use_local_history_only_in_offline_play() {
+        use crate::sim::scenario_session::{ExecutionTopology, ScenarioDescriptor};
+
+        let launch_flags = |topology, prior_growth, map_growth| {
+            let mut resident = Simulation::from_descriptor(&ScenarioDescriptor {
+                tiberium_grows_flag: prior_growth,
+                tiberium_spreads_flag: true,
+                ..Default::default()
+            });
+            let mut map = map_with_locals("");
+            map.special_flags.tiberium_grows = map_growth;
+            let mut load = MapLoadInitial::from_test_map_source(
+                map,
+                LoadedMapSource::Loose {
+                    cache_lease: Default::default(),
+                    path: PathBuf::from("CAMPAIGN.MAP"),
+                    payload_len: 1,
+                    source_sha256: crate::util::sha256::sha256_hex(b"campaign flags"),
+                },
+            );
+            load.retain_process_state(&mut Default::default(), Some(&mut resident), topology);
+            load.map_data
+                .special_flags
+                .resolve_campaign_defaults(load.retained_campaign_special_flags.as_ref());
+            load.map_data.special_flags.tiberium_grows
+        };
+        let lockstep = ExecutionTopology::LockstepNetwork;
+        assert_eq!(
+            launch_flags(lockstep, true, None),
+            launch_flags(lockstep, false, None)
+        );
+        assert_eq!(launch_flags(lockstep, true, None), Some(false));
+        assert_eq!(launch_flags(lockstep, false, Some(true)), Some(true));
+        assert_eq!(
+            launch_flags(ExecutionTopology::LocalOffline, true, None),
+            Some(true)
+        );
     }
 
     #[test]
@@ -2214,6 +2236,7 @@ impl MapLoadInitial {
             mapgen_rng_continuation,
             retained_process_mapgen: _,
             retained_campaign_special_flags: _,
+            supplied_tiberium,
             retained_local_variables: _,
             generated_construction_trace,
             generated_rules,
@@ -2319,7 +2342,13 @@ impl MapLoadInitial {
         // constructor replay on that owner, the GPU-free population funnel,
         // standard Battle launch application, and the shared Post_Map_Init
         // finalizer.
-        let theater_result = theater::load_theater(asset_manager, &map_data.header.theater);
+        let theater_result = theater::load_scenario_theater(
+            asset_manager,
+            &map_data.header.theater,
+            &map_data.ini,
+            false,
+        )
+        .expect("generated fixture theater");
         let (mut rules, _, art_ini, native_rules_receipt) = generated_rules
             .expect("generated-map receipt includes its early Full_Init Rules")
             .native
@@ -2349,10 +2378,6 @@ impl MapLoadInitial {
                 .unwrap_or_default(),
             theater: map_data.header.theater.clone(),
             rule_policy,
-            no_damage: false,
-            // Same nonzero-mode replacement as the match load: the launch
-            // session's Harvester Truce byte, not the map's key.
-            harvester_immune: match_launch_descriptor.session().options.harvester_truce,
             free_radar: map_data.basic.free_radar.unwrap_or(false),
             ignore_global_ai_triggers: map_data.basic.ignore_global_ai_triggers.unwrap_or(false),
             timer_inherit: map_data.basic.timer_inherit.unwrap_or(false),
@@ -2362,10 +2387,6 @@ impl MapLoadInitial {
             truck_crate: map_data.basic.truck_crate.unwrap_or(false),
             ice_growth_enabled: map_data.basic.ice_growth_enabled,
             vein_growth_enabled: map_data.basic.vein_growth_enabled,
-            // Skirmish start forces `TiberiumGrows|TiberiumSpreads` (`OR 0xC0`
-            // at `0x005E74CD`), copied into the scenario at `0x00687C23`.
-            tiberium_grows_flag: rule_policy.uses_room_options(),
-            tiberium_spreads_flag: rule_policy.uses_room_options(),
             // Native Resize constructs a square cell-array extent of SizeW+SizeH.
             map_width: scenario_cell_extent,
             map_height: scenario_cell_extent,
@@ -2377,7 +2398,14 @@ impl MapLoadInitial {
             lighting: crate::sim::scenario_session::ScenarioLightingState::from_map(
                 &lighting_profiles,
             ),
-        };
+            ..Default::default()
+        }
+        .with_authored_special_flags(
+            &map_data.special_flags,
+            match_launch_descriptor.session().options.harvester_truce,
+            crate::sim::scenario_session::ScenarioGameMode::Skirmish,
+            supplied_tiberium,
+        );
         let (mut simulation, scenario_prefix_projection) = bootstrap_rng
             .into_stock_offline_staged_simulation(&scenario_descriptor, bound_scenario_prefix)
             .expect("matching stock-offline Scenario prefix");
@@ -2802,6 +2830,9 @@ pub(crate) fn load_map_initial_with_assets(
             tmcj4f.as_ref(),
             full_init_entry_mode.stock_rule_policy(None),
             ai_file,
+            // RESIDUAL: a random map's load has no launch session here, so
+            // its "mod AI" seats get no extra module memory.
+            0,
         )?;
         let terrain_rules = &generated_rules.native.rules().terrain_rules;
         let resolved = crate::map::rmg::build::ResolvedTheaterInputs::from_theater(
@@ -2916,6 +2947,7 @@ pub(crate) fn load_map_initial_with_assets(
             mapgen_rng_continuation: Some(mapgen_rng_continuation),
             retained_process_mapgen: None,
             retained_campaign_special_flags: None,
+            supplied_tiberium: None,
             retained_local_variables: None,
             generated_construction_trace: Some(generated_construction_trace),
             generated_rules: Some(generated_rules),
@@ -2981,6 +3013,7 @@ pub(crate) fn load_map_initial_with_assets(
         mapgen_rng_continuation: None,
         retained_process_mapgen: None,
         retained_campaign_special_flags: None,
+        supplied_tiberium: None,
         retained_local_variables: None,
         generated_construction_trace: None,
         generated_rules: None,
@@ -3186,21 +3219,25 @@ fn load_match_theater(
     asset_manager: &mut crate::assets::asset_manager::AssetManager,
     map: &crate::map::map_file::MapFile,
     network: bool,
-) -> Option<theater::TheaterData> {
-    let loaded = theater::load_theater_for_play(asset_manager, &map.header.theater, network)?;
-    if !asset_manager.names_pinned() {
-        return Some(loaded);
+) -> Result<Option<theater::TheaterData>> {
+    let Some(loaded) =
+        theater::load_scenario_theater(asset_manager, &map.header.theater, &map.ini, network)?
+    else {
+        return Ok(None);
+    };
+    if loaded.uses_bundled_ice() || !asset_manager.names_pinned() {
+        return Ok(Some(loaded));
     }
     if crate::map::resolved_terrain::map_tiles_exist(map, &loaded.lookup, |name| {
         asset_manager.get_ref(name).is_some()
     }) {
         log::info!("Network match terrain: the original game's files");
-        return Some(loaded);
+        return Ok(Some(loaded));
     }
     log::info!(
         "Network match terrain: the game folder's files; the map names a tile the original game lacks"
     );
-    theater::load_theater(asset_manager, &map.header.theater)
+    Ok(theater::load_theater(asset_manager, &map.header.theater))
 }
 
 fn load_map_first_step(
@@ -3217,6 +3254,7 @@ fn load_map_first_step(
         mapgen_rng_continuation,
         retained_process_mapgen,
         retained_campaign_special_flags,
+        supplied_tiberium,
         retained_local_variables,
         generated_construction_trace,
         generated_rules,
@@ -3290,6 +3328,7 @@ fn load_map_first_step(
     let map_hash = match &map_source {
         LoadedMapSource::Loose { .. }
         | LoadedMapSource::Mix { .. }
+        | LoadedMapSource::Bundled { .. }
         | LoadedMapSource::Generated { .. } => Some(map_data.ini.content_hash()),
         LoadedMapSource::LegacyFallback { .. } => None,
     };
@@ -3299,7 +3338,7 @@ fn load_map_first_step(
         services.asset_manager,
         &map_data,
         startup.session_mode().is_network(),
-    );
+    )?;
     if theater_cache_mismatch {
         services.progress.milestone(12)?;
         // Native advances while rebuilding each color scheme. Rust's theater
@@ -3397,6 +3436,7 @@ fn load_map_first_step(
                     tmcj4f_ini.as_ref(),
                     rule_policy,
                     ai_file,
+                    skirmish_launch_session.map_or(0, |launch| launch.mod_ai_slots.len()),
                 )?
             };
             let (
@@ -3405,6 +3445,8 @@ fn load_map_first_step(
                 team_ai_rules_at_read,
                 fixed_art_ini,
                 native_rules_receipt,
+                ext_modules,
+                processed_rules_ini,
             ) = prepared_rules.into_parts();
             Ok(FreshMapLoadStep::Continue(FreshMapLoadContinuation::new(
                 "art-metadata",
@@ -3473,14 +3515,17 @@ fn load_map_first_step(
                                 bootstrap_rng.install_process_mapgen_continuation(continuation);
                             }
                             let authored_campaign = startup.authored_campaign();
-                            let campaign_game_options = if let Some(game_speed) = startup.authored_campaign_speed() {
-                                Some(crate::sim::game_options::GameOptions {
-                                    game_speed,
-                                    ..Default::default()
-                                })
-                            } else {
-                                campaign.as_ref().and_then(|campaign| campaign.game_options())
-                            };
+                            let campaign_game_options =
+                                if let Some(game_speed) = startup.authored_campaign_speed() {
+                                    Some(crate::sim::game_options::GameOptions {
+                                        game_speed,
+                                        ..Default::default()
+                                    })
+                                } else {
+                                    campaign
+                                        .as_ref()
+                                        .and_then(|campaign| campaign.game_options())
+                                };
                             let fresh_prefix = if let Some(plan) = scenario_prefix_plan {
                                 FreshScenarioPrefix::StockOffline(
                                     plan.bind_native_rules_receipt(
@@ -3502,7 +3547,8 @@ fn load_map_first_step(
                                     house_roster: &house_roster,
                                     game_options: campaign_game_options.as_ref(),
                                     campaign_index: 0,
-                                    restart_carry_over: crate::sim::campaign_carry_over::CampaignCarryOver::CLEARED,
+                                    restart_carry_over:
+                                        crate::sim::campaign_carry_over::CampaignCarryOver::CLEARED,
                                 }
                             } else {
                                 let campaign = campaign
@@ -3571,6 +3617,8 @@ fn load_map_first_step(
                         &map_data.special_flags,
                         skirmish_launch_session
                             .is_some_and(|launch| launch.options.harvester_truce),
+                        full_init_entry_mode,
+                        supplied_tiberium,
                     );
                             log::info!("Match seed: 0x{:08X}", scenario_descriptor.seed);
                             // Consume the paired RNG/native-ID prefix here: Fill and every later load
@@ -3599,6 +3647,16 @@ fn load_map_first_step(
                                     .map(crate::app::process_assets::ProcessAudioCatalog::sounds),
                                 services.themes,
                             );
+                            // Wasm extension modules (RFC 0001), which ran
+                            // `on_rules` with the rules. One that cannot
+                            // start stops the match before it starts.
+                            staged_simulation
+                                .install_scenario_ext_modules(
+                                    &rules,
+                                    ext_modules,
+                                    processed_rules_ini,
+                                )
+                                .map_err(|e| anyhow::anyhow!("Wasm extension module: {e}"))?;
                             let (mut scenario_fill_rng, variant_main_rng) =
                                 staged_simulation.terrain_load_draws();
                             let mut scenario_fill_ranged =
@@ -3789,8 +3847,7 @@ fn load_map_first_step(
                                             let fill = authored_terrain_fill.take().expect(
                                         "authored materialization retained its pending Fill owner",
                                     );
-                                            let overlay_shp_ids = resolved_overlay_shp_ids(
-                                                rules.overlay_registry(),
+                                            let overlay_shp_ids = rules.resolved_overlay_shp_ids(
                                                 services.asset_manager,
                                                 theater_ext,
                                                 &map_data.header.theater,
@@ -4284,6 +4341,16 @@ fn load_map_first_step(
                                                                         .progress
                                                                         .milestone(98)?;
 
+                                                                    // The client modules (`ui.wasm`) beside the
+                                                                    // rules modules: the mod's loose one and the
+                                                                    // map's embedded one, read before map_data's
+                                                                    // fields move out below.
+                                                                    let ui_modules =
+                                                                        crate::app::ui_modules::UiModuleSources::read(
+                                                                            services.asset_manager,
+                                                                            &map_data.ini,
+                                                                            &map_source,
+                                                                        );
                                                                     // Move fields out of map_data (last use) instead of cloning.
                                                                     let theater_name =
                                                                         map_data.header.theater;
@@ -4310,6 +4377,7 @@ fn load_map_first_step(
             opening_view_cell,
             camera_anchor_x,
             camera_anchor_y,
+            ui_modules,
         },
         presentation,
         // The app loading job retains the one process-lifetime manager while
