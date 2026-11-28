@@ -75,6 +75,8 @@ cp config.toml.example config.toml
 cargo run --release --bin vera20k
 ```
 
+これでゲームが起動するはずです。開発とテストを楽しんでください！
+
 ## 開発の進め方
 
 コードの大部分は AI コーディングエージェントが書いています。エージェントは Ghidra でオリジナルのエンジンを調べ、その挙動を Rust に移植し、[比較ツール](tools/native_oracle.md)とテストプレイで確認します。エージェントは [AGENTS.md](AGENTS.md) に従います。

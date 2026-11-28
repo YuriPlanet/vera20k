@@ -77,6 +77,8 @@ cp config.toml.example config.toml
 cargo run --release --bin vera20k
 ```
 
+现在游戏应该会启动。祝你开发和测试愉快！
+
 ## 我们如何开发
 
 大部分代码由 AI 编程助手编写。它们用 Ghidra 研究原版引擎，再将其行为移植到 Rust，

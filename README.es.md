@@ -87,6 +87,8 @@ cp config.toml.example config.toml
 cargo run --release --bin vera20k
 ```
 
+El juego ya debería iniciarse. ¡Diviértete desarrollándolo y probándolo!
+
 ## Cómo trabajamos
 
 La mayor parte del código la escriben agentes de programación con IA. Usan Ghidra para estudiar el

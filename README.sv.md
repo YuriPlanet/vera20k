@@ -84,6 +84,8 @@ cp config.toml.example config.toml
 cargo run --release --bin vera20k
 ```
 
+Nu borde spelet starta. Ha så kul med att utveckla och testa det!
+
 ## Så arbetar vi
 
 Större delen av koden skrivs av AI-agenter. De använder Ghidra för att studera originalmotorn,
