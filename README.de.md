@@ -85,6 +85,8 @@ cp config.toml.example config.toml
 cargo run --release --bin vera20k
 ```
 
+Das Spiel sollte jetzt starten. Viel Spaß beim Entwickeln und Testen!
+
 ## So arbeiten wir
 
 Der Großteil des Codes wird von KI-Programmieragenten geschrieben. Sie untersuchen die

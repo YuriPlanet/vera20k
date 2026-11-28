@@ -85,6 +85,8 @@ cp config.toml.example config.toml
 cargo run --release --bin vera20k
 ```
 
+Giờ thì trò chơi sẽ khởi động. Chúc bạn phát triển và thử nghiệm vui vẻ!
+
 ## Cách chúng tôi làm việc
 
 Phần lớn mã được viết bởi các AI coding agent. Chúng dùng Ghidra để nghiên cứu engine gốc, sau đó

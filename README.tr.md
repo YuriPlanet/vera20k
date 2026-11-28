@@ -84,6 +84,8 @@ cp config.toml.example config.toml
 cargo run --release --bin vera20k
 ```
 
+Oyun artık açılmalı. Geliştirirken ve test ederken iyi eğlenceler!
+
 ## Nasıl çalışıyoruz
 
 Kodun büyük bölümünü yapay zekâ kodlama ajanları yazıyor. Ajanlar özgün motoru Ghidra ile
