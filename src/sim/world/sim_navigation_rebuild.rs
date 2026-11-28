@@ -289,6 +289,24 @@ impl Simulation {
         let Some(terrain) = self.resolved_terrain.as_ref() else {
             return;
         };
+        // A Recalc can change a cell's reduced zone class without any separate
+        // Assign/Merge repair. The base cluster plane and every movement row
+        // would then still describe the old class, leaving two same-class
+        // regions split after the barrier that separated them is gone. Rebuild
+        // the topology once for such a batch; Recalc-only path publication is
+        // insufficient whenever a class byte changes.
+        let class_changed = self.zone_grid.as_ref().is_some_and(|zones| {
+            cells.iter().any(|&(x, y)| {
+                zones.base_movement_class_at(x, y)
+                    != Some(
+                        terrain
+                            .cell(x, y)
+                            .map_or(crate::map::resolved_terrain::zone_class::OUTSIDE, |cell| {
+                                cell.zone_type
+                            }),
+                    )
+            })
+        });
         let mut caches = navigation::NavigationCaches {
             zones: &mut self.zone_grid,
             path: &mut self.path_grid,
@@ -309,6 +327,9 @@ impl Simulation {
             } else {
                 self.structure_navigation_cells.remove(&coord);
             }
+        }
+        if class_changed && self.zone_grid.is_some() && self.path_grid.is_some() {
+            let _ = self.rebuild_dynamic_navigation(rules);
         }
     }
 

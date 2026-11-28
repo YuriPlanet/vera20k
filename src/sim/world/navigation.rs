@@ -271,6 +271,7 @@ impl NavigationCaches<'_> {
                 .diff_cells(&path_grid)
                 .is_some_and(|changed| changed.is_empty())
             && zones.movement_classes_match(terrain)
+            && !zones.topology_dirty()
         {
             // PathGrid does not carry CellClass reduced zone type.
             // Both path state and retained base classes must match.

@@ -376,3 +376,78 @@ mod unit_presentation_tests;
 mod wall_sale_tests;
 #[path = "world_tests/weapons_and_waves_tests.rs"]
 mod weapons_and_waves_tests;
+
+/// A Recalc that changes a cell's reduced zone class must rebuild the base
+/// zones. Before this guard, removing a wall line between two water regions
+/// updated the path cells only, leaving the two sides in different water
+/// zones and making naval orders snap back into the mover's side.
+#[test]
+fn recalc_that_changes_a_zone_class_rebuilds_and_merges_water_zones() {
+    use crate::map::resolved_terrain::{test_loader_clear_cell, zone_class};
+    use crate::rules::locomotor_type::MovementZone;
+    use crate::rules::terrain_rules::LandType;
+
+    let size = 16u16;
+    let mut cells: Vec<_> = (0..size)
+        .flat_map(|y| (0..size).map(move |x| test_loader_clear_cell(x, y)))
+        .collect();
+    for cell in &mut cells {
+        cell.zone_type = zone_class::WATER;
+        cell.land_type = LandType::Water.as_index();
+        cell.level = 0;
+    }
+    for y in 0..size {
+        let cell = &mut cells[usize::from(y) * usize::from(size) + 8];
+        cell.zone_type = zone_class::WALL;
+        cell.land_type = LandType::Rock.as_index();
+    }
+
+    let rules = RuleSet::empty_for_test();
+    let mut sim = Simulation::new();
+    sim.set_playfield_bounds_for_test(Some(
+        crate::map::playfield::PlayfieldBounds::from_normalized_local_size(
+            i32::from(size),
+            2,
+            2,
+            i32::from(size) - 4,
+            i32::from(size) - 4,
+        ),
+    ));
+    sim.install_resolved_terrain_for_new_map(ResolvedTerrainGrid::from_cells(
+        size, size, cells,
+    ));
+    assert!(sim.rebuild_dynamic_navigation(&rules));
+
+    let water_zone = |sim: &Simulation, x, y| {
+        sim.zone_grid()
+            .and_then(|zones| zones.map_for(MovementZone::Water))
+            .map_or(0, |map| {
+                map.zone_at(x, y, crate::sim::movement::locomotor::MovementLayer::Ground)
+            })
+    };
+    let left = water_zone(&sim, 4, 4);
+    let right = water_zone(&sim, 12, 4);
+    assert_ne!(left, 0);
+    assert_ne!(right, 0);
+    assert_ne!(left, right, "the wall line splits the two water regions");
+
+    let barrier: Vec<(u16, u16)> = (0..size).map(|y| (8, y)).collect();
+    {
+        let terrain = sim.resolved_terrain_mut_for_test().as_mut().unwrap();
+        for &(x, y) in &barrier {
+            let cell = terrain.cell_mut_for_test(x, y).unwrap();
+            cell.zone_type = zone_class::WATER;
+            cell.land_type = LandType::Water.as_index();
+            cell.level = 0;
+        }
+    }
+    sim.publish_recalculated_cells(&rules, &barrier);
+
+    let left = water_zone(&sim, 4, 4);
+    let right = water_zone(&sim, 12, 4);
+    assert_ne!(left, 0);
+    assert_eq!(
+        left, right,
+        "a Recalc class change must rebuild the water zone topology"
+    );
+}

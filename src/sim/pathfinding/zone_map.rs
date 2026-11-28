@@ -205,6 +205,10 @@ pub struct ZoneGrid {
     /// the bridge records and the fixed sizes, so a rebuild with the same
     /// flag and records would produce them again and is skipped. Not saved.
     rebuilt_unchanged: Option<bool>,
+    /// A retained class or level byte changed without the base cluster plane
+    /// being rebuilt. Matching attribute bytes alone must not let `rebuild_zones`
+    /// reuse a stale topology.
+    topology_dirty: bool,
     width: u16,
     height: u16,
 }
@@ -291,6 +295,7 @@ impl<'de> serde::Deserialize<'de> for ZoneGrid {
             bridge_records: Vec::new(),
             native_bridge_source_size,
             rebuilt_unchanged: None,
+            topology_dirty: false,
             width: retained.width,
             height: retained.height,
         })
@@ -564,6 +569,7 @@ impl ZoneGrid {
             bridge_records: bridge_records.to_vec(),
             native_bridge_source_size,
             rebuilt_unchanged: None,
+            topology_dirty: false,
             width,
             height,
         }
@@ -1028,6 +1034,7 @@ impl ZoneGrid {
         let level = terrain.cell(x, y).map_or(0, |cell| cell.level);
         self.invalidate_navigation_history();
         self.rebuilt_unchanged = None;
+        self.topology_dirty = true;
         let base = &mut self.base_topology;
         let Some(slot) = base.movement_classes.get_mut(index) else {
             return false;
@@ -1037,7 +1044,10 @@ impl ZoneGrid {
         true
     }
 
-    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn topology_dirty(&self) -> bool {
+        self.topology_dirty
+    }
+
     pub(crate) fn base_movement_class_at(&self, x: u16, y: u16) -> Option<u8> {
         if x >= self.width || y >= self.height {
             return None;
@@ -1132,7 +1142,8 @@ impl ZoneGrid {
     ) {
         self.invalidate_navigation_history();
         let signed_levels = resolved_terrain.terrain_deformation();
-        if self.rebuilt_unchanged == Some(signed_levels)
+        if !self.topology_dirty
+            && self.rebuilt_unchanged == Some(signed_levels)
             && self.bridge_records.as_slice() == bridge_records
         {
             // Nothing the base pass reads has changed since it last ran, and
@@ -1174,6 +1185,7 @@ impl ZoneGrid {
         self.base_topology = base_topology;
         self.bridge_records = bridge_records.to_vec();
         self.rebuilt_unchanged = Some(signed_levels);
+        self.topology_dirty = false;
     }
 
     /// Replace the one shared route-selection hierarchy (test fixtures only).
