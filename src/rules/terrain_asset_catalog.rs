@@ -38,8 +38,8 @@ struct TerrainShapeBinding {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct TerrainAssetCatalog {
     bindings: BTreeMap<String, TerrainShapeBinding>,
-    /// VERA: the game-folder files whose resource-spawner shape has another
-    /// frame count than the copy a retail install reads
+    /// VERA: the game-folder files whose resource-spawner shape, or
+    /// picture, has another frame count than the copy a retail install reads
     /// (`retail_sources::FolderFiles`); not hashed.
     folder_files: std::collections::BTreeSet<String>,
 }
@@ -87,10 +87,10 @@ impl TerrainAssetCatalog {
                             // SHP header's.
                             if let Some((section, decl)) = art.resolve_declared_picture(image, "") {
                                 return art
-                                    .picture_candidates(section, decl, theater_name)
-                                    .iter()
-                                    .find_map(|file| asset_manager.get_ref(file))
-                                    .and_then(|bytes| PictureFrames::decode(bytes).ok())
+                                    .find_picture(section, decl, theater_name, |file| {
+                                        asset_manager.get_ref(file)
+                                    })
+                                    .and_then(|(_, bytes)| PictureFrames::decode(bytes).ok())
                                     .and_then(|picture| picture.mean_color(0));
                             }
                             // TerrainTypeReadINI71DF9E..71DFC0 uses ImageFile.SHP
@@ -127,9 +127,24 @@ impl TerrainAssetCatalog {
             let spawner = terrain.spawns_tiberium && terrain.is_animated;
             let frame_count = |bytes: &[u8]| ShpFile::frame_count_from_bytes(bytes).ok();
             let count = match picture {
-                Some((section, decl)) => art
-                    .picture_header(section, decl, asset_manager, theater_name)
-                    .map(|facts| facts.frames.clamp(0, i32::from(u16::MAX)) as u16),
+                Some((section, decl)) => {
+                    let facts = art.picture_header(section, decl, asset_manager, theater_name);
+                    let count = facts
+                        .as_ref()
+                        .map(|facts| facts.frames.clamp(0, i32::from(u16::MAX)) as u16);
+                    // Only a spawner's frame count reaches the simulation:
+                    // named when it is not the retail SHP's.
+                    if spawner {
+                        folder.note_stand_in(
+                            facts.as_ref().map_or(&decl.file, |facts| &facts.file),
+                            count,
+                            [&filename],
+                            frame_count,
+                            &mut catalog.folder_files,
+                        );
+                    }
+                    count
+                }
                 None => {
                     // Only a spawner's frame count reaches the simulation.
                     let bytes = if spawner {
@@ -493,8 +508,8 @@ mod tests {
     fn a_declared_terrain_picture_gives_frames_and_radar_color() {
         let directory = crate::map::source::test_support::TestDirectory::new("terrain-picture");
         directory.write("TREE.SHP", &test_shp_with_radar_color([10, 20, 30]));
-        let frames = [[40u8, 50, 60, 255], [0, 0, 0, 255], [0, 0, 0, 255]]
-            .map(|pixel| pixel.repeat(4));
+        let frames =
+            [[40u8, 50, 60, 255], [0, 0, 0, 255], [0, 0, 0, 255]].map(|pixel| pixel.repeat(4));
         directory.write(
             "tree.png",
             &crate::assets::picture_file::encode_frames(2, 2, &frames).unwrap(),

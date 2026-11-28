@@ -45,7 +45,11 @@ impl NativeIniHashes {
         Self {
             rules,
             ai: ai.digest_checked_crc(),
-            art: art.native_crc(),
+            // VERA: without VERA's drawing keys, as the art digest
+            // (`art_data::art_native_crc`), so a picture or model pack's art
+            // INI opens the same rooms as the original's. Retail art holds
+            // none of them: its CRC is GetCRC's (`0x00476D80`).
+            art: crate::rules::art_data::art_native_crc(art),
         }
     }
 

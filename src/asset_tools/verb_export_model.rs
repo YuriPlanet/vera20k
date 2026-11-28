@@ -79,6 +79,10 @@ pub struct ExportModelReport {
     /// The scale the draw gives the model at `model_size`
     /// (`model_size * u / body_length`); 1 draws it voxel for voxel.
     pub draw_scale: f32,
+    /// The art section's keys for the model: `Model=`, the suggested
+    /// `ModelSize=`, and `ModelVoxels=` with `vxl_size`, which gives the
+    /// game the VXL's own tilt half sizes whatever `ModelSize=` is.
+    pub art: Vec<String>,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -199,6 +203,11 @@ pub fn run(
         model_tilt_half_sizes: model_tilt_half_sizes(bounds, model_size),
         tilt_matches,
         draw_scale,
+        art: vec![
+            format!("Model={stem}.glb"),
+            format!("ModelSize={model_size}"),
+            format!("ModelVoxels={},{}", section.size_x, section.size_y),
+        ],
     })
 }
 

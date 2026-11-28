@@ -436,9 +436,10 @@ fn body_art_exists(
 ) -> bool {
     if let Some((section, decl)) = registry.resolve_declared_picture(id, rules_image) {
         return registry
-            .picture_candidates(section, decl, theater_name)
-            .iter()
-            .any(|file| has_file(file));
+            .find_picture(section, decl, theater_name, |file| {
+                has_file(file).then_some(())
+            })
+            .is_some();
     }
     let image_id = registry.resolve_effective_image_id(id, rules_image);
     crate::rules::art_data::building_body_shp_candidates(
@@ -610,7 +611,11 @@ mod tests {
             "TEMPERATE",
             &has("CTPIC.SHP")
         ));
-        assert_eq!(*asked.borrow(), ["capic.png"], "no SHP name asked");
+        assert_eq!(
+            *asked.borrow(),
+            ["capic.png", "capic.webp"],
+            "the picture and its WebP twin, no SHP name"
+        );
         asked.borrow_mut().clear();
         assert!(body_art_exists(
             &registry,

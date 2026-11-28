@@ -218,7 +218,9 @@ pub struct AlphaImageCatalog {
     /// and whether that picture loaded.
     pictures: BTreeMap<String, bool>,
     /// VERA: by image name, the game-folder file that supplied a loaded SHP
-    /// where a retail install loads none (`retail_sources::FolderFiles`).
+    /// where a retail install loads none, or a declared picture that loads
+    /// where the retail SHP does not or the reverse
+    /// (`retail_sources::FolderFiles`).
     folder_files: BTreeMap<String, String>,
 }
 
@@ -240,15 +242,28 @@ impl AlphaImageCatalog {
                 // art section declares `Picture=` is read from the picture;
                 // its SHP is never opened.
                 if let Some((section, decl)) = rules.art().resolve_declared_picture(&name, "") {
-                    let image = rules
+                    let found = rules
                         .art()
-                        .picture_candidates(section, decl, "")
-                        .iter()
-                        .find_map(|file| assets.get_ref(file))
-                        .and_then(|bytes| {
+                        .find_picture(section, decl, "", |file| assets.get_ref(file));
+                    let image = found
+                        .as_ref()
+                        .and_then(|(_, bytes)| {
                             crate::assets::picture_file::PictureFrames::decode(bytes).ok()
                         })
                         .and_then(|picture| AlphaImage::from_picture(&picture, decl.size));
+                    // Named when it loads where the retail SHP does not, or
+                    // the reverse.
+                    let mut file = BTreeSet::new();
+                    folder.note_stand_in(
+                        found.as_ref().map_or(&decl.file, |(found, _)| found),
+                        image.is_some().then_some(()),
+                        [format!("{name}.SHP")],
+                        |bytes| AlphaImage::from_shp(bytes).map(drop),
+                        &mut file,
+                    );
+                    if let Some(file) = file.pop_first() {
+                        folder_files.insert(name.clone(), file);
+                    }
                     if image.is_none() {
                         log::warn!("[{section}] AlphaImage picture {} cannot be drawn", decl.file);
                         crate::rules::art_problems::report(

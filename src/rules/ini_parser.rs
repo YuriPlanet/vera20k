@@ -271,6 +271,18 @@ impl IniSection {
         self.physical_slots().map(|slot| self.physical_entry(slot))
     }
 
+    /// [`Self::physical_entries`] but those keyed `dropped`; None when the
+    /// section held entries and every one was dropped, so it is left out.
+    fn kept_entries(&self, dropped: &[&str]) -> Option<Vec<(&str, &str)>> {
+        let mut any = false;
+        let kept: Vec<_> = self
+            .physical_entries()
+            .inspect(|_| any = true)
+            .filter(|(key, _)| !dropped.contains(key))
+            .collect();
+        (!kept.is_empty() || !any).then_some(kept)
+    }
+
     /// GetEntryCount/GetEntryName's physical walk, including duplicate keys
     /// (LoadFromStraw525A60/526177). Value readers still query by name.
     pub fn physical_keys(&self) -> impl Iterator<Item = &str> {
@@ -811,19 +823,28 @@ impl IniFile {
     /// per entry, in list order, with `\r\n` before every section but the
     /// first. `skip` names a section the load removed first.
     fn save_to_pipe(&self, skip: Option<&str>) -> Vec<u8> {
+        self.save_to_pipe_without(skip, &[])
+    }
+
+    /// [`Self::save_to_pipe`] without the entries keyed `dropped`, and
+    /// without a section those were all it held ([`IniSection::kept_entries`]).
+    fn save_to_pipe_without(&self, skip: Option<&str>, dropped: &[&str]) -> Vec<u8> {
         let skipped = skip.and_then(|name| self.section_position(name));
         let mut bytes = Vec::new();
         for (index, section) in self.sections.iter().enumerate() {
             if Some(index) == skipped {
                 continue;
             }
+            let Some(entries) = section.kept_entries(dropped) else {
+                continue;
+            };
             if !bytes.is_empty() {
                 bytes.extend_from_slice(b"\r\n");
             }
             bytes.push(b'[');
             bytes.extend(crate::util::native_string::narrow_widened(&section.name));
             bytes.extend_from_slice(b"]\r\n");
-            for (key, value) in section.physical_entries() {
+            for (key, value) in entries {
                 bytes.extend(crate::util::native_string::narrow_widened(key));
                 bytes.push(b'=');
                 bytes.extend(crate::util::native_string::narrow_widened(value));
@@ -838,18 +859,30 @@ impl IniFile {
     /// compare as [`Self::multiplayer_digest`] reads them: every physical
     /// entry in order, a section's repeated headers as one.
     pub fn differing_sections(&self, other: &IniFile) -> Vec<String> {
+        self.differing_sections_without(other, &[])
+    }
+
+    /// VERA: [`Self::differing_sections`] as
+    /// [`Self::multiplayer_digest_without`] reads both files: without the
+    /// entries keyed `dropped`, nor a section those were all it held.
+    pub fn differing_sections_without(&self, other: &IniFile, dropped: &[&str]) -> Vec<String> {
         use std::collections::BTreeMap;
-        fn entries(ini: &IniFile) -> BTreeMap<&str, Vec<(&str, &str)>> {
+        fn entries<'a>(
+            ini: &'a IniFile,
+            dropped: &[&str],
+        ) -> BTreeMap<&'a str, Vec<(&'a str, &'a str)>> {
             let mut sections: BTreeMap<&str, Vec<_>> = BTreeMap::new();
             for section in &ini.sections {
-                sections
-                    .entry(section.name.as_str())
-                    .or_default()
-                    .extend(section.physical_entries());
+                if let Some(kept) = section.kept_entries(dropped) {
+                    sections
+                        .entry(section.name.as_str())
+                        .or_default()
+                        .extend(kept);
+                }
             }
             sections
         }
-        let (mine, theirs) = (entries(self), entries(other));
+        let (mine, theirs) = (entries(self, dropped), entries(other, dropped));
         let mut names: Vec<&str> = mine.keys().chain(theirs.keys()).copied().collect();
         names.sort_unstable();
         names.dedup();
@@ -866,12 +899,28 @@ impl IniFile {
         crc_of_pipe(&self.save_to_pipe(None))
     }
 
+    /// VERA: [`Self::native_crc`] over the bytes
+    /// [`Self::multiplayer_digest_without`] reads: without the entries keyed
+    /// `dropped`, nor a section those were all it held. A file with none of
+    /// those keys gives [`Self::native_crc`].
+    pub fn native_crc_without(&self, dropped: &[&str]) -> u32 {
+        crc_of_pipe(&self.save_to_pipe_without(None, dropped))
+    }
+
     /// Collision-resistant agreement for VERA peers over the same ordered
     /// physical entries as SaveToPipe526470. Presentation-only whitespace and
     /// comments do not change it; duplicate entries and their order do.
     /// This extends the network protocol, not the native GetCRC result.
     pub fn multiplayer_digest(&self) -> String {
         crate::util::sha256::sha256_hex(&self.save_to_pipe(None))
+    }
+
+    /// VERA: [`Self::multiplayer_digest`] without the entries keyed
+    /// `dropped` (exact case, as the readers take them), and without a
+    /// section those were all it held; a section the file leaves empty still
+    /// counts. Peers agree whatever they set those keys to.
+    pub fn multiplayer_digest_without(&self, dropped: &[&str]) -> String {
+        crate::util::sha256::sha256_hex(&self.save_to_pipe_without(None, dropped))
     }
 
     /// GetCRC after a digest-checked load (`ReadCCFile(file, 1, 0)`,

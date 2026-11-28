@@ -1017,16 +1017,16 @@ pub(crate) fn picture_file(
 }
 
 /// The file `source` loads in `theater_name` and its bytes; None when no
-/// candidate file is there.
+/// candidate file is there (`ArtRegistry::find_picture`).
 fn locate_source(
     source: &PictureSource,
     art: &crate::rules::art_data::ArtRegistry,
     asset_manager: &crate::assets::asset_manager::AssetManager,
     theater_name: &str,
 ) -> Option<(String, SharedBytes)> {
-    art.picture_candidates(&source.section, &source.decl, theater_name)
-        .into_iter()
-        .find_map(|file| asset_manager.get_shared(&file).map(|bytes| (file, bytes)))
+    art.find_picture(&source.section, &source.decl, theater_name, |file| {
+        asset_manager.get_shared(file)
+    })
 }
 
 /// [`stream_picture`], shared by every source that draws `file`.
@@ -1054,10 +1054,14 @@ fn stream_picture(
         file.rsplit_once('.').map_or(file, |(stem, _)| stem)
     );
     let canvas = decl.size.map(|size| size.map(|side| side.unsigned_abs()));
+    let mask = crate::assets::picture_file::find_picture(&mask_name, |name| {
+        asset_manager.get_shared(name)
+    })
+    .map(|(_, mask)| mask);
     GamePictureFrames::stream(
         PictureBytes {
             picture: bytes,
-            mask: asset_manager.get_shared(&mask_name),
+            mask,
         },
         canvas,
     )

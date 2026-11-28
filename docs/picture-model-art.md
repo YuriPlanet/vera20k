@@ -1,7 +1,7 @@
 # Picture and model art (design, experimental)
 
-VERA-only art formats that replace an SHP with a PNG/APNG picture and a
-VXL+HVA with a glTF 2.0 model. This file is the design the implementation
+VERA-only art formats that replace an SHP with a PNG/APNG or WebP picture
+and a VXL+HVA with a glTF 2.0 model. This file is the design the implementation
 follows; each section that is built says so in [Status](#status).
 
 ## Goals
@@ -51,10 +51,11 @@ numbers, so `Start=`, `End=`, `LoopStart=`, `Shadow=`, `Sequence=`,
 
 | Key | Value | Default |
 |---|---|---|
-| `Picture=` | file name of a PNG or APNG; theater substitution applies to it as to the SHP name | none (no picture) |
+| `Picture=` | file name of a PNG, APNG or WebP ([Formats](#formats-png-or-webp)); theater substitution applies to it as to the SHP name | none (no picture) |
 | `PictureSize=W,H` | the frame canvas in game pixels; the picture is a whole multiple of it (1x, 2x, 4x art) | the picture's own size (1x art) |
 | `Model=` | file name of a binary glTF 2.0 model (`.glb`) | none (no model) |
 | `ModelSize=L` | the length of the model's `body` node along its forward axis, in its rest pose, in leptons (256 per cell); the whole model scales by the same factor | required with `Model=` |
+| `ModelVoxels=X,Y` | the VXL main section's `size_x`, `size_y` (1 to 255) the model stands in for (`asset export-model` prints them, `vxl_size`); the simulation's tilt half sizes then come from them as from that VXL, and `ModelSize=` only scales the drawing | optional; a refused value leaves the tilt to `ModelSize=` |
 
 A value out of range is refused with an in-game message naming the section and
 key; a refused `Picture=` leaves the section with no art (it draws nothing), as
@@ -145,10 +146,32 @@ declares `Picture=`; they take its `PictureSize=`.
 
 ## Files
 
+### Formats: PNG or WebP
+
+Every picture below (pictures, masks, tile pictures, cameo pictures,
+interface art, a model's sidecar images) may be a PNG or APNG, or a WebP:
+a still WebP is one frame, an animated WebP one frame per `ANMF`, composited
+on its canvas by its blend and dispose flags as an APNG's frames are
+(disposal clears to transparent; the `ANIM` background colour and frame
+durations are ignored). Lossy and lossless frames both read; alpha is kept.
+The format is told by the file's signature, not its name.
+
+Every lookup of a picture by a `.png` name (`NAME.png`, `NAME.mask.png`,
+`{PictureFileName}{NN}.png`, `Buildup=` and `BibShape=` names, the interface
+art's `NAME.png` beside its SHP) that does not find that file looks for the
+same name with `.webp` (`NAME.webp`, `NAME.mask.webp`) and uses it, so an
+art pack can ship every picture as WebP, to be small, and its INIs keep
+naming `.png`; `Picture=NAME.webp` names a WebP directly. A `.png` that is
+there wins and costs no more lookups than before; only a miss asks for the
+WebP twin (`picture_file::find_picture`). Logs and in-game art problems name
+the file found. A picture and its mask may be in different formats. Embedded
+images in a `.glb` model stay PNG only.
+
 ### Picture: `NAME.png`
 
 - An APNG with one animation frame per SHP frame, shadow frames included in the
   SHP's order (the back half when the art has shadows). A plain PNG is one frame.
+  Or the WebP equivalent ([Formats](#formats-png-or-webp)).
 - Frames may be whole-canvas or the optimised regions with blend and dispose
   operations APNG tools write; the engine composites them.
 - Straight RGBA. A pixel at least half covered is drawn.
@@ -325,21 +348,22 @@ simulation reads art.
 
 | Value | Owner today | Source with the new art |
 |---|---|---|
-| Anim raw frame count (End/LoopEnd defaults, Middle = count/2, PsyDom, Lightning, flaming infantry) | `ArtRegistry::bind_one_anim_asset` (`427B50`) | APNG frame count (`acTL`), 1 for a plain PNG |
+| Anim raw frame count (End/LoopEnd defaults, Middle = count/2, PsyDom, Lightning, flaming infantry) | `ArtRegistry::bind_one_anim_asset` (`427B50`) | APNG frame count (`acTL`), 1 for a plain PNG; for a type whose ART body is never read (a section of only VERA's keys), as its own-name SHP: the count, Middle 0, the constructor's End |
 | Anim canvas height (WeatherCon bolt Z) | same, `raw_shp_height` (`53A16B`) | `PictureSize` height |
-| Middle frame size (Crater/Scorch smudge size) | `ArtRegistry::populate_anim_frame_dims` (`424F00`) | `PictureSize` |
+| Middle frame size (Crater/Scorch smudge size) | `ArtRegistry::populate_anim_frame_dims` (`424F00`) | the rectangle the middle frame draws on its `PictureSize` canvas, as an SHP frame stores its own (`picture_file::drawn_size`) |
 | Buildup frame count and presence (build/sell time, `CanSell`) | `buildup_asset_catalog` (`45F23E`) | the Buildup picture's frame count |
 | Body frame count (rubble) | `building_rubble` (`45F160`) | the body picture's frame count |
 | Body art present in this theater (random maps) | `map/rmg/tech_catalog` | the declared picture |
 | Voxel model loaded (rocking, rockers) | `VoxelAssetCatalog::bind` (`6F9E10`) | `Model=` declared and the file loaded |
-| Tilt half sizes (slope tilt, fire coordinates) | `voxel_asset_catalog::voxel_tilt_half_sizes` (`6F3B6C`) | `body` bounds scaled by `ModelSize` |
+| Tilt half sizes (slope tilt, fire coordinates) | `voxel_asset_catalog::voxel_tilt_half_sizes` (`6F3B6C`) | `ModelVoxels` as a VXL's section sizes, else `body` bounds scaled by `ModelSize` |
 | Overlay image present (authored overlay admission) | `effect_asset_catalog::resolved_overlay_shp_ids` (`5FE620`) | the declared picture found and readable |
 | Ore-tree frame count (spawner timer) | `TerrainAssetCatalog::bind` (`71C87A`) | the picture's frame count |
 | TerrainType radar colour (frame 0 header RGB, `71DF9E`) | same | frame 0's mean colour |
 | Particle image frame count (config hash only) | `EffectAssetCatalog::bind` | the picture's frame count |
 | AlphaImage loaded and its canvas (Ares particle mode, glow centre) | `AlphaImageCatalog::bind` (`5F92D0`) | the picture loaded; `PictureSize`, else its size |
 
-The tilt half sizes take the VXL section sizes the model stands in for:
+The tilt half sizes take the VXL section sizes `ModelVoxels=` gives, exactly
+as from that VXL; without it, the sizes the model stands in for:
 `size_x = round(ModelSize * u)` voxels along the body's glTF +Z and
 `size_y = round(width / length * ModelSize * u)` across its X, `u` being the
 native model units per lepton (`0x00B1D008`, about 0.16573), each held to 1..255;
@@ -349,15 +373,49 @@ then `[size_y / 2 + 0.5, size_x / 2]` as for a VXL
 `TURN.VXL` (`5F865F`, `5F8ACB`). The config hash takes the model's file name,
 `ModelSize=` and a digest of its bytes.
 
-Declared overlay pictures enter the config hash and match-start file-input
-hash when their presence decides placement. A `CellAnim=` admits the
-overlay independently. A refused start can name the picture or archive that
-supplied it. The AlphaImage facts enter the config hash only for names whose
+The match-start file-input hash folds which overlay types without a
+`CellAnim=` have an image, from a picture or an SHP alike
+(`EffectAssetCatalog::fold_overlay_admission`): a pack whose wall, ore or
+bridge pictures admit what the SHPs admit hashes as the original game, with
+or without those SHPs. A `CellAnim=` admits the overlay independently.
+Declared overlay pictures that decide placement also enter the config hash,
+as before. A refused start can name the picture or archive that supplied
+one whose admission is not the shipped SHP's, or that stands in for an SHP
+the archives lack. The AlphaImage facts enter the config hash only for names whose
 art declares a picture (`AlphaImageCatalog::hash_declared_pictures`).
 
 A declared file that is missing on one machine changes these values there, as a
 missing SHP does today; the config hash refuses that machine online and in
 saves and replays.
+
+The art keys themselves only choose what is drawn (`art_data::VERA_ART_KEYS`:
+`Picture=`, `PictureSize=`, `CameoPicture=`, `AltCameoPicture=`, `Model=`,
+`ModelSize=`, `ModelVoxels=`; what `ModelVoxels=` decides, the tilt half
+sizes, is a fact the start certifies). The art INI's multiplayer digest,
+the room door's ARTMD CRC (`art_data::art_native_crc`), Quick Match's and a
+refused start's changed game files (`retail_sources::vera_drawing_keys`) and
+the rules parts' art part leave them out, and a section they leave empty
+(`art_data::art_multiplayer_digest`), so an art pack's INI agrees with the
+original's when nothing else differs; a theater INI's `PictureFileName=`
+likewise (`map::theater::VERA_THEATER_KEYS`). A section holding only those keys is no
+art section to the simulation (`art_data::sim_art_section`): the AnimType
+sweep does not read it as an ART body, the image readers do not find it, and
+the art registry keeps it apart, where only the picture, model and cameo
+declarations look; interface art's `PictureSize=` is read there too. The
+values the table lists still have to agree: `RuleSet::file_inputs_hash`
+folds them as facts, whichever file gave them, so a pack that keeps the
+original's facts starts with retail players and one that does not is
+refused at the start, naming the picture or model files whose facts are
+not the shipped SHP's or VXL's, or that stand in for one the archives
+lack (`FolderFiles::note_stand_in`, naming only), never a
+desync ([Networking](Networking.md)).
+
+A mod's new AnimType whose art section holds only `Picture=` is an unread
+type, as one with no section: its picture gives its frame count, but its
+End and LoopEnd stay the constructor's 0, so it ends at once and draws
+nothing. Give such a section any other art key its type reads (`Rate=`,
+say) to make it an ART body; that key enters the digests, which a pack
+for retail types never needs.
 
 ## Drawing
 
@@ -673,13 +731,21 @@ against this list.
   `PictureSize=`: the match's art registry, or before a match (the startup
   cursor) the fixed art INI.
 
+- WebP ([Formats](#formats-png-or-webp)): `picture_file::FrameStream` and
+  `PictureHeader::read` read a WebP by its signature (`image-webp`), the PNG
+  path unchanged; every picture lookup by name goes through
+  `picture_file::find_picture` (`ArtRegistry::find_picture` over the
+  candidates; `picture_atlas::locate_source` and its masks,
+  `interface_picture::find`, the cameo pictures, `TilePicture::load`, a
+  model's sidecars).
+
 ## Verification
 
 ### Off: nothing declared (retail data), identical to `main`
 
 | Check | How | Passes when |
 |---|---|---|
-| No new lookups | a test loads the retail rules through an asset manager that records lookups | no `.png`, `.glb` or `.mask.png` name is looked up |
+| No new lookups | a test loads the retail rules through an asset manager that records lookups | no `.png`, `.webp`, `.glb` or `.mask.png` name is looked up |
 | Shared code untouched | `git diff main` of existing files against the hook list above | every edit is a listed hook |
 | Simulation | `sim-bench --release`, 30-start map, one player against 29 AI, on `main` and on the branch | same final state hash and config hash |
 | Replays | play the same replays on both builds | same final hashes |
@@ -733,6 +799,22 @@ Art that still only comes from SHP, PCX or TMP, and why:
   SHP cameo, and no language label is baked onto them.
 - Radar colours of declared overlays and trees are the frames' mean colours;
   an SHP header holds a colour its author chose.
+- Retail `artmd.ini` has empty sections (`[FPLS]`, `[120MM]`, the
+  `[SAM-*]` ones). Adding only VERA's keys to one leaves a section of only
+  those, which the simulation and the digests take as missing, while the
+  retail game has it empty: such a pack differs from the original's art and
+  is refused (named in the art part), not let in to desync.
+- A scorching or cratering animation's picture is sized by the rectangle its
+  middle frame draws; an SHP frame that stores transparent margins around
+  its pixels is larger, so a faithful picture of it can fall on the other
+  side of the smudge size test and be refused at the start.
+- A refused start names files by comparing a picture's or model's fact
+  with the shipped SHP's or VXL's; where a repacked archive dropped that
+  file, it names the picture or model whatever its fact. Only the naming
+  does this; what the start compares is the facts alone.
+- Tile pictures (`PictureFileName=`) draw in skirmish and campaign; a network
+  match of the original game reads the retail theater INIs and tiles
+  ([Networking](Networking.md)), so they do not draw there.
 
 - BibShape and factory door art are atlas files shared by name. When a
   building that declares `Picture=` and one that does not name the same file,
