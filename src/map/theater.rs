@@ -23,6 +23,12 @@ use crate::rules::ini_parser::{IniFile, IniSection};
 use crate::rules::object_image::ImageTheater;
 use crate::rules::retail_sources::{RetailArchive, registered_retail, retail_archive};
 
+/// VERA's drawing key in a theater INI's tilesets (`PictureFileName=`, the
+/// tile pictures, docs/picture-model-art.md): it changes no cell's land or
+/// height, so the theater INI's multiplayer digest leaves it out and a
+/// picture pack agrees with the original theater online.
+pub const VERA_THEATER_KEYS: &[&str] = &["PictureFileName"];
+
 /// Marker for "no tile" after raw Pack5 compatibility translation.
 ///
 /// A raw signed `-1` can be shifted by a reached `LastTilesInSet` record, so
@@ -1807,14 +1813,20 @@ struct TilePicture {
 }
 
 impl TilePicture {
-    /// `file` for `tmp`; None, reported in the game, when it is missing,
-    /// unreadable or does not fit the TMP's cells. The TMP's pixels then draw.
-    fn load(asset_manager: &AssetManager, file: &str, tmp: &TmpFile) -> Option<Self> {
+    /// `name` for `tmp`, else its WebP twin
+    /// (`crate::assets::picture_file::find_picture`); None, reported in the
+    /// game, when it is missing, unreadable or does not fit the TMP's cells.
+    /// The TMP's pixels then draw.
+    fn load(asset_manager: &AssetManager, name: &str, tmp: &TmpFile) -> Option<Self> {
         let max = tmp.tiles.iter().flatten().fold([1u32, 1u32], |max, tile| {
             [max[0].max(tile.pixel_width), max[1].max(tile.pixel_height)]
         });
-        let loaded = asset_manager
-            .get_ref(file)
+        let found =
+            crate::assets::picture_file::find_picture(name, |name| asset_manager.get_ref(name));
+        let file = found.as_ref().map_or(name, |(file, _)| &**file);
+        let loaded = found
+            .as_ref()
+            .map(|&(_, bytes)| bytes)
             .ok_or_else(|| "the file is not found".to_owned())
             .and_then(|bytes| {
                 crate::assets::picture_file::PictureFrames::decode(bytes)

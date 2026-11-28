@@ -138,6 +138,11 @@ pub struct ModelDecl {
     /// `ModelSize=L`: the `body` node's rest length along its forward axis,
     /// in leptons; the whole model scales by the same factor.
     pub size: i32,
+    /// `ModelVoxels=X,Y`: the VXL main section's `size_x`, `size_y` the
+    /// model stands in for (`asset export-model` prints them). When set, the
+    /// simulation's tilt half sizes come from them as from that VXL, and
+    /// `ModelSize=` only scales the drawing.
+    pub voxels: Option<[u8; 2]>,
 }
 
 /// The largest `ModelSize=`: six cells, so the body's length stays within the
@@ -166,7 +171,75 @@ fn parse_model_decl(section_name: &str, section: &IniSection) -> Option<ModelDec
         );
         return None;
     };
-    Some(ModelDecl { file, size })
+    let voxels = section.read_name("ModelVoxels", 0x40).and_then(|_| {
+        let voxels = section
+            .read_int_fields_complete::<2>("ModelVoxels", 0x40)
+            .and_then(|[x, y]| Some([u8::try_from(x).ok()?, u8::try_from(y).ok()?]))
+            .filter(|voxels| voxels.iter().all(|&side| side > 0));
+        if voxels.is_none() {
+            log::warn!(
+                "[{section_name}] ModelVoxels= needs two sizes from 1 to 255; \
+                 the tilt follows ModelSize="
+            );
+            crate::rules::art_problems::report(
+                section_name,
+                "ModelVoxels=",
+                "needs two sizes from 1 to 255",
+                "the tilt follows ModelSize=",
+            );
+        }
+        voxels
+    });
+    Some(ModelDecl { file, size, voxels })
+}
+
+/// VERA-only, experimental (docs/picture-model-art.md): the art keys that
+/// only choose what is drawn. What the simulation takes from the art they
+/// name (frame counts, admission, `ModelVoxels=`'s tilt half sizes) enters
+/// `RuleSet::file_inputs_hash`, which a network start certifies, so a peer
+/// with picture or model art agrees with one without when those agree: the
+/// multiplayer digest and the room CRC of the art INI leave them out
+/// ([`art_multiplayer_digest`], [`art_native_crc`]), and a section holding
+/// nothing else is no art section to the simulation ([`sim_art_section`]).
+pub const VERA_ART_KEYS: &[&str] = &[
+    "Picture",
+    "PictureSize",
+    "CameoPicture",
+    "AltCameoPicture",
+    "Model",
+    "ModelSize",
+    "ModelVoxels",
+];
+
+/// Whether `section` holds VERA's drawing keys ([`VERA_ART_KEYS`]) and
+/// nothing else: a section a picture or model pack adds for a type the
+/// original art gives none.
+pub fn vera_only_section(section: &IniSection) -> bool {
+    let mut keys = section.physical_keys().peekable();
+    keys.peek().is_some() && keys.all(|key| VERA_ART_KEYS.contains(&key))
+}
+
+/// The art INI's section `name` as the simulation reads it: None for a
+/// section with only VERA's drawing keys ([`vera_only_section`]), as for a
+/// missing one.
+pub fn sim_art_section<'a>(art: &'a IniFile, name: &str) -> Option<&'a IniSection> {
+    art.section(name)
+        .filter(|section| !vera_only_section(section))
+}
+
+/// The art INI's multiplayer digest (`IniFile::multiplayer_digest`) without
+/// VERA's drawing keys ([`VERA_ART_KEYS`]), and without the sections that
+/// leaves empty: art packs agree with the original art.
+pub fn art_multiplayer_digest(art: &IniFile) -> String {
+    art.multiplayer_digest_without(VERA_ART_KEYS)
+}
+
+/// The art INI's CRC a network room compares (`IniFile::native_crc`,
+/// `0x00679EC0`) over the same entries as [`art_multiplayer_digest`]: art
+/// packs open the original art's rooms. Retail art holds none of
+/// [`VERA_ART_KEYS`], so its CRC is GetCRC's.
+pub fn art_native_crc(art: &IniFile) -> u32 {
+    art.native_crc_without(VERA_ART_KEYS)
 }
 
 /// Per-object art configuration parsed from an art.ini section.
@@ -1288,6 +1361,12 @@ pub struct ArtRegistry {
     /// Derived uppercase lookup -> exact entry key for legacy visual consumers.
     /// Rebuilt with entries; preserves their former last-wins folded lookup.
     entry_names: LookupMap<String, String>,
+    /// VERA-only, experimental: the sections with only VERA's drawing keys
+    /// ([`vera_only_section`]), kept out of `entries` so nothing the
+    /// simulation reads finds them; only the picture, model and cameo
+    /// declarations look here. Keyed as `entries` and `entry_names`.
+    vera_entries: LookupMap<String, ArtEntry>,
+    vera_entry_names: LookupMap<String, String>,
     /// section ID (uppercase) -> `CanHideThings=`. Missing sections default true.
     can_hide_things: HashMap<String, bool>,
     /// section ID (uppercase) -> `OccupyHeight=`, defaulting to art `Height=`.
@@ -1565,6 +1644,8 @@ impl ArtRegistry {
     pub fn from_ini(ini: &IniFile) -> Self {
         let mut entries: LookupMap<String, ArtEntry> = LookupMap::default();
         let mut entry_names: LookupMap<String, String> = LookupMap::default();
+        let mut vera_entries: LookupMap<String, ArtEntry> = LookupMap::default();
+        let mut vera_entry_names: LookupMap<String, String> = LookupMap::default();
         let mut can_hide_things: HashMap<String, bool> = HashMap::new();
         let mut occupy_heights: HashMap<String, i32> = HashMap::new();
         let mut anim_runtime_configs = AnimConfigs::default();
@@ -1759,10 +1840,18 @@ impl ArtRegistry {
             let normal_z_adjust: i32 = section.read_int("NormalZAdjust", 0);
 
             let section_key = section_name.to_uppercase();
-            can_hide_things.insert(section_key.clone(), can_hide);
-            occupy_heights.insert(section_key.clone(), occupy_height);
-            anim_runtime_configs.insert(section_name.to_ascii_uppercase(), anim_runtime_config);
-            anim_theater_flags.insert(section_key.clone(), (anim_theater, anim_new_theater));
+            let vera_only = vera_only_section(section);
+            if !vera_only {
+                can_hide_things.insert(section_key.clone(), can_hide);
+                occupy_heights.insert(section_key.clone(), occupy_height);
+                anim_runtime_configs.insert(section_name.to_ascii_uppercase(), anim_runtime_config);
+                anim_theater_flags.insert(section_key.clone(), (anim_theater, anim_new_theater));
+            }
+            let (entries, entry_names) = if vera_only {
+                (&mut vera_entries, &mut vera_entry_names)
+            } else {
+                (&mut entries, &mut entry_names)
+            };
             entry_names.insert(section_key, section_name.to_owned());
             entries.insert(
                 section_name.to_owned(),
@@ -1843,6 +1932,8 @@ impl ArtRegistry {
         let mut registry = ArtRegistry {
             entries,
             entry_names,
+            vera_entries,
+            vera_entry_names,
             can_hide_things,
             occupy_heights,
             anim_runtime_configs,
@@ -1862,6 +1953,8 @@ impl ArtRegistry {
         ArtRegistry {
             entries: LookupMap::default(),
             entry_names: LookupMap::default(),
+            vera_entries: LookupMap::default(),
+            vera_entry_names: LookupMap::default(),
             can_hide_things: HashMap::new(),
             occupy_heights: HashMap::new(),
             anim_runtime_configs: AnimConfigs::default(),
@@ -1883,7 +1976,8 @@ impl ArtRegistry {
     /// art"): `PictureSize=` of the section named `section`
     /// (case-insensitive), with or without `Picture=`.
     pub fn picture_size(&self, section: &str) -> Option<[i32; 2]> {
-        self.get(section)?.picture_size
+        // A section of only VERA's drawing keys sizes interface art too.
+        self.declared_entry(section)?.1.picture_size
     }
 
     /// Native Foundation474DA0 uses exact section/key identity. The cached
@@ -2301,12 +2395,6 @@ impl ArtRegistry {
         theater_ext: &str,
         theater_name: &str,
     ) {
-        if config.art_body_read
-            && let Some(decl) = self.get(name).and_then(|entry| entry.picture.clone())
-        {
-            self.bind_one_anim_picture(name, config, &decl, asset_manager, theater_name);
-            return;
-        }
         let image_id = self.resolve_anim_image_id(name);
         let candidates = effect_shp_candidates(
             crate::rules::art_data::EffectImageKind::Animation,
@@ -2316,6 +2404,23 @@ impl ArtRegistry {
             theater_ext,
             theater_name,
         );
+        // VERA-only: a section of only VERA's drawing keys declares the
+        // picture of a type whose ART body is never read, as the own-name
+        // SHP such a type still loads (AnimTypeLoad428855).
+        if let Some(decl) = self
+            .declared_entry(name)
+            .and_then(|(_, entry)| entry.picture.clone())
+        {
+            self.bind_one_anim_picture(
+                name,
+                config,
+                &decl,
+                &candidates,
+                asset_manager,
+                theater_name,
+            );
+            return;
+        }
         let folder = crate::rules::retail_sources::FolderFiles::new(asset_manager);
         let word = |bytes: &[u8], offset: usize| {
             bytes
@@ -2438,17 +2543,60 @@ impl ArtRegistry {
     /// `Picture=`. The picture's frame count stands in for the SHP header's
     /// (`427B50`, header `+6`) and its canvas height, `PictureSize=` else the
     /// picture's own, for the header's `+4`; the SHP is never opened. A picture
-    /// that is missing or unreadable binds as a missing SHP does.
+    /// that is missing or unreadable binds as a missing SHP does. A type whose
+    /// ART body was never read (its section holds only VERA's drawing keys)
+    /// binds it as such a type binds its SHP: the count and height, Middle 0,
+    /// the constructor's End and LoopEnd. The picture is noted where its
+    /// frame count or height is not that of the first of the SHP
+    /// `candidates` a retail install ships.
     fn bind_one_anim_picture(
         &mut self,
         name: &str,
         config: &AnimTypeRuntimeConfig,
         decl: &PictureDecl,
+        candidates: &[String],
         asset_manager: &crate::assets::asset_manager::AssetManager,
         theater_name: &str,
     ) {
-        let header = self.picture_header(name, decl, asset_manager, theater_name);
+        let section = self
+            .declared_entry(name)
+            .map_or_else(|| name.to_owned(), |(section, _)| section.clone());
+        let header = self.picture_header(&section, decl, asset_manager, theater_name);
+        let folder = crate::rules::retail_sources::FolderFiles::new(asset_manager);
+        let file = header.as_ref().map_or(&decl.file, |header| &header.file);
+        // The SHP header's signed frame and height words (`+6`, `+4`).
+        fn word(bytes: &[u8], offset: usize) -> Option<i32> {
+            bytes
+                .get(offset..offset + 2)
+                .map(|word| i32::from(i16::from_le_bytes([word[0], word[1]])))
+        }
+        let mut folder_files = AnimFolderFiles::default();
+        folder.note_stand_in(
+            file,
+            header.as_ref().map(|header| header.frames),
+            candidates,
+            |bytes| word(bytes, 6),
+            &mut folder_files.frames,
+        );
+        folder.note_stand_in(
+            file,
+            header.as_ref().map(|header| header.size[1]),
+            candidates,
+            |bytes| word(bytes, 4),
+            &mut folder_files.height,
+        );
+        self.note_anim_folder_files(name, folder_files);
         let raw_count = header.as_ref().map_or(0, |header| header.frames);
+        if !config.art_body_read {
+            if header.is_none() {
+                return;
+            }
+            let bound = self.anim_runtime_configs.get_mut(name).unwrap();
+            bound.raw_shp_frame_count = Some(raw_count);
+            bound.raw_shp_height = Some(header.as_ref().map_or(0, |header| header.size[1]));
+            bound.middle_frame = Some(0);
+            return;
+        }
         let (loaded_end, loaded_loop_end) = if header.is_some() {
             resolve_loaded_bounds(
                 raw_count,
@@ -2473,14 +2621,29 @@ impl ArtRegistry {
     /// Whether any art section declares `Picture=`. Without one, no object
     /// takes the picture path, so callers skip resolving per object.
     pub fn declares_any_picture(&self) -> bool {
-        self.entries.values().any(|entry| entry.picture.is_some())
+        self.entries
+            .values()
+            .chain(self.vera_entries.values())
+            .any(|entry| entry.picture.is_some())
+    }
+
+    /// VERA-only, experimental: section `image_id` as the picture, model and
+    /// cameo declarations read it: an art section, else one with only VERA's
+    /// drawing keys (`vera_entries`), which nothing else finds.
+    fn declared_entry(&self, image_id: &str) -> Option<(&String, &ArtEntry)> {
+        folded_entry_name(&self.entry_names, image_id)
+            .and_then(|name| self.entries.get_key_value(name))
+            .or_else(|| {
+                folded_entry_name(&self.vera_entry_names, image_id)
+                    .and_then(|name| self.vera_entries.get_key_value(name))
+            })
     }
 
     /// Whether art section `section` declares `Picture=`, so its frames are
     /// the picture's and its SHP is never opened (docs/picture-model-art.md).
     pub fn declares_picture(&self, section: &str) -> bool {
-        self.get(section)
-            .is_some_and(|entry| entry.picture.is_some())
+        self.declared_entry(section)
+            .is_some_and(|(_, entry)| entry.picture.is_some())
     }
 
     /// The art section an object's art metadata is read through
@@ -2493,10 +2656,9 @@ impl ArtRegistry {
     ) -> Option<(&str, &PictureDecl)> {
         let image = rules_image.trim();
         let base = if image.is_empty() { type_id } else { image };
-        let (section, entry) = [base, type_id].into_iter().find_map(|id| {
-            folded_entry_name(&self.entry_names, id)
-                .and_then(|name| self.entries.get_key_value(name))
-        })?;
+        let (section, entry) = [base, type_id]
+            .into_iter()
+            .find_map(|id| self.declared_entry(id))?;
         Some((section.as_str(), entry.picture.as_ref()?))
     }
 
@@ -2504,7 +2666,8 @@ impl ArtRegistry {
     /// are the model's and its VXL and HVA are never opened
     /// (docs/picture-model-art.md).
     pub fn declares_model(&self, section: &str) -> bool {
-        self.get(section).is_some_and(|entry| entry.model.is_some())
+        self.declared_entry(section)
+            .is_some_and(|(_, entry)| entry.model.is_some())
     }
 
     /// The art section a voxel object's image resolves to and its `Model=`,
@@ -2516,10 +2679,9 @@ impl ArtRegistry {
     pub fn resolve_declared_model(&self, type_id: &str, image: &str) -> Option<(&str, &ModelDecl)> {
         let image = image.trim();
         let base = if image.is_empty() { type_id } else { image };
-        let (section, entry) = [base, type_id].into_iter().find_map(|id| {
-            folded_entry_name(&self.entry_names, id)
-                .and_then(|name| self.entries.get_key_value(name))
-        })?;
+        let (section, entry) = [base, type_id]
+            .into_iter()
+            .find_map(|id| self.declared_entry(id))?;
         Some((section.as_str(), entry.model.as_ref()?))
     }
 
@@ -2564,10 +2726,35 @@ impl ArtRegistry {
             .collect()
     }
 
+    /// The first of [`Self::picture_candidates`] that `lookup` finds, each
+    /// tried as [`crate::assets::picture_file::find_picture`] tries a name
+    /// (its `.webp` twin on a miss), and the name it was found by: what
+    /// every reader of a declared picture opens.
+    pub fn find_picture<T>(
+        &self,
+        section: &str,
+        decl: &PictureDecl,
+        theater_name: &str,
+        mut lookup: impl FnMut(&str) -> Option<T>,
+    ) -> Option<(String, T)> {
+        self.picture_candidates(section, decl, theater_name)
+            .into_iter()
+            .find_map(|file| {
+                let (found, value) = crate::assets::picture_file::find_picture(&file, &mut lookup)?;
+                // The candidate itself, not a copy, unless its twin was found.
+                let twin = match found {
+                    std::borrow::Cow::Borrowed(_) => None,
+                    std::borrow::Cow::Owned(twin) => Some(twin),
+                };
+                Some((twin.unwrap_or(file), value))
+            })
+    }
+
     /// The simulation's facts of the picture `decl` declares in `section`:
     /// its frame count and its canvas in game pixels (`PictureSize=`, else
     /// the picture's own size), both clamped to an SHP header's signed words.
-    /// None, logged, when no candidate file is found or it is not a PNG.
+    /// None, logged, when no candidate file is found or it is not a PNG or
+    /// WebP.
     pub fn picture_header(
         &self,
         section: &str,
@@ -2575,11 +2762,9 @@ impl ArtRegistry {
         asset_manager: &crate::assets::asset_manager::AssetManager,
         theater_name: &str,
     ) -> Option<PictureFacts> {
-        let candidates = self.picture_candidates(section, decl, theater_name);
-        let Some((file, bytes)) = candidates
-            .iter()
-            .find_map(|file| asset_manager.get_ref(file).map(|bytes| (file, bytes)))
-        else {
+        let Some((file, bytes)) = self.find_picture(section, decl, theater_name, |file| {
+            asset_manager.get_ref(file)
+        }) else {
             log::warn!("[{section}] {} is not found; it has no frames", decl.file);
             crate::rules::art_problems::report(
                 section,
@@ -2621,7 +2806,7 @@ impl ArtRegistry {
             );
         }
         Some(PictureFacts {
-            file: file.clone(),
+            file,
             frames: word(header.frames),
             size: decl
                 .size
@@ -2934,7 +3119,9 @@ impl ArtRegistry {
         rules_image: &str,
     ) -> [Option<&str>; 2] {
         let resolved = self.resolve_object_art(type_id, rules_image);
-        let entry = self.get(&resolved.base_art_id);
+        let entry = self
+            .declared_entry(&resolved.base_art_id)
+            .map(|(_, entry)| entry);
         [
             entry.and_then(|entry| entry.cameo_picture.as_deref()),
             entry.and_then(|entry| entry.alt_cameo_picture.as_deref()),
@@ -3090,21 +3277,6 @@ impl ArtRegistry {
             ))
         };
         for (name, image_id, sized) in pending {
-            // VERA-only, experimental: a picture's frames all have the
-            // canvas `PictureSize=` gives (docs/picture-model-art.md).
-            if let Some(decl) = self.get(&name).and_then(|entry| entry.picture.clone()) {
-                match self.picture_header(&name, &decl, asset_manager, theater_name) {
-                    Some(facts) => {
-                        let entry = self.get_mut(&name).unwrap();
-                        let side = |value: i32| u16::try_from(value).unwrap_or(u16::MAX);
-                        entry.frame_width = side(facts.size[0]);
-                        entry.frame_height = side(facts.size[1]);
-                        populated += 1;
-                    }
-                    None => fallback += 1,
-                }
-                continue;
-            }
             let candidates: Vec<String> = effect_shp_candidates(
                 crate::rules::art_data::EffectImageKind::Animation,
                 Some(self),
@@ -3113,6 +3285,39 @@ impl ArtRegistry {
                 theater_ext,
                 theater_name,
             );
+            // VERA-only, experimental (docs/picture-model-art.md): the
+            // picture's middle frame, sized as an SHP frame is, by the
+            // rectangle it draws on its canvas (`picture_file::drawn_size`).
+            if let Some(decl) = self.get(&name).and_then(|entry| entry.picture.clone()) {
+                let facts = self.picture_header(&name, &decl, asset_manager, theater_name);
+                let size = facts.as_ref().and_then(|facts| {
+                    crate::assets::picture_file::drawn_size(
+                        asset_manager.get_ref(&facts.file)?,
+                        usize::try_from(facts.frames / 2).ok()?,
+                        facts.size,
+                    )
+                });
+                if sized {
+                    folder.note_stand_in(
+                        facts.as_ref().map_or(&decl.file, |facts| &facts.file),
+                        size.map(|[width, height]| smudge_frame_is_large(width, height)),
+                        &candidates,
+                        middle_frame_is_large,
+                        &mut folder_files,
+                    );
+                }
+                match size {
+                    Some([width, height]) => {
+                        let entry = self.get_mut(&name).unwrap();
+                        let side = |value: i32| u16::try_from(value).unwrap_or(u16::MAX);
+                        entry.frame_width = side(width);
+                        entry.frame_height = side(height);
+                        populated += 1;
+                    }
+                    None => fallback += 1,
+                }
+                continue;
+            }
             let shp_bytes: Option<&[u8]> = candidates.iter().find_map(|c| {
                 if sized {
                     folder.read_noting(c, middle_frame_is_large, &mut folder_files)

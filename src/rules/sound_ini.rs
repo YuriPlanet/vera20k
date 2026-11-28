@@ -544,6 +544,14 @@ impl SoundRegistry {
         }
     }
 
+    /// Every `Sounds=` sample name the registry holds, in no set order (a
+    /// name shared by several entries repeats).
+    pub fn sample_names(&self) -> impl Iterator<Item = &str> {
+        self.entries
+            .values()
+            .flat_map(|entry| entry.sounds.iter().map(String::as_str))
+    }
+
     /// Look up a sound entry by ID (case-insensitive).
     pub fn get(&self, sound_id: &str) -> Option<&SoundEntry> {
         crate::util::native_string::with_ascii_uppercase(sound_id, |key| self.entries.get(key))

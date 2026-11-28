@@ -158,6 +158,7 @@ Thumbs.db
 !/docs/images/
 !/docs/images/**
 !/docs/picture-model-art.md
+!/docs/opus-audio.md
 !/docs/zoom-one-pass.md
 
 .mcp.json

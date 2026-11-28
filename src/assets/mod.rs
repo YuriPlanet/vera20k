@@ -42,6 +42,7 @@ pub mod mix_crypto;
 pub mod mix_hash;
 mod numbered_mod_resources;
 pub mod model_file;
+pub mod opus_file;
 pub mod pal_file;
 pub mod pcx_file;
 pub mod picture_file;

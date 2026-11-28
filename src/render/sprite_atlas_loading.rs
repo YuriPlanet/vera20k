@@ -64,7 +64,9 @@ impl PreparedSpriteAtlas {
             .drawn(work.render())
             .map_err(sprite_atlas_load_error)?;
         let added = rendered.len() + pictures.keys.len();
-        if rendered.is_empty() {
+        // A world whose every SHP is drawn from pictures (an art pack that
+        // replaces them all) still makes the atlas, of picture pages only.
+        if rendered.is_empty() && pictures.keys.is_empty() {
             log::warn!("No SHP sprites rendered");
             return Ok(SpriteAtlasLoadingJob::ready(None));
         }

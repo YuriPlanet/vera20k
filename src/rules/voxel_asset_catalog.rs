@@ -134,7 +134,8 @@ pub struct DeclaredModel {
     pub section: String,
     pub decl: crate::rules::art_data::ModelDecl,
     pub model: Arc<crate::assets::model_file::Model>,
-    /// The tilt half sizes the simulation takes ([`model_tilt_half_sizes`]).
+    /// The tilt half sizes the simulation takes: `ModelVoxels=`'s as a VXL's
+    /// ([`voxel_tilt_half_sizes`]), else [`model_tilt_half_sizes`].
     pub half_sizes: [f32; 2],
     /// FNV-1a of the file's bytes: the catalog hashes it with the file name,
     /// so a machine with another file is refused online.
@@ -161,6 +162,7 @@ impl DeclaredModel {
             decl: crate::rules::art_data::ModelDecl {
                 file: "test.glb".into(),
                 size,
+                voxels: None,
             },
             model,
             half_sizes,
@@ -228,10 +230,12 @@ fn admit_declared_model(
             }
         })
         .clone()?;
-    let Some(half_sizes) = model
-        .body_bounds()
-        .and_then(|bounds| model_tilt_half_sizes(bounds, decl.size))
-    else {
+    // `ModelVoxels=` gives the VXL's own section sizes; else they follow
+    // the model's body at `ModelSize=`.
+    let Some(half_sizes) = model.body_bounds().and_then(|bounds| match decl.voxels {
+        Some([size_x, size_y]) => Some(tilt_half_sizes(size_x, size_y)),
+        None => model_tilt_half_sizes(bounds, decl.size),
+    }) else {
         log::warn!(
             "[{section}] Model={} has no body node with a forward length; it draws nothing",
             decl.file
@@ -331,6 +335,7 @@ fn no_spawn_alt_model(
         decl: crate::rules::art_data::ModelDecl {
             file,
             size: decl.size,
+            voxels: decl.voxels,
         },
         model: Arc::new(model),
         half_sizes,
@@ -612,8 +617,9 @@ pub(crate) struct VoxelAssetCatalog {
     /// VERA: the game-folder files that change which main models load or a
     /// main VXL's half sizes: a library that is there or reads where the
     /// retail copy does not (or the reverse), whatever part it is, as one
-    /// bad part unloads the whole model; and a main VXL of other half
-    /// sizes. Not hashed or compared.
+    /// bad part unloads the whole model; a main VXL of other half sizes;
+    /// and a declared `Model=` whose load or half sizes are not the retail
+    /// main VXL's (`FolderFiles::note_stand_in`). Not hashed or compared.
     folder_files: BTreeSet<String>,
 }
 impl PartialEq for VoxelAssetCatalog {
@@ -683,6 +689,12 @@ impl VoxelAssetCatalog {
         // declares `Model=`, each section admitted once.
         let mut by_section = BTreeMap::new();
         let mut building_guns: BTreeMap<String, Option<Arc<DeclaredModel>>> = BTreeMap::new();
+        let folder = crate::rules::retail_sources::FolderFiles::new(assets);
+        let half_sizes =
+            |vxl: &VxlFile| voxel_tilt_half_sizes(vxl).map(|sizes| sizes.map(f32::to_bits));
+        // VERA: the models whose load or tilt half sizes (what `loaded`
+        // takes) are not the retail main VXL's.
+        let mut model_files = BTreeSet::new();
         for object in rules.all_objects() {
             if let Some((section, decl)) = building_gun_model_decl(rules, object) {
                 let admitted =
@@ -697,6 +709,15 @@ impl VoxelAssetCatalog {
                 continue;
             };
             let admitted = admit_declared_model(Some(object), section, decl, &mut decoded, assets);
+            folder.note_stand_in(
+                &decl.file,
+                admitted
+                    .as_ref()
+                    .map(|model| model.half_sizes.map(f32::to_bits)),
+                [crate::rules::art_data::voxel_asset_names(image).0],
+                |bytes| half_sizes(&VxlFile::from_bytes(bytes).ok()?),
+                &mut model_files,
+            );
             declared.insert(
                 (object.category, object.id.to_ascii_uppercase()),
                 admitted.map(Arc::new),
@@ -778,9 +799,6 @@ impl VoxelAssetCatalog {
                 mine.difference(&others).cloned().collect()
             };
         let mut libraries = BTreeMap::new();
-        let folder = crate::rules::retail_sources::FolderFiles::new(assets);
-        let half_sizes =
-            |vxl: &VxlFile| voxel_tilt_half_sizes(vxl).map(|sizes| sizes.map(f32::to_bits));
         let requests: BTreeSet<_> = rules.voxel_model_plan.requests().cloned().collect();
         for request in requests {
             if unopened.contains(&request) {
@@ -913,13 +931,14 @@ impl VoxelAssetCatalog {
             .all_objects()
             .filter_map(|object| plan.library(object.voxel_model_slots.main.vxl))
             .collect();
-        let folder_files = libraries
+        let mut folder_files: BTreeSet<String> = libraries
             .iter()
             .filter(|(request, read)| {
                 read.validity_differs || (read.half_sizes_differ && main_vxls.contains(request))
             })
             .filter_map(|(_, read)| read.folder_file.clone())
             .collect();
+        folder_files.extend(model_files);
         Self {
             bound: true,
             loaded,
@@ -1065,6 +1084,41 @@ mod tests {
         // The unit atlas skips a type drawn from a model, refused or not.
         assert!(rules.draws_declared_model("TEST"));
         assert!(!rules.draws_declared_model("PLAIN"));
+    }
+
+    /// With `ModelVoxels=X,Y` a model's tilt half sizes are those of a VXL
+    /// whose main section is X by Y voxels (`voxel_tilt_half_sizes`),
+    /// whatever `ModelSize=` and the body's bounds would give, and no VXL
+    /// need be there; a refused value leaves them to `ModelSize=`.
+    #[test]
+    fn model_voxels_give_the_vxls_tilt_half_sizes() {
+        let directory = crate::map::source::test_support::TestDirectory::new("model-voxels");
+        let glb = crate::assets::model_file::test_glb::box_model(2.0, 1.0, 4.0, &[]);
+        std::fs::write(directory.path().join("tank.glb"), &glb).unwrap();
+        let assets = AssetManager::from_loose_root_for_test(directory.path());
+        let art = IniFile::from_str(
+            "[BODY]\nVoxel=yes\nModel=tank.glb\nModelSize=120\nModelVoxels=24,12\n\
+             [BAD]\nVoxel=yes\nModel=tank.glb\nModelSize=120\nModelVoxels=300,12\n",
+        );
+        let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
+            &IniFile::from_str(
+                "[VehicleTypes]\n0=TEST\n1=BAD\n[TEST]\nImage=BODY\nStrength=300\n\
+                 [BAD]\nStrength=300\n",
+            ),
+            &art,
+        )
+        .unwrap();
+        rules.install_art_fixture(ArtRegistry::from_ini(&art));
+        rules.bind_effect_assets(&assets, "TEM", "TEMPERATE");
+        // A 24 by 12 section: [12 / 2 + 0.5, 24 / 2].
+        assert_eq!(tilt_half_sizes(24, 12), [6.5, 12.0]);
+        assert!(loaded(&rules, "TEST"));
+        assert_eq!(rules.object_voxel_half_sizes("TEST"), Some([6.5, 12.0]));
+        assert_eq!(
+            rules.object_voxel_half_sizes("BAD"),
+            Some([5.5, 10.0]),
+            "ModelSize= decides, as without the key"
+        );
     }
 
     /// A unit with indexed guns needs a `turretN` node for each, as a missing

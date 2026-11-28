@@ -1161,6 +1161,11 @@ impl RulesPassProcessor {
         if image.is_empty() {
             return None;
         }
-        self.resolve_scalar_from(fixed_art.section(image)?, key, family, 0x80)
+        self.resolve_scalar_from(
+            crate::rules::art_data::sim_art_section(fixed_art, image)?,
+            key,
+            family,
+            0x80,
+        )
     }
 }

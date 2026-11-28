@@ -16,10 +16,17 @@
 //! it plays at, and rodio's mixer converts that one span at a time
 //! (`MAX_SPAN_FRAMES` in `playback.rs`), so a copy converted once to the
 //! device rate would not play the same samples.
+//!
+//! VERA extension: a `<name>.opus` file replaces the sample `name` wherever
+//! it is found ([`ClipCache::load_override`], docs/opus-audio.md). Whether a
+//! name has one is looked up once per name and kept; retail data has none,
+//! so a stock game pays one name-hash miss per sample name and decodes what
+//! it always did.
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 
-use super::{DecodedAudio, decode_archive_clip, decode_index_clip};
+use super::{DecodedAudio, decode_archive_clip, decode_index_clip, decode_opus_clip};
 use crate::assets::asset_manager::AssetManager;
 use crate::assets::audio_bag::AudioIndex;
 
@@ -40,6 +47,10 @@ pub(super) struct ClipCache {
     bytes: usize,
     /// Loads so far; each clip keeps the count at its last load.
     loads: u64,
+    /// Whether each sample name looked up so far has a playable `.opus`
+    /// override. A name found here as `false` takes the retail path with no
+    /// further lookup.
+    overrides: HashMap<String, bool>,
 }
 
 struct CachedClip {
@@ -53,31 +64,90 @@ impl ClipCache {
     /// it; a dropped clip plays on in the starts that hold it. A name the
     /// index lacks is decoded from the MIX archives or loose files each time:
     /// a scenario's theater and side archives can change which file it finds,
-    /// while the index is fixed for the process.
+    /// while the index is fixed for the process. A `.opus` override comes
+    /// before all of them.
     pub(super) fn load(
         &mut self,
         name: &str,
         assets: &AssetManager,
         index: Option<&AudioIndex>,
     ) -> Option<DecodedAudio> {
+        if let Some(clip) = self.load_override(name, |file| assets.get_ref(file).map(Cow::Borrowed))
+        {
+            return Some(clip);
+        }
         index
             .and_then(|index| self.load_from_index(name, index))
             .or_else(|| decode_archive_clip(name, assets))
     }
 
+    /// The `.opus` override of `name` ([`crate::assets::opus_file::override_name`])
+    /// that `read` finds, decoded once and kept like an index clip. The first
+    /// load of a name looks it up; a name without one, or whose file does not
+    /// decode, is remembered as such and never looked up again, so the retail
+    /// path that follows is the one it always was.
+    pub(super) fn load_override<'a>(
+        &mut self,
+        name: &str,
+        read: impl FnOnce(&str) -> Option<Cow<'a, [u8]>>,
+    ) -> Option<DecodedAudio> {
+        let decode = |name: &str| {
+            let file = read(&crate::assets::opus_file::override_name(name))?;
+            decode_opus_clip(&file, name)
+        };
+        match self.overrides.get(name).copied() {
+            Some(false) => None,
+            Some(true) => {
+                let clip = self.cached_or_decode(name, decode);
+                if clip.is_none() {
+                    self.overrides.insert(name.to_owned(), false);
+                }
+                clip
+            }
+            None => {
+                let clip = decode(name);
+                self.overrides.insert(name.to_owned(), clip.is_some());
+                if let Some(clip) = &clip {
+                    log::info!("Sound {name} plays its .opus override");
+                    self.loads += 1;
+                    self.keep(name, clip);
+                }
+                clip
+            }
+        }
+    }
+
     fn load_from_index(&mut self, name: &str, index: &AudioIndex) -> Option<DecodedAudio> {
         if self.index != index.id() {
+            // The overrides come from the archives, not the index: they stay.
             *self = Self {
                 index: index.id(),
+                overrides: std::mem::take(&mut self.overrides),
                 ..Self::default()
             };
         }
+        self.cached_or_decode(name, |name| decode_index_clip(name, index))
+    }
+
+    /// The kept clip of `name`, else `decode`'s, kept while it fits.
+    fn cached_or_decode(
+        &mut self,
+        name: &str,
+        decode: impl FnOnce(&str) -> Option<DecodedAudio>,
+    ) -> Option<DecodedAudio> {
         self.loads += 1;
         if let Some(cached) = self.clips.get_mut(name) {
             cached.last_load = self.loads;
             return Some(cached.clip.clone());
         }
-        let clip = decode_index_clip(name, index)?;
+        let clip = decode(name)?;
+        self.keep(name, &clip);
+        Some(clip)
+    }
+
+    /// Keep `clip` as `name`'s at the current load count, dropping the least
+    /// recently loaded clips to fit; a clip larger than the bound is not kept.
+    fn keep(&mut self, name: &str, clip: &DecodedAudio) {
         let bytes = size_of_val(&*clip.samples);
         if bytes <= MAX_BYTES {
             while self.bytes + bytes > MAX_BYTES && self.drop_least_recently_loaded() {}
@@ -88,7 +158,6 @@ impl ClipCache {
             };
             self.clips.insert(name.to_owned(), cached);
         }
-        Some(clip)
     }
 
     /// Drop the clip whose last load is the oldest; false when none is kept.
@@ -193,6 +262,46 @@ mod tests {
         let other = index_of(&[("other", 8), ("shot", 32)]);
         let fresh = load_sfx("shot", &assets, Some(&other)).unwrap();
         assert_eq!(*start(&other), *fresh.samples);
+    }
+
+    /// A `<name>.opus` file plays in place of the bag's `name`, at 48 kHz;
+    /// a name without one decodes from the bag as before; and with no
+    /// audio.idx mounted (a miniHD package) the override still plays.
+    #[test]
+    fn an_opus_file_overrides_its_sample_with_or_without_the_bag() {
+        let dir = TestDirectory::new("clip-cache-opus");
+        let opus = crate::test_fixture::bytes("tests/fixtures/audio/sine440.opus");
+        std::fs::write(dir.path().join("Shot.opus"), opus).unwrap();
+        let assets = AssetManager::from_loose_root_for_test(dir.path());
+        let index = index_of(&[("shot", 64), ("other", 32)]);
+
+        let mut cache = ClipCache::default();
+        let shot = cache.load("shot", &assets, Some(&index)).unwrap();
+        let layout = (
+            shot.sample_rate,
+            shot.native_channels,
+            shot.native_sample_bytes,
+        );
+        assert_eq!(layout, (48_000, 1, 2));
+        assert_eq!(shot.samples.len(), 9_600 * 2, "mono upmixed to stereo");
+        assert!(Arc::ptr_eq(
+            &shot.samples,
+            &cache.load("shot", &assets, Some(&index)).unwrap().samples
+        ));
+
+        let other = cache.load("other", &assets, Some(&index)).unwrap();
+        let bag = super::super::decode_index_clip("other", &index).unwrap();
+        assert_eq!(
+            (other.sample_rate, &*other.samples),
+            (22_050, &*bag.samples)
+        );
+
+        let mut cache = ClipCache::default();
+        assert_eq!(
+            cache.load("SHOT", &assets, None).unwrap().samples.len(),
+            9_600 * 2
+        );
+        assert!(cache.load("other", &assets, None).is_none());
     }
 
     /// Past [`MAX_BYTES`] the cache drops the clip whose last load is the

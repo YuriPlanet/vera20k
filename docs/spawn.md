@@ -94,9 +94,16 @@ agree.
   its folder's terrain files to each match ([Networking](Networking.md)), so they are in no part. `name` is the file name, never a path; `digest` the first 16
   hex digits of the part's digest, or `absent`; `source` `retail` (the original archives), `loose`
   (a file in the game folder), `mix:<archive>` (another archive by its lowercased name, such as `expandmd99.mix`), `mod`
-  or `unknown`; `changed` whether it differs from the retail copy. A changed INI names in
+  or `unknown`; `changed` whether it differs from the retail copy in what the part's digest
+  reads. The art and theater parts leave out VERA's drawing keys (`Picture=`, `PictureSize=`,
+  `CameoPicture=`, `AltCameoPicture=`, `Model=`, `ModelSize=`, `ModelVoxels=` in the Art INI,
+  `PictureFileName=` in a theater INI; [picture and model art](picture-model-art.md)) and a
+  section they leave empty, as their digests do: an art pack's INI that only adds them is
+  `changed: false` and its digest is the retail one's. A changed INI names in
   `sections` the sections that differ from the retail copy (added, removed or changed), sorted, at
-  most 20, and counts the rest in `sections_more`.
+  most 20, and counts the rest in `sections_more`, those keys left out alike. A launcher's
+  `src/lib/rulesDiff.ts` needs no change: it compares `digest`, `changed` and `sections` as
+  before, and a build without this reads such an INI as changed (its digest differs too).
   The `ai` part and `rules_digest` name the game folder's AI INI. A network match that seats no
   computer reads the retail copy instead ([Networking](Networking.md)), so two games that differ
   only in `ai` would play such a match together, though their digests differ: a launcher that
