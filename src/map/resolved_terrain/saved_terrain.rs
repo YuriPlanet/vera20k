@@ -401,7 +401,17 @@ impl ResolvedTerrainGrid {
             cell.ground_walk_blocked = (cell.canonical_ramp.is_none() && land_blocked)
                 || cell.terrain_object_blocks
                 || cell.overlay_blocks;
-            cell.zone_type = zone_class::GROUND;
+            // Re-derive the reduced class from the restored Land instead of
+            // forcing Ground. A player save whose Water cells were previously
+            // published as Ground otherwise keeps them out of every Water
+            // zone even after the saved zone partition is repaired.
+            cell.zone_type = super::recalc_zone_type(
+                cell.outside_playfield,
+                cell.overlay_zone_type,
+                *land,
+                speed_costs.wheel,
+                cell.terrain_object_occupation,
+            );
         }
         Ok(())
     }

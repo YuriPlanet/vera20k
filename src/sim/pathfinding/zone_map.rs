@@ -411,12 +411,19 @@ impl ZoneGrid {
                 (0..self.width).map(move |x| zone_build::movement_class_for_cell(terrain, x, y))
             })
             .collect();
-        if self.base_topology.movement_classes == terrain_classes {
+        let terrain_levels: Vec<u8> = (0..self.height)
+            .flat_map(|y| {
+                (0..self.width).map(move |x| terrain.cell(x, y).map_or(0, |cell| cell.level))
+            })
+            .collect();
+        if self.base_topology.movement_classes == terrain_classes
+            && self.base_topology.levels == terrain_levels
+        {
             return Ok(());
         }
         self.base_topology = zone_build::rebuild_base_zone_topology(
             terrain_classes,
-            self.base_topology.levels.clone(),
+            terrain_levels,
             terrain.terrain_deformation(),
             records,
             self.width,
