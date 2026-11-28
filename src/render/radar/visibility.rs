@@ -168,7 +168,7 @@ impl RadarVisibilityResult {
     };
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct RadarMobileVisibilityFacts {
     pub type_invisible: bool,
     pub sinking: bool,
@@ -228,7 +228,7 @@ pub(super) fn radar_mobile_registration_visibility(
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct RadarBuildingVisibilityFacts {
     pub type_invisible: bool,
     pub in_limbo: bool,
@@ -284,7 +284,7 @@ pub(super) fn radar_building_registration_visibility(
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum RadarRegistrationVisibilityFacts {
     Mobile(RadarMobileVisibilityFacts),
     Building(RadarBuildingVisibilityFacts),
@@ -297,6 +297,75 @@ impl RadarRegistrationVisibilityFacts {
             Self::Building(facts) => radar_building_registration_visibility(facts, discovered),
         }
     }
+}
+
+fn raised_cells_are_real(
+    point: crate::sim::components::DriveCoord,
+    terrain: &crate::map::resolved_terrain::ResolvedTerrainGrid,
+) -> bool {
+    let level = point.z / crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS;
+    let shift = level / 2 + i32::from(level & 1 != 0);
+    let x = ((point.x / 256) as i16).wrapping_sub(shift as i16);
+    let y = ((point.y / 256) as i16).wrapping_sub(shift as i16);
+    terrain.native_fixed_cell_index(x, y).is_some()
+        && (level & 1 == 0
+            || terrain
+                .native_fixed_cell_index(x.wrapping_add(1), y.wrapping_add(1))
+                .is_some())
+}
+
+/// Whether `build_radar_object_update` cannot read or stamp the fallback Cell
+/// for `entity`. Such updates may run side by side; every other update keeps
+/// the pass's original serial query and its retained Dummy state.
+pub(super) fn radar_object_update_is_dummy_free(
+    entity: &impl crate::render::snapshot::SnapshotObject,
+    local_owner: Option<InternedId>,
+    full_visibility: bool,
+    projection: RadarProjectionFacts,
+    playfield_bounds: Option<crate::map::playfield::PlayfieldBounds>,
+    resolved_terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
+) -> bool {
+    let Some(terrain) = resolved_terrain else {
+        return true;
+    };
+    if playfield_bounds.is_some() {
+        let [x, y] = entity.center_xy();
+        let (rx, ry) = radar_packed_cell_from_leptons(x, y);
+        if terrain
+            .native_fixed_cell_index(rx as i16, ry as i16)
+            .is_none()
+        {
+            return false;
+        }
+    }
+    let facts = entity.radar();
+    if projection.native_surface.is_some()
+        && facts.navigation_cell == Some(crate::map::cell_index::NativeCellIdentity::Dummy)
+    {
+        return false;
+    }
+    if !full_visibility && local_owner.is_some() {
+        if !raised_cells_are_real(facts.location(), terrain) {
+            return false;
+        }
+        if let Some((width, height)) = facts.foundation {
+            let far = crate::sim::components::DriveCoord {
+                x: facts
+                    .location()
+                    .x
+                    .wrapping_add((width as i32).wrapping_sub(1).wrapping_mul(256)),
+                y: facts
+                    .location()
+                    .y
+                    .wrapping_add((height as i32).wrapping_sub(1).wrapping_mul(256)),
+                z: facts.location().z,
+            };
+            if !raised_cells_are_real(far, terrain) {
+                return false;
+            }
+        }
+    }
+    true
 }
 
 pub(super) fn build_radar_object_update(

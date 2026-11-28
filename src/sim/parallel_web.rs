@@ -15,7 +15,7 @@ pub(crate) fn map_in_order_then_filter_map_indices<T: Sync, A: Send, B: Send>(
         .collect();
     (of_items, filter_map_indices(len, pick))
 }
-pub(crate) fn map_with<T: Sync, S: Clone + Send, R: Send>(
+pub fn map_with<T: Sync, S: Clone + Send, R: Send>(
     items: &[T],
     mut init: S,
     work: impl Fn(&mut S, &T) -> R + Sync,

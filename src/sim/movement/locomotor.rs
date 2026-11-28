@@ -399,6 +399,11 @@ impl LocomotorState {
         }
     }
 
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_step_head_for_test(&mut self, head: Option<crate::sim::components::DriveCoord>) {
+        self.set_step_head(head);
+    }
+
     /// The active Hover object's state.
     pub(crate) fn hover_runtime(&self) -> Option<&super::hover::HoverRuntime> {
         match (self.kind, &self.runtime_payload) {

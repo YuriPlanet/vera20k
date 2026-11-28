@@ -223,7 +223,7 @@ struct RadarObjectCache {
     pixels: Vec<(i32, i32)>,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub(super) struct RadarObjectUpdate {
     pub stable_id: u64,
     pub owner: InternedId,
@@ -251,7 +251,7 @@ pub(super) struct RadarObjectUpdate {
 /// re-projected with clamping (`FUN_006557F0`, clamp 1). Builders fill it when
 /// the fresh pixel lies off the surface, and always for Buildings, whose
 /// cached pixel the tracker may test instead.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct RadarSurfaceEdge {
     pub size: (i32, i32),
     pub in_playfield_origin: Option<(i32, i32)>,
