@@ -28,6 +28,11 @@ artifact is `libvera20k_android.so`, and the manifest's
 
 ## Building
 
+For a test build, run **Android ARM64 APK** in GitHub Actions and download
+`vera20k-android-arm64-debug.apk` from the run's artifacts. Each run uses a fresh
+debug signing key. Switching between these builds requires uninstalling the previous
+copy, which removes its app data, including imported game files.
+
 Prerequisites: `platforms;android-36`, `build-tools;36.1.0`, `ndk;28.2.13676358`,
 `cargo-ndk`, a JDK 17+ that `JAVA_HOME` and `PATH` agree on. The Gradle wrapper
 is committed, so no separate Gradle install is needed — the first `gradlew` run
