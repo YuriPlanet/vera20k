@@ -11,6 +11,7 @@ kotlin {
 
 dependencies {
     testImplementation("junit:junit:4.13.2")
+    // The Java and Kotlin runtime notices ship in src/release/assets/NOTICE-Android.
     // The GameActivity base class the app's activity extends. The version must
     // match the GameActivity glue `android-activity` 0.6 compiles in
     // (GAMEACTIVITY_PACKED_VERSION 2.0.2); a mismatch fails at class load or at
@@ -23,15 +24,15 @@ dependencies {
 
 // versionName reads the Cargo package version, so the APK and the binary inside
 // it cannot drift apart (they did once: a 0.2.7 bump changed Cargo.toml while
-// this file still said 0.2.6). versionCode is a monotonically rising integer
-// that Play and sideload both compare, so it cannot be derived from the version
-// string and has to be bumped by hand on every upload.
+// this file still said 0.2.6). The official release workflow supplies a versionCode
+// derived from its UTC build time so successive builds of one version can update.
 val veraVersionName: String = rootProject.file("../Cargo.toml")
     .readLines()
     .first { it.trimStart().startsWith("version = ") }
     .substringAfter('"')
     .substringBefore('"')
-val veraVersionCode = 207
+val veraVersionCode = providers.gradleProperty("veraVersionCode").orElse("207").get().toInt()
+require(veraVersionCode in 1..2_100_000_000) { "veraVersionCode must be between 1 and 2100000000" }
 
 android {
     namespace = "org.vera20k"

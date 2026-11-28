@@ -26,6 +26,28 @@ The library name must stay in sync: the crate is `vera20k-android`, so the
 artifact is `libvera20k_android.so`, and the manifest's
 `android.app.lib_name` is `vera20k_android`.
 
+## Official release APKs
+
+From v0.4.3, the GitHub release includes `vera20k-<version>-android-arm64.apk`
+for 64-bit ARM Android phones and tablets. Open it to install VERA20K, then
+choose **Import Game Files** and select your retail game folder. To update an
+official installation, open the newer APK on the same device. Android checks
+the signing certificate and keeps the app's files and settings.
+
+The Release workflow uses the shipping native library and Gradle's release
+build. Its `android-signing` job requires maintainer approval on `main`.
+Dev builds and stable releases use the same signing key and package ID
+(`org.vera20k`). Promotion publishes the exact APK tested in the dev build.
+
+Before promoting a candidate, use an ARM64 device to check a fresh install,
+a game-file import and a match. Then install the candidate over an older
+official build containing imported files and a saved game. For v0.4.3, use
+two successively built, release-signed dev APKs. With the older one installed,
+run `adb install -r <candidate.apk>`, check the version in App info, and
+launch VERA20K. Confirm the game finds the imported files and loads the save.
+Use a spare device if your existing debug installation contains data you
+want to keep.
+
 ## Building
 
 For a test build, run **Android ARM64 APK** in GitHub Actions and download
@@ -66,8 +88,8 @@ cargo ndk -t arm64-v8a --platform 26 -o android\app\src\main\jniLibs build `
 android\gradlew.bat -p android :app:assembleDebug
 ```
 
-`For iteration build `--profile fast` and `:app:assembleDebug`; the recipe above
-(shipping plus a symbol strip) is for releases. Remove
+For faster local iteration, use `--profile fast` with `:app:assembleDebug`.
+The recipe above gives the debug APK a shipping-optimized native library. Remove
 `android/app/build/outputs/apk` and `android/app/build/intermediates/merged_native_libs`
 when a rebuild must repackage the native library: Gradle otherwise keeps the
 previous `.so`. A `cargo check` that prints `Finished` in under a second means
@@ -271,10 +293,9 @@ Run the import regression tests with `./android/gradlew -p android :app:testDebu
 
 ## What is still open
 
-1. **Release validation.** The recipe uses `--profile shipping` and strips
-   symbols, but the contributor's earlier device results were from a debug APK.
-   Rebuild the current code, inspect ELF/APK alignment and signing, and repeat
-   device testing before treating it as a release.
+1. **Release validation.** The earlier device results below used a debug APK.
+   Test each signed release candidate on a device as described under
+   [Official release APKs](#official-release-apks).
 2. **Live import progress.** The dialog shows the copy's step and the folder it
    landed in, and the copy refuses a folder without `ra2md.mix`/`ra2.mix` before
    touching anything, but the byte counter is wired and unexercised: the copy
@@ -471,5 +492,5 @@ Residuals:
 ## TODO
 
 Save/Map files import/export, the rest of the touch UI (the shell pages are still
-pointer-sized for a mouse), audio focus, LAN locks, CI, and the soft-keyboard
+pointer-sized for a mouse), audio focus, LAN locks, and the soft-keyboard
 insets that would lift a page above the keyboard.

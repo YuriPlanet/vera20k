@@ -128,9 +128,12 @@ if jq -e --arg name "$intel" 'any(.assets[]; .name == $name)' "$work/release.jso
   platforms+=(macos-x64)
   types+=(application/x-apple-diskimage)
 fi
-jq -e --arg tag "$tag" '
+# The Android APK ships on GitHub alongside the desktop installers. The R2
+# manifest is for desktop updates, including rollbacks to pre-Android releases.
+jq -e --arg tag "$tag" --arg apk "vera20k-$version-android-arm64.apk" '
   .tag_name == $tag and .draft == false and .prerelease == false
-  and ([.assets[].name] | sort == ($ARGS.positional | sort))
+  and ([.assets[].name] | sort
+       | . == ($ARGS.positional | sort) or . == ($ARGS.positional + [$apk] | sort))
   and all(.assets[]; .state == "uploaded" and (.size | type == "number") and .size > 0
     and (.digest | type == "string") and (.digest | test("^sha256:[0-9a-f]{64}$")))
 ' "$work/release.json" --args "${names[@]}" >/dev/null \

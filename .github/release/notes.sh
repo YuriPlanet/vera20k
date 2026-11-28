@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # Write the release notes for the Release workflow (.github/workflows/release.yml)
 # to file $1: a short list of what changed since the previous release, then a few
-# lines on which installer to run, since a release holds only the three
-# installers, and a link to the license. Both of its paths use them: a dev
+# lines on which installer to run and a link to the license. Both paths use them: a dev
 # build, and a release promoted from a dev build (PROMOTED_FROM set to the dev
 # build's tag).
 #
@@ -75,6 +74,7 @@ You need your own copy of Yuri's Revenge.
 - **Windows:** run the `-setup.exe`. If SmartScreen warns, click More info, then Run anyway.
 - **macOS:** open the `macos-arm64.dmg` (Apple Silicon) or `macos-x64.dmg` (Intel) and drag VERA20K into Applications.
 - **Linux:** make the `.AppImage` executable and start it.
+- **Android (ARM64)** — open the `-android-arm64.apk` on your device to install or update VERA20K. On first launch, choose **Import Game Files** and select your game folder.
 EOF
   echo
   echo "Free software under the [GNU GPL version 3]($repo_url/blob/$COMMIT/LICENSE-GPL)."

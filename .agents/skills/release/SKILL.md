@@ -1,6 +1,6 @@
 ---
 name: release
-description: "Make a VERA20K dev build or release with the Release workflow, keeping the release page to the four installers, a really small changes list in plain words and the install lines."
+description: "Make a VERA20K dev build or release with the Release workflow, including the signed Android APK, four desktop installers, a short changes list and install instructions."
 ---
 
 # Release
@@ -10,9 +10,9 @@ builds and releases. This skill is the maintainer's order of steps and the page 
 
 ## Page style
 
-- Downloads: only the Windows setup, the two macOS `.dmg`s (`macos-arm64` for Apple Silicon,
-  `macos-x64` for Intel) and the Linux AppImage. The workflow uploads nothing else; GitHub
-  adds the source code archives itself.
+- Publish five installers from v0.4.3 onward. They are the Windows setup, the two macOS
+  disk images (`macos-arm64` for Apple Silicon and `macos-x64` for Intel), the Linux
+  AppImage and the signed Android ARM64 APK. GitHub supplies the source archives.
 - Text: a really small list of what changed, then the install lines and the license line
   that `.github/release/notes.sh` writes. No commit dumps, tables, checksums or other legal
   text.
@@ -28,7 +28,7 @@ builds and releases. This skill is the maintainer's order of steps and the page 
 
 ## Dev build
 
-Each release runner collects a gameplay profile on its own OS and CPU architecture
+Each desktop release runner collects a gameplay profile on its own OS and CPU architecture
 with the retail fixture from `RETAIL_GAME_DATA_URL`. Its build log shows the LLVM
 counter summary, the merged profile hash and the final game binary hash. The
 installer checks compare the packaged executable with that final build (the Mach-O
@@ -40,23 +40,24 @@ disabled (`gh workflow list --all` shows its state). By hand:
 
 1. `gh workflow run release.yml --ref main -f publish=prerelease`; `draft` to look before
    publishing, `none` to only build and test.
-2. After the builds, its two `sign and notarize` jobs, one per Mac image, wait in the
-   `macos-signing` environment until the maintainer approves them on the run's page (Review
-   deployments); a nightly's do too. Tell the maintainer when you start the run, and don't
-   approve them yourself.
+2. The two Mac signing jobs wait in `macos-signing` and the APK signing job waits in
+   `android-signing`. The maintainer approves these environments on the run's page
+   under **Review deployments**, including for nightlies. Tell the maintainer when
+   you start a run and leave these approvals to them.
 3. Wait with one background `gh run watch <run> --exit-status`. When GitHub never gives a job
    a machine ("not acquired by Runner"), `release-rerun.yml` reruns the failed jobs, up to the
-   run's third attempt: watch the run again rather than rerunning it by hand. A rerun build or
-   signing job brings signing back to the `macos-signing` approval, so tell the maintainer.
+   run's third attempt: watch the run again rather than rerunning it by hand. Tell the
+   maintainer if the rerun needs fresh signing approval.
 
 ## Release
 
-1. Tag the commit of the published dev build that was tested with its version, using the
-   maintainer's login, then promote the build. The workflow checks that the tag names that
-   commit and copies the build's four installers under plain release filenames.
-   Before creating the draft, it verifies both Mac installers' signatures, stapled
-   Apple notarization tickets and Gatekeeper acceptance. An old unnotarized dev
-   build, or one from before the Intel Mac image, cannot be promoted:
+1. Test the signed Android APK from the candidate dev build on an ARM64 device,
+   including an update over an earlier VERA20K-signed APK
+   ([Android release checks](../../../docs/android.md#official-release-apks)).
+   Tag the commit of the tested dev build using the maintainer's login, then promote
+   it. The workflow verifies the commit, both Mac signatures, stapled notarization
+   tickets and Gatekeeper acceptance. It promotes the same signed APK and desktop
+   installers under their stable release filenames.
 
    ```bash
    git fetch origin tag <dev build tag>
@@ -68,7 +69,7 @@ disabled (`gh workflow list --all` shows its state). By hand:
 2. Replace the draft's change list with the plain-words list, keeping the install and license
    lines (`gh release edit vX.Y.Z --notes-file <file>`), read the rendered draft, then publish it:
    `gh release edit vX.Y.Z --draft=false --latest`.
-3. Check that it is Latest, holds the four installers, and that
+3. Check that it is Latest, holds all five installers, and that
    `gh attestation verify <download> --repo YuriPlanet/vera20k` passes for each.
 4. The `downloads.yml` run it started waits for approval in the `downloads` environment.
    Check that it is this release's run (event `release`, the new tag), then approve it on
@@ -99,14 +100,10 @@ disabled (`gh workflow list --all` shows its state). By hand:
 For example, after publishing `v0.2.0`, main can move to `0.2.1` for future development
 builds while `v0.2.0` remains Latest.
 
-Dev builds run from `main`: the `macos-signing` environment allows only that exact
-branch, so an arbitrary dispatched branch cannot read the Apple credentials.
-The separate signing job must pass before updater tests or publication. Stable
-promotion keeps the notarized installer bytes unchanged. See
-[Mac signing](../../../.github/release/macos/README.md) for environment setup and
-resuming a submission that outlasted the job. A patch release from another branch
-needs a separate, explicitly authorized signing policy; do not widen the environment
-to an arbitrary branch pattern.
+Dev builds run from `main`. Both `macos-signing` and `android-signing` are restricted
+to that exact branch. See [Mac signing](../../../.github/release/macos/README.md) for
+environment setup and resuming a notarization submission that outlasted the job.
+A patch release from another branch needs a separate, explicitly authorized signing policy.
 
 The repository ruleset `Release tags` lets only repository admins create, move or delete a tag
 other than a dev build's (`v*-*`), so nobody else can publish a release under a version
