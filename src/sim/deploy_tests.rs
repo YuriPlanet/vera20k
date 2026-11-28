@@ -615,6 +615,9 @@ fn deploy_mcv_rejects_pure_0x400_bridge_marker_foundation_cell() {
 fn a_computer_mcv_deploy_turns_the_computers_paranoid() {
     let mut rules = make_recalc_mcv_rules("0,0,0");
     rules.general.allies_allowed = true;
+    // The original's Computer_Paranoid (this build turns AINearestEnemy on
+    // in a skirmish when no rules set it).
+    rules.general.ai_nearest_enemy = Some(false);
     let mut sim = deploy_sim(&rules);
     sim.session
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));

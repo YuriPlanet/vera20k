@@ -1,11 +1,12 @@
 # Computer players pick the nearest enemy
 
-A VERA option, off by default. With it off, computer players choose their
-enemy as in the original game.
+A VERA option. It is on in every Skirmish and online match
+unless a mod's rules or the map set it, and off in the campaign, where
+computer players choose their enemy as in the original game.
 
 ```ini
 [General]
-AINearestEnemy=yes   ; default no
+AINearestEnemy=no    ; the original's choice, everywhere
 ```
 
 A mod's `rulesmd.ini` or a map can set it. In an online game every player needs the same rules, which the rules

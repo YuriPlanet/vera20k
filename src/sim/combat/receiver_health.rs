@@ -423,7 +423,10 @@ pub(super) fn commit_receiver_health(
                 delta,
                 world.session.rule_policy(),
                 rules.ares_form(),
-                rules.general.ai_nearest_enemy,
+                rules.general.ai_nearest_enemy_in(matches!(
+                    world.session.game_mode(),
+                    crate::sim::scenario_session::ScenarioGameMode::Campaign
+                )),
             );
         }
         Some(delta)
