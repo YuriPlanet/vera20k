@@ -478,9 +478,13 @@ impl Simulation {
         {
             return;
         }
-        // VERA `[General] AINearestEnemy=` (off by default): the computers
+        // VERA `[General] AINearestEnemy=` (on outside the campaign unless a
+        // rules file or map sets it, `GeneralRules::ai_nearest_enemy_in`): the computers
         // neither band together nor all turn on the humans.
-        if rules.general.ai_nearest_enemy {
+        if rules.general.ai_nearest_enemy_in(matches!(
+            self.session.game_mode(),
+            crate::sim::scenario_session::ScenarioGameMode::Campaign
+        )) {
             return;
         }
         // 0x00501668..0x00501675.
@@ -662,7 +666,10 @@ impl Simulation {
             anger.wrapping_neg(),
             self.session.rule_policy(),
             rules.ares_form(),
-            rules.general.ai_nearest_enemy,
+            rules.general.ai_nearest_enemy_in(matches!(
+                self.session.game_mode(),
+                crate::sim::scenario_session::ScenarioGameMode::Campaign
+            )),
         );
         if let Some(house) = self.houses.get_mut(&owner)
             && house.enemy_house() == Some(other)
@@ -811,7 +818,10 @@ impl Simulation {
             1,
             self.session.rule_policy(),
             rules.ares_form(),
-            rules.general.ai_nearest_enemy,
+            rules.general.ai_nearest_enemy_in(matches!(
+                self.session.game_mode(),
+                crate::sim::scenario_session::ScenarioGameMode::Campaign
+            )),
         );
         // 0x004F9FE7..0x004FA01A: only an alliance is broken.
         if is_ally_by_object(Some(&self.house_alliances), &self.interner, owner, other) {
@@ -847,7 +857,10 @@ impl Simulation {
                     1,
                     self.session.rule_policy(),
                     rules.ares_form(),
-                    rules.general.ai_nearest_enemy,
+                    rules.general.ai_nearest_enemy_in(matches!(
+                        self.session.game_mode(),
+                        crate::sim::scenario_session::ScenarioGameMode::Campaign
+                    )),
                 );
             }
             if !self.object_placement_scope_active() {

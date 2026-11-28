@@ -364,11 +364,12 @@ pub struct GeneralRules {
     /// within this many cells instead of hovering
     /// ([docs/jumpjet-land-nearby.md]).
     pub jumpjet_land_nearby: i32,
-    /// VERA: `[General] AINearestEnemy=` (default no). When set, a computer
-    /// house picks the nearest enemy base instead of the first house in the
-    /// array, and equal anger goes to the nearer house
-    /// ([docs/ai-nearest-enemy.md]).
-    pub ai_nearest_enemy: bool,
+    /// VERA: `[General] AINearestEnemy=`. When on, a computer house picks the
+    /// nearest enemy base instead of the first house in the array, and equal
+    /// anger goes to the nearer house ([docs/ai-nearest-enemy.md]). `None`
+    /// when no rules file or map sets it: it is then on
+    /// outside the campaign ([`Self::ai_nearest_enemy_in`]).
+    pub ai_nearest_enemy: Option<bool>,
     /// `[General] HoverHeight=`, Rules+0x5CC: the Hover altitude controller's
     /// cruise height in leptons (0x00513D20). Constructor 120 (0x00665E2B).
     pub hover_height: i32,
@@ -1939,7 +1940,7 @@ impl Default for GeneralRules {
             display_cruise_height: 400, // Rules constructor665C3A
             jumpjet_smooth_facing: false,
             jumpjet_land_nearby: 0,
-            ai_nearest_enemy: false,
+            ai_nearest_enemy: None,
             // Rules constructor 0x00665E2B..0x00665E81.
             hover_height: 120,
             hover_bob: NativeF64Bits::from_bits(0x403e_0000_0000_0000),
@@ -2377,6 +2378,14 @@ pub(crate) fn read_cliff_back_impassability(general: Option<&IniSection>) -> u8 
 }
 
 impl GeneralRules {
+    /// Whether computer houses pick the nearest enemy in this match: the
+    /// rules' or map's `AINearestEnemy=` when one sets it, else on outside the
+    /// campaign. Off, the original's first-house search and Computer_Paranoid
+    /// band every computer in a skirmish against the human.
+    pub fn ai_nearest_enemy_in(&self, campaign: bool) -> bool {
+        self.ai_nearest_enemy.unwrap_or(!campaign)
+    }
+
     pub fn allow_shrouded_subterannean_moves(&self) -> bool {
         self.allow_shrouded_subterannean_moves
     }
@@ -2555,10 +2564,10 @@ impl GeneralRules {
             .section("JumpjetControls")
             .map_or(0, |s| s.read_int("LandNearby", 0))
             .clamp(0, 8);
-        // VERA key; absent keeps the original's first-house enemy search.
+        // VERA key; absent lets the match decide (`ai_nearest_enemy_in`).
         let ai_nearest_enemy = ini
             .section("General")
-            .is_some_and(|s| s.read_bool("AINearestEnemy", false));
+            .and_then(|s| s.read_bool_value("AINearestEnemy"));
         // AI IQ thresholds live in their own [IQ] read.
         let iq = ini.section_or_empty("IQ");
         // gamemd-derived: `RulesClass__ReadIQ @ 0x00674240` reads signed

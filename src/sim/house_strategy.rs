@@ -114,6 +114,10 @@ fn building_strategy(
     frame_effects: &mut FrameEffects<'_>,
 ) -> i32 {
     let policy = sim.session.rule_policy();
+    let nearest_enemy = rules.general.ai_nearest_enemy_in(matches!(
+        sim.session.game_mode(),
+        crate::sim::scenario_session::ScenarioGameMode::Campaign
+    ));
     pick_enemy(
         &sim.interner,
         &sim.session,
@@ -121,7 +125,7 @@ fn building_strategy(
         &mut sim.houses,
         owner,
         rules.ares_form(),
-        rules.general.ai_nearest_enemy,
+        nearest_enemy,
     );
     forget_defeated_enemy(
         &sim.interner,
@@ -130,7 +134,7 @@ fn building_strategy(
         owner,
         policy,
         rules.ares_form(),
-        rules.general.ai_nearest_enemy,
+        nearest_enemy,
     );
     // `0x004FD77C..0x004FD79B`: a signed IQ (`+0x24C`) compare.
     if policy.runs_ai_strategy()
@@ -294,7 +298,7 @@ fn pick_enemy(
                 .get(&peer)
                 .is_some_and(|peer| !peer.multiplay_passive() && !peer.is_defeated())
     });
-    // VERA `[General] AINearestEnemy=` (off by default; the original's
+    // VERA `[General] AINearestEnemy=` (on outside the campaign unless set; the original's
     // distances are all zero, see the module doc): the candidate that is no
     // ally and whose base centre is nearest, the earlier house on a tie.
     let nearest = nearest_enemy

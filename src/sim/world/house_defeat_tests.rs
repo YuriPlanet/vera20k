@@ -1346,6 +1346,9 @@ fn native_blowup_all_corpus() {
 fn a_computer_defeat_turns_the_computers_left_paranoid() {
     let mut rules = rules(3);
     rules.general.allies_allowed = true;
+    // The original's Computer_Paranoid (this build turns AINearestEnemy on
+    // in a skirmish when no rules set it).
+    rules.general.ai_nearest_enemy = Some(false);
     let (mut sim, houses) = sim_with_houses(&[0, 1, 1, 1]);
     sim.session.game_options_mut_for_test().short_game = true;
     sim.houses

@@ -22,7 +22,11 @@ const RULES: &str = "[MultiplayerDialogSettings]\nAlliesAllowed=yes\n\
      [VehicleTypes]\n0=TANK\n[TANK]\nStrength=1000\n";
 
 fn rules() -> RuleSet {
-    RuleSet::from_ini(&IniFile::from_str(RULES)).expect("diplomacy rules")
+    let mut rules = RuleSet::from_ini(&IniFile::from_str(RULES)).expect("diplomacy rules");
+    // The original's enemy choice, which these tests pin; this build turns
+    // AINearestEnemy on in a skirmish when no rules set it.
+    rules.general.ai_nearest_enemy = Some(false);
+    rules
 }
 
 /// Houses `(name, country, human)` in that array order, in a skirmish.
@@ -111,7 +115,7 @@ fn computer_paranoid_allies_the_computers_against_the_human() {
 #[test]
 fn ai_nearest_enemy_keeps_the_computers_from_banding_against_the_human() {
     let mut rules = rules();
-    rules.general.ai_nearest_enemy = true;
+    rules.general.ai_nearest_enemy = Some(true);
     let houses = [
         ("Player", "Americans", true),
         ("Computer1", "Russians", false),
