@@ -1313,6 +1313,7 @@ impl Simulation {
             special_type: object.movement_zone == MovementZone::Subterranean
                 || entity.category() == EntityCategory::Aircraft
                 || (entity.category() == EntityCategory::Infantry && object.jumpjet),
+            aircraft: entity.category() == EntityCategory::Aircraft,
             movement_zone: object.movement_zone,
             speed_type: object.speed_type,
         })
@@ -1335,6 +1336,10 @@ struct ClickMover {
     /// Infantry's Type+D94 (JumpJet; 4DE1D0's House53A130 test is constant
     /// false), or an Aircraft.
     special_type: bool,
+    /// The mover's concrete class is Aircraft. A MoveToShroud aircraft keeps
+    /// a shrouded destination without the ground zone search; the Fly
+    /// locomotor neither needs nor reads the destination's zone.
+    aircraft: bool,
     movement_zone: MovementZone,
     speed_type: SpeedType,
 }
@@ -1620,6 +1625,13 @@ fn resolve_foot_cell_click(
     let unrestricted = special && click.action == 2;
     let clicked =
         (click.clicked != (0, 0)).then_some((click.clicked.0 as u16, click.clicked.1 as u16));
+    // A MoveToShroud aircraft may be sent into a shrouded Cell. Resolve its
+    // Fly destination directly: the source-zone FNPC path below exists for
+    // ground movement, and a stale or split zone would otherwise reject the
+    // click or snap it to a far cell.
+    if in_playfield && shrouded && click.move_to_shroud && click.mover.aircraft {
+        return Ok(clicked);
+    }
     if !unrestricted && in_playfield && !shrouded {
         if special || (click.teleporter && click.action != 2) {
             return Ok(clicked);

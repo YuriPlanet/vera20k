@@ -52,6 +52,7 @@ fn ordinary_foot_input_matches_native_admission_rows() {
                 on_bridge: input["on_bridge"].as_bool().unwrap_or(false),
                 in_tube: false,
                 special_type: false,
+                aircraft: false,
                 movement_zone: match input["movement_zone"].as_u64().unwrap_or(4) {
                     0 => MovementZone::Normal,
                     1 => MovementZone::Crusher,
@@ -297,6 +298,47 @@ fn an_aircraft_click_keeps_a_river_cell() {
     assert_eq!(graph.nodes.len(), 1, "one river click is one shared node");
     assert_eq!(graph.nodes[0].coord, DriveCoord::cell(9, 5, 0));
     assert_eq!(graph.nodes[0].members, vec![gi, harrier]);
+}
+
+/// A `MoveToShroud` aircraft keeps a shrouded Cell even when the Fly row's
+/// zones no longer agree. The ClickedAction shroud rung answers Move, and the
+/// Fly locomotor does not need the destination's ground zone; before this
+/// guard the source-zone FNPC path below rejected or snapped the click.
+#[test]
+fn a_shrouded_aircraft_click_keeps_the_cell_when_its_fly_zone_is_split() {
+    let Some(rules) =
+        crate::rules::retail_ini_fixture::retail_battle_rules_for_map("amazon.mmx")
+    else {
+        return;
+    };
+    let rules = rules.rules;
+    let (mut sim, rules, _gi) = Simulation::walk_cell_input_test_scene_with(rules, false);
+    let owner = sim.interner.get("Local").unwrap();
+    let harrier = sim.spawn_object("BEAG", "Local", 6, 4, 0, &rules).unwrap();
+    sim.resolve_type_handles(&rules);
+    assert!(rules.object("BEAG").unwrap().move_to_shroud);
+
+    let shrouded = (12, 5);
+    *sim.fog = crate::sim::vision::FogState::new(16, 16);
+    sim.fog.reveal_cells_for_owner(
+        owner,
+        (0..16)
+            .flat_map(|y| (0..16).map(move |x| (x, y)))
+            .filter(|&cell| cell != shrouded),
+    );
+    assert!(!sim.fog.is_cell_revealed(owner, shrouded.0, shrouded.1));
+
+    let zones = sim.zone_grid.as_mut().unwrap();
+    let index = usize::from(shrouded.1) * usize::from(zones.width()) + usize::from(shrouded.0);
+    let base = zones.base_topology_mut_for_test();
+    let cluster = base.zone_ids_mut_for_test()[index];
+    let row = MovementZone::Fly.matrix_row().unwrap();
+    base.raw_zone_ids_by_row_mut_for_test()[row][cluster as usize] = 999;
+
+    assert_eq!(
+        sim.cell_click_destination(owner, harrier, shrouded, false, &rules),
+        Ok(Some(shrouded))
+    );
 }
 
 /// A Teleporter whose own What_Action answers Move keeps the clicked Cell,
