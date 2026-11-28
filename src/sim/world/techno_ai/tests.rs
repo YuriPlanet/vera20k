@@ -540,7 +540,10 @@ fn a_plain_active_unit_skips_absent_common_managers() {
         &mut outcome
     ));
     let lookups = sim.substrate.entities.lookups().0 - lookups_before;
-    assert!(lookups <= 12, "the absent managers were queried: {lookups}");
+    assert!(
+        lookups <= 10,
+        "the empty manager slots took extra lookups: {lookups}"
+    );
     assert_eq!(sim.substrate.entities.hand_outs(), handouts_before);
     assert_eq!(sim.rng_state(), rng_before);
     assert!(outcome.frame_error.is_none());
