@@ -1380,11 +1380,14 @@ impl ShadowModel {
         // exceeds every one's); a Jumpjet there (stock LocomotorBeam) draws
         // the victim through that suffix, whose Shadow_Matrix is the base
         // 0x0055A7D0 at its cell's slope.
+        // Hover's own Shadow_Matrix (game.exe 0x004FBF50, gamemd 0x005142A0)
+        // ends in the same base: its stencil needs no locomotor warhead.
         let lifted = vehicle
             && !own_jumpjet
-            && rules
-                .warheads_iter()
-                .any(|warhead| warhead.is_locomotor && warhead.locomotor == LocomotorKind::Jumpjet);
+            && (object.locomotor == LocomotorKind::Hover
+                || rules.warheads_iter().any(|warhead| {
+                    warhead.is_locomotor && warhead.locomotor == LocomotorKind::Jumpjet
+                }));
         (aircraft
             || own_jumpjet
             || lifted

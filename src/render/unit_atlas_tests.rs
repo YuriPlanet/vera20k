@@ -61,6 +61,16 @@ fn retail_jumpjet_unit_demand_includes_native_shadow_stencils() {
     }
 }
 
+#[test]
+fn a_hover_transport_needs_a_native_shadow_without_a_locomotor_warhead() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
+        "[VehicleTypes]\n0=LCRF\n[LCRF]\nLocomotor={}\n",
+        crate::rules::locomotor_type::LocomotorKind::Hover.clsid()
+    )))
+    .unwrap();
+    assert!(ShadowModel::for_type(&rules, "LCRF").is_some_and(|shadow| shadow.jumpjet));
+}
+
 /// A Magnetron's `IsLocomotor=` Jumpjet lifts any vehicle, whose shadow
 /// Unit73C1D2's suffix then draws at the slope of the cell below (base
 /// Shadow_Matrix 0x0055A7D0): unmasked high above it, and in the grounded
