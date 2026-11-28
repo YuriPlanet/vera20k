@@ -802,13 +802,13 @@ impl MoviesCapture {
                             crate::ui::movies_credits_shell::MoviesCreditsAction::PlayMovies
                         }
                         MoviesTarget::FullList { .. } => {
-                            state.persistence.options_profile.movie_progress =
-                                crate::ui::movies_credits_shell::MovieProgress {
-                                    soviet: 7,
-                                    allied: 7,
-                                };
+                            use crate::ui::movies_credits_shell::MovieCatalog;
+                            let catalog = MovieCatalog::for_launch();
+                            let progress = catalog.full_progress();
+                            state.persistence.options_profile.movie_progress[catalog as usize] =
+                                progress;
                             self.route.push(json!({"frame": frame,
-                                "action": "diagnostic movie progress override", "progress": [7, 7]}));
+                                "action": "diagnostic movie progress override", "progress": [progress.soviet, progress.allied]}));
                             self.phase = Phase::List;
                             crate::ui::movies_credits_shell::MoviesCreditsAction::PlayMovies
                         }

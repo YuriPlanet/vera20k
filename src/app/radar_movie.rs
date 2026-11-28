@@ -185,7 +185,10 @@ pub(crate) fn enqueue(
         return;
     };
     let stem = crate::app::frontend::fullscreen_movie::movie_stem(&name);
-    profile.movie_progress.note_played(stem);
+    profile.note_movie_played(
+        crate::ui::movies_credits_shell::MovieCatalog::for_launch(),
+        stem,
+    );
     enqueue_file(
         &mut match_state.match_presentation,
         process_assets,
