@@ -98,6 +98,9 @@ VERA20K は標準で Yuri's Revenge オリジナル版のルールを使いま�
 ## プロジェクトの支援
 
 <a href="https://paypal.me/vera20k"><img src="https://img.shields.io/badge/Donate_via_PayPal-FFC439?style=flat&amp;logo=paypal&amp;logoColor=003087" alt="PayPal で VERA20K を支援" height="23"></a>
+<a href="https://wise.com/pay/me/halvorr2"><img src="https://img.shields.io/badge/Donate_via_Wise-9FE870?style=flat&amp;logo=wise&amp;logoColor=163300" alt="Wise で VERA20K を支援" height="23"></a>
+
+Wise のページには、メンテナーの Halvor Rusten が受取人として表示されます。
 
 いただいた寄付はすべて、[TIBTRE 貢献台帳](https://github.com/YuriPlanet/tibtre-ledger)に基づいてコントリビューターに分配されます。
 
