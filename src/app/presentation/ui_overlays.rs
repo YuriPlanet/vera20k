@@ -62,6 +62,8 @@ struct StructureHud {
 
 #[derive(Clone, Debug, Default)]
 struct HudMore {
+    /// A building's rally destination. Its line starts at the captured `get_coords`.
+    rally_target: Option<DriveCoord>,
     /// Scale pips that depend on individual passengers, occupants or other slot contents.
     scale_pips: Vec<ScalePipDraw>,
     /// `MindControlLink::controller`.
@@ -88,7 +90,8 @@ struct HudMore {
 
 impl HudMore {
     fn is_empty(&self) -> bool {
-        self.scale_pips.is_empty()
+        self.rally_target.is_none()
+            && self.scale_pips.is_empty()
             && self.controller.is_none()
             && self.radial_radius == 0
             && self.capture_links.is_empty()
@@ -162,6 +165,9 @@ impl HudFacts {
         });
         let pips = scale_pip_rows(sim, entity, object, rules);
         let more = HudMore {
+            rally_target: at.cells.as_ref().and_then(|cells| {
+                crate::app::presentation::target_lines::rally_target(entity, sim, cells)
+            }),
             scale_pips: pips.individual,
             controller: entity.seldom.mind_control.controller(),
             // Ares ObjectClass_DrawRadialIndicator (10049A70, hook
@@ -264,6 +270,10 @@ impl HudFacts {
             .into_iter()
             .flat_map(|more| more.scale_pips.iter().copied())
             .chain(self.uniform_pips.draws())
+    }
+
+    pub(crate) fn rally_target(&self) -> Option<DriveCoord> {
+        self.more()?.rally_target
     }
 
     /// The object that mind-controls it.

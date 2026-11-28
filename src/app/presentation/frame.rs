@@ -429,8 +429,6 @@ pub(crate) struct Place {
     /// Its action line's world endpoints
     /// (`target_lines::action_line_endpoints`).
     pub(crate) action_line: Option<crate::app::presentation::target_lines::SelectedActionLine>,
-    /// A Structure's rally line (`target_lines::rally_line_coords`).
-    pub(crate) rally_line: Option<[crate::sim::components::DriveCoord; 2]>,
     /// `Simulation::techno_intent_psychically_detected` by the current
     /// house's detectors.
     pub(crate) psychically_detected: bool,
@@ -614,9 +612,6 @@ impl Place {
                     )
                 })
                 .flatten(),
-            rally_line: at.cells.as_ref().and_then(|cells| {
-                crate::app::presentation::target_lines::rally_line_coords(entity, sim, cells)
-            }),
             psychically_detected,
             // Only a Structure's is ever active.
             airstrike_tint_active: entity.category() == EntityCategory::Structure
