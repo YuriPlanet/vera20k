@@ -393,6 +393,39 @@ impl ZoneGrid {
         Ok(())
     }
 
+    /// Repair a player-file class plane that disagrees with the final bound
+    /// terrain. A user save can retain ground-class bytes where the restored
+    /// map and overlays say water; the saved partition then still describes
+    /// the old barrier. Rebuild the base from terrain classes when they
+    /// differ, then reproject maps and hierarchy. Internal snapshot
+    /// continuations keep their saved bytes and skip this call.
+    pub(crate) fn repair_player_load_zone_classes(
+        &mut self,
+        path: &PathGrid,
+        terrain: &ResolvedTerrainGrid,
+        records: &[crate::sim::bridge_state::BridgeEndpointRecord],
+        bounds: Option<crate::map::playfield::PlayfieldBounds>,
+    ) -> Result<(), String> {
+        let terrain_classes: Vec<u8> = (0..self.height)
+            .flat_map(|y| {
+                (0..self.width).map(move |x| zone_build::movement_class_for_cell(terrain, x, y))
+            })
+            .collect();
+        if self.base_topology.movement_classes == terrain_classes {
+            return Ok(());
+        }
+        self.base_topology = zone_build::rebuild_base_zone_topology(
+            terrain_classes,
+            self.base_topology.levels.clone(),
+            terrain.terrain_deformation(),
+            records,
+            self.width,
+            self.height,
+            self.base_topology.native_bridge_source_size,
+        );
+        self.finish_native_load(path, terrain, records, bounds)
+    }
+
     /// Read-only contribution of the retained native navigation state.
     /// Local56CB90/586990 updates preserve IDs, raw movement rows and ordered
     /// hierarchy history. These facts affect live queries and future repairs,

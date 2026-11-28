@@ -581,6 +581,7 @@ impl Simulation {
             });
         }
 
+        let player_load = saved_land.is_some();
         if let Some(saved_land) = saved_land.as_ref() {
             // MouseLoad restores Map+68/raw rows before LoadContent67E8CD's
             // hierarchy pass. A user file cannot invent that saved topology
@@ -691,6 +692,28 @@ impl Simulation {
         }
         if !self.rebuild_dynamic_navigation(rules) {
             return Err(SnapshotRestoreError::NavigationAuthorityPublicationFailed);
+        }
+
+        // A player save can retain class bytes from before a terrain/overlay
+        // change. Now that the dynamic terrain and overlay passability are
+        // reprojected, align the zone base with the bound map. Internal
+        // snapshots keep their saved bytes.
+        if player_load {
+            let bounds = self.playfield_bounds();
+            let records = self
+                .bridge_state
+                .as_ref()
+                .map(crate::sim::bridge_state::BridgeRuntimeState::endpoint_records)
+                .unwrap_or(&[]);
+            if let (Some(terrain), Some(path), Some(zones)) = (
+                self.resolved_terrain.as_ref(),
+                self.path_grid.as_deref(),
+                self.zone_grid.as_mut(),
+            ) {
+                zones
+                    .repair_player_load_zone_classes(path, terrain, records, bounds)
+                    .map_err(|_| SnapshotRestoreError::NavigationAuthorityPublicationFailed)?;
+            }
         }
 
         let occupied_overlays = self
