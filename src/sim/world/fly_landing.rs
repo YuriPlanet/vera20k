@@ -2,8 +2,8 @@
 //! The surrounding Mark/Display pair belongs to lifecycle::complete_fly_phase.
 //! Native executable corpus: tools/spatial_oracle/fly_landing_phase.*.
 use super::{Simulation, display_layers::DisplayLayer};
-use crate::map::entities::EntityCategory;
 use crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL;
+use crate::map::entities::EntityCategory;
 use crate::map::resolved_terrain::{NativeCellQuery, ResolvedTerrainGrid};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::components::{DriveCoord, NavTargetRef};
@@ -15,6 +15,35 @@ use crate::sim::world::FrameEffects;
 use crate::sim::world::ObjectSubstrate;
 use crate::sim::world::SimSoundEvent;
 use crate::util::fixed_math::SIM_ZERO;
+
+/// Phobos `GetLandingAnim` (`Ext/Techno/Hooks.cpp:2178-2201`, reached from the
+/// `FlyLocomotionClass::ProcessLanding` hooks `0x4CEB7E`/`0x4CEC31`): the
+/// type's `LandingAnim` first, then the class's global variant with its stock
+/// fallback name, then `[AudioVisual] DefaultLandingAnim` (null for an
+/// ordinary aircraft, which also keeps its landing silent unless the hook at
+/// `0x4CEB59` widens the effect to every aircraft). A name the anim catalog
+/// does not hold counts as unset, as the native `AnimTypeClass::Find` read
+/// would leave the pointer null. The forced dropship arm jumps to the tail
+/// (`0x4CEBA3 jmp 0x4CEC56`), so exactly one anim is spawned.
+fn phobos_landing_anim<'a>(
+    rules: &'a RuleSet,
+    object: Option<&'a crate::rules::object_type::ObjectType>,
+    dropship: bool,
+    carryall: bool,
+) -> Option<&'a str> {
+    let globals = &rules.phobos_globals;
+    let known = |name: Option<&'a str>| name.filter(|name| rules.has_anim_type(name));
+    if let Some(name) = known(object.and_then(|object| object.phobos_landing_anim.as_deref())) {
+        return Some(name);
+    }
+    if dropship {
+        return Some(known(globals.default_landing_anim_dropship.as_deref()).unwrap_or("DROPLAND"));
+    }
+    if carryall {
+        return Some(known(globals.default_landing_anim_carryall.as_deref()).unwrap_or("CARYLAND"));
+    }
+    known(globals.default_landing_anim.as_deref())
+}
 
 impl Simulation {
     pub(crate) fn finish_fly_takeoff_entry(
@@ -134,7 +163,9 @@ impl Simulation {
         if entity.on_bridge() && !landing {
             return height;
         }
-        let Some(terrain) = terrain else { return height };
+        let Some(terrain) = terrain else {
+            return height;
+        };
         let coord = ground_pose::position_world_coord(&entity.position);
         let cells = NativeCellQuery::canonical(terrain);
         let cell = cells.lookup_world(coord.x, coord.y);
@@ -143,7 +174,9 @@ impl Simulation {
         }
         let rise = match ground_pose::corrected_deck_z(terrain, cell) {
             Some(_) if entity.on_bridge() => return height,
-            Some(deck) => deck.wrapping_sub(ground_pose::query_ground_height(&cells, coord).unwrap_or(0)),
+            Some(deck) => {
+                deck.wrapping_sub(ground_pose::query_ground_height(&cells, coord).unwrap_or(0))
+            }
             None => crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS,
         };
         if height >= rise {
@@ -252,13 +285,10 @@ impl Simulation {
                 y: coord.y,
                 z: ground,
             };
-            let animation = if dropship {
-                Some("DROPLAND")
-            } else if carryall {
-                Some("CARYLAND")
-            } else {
-                None
-            };
+            // Phobos `GetLandingAnim` replaces the stock DROPLAND/CARYLAND
+            // choice (`Ext/Techno/Hooks.cpp:2178-2225`); a stock build keeps
+            // the two literal names.
+            let animation = phobos_landing_anim(rules, object, dropship, carryall);
             if let Some(animation) = animation {
                 let name = self.interner.intern(animation);
                 let (rx, ry, sx, sy, z) = world.to_cell_sub_z();
@@ -295,11 +325,12 @@ impl Simulation {
             let cells = NativeCellQuery::canonical(terrain);
             let cell = cells.lookup_world(coord.x, coord.y);
             if cells.flags(cell) & BRIDGE_FLAG_STRUCTURAL != 0
-                && coord.z >= ground_pose::deck_surface_z(
-                    &cells,
-                    cell,
-                    ground_pose::query_ground_height(&cells, coord).unwrap_or(0),
-                )
+                && coord.z
+                    >= ground_pose::deck_surface_z(
+                        &cells,
+                        cell,
+                        ground_pose::query_ground_height(&cells, coord).unwrap_or(0),
+                    )
             {
                 self.substrate
                     .entities
@@ -626,7 +657,7 @@ impl Simulation {
             );
             true
         } else {
-            self.receive_own_health_c4(id, rules, Some(rules.overlay_registry()), frame_effects);
+            self.receive_own_health_c4(id, rules, None, frame_effects, true);
             if let Some(state) = self
                 .substrate
                 .entities
@@ -669,14 +700,25 @@ mod tests {
     use crate::util::fixed_math::SimFixed;
 
     fn fixture(row: &serde_json::Value) -> (Simulation, RuleSet) {
+        fixture_with(row, "")
+    }
+
+    /// `tail` is appended after the fixture's `[TEST]` keys, so a test can add
+    /// type keys (before the section ends) and further sections.
+    fn fixture_with(row: &serde_json::Value, tail: &str) -> (Simulation, RuleSet) {
         let input = &row["input"];
         let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
-            "[General]\nFlightLevel=1500\n[AircraftTypes]\n0=TEST\n[TEST]\nLandable=yes\nStrength=100\nSpeed=10\nFlightLevel={}\nLocomotor={{4A582746-9839-11D1-B709-00A024DDAFD1}}\nIsDropship={}\nAirportBound={}\n",
+            "[General]\nFlightLevel=1500\n[AircraftTypes]\n0=TEST\n[TEST]\nLandable=yes\nStrength=100\nSpeed=10\nFlightLevel={}\nLocomotor={{4A582746-9839-11D1-B709-00A024DDAFD1}}\nIsDropship={}\nAirportBound={}\n{tail}",
             input["flight_level"].as_i64().unwrap_or(-1),
             input["dropship"].as_bool().unwrap_or(false),
             input["airport_bound"].as_bool().unwrap_or(false),
         ))).unwrap();
         let mut rules = rules;
+        // Synthesize constructor-only anim configs so a landing anim named by
+        // these tests can construct without an ART body.
+        rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(
+            &IniFile::from_str("[Animations]\n"),
+        ));
         rules.general.blockage_path_delay_ticks = 11;
         let mut sim = Simulation::with_seed(31);
         sim.session.set_map_width_for_test(128);
@@ -1164,6 +1206,123 @@ mod tests {
         assert!(fly(&sim).landing() && !fly(&sim).target_speed_is_zero());
         sim.apply_fly_landing_callback(1, &rules, &mut crate::sim::world::FrameEffects::default());
         assert!(fly(&sim).target_speed_is_zero());
+    }
+
+    /// Phobos `GetLandingAnim` (`Ext/Techno/Hooks.cpp:2178-2225`): the type's
+    /// `LandingAnim` first, else the class's global variant with the stock
+    /// `DROPLAND`/`CARYLAND` fallback, else `[AudioVisual] DefaultLandingAnim`
+    /// (whose presence also widens the landing effect to every aircraft,
+    /// `0x4CEB59`). Each case lands row 1, whose effect latch is still clear.
+    #[test]
+    fn phobos_landing_anim_choice_reaches_the_landing_effect() {
+        let rows: Vec<serde_json::Value> = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/fly_landing_phase.json",
+        ))
+        .unwrap();
+        let row = rows
+            .iter()
+            .find(|row| row["before"]["phase"][1] == 1 && row["before"]["phase"][2] == 0)
+            .unwrap();
+        let anims = |tail: &str| -> Vec<String> {
+            let (mut sim, rules) = fixture_with(row, tail);
+            sim.apply_fly_landing_callback(
+                1,
+                &rules,
+                &mut crate::sim::world::FrameEffects::default(),
+            );
+            sim.anims()
+                .map(|(_, anim)| sim.interner().resolve(anim.type_id()).to_owned())
+                .collect()
+        };
+        let catalog = "[Animations]\n0=LAND\n1=DUST\n2=CARYLAND\n[LAND]\n[DUST]\n[CARYLAND]\n";
+
+        assert_eq!(
+            anims(catalog),
+            Vec::<String>::new(),
+            "a plain aircraft plays no landing anim while both keys are unset"
+        );
+        assert_eq!(
+            anims(&format!("LandingAnim=LAND\n{catalog}")),
+            ["LAND"],
+            "the type key forces the landing effect"
+        );
+        assert_eq!(
+            anims(&format!(
+                "[AudioVisual]\nDefaultLandingAnim=DUST\n{catalog}"
+            )),
+            ["DUST"],
+            "the global default widens the effect to a plain aircraft"
+        );
+        assert_eq!(
+            anims(&format!("LandingAnim=TYPO\n{catalog}")),
+            Vec::<String>::new(),
+            "an unknown type LandingAnim counts as unset"
+        );
+        assert_eq!(
+            anims(&format!("Carryall=yes\nLandingAnim=TYPO\n{catalog}")),
+            ["CARYLAND"],
+            "an unknown type key leaves the carryall fallback"
+        );
+        assert_eq!(
+            anims(&format!("Carryall=yes\n{catalog}")),
+            ["CARYLAND"],
+            "a carryall keeps its stock fallback name"
+        );
+        assert_eq!(
+            anims(&format!(
+                "Carryall=yes\n[AudioVisual]\nDefaultLandingAnim=DUST\n{catalog}"
+            )),
+            ["CARYLAND"],
+            "a carryall ignores the plain global default"
+        );
+        assert_eq!(
+            anims(&format!(
+                "Carryall=yes\n[AudioVisual]\nDefaultLandingAnim.Carryall=LAND\n{catalog}"
+            )),
+            ["LAND"],
+            "the carryall variant replaces CARYLAND"
+        );
+    }
+
+    /// The dropship arm of `GetLandingAnim` (`Ext/Techno/Hooks.cpp:2183-2201`):
+    /// an `IsDropship` type takes `.Dropship` else `DROPLAND` and never the
+    /// plain global default; an authored type key wins over both.
+    #[test]
+    fn the_dropship_landing_anim_precedence() {
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[AircraftTypes]\n0=DROP\n1=PLAIN\n2=TYPED\n\
+             [DROP]\nStrength=100\nIsDropship=yes\n\
+             [PLAIN]\nStrength=100\n\
+             [TYPED]\nStrength=100\nIsDropship=yes\nLandingAnim=LAND\n\
+             [Animations]\n0=DSHIP\n1=DUST\n2=LAND\n[DSHIP]\n[DUST]\n[LAND]\n\
+             [AudioVisual]\nDefaultLandingAnim=DUST\nDefaultLandingAnim.Dropship=DSHIP\n",
+        ))
+        .unwrap();
+        assert_eq!(
+            phobos_landing_anim(&rules, rules.object("DROP"), true, false),
+            Some("DSHIP")
+        );
+        assert_eq!(
+            phobos_landing_anim(&rules, rules.object("TYPED"), true, false),
+            Some("LAND"),
+            "the type LandingAnim precedes the dropship variant"
+        );
+        assert_eq!(
+            phobos_landing_anim(&rules, rules.object("PLAIN"), false, false),
+            Some("DUST")
+        );
+
+        let bare = RuleSet::from_ini(&IniFile::from_str(
+            "[AircraftTypes]\n0=DROP\n[DROP]\nStrength=100\nIsDropship=yes\n\
+             [Animations]\n0=DUST\n[DUST]\n\
+             [AudioVisual]\nDefaultLandingAnim=DUST\n",
+        ))
+        .unwrap();
+        assert_eq!(
+            phobos_landing_anim(&bare, bare.object("DROP"), true, false),
+            Some("DROPLAND"),
+            "a dropship ignores the plain global default"
+        );
     }
 
     #[test]

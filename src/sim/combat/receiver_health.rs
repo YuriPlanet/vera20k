@@ -27,7 +27,6 @@ pub(super) struct ReceiverHealthCommit {
     pub(super) psychedelic: bool,
     /// `*pDamage` after Object's body (`0x00701DF8`), when Techno reached it:
     /// what Phobos' `0x701E18` hook reflects and counts.
-    #[cfg(feature = "phobos")]
     pub(super) object_packet: Option<i32>,
 }
 
@@ -274,6 +273,53 @@ impl super::object_health::ObjectHealthHost for ReceiverHealthHost<'_, '_, '_> {
     }
 }
 
+/// Phobos' `TechnoClass_ReceiveDamage_Psychedelic` (`0x701D6B`,
+/// `Ext/WarheadType/Hooks.cpp:678-696`) replaces the stock time write with
+/// `EnumFunctions::CalcValueWithStackingMode`: the warhead's nullable
+/// `Psychedelic.StackingMode`, else `[CombatDamage] Psychedelic.StackingMode`,
+/// combines the incoming damage with the target's current
+/// `BerzerkDurationLeft`.
+pub(super) fn psychedelic_berserk_time(
+    world: &Simulation,
+    rules: &RuleSet,
+    event: &EntityDamageEvent,
+    value: i32,
+) -> i32 {
+    let mode = rules
+        .warhead(world.interner.resolve(event.warhead_ref))
+        .and_then(|warhead| warhead.phobos_psychedelic_stacking_mode)
+        .unwrap_or(rules.combat_damage.phobos_psychedelic_stacking_mode);
+    let current = world
+        .substrate
+        .entities
+        .get(event.target_id)
+        .map_or(0, |target| target.berserk.timer());
+    mode.combine(current, value)
+}
+
+/// Whether the hit enters the stock berserk block at `0x701D71`: the object
+/// is not already berserk and, under Phobos, the combined time is positive
+/// (`StopBerzerk` at `0x701DBA` skips the block otherwise). Native uses this
+/// same answer for team removal, target clear and Hunt.
+pub(super) fn psychedelic_starts_berserk(
+    world: &Simulation,
+    rules: &RuleSet,
+    event: &EntityDamageEvent,
+    value: i32,
+) -> bool {
+    if world
+        .substrate
+        .entities
+        .get(event.target_id)
+        .is_none_or(|target| target.berserk.is_active())
+    {
+        return false;
+    }
+    {
+        psychedelic_berserk_time(world, rules, event, value) > 0
+    }
+}
+
 pub(super) fn commit_receiver_health(
     event: &EntityDamageEvent,
     caller_damage: &mut ReceiverDamage,
@@ -311,8 +357,11 @@ pub(super) fn commit_receiver_health(
     if let Some(value) = receive_outcome.psychedelic_value {
         //701D71..701DBA returns before Object and Techno's own tail.
         //The caller owns team removal before, then target-clear/Hunt after.
+        //Phobos' 0x701D6B hook replaces the stock time write; a non-positive
+        //combined time jumps to StopBerzerk (0x701DBA), before the flag write.
+        let time = psychedelic_berserk_time(world, rules, event, value);
         let target = world.substrate.entities.get_mut(target_id)?;
-        target.berserk.start(value);
+        target.berserk.psychedelic_stack(time);
         return Some(ReceiverHealthCommit {
             building_entry_frame,
             state: damage::DamageState::Damaged,
@@ -338,11 +387,10 @@ pub(super) fn commit_receiver_health(
             uncloak_after_damage: false,
             house_threat_delta: None,
             psychedelic: true,
-            #[cfg(feature = "phobos")]
             object_packet: None,
         });
     }
-    let (strength, building_no_c4) = {
+    let (strength, building_no_c4, allow_zero_damage) = {
         let target = world.substrate.entities.get(target_id)?;
         let ty = world.interner.object_type(target.type_ref(), rules)?;
         if target.category() == EntityCategory::Structure {
@@ -353,9 +401,11 @@ pub(super) fn commit_receiver_health(
                 world.object_tech_level(ty),
             ));
         }
+        let allow_zero_damage = ty.phobos_can_c4_allow_zero_damage;
         (
             ty.strength,
             target.category() == EntityCategory::Structure && !ty.can_c4,
+            allow_zero_damage,
         )
     };
     let mut packet = receive_outcome.hp_delta;
@@ -375,9 +425,11 @@ pub(super) fn commit_receiver_health(
         strength,
         receive_outcome.apply_object_damage,
         building_no_c4,
+        allow_zero_damage,
         rules.general.condition_red,
         attacker_id != RAD_NO_ATTACKER,
         rules.ares(),
+        rules.phobos(),
     );
     #[cfg(any(test, feature = "test-support"))]
     let reached_exact_zero = host.reached_exact_zero;
@@ -527,7 +579,6 @@ pub(super) fn commit_receiver_health(
         uncloak_after_damage,
         house_threat_delta,
         psychedelic: false,
-        #[cfg(feature = "phobos")]
         object_packet: reached_survivor_postlude.then_some(final_packet),
     })
 }
@@ -555,7 +606,6 @@ impl BerserkState {
 
     /// The time left. The Psychedelic arm and the countdown use the field;
     /// tests read it through this.
-    #[cfg(any(test, feature = "test-support"))]
     pub(crate) const fn timer(self) -> i32 {
         self.timer
     }
@@ -578,12 +628,25 @@ impl BerserkState {
         self.timer = timer;
     }
 
-    /// The Psychedelic arm's writes (`0x00701D6B..0x00701D7D`): the time,
-    /// then the flag. Answers whether this hit turned the object berserk; a
-    /// berserk object only has its time refreshed.
+    /// The stock Psychedelic arm's writes (`0x00701D6B..0x00701D7D`): the
+    /// time, then the flag. Answers whether this hit turned the object
+    /// berserk; a berserk object only has its time refreshed. Phobos' hook
+    /// replaces this arm with [`Self::psychedelic_stack`].
     pub fn start(&mut self, time: i32) -> bool {
         self.timer = time;
         !std::mem::replace(&mut self.active, true)
+    }
+
+    /// The Phobos `0x701D6B` hook's write: the combined time always lands in
+    /// `+0x29C`, then a non-positive result jumps to `StopBerzerk`
+    /// (`0x701DBA`) before `0x701D7D`'s flag write, so an object that was not
+    /// berserk stays that way, while an already-berserk object keeps its flag
+    /// (and its next `AI_Update` tick clears the non-positive time).
+    pub fn psychedelic_stack(&mut self, time: i32) {
+        self.timer = time;
+        if time > 0 {
+            self.active = true;
+        }
     }
 
     /// `TechnoClass::AI_Update`'s countdown (`0x006F9F0D..0x006F9F31`): a

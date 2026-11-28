@@ -52,10 +52,13 @@ fn weapon_ini(name: &str, input: &Value) -> String {
     let thickness = input["laser_thickness"]
         .as_i64()
         .map_or_else(String::new, |value| format!("LaserThickness={value}\n"));
+    let z_adjust = input["laser_z_adjust"]
+        .as_i64()
+        .map_or_else(String::new, |value| format!("LaserZAdjust={value}\n"));
     format!(
         "[{name}]\nIsLaser={is_laser}\nIsHouseColor={house}\nIsSingleColor={single}\nIsBigLaser={big}\n\
          LaserDuration={duration}\nLaserInnerColor={r},{g},{b}\n\
-         LaserOuterColor={or},{og},{ob}\nLaserOuterSpread={sr},{sg},{sb}\n{thickness}"
+         LaserOuterColor={or},{og},{ob}\nLaserOuterSpread={sr},{sg},{sb}\n{thickness}{z_adjust}"
     )
 }
 
@@ -70,6 +73,11 @@ fn fixture_rules(input: &Value) -> RuleSet {
     } else {
         ("LaserProbe", String::new())
     };
+    let global_z = input["global_laser_z_adjust"]
+        .as_i64()
+        .map_or_else(String::new, |value| {
+            format!("[AudioVisual]\nLaserZAdjust={value}\n")
+        });
     let rules_ini = crate::sim::arena_fixture::clear_ground_ini(&format!(
         "[General]\nPrismType=ATESLA\nPrismSupportDuration={support_duration}\nPrismSupportDelay=45\n\
          [VehicleTypes]\n0=UNIT\n1=TARGET\n[InfantryTypes]\n0=INF\n\
@@ -79,7 +87,7 @@ fn fixture_rules(input: &Value) -> RuleSet {
          [GAPOWR]\nStrength=750\n\
          [UNIT]\nImage=UNITART\nStrength=600\nPrimary=LaserProbe\n\
          [INF]\nStrength=125\nPrimary=LaserProbe\n\
-         [TARGET]\nStrength=1000\n{selected}{current}"
+         [TARGET]\nStrength=1000\n{selected}{current}{global_z}"
     ));
     let art_ini = IniFile::from_str(
         "[GAPRIS]\nFoundation=1x1\nPrimaryFirePixelOffset=0,-4\n\
@@ -115,6 +123,44 @@ fn place(sim: &mut Simulation, id: u64, kind: &str, category: EntityCategory, at
         .type_facts
         .set_foundation_for_test(if kind == "GAPOWR" { "2x2" } else { "1x1" }.into());
     sim.substrate.entities.insert(entity);
+}
+
+/// Phobos `LaserZAdjust` (`Ext/WeaponType/Body.cpp:130`, nullable) with the
+/// `[AudioVisual]` default (`Ext/Rules/Body.cpp:277`), applied by the LaserDraw
+/// hook (`Misc/Hooks.LaserDraw.cpp:49-57`): the created beam carries the sum.
+#[test]
+fn laser_z_adjust_reads_the_weapon_then_the_audio_visual_global() {
+    let produce = |global: &str, weapon: &str| {
+        let rules_ini = crate::sim::arena_fixture::clear_ground_ini(&format!(
+            "[AudioVisual]\n{global}\
+             [VehicleTypes]\n0=UNIT\n1=TARGET\n\
+             [UNIT]\nImage=UNITART\nStrength=600\nPrimary=LaserProbe\n\
+             [TARGET]\nStrength=1000\n\
+             [LaserProbe]\nIsLaser=yes\nIsHouseColor=yes\nLaserDuration=10\n{weapon}"
+        ));
+        let art = IniFile::from_str("[UNITART]\nPrimaryFireFLH=0,0,0\n");
+        let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&rules_ini, &art).unwrap();
+        rules.install_art_data(ArtRegistry::from_ini(&art));
+        let mut sim = Simulation::with_seed(0);
+        place(&mut sim, 1, "UNIT", EntityCategory::Unit, [1280, 1280, 0]);
+        place(&mut sim, 2, "TARGET", EntityCategory::Unit, [1536, 1280, 0]);
+        laser::create(
+            &mut sim,
+            &rules,
+            1,
+            crate::sim::projectile::ProjectileTarget::Entity(2),
+            0,
+            rules.weapon("LaserProbe").unwrap(),
+            None,
+            false,
+        )
+        .unwrap()
+        .z_adjust
+    };
+    assert_eq!(produce("", ""), 0);
+    assert_eq!(produce("LaserZAdjust=7\n", ""), 7);
+    assert_eq!(produce("LaserZAdjust=7\n", "LaserZAdjust=5\n"), 5);
+    assert_eq!(produce("", "LaserZAdjust=-4\n"), -4);
 }
 
 fn assert_birth(actual: LaserBirth, expected: &Value, name: &str, rules: &RuleSet) {
@@ -372,6 +418,7 @@ fn ares_laser_thickness_sets_the_fire_at_and_spawn_laser_widths() {
         0,
         rules.weapon("LaserProbe").unwrap(),
         Some(ProjectileCoord::new(1280, 1280, 0)),
+        false,
     )
     .unwrap();
     assert_eq!((birth.width, birth.supported), (5, false));
@@ -381,7 +428,6 @@ fn ares_laser_thickness_sets_the_fire_at_and_spawn_laser_widths() {
 /// laser with `IsSingleColor=` and no house colour keeps only its
 /// `LaserInnerColor=`; `IsHouseColor=` still wins, and an ordinary laser
 /// keeps the full inner/outer/spread triple.
-#[cfg(feature = "phobos")]
 #[test]
 fn stock_single_color_laser_keeps_only_the_inner_colour() {
     fn birth(
@@ -407,6 +453,7 @@ fn stock_single_color_laser_keeps_only_the_inner_colour() {
             0,
             rules.weapon("LaserProbe").unwrap(),
             Some(ProjectileCoord::new(1280, 1280, 0)),
+            false,
         )
         .unwrap();
         (birth.color, owner)
@@ -430,6 +477,46 @@ fn stock_single_color_laser_keeps_only_the_inner_colour() {
     );
     let (color, owner) = birth(true, true);
     assert_eq!(color, LaserColor::House(owner));
+}
+
+/// Phobos `TechnoClass_LaserZap_ZAdjust` (`0x6FD3FD`,
+/// `Misc/Hooks.LaserDraw.cpp:51-58`): the weapon's `LaserZAdjust=` else the
+/// `[AudioVisual] LaserZAdjust` global adds to the native zAdjust.
+#[test]
+fn laser_z_adjust_adds_the_weapon_value_else_the_global() {
+    fn birth(weapon_z: Option<i64>, global_z: Option<i64>) -> i32 {
+        let mut input = json!({ "is_laser": true, "inner": [11, 22, 33] });
+        if let Some(z) = weapon_z {
+            input["laser_z_adjust"] = json!(z);
+        }
+        if let Some(z) = global_z {
+            input["global_laser_z_adjust"] = json!(z);
+        }
+        let rules = fixture_rules(&input);
+        let mut sim = Simulation::new();
+        place(&mut sim, 1, "UNIT", EntityCategory::Unit, [1280, 1280, 0]);
+        place(&mut sim, 2, "TARGET", EntityCategory::Unit, [1536, 1280, 0]);
+        laser::create(
+            &mut sim,
+            &rules,
+            1,
+            crate::sim::projectile::ProjectileTarget::Entity(2),
+            0,
+            rules.weapon("LaserProbe").unwrap(),
+            Some(ProjectileCoord::new(1280, 1280, 0)),
+            false,
+        )
+        .unwrap()
+        .z_adjust
+    }
+    assert_eq!(birth(None, None), 0);
+    assert_eq!(birth(Some(10), None), 10);
+    assert_eq!(birth(None, Some(5)), 5);
+    assert_eq!(
+        birth(Some(10), Some(5)),
+        10,
+        "the weapon key overrides the global"
+    );
 }
 
 #[test]
@@ -469,6 +556,7 @@ fn direct_laser_keeps_explicit_source_and_native_constructor_defaults() {
         0,
         rules.weapon("LaserProbe").unwrap(),
         Some(from),
+        false,
     )
     .unwrap();
     assert_eq!(birth.from, from);
@@ -492,6 +580,7 @@ fn direct_laser_keeps_explicit_source_and_native_constructor_defaults() {
             0,
             rules.weapon("LaserProbe").unwrap(),
             source,
+            false,
         )
         .unwrap();
         assert_eq!(birth.from, coordinate(&row["laser"]["source"]));

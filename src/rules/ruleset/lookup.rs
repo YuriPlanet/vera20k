@@ -1040,7 +1040,7 @@ impl RuleSet {
         Self::lookup_ci(&self.super_weapons, id)
     }
 
-    pub(crate) fn super_weapon_metadata(
+    pub fn super_weapon_metadata(
         &self,
         id: &str,
     ) -> Option<&crate::rules::superweapon_type::AresSuperWeaponMetadata> {
@@ -1051,7 +1051,6 @@ impl RuleSet {
 
     /// The Phobos techno gates for a superweapon, if the capability is
     /// compiled in and the type was registered.
-    #[cfg(feature = "phobos")]
     pub(crate) fn phobos_super_weapon_metadata(
         &self,
         id: &str,

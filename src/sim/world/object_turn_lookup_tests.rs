@@ -86,10 +86,7 @@ fn a_tanks_turn_and_a_load_store_no_building_state() {
 /// (`FootSpeedState::limpeted`) says when to. Tiberian Sun's web timer sits
 /// there too, and a byte in `InfantryRuntime`'s padding says when to read it.
 /// The Wasm module modifier cache is another 8 in the seldom part.
-#[cfg(all(
-    target_pointer_width = "64",
-    not(any(feature = "phobos", feature = "debug-tools"))
-))]
+#[cfg(all(target_pointer_width = "64", not(feature = "debug-tools")))]
 #[test]
 fn the_object_record_stays_under_its_ceiling() {
     use crate::sim::game_entity::{GameEntity, Seldom};

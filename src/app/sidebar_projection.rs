@@ -77,7 +77,6 @@ pub(crate) struct SidebarModel {
     /// Phobos `ScenarioExt::SWSidebar_Enable` off: the superweapon column is
     /// collapsed (it starts expanded). Saved and restored with the strips,
     /// in the local presentation envelope rather than the simulation hash.
-    #[cfg(feature = "phobos")]
     sw_sidebar_collapsed: bool,
 }
 
@@ -274,7 +273,6 @@ pub(crate) struct PreparedSidebarOrder {
     factory_links: HashMap<InternedId, CameoFactoryLink>,
     prediction_categories: HashSet<ProductionCategory>,
     active_tab: SidebarTab,
-    #[cfg(feature = "phobos")]
     pub(crate) sw_sidebar_expanded: bool,
 }
 
@@ -406,7 +404,8 @@ impl SidebarProjectionState {
             return;
         };
         self.view_basis = None;
-        self.model.apply_cameo_draw_state(&mut view, sim, frame, rules, owner, armed_building);
+        self.model
+            .apply_cameo_draw_state(&mut view, sim, frame, rules, owner, armed_building);
         self.current_view = Some(view);
         // Committed frames only; the world revision moves with them anyway.
         self.view_revision = self.view_revision.wrapping_add(1);
@@ -570,13 +569,11 @@ impl SidebarModel {
                     })
                     .collect()
             });
-            #[cfg_attr(not(feature = "phobos"), allow(unused_mut))]
             let mut order = crate::sim::snapshot::SavedSidebarOrder::new(*owner, identities)
                 .with_flash(deadlines, redraw_until)
                 .with_requests(strips.saved_requests())
                 .with_factory_links(factory_links)
                 .with_prediction_categories(prediction_categories);
-            #[cfg(feature = "phobos")]
             order.set_sw_sidebar_expanded(self.sw_sidebar_expanded());
             order
         })
@@ -584,19 +581,16 @@ impl SidebarModel {
 
     /// Whether Phobos' superweapon column is expanded
     /// (`ScenarioExt::SWSidebar_Enable`).
-    #[cfg(feature = "phobos")]
     pub(crate) fn sw_sidebar_expanded(&self) -> bool {
         !self.sw_sidebar_collapsed
     }
 
     /// `ToggleSWButtonClass::SwitchSidebar`: collapse or expand the column.
-    #[cfg(feature = "phobos")]
     pub(crate) fn toggle_sw_sidebar(&mut self) {
         self.sw_sidebar_collapsed = !self.sw_sidebar_collapsed;
     }
 
     /// A new scenario's column starts expanded.
-    #[cfg(feature = "phobos")]
     pub(crate) fn reset_sw_sidebar(&mut self) {
         self.sw_sidebar_collapsed = false;
     }
@@ -613,7 +607,6 @@ impl SidebarModel {
                 self.prediction_categories = saved.prediction_categories;
                 // `ScenarioExt::SWSidebar_Enable` survives the load like the
                 // strips.
-                #[cfg(feature = "phobos")]
                 {
                     self.sw_sidebar_collapsed = !saved.sw_sidebar_expanded;
                 }
@@ -1445,8 +1438,18 @@ impl SidebarModel {
     /// Returns the step's [`CreditTick`]: `Some(CreditTick { counting_up })`
     /// when the displayed value changed (native sets `animating(+0xA) = 1` and
     /// `counting_up(+0x9) = step > 0` at `0x004A2740..0x004A2751` only on a
-    /// changed step), `None` otherwise.
-    pub(crate) fn advance_credits(&mut self, owner: &str, actual: i32) -> Option<CreditTick> {
+    /// changed step), `None` otherwise. `max_step` is Phobos
+    /// `CreditsIndicator.MaxStep` (`0x4A2729`): above zero it caps the step, at
+    /// or below it removes the upper bound. `smooth` is `CreditsIndicator.
+    /// Smooth` (`0x4A26E8`): off snaps straight to the balance with no step or
+    /// tick cue.
+    pub(crate) fn advance_credits(
+        &mut self,
+        owner: &str,
+        actual: i32,
+        max_step: i32,
+        smooth: bool,
+    ) -> Option<CreditTick> {
         use std::collections::hash_map::Entry;
 
         let mut entry = match self.displayed_credits.entry(owner.to_string()) {
@@ -1461,11 +1464,21 @@ impl SidebarModel {
             return None;
         }
 
+        if !smooth {
+            // `0x4A26EE` with Phobos's jump to `0x4A26F0`: the balance is
+            // copied without a counting step or `CreditTicks` cue.
+            *displayed = actual;
+            return None;
+        }
         // gamemd `CreditsClass::AI / FUN_004A2600 @ 0x004A2600`:
-        // |actual-displayed| / 8, clamped to [1, 143]. The stored 1/3 value
-        // does not delay this call's step (SIDEBAR_SYSTEM_GHIDRA_REPORT §30).
+        // |actual-displayed| / 8, clamped to at least 1. Phobos's positive
+        // `CreditsIndicator.MaxStep` replaces the retail upper bound of 143.
         let difference = (i64::from(actual) - i64::from(*displayed)).unsigned_abs();
-        let step = (difference / 8).clamp(1, 143) as i32;
+        let step = (difference / 8).max(1).min(if max_step > 0 {
+            max_step as u64
+        } else {
+            u64::MAX
+        }) as i32;
         let before = *displayed;
         let counting_up = actual > *displayed;
         if counting_up {
@@ -1548,6 +1561,7 @@ fn object_cameo(
         object.category,
         ObjectCategory::Vehicle | ObjectCategory::Aircraft
     );
+    let sort_by_internal_name = rules.phobos_globals.sort_cameo_by_name;
     Some(Cameo {
         id: CameoId::Object(id),
         tab: SidebarTab::for_category(crate::sim::production::category_for_object(object)),
@@ -1558,6 +1572,8 @@ fn object_cameo(
             naval: vehicle && object.naval,
             tech_level: sim.object_tech_level(object),
             cost,
+            internal_name: object.id.clone(),
+            sort_by_internal_name,
             name: crate::assets::csf_file::type_ui_name(object.ui_name.as_deref(), csf),
         },
     })
@@ -1570,11 +1586,15 @@ fn super_cameo(
     id: InternedId,
 ) -> Option<Cameo> {
     let kind = rules.super_weapon(sim.interner().try_resolve(id)?)?;
+    // Phobos `TabIndex` (`Ext/SWType/Hooks.cpp:245-258`, `0x6ABC9D`): the
+    // cameo goes to the tab its type names, which defaults to strip 1.
+    let tab = crate::ui::sidebar::SidebarTab::for_sw_tab_index(kind.phobos_tab_index.index());
+    let sort_by_internal_name = rules.phobos_globals.sort_cameo_by_name;
     Some(Cameo {
         id: CameoId::SuperWeapon(id),
-        tab: crate::ui::sidebar::SidebarTab::Defense,
+        tab,
         available: true,
-        key: super_weapon_cameo_key(kind, csf),
+        key: super_weapon_cameo_key(kind, csf, sort_by_internal_name),
     })
 }
 
@@ -1583,9 +1603,12 @@ fn super_cameo(
 pub(crate) fn super_weapon_cameo_key(
     kind: &crate::rules::superweapon_type::SuperWeaponType,
     csf: Option<&crate::assets::csf_file::CsfFile>,
+    sort_by_internal_name: bool,
 ) -> CameoKey {
     CameoKey::SuperWeapon {
         recharge_frames: kind.recharge_time_frames,
+        internal_name: kind.id.clone(),
+        sort_by_internal_name,
         name: crate::assets::csf_file::type_ui_name(kind.ui_name.as_deref(), csf),
     }
 }
@@ -1611,7 +1634,6 @@ pub(crate) fn prepare_saved_order(
         factory_links: saved_factory_links,
         prediction_categories: saved_categories,
         active_tab,
-        #[cfg(feature = "phobos")]
         sw_sidebar_expanded,
     } = saved.into_parts();
     let active_tab = *SidebarTab::all()
@@ -1741,7 +1763,6 @@ pub(crate) fn prepare_saved_order(
         factory_links,
         prediction_categories,
         active_tab,
-        #[cfg(feature = "phobos")]
         sw_sidebar_expanded,
     }))
 }
@@ -1817,7 +1838,9 @@ mod tests {
             })
             .collect();
         let mut projection = SidebarProjectionState::default();
-        projection.model.reconcile_fixture(owner, &candidates, 1, false);
+        projection
+            .model
+            .reconcile_fixture(owner, &candidates, 1, false);
         (sim, rules, owner, projection)
     }
 
@@ -1841,18 +1864,30 @@ mod tests {
                 construction_order,
             };
             let mut absent = SidebarProjectionState::default();
-            absent.model.apply_lifecycle_output(&link, Some(owner), ares_way);
+            absent
+                .model
+                .apply_lifecycle_output(&link, Some(owner), ares_way);
             assert!(
                 absent.model.factory_links.is_empty(),
                 "LinkFactory requires a retained entry"
             );
             projection.model.reconcile_factory_links(&sim, owner);
             assert!(
-                projection.model.cameo_factory(&sim, owner, type_id).is_none(),
+                projection
+                    .model
+                    .cameo_factory(&sim, owner, type_id)
+                    .is_none(),
                 "a later draw/reconciliation cannot retry a failed link from the queue head"
             );
-            projection.model.apply_lifecycle_output(&link, Some(owner), ares_way);
-            assert!(projection.model.cameo_factory(&sim, owner, type_id).is_some());
+            projection
+                .model
+                .apply_lifecycle_output(&link, Some(owner), ares_way);
+            assert!(
+                projection
+                    .model
+                    .cameo_factory(&sim, owner, type_id)
+                    .is_some()
+            );
         }
     }
 
@@ -1896,7 +1931,8 @@ mod tests {
             );
             let e1 = visits[0].type_id;
             projection
-                .model.cameos
+                .model
+                .cameos
                 .as_mut()
                 .unwrap()
                 .1
@@ -1958,27 +1994,35 @@ mod tests {
                 naval: false,
                 tech_level: 1,
                 cost: 100,
+                internal_name: String::new(),
+                sort_by_internal_name: false,
                 name: "E2".into(),
             },
         };
-        projection.model.reconcile_cameos(owner, &[cameo.clone()], 3, &[e2], false);
+        projection
+            .model
+            .reconcile_cameos(owner, &[cameo.clone()], 3, &[e2], false);
         let produce = CameoClick {
             order: Some(CameoOrder::Produce),
             ..CameoClick::default()
         };
-        projection.model.record_cameo_click(&sim, &rules, owner, e2, produce);
+        projection
+            .model
+            .record_cameo_click(&sim, &rules, owner, e2, produce);
         assert_eq!(
             projection.model.cameo_request(e2),
             Some(CameoRequestState::Started)
         );
         assert!(
             projection
-                .model.prediction_categories
+                .model
+                .prediction_categories
                 .contains(&ProductionCategory::Infantry)
         );
         assert!(
             projection
-                .model.prediction_categories
+                .model
+                .prediction_categories
                 .contains(&ProductionCategory::Vehicle),
             "original Infantry mark falls through to its nonnaval Vehicle slot"
         );
@@ -2000,7 +2044,9 @@ mod tests {
                 ..CameoClick::default()
             },
         );
-        projection.model.record_cameo_click(&sim, &rules, owner, e2, produce);
+        projection
+            .model
+            .record_cameo_click(&sim, &rules, owner, e2, produce);
         assert_eq!(
             projection.model.cameo_request(e2),
             Some(CameoRequestState::Held),
@@ -2017,7 +2063,8 @@ mod tests {
         );
         assert!(
             projection
-                .model.prediction_categories
+                .model
+                .prediction_categories
                 .contains(&ProductionCategory::Infantry)
         );
         projection.model.apply_lifecycle_output(
@@ -2035,13 +2082,19 @@ mod tests {
             Some(CameoRequestState::Held),
             "Begin clears its category gate before even a refused builder lookup"
         );
-        projection.model.record_cameo_click(&sim, &rules, owner, e2, produce);
+        projection
+            .model
+            .record_cameo_click(&sim, &rules, owner, e2, produce);
         assert_eq!(
             projection.model.cameo_request(e2),
             Some(CameoRequestState::Started),
             "a retained failed request must not stand in for the cleared first-request gate"
         );
-        let clock = projection.model.cameo_strips().request_clock(cameo.id).unwrap();
+        let clock = projection
+            .model
+            .cameo_strips()
+            .request_clock(cameo.id)
+            .unwrap();
         let mut repriced = cameo.clone();
         repriced.key = CameoKey::Techno {
             own_side: true,
@@ -2049,9 +2102,13 @@ mod tests {
             naval: false,
             tech_level: 1,
             cost: 300,
+            internal_name: String::new(),
+            sort_by_internal_name: false,
             name: "changed comparison key".into(),
         };
-        projection.model.reconcile_cameos(owner, &[repriced], 3, &[], false);
+        projection
+            .model
+            .reconcile_cameos(owner, &[repriced], 3, &[], false);
         assert_eq!(
             projection.model.cameo_strips().request_clock(cameo.id),
             Some(clock),
@@ -2064,20 +2121,32 @@ mod tests {
             Some(owner),
             false,
         );
-        projection.model.reconcile_cameos(owner, &[unavailable], 3, &[], false);
+        projection
+            .model
+            .reconcile_cameos(owner, &[unavailable], 3, &[], false);
         assert!(
             projection.model.cameo_request(e2).is_none(),
             "actual membership removal discards the request"
         );
         for reset in 0..3 {
             projection.model.reset_cameo_seed();
-            projection.model.reconcile_cameos(owner, &[cameo.clone()], 3, &[e2], false);
-            projection.model.record_cameo_click(&sim, &rules, owner, e2, produce);
+            projection
+                .model
+                .reconcile_cameos(owner, &[cameo.clone()], 3, &[e2], false);
+            projection
+                .model
+                .record_cameo_click(&sim, &rules, owner, e2, produce);
             match reset {
                 0 => projection.model.reset_cameo_seed(),
                 1 => projection.clear(),
                 _ => {
-                    projection.model.reconcile_cameos(other_owner, &[cameo.clone()], 3, &[e2], false);
+                    projection.model.reconcile_cameos(
+                        other_owner,
+                        &[cameo.clone()],
+                        3,
+                        &[e2],
+                        false,
+                    );
                 }
             }
             assert!(projection.model.cameo_request(e2).is_none());
@@ -2124,15 +2193,21 @@ mod tests {
                 naval: false,
                 tech_level: 1,
                 cost: 100,
+                internal_name: String::new(),
+                sort_by_internal_name: false,
                 name: "E2".into(),
             },
         };
-        projection.model.reconcile_cameos(owner, &[cameo], 3, &[e2], false);
+        projection
+            .model
+            .reconcile_cameos(owner, &[cameo], 3, &[e2], false);
         let produce = CameoClick {
             order: Some(CameoOrder::Produce),
             ..CameoClick::default()
         };
-        projection.model.record_cameo_click(&sim, &rules, owner, e2, produce);
+        projection
+            .model
+            .record_cameo_click(&sim, &rules, owner, e2, produce);
         assert_eq!(
             projection.model.cameo_request(e2),
             Some(CameoRequestState::Started)
@@ -2190,6 +2265,8 @@ mod tests {
                             naval: false,
                             tech_level: 0,
                             cost: 0,
+                            internal_name: String::new(),
+                            sort_by_internal_name: false,
                             name: String::new(),
                         },
                     })
@@ -2245,7 +2322,8 @@ mod tests {
                 for entry in entries.as_array().unwrap() {
                     let type_id = crate::sim::intern::test_intern(entry["type"].as_str().unwrap());
                     let actual = projection
-                        .model.factory_links
+                        .model
+                        .factory_links
                         .get(&type_id)
                         .map(|link| &registry[link.construction_order as usize]["id"]);
                     assert_eq!(
@@ -2281,18 +2359,24 @@ mod tests {
                         naval: false,
                         tech_level: 0,
                         cost: 100,
+                        internal_name: String::new(),
+                        sort_by_internal_name: false,
                         name: String::new(),
                     },
                 })
             };
             let mut projection = SidebarProjectionState::default();
-            projection.model.reconcile_fixture(owner, &candidates(true), 3, false);
+            projection
+                .model
+                .reconcile_fixture(owner, &candidates(true), 3, false);
             let before = projection.model.cameo_strips().saved_identities();
 
             // FindFactory rejects a Selling producer immediately, but the local
             // House +1FC pass has not run. Strip AI/Draw retain their entries.
             // Native caller/Draw evidence: House 4F927C/4F92E2, Strip 6A8B30/6A9540.
-            let refreshed = projection.model.reconcile_fixture(owner, &candidates(false), 3, false);
+            let refreshed = projection
+                .model
+                .reconcile_fixture(owner, &candidates(false), 3, false);
             assert_eq!(projection.model.cameo_strips().saved_identities(), before);
             assert_eq!(refreshed.transitions(), Default::default());
 
@@ -2303,7 +2387,9 @@ mod tests {
                 Some(owner),
                 ares_way,
             );
-            projection.model.reconcile_fixture(owner, &candidates(false), 3, false);
+            projection
+                .model
+                .reconcile_fixture(owner, &candidates(false), 3, false);
             assert_eq!(projection.model.cameo_strips().saved_identities(), before);
 
             projection.model.apply_lifecycle_output(
@@ -2311,10 +2397,14 @@ mod tests {
                 Some(owner),
                 ares_way,
             );
-            let recalculated = projection.model.reconcile_fixture(owner, &candidates(false), 3, false);
+            let recalculated =
+                projection
+                    .model
+                    .reconcile_fixture(owner, &candidates(false), 3, false);
             assert!(
                 projection
-                    .model.cameo_strips()
+                    .model
+                    .cameo_strips()
                     .items(SidebarTab::Infantry)
                     .is_empty()
             );
@@ -2344,6 +2434,8 @@ mod tests {
                     naval: false,
                     tech_level: 0,
                     cost: 100,
+                    internal_name: String::new(),
+                    sort_by_internal_name: false,
                     name: String::new(),
                 },
             };
@@ -2351,12 +2443,14 @@ mod tests {
             // Sim A: the first projection seeds silently, growth speaks.
             assert!(
                 !projection
-                    .model.reconcile_fixture(owner, &[candidate(a)], 3, false)
+                    .model
+                    .reconcile_fixture(owner, &[candidate(a)], 3, false)
                     .build_inserted()
             );
             assert!(
                 !projection
-                    .model.reconcile_fixture(owner, &[candidate(a)], 3, false)
+                    .model
+                    .reconcile_fixture(owner, &[candidate(a)], 3, false)
                     .build_inserted()
             );
             projection.model.apply_lifecycle_output(
@@ -2366,7 +2460,8 @@ mod tests {
             );
             assert!(
                 projection
-                    .model.reconcile_fixture(owner, &[candidate(a), candidate(b)], 3, false)
+                    .model
+                    .reconcile_fixture(owner, &[candidate(a), candidate(b)], 3, false)
                     .build_inserted()
             );
             projection.model.apply_lifecycle_output(
@@ -2376,7 +2471,8 @@ mod tests {
             );
             assert!(
                 !projection
-                    .model.reconcile_fixture(owner, &[candidate(a)], 3, false)
+                    .model
+                    .reconcile_fixture(owner, &[candidate(a)], 3, false)
                     .build_inserted()
             );
             projection.model.apply_lifecycle_output(
@@ -2386,7 +2482,8 @@ mod tests {
             );
             assert!(
                 projection
-                    .model.reconcile_fixture(owner, &[candidate(a), candidate(b)], 3, false)
+                    .model
+                    .reconcile_fixture(owner, &[candidate(a), candidate(b)], 3, false)
                     .build_inserted()
             );
             // Sim B with a different pre-placed base: without the reset its
@@ -2394,7 +2491,8 @@ mod tests {
             projection.model.reset_cameo_seed();
             assert!(
                 !projection
-                    .model.reconcile_fixture(owner, &[candidate(b)], 3, false)
+                    .model
+                    .reconcile_fixture(owner, &[candidate(b)], 3, false)
                     .build_inserted(),
                 "the first refresh after a sim install is the init window"
             );
@@ -2405,19 +2503,22 @@ mod tests {
             );
             assert!(
                 projection
-                    .model.reconcile_fixture(owner, &[candidate(a), candidate(b)], 3, false)
+                    .model
+                    .reconcile_fixture(owner, &[candidate(a), candidate(b)], 3, false)
                     .build_inserted()
             );
             assert!(
                 !projection
-                    .model.reconcile_fixture(InternedId::from_index(4), &[candidate(a)], 3, false)
+                    .model
+                    .reconcile_fixture(InternedId::from_index(4), &[candidate(a)], 3, false)
                     .build_inserted()
             );
             // Leaving the match still clears the seed.
             projection.replace_view(None);
             assert!(
                 !projection
-                    .model.reconcile_fixture(owner, &[candidate(a)], 3, false)
+                    .model
+                    .reconcile_fixture(owner, &[candidate(a)], 3, false)
                     .build_inserted()
             );
         }
@@ -2429,11 +2530,22 @@ mod tests {
     #[test]
     fn fresh_scenario_counter_rolls_up_from_zero() {
         let mut projection = SidebarProjectionState::default();
-        projection.model.displayed_credits_or_seed("Americans", 10_000);
-        projection.model.start_scenario_credits_counter(Some("Americans"));
-        assert_eq!(projection.model.displayed_credits_or_seed("Americans", 10_000), 0);
+        projection
+            .model
+            .displayed_credits_or_seed("Americans", 10_000);
+        projection
+            .model
+            .start_scenario_credits_counter(Some("Americans"));
         assert_eq!(
-            projection.model.advance_credits("Americans", 10_000),
+            projection
+                .model
+                .displayed_credits_or_seed("Americans", 10_000),
+            0
+        );
+        assert_eq!(
+            projection
+                .model
+                .advance_credits("Americans", 10_000, 143, true),
             Some(CreditTick { counting_up: true })
         );
         assert_eq!(
@@ -2451,22 +2563,36 @@ mod tests {
         let ticks = vec!["CreditUp".to_string(), "CreditDown".to_string()];
         let mut projection = SidebarProjectionState::default();
         // First observation seeds silently.
-        assert_eq!(projection.model.advance_credits("Americans", 100), None);
+        assert_eq!(
+            projection
+                .model
+                .advance_credits("Americans", 100, 143, true),
+            None
+        );
         // Counting up.
-        let up = projection.model.advance_credits("Americans", 900);
+        let up = projection
+            .model
+            .advance_credits("Americans", 900, 143, true);
         assert_eq!(up, Some(CreditTick { counting_up: true }));
         assert_eq!(credit_tick_sound(&ticks, up.unwrap()), Some("CreditUp"));
         // Counting down.
-        let down = projection.model.advance_credits("Americans", 0);
+        let down = projection.model.advance_credits("Americans", 0, 143, true);
         assert_eq!(down, Some(CreditTick { counting_up: false }));
         assert_eq!(credit_tick_sound(&ticks, down.unwrap()), Some("CreditDown"));
         // Settle, then no change → no tick.
-        while projection.model.advance_credits("Americans", 0).is_some() {}
+        while projection
+            .model
+            .advance_credits("Americans", 0, 143, true)
+            .is_some()
+        {}
         assert_eq!(
             projection.model.displayed_credits.get("Americans").copied(),
             Some(0)
         );
-        assert_eq!(projection.model.advance_credits("Americans", 0), None);
+        assert_eq!(
+            projection.model.advance_credits("Americans", 0, 143, true),
+            None
+        );
         // A list shorter than two names never plays.
         let short = vec!["CreditUp".to_string()];
         assert_eq!(
@@ -2483,7 +2609,7 @@ mod tests {
     fn saved_credits_replace_warm_and_cold_counters_without_an_ai_step() {
         let mut saved = SidebarModel::default();
         saved.displayed_credits_or_seed("Americans", 1000);
-        saved.advance_credits("Americans", 0);
+        saved.advance_credits("Americans", 0, 143, true);
         let display = saved.saved_credits_counter("Americans");
         assert_ne!(display, Some(1000), "save during the counter's animation");
 
@@ -2500,9 +2626,15 @@ mod tests {
             cold.displayed_credits_or_seed("Americans", 1000),
             display.unwrap()
         );
-        let next_tick = saved.advance_credits("Americans", 1000);
-        assert_eq!(warm.advance_credits("Americans", 1000), next_tick);
-        assert_eq!(cold.advance_credits("Americans", 1000), next_tick);
+        let next_tick = saved.advance_credits("Americans", 1000, 143, true);
+        assert_eq!(
+            warm.advance_credits("Americans", 1000, 143, true),
+            next_tick
+        );
+        assert_eq!(
+            cold.advance_credits("Americans", 1000, 143, true),
+            next_tick
+        );
         assert_eq!(
             warm.saved_credits_counter("Americans"),
             saved.saved_credits_counter("Americans")
@@ -2516,5 +2648,42 @@ mod tests {
         warm.restore_credits_counter(Some("Americans"), None);
         assert_eq!(warm.saved_credits_counter("Americans"), None);
         assert_eq!(warm.displayed_credits_or_seed("Americans", 1000), 1000);
+    }
+
+    /// Phobos `CreditsIndicator.MaxStep` (`0x4A2729`) and `.Smooth`
+    /// (`0x4A26E8`): the step cap is configurable — a value at or below zero
+    /// removes it — and smoothing off snaps to the balance with no tick cue.
+    #[test]
+    fn phobos_credits_indicator_step_cap_and_smooth() {
+        let mut capped = SidebarModel::default();
+        capped.displayed_credits_or_seed("Americans", 0);
+        assert_eq!(
+            capped.advance_credits("Americans", 10_000, 10, true),
+            Some(CreditTick { counting_up: true })
+        );
+        assert_eq!(capped.displayed_credits.get("Americans").copied(), Some(10));
+
+        let mut unbounded = SidebarModel::default();
+        unbounded.displayed_credits_or_seed("Americans", 0);
+        assert!(
+            unbounded
+                .advance_credits("Americans", 10_000, 0, true)
+                .is_some()
+        );
+        assert_eq!(
+            unbounded.displayed_credits.get("Americans").copied(),
+            Some(1_250)
+        );
+
+        let mut smooth_off = SidebarModel::default();
+        smooth_off.displayed_credits_or_seed("Americans", 0);
+        assert_eq!(
+            smooth_off.advance_credits("Americans", 10_000, 143, false),
+            None
+        );
+        assert_eq!(
+            smooth_off.displayed_credits.get("Americans").copied(),
+            Some(10_000)
+        );
     }
 }

@@ -27,14 +27,9 @@ pub use vera20k_core::{
 };
 
 // Cargo unifies dependency features across a workspace. Refuse a client built
-// without its Phobos consumers when another package enables the core
-// capability; the capability is enabled through the client package.
-const _: () = assert!(
-    cfg!(feature = "phobos") == rules::PHOBOS_ENABLED,
-    "enable Phobos through the vera20k package's phobos feature"
-);
-// VERA20K's own VeraX capability; NPatch needs no boundary, every build
-// carries its switch.
+// without VERA20K's own extension capabilities when another package enables
+// the core capability; those capabilities are enabled through this package.
+// Phobos and NPatch need no boundary: every build carries their switches.
 const _: () = assert!(
     cfg!(feature = "verax") == rules::VERAX_ENABLED,
     "enable VeraX through the vera20k package's verax feature"

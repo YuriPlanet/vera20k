@@ -348,6 +348,8 @@ pub struct ShpVehicleTurret {
     pub start_frame: u16,
     /// Facing frames in the block: `SHP_TURRET_FACING_FRAMES`.
     pub facings: u16,
+    /// Frames in the turret block, for the atlas' turret page.
+    pub frame_count: u16,
 }
 
 /// Rules-owned divisors consumed by the shared Foot body counter.
@@ -532,6 +534,7 @@ pub(crate) fn build_animation_sequence_catalog(
             crate::rules::shp_vehicle_sequence::build_shp_vehicle_sequences(
                 art,
                 cadence,
+                object.has_turret,
                 if object.category == crate::rules::object_type::ObjectCategory::Vehicle {
                     Some(
                         rules
@@ -541,7 +544,7 @@ pub(crate) fn build_animation_sequence_catalog(
                 } else {
                     None
                 },
-                object.has_turret,
+                rules.phobos(),
             ),
         );
     }

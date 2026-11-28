@@ -109,6 +109,21 @@ class TestGroupTests(unittest.TestCase):
             '    )\n'
             '))]'))
 
+    def test_tag_keeps_a_crlf_checkout_crlf_and_lands_on_the_attribute(self):
+        # Git for Windows checks these files out with CRLF; the tag offsets index
+        # the same bytes rewrite() slices, and the rendered cfg keeps that ending.
+        text = ('#[cfg(test)]\r\nmod tests {\r\n}\r\n'
+                '#[cfg(all(\r\n    test,\r\n'
+                '    any(tests_sim_combat, tests_sim_world, tests_rules)\r\n))]\r\n'
+                'mod oracle_tests;\r\n')
+        (self.root / 'src/sim/ammo.rs').write_bytes(text.encode('utf-8'))
+        group_tests.tag(self.root)
+        written = (self.root / 'src/sim/ammo.rs').read_bytes()
+        self.assertEqual(written.count(b'\n'), written.count(b'\r\n'))
+        self.assertTrue(written.startswith(b'#[cfg(all(test, tests_sim))]\r\nmod tests {\r\n}\r\n'))
+        self.assertTrue(written.endswith(b'mod oracle_tests;\r\n'))
+        self.assertEqual(group_tests.problems(self.root), [])
+
 
 if __name__ == '__main__':
     unittest.main()

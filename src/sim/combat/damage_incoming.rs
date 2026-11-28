@@ -55,13 +55,15 @@ pub(super) fn decide_damage_incoming(
             .is_allied(&world.interner, attacker.owner(), target.owner())
     });
     // The receiver's gates, with a module's `ImmunityFlags` over the type's.
-    let type_flag = |flag: fn(&crate::rules::object_type::ObjectType) -> bool| {
-        target_type.is_some_and(flag)
-    };
+    let type_flag =
+        |flag: fn(&crate::rules::object_type::ObjectType) -> bool| target_type.is_some_and(flag);
     let immune = (warhead.radiation
         && target.module_immune(Immunity::Radiation, type_flag(|o| o.immune_to_radiation)))
         || (warhead.psychic_damage
-            && target.module_immune(Immunity::Psychic, type_flag(|o| o.immune_to_psionic_weapons)))
+            && target.module_immune(
+                Immunity::Psychic,
+                type_flag(|o| o.immune_to_psionic_weapons),
+            ))
         || (warhead.poison
             && target.module_immune(Immunity::Poison, type_flag(|o| o.immune_to_poison)));
     let curtained = incoming > 0
@@ -105,6 +107,7 @@ pub(super) fn decide_damage_incoming(
             distance,
             scenario_no_damage,
             max_damage,
+            warhead.apply_modifiers_on_negative_damage(rules),
         );
         (i64::from(previous), i64::from(preview))
     };

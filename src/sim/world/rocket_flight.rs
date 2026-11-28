@@ -113,6 +113,16 @@ impl RocketHost for RocketProcessHost<'_> {
         // (`ext_modules::modifiers`); none leaves the native value.
         owner.module_scaled_speed(speed)
     }
+    fn phobos_missile(&self) -> Option<crate::rules::phobos_missile::PhobosMissileRules> {
+        if !self.rules.phobos() {
+            return None;
+        }
+        let owner = self.owner();
+        self.sim
+            .interner
+            .object_type(owner.type_ref(), self.rules)
+            .map(|object| object.phobos_missile.clone())
+    }
     fn in_bounds(&self, cell: (i16, i16)) -> bool {
         self.sim.map_cell_in_bounds(cell)
     }
@@ -229,16 +239,18 @@ impl RocketHost for RocketProcessHost<'_> {
             return;
         }
         let warhead_ref = self.sim.interner.intern(warhead);
-        self.sim
-            .combat_light_requests
-            .emit(crate::sim::combat::CombatLightRequest::Impact {
-                target_id: None,
-                damage,
-                warhead_ref,
-                coord: ProjectileCoord::new(coord[0], coord[1], coord[2]),
-                force_create: false,
-                flags: 0,
-            });
+        if crate::sim::combat::combat_light_chance_admits(self.sim, self.rules, warhead_ref) {
+            self.sim
+                .combat_light_requests
+                .emit(crate::sim::combat::CombatLightRequest::Impact {
+                    target_id: None,
+                    damage,
+                    warhead_ref,
+                    coord: ProjectileCoord::new(coord[0], coord[1], coord[2]),
+                    force_create: false,
+                    flags: 0,
+                });
+        }
     }
     fn area_damage(&mut self, coord: [i32; 3], damage: i32, warhead: &str) {
         let Some(warhead_type) = self.warhead(warhead) else {

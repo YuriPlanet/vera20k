@@ -18,6 +18,8 @@ fn rank_only(parent: u64, index: u32, insignia: Option<&str>) -> ObjectExtrasRun
         group_text: 0..0,
         digital_text: Vec::new(),
         digital_shapes: Vec::new(),
+        select_box: None,
+        select_box_ground: None,
         talk_bubble: None,
     }
 }

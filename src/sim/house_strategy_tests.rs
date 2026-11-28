@@ -1109,6 +1109,322 @@ fn non_bincode_missing_house_field_uses_native_constructor_defaults() {
     );
 }
 
+/// Phobos `[General] AISuperWeaponDelay=` (`Ext/Rules/Body.cpp:127`,
+/// `Ext/House/Hooks.cpp:518-541`): with the key set, a per-house timer gates
+/// the per-frame `AI_TryFireSW`; `<= 0` tries every frame; unset adds no
+/// per-frame call.
+#[test]
+fn ai_superweapon_delay_gates_the_per_frame_try() {
+    use crate::sim::superweapon::ai_fire::{AI_FIRE_LOG, AiFireEvent};
+    let local_rules = |global: &str| {
+        RuleSet::from_ini(&IniFile::from_str(&format!(
+            "[General]\n{global}\
+             [InfantryTypes]\n0=FOOT\n[VehicleTypes]\n0=WHEELS\n\
+             [AircraftTypes]\n0=WINGS\n[BuildingTypes]\n0=PLAIN\n\
+             [PLAIN]\n[FOOT]\n[WHEELS]\n[WINGS]\n"
+        )))
+        .unwrap()
+    };
+    let tries = |global: &str, frames: &[u32]| -> Vec<usize> {
+        let rules = local_rules(global);
+        let (mut sim, names) = houses(true, 1);
+        let owner = names[0];
+        let mut counts = Vec::new();
+        for &frame in frames {
+            sim.session.set_binary_frame_for_test(frame);
+            AI_FIRE_LOG.with(|log| *log.borrow_mut() = Some(Vec::new()));
+            crate::sim::house_strategy::update_ai_superweapon_delay(
+                &mut sim,
+                &rules,
+                owner,
+                None,
+                &mut crate::sim::world::FrameEffects::default(),
+            );
+            counts.push(AI_FIRE_LOG.with(|log| {
+                let events = log.borrow_mut().take().unwrap_or_default();
+                events
+                    .iter()
+                    .filter(|event| **event == AiFireEvent::TryFire)
+                    .count()
+            }));
+        }
+        counts
+    };
+    assert_eq!(
+        tries("AISuperWeaponDelay=3\n", &[0, 1, 2, 3]),
+        vec![1, 0, 0, 1],
+        "the per-house timer spaces the tries"
+    );
+    assert_eq!(
+        tries("AISuperWeaponDelay=0\n", &[0, 1]),
+        vec![1, 1],
+        "a non-positive delay tries every frame"
+    );
+    assert_eq!(
+        tries("", &[0, 1]),
+        vec![0, 0],
+        "unset adds no per-frame call"
+    );
+}
+
+/// `[General]` alone over the Strategy replay's type set (`rules()` plus the
+/// key): one factory and one plain building, no `AISuperWeaponDelay`.
+fn ai_sw_rules(global: &str) -> RuleSet {
+    let mut rules = RuleSet::from_ini(&IniFile::from_str(&format!(
+        "[General]\n{global}\
+         [InfantryTypes]\n0=FOOT\n[VehicleTypes]\n0=WHEELS\n[AircraftTypes]\n0=WINGS\n\
+         [BuildingTypes]\n0=FACTORY\n\
+         [FACTORY]\nFactory=UnitType\n[FOOT]\n[WHEELS]\n[WINGS]\n"
+    )))
+    .unwrap();
+    rules.set_buildup_control_for_test("FACTORY", [0, 17, 3]);
+    rules
+}
+
+/// `AI_TryFireSW` calls logged since the last reset.
+fn ai_sw_tries() -> usize {
+    use crate::sim::superweapon::ai_fire::{AI_FIRE_LOG, AiFireEvent};
+    AI_FIRE_LOG.with(|log| {
+        log.borrow_mut()
+            .take()
+            .unwrap_or_default()
+            .iter()
+            .filter(|event| **event == AiFireEvent::TryFire)
+            .count()
+    })
+}
+
+/// Run the Strategy step at `frame` and answer how many times it reached
+/// `AI_TryFireSW`.
+fn ai_sw_strategy_tries(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    frame: u32,
+) -> usize {
+    use crate::sim::superweapon::ai_fire::AI_FIRE_LOG;
+    sim.session.set_binary_frame_for_test(frame);
+    AI_FIRE_LOG.with(|log| *log.borrow_mut() = Some(Vec::new()));
+    update_strategy(
+        sim,
+        rules,
+        owner,
+        None,
+        &mut crate::sim::world::FrameEffects::default(),
+    );
+    ai_sw_tries()
+}
+
+/// Run Phobos' per-frame `HouseClass_AI_Superweapons` owner at `frame`.
+fn ai_sw_per_frame_tries(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    frame: u32,
+) -> usize {
+    use crate::sim::superweapon::ai_fire::AI_FIRE_LOG;
+    sim.session.set_binary_frame_for_test(frame);
+    AI_FIRE_LOG.with(|log| *log.borrow_mut() = Some(Vec::new()));
+    crate::sim::house_strategy::update_ai_superweapon_delay(
+        sim,
+        rules,
+        owner,
+        None,
+        &mut crate::sim::world::FrameEffects::default(),
+    );
+    ai_sw_tries()
+}
+
+/// An unset `[General] AISuperWeaponDelay=` (`Ext/Rules/Body.cpp:127`) leaves
+/// both hooks inert: `0x4FD77C` does not skip, `0x4F9038` does not run, and the
+/// strategy timer keeps the vanilla `RandomRanged(1, 7) + 105`
+/// (`0x004FD918..0x004FD928`) schedule drawn in `building_strategy`.
+#[test]
+fn an_unset_key_keeps_the_vanilla_strategy_timer() {
+    let rules = ai_sw_rules("");
+    let (mut sim, names) = houses(true, 1);
+    let owner = names[0];
+    sim.houses
+        .get_mut(&owner)
+        .unwrap()
+        .economy_mut()
+        .set_credits_for_test(1000);
+    spawn_building(&mut sim, owner, "FACTORY", 1000, false);
+    *sim.scenario_rng = SimRng::answering(1, 7, 7);
+
+    assert_eq!(
+        ai_sw_strategy_tries(&mut sim, &rules, owner, 0),
+        1,
+        "the vanilla step calls AI_TryFireSW"
+    );
+    let timer = sim.houses[&owner].strategy_timer();
+    assert_eq!(
+        (timer.start_frame(), timer.duration()),
+        (0, 112),
+        "RandomRanged(1, 7) + 105"
+    );
+    assert_eq!(
+        ai_sw_strategy_tries(&mut sim, &rules, owner, 111),
+        0,
+        "the strategy timer is still counting"
+    );
+    assert_eq!(
+        ai_sw_strategy_tries(&mut sim, &rules, owner, 112),
+        1,
+        "the same launch schedule as before the key existed"
+    );
+    assert_eq!(
+        ai_sw_per_frame_tries(&mut sim, &rules, owner, 112),
+        0,
+        "an unset key adds no per-frame call"
+    );
+}
+
+/// `AISuperWeaponDelay=40` (`Ext/House/Hooks.cpp:518-541`): `0x4F9038` runs
+/// `AI_TryFireSW` behind the per-house `CDTimerClass`, and `0x4FD77C` stops the
+/// strategy-side call, so the key alone paces the launches.
+#[test]
+fn a_set_key_runs_ai_sw_on_its_own_timer_and_skips_the_vanilla_step() {
+    let rules = ai_sw_rules("AISuperWeaponDelay=40\n");
+    let (mut sim, names) = houses(true, 1);
+    let owner = names[0];
+    let cadence: Vec<usize> = [0u32, 20, 40, 60, 80]
+        .iter()
+        .map(|&frame| ai_sw_per_frame_tries(&mut sim, &rules, owner, frame))
+        .collect();
+    assert_eq!(
+        cadence,
+        vec![1, 0, 1, 0, 1],
+        "the per-house timer spaces the tries by the key's value"
+    );
+
+    // The construction-started strategy timer is expired on every frame here:
+    // without the key this frame reaches AI_TryFireSW, with it hook A skips.
+    sim.houses
+        .get_mut(&owner)
+        .unwrap()
+        .economy_mut()
+        .set_credits_for_test(1000);
+    spawn_building(&mut sim, owner, "FACTORY", 1000, false);
+    assert_eq!(
+        ai_sw_strategy_tries(&mut sim, &rules, owner, 81),
+        0,
+        "the strategy step no longer reaches AI_TryFireSW"
+    );
+
+    let plain = ai_sw_rules("");
+    let (mut vanilla, names) = houses(true, 1);
+    let owner = names[0];
+    vanilla
+        .houses
+        .get_mut(&owner)
+        .unwrap()
+        .economy_mut()
+        .set_credits_for_test(1000);
+    spawn_building(&mut vanilla, owner, "FACTORY", 1000, false);
+    assert_eq!(
+        ai_sw_strategy_tries(&mut vanilla, &plain, owner, 81),
+        1,
+        "the same strategy frame without the key does call"
+    );
+}
+
+/// The native timer block runs only for a positive delay
+/// (`Ext/House/Hooks.cpp:527`), so `0` and `-1` reach `AI_TryFireSW` on every
+/// frame.
+#[test]
+fn a_nonpositive_key_fires_every_frame() {
+    for global in ["AISuperWeaponDelay=0\n", "AISuperWeaponDelay=-1\n"] {
+        let rules = ai_sw_rules(global);
+        let (mut sim, names) = houses(true, 1);
+        let owner = names[0];
+        let counts: Vec<usize> = [0u32, 1, 2]
+            .iter()
+            .map(|&frame| ai_sw_per_frame_tries(&mut sim, &rules, owner, frame))
+            .collect();
+        assert_eq!(counts, vec![1, 1, 1], "{global}");
+    }
+}
+
+fn bias_rules(key: bool) -> RuleSet {
+    let mut rules = RuleSet::from_ini(&IniFile::from_str(
+        "[BuildingTypes]\n0=YARD\n[YARD]\nConstructionYard=yes\nStrength=1000\n",
+    ))
+    .unwrap();
+    rules.phobos_globals.ai_bias_spawn_cell = key;
+    rules
+}
+
+fn bias_scene(
+    key: bool,
+    campaign: bool,
+    yards: &[(u16, u16, bool, bool)],
+) -> (Simulation, RuleSet, InternedId) {
+    let rules = bias_rules(key);
+    let (mut sim, names) = houses(true, 1);
+    let owner = names[0];
+    if campaign {
+        sim.session
+            .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Campaign);
+    }
+    for &(rx, ry, limbo, alive) in yards {
+        let yard = spawn_building(&mut sim, owner, "YARD", 1000, limbo);
+        let entity = sim.substrate.entities.get_mut(yard).unwrap();
+        entity.position.set_rx_for_test(rx);
+        entity.position.set_ry_for_test(ry);
+        if !alive {
+            entity.health = Health::new(0);
+        }
+    }
+    sim.houses
+        .get_mut(&owner)
+        .unwrap()
+        .set_base_center_for_test(Some((20, 20)));
+    (sim, rules, owner)
+}
+
+#[test]
+fn ai_bias_spawn_cell_moves_the_center_to_the_nearest_live_yard() {
+    let (mut sim, rules, owner) =
+        bias_scene(true, false, &[(10, 20, false, true), (30, 30, false, true)]);
+    bias_base_center_to_nearest_conyard(&mut sim, &rules, owner);
+    assert_eq!(sim.houses[&owner].base_center(), Some((10, 20)));
+}
+
+#[test]
+fn ai_bias_spawn_cell_skips_limbo_and_dead_yards() {
+    let (mut sim, rules, owner) = bias_scene(
+        true,
+        false,
+        &[
+            (10, 20, true, true),
+            (30, 20, false, false),
+            (40, 20, false, true),
+        ],
+    );
+    bias_base_center_to_nearest_conyard(&mut sim, &rules, owner);
+    assert_eq!(sim.houses[&owner].base_center(), Some((40, 20)));
+}
+
+#[test]
+fn ai_bias_spawn_cell_needs_two_yards_and_a_non_campaign() {
+    let (mut sim, rules, owner) = bias_scene(true, false, &[(10, 20, false, true)]);
+    bias_base_center_to_nearest_conyard(&mut sim, &rules, owner);
+    assert_eq!(sim.houses[&owner].base_center(), Some((20, 20)));
+
+    let (mut sim, rules, owner) =
+        bias_scene(true, true, &[(10, 20, false, true), (30, 30, false, true)]);
+    bias_base_center_to_nearest_conyard(&mut sim, &rules, owner);
+    assert_eq!(sim.houses[&owner].base_center(), Some((20, 20)));
+
+    let (mut sim, rules, owner) = bias_scene(
+        false,
+        false,
+        &[(10, 20, false, true), (30, 30, false, true)],
+    );
+    bias_base_center_to_nearest_conyard(&mut sim, &rules, owner);
+    assert_eq!(sim.houses[&owner].base_center(), Some((20, 20)));
+}
 /// Three houses with base centres: H0 far from H1, H2 beside it.
 fn houses_with_bases() -> (Simulation, Vec<InternedId>) {
     let (mut sim, names) = houses(true, 3);

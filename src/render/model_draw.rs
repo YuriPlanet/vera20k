@@ -1858,7 +1858,8 @@ mod tests {
     #[test]
     fn a_model_lights_at_the_voxel_light_page() {
         use crate::render::vxl_raster::{GroundPose, ground_unit_pose_matrices};
-        let light = crate::render::vxl_normals::world_light();
+        let voxel_light = crate::render::vxl_normals::VoxelLight::default();
+        let light = voxel_light.world;
         for facing in (0..=255u8).step_by(8) {
             let [body, ..] = ground_unit_pose_matrices(
                 0,
@@ -1874,7 +1875,7 @@ mod tests {
                 0,
             );
             let rotation = Mat3::from_mat4(body);
-            let pages = crate::render::vxl_normals::blinn_phong_pages(4, rotation);
+            let pages = crate::render::vxl_normals::blinn_phong_pages(4, rotation, voxel_light);
             let viewer = body.transform_vector3(Vec3::Z).normalize();
             let half = (light + viewer).normalize();
             for index in 0..=240u8 {

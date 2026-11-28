@@ -714,6 +714,19 @@ pub fn ares_time_to_build(
     time
 }
 
+/// Phobos `PhobosToolTip::GetBuildTime` (`Misc/PhobosToolTip.cpp:50-76`): the
+/// tooltip's temporary object carries the local player as its owner, so the
+/// full [`object_time_to_build`] formula runs against the live house, power and
+/// factory count; the tip never prints less than 54 frames.
+pub fn tooltip_build_time(
+    sim: &crate::sim::world::Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    obj: &ObjectType,
+) -> i32 {
+    object_time_to_build(sim, rules, owner, obj).max(54)
+}
+
 /// `TechnoClass::Time_To_Build @ 0x006F47A0` for `owner` building `obj`:
 /// [`time_to_build`], or when Ares plays its replacement [`ares_time_to_build`].
 pub(super) fn object_time_to_build(
@@ -988,6 +1001,16 @@ pub(super) struct FactoryEdit<'a> {
 impl FactoryRegistry {
     fn edit(&mut self) -> FactoryEdit<'_> {
         FactoryEdit { registry: self }
+    }
+
+    /// `FactoryClass::RemoveFromQueue @ 0x004CA620` through the registry owner.
+    pub(super) fn remove_one_queued(
+        &mut self,
+        owner: InternedId,
+        category: ProductionCategory,
+        type_id: InternedId,
+    ) -> bool {
+        self.edit().remove_one_queued(owner, category, type_id)
     }
 
     /// Register `factory` under `holder`, in its construction order. A
@@ -1596,6 +1619,34 @@ impl FactoryEdit<'_> {
         }
     }
 
+    /// `FactoryClass::RemoveFromQueue @ 0x004CA620`: drop the first queued
+    /// copy of `type_id`, keeping the rest in order. The held product is
+    /// untouched and no refund is issued — Phobos' `RemoveProduction` calls
+    /// this, not the abandon path. Returns false when nothing matched.
+    pub(super) fn remove_one_queued(
+        &mut self,
+        owner: InternedId,
+        category: ProductionCategory,
+        type_id: InternedId,
+    ) -> bool {
+        let Some(factory) = self
+            .registry
+            .factories
+            .get_mut(&FactoryHolder::House(owner, category))
+        else {
+            return false;
+        };
+        let Some(index) = factory
+            .queue
+            .iter()
+            .position(|entry| entry.type_id == type_id)
+        else {
+            return false;
+        };
+        factory.queue.remove(index);
+        true
+    }
+
     /// Link the EntityStore identity created at StartProduction to the active
     /// factory object. The link is established at progress zero and is retained
     /// through completion and every delivery retry.
@@ -1781,7 +1832,7 @@ impl FactoryEdit<'_> {
         type_id: Option<InternedId>,
         all: bool,
         build_cat: Option<BuildCategory>,
-        building_queue: bool,
+        _building_queue: bool,
     ) -> CancelOutcome {
         let Some(f) = self
             .registry
@@ -1801,12 +1852,10 @@ impl FactoryEdit<'_> {
         // stores 0 otherwise, as it does for a negative index at
         // `0x004FAA29`. A `BuildingType` with no `BuildCat=` is 0 too
         // (constructor `0x0045DD9A`/`0x0045DDC7`), which is VERA's `None`.
-        // The rewrite is unconditional in Phobos. VERA's own building queue
-        // option reproduces it in a default build: with a multi-copy structure
-        // queue, ABANDON_ALL must drain every queued copy of the clicked type
-        // before abandoning the active build. Without either, a nonzero
-        // BuildCat skips the arm and only the held product goes (`0x004FABF6`).
-        let structure_abandon = cfg!(feature = "phobos") || building_queue;
+        // The rewrite is unconditional in Phobos, so it follows the Phobos
+        // capability (compiled into every build) and not
+        // `[General] BuildingProductionQueue=`.
+        let structure_abandon = true;
         // Phobos' own guard inside that rewrite: a single cancel on a structure
         // strip holding no product skips the removal and takes the null-held
         // admit at `0x004FAB64`.
@@ -2910,7 +2959,7 @@ mod tests {
             false,
         );
         let view = reg.view(owner, ProductionCategory::Building).unwrap();
-        if cfg!(feature = "phobos") {
+        if true {
             assert_eq!(
                 outcome,
                 CancelOutcome::QueuedRemoved,
@@ -2969,7 +3018,7 @@ mod tests {
             (CancelOutcome::AdmittedEmpty, 1),
             "the skip removes nothing"
         );
-        let expected_all = if cfg!(feature = "phobos") {
+        let expected_all = if true {
             (CancelOutcome::QueuedRemoved, 0)
         } else {
             (CancelOutcome::AdmittedEmpty, 1)
@@ -3013,7 +3062,7 @@ mod tests {
             .iter()
             .map(|e| e.type_id)
             .collect();
-        if cfg!(feature = "phobos") {
+        if true {
             assert!(matches!(outcome, CancelOutcome::AbandonedActive(_)));
             assert_eq!(queue, vec![b], "both queued copies drain, B stays");
         } else {
@@ -3071,14 +3120,10 @@ mod tests {
         assert!(matches!(outcome, CancelOutcome::AbandonedActive(_)));
         assert_eq!(queue, vec![b], "all copies of the clicked type drain");
 
-        // With it off, only a default build keeps vanilla's queue intact;
-        // Phobos drains regardless because its rewrite is unconditional.
+        // With it off, Phobos still drains because its rewrite is
+        // unconditional; the option only matters to a build without Phobos.
         let (_, queue) = drain(false);
-        if cfg!(feature = "phobos") {
-            assert_eq!(queue, vec![b]);
-        } else {
-            assert_eq!(queue, vec![a, b, a], "no option keeps vanilla behavior");
-        }
+        assert_eq!(queue, vec![b]);
     }
 
     /// ABANDON_ALL (`0x004FAB01..0x004FAB0B`) removes every queued copy and
@@ -3398,3 +3443,4 @@ mod tests {
         );
     }
 }
+

@@ -4,13 +4,12 @@
 //! `Phobos::VersionDescription` (`src/Phobos.cpp`) on the Composite surface:
 //! a black box starting `marginX` (10) pixels in from the view's right edge
 //! at `y = 0`, and the text in red five pixels inside it. Retail's own
-//! `GScreenClass::DrawText` body draws the optional `ShowGameTime` clock,
-//! which VERA20K does not implement, so this module is that site's first
-//! VERA writer and carries the version description instead.
+//! `GScreenClass::DrawText` body draws the optional `ShowGameTime` clock below
+//! it; this module carries both boards.
 //!
 //! The text is the native product name, version and build warning from
-//! [`crate::app::phobos_version`], drawn only in Phobos builds; every other
-//! build keeps the retail screen, which prints nothing here.
+//! [`crate::app::phobos_version`], drawn only in games whose data enables
+//! Phobos; retail games keep the screen without these boards.
 //!
 //! ## Dependency rules
 //! - Part of the app layer — may depend on everything.
@@ -50,20 +49,29 @@ pub(crate) fn place(view_width: i32, text_width: i32, text_height: i32) -> ([i32
     )
 }
 
+/// Whether the current game admits the Phobos boards.
+fn boards_admitted(phobos: bool, screen: &GameScreen, map_picture: bool) -> bool {
+    phobos && *screen == GameScreen::InGame && !map_picture
+}
+
 /// The description's fill box and text instances, or empty pairs outside a
-/// Phobos build's in-game screen and in a map picture.
+/// Phobos game's in-game screen and in a map picture.
 pub(crate) fn build_instances(
     platform: &PlatformState,
     renderer: &RendererState,
     screen: &GameScreen,
     match_state: &MatchState,
     persistence: &PersistenceState,
+    phobos: bool,
 ) -> (Vec<SpriteInstance>, Vec<SpriteInstance>) {
-    if !crate::rules::PHOBOS_ENABLED
-        || !phobos_version::SHOWS_DESCRIPTION
-        || *screen != GameScreen::InGame
-        || (platform.capture_client_size.is_some() && platform.capture_presentation.map_picture)
-    {
+    // `GScreenClass_DrawText @ 0x4F4583` owns two independent boards: the
+    // TESTING_BUILD version description and the `ShowGameTime` clock. Only the
+    // common on-screen admission is shared; each board has its own switch.
+    if !boards_admitted(
+        phobos,
+        screen,
+        platform.capture_client_size.is_some() && platform.capture_presentation.map_picture,
+    ) {
         return (Vec::new(), Vec::new());
     }
     let (view_width, _) = crate::app::input::camera::tactical_viewport_size(
@@ -83,25 +91,87 @@ pub(crate) fn build_instances(
         persistence,
     );
     let font = &renderer.bit_font;
-    let text = description();
-    let text_width = font.text_width(&text) as i32;
-    let text_height = font.cell_height() as i32;
-    let (at, fill_rect) = place(view_width as i32, text_width, text_height);
-    let fill = SpriteInstance {
-        position: [
-            fill_rect[0] as f32 + camera[0],
-            fill_rect[1] as f32 + camera[1],
-        ],
+    let mut fills = Vec::new();
+    let mut texts = Vec::new();
+
+    if phobos_version::SHOWS_DESCRIPTION {
+        let text = description();
+        let text_width = font.text_width(&text) as i32;
+        let text_height = font.cell_height() as i32;
+        let (at, fill_rect) = place(view_width as i32, text_width, text_height);
+        fills.push(SpriteInstance {
+            position: [
+                fill_rect[0] as f32 + camera[0],
+                fill_rect[1] as f32 + camera[1],
+            ],
+            size: [fill_rect[2] as f32, fill_rect[3] as f32],
+            uv_origin: [0.0, 0.0],
+            uv_size: [1.0, 1.0],
+            tint: [0.0; 3],
+            alpha: 1.0,
+            ..Default::default()
+        });
+        let tint: [f32; 3] = TEXT_RGB.map(|channel| f32::from(channel) / 255.0);
+        texts.extend(font.build_text(&text, at[0] as f32, at[1] as f32, 1.0, 0.0, tint, camera));
+    }
+
+    // `src/Phobos.cpp:350-392`: `ScenarioClass::ElapsedTimer` drives a
+    // `Time:` label on a `FillRectTrans(&rectB, &color, BoardOpacity)` board
+    // below the version description. VERA's wall-clock scenario timer is the
+    // local equivalent; the native TimeLeft/SystemTimer blend is a residual.
+    {
+        let boards = match_state.match_presentation.hud_boards;
+        if boards.show_game_time {
+            let coord_y = if phobos_version::SHOWS_DESCRIPTION {
+                font.cell_height() as i32 + BOX_PAD
+            } else {
+                0
+            };
+            let seconds = match_state
+                .scenario_elapsed_clock
+                .elapsed_seconds(crate::app::match_runtime::frame_pacer::wall_clock_ms());
+            let label = super::hud_boards::game_time_text(seconds);
+            let label_width = font.text_width(&label) as i32;
+            let label_height = font.cell_height() as i32;
+            let (at, fill_rect) = place(view_width as i32, label_width, label_height);
+            fills.push(game_time_board(
+                fill_rect,
+                coord_y,
+                camera,
+                super::hud_boards::board_alpha(boards.game_time_board_opacity),
+            ));
+            texts.extend(font.build_text(
+                &label,
+                at[0] as f32,
+                (coord_y + TEXT_INSET) as f32,
+                1.0,
+                0.0,
+                [1.0; 3],
+                camera,
+            ));
+        }
+    }
+    (fills, texts)
+}
+
+/// `src/Phobos.cpp:383-392`: `rectB`'s `FillRectTrans(&rectB, &color,
+/// ShowGameTime.BoardOpacity)` board. Separated from the writer so the opacity
+/// and the `coordY` offset below the version box are testable without a GPU.
+fn game_time_board(
+    fill_rect: [i32; 4],
+    coord_y: i32,
+    camera: [f32; 2],
+    alpha: f32,
+) -> SpriteInstance {
+    SpriteInstance {
+        position: [fill_rect[0] as f32 + camera[0], coord_y as f32 + camera[1]],
         size: [fill_rect[2] as f32, fill_rect[3] as f32],
         uv_origin: [0.0, 0.0],
         uv_size: [1.0, 1.0],
         tint: [0.0; 3],
-        alpha: 1.0,
+        alpha,
         ..Default::default()
-    };
-    let tint: [f32; 3] = TEXT_RGB.map(|channel| f32::from(channel) / 255.0);
-    let texts = font.build_text(&text, at[0] as f32, at[1] as f32, 1.0, 0.0, tint, camera);
-    (vec![fill], texts)
+    }
 }
 
 #[cfg(all(test, tests_app_presentation))]

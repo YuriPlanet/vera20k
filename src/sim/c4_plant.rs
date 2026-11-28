@@ -692,6 +692,8 @@ impl Simulation {
         );
         let frame = session.binary_frame() as i32;
         if let Some(planter) = substrate.entities.get_mut(id) {
+            // RESIDUAL: the shared snapshot ROF owner returns only the delay;
+            // this caller does not publish Phobos' LastRearmWasFullDelay arm.
             planter.seldom.rearm_timer.start(frame, rof);
         }
     }

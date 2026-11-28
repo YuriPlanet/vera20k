@@ -16,17 +16,18 @@
 //! `TechnoClass::ReceiveDamage @ 0x00701900` entry
 //! (installed hook `0x701900+0x6`, `src/Ext/Techno/Hooks.ReceiveDamage.cpp`).
 //!
-//! Read but not consumed here: `Pips*`, `IdleAnim*`, `HitFlash*`, `AllowTransfer*`
-//! and the warhead-side `Shield.AttachTypes`/`RemoveTypes`/`Break`/`HitAnim`
-//! keys. Those are separate presentation, transfer and warhead-effect chains.
+//! Read but not consumed here: `Pips*` (drawn by `app/presentation/ui_overlays`).
+//! `AllowTransfer`/`AllowTransfer.Convert` are consumed by
+//! `sim::shield`'s `ConvertCheck` on the conversion and deploy paths. `IdleAnim*` is consumed by
+//! `sim::shield` and `HitFlash*` feeds `sim::combat::CombatLightRequest`
+//! through the same owner. The warhead-side shield keys live in
+//! [`ShieldWarheadRules`]; the simulation owner `sim::shield` consumes them.
 
-#[cfg(feature = "phobos")]
+use crate::rules::attach_effect::AttachedAnimFlag;
 use crate::rules::ini_parser::IniFile;
-#[cfg(feature = "phobos")]
 use crate::rules::ini_value::truncate_native_bytes;
 
 /// `Enumerable` stores `Name[32]` with `_TRUNCATE`.
-#[cfg(feature = "phobos")]
 const NAME_PAYLOAD_BYTES: usize = 0x1F;
 
 /// Phobos `AffectedHouse` flags (`Utilities/Enum.h:127..141`), the target of
@@ -41,6 +42,8 @@ impl AffectedHouse {
     pub const ALLIES: Self = Self(0x2);
     pub const ENEMIES: Self = Self(0x4);
     pub const NEUTRAL: Self = Self(0x8);
+    /// `Team` = Owner | Allies (`Utilities/Enum.h`, the `RevealHouses` default).
+    pub const TEAM: Self = Self(Self::OWNER.0 | Self::ALLIES.0);
     pub const ALL: Self = Self(Self::OWNER.0 | Self::ALLIES.0 | Self::ENEMIES.0 | Self::NEUTRAL.0);
 
     pub fn bits(self) -> u8 {
@@ -64,7 +67,7 @@ impl AffectedHouse {
                 "enemies" | "enemy" => Self::ENEMIES,
                 "neutral" => Self::NEUTRAL,
                 // Team = Owner | Allies, Others = NotOwner.
-                "team" => Self(Self::OWNER.0 | Self::ALLIES.0),
+                "team" => Self::TEAM,
                 "others" => Self(Self::ALLIES.0 | Self::ENEMIES.0),
                 "all" => Self::ALL,
                 "none" => Self::NONE,
@@ -84,7 +87,6 @@ impl Default for AffectedHouse {
 }
 
 /// `Valueable<AffectedHouse>` read: absent or rejected text keeps `current`.
-#[cfg(feature = "phobos")]
 pub(crate) fn read_affected_house(
     section: &crate::rules::ini_parser::IniSection,
     key: &str,
@@ -93,6 +95,142 @@ pub(crate) fn read_affected_house(
     section.read_string_with(key, 2048, current, |current, raw| {
         AffectedHouse::parse(raw).unwrap_or(current)
     })
+}
+
+/// `EnumFunctions::CanTargetHouse` (`EnumFunctions.cpp:5..16`): the shared
+/// owner/neutral/alliance ladder. `is_owner` is source==target, `is_neutral`
+/// the target house's `MultiplayPassive`, `is_allied` the source/target
+/// alliance. Pure decision logic so the sim combat owner and the radar's
+/// `RadarInvisibleToHouse` test share one port instead of copying the ladder.
+pub fn can_target_house_ladder(
+    flags: AffectedHouse,
+    is_owner: bool,
+    is_neutral: bool,
+    is_allied: bool,
+) -> bool {
+    if flags == AffectedHouse::ALL {
+        return true;
+    }
+    if is_owner {
+        return flags.contains(AffectedHouse::OWNER);
+    }
+    if is_neutral && flags.contains(AffectedHouse::NEUTRAL) {
+        return true;
+    }
+    if is_allied {
+        flags.contains(AffectedHouse::ALLIES)
+    } else {
+        flags.contains(AffectedHouse::ENEMIES)
+    }
+}
+
+/// `ShieldTypeClass`'s constructor value for both `IdleAnim` actions.
+fn attached_anim_hides() -> AttachedAnimFlag {
+    AttachedAnimFlag::Hides
+}
+
+/// Phobos `Damageable<AnimTypeClass*>` (`Utilities/Template.h:409-474`): the
+/// base animation plus nullable `ConditionYellow`/`ConditionRed` overrides.
+/// The base flag's trailing dot is stripped (`Utilities/TemplateDef.h:2227-2245`).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct ShieldIdleAnimSet {
+    /// `<Key>`: the base animation as the `Valueable<AnimTypeClass*>` read
+    /// retained it; `none` spellings clear it, `<default>` retains.
+    #[serde(default)]
+    base: Option<String>,
+    /// `<Key>.ConditionYellow=`: `Nullable<AnimTypeClass*>::Read<false>`
+    /// (`Utilities/TemplateDef.h:1834..1849`), whose `allowNone=false` makes
+    /// `none`/`<none>` a reset rather than a present null.
+    #[serde(default)]
+    condition_yellow: Option<String>,
+    /// `<Key>.ConditionRed=`.
+    #[serde(default)]
+    condition_red: Option<String>,
+}
+
+impl ShieldIdleAnimSet {
+    pub(crate) fn apply(&mut self, section: &crate::rules::ini_parser::IniSection, key: &str) {
+        self.base = read_anim_value(section, key, self.base.take());
+        self.condition_yellow = read_anim_band(
+            section,
+            &format!("{key}.ConditionYellow"),
+            self.condition_yellow.take(),
+        );
+        self.condition_red = read_anim_band(
+            section,
+            &format!("{key}.ConditionRed"),
+            self.condition_red.take(),
+        );
+    }
+
+    /// `ConditionYellow || ConditionRed` set.
+    pub(crate) fn is_damaged_value_set(&self) -> bool {
+        self.condition_yellow.is_some() || self.condition_red.is_some()
+    }
+
+    /// `BaseValue || ConditionYellow.isset() || ConditionRed.isset()`.
+    pub(crate) fn isset(&self) -> bool {
+        self.base.is_some() || self.is_damaged_value_set()
+    }
+
+    /// `Damageable::Get(ratio, conditionYellow, conditionRed)`.
+    pub(crate) fn get(&self, ratio: f64, yellow: f64, red: f64) -> Option<&str> {
+        if self.condition_red.is_some() && ratio <= red {
+            return self.condition_red.as_deref();
+        }
+        if self.condition_yellow.is_some() && ratio <= yellow {
+            return self.condition_yellow.as_deref();
+        }
+        self.base.as_deref()
+    }
+
+    /// The unset base, for the no-damaged-values arm of `CreateAnim`.
+    pub(crate) fn base(&self) -> Option<&str> {
+        self.base.as_deref()
+    }
+}
+
+/// `Valueable<AnimTypeClass*>::Read` (`Utilities/TemplateDef.h:1793..1797` ->
+/// `:53..78`): `none`/`<none>` are `INIClass::IsBlank` (0x40F4D0 compares
+/// those two exact sentinels), so a blank assigns null; an unknown name or
+/// `<default>` fails the parse and retains the current value. The default
+/// build has no shield idle animations, so it leaves the value unset.
+fn read_anim_value(
+    section: &crate::rules::ini_parser::IniSection,
+    key: &str,
+    current: Option<String>,
+) -> Option<String> {
+    {
+        section.read_string_with(key, 2048, current, |current, raw| {
+            if raw.eq_ignore_ascii_case("<default>") {
+                current
+            } else if is_none_name(raw) {
+                None
+            } else {
+                Some(raw.to_owned())
+            }
+        })
+    }
+}
+
+/// `Nullable<AnimTypeClass*>::Read<false, false>` (`Utilities/TemplateDef.h`
+/// `:1834..1849`): `<default>` and the `none`/`<none>` spellings that
+/// `INIClass::IsBlank` (0x40F4D0) accepts reset the band; any other name
+/// becomes the value.
+fn read_anim_band(
+    section: &crate::rules::ini_parser::IniSection,
+    key: &str,
+    current: Option<String>,
+) -> Option<String> {
+    {
+        section.read_string_with(key, 2048, current, |_, raw| {
+            if raw.eq_ignore_ascii_case("<default>") || is_none_name(raw) {
+                None
+            } else {
+                Some(raw.to_owned())
+            }
+        })
+    }
 }
 
 /// `ShieldTypeClass`'s constructor values. Every field keeps the current value
@@ -104,6 +242,22 @@ pub struct ShieldType {
     initial_strength: Option<i32>,
     condition_yellow: Option<f64>,
     condition_red: Option<f64>,
+    /// Phobos `IdleAnim=` (`ShieldTypeClass.h:36`, `Damageable<AnimTypeClass*>`,
+    /// constructor unset `ShieldTypeClass.cpp:94`): the shield's idle
+    /// animation, with per-condition variants.
+    #[serde(default)]
+    idle_anim: ShieldIdleAnimSet,
+    /// `IdleAnimDamaged=` (`ShieldTypeClass.h:37`, unset `:95`): the idle
+    /// animation while the techno is at or below `[General] ConditionYellow`.
+    #[serde(default)]
+    idle_anim_damaged: ShieldIdleAnimSet,
+    /// `IdleAnim.OfflineAction=` (`ShieldTypeClass.cpp:56`,
+    /// `Valueable<AttachedAnimFlag>` constructor `Hides` `:92`).
+    #[serde(default = "attached_anim_hides")]
+    idle_anim_offline_action: AttachedAnimFlag,
+    /// `IdleAnim.TemporalAction=` (`:57`, constructor `Hides` `:93`).
+    #[serde(default = "attached_anim_hides")]
+    idle_anim_temporal_action: AttachedAnimFlag,
     armor: String,
     inherit_armor_from_techno: bool,
     inherit_armor_allowed: Vec<String>,
@@ -140,6 +294,16 @@ pub struct ShieldType {
     received_damage_maximum: i32,
     pips: [i32; 3],
     pips_building: [i32; 3],
+    /// `AllowTransfer` (`ShieldTypeClass.h:53`, `Nullable<bool>`, unset
+    /// `:108`): whether the shield survives onto a converted object. The
+    /// reading falls back to `Attached`, so an unset key keeps a
+    /// warhead-attached shield and drops a type-bound one.
+    #[serde(default)]
+    allow_transfer: Option<bool>,
+    /// `AllowTransfer.Convert` (`:54`, unset `:109`): the conversion override,
+    /// which falls back to `AllowTransfer.Get(Attached)`.
+    #[serde(default)]
+    allow_transfer_convert: Option<bool>,
     pips_background: Option<String>,
     pips_building_empty: Option<i32>,
     pips_hide_if_no_strength: bool,
@@ -167,6 +331,8 @@ impl ShieldType {
             received_damage_maximum: i32::MAX,
             pips: [-1, -1, -1],
             pips_building: [-1, -1, -1],
+            idle_anim_offline_action: AttachedAnimFlag::Hides,
+            idle_anim_temporal_action: AttachedAnimFlag::Hides,
             ..Self::default()
         }
     }
@@ -186,6 +352,56 @@ impl ShieldType {
 
     pub fn condition_red(&self, global: f64) -> f64 {
         self.condition_red.unwrap_or(global)
+    }
+
+    pub(crate) fn idle_anim(&self) -> &ShieldIdleAnimSet {
+        &self.idle_anim
+    }
+
+    pub(crate) fn idle_anim_damaged(&self) -> &ShieldIdleAnimSet {
+        &self.idle_anim_damaged
+    }
+
+    pub(crate) fn idle_anim_offline_action(&self) -> AttachedAnimFlag {
+        self.idle_anim_offline_action
+    }
+
+    pub(crate) fn idle_anim_temporal_action(&self) -> AttachedAnimFlag {
+        self.idle_anim_temporal_action
+    }
+
+    /// `ShieldTypeClass::HitFlash` (`ShieldTypeClass.h:40`, member
+    /// initialiser `false` `ShieldTypeClass.h:98`): the absorbed-hit
+    /// spotlight gate.
+    pub(crate) fn hit_flash(&self) -> bool {
+        self.hit_flash
+    }
+
+    /// `HitFlash.FixedSize` (`Nullable<int>`, `ShieldTypeClass.h:41`,
+    /// `:99`): the flash strength, defaulting to twice the clamped shield
+    /// damage.
+    pub(crate) fn hit_flash_fixed_size(&self) -> Option<i32> {
+        self.hit_flash_fixed_size
+    }
+
+    /// `HitFlash.Red` (`ShieldTypeClass.h:42`, default `true` `:100`).
+    pub(crate) fn hit_flash_red(&self) -> bool {
+        self.hit_flash_red
+    }
+
+    /// `HitFlash.Green` (`ShieldTypeClass.h:43`, default `true` `:101`).
+    pub(crate) fn hit_flash_green(&self) -> bool {
+        self.hit_flash_green
+    }
+
+    /// `HitFlash.Blue` (`ShieldTypeClass.h:44`, default `true` `:102`).
+    pub(crate) fn hit_flash_blue(&self) -> bool {
+        self.hit_flash_blue
+    }
+
+    /// `HitFlash.Black` (`ShieldTypeClass.h:45`, default `false` `:103`).
+    pub(crate) fn hit_flash_black(&self) -> bool {
+        self.hit_flash_black
     }
 
     pub fn has_tint(&self) -> bool {
@@ -216,6 +432,25 @@ impl ShieldType {
         self.powered
     }
 
+    /// `AllowTransfer` (`ShieldTypeClass.h:53`).
+    pub(crate) fn allow_transfer(&self) -> Option<bool> {
+        self.allow_transfer
+    }
+
+    /// `AllowTransfer.Convert` (`ShieldTypeClass.h:54`).
+    pub(crate) fn allow_transfer_convert(&self) -> Option<bool> {
+        self.allow_transfer_convert
+    }
+
+    /// `ShieldClass::ConvertCheck`'s `allowTransfer`
+    /// (`ShieldClass.cpp:612-613`): the conversion override falls back to
+    /// `AllowTransfer.Get(Attached)`, and an unset `AllowTransfer` falls back
+    /// to `Attached` itself.
+    pub(crate) fn conversion_transfer(&self, attached: bool) -> bool {
+        self.allow_transfer_convert
+            .unwrap_or(self.allow_transfer.unwrap_or(attached))
+    }
+
     pub(crate) fn respawn(&self) -> f64 {
         self.respawn
     }
@@ -232,14 +467,26 @@ impl ShieldType {
         self.respawn_restart_in_combat_delay
     }
 
+    pub(crate) fn respawn_anim(&self) -> &[String] {
+        &self.respawn_anim
+    }
+
     pub(crate) fn respawn_weapon(&self) -> Option<&str> {
         self.respawn_weapon.as_deref()
     }
 
+    /// `SelfHealing.EnabledBy` (`ShieldTypeClass.cpp:49`): an empty list means
+    /// self-healing is enabled for every owner.
+    pub(crate) fn self_healing_enabled_by(&self) -> &[String] {
+        &self.self_healing_enabled_by
+    }
+
+    /// `SelfHealing` (`ShieldTypeClass.cpp:41`).
     pub(crate) fn self_healing(&self) -> f64 {
         self.self_healing
     }
 
+    /// `SelfHealing` (`ShieldTypeClass.cpp:41`).
     pub(crate) fn self_healing_rate(&self) -> i32 {
         self.self_healing_rate
     }
@@ -260,8 +507,22 @@ impl ShieldType {
         self.immune_to_berserk
     }
 
+    /// Phobos `ShieldTypeClass::BreakAnim`, `BreakShield`'s fallback list.
+    pub(crate) fn break_anim(&self) -> &[String] {
+        &self.break_anim
+    }
+
+    /// Phobos `ShieldTypeClass::HitAnim`, `WeaponNullifyAnim`'s fallback.
+    pub(crate) fn hit_anim(&self) -> &[String] {
+        &self.hit_anim
+    }
+
+    /// Phobos `ShieldTypeClass::BreakWeapon`, the break shot's fallback.
+    pub(crate) fn break_weapon(&self) -> Option<&str> {
+        self.break_weapon.as_deref()
+    }
+
     /// Phobos `ShieldTypeClass::ImmuneToCrit`.
-    #[cfg(feature = "phobos")]
     pub(crate) fn immune_to_crit(&self) -> bool {
         self.immune_to_crit
     }
@@ -372,6 +633,8 @@ impl std::hash::Hash for ShieldType {
         self.tint_color.hash(state);
         self.tint_intensity.to_bits().hash(state);
         self.tint_visible_to_houses.hash(state);
+        self.allow_transfer.hash(state);
+        self.allow_transfer_convert.hash(state);
     }
 }
 
@@ -384,12 +647,10 @@ pub struct ShieldTypeCatalog {
 }
 
 impl ShieldTypeCatalog {
-    #[cfg(feature = "phobos")]
     pub(crate) fn names(&self) -> impl Iterator<Item = &str> {
         self.types.iter().map(|entry| entry.name.as_str())
     }
 
-    #[cfg(feature = "phobos")]
     pub fn entry(&self, name: &str) -> Option<&ShieldType> {
         self.types
             .iter()
@@ -398,7 +659,6 @@ impl ShieldTypeCatalog {
 
     /// Read one reached Rules pass: the pass's `[ShieldTypes]` list appends
     /// entries, then every retained entry re-reads its own section.
-    #[cfg(feature = "phobos")]
     pub(crate) fn apply_pass(&mut self, pass: &IniFile) {
         if let Some(list) = pass.section("ShieldTypes") {
             // Phobos Enumerable::LoadFromINIList reads each physical key
@@ -430,6 +690,20 @@ impl ShieldTypeCatalog {
                 section.read_phobos_nullable_double("ConditionYellow", entry.condition_yellow);
             entry.condition_red =
                 section.read_phobos_nullable_double("ConditionRed", entry.condition_red);
+            entry.idle_anim.apply(section, "IdleAnim");
+            entry.idle_anim_damaged.apply(section, "IdleAnimDamaged");
+            entry.idle_anim_offline_action = section.read_string_with(
+                "IdleAnim.OfflineAction",
+                0x40,
+                entry.idle_anim_offline_action,
+                |current, raw| AttachedAnimFlag::parse(raw).unwrap_or(current),
+            );
+            entry.idle_anim_temporal_action = section.read_string_with(
+                "IdleAnim.TemporalAction",
+                0x40,
+                entry.idle_anim_temporal_action,
+                |current, raw| AttachedAnimFlag::parse(raw).unwrap_or(current),
+            );
             entry.armor = section.read_string("Armor", &entry.armor, 0x80);
             entry.inherit_armor_from_techno =
                 section.read_bool("InheritArmorFromTechno", entry.inherit_armor_from_techno);
@@ -506,6 +780,12 @@ impl ShieldTypeCatalog {
             }
             entry.absorb_percent = section.read_double("AbsorbPercent", entry.absorb_percent);
             entry.pass_percent = section.read_double("PassPercent", entry.pass_percent);
+            // `ShieldTypeClass.cpp:75-76`, read after PassPercent and before
+            // the Pips block.
+            entry.allow_transfer =
+                section.read_phobos_nullable_bool("AllowTransfer", entry.allow_transfer);
+            entry.allow_transfer_convert = section
+                .read_phobos_nullable_bool("AllowTransfer.Convert", entry.allow_transfer_convert);
             entry.received_damage_minimum =
                 section.read_int("ReceivedDamage.Minimum", entry.received_damage_minimum);
             entry.received_damage_maximum =
@@ -537,23 +817,80 @@ impl ShieldTypeCatalog {
 }
 
 /// The warhead-side shield overrides (`WarheadTypeExt` shield fields,
-/// `src/Ext/WarheadType/Body.cpp:246..260`). Read on the merged warhead section;
-/// `None` floats/ints retain the shield type's value at use, exactly as
-/// `Nullable.Get(typeValue)` resolves them.
+/// `src/Ext/WarheadType/Body.cpp:246..287`, defaults `Body.h:371..410`).
+/// Read on the merged warhead section; `None` floats/ints retain the shield
+/// type's value at use, exactly as `Nullable.Get(typeValue)` resolves them.
+/// The `ShieldTypeClass*` lists store raw tokens: the native readers parse
+/// each comma token through `Parser<T>::Parse` (`Utilities/TemplateDef.h`
+/// `detail::parse_values`), which drops names with no type, so the catalog
+/// filter at the use site reproduces the parsed vector.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ShieldWarheadRules {
     pub(crate) penetrate: bool,
-    /// `Shield.AffectTypes`: empty means every shield type.
+    /// `Shield.AffectTypes`: raw tokens; an empty parsed list reaches every
+    /// shield type.
     pub(crate) affect_types: Vec<String>,
-    /// `Shield.Penetrate.Types`: when non-empty, a shield type outside it is
-    /// never penetrated.
-    pub(crate) penetrate_types: Vec<String>,
+    /// `Shield.Penetrate.Types` (`NullableVector`): `None` is unset, where
+    /// `GetElements(Shield_AffectTypes)` falls back to the affect list.
+    pub(crate) penetrate_types: Option<Vec<String>>,
     pub(crate) absorb_percent: Option<f64>,
     pub(crate) pass_percent: Option<f64>,
     pub(crate) received_minimum: Option<i32>,
     pub(crate) received_maximum: Option<i32>,
     pub(crate) received_min_multiplier: f64,
     pub(crate) received_max_multiplier: f64,
+    /// `Shield.Break`: `ApplyShieldModifiers` breaks the eligible active shield.
+    pub(crate) break_shield: bool,
+    /// `Shield.Break.Types` (`NullableVector`): the break arm's type filter.
+    pub(crate) break_types: Option<Vec<String>>,
+    /// `Shield.BreakAnim`: the break animation list, `BreakShield`'s first
+    /// argument; an empty parsed list falls back to the type's `BreakAnim`.
+    pub(crate) break_anim: Vec<String>,
+    /// `Shield.BreakWeapon` (`Nullable<WeaponTypeClass*>`, `Read<true>`):
+    /// `None` falls back to the shield type's `BreakWeapon` at the break.
+    pub(crate) break_weapon: Option<String>,
+    /// `Shield.HitAnim`: the shield-absorbed hit animation list, an empty
+    /// parsed list falls back to the type's `HitAnim`.
+    pub(crate) hit_anim: Vec<String>,
+    /// `Shield.SkipHitAnim`: suppresses the absorbed-hit animation.
+    pub(crate) skip_hit_anim: bool,
+    /// `Shield.HitFlash` (default true): the shield owner's flash gate. VERA
+    /// ports the key; the `FlashbangWarheadAt` spotlight stays a render-side
+    /// residual.
+    pub(crate) hit_flash: bool,
+    /// `Shield.Respawn.*`: the warhead's respawn recovery modifier.
+    pub(crate) respawn_duration: i32,
+    pub(crate) respawn_amount: Option<f64>,
+    /// `Shield.Respawn.Rate` in minutes (`Valueable<double>` default -1.0);
+    /// the frames value is `(int)(minutes * 900)` (`Body.cpp:263`).
+    pub(crate) respawn_rate_in_minutes: f64,
+    pub(crate) respawn_rate: i32,
+    pub(crate) respawn_restart_in_combat: Option<bool>,
+    pub(crate) respawn_restart_in_combat_delay: i32,
+    pub(crate) respawn_restart_timer: bool,
+    pub(crate) respawn_anim: Vec<String>,
+    /// `Shield.Respawn.Weapon` (`Nullable<WeaponTypeClass*>`, plain `Find`).
+    pub(crate) respawn_weapon: Option<String>,
+    /// `Shield.Respawn.Types` (`NullableVector`): the respawn arm's type filter.
+    pub(crate) respawn_types: Option<Vec<String>>,
+    /// `Shield.SelfHealing.*`: the warhead's self-healing recovery modifier.
+    pub(crate) self_healing_duration: i32,
+    pub(crate) self_healing_amount: Option<f64>,
+    pub(crate) self_healing_rate_in_minutes: f64,
+    pub(crate) self_healing_rate: i32,
+    pub(crate) self_healing_restart_in_combat: Option<bool>,
+    pub(crate) self_healing_restart_in_combat_delay: i32,
+    pub(crate) self_healing_restart_timer: bool,
+    /// `Shield.SelfHealing.Types` (`NullableVector`).
+    pub(crate) self_healing_types: Option<Vec<String>>,
+    /// `Shield.AttachTypes`/`Shield.RemoveTypes` (`ValueableVector`).
+    pub(crate) attach_types: Vec<String>,
+    pub(crate) remove_types: Vec<String>,
+    pub(crate) remove_all: bool,
+    pub(crate) replace_only: bool,
+    pub(crate) replace_non_respawning: bool,
+    pub(crate) inherit_state_on_replace: bool,
+    pub(crate) minimum_replace_delay: i32,
 }
 
 impl Default for ShieldWarheadRules {
@@ -561,30 +898,67 @@ impl Default for ShieldWarheadRules {
         Self {
             penetrate: false,
             affect_types: Vec::new(),
-            penetrate_types: Vec::new(),
+            penetrate_types: None,
             absorb_percent: None,
             pass_percent: None,
             received_minimum: None,
             received_maximum: None,
             received_min_multiplier: 1.0,
             received_max_multiplier: 1.0,
+            break_shield: false,
+            break_types: None,
+            break_anim: Vec::new(),
+            break_weapon: None,
+            hit_anim: Vec::new(),
+            skip_hit_anim: false,
+            hit_flash: true,
+            respawn_duration: 0,
+            respawn_amount: None,
+            respawn_rate_in_minutes: -1.0,
+            respawn_rate: -1,
+            respawn_restart_in_combat: None,
+            respawn_restart_in_combat_delay: -1,
+            respawn_restart_timer: false,
+            respawn_anim: Vec::new(),
+            respawn_weapon: None,
+            respawn_types: None,
+            self_healing_duration: 0,
+            self_healing_amount: None,
+            self_healing_rate_in_minutes: -1.0,
+            self_healing_rate: -1,
+            self_healing_restart_in_combat: None,
+            self_healing_restart_in_combat_delay: -1,
+            self_healing_restart_timer: false,
+            self_healing_types: None,
+            attach_types: Vec::new(),
+            remove_types: Vec::new(),
+            remove_all: false,
+            replace_only: false,
+            replace_non_respawning: false,
+            inherit_state_on_replace: false,
+            minimum_replace_delay: 0,
         }
     }
 }
 
 impl ShieldWarheadRules {
-    /// `WarheadTypeClass::ReadINI`'s shield block, in native order.
+    /// `WarheadTypeClass::ReadINI`'s shield block, in native order
+    /// (`src/Ext/WarheadType/Body.cpp:247..287`). Phobos reads every key
+    /// through `INI_EX::ReadString` into `Phobos::readBuffer[2048]`
+    /// (`src/Phobos.h:26..28`).
     pub(crate) fn from_section(section: &crate::rules::ini_parser::IniSection) -> Self {
         let mut rules = Self::default();
         rules.penetrate = section.read_bool("Shield.Penetrate", rules.penetrate);
-        rules.affect_types = section
-            .read_list("Shield.AffectTypes", 0x80)
-            .map(|tokens| tokens.into_iter().map(str::to_owned).collect())
-            .unwrap_or_default();
-        rules.penetrate_types = section
-            .read_list("Shield.Penetrate.Types", 0x80)
-            .map(|tokens| tokens.into_iter().map(str::to_owned).collect())
-            .unwrap_or_default();
+        rules.break_shield = section.read_bool("Shield.Break", rules.break_shield);
+        rules.break_anim = read_phobos_name_list(section, "Shield.BreakAnim");
+        rules.hit_anim = read_phobos_name_list(section, "Shield.HitAnim");
+        rules.skip_hit_anim = section.read_bool("Shield.SkipHitAnim", rules.skip_hit_anim);
+        rules.hit_flash = section.read_bool("Shield.HitFlash", rules.hit_flash);
+        // `Nullable<WeaponTypeClass*>::Read<true>`: `none`/`<none>` answer
+        // null, and an unknown name constructs the weapon on this pass.
+        rules.break_weapon = section
+            .read_type_name("Shield.BreakWeapon", 2048)
+            .map(str::to_owned);
         rules.absorb_percent =
             section.read_phobos_nullable_double("Shield.AbsorbPercent", rules.absorb_percent);
         rules.pass_percent =
@@ -601,36 +975,101 @@ impl ShieldWarheadRules {
             "Shield.ReceivedDamage.MaxMultiplier",
             rules.received_max_multiplier,
         );
+        rules.respawn_duration =
+            section.read_int("Shield.Respawn.Duration", rules.respawn_duration);
+        rules.respawn_amount =
+            section.read_phobos_nullable_double("Shield.Respawn.Amount", rules.respawn_amount);
+        // `Body.cpp:262..263`: the minutes field is a `Valueable<double>`;
+        // every reached read recomputes `(int)(minutes * 900)`.
+        rules.respawn_rate_in_minutes =
+            section.read_phobos_double("Shield.Respawn.Rate", rules.respawn_rate_in_minutes);
+        rules.respawn_rate = (rules.respawn_rate_in_minutes * 900.0) as i32;
+        rules.respawn_restart_in_combat = section.read_phobos_nullable_bool(
+            "Shield.Respawn.RestartInCombat",
+            rules.respawn_restart_in_combat,
+        );
+        rules.respawn_restart_in_combat_delay = section.read_int(
+            "Shield.Respawn.RestartInCombatDelay",
+            rules.respawn_restart_in_combat_delay,
+        );
+        rules.respawn_restart_timer =
+            section.read_bool("Shield.Respawn.RestartTimer", rules.respawn_restart_timer);
+        rules.respawn_anim = read_phobos_name_list(section, "Shield.Respawn.Anim");
+        rules.respawn_weapon = section
+            .read_type_name("Shield.Respawn.Weapon", 2048)
+            .map(str::to_owned);
+        rules.respawn_types = section.read_phobos_nullable_type_list("Shield.Respawn.Types");
+        rules.self_healing_duration =
+            section.read_int("Shield.SelfHealing.Duration", rules.self_healing_duration);
+        rules.self_healing_amount = section
+            .read_phobos_nullable_double("Shield.SelfHealing.Amount", rules.self_healing_amount);
+        rules.self_healing_rate_in_minutes = section.read_phobos_double(
+            "Shield.SelfHealing.Rate",
+            rules.self_healing_rate_in_minutes,
+        );
+        rules.self_healing_rate = (rules.self_healing_rate_in_minutes * 900.0) as i32;
+        rules.self_healing_restart_in_combat = section.read_phobos_nullable_bool(
+            "Shield.SelfHealing.RestartInCombat",
+            rules.self_healing_restart_in_combat,
+        );
+        rules.self_healing_restart_in_combat_delay = section.read_int(
+            "Shield.SelfHealing.RestartInCombatDelay",
+            rules.self_healing_restart_in_combat_delay,
+        );
+        rules.self_healing_restart_timer = section.read_bool(
+            "Shield.SelfHealing.RestartTimer",
+            rules.self_healing_restart_timer,
+        );
+        rules.attach_types = read_phobos_name_list(section, "Shield.AttachTypes");
+        rules.remove_types = read_phobos_name_list(section, "Shield.RemoveTypes");
+        rules.remove_all = section.read_bool("Shield.RemoveAll", rules.remove_all);
+        rules.replace_only = section.read_bool("Shield.ReplaceOnly", rules.replace_only);
+        rules.replace_non_respawning =
+            section.read_bool("Shield.ReplaceNonRespawning", rules.replace_non_respawning);
+        rules.inherit_state_on_replace = section.read_bool(
+            "Shield.InheritStateOnReplace",
+            rules.inherit_state_on_replace,
+        );
+        rules.minimum_replace_delay =
+            section.read_int("Shield.MinimumReplaceDelay", rules.minimum_replace_delay);
+        rules.affect_types = read_phobos_name_list(section, "Shield.AffectTypes");
+        rules.penetrate_types = section.read_phobos_nullable_type_list("Shield.Penetrate.Types");
+        rules.break_types = section.read_phobos_nullable_type_list("Shield.Break.Types");
+        rules.self_healing_types =
+            section.read_phobos_nullable_type_list("Shield.SelfHealing.Types");
         rules
     }
 
-    /// `Shield.AffectTypes`: whether this warhead reaches the given shield
-    /// type. An empty list affects every type.
-    pub(crate) fn affects(&self, shield_type: &str) -> bool {
-        self.affect_types.is_empty()
-            || self
-                .affect_types
-                .iter()
-                .any(|name| name.eq_ignore_ascii_case(shield_type))
-    }
-
-    /// `CanBePenetrated`'s shield-type gate: `Shield.Penetrate.Types` falls
-    /// back to `Shield.AffectTypes` and restricts only when non-empty.
-    pub(crate) fn penetration_allowed(&self, shield_type: &str) -> bool {
-        let list = if self.penetrate_types.is_empty() {
-            &self.affect_types
-        } else {
-            &self.penetrate_types
-        };
-        list.is_empty()
-            || list
-                .iter()
-                .any(|name| name.eq_ignore_ascii_case(shield_type))
+    /// `PossibleCellSpreadDetonate`'s shield members
+    /// (`src/Ext/WarheadType/Body.cpp:495..516`): the per-target detonation
+    /// pass reaches a warhead that carries any shield attach/remove/break or
+    /// a respawn/self-healing duration.
+    pub(crate) fn has_per_target_modifier(&self) -> bool {
+        self.break_shield
+            || self.respawn_duration > 0
+            || self.self_healing_duration > 0
+            || !self.attach_types.is_empty()
+            || !self.remove_types.is_empty()
+            || self.remove_all
     }
 }
 
 fn is_none_name(name: &str) -> bool {
     name.is_empty() || name.eq_ignore_ascii_case("none") || name.eq_ignore_ascii_case("<none>")
+}
+
+/// `ValueableVector<T*>::Read` (`Utilities/TemplateDef.h:1947..1956`): a
+/// reached read replaces the vector, parsing each comma token through
+/// `Parser<T>::Parse`; unknown names drop and an absent key keeps the
+/// current list. Raw tokens; the catalog filter runs at the use site.
+pub(crate) fn read_phobos_name_list(
+    section: &crate::rules::ini_parser::IniSection,
+    key: &str,
+) -> Vec<String> {
+    section
+        .read_list(key, 2048)
+        .map(|tokens| tokens.into_iter().map(str::to_owned).collect())
+        .unwrap_or_default()
 }
 
 /// `Vector3D<int>` read: the first three tokens replace the defaults; an
@@ -737,6 +1176,6 @@ impl ShieldGlobals {
     }
 }
 
-#[cfg(all(test, tests_rules_o_z, feature = "phobos"))]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "phobos_shields_tests.rs"]
 mod tests;

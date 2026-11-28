@@ -58,6 +58,16 @@ pub struct VoxelAnimObject {
     lifecycle: ObjectLifecycle,
     /// The embedded `BounceClass` at `+0xB0`.
     bounce: BounceState,
+    /// Phobos `VoxelAnimExt::TrailerSpawnTimer` (`Ext/VoxelAnim/Body.h`): the
+    /// countdown between trailer spawns. Starts expired and restarts after
+    /// every spawn (`VoxelAnimClass_AI_Trailer @ 0x74A70E`); saved with the
+    /// object like Phobos' extension.
+    #[serde(default)]
+    trailer_spawn_timer: crate::sim::timer::CdTimer,
+    /// Phobos `VoxelAnimExt::LaserTrails`, built in the constructor from the
+    /// type's `LaserTrail.Types` (`Ext/VoxelAnim/Body.cpp:5..18`).
+    #[serde(default)]
+    laser_trails: Vec<crate::sim::laser_trail::LaserTrailState>,
     /// `+0x108`: the type's `AttachedSystem=` (`+0x2FC`), which the
     /// constructor's tail builds (`0x007498A5..0x007498BD`, NULL included).
     /// The destructor (`0x00749A5F..0x00749A71`) then calls the system's
@@ -74,6 +84,16 @@ pub struct VoxelAnimObject {
 }
 
 impl VoxelAnimObject {
+    pub(crate) fn phobos_laser_trails_mut(
+        &mut self,
+    ) -> &mut Vec<crate::sim::laser_trail::LaserTrailState> {
+        &mut self.laser_trails
+    }
+
+    pub(crate) fn phobos_laser_trails(&self) -> &[crate::sim::laser_trail::LaserTrailState] {
+        &self.laser_trails
+    }
+
     #[cfg(any(test, feature = "test-support"))]
     pub fn set_duration_for_test(&mut self, value: i32) {
         self.duration = value;
@@ -177,6 +197,28 @@ impl VoxelAnimObject {
 
     pub(crate) fn replace_bounce(&mut self, body: BounceState) {
         self.bounce = body;
+    }
+
+    /// Phobos `VoxelAnimClass_AI_Trailer @ 0x74A70E`: the trailer spawn timer
+    /// reads expired every `Trailer.SpawnDelay` game frames; a due visit
+    /// restarts it with the type's delay.
+    pub(crate) fn trailer_spawn_due(&mut self, now: i32, delay: i32) -> bool {
+        if !self.trailer_spawn_timer.expired(now) {
+            return false;
+        }
+        self.trailer_spawn_timer.start(now, delay);
+        true
+    }
+
+    /// The trailer countdown's hash fold. Only a running timer contributes,
+    /// so pieces that never spawned (all retail ones) keep their previous
+    /// state hash.
+    pub(crate) fn trailer_spawn_timer_hash(&self, hasher: &mut impl std::hash::Hasher) {
+        use std::hash::Hash;
+        if self.trailer_spawn_timer != crate::sim::timer::CdTimer::default() {
+            b"voxel-trailer-timer-v1".hash(hasher);
+            self.trailer_spawn_timer.hash(hasher);
+        }
     }
 
     /// Stopped74A7E4 / Water74A823 expire on the next AI visit.
@@ -396,6 +438,10 @@ pub fn spawn_debris_piece(
             location: launch.start.to_array(),
             lifecycle: ObjectLifecycle::default(),
             bounce,
+            trailer_spawn_timer: crate::sim::timer::CdTimer::default(),
+            laser_trails: crate::sim::laser_trail::LaserTrailState::from_names(
+                &voxel_anim_type.laser_trail_types,
+            ),
             attached_system: None,
             in_logic_vector: false,
         });
@@ -457,6 +503,10 @@ pub fn spawn_debris_piece(
         location: origin.to_array(),
         lifecycle: ObjectLifecycle::default(),
         bounce,
+        trailer_spawn_timer: crate::sim::timer::CdTimer::default(),
+        laser_trails: crate::sim::laser_trail::LaserTrailState::from_names(
+            &voxel_anim_type.laser_trail_types,
+        ),
         attached_system: None,
         in_logic_vector: false,
     })
@@ -484,6 +534,9 @@ fn spin_angle(voxel_anim_type: &VoxelAnimType, draw: u32) -> Result<NativeF64Bit
 pub enum ShpDebrisSource {
     /// `TechnoType+0x5C4` — the section's own `DebrisAnims=`.
     TypeDebrisAnims,
+    /// Phobos `WarheadTypeExt::DebrisAnims=`: the warhead's own list, used
+    /// before the metallic fallback by the bullet debris block (`0x469D1A`).
+    WarheadDebrisAnims,
     /// `RulesClass+0x140` / `+0x14C` — `[General] MetallicDebris=`.
     RulesMetallicDebris,
 }
@@ -591,10 +644,21 @@ pub struct DebrisTypeData<'a> {
     pub debris_types: &'a [Option<VoxelAnimTypeId>],
     /// `+0x330` vector, positionally paired with `debris_types`.
     pub debris_maximums: &'a [i32],
+    /// Phobos `TechnoTypeExt::DebrisMinimums`, positionally paired with
+    /// `debris_maximums`. Empty leaves the per-slot floor at 0; the restored
+    /// Techno loop still runs.
+    pub debris_minimums: &'a [i32],
+    /// Phobos `TechnoTypeExt::DebrisTypes.Limit` (`Ext/TechnoType/Body.cpp:
+    /// 1146`, `Nullable<bool>`): the restored loop's one-pass gate; unset
+    /// keeps the `count > 1` default.
+    pub debris_types_limit: Option<bool>,
     /// `+0x5C4` vector, count at `+0x5D4`.
     pub debris_anim_count: usize,
     /// `RulesClass+0x14C`.
     pub metallic_debris_count: usize,
+    /// Whether the Phobos hook (`Misc/Hooks.BugFixes.cpp:149`) widens the
+    /// budget's top from the stock `MaxDebris - 1` to `MaxDebris`.
+    pub phobos: bool,
 }
 
 /// Recovery bound only for malformed or non-draining lists. Missing entries
@@ -611,9 +675,71 @@ pub(crate) fn throw_typed_debris(
     mut budget: i32,
     types: &[Option<VoxelAnimTypeId>],
     maximums: &[i32],
+    minimums: &[i32],
     owner_house: Option<InternedId>,
+    restored: bool,
+    limit: Option<bool>,
     host: &mut impl VoxelDebrisHost,
 ) -> Result<i32, NativeX87Error> {
+    if restored {
+        // Phobos `TechnoClass_ReceiveDamage_Debris`
+        // (`Misc/Hooks.BugFixes.cpp:167-196`, hook `0x702299`): the hook
+        // replaces the whole Techno block, so the restored loop runs for every
+        // type with `DebrisTypes=`/`DebrisMaximums=`, minimums or not. It
+        // takes `count = min(DebrisTypes.Count, DebrisMaximums.Count)`, throws
+        // `RandomRanged(min, max(1, maximum))` per slot — the minimum floored
+        // at 0, its last entry repeating for later slots, and 0 when the list
+        // is empty — and stops after one pass when `DebrisTypes.Limit` says so
+        // (its `count > 1` default) instead of cycling until the budget
+        // drains. A zero `count` falls through to the SHP arms with the full
+        // budget.
+        let count = types.len().min(maximums.len());
+        if count > 0 && budget > 0 {
+            let last_minimum = minimums.len() as i32 - 1;
+            let limit = limit.unwrap_or(count > 1);
+            let mut index = 0usize;
+            let mut iterations = 0u32;
+            loop {
+                let current_max = maximums[index].max(1);
+                let current_min = if last_minimum >= 0 {
+                    minimums[index.min(last_minimum as usize)].max(0)
+                } else {
+                    0
+                };
+                let amount = host
+                    .rng()
+                    .next_range_i32_inclusive(current_min, current_max)
+                    .min(budget);
+                if amount > 0
+                    && let Some(type_id) = types[index]
+                {
+                    for _ in 0..amount {
+                        let origin = host.voxel_origin();
+                        host.construct_voxel(type_id, owner_house, origin)?;
+                    }
+                }
+                budget -= amount;
+                if budget <= 0 {
+                    break;
+                }
+                index += 1;
+                if index < count {
+                    continue;
+                }
+                if limit {
+                    break;
+                }
+                index = 0;
+                // Recovery bound only; Phobos retries a zero-pick pass forever
+                // on a one-slot list whose every draw is 0.
+                iterations += 1;
+                if iterations >= DEBRIS_LOOP_ITERATION_CEILING {
+                    break;
+                }
+            }
+        }
+        return Ok(budget);
+    }
     if !types.is_empty() && budget > 0 {
         let mut well_formed = true;
         let mut can_drain = false;
@@ -772,20 +898,30 @@ pub fn throw_death_debris(
 ) -> Result<(), NativeX87Error> {
     // `Random__RandomRanged` sorts reversed bounds and consumes no draw when
     // they coincide; `next_range_i32_inclusive` models that helper directly.
-    // The signed form is what native computes: `DEC EDI` at `0x007022AD` puts
-    // the top at `MaxDebris - 1`, which `MinDebris` can sit on or above, and an
-    // unsigned read of an inverted span would invent a huge one instead of
-    // letting the helper sort it. No stock section goes above the top — 5 pin
-    // `MinDebris == MaxDebris - 1` (`(0,1)`, `(1,2)`, three at `(2,3)`), which
-    // is a coincident span costing no draw, and none is higher — so only a
-    // modded rules file inverts it.
-    let mut budget = debris_budget(data.min_debris, data.max_debris, host.rng());
+    // Vanilla decrements the top (`DEC EDI` at `0x007022AD`), so the budget is
+    // `RandomRanged(MinDebris, MaxDebris - 1)`; Phobos's hook
+    // (`Misc/Hooks.BugFixes.cpp:149`) fixes the inverted range and asks
+    // `RandomRanged(MinDebris, MaxDebris)` instead. The signed form is what
+    // native computes: `MinDebris` can sit on or above the top, and an
+    // unsigned read would invent a huge span instead of letting the helper
+    // sort it.
+    let mut budget = if data.max_debris <= 0 {
+        0
+    } else if data.phobos {
+        host.rng()
+            .next_range_i32_inclusive(data.min_debris, data.max_debris)
+    } else {
+        debris_budget(data.min_debris, data.max_debris, host.rng())
+    };
 
     budget = throw_typed_debris(
         budget,
         data.debris_types,
         data.debris_maximums,
+        data.debris_minimums,
         owner_house,
+        data.phobos,
+        data.debris_types_limit,
         host,
     )?;
 
@@ -839,6 +975,7 @@ mod tests {
         min_debris: i32,
         debris_types: &'a [Option<VoxelAnimTypeId>],
         debris_maximums: &'a [i32],
+        debris_minimums: &'a [i32],
         debris_anim_count: usize,
         metallic_debris_count: usize,
     ) -> DebrisTypeData<'a> {
@@ -847,9 +984,18 @@ mod tests {
             min_debris,
             debris_types,
             debris_maximums,
+            debris_minimums,
+            debris_types_limit: None,
             debris_anim_count,
             metallic_debris_count,
+            phobos: true,
         }
+    }
+
+    /// The budget draw of the arm under test: the stock `MaxDebris - 1` top,
+    /// or Phobos's `MaxDebris` top for the Techno hook.
+    fn budget(min: i32, max: i32, rng: &mut SimRng) -> i32 {
+        { rng.next_range_i32_inclusive(min, max) }
     }
 
     /// Each live identity contributes to the world hash independently of the
@@ -952,12 +1098,50 @@ mod tests {
         host.receipt
     }
 
+    /// Counts selected pieces per `[VoxelAnims]` type without spending the
+    /// constructor's draws, so the RNG cursor shows only the selector picks.
+    struct SelectionHost<'a> {
+        rng: &'a mut SimRng,
+        pieces: Vec<(VoxelAnimTypeId, i32)>,
+    }
+
+    impl ShpDebrisHost for SelectionHost<'_> {
+        fn rng(&mut self) -> &mut SimRng {
+            self.rng
+        }
+        fn construct_anim(
+            &mut self,
+            _source: ShpDebrisSource,
+            _index: usize,
+        ) -> Result<(), NativeX87Error> {
+            Ok(())
+        }
+    }
+
+    impl VoxelDebrisHost for SelectionHost<'_> {
+        fn voxel_origin(&self) -> IVec3 {
+            IVec3::new(0, 0, 0)
+        }
+        fn construct_voxel(
+            &mut self,
+            type_id: VoxelAnimTypeId,
+            _owner_house: Option<InternedId>,
+            _origin: IVec3,
+        ) -> Result<(), NativeX87Error> {
+            match self.pieces.iter_mut().find(|(id, _)| *id == type_id) {
+                Some((_, count)) => *count += 1,
+                None => self.pieces.push((type_id, 1)),
+            }
+            Ok(())
+        }
+    }
+
     #[test]
     fn gsi_05_14_no_debris_without_a_positive_maxdebris_and_no_draw_taken() {
         // `TEST ECX,ECX / JLE` at `0x00702291` sits BEFORE the budget draw, so
         // a type with no `MaxDebris=` costs the shared stream nothing.
         let types = [Some(VoxelAnimTypeId(0))];
-        let input = data(0, 0, &types, &[3], 6, 20);
+        let input = data(0, 0, &types, &[3], &[], 6, 20);
         let mut rng = SimRng::new(11);
         assert!(throw(&input, &mut rng).is_empty());
         assert_eq!(rng.logical_view(), SimRng::new(11).logical_view());
@@ -972,7 +1156,7 @@ mod tests {
         // `budget` draws in gamemd and lands on an out-of-bounds index the
         // caller resolves away. Skipping the draws instead would shift the
         // shared cursor for every later consumer in the tick.
-        let input = data(5, 4, &[], &[], 0, 0);
+        let input = data(5, 4, &[], &[], &[], 0, 0);
         let mut rng = SimRng::new(5);
         let thrown = throw(&input, &mut rng);
         assert!(
@@ -980,11 +1164,13 @@ mod tests {
             "no DebrisTypes= means no voxel pieces"
         );
 
-        // The budget is exactly 4 (MinDebris == MaxDebris - 1 takes no draw),
-        // and each unit spends one RandomRanged draw over the reversed span
-        // (0, -1) that native's `DEC EAX` produces on an empty list.
+        // Vanilla's budget is `MaxDebris - 1` without a draw; Phobos's Techno
+        // hook draws `RandomRanged(MinDebris, MaxDebris)`. Each unit then
+        // spends one RandomRanged draw over the reversed span (0, -1) that
+        // native's `DEC EAX` produces on an empty list.
         let mut expected = SimRng::new(5);
-        for _ in 0..4 {
+        let pieces = budget(4, 5, &mut expected);
+        for _ in 0..pieces {
             let _ = expected.next_range_i32_inclusive(0, -1);
         }
         assert_eq!(
@@ -992,7 +1178,7 @@ mod tests {
             expected.logical_view(),
             "an empty MetallicDebris list must still spend the budget in draws"
         );
-        assert_eq!(thrown.anims.len(), 4);
+        assert_eq!(thrown.anims.len(), pieces as usize);
         assert!(
             thrown
                 .anims
@@ -1001,6 +1187,13 @@ mod tests {
         );
     }
 
+    /// The stock `TechnoClass::ReceiveDamage` debris loop: `SUB EBX,EAX` at
+    /// `0x007023B5` subtracts the spent count from the budget, and
+    /// `CMP EDI,ECX / JL` at `0x007023D3` wraps the type index, so the loop
+    /// cycles the list until the pool is empty and the TOTAL thrown is exactly
+    /// the budget. Phobos's hook replaces this block for Techno deaths (see
+    /// `phobos_debris_one_pass_limit_leaves_the_rest_of_the_budget`), so this
+    /// stock check runs only without the feature.
     #[test]
     fn gsi_05_14_the_voxel_budget_drains_and_the_type_index_wraps() {
         // The load-bearing correction to the earlier reading of this block.
@@ -1012,7 +1205,9 @@ mod tests {
         // throw up to twice the budget.
         let types = [Some(VoxelAnimTypeId(0)), Some(VoxelAnimTypeId(0))];
         for seed in 0..64u64 {
-            let input = data(7, 6, &types, &[5, 5], 0, 20);
+            let mut input = data(7, 6, &types, &[5, 5], &[], 0, 20);
+            // The stock `MaxDebris - 1` top: 7/6 asks exactly 6.
+            input.phobos = false;
             let mut rng = SimRng::new(seed);
             let thrown = throw(&input, &mut rng);
             assert_eq!(
@@ -1027,6 +1222,176 @@ mod tests {
         }
     }
 
+    /// Phobos `TechnoClass_ReceiveDamage_Debris` (`Misc/Hooks.BugFixes.cpp:
+    /// 167-196`): with more than one slot and no `DebrisTypes.Limit=` key, the
+    /// restored loop stops after one whole pass, so a pass that spends less
+    /// than the budget never cycles to drain it.
+    #[test]
+    fn phobos_debris_one_pass_limit_leaves_the_rest_of_the_budget() {
+        let types = [Some(VoxelAnimTypeId(0)), Some(VoxelAnimTypeId(0))];
+        for seed in 0..16u64 {
+            let input = data(6, 6, &types, &[5, 5], &[], 0, 20);
+            let mut rng = SimRng::new(seed);
+            let thrown = throw(&input, &mut rng);
+            let mut expected = SimRng::new(seed);
+            let mut remaining = 6;
+            let mut thrown_count = 0;
+            for _ in 0..2 {
+                let amount = expected.next_range_i32_inclusive(0, 5).min(remaining);
+                for _ in 0..amount {
+                    for _ in 0..4 {
+                        expected.next_u32();
+                    }
+                    for _ in 0..3 {
+                        expected.next_range_u32_inclusive(0, 0x1_FFFE);
+                    }
+                }
+                remaining -= amount;
+                thrown_count += amount;
+            }
+            assert_eq!(
+                thrown.voxels.len() as i32,
+                thrown_count,
+                "seed {seed}: one pass only"
+            );
+            assert_eq!(rng.logical_view(), expected.logical_view(), "seed {seed}");
+        }
+    }
+
+    #[test]
+    fn phobos_debris_minimums_floor_each_slots_throw() {
+        // Phobos `TechnoClass_ReceiveDamage_Debris`
+        // (`Misc/Hooks.BugFixes.cpp:167-196`, hook `0x702299`) replaced the
+        // stock `|Next| % (maximum + 1)` pick with
+        // `RandomRanged(min, max(1, maximum))`. The hook's budget is
+        // `RandomRanged(1, 2)`, and the slot's minimum of 4 sits above the
+        // stock modulo's zero outcome, so every pass throws where the stock
+        // arm can draw a zero and throw none.
+        let types = [Some(VoxelAnimTypeId(0))];
+        for seed in 0..8u64 {
+            let input = data(2, 1, &types, &[5], &[4], 0, 20);
+            let mut rng = SimRng::new(seed);
+            let thrown = throw(&input, &mut rng);
+            let mut expected = SimRng::new(seed);
+            let budget = expected.next_range_i32_inclusive(1, 2);
+            let mut remaining = budget;
+            while remaining > 0 {
+                let amount = expected.next_range_i32_inclusive(4, 5).min(remaining);
+                for _ in 0..amount {
+                    for _ in 0..4 {
+                        expected.next_u32();
+                    }
+                    for _ in 0..3 {
+                        expected.next_range_u32_inclusive(0, 0x1_FFFE);
+                    }
+                }
+                remaining -= amount;
+            }
+            assert_eq!(
+                thrown.voxels.len() as i32,
+                budget,
+                "seed {seed}: the slot's floor always throws"
+            );
+            assert_eq!(
+                rng.logical_view(),
+                expected.logical_view(),
+                "seed {seed}: one bounded pick per slot"
+            );
+        }
+
+        // The same through the production loop with two bound slots: the
+        // hook's budget is `RandomRanged(9, 10)` and each slot's pick from
+        // 4..=5 is bounded by the remaining budget, so both slots always throw
+        // within their authored bounds.
+        let bound = [Some(VoxelAnimTypeId(0)), Some(VoxelAnimTypeId(1))];
+        let floored = data(10, 9, &bound, &[5, 5], &[4], 0, 20);
+        for seed in 0..64u64 {
+            let mut rng = SimRng::new(seed);
+            let mut host = SelectionHost {
+                rng: &mut rng,
+                pieces: Vec::new(),
+            };
+            throw_death_debris(&floored, None, &mut host).expect("in domain");
+            for (index, id) in [VoxelAnimTypeId(0), VoxelAnimTypeId(1)]
+                .into_iter()
+                .enumerate()
+            {
+                let count = host
+                    .pieces
+                    .iter()
+                    .find_map(|(spawned, count)| (*spawned == id).then_some(*count))
+                    .unwrap_or(0);
+                assert!(
+                    (4..=5).contains(&count),
+                    "seed {seed}: slot {index} threw {count} outside its 4..=5 bounds"
+                );
+            }
+        }
+    }
+
+    /// Phobos `TechnoClass_ReceiveDamage_Debris` (`Misc/Hooks.BugFixes.cpp:
+    /// 137-196`): the hook's budget is `RandomRanged(MinDebris, MaxDebris)`
+    /// (no `- 1`), and its restored per-slot loop runs for a type with
+    /// `DebrisTypes=` even when `DebrisMinimums=` is absent; the pass gate is
+    /// `DebrisTypes.Limit`, here an explicit no.
+    #[test]
+    fn phobos_debris_budget_range_and_restored_loop_need_no_minimums() {
+        use crate::rules::ini_parser::IniFile;
+        use crate::rules::ruleset::RuleSet;
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[VehicleTypes]
+0=TANK
+[TANK]
+Strength=100
+MaxDebris=3
+MinDebris=2
+             DebrisTypes=TIRE
+DebrisMaximums=4
+DebrisTypes.Limit=no
+",
+        ))
+        .expect("debris rules");
+        let tank = rules.object("TANK").expect("TANK");
+        assert_eq!(tank.phobos_debris_types_limit(), Some(false));
+        assert!(tank.debris_minimums.is_empty());
+
+        let types = [Some(VoxelAnimTypeId(0))];
+        let input = DebrisTypeData {
+            max_debris: 3,
+            min_debris: 2,
+            debris_types: &types,
+            debris_maximums: &[4],
+            debris_minimums: &[],
+            debris_types_limit: tank.phobos_debris_types_limit(),
+            debris_anim_count: 0,
+            metallic_debris_count: 20,
+            phobos: true,
+        };
+        for seed in 0..8u64 {
+            let mut rng = SimRng::new(seed);
+            let thrown = throw(&input, &mut rng);
+            let mut expected = SimRng::new(seed);
+            let budget = expected.next_range_i32_inclusive(2, 3);
+            let mut remaining = budget;
+            let mut iterations = 0;
+            while remaining > 0 && iterations < 4096 {
+                let amount = expected.next_range_i32_inclusive(0, 4).min(remaining);
+                for _ in 0..amount {
+                    for _ in 0..4 {
+                        expected.next_u32();
+                    }
+                    for _ in 0..3 {
+                        expected.next_range_u32_inclusive(0, 0x1_FFFE);
+                    }
+                }
+                remaining -= amount;
+                iterations += 1;
+            }
+            assert_eq!(thrown.voxels.len() as i32, budget, "seed {seed}");
+            assert_eq!(rng.logical_view(), expected.logical_view(), "seed {seed}");
+        }
+    }
+
     #[test]
     fn gsi_05_14_each_voxel_piece_costs_exactly_seven_draws() {
         // Four `Random__Next()` in `VoxelAnimClass::Constructor` plus three
@@ -1034,27 +1399,33 @@ mod tests {
         // the lockstep contract: a miscount desyncs every later consumer in the
         // same tick.
         let types = [Some(VoxelAnimTypeId(0))];
-        let input = data(4, 3, &types, &[9], 0, 20);
+        let input = data(4, 3, &types, &[9], &[], 0, 20);
         let mut rng = SimRng::new(2024);
         let thrown = throw(&input, &mut rng);
-        assert_eq!(thrown.voxels.len(), 3);
 
-        // The budget bounds coincide, so it costs no draw. The loop then takes
-        // one count draw per iteration; with DebrisMaximums=9 and a budget of
-        // 3 the first iteration can already spend the pool.
+        // The stock loop takes one `|Next| % (maximum + 1)` count draw per
+        // iteration; the Phobos Techno hook draws `RandomRanged(MinDebris,
+        // MaxDebris)` for the budget and then `RandomRanged(0, maximum)` per
+        // pass. Both spend the budget across one-slot passes.
         let mut expected = SimRng::new(2024);
+        let budget = budget(3, 4, &mut expected);
+        assert_eq!(thrown.voxels.len() as i32, budget);
         let mut spawned = 0;
-        while spawned < 3 {
-            let count = (expected.next_raw_abs_modulo(10) as i32).min(3 - spawned);
+        let mut iterations = 0;
+        while spawned < budget && iterations < 4096 {
+            let count = expected
+                .next_range_i32_inclusive(0, 9)
+                .min(budget - spawned);
             for _ in 0..count {
                 for _ in 0..4 {
                     expected.next_u32();
                 }
                 for _ in 0..3 {
-                    expected.next_range_u32_inclusive(0, (0xFFFF - -0xFFFF) as u32);
+                    expected.next_range_u32_inclusive(0, 0x1_FFFE);
                 }
             }
             spawned += count;
+            iterations += 1;
         }
         assert_eq!(rng.logical_view(), expected.logical_view());
     }
@@ -1066,7 +1437,7 @@ mod tests {
         // at `0x0070252D`. 166 stock sections take the first arm and 158 the
         // second; 13 of the 17 sections spelling `Maxdebris=` would have
         // joined the second arm had the read folded case, which it does not.
-        let input = data(9, 7, &[], &[], 6, 20);
+        let input = data(9, 7, &[], &[], &[], 6, 20);
         let mut rng = SimRng::new(31);
         let thrown = throw(&input, &mut rng);
         assert!(!thrown.anims.is_empty());
@@ -1084,10 +1455,12 @@ mod tests {
         // spent pool. `[HARV]` is the stock case: `MaxDebris=6`,
         // `DebrisTypes=TIRE`, no `DebrisAnims=`.
         let types = [Some(VoxelAnimTypeId(0))];
-        let input = data(6, 5, &types, &[4], 6, 20);
+        let input = data(6, 5, &types, &[4], &[], 6, 20);
+        let mut expected = SimRng::new(77);
+        let budget = budget(5, 6, &mut expected);
         let mut rng = SimRng::new(77);
         let thrown = throw(&input, &mut rng);
-        assert_eq!(thrown.voxels.len(), 5);
+        assert_eq!(thrown.voxels.len() as i32, budget);
         assert!(thrown.anims.is_empty());
     }
 

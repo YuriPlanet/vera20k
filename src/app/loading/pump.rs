@@ -2895,6 +2895,11 @@ fn ensure_loading_composition_snapshot(
         let projection = context.stock_offline_projection();
         let render_size = [gpu.config.width, gpu.config.height];
         let scale = loading_scale(gpu);
+        // Phobos `[LoadingScreen] DisableEmptySpawnPositions` removes the
+        // hardcoded black dots over start positions (`Misc/Hooks.UI.cpp:29-37`).
+        let draw_start_dots = !process_assets
+            .phobos_tooltips_ui
+            .disable_empty_spawn_positions;
         match native.progress_cadence {
             NativeLoadingProgressCadence::SelectedMap => {
                 let assignments = selected_map_start_assignments(launch_session, Some(projection));
@@ -2905,6 +2910,7 @@ fn ensure_loading_composition_snapshot(
                     render_size,
                     scale,
                     &assignments,
+                    draw_start_dots,
                 )
             }
             NativeLoadingProgressCadence::RandomMapHalved => {
@@ -2925,6 +2931,7 @@ fn ensure_loading_composition_snapshot(
                     initial.map_data(),
                     projection.active_scenario_waypoints(),
                     &assignments,
+                    draw_start_dots,
                 )
             }
         }

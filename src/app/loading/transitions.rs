@@ -89,14 +89,15 @@ pub(crate) fn fallback_map_load_result() -> init::MapLoadResult {
             sidebar_cameo_atlas: None,
             sidebar_chrome: None,
             match_layout_ini: None,
-            #[cfg(feature = "phobos")]
             sw_sidebar_ui: crate::rules::phobos_sw_sidebar::SuperWeaponSidebarUi::default(),
-            #[cfg(feature = "phobos")]
             center_pause_menu_background: false,
-            #[cfg(feature = "phobos")]
+            sidebar_indicators:
+                crate::rules::phobos_sidebar_indicators::SidebarIndicatorsUi::default(),
+            briefing_dialog: Default::default(),
             sw_sidebar_art: None,
             outcome_banner_side_art: None,
             end_game_banner: None,
+            banner_art: None,
             software_cursor: None,
             overlay_names: BTreeMap::new(),
             overlay_radar_colors: HashMap::new(),
@@ -124,6 +125,9 @@ pub(crate) struct MapPresentationInputs {
     pub(crate) lighting_config: crate::map::lighting::LightingConfig,
     /// Present only for a fresh map, from before authored Overlay admission.
     pub(crate) lighting_events: Option<Vec<crate::sim::light_sources::LightingEvent>>,
+    /// True on the fresh-start route only: a save restore keeps the ranking
+    /// ScenarioClass fields the save carries (`ScenarioClass::LoadFromINI`).
+    pub(crate) fresh_startup: bool,
     pub(crate) theater_name: String,
     pub(crate) theater_ext: String,
 }
@@ -168,7 +172,30 @@ pub(crate) fn install_world_presentation(
         match_state.campaign_names = names;
     }
     match_state.map_basic = map.basic;
-    match_state.map_ranking = map.ranking;
+    // Phobos `ScenarioExt::LoadFromINIFile` (`Ext/Scenario/Body.cpp:152-166`):
+    // a campaign scenario re-reads MISSIONMD.INI under its own file name and
+    // lets `Ranking.*` override the map's `[Ranking]` fields. Native applies
+    // it while `ScenarioClass::LoadFromINI` reads a scenario, so a restored
+    // save keeps the ranking fields it carries.
+    let ranking = {
+        let mut ranking = map.ranking;
+        if map.fresh_startup {
+            let campaign = match_state.sim_runtime.runtime().filter(|runtime| {
+                runtime.simulation.session().game_mode()
+                    == crate::sim::scenario_session::ScenarioGameMode::Campaign
+            });
+            if let Some(runtime) = campaign
+                && let Some(manager) = process_assets.manager()
+                && let Ok(selected) =
+                    crate::rules::retail_sources::select_ini(manager, "MISSIONMD.INI")
+            {
+                let file_name = runtime.simulation.session().map_name().to_owned();
+                ranking.apply_missionmd_overrides(true, &selected.ini, &file_name);
+            }
+        }
+        ranking
+    };
+    match_state.map_ranking = ranking;
     match_state.loaded_map_source = Some(map.source);
     match_state.loaded_map_hash = map.map_hash;
     match_state.match_presentation.terrain_grid = map.terrain_grid;
@@ -241,11 +268,12 @@ pub(crate) fn install_world_presentation(
         persistence,
         assets.match_layout_ini,
     );
-    #[cfg(feature = "phobos")]
     {
         match_state.match_presentation.center_pause_menu_background =
             assets.center_pause_menu_background;
         match_state.match_presentation.sw_sidebar_art = assets.sw_sidebar_art;
+        match_state.match_presentation.sidebar_indicators = assets.sidebar_indicators;
+        match_state.match_presentation.briefing_dialog = assets.briefing_dialog;
         let significance = match_state
             .match_presentation
             .sw_sidebar
@@ -339,6 +367,10 @@ pub(crate) fn install_world_presentation(
             .resolved_terrain()
             .map(|terrain| (terrain, &runtime.simulation))
     });
+    let use_retint_fix = match_state
+        .sim_runtime
+        .runtime()
+        .is_some_and(|runtime| runtime.resources.rules.phobos_globals.use_retint_fix);
     let presentation = &mut match_state.match_presentation;
     presentation.lighting.install(
         assets.lighting_grid,
@@ -347,6 +379,7 @@ pub(crate) fn install_world_presentation(
         live,
         map.lighting_events.as_deref(),
     );
+    presentation.lighting.set_use_retint_fix(use_retint_fix);
     // Current MapClass authority, including restored/triggered LocalSize,
     // reaches camera and minimap before either route positions its view.
     let (playfield_bounds, playfield_revision) =
@@ -395,7 +428,6 @@ pub(crate) fn install_world_presentation(
     ));
     // Phobos DigitalDisplay `Shape=`/`Palette=` assets, retained once per match
     // like `DigitalDisplayTypeClass`'s SHP pointers.
-    #[cfg(feature = "phobos")]
     if let Some(assets) = process_assets.manager()
         && let Some(rules) = match_state
             .sim_runtime
@@ -428,6 +460,13 @@ pub(crate) fn install_world_presentation(
             assets,
             rules,
         );
+        overlay.load_select_box_shapes(
+            &renderer.gpu.device,
+            &renderer.gpu.queue,
+            &renderer.batch_renderer,
+            assets,
+            rules.select_box_types().types(),
+        );
     }
     // Ares `IvanBomb.Image` SHPs, retained once per match like the
     // WeaponTypeExt's SHPStruct pointers, when the Rules were read the Ares
@@ -450,7 +489,6 @@ pub(crate) fn install_world_presentation(
     }
     // Phobos placement preview strips embed the active theater's palette and
     // the local house colour; a map load invalidates them.
-    #[cfg(feature = "phobos")]
     match_state
         .match_presentation
         .placement_preview_art
@@ -719,6 +757,7 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
             house_roster: result.scenario.house_roster,
             lighting_config: result.scenario.map_lighting_config,
             lighting_events,
+            fresh_startup: true,
             theater_name: result.scenario.theater_name,
             theater_ext: result.scenario.theater_ext,
         },
@@ -1032,6 +1071,10 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
                     &initial_replay_effects,
                 );
             }
+            // Phobos `MainGame_ShowBriefing @ 0x48CE85` and
+            // `AuxLoop_ShowBriefing @ 0x55D14F` open the dialog queued by
+            // `ScenarioClass_Start_ShowBriefing @ 0x683E41` here.
+            crate::app::briefing_start::admit_scenario_start_briefing(state);
             #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
             crate::web::match_started();
             if returns_scenario_rng_to_multiplayer_shell {

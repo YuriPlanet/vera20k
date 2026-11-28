@@ -271,8 +271,7 @@ pub struct InfantrySequenceEntry {
 pub(crate) struct InfantrySequenceBank {
     records: Vec<InfantrySequenceEntry>,
     sounds: Vec<Vec<SequenceSoundIndex>>,
-    /// Firestorm's `Struggle=` record ([`DO_STRUGGLE`]), which gamemd's bank
-    /// lacks. The default (no frames) is a type without it.
+    /// Firestorm's `Struggle=` record, which gamemd's bank lacks.
     struggle: InfantrySequenceEntry,
 }
 

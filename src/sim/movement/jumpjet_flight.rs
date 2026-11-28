@@ -74,7 +74,7 @@ use crate::util::retail_trig::TrigTable;
 const ARRIVAL_RADIUS: i32 = 20;
 /// Extra reference height for a non-building techno in a cell (`ADD EBP,0x55`
 /// at `0x004850EF`).
-const CELL_OBJECT_LIFT: i32 = 0x55;
+pub(crate) const CELL_OBJECT_LIFT: i32 = 0x55;
 /// `0x007E3CC0`: 2pi.
 const TWO_PI: u64 = 0x4019_21FB_5444_2D18;
 /// `0x007ECE60`: 15.0.
@@ -176,25 +176,21 @@ impl JumpjetFlightParams {
     }
 
     /// See the field.
-    #[cfg(any(test, feature = "test-support"))]
-    pub(crate) const fn accel_bits(&self) -> u32 {
+    pub const fn accel_bits(&self) -> u32 {
         self.accel_bits
     }
 
     /// See the field.
-    #[cfg(all(feature = "phobos", any(test, feature = "test-support")))]
     pub(crate) const fn wobbles_bits(&self) -> u32 {
         self.wobbles_bits
     }
 
     /// See the field.
-    #[cfg(all(feature = "phobos", any(test, feature = "test-support")))]
     pub(crate) const fn deviation(&self) -> i32 {
         self.deviation
     }
 
     /// See the field.
-    #[cfg(all(feature = "phobos", any(test, feature = "test-support")))]
     pub(crate) const fn no_wobbles(&self) -> bool {
         self.no_wobbles
     }
@@ -245,6 +241,17 @@ impl JumpjetFlightParams {
     pub fn linked_facing(&self) -> FacingClass {
         FacingClass::new(0x4000, self.turn_rate)
     }
+
+    /// Phobos `FootExt::UpdateTypeData` (`Ext/Foot/Body.cpp:733-746`) rewrites
+    /// the instance's copy of the type block after a conversion: the same
+    /// values `Link_To_Object` copies, except that the hook clamps
+    /// `JumpjetTurnRate` to 127 first (`:733`), so the stored turn rate — which
+    /// doubles as the turn-error threshold — is the clamped one.
+    pub(crate) fn relinked(params: &JumpjetParams) -> Self {
+        let mut relinked = Self::link(params);
+        relinked.turn_rate = relinked.turn_rate.min(127);
+        relinked
+    }
 }
 
 /// Flight fields of the locomotor (receiver `+0x54..+0x8C`).
@@ -263,9 +270,9 @@ pub struct JumpjetFlight {
 }
 
 impl JumpjetFlight {
-    /// See the field.
-    #[cfg(any(test, feature = "test-support"))]
-    pub(crate) fn facing(&self) -> &FacingClass {
+    /// See the field. The draw's Phobos JumpjetTilt reads this facing's
+    /// current/timer state; it stays the locomotor's authority.
+    pub fn facing(&self) -> &FacingClass {
         &self.facing
     }
 
@@ -275,9 +282,23 @@ impl JumpjetFlight {
         &mut self.facing
     }
 
-    /// See the field.
-    #[cfg(any(test, feature = "test-support"))]
-    pub(crate) const fn current_speed_bits(&self) -> u64 {
+    /// Phobos `pJJLoco->LocomotionFacing.SetCurrent(DirStruct(facing))` for a
+    /// spawn order (`Ext/TechnoType/Body.cpp:686`): both the current and the
+    /// target bytes move to the spawn facing, with no turn.
+    pub(crate) fn set_locomotion_facing(&mut self, facing: u16, binary_frame: u32) {
+        self.facing.snap(facing, binary_frame);
+    }
+
+    /// The OmniFire hook's `pLoco->LocomotionFacing.SetDesired(tgtDir)`
+    /// (`Ext/Unit/Hooks.Jumpjet.cpp:82-84`): a smooth setter on the
+    /// locomotor's own facing; the body copies it every Update.
+    pub(crate) fn set_desired_facing(&mut self, target: u16, binary_frame: u32) {
+        self.facing.set(target, binary_frame);
+    }
+
+    /// See the field. Phobos `JumpjetLocomotionClass_Draw_Matrix` reads this
+    /// binary64 directly for the forwards tilt.
+    pub const fn current_speed_bits(&self) -> u64 {
         self.current_speed_bits
     }
 
@@ -327,6 +348,16 @@ impl JumpjetFlight {
             target_height: 0,
             bob_phase_bits: 0,
         }
+    }
+
+    /// Phobos `FootExt::UpdateTypeData`'s instance-side write
+    /// (`Ext/Foot/Body.cpp:744-746`): `Height` and `CurrentHeight` become the
+    /// new type's `JumpjetHeight=` and `LocomotionFacing.SetROT(turnrate)`
+    /// replaces only the rate. The facing and its destination, the current
+    /// and target speed and the hover bob survive, unlike a `Link_To_Object`.
+    pub(crate) fn relinked_for_type_change(&mut self, params: &JumpjetFlightParams) {
+        self.facing.set_rot(params.turn_rate);
+        self.target_height = params.height;
     }
 
     #[cfg(any(test, feature = "test-support"))]
@@ -437,7 +468,8 @@ pub(crate) trait JumpjetFlightHost {
     /// The cell holding `xy` carries a high bridge (`+0x140 & 0x100`).
     fn cell_high_bridge(&self, xy: [i32; 2]) -> bool;
     fn high_bridge_deck(&self, xy: [i32; 2]) -> Option<JumpjetBridgeDeck> {
-        self.cell_high_bridge(xy).then_some(JumpjetBridgeDeck::Legacy)
+        self.cell_high_bridge(xy)
+            .then_some(JumpjetBridgeDeck::Legacy)
     }
     /// `CellClass @ 0x00485080` for the cell holding `xy`.
     fn cell_top_height(&self, xy: [i32; 2]) -> i32;
@@ -445,10 +477,55 @@ pub(crate) trait JumpjetFlightHost {
     fn cell_land_type(&self, xy: [i32; 2]) -> u8;
     /// `TechnoTypeClass+0xD6A` `BalloonHover=`.
     fn balloon_hover(&self) -> bool;
+    /// Phobos `FootExt::JumpjetStraightAscend` (`Ext/Foot/Body.h:25`), read by
+    /// the Ascending handler (`0x54BB D0`) and by MovementAI (`0x54D600`).
+    fn straight_ascend(&self) -> bool;
+    fn set_straight_ascend(&mut self, on: bool);
     /// Owner `+0x2B4` TarCom is set.
     fn has_target(&self) -> bool;
     /// Foot `+0x6AD`: a Magnetron lifted the owner (`sim::locomotor_lift`).
     fn piggyback_active(&self) -> bool;
+    /// Phobos `JumpjetRotateOnCrash=` (hook `0x54CB0E`,
+    /// `Ext/Unit/Hooks.Jumpjet.cpp:153-158`): when false, state 5 skips the
+    /// `ADD CX,0x2D00` facing re-aim (`0x0054CB0E..0x0054CB39`) and drops
+    /// straight to the impact test. Defaults to the native spin.
+    fn jumpjet_rotate_on_crash(&self) -> bool {
+        true
+    }
+    /// Phobos `JumpjetClimbIgnoreBuilding=` (hooks `0x54D820`, `0x54D859`,
+    /// `0x54D8EA`; `Ext/Unit/Hooks.Jumpjet.cpp:439-457`): when set, the
+    /// `0x0054D820` floor reference is `MapClass::GetCellFloorHeight` of the
+    /// owner's cell — the raw ground, with no building top and no bridge deck
+    /// — for both the current and the one-step-ahead sample.
+    fn jumpjet_climb_ignore_building(&self) -> bool {
+        false
+    }
+    /// Phobos `JumpjetClimbPredictHeight=` (`Ext/Rules/Body.cpp:336`, hook
+    /// `0x54D827`): replace the `0x0054D820` reference with
+    /// [`predict_reference_height`]'s five-cell prediction.
+    fn jumpjet_climb_predict_height(&self) -> bool {
+        false
+    }
+    /// Phobos `JumpjetClimbWithoutCutOut=` (`:337`, hook `0x54D4C0`): skip the
+    /// too-low speed cut-out after the height integration.
+    fn jumpjet_climb_without_cut_out(&self) -> bool {
+        false
+    }
+    /// `GetJumpjetHeightWithOccupyTechno` for `cell`
+    /// (`Ext/Unit/Hooks.Jumpjet.cpp:234-252`): the first building's
+    /// `Dimension2.Z`, else 85 leptons for a present techno, plus the bridge
+    /// deck. The prediction's height base adds it to the floor at the point.
+    fn cell_occupy_height(&self, _cell: (i16, i16)) -> i32 {
+        0
+    }
+    /// `CellClass::Level` of `cell`, for the side-height samples.
+    fn cell_level_at(&self, _cell: (i16, i16)) -> i32 {
+        0
+    }
+    /// `MapClass::TryGetCellAt` answers null outside the map.
+    fn cell_exists(&self, _cell: (i16, i16)) -> bool {
+        true
+    }
     /// A lifted owner's arrival (`0x0054C1BD..0x0054C1CB`): the Magnetron
     /// still holding it (`+0x2B0`) lets it go (`0x0070FEE0(1)`), which drops
     /// it. The callback runs on the published instance.
@@ -626,6 +703,12 @@ fn reference_height(
     location: [i32; 3],
 ) -> i32 {
     let here_xy = [location[0], location[1]];
+    // Phobos `JumpjetClimbIgnoreBuilding`: all three hooks answer the raw
+    // `GetCellFloorHeight` of the owner's own cell, so the bridge add and the
+    // one-step-ahead sample never run.
+    if host.jumpjet_climb_ignore_building() {
+        return host.floor_height(here_xy);
+    }
     let mut here = host.cell_top_height(here_xy);
     let here_bridge = host.high_bridge_deck(here_xy);
     match here_bridge {
@@ -643,7 +726,9 @@ fn reference_height(
     let mut ahead = host.cell_top_height(ahead_xy);
     match host.high_bridge_deck(ahead_xy) {
         Some(JumpjetBridgeDeck::Fixed(deck)) => ahead = ahead.max(deck),
-        Some(JumpjetBridgeDeck::Legacy) if matches!(here_bridge, Some(JumpjetBridgeDeck::Fixed(_))) => {
+        Some(JumpjetBridgeDeck::Legacy)
+            if matches!(here_bridge, Some(JumpjetBridgeDeck::Fixed(_))) =>
+        {
             ahead = ahead.wrapping_add(BRIDGE_DECK_HEIGHT_LEPTONS);
         }
         Some(JumpjetBridgeDeck::Legacy) => here = here.wrapping_add(BRIDGE_DECK_HEIGHT_LEPTONS),
@@ -654,6 +739,151 @@ fn reference_height(
     } else {
         ahead.wrapping_add(here) / 2
     }
+}
+
+/// One cell of the predictor's anti-aliasing sample
+/// (`Ext/Unit/Hooks.Jumpjet.cpp:293-323`): the neighbouring cell the step
+/// crosses when it leaves both the row and the column, `None` on a straight
+/// move or outside the map.
+fn predict_anti_alias_cell(
+    current: [i32; 2],
+    last: [i32; 2],
+    step: [i32; 2],
+    check: [i32; 2],
+) -> Option<(i16, i16)> {
+    let here = (native_cell(current[0]), native_cell(current[1]));
+    let previous = (native_cell(last[0]), native_cell(last[1]));
+    if here.0 == previous.0 || here.1 == previous.1 {
+        return None;
+    }
+    const MASK: i32 = 0xFF;
+    let last_x = if step[0].abs() > step[1].abs() {
+        let offset_x = current[0] & MASK;
+        let delta_x = if step[0] > 0 {
+            offset_x
+        } else {
+            offset_x - (MASK + 1)
+        };
+        let projected_y = current[1] - delta_x * check[1] / check[0];
+        ((projected_y ^ current[1]) >> 8) != 0
+    } else {
+        let offset_y = current[1] & MASK;
+        let delta_y = if step[1] > 0 {
+            offset_y
+        } else {
+            offset_y - (MASK + 1)
+        };
+        let projected_x = current[0] - delta_y * check[0] / check[1];
+        ((projected_x ^ current[0]) >> 8) != 0
+    };
+    Some(if last_x {
+        (previous.0, here.1)
+    } else {
+        (here.0, previous.1)
+    })
+}
+
+/// Phobos `JumpjetRushHelpers::JumpjetLocomotionPredictHeight`
+/// (`Ext/Unit/Hooks.Jumpjet.cpp:254-356`): the reference height the `0x54D827`
+/// hook substitutes for `0x0054D820`, and whether it armed
+/// `JumpjetRushHelpers::Skip` (consumed by the `0x54D4C0` cut-out hook).
+///
+/// The five-cell lookahead samples the floor plus the cell top along the
+/// locomotion facing, with the anti-aliasing side cell on diagonal steps.
+#[allow(clippy::too_many_arguments)]
+fn predict_reference_height(
+    current_speed: f64,
+    facing: u16,
+    facing_rotating: bool,
+    location: [i32; 3],
+    destination: Option<[i32; 3]>,
+    jumpjet_height: i32,
+    ignore_occupy: bool,
+    floor_at: &dyn Fn([i32; 2]) -> i32,
+    occupy_at: &dyn Fn((i16, i16)) -> i32,
+    level_at: &dyn Fn((i16, i16)) -> i32,
+    cell_exists: &dyn Fn((i16, i16)) -> bool,
+) -> (i32, bool) {
+    const CELL_LEPTONS: i32 = 1 << 8;
+    let point_cell = |xy: [i32; 2]| (native_cell(xy[0]), native_cell(xy[1]));
+    let jumpjet_height_at = |xy: [i32; 2]| {
+        floor_at(xy).wrapping_add(if ignore_occupy {
+            0
+        } else {
+            occupy_at(point_cell(xy))
+        })
+    };
+    let mut current = [location[0], location[1]];
+    let mut max_height = jumpjet_height_at(current);
+    let mut skip = false;
+    if !(current_speed > 0.0) {
+        return (max_height, skip);
+    }
+    let check_length = if facing_rotating || destination.is_none() {
+        CELL_LEPTONS
+    } else {
+        (CELL_LEPTONS * 5).min(crate::util::native_x87::distance_3d_leptons(
+            location,
+            destination.expect("checked above"),
+        ))
+    };
+    // `-LocomotionFacing.Current().GetRadian<65536>()`; `Math::cos`/`Math::sin`
+    // are the CRT's binary64 functions, which `libm` reproduces on every target.
+    let angle = -f64::from_bits(radians_from_facing16(facing).bits());
+    let check = [
+        (f64::from(check_length) * libm::cos(angle) + 0.5) as i32,
+        (f64::from(check_length) * libm::sin(angle) + 0.5) as i32,
+    ];
+    if check == [0, 0] {
+        // The native scan divides by `checkCoord`; a zero length is the
+        // unreachable arrived-at-destination case.
+        return (max_height, skip);
+    }
+    let large_step = check[0].abs().max(check[1].abs());
+    let steps = if large_step > CELL_LEPTONS {
+        large_step / CELL_LEPTONS + 1
+    } else {
+        1
+    };
+    let step = [check[0] / steps, check[1] / steps];
+    let side_height = |cell: (i16, i16)| {
+        level_at(cell)
+            .wrapping_mul(GROUND_LEVEL_HEIGHT_LEPTONS)
+            .wrapping_add(if ignore_occupy { 0 } else { occupy_at(cell) })
+    };
+    let mut last = current;
+    let mut check_step = |current: &mut [i32; 2], last: &mut [i32; 2]| -> Option<i32> {
+        *last = *current;
+        current[0] = current[0].wrapping_add(step[0]);
+        current[1] = current[1].wrapping_add(step[1]);
+        if !cell_exists(point_cell(*current)) {
+            return None;
+        }
+        let mut height = jumpjet_height_at(*current);
+        if let Some(cell) =
+            predict_anti_alias_cell(*current, *last, step, check).filter(|cell| cell_exists(*cell))
+        {
+            height = height.max(side_height(cell));
+        }
+        Some(height)
+    };
+    if let Some(height) = check_step(&mut current, &mut last) {
+        max_height = max_height.max(height);
+        // Phobos arms the stop-check skip while the owner is at least a full
+        // `JumpjetHeight=` above the prediction.
+        if location[2].wrapping_sub(max_height) >= jumpjet_height {
+            skip = true;
+        }
+        let mut i = 1;
+        while i < steps {
+            let Some(height) = check_step(&mut current, &mut last) else {
+                break;
+            };
+            max_height = max_height.max(height);
+            i += 1;
+        }
+    }
+    (max_height, skip)
 }
 
 /// `Update_Coordinates_And_Altitude @ 0x0054D0F0`.
@@ -739,11 +969,27 @@ pub(crate) fn update_coordinates_and_altitude(
             ground = deck;
         }
     }
-    let reference =
+    let (reference, rush_skip) =
         if matches!(phase, STATE_DESCEND | STATE_GROUND) || (same_cell && !host.balloon_hover()) {
-            ground
+            (ground, false)
+        } else if host.jumpjet_climb_predict_height() {
+            // Phobos `JumpjetClimbPredictHeight` (`0x54D827`) replaces the
+            // `0x0054D820` reference; its `Skip` arms the cut-out hook below.
+            predict_reference_height(
+                f64::from_bits(flight.current_speed_bits),
+                flight.facing.current(host.binary_frame()),
+                flight.facing.is_rotating(host.binary_frame()),
+                location,
+                (destination != [0, 0, 0]).then_some(destination),
+                params.height,
+                host.jumpjet_climb_ignore_building(),
+                &|xy| host.floor_height(xy),
+                &|cell| host.cell_occupy_height(cell),
+                &|cell| host.cell_level_at(cell),
+                &|cell| host.cell_exists(cell),
+            )
         } else {
-            reference_height(flight, host, location)
+            (reference_height(flight, host, location), false)
         };
 
     // Height integration 0x0054D354..D4BB.
@@ -787,7 +1033,12 @@ pub(crate) fn update_coordinates_and_altitude(
     }
 
     // Too low outside the destination cell: no horizontal speed (0x0054D4FD..D52D).
-    if !same_cell && (altitude < bob_target / 2 || altitude < bob_target / 4) {
+    // Phobos `JumpjetClimbWithoutCutOut` (`0x54D4C0`) skips this whole block,
+    // and the prediction's `Skip` does so for the frame it armed.
+    if !same_cell
+        && (altitude < bob_target / 2 || altitude < bob_target / 4)
+        && !(rush_skip || host.jumpjet_climb_without_cut_out())
+    {
         flight.current_speed_bits = 0;
     }
     if let Some(next) = new_z {
@@ -798,6 +1049,24 @@ pub(crate) fn update_coordinates_and_altitude(
             host.mark(false);
         }
     }
+
+    // Phobos `JumpjetStraightAscend` MovementAI hook (`0x54D600`,
+    // `Ext/Unit/Hooks.Jumpjet.cpp:413-437`): a crashing or dead owner, or a
+    // state past the ascend, clears the latch and moves normally; otherwise the
+    // location write and the body-facing snap are skipped, so only Z changes.
+    let skip_horizontal = if host.straight_ascend() {
+        if host.crashing() || !host.is_object_alive() {
+            host.set_straight_ascend(false);
+            false
+        } else if phase <= STATE_ASCEND {
+            true
+        } else {
+            host.set_straight_ascend(false);
+            false
+        }
+    } else {
+        false
+    };
 
     // Horizontal step along the locomotor facing (0x0054D55A..D607).
     let location = host.location();
@@ -815,10 +1084,12 @@ pub(crate) fn update_coordinates_and_altitude(
         X87Chop53::mul(host.trig().cos_from_table(angle), step),
         int(location[0]),
     ));
-    host.set_location([new_x, new_y, location[2]]);
+    if !skip_horizontal {
+        host.set_location([new_x, new_y, location[2]]);
+    }
 
     // Body facing (0x0054D60D..D692).
-    if !host.piggyback_active() {
+    if !skip_horizontal && !host.piggyback_active() {
         let hold_facing = (host.owner_kind() == FlightOwnerKind::Infantry
             && phase == STATE_HOLD
             && host.has_target())
@@ -1291,11 +1562,17 @@ pub(crate) fn state1_ascend(
             runtime.flight.target_height / 4
         };
         if gate < height {
-            runtime.flight.target_speed_bits = store_double(int(params.speed));
-            runtime
-                .flight
-                .facing
-                .set(desired_facing(destination, location), frame);
+            // Phobos `0x54BBD0` (`Ext/Unit/Hooks.Jumpjet.cpp:397-411`): a
+            // straight ascent skips the speed raise and the turn, resuming at
+            // `0x54BC59` where only the factory notice remains.
+            let straight = host.straight_ascend();
+            if !straight {
+                runtime.flight.target_speed_bits = store_double(int(params.speed));
+                runtime
+                    .flight
+                    .facing
+                    .set(desired_facing(destination, location), frame);
+            }
             // A factory contact hears the lift-off; the barracks releases
             // its tether and the owner may take its rally or scatter again.
             host.factory_contact_notify(runtime);
@@ -1515,7 +1792,9 @@ pub(crate) fn state4_descend(
 fn height_over_landing_surface(host: &impl JumpjetFlightHost, location: [i32; 3]) -> i32 {
     let mut height = host.height_above_ground();
     let xy = [location[0], location[1]];
-    if !host.on_bridge() && let Some(bridge) = host.high_bridge_deck(xy) {
+    if !host.on_bridge()
+        && let Some(bridge) = host.high_bridge_deck(xy)
+    {
         let rise = match bridge {
             JumpjetBridgeDeck::Fixed(deck) => deck.wrapping_sub(host.floor_height(xy)),
             JumpjetBridgeDeck::Legacy => BRIDGE_DECK_HEIGHT_LEPTONS,
@@ -1531,7 +1810,8 @@ fn height_over_landing_surface(host: &impl JumpjetFlightHost, location: [i32; 3]
 ///
 /// The owner drops by `JumpjetCrash=` below where Update left it, truncated by
 /// `Math::ftol` (`0x0054CAFE..0x0054CB0A`), and the facing is re-aimed
-/// `0x2D00` past its animated current (`0x0054CB0E..0x0054CB39`). A lifted
+/// `0x2D00` past its animated current (`0x0054CB0E..0x0054CB39`) unless Phobos
+/// `JumpjetRotateOnCrash=` is false (hook `0x54CB0E`). A lifted
 /// owner (`+0x6AD`) instead stops dead and falls ever faster: its speeds
 /// zero and `JumpjetCrash=` grows by 1.0f a frame after the drop, stored as
 /// binary32 under the chop control word (`0x0054CAD2..0x0054CAFC`). Only a
@@ -1574,7 +1854,7 @@ pub(crate) fn state5_crash(runtime: &mut JumpjetRuntime, host: &mut impl Jumpjet
             single(ONE_F32),
         ))
         .bits();
-    } else {
+    } else if host.jumpjet_rotate_on_crash() {
         let spin = runtime
             .flight
             .facing
@@ -1711,6 +1991,14 @@ mod tests {
         can_enter: i32,
         /// Locomotor `+0x90`, the landing-admitted latch.
         landing_latched: bool,
+        /// Phobos `JumpjetClimbIgnoreBuilding=` resolved for this owner.
+        climb_ignore_building: bool,
+        /// Phobos `JumpjetClimbPredictHeight=`.
+        climb_predict: bool,
+        /// Phobos `JumpjetClimbWithoutCutOut=`.
+        climb_without_cut_out: bool,
+        /// Phobos `FootExt::JumpjetStraightAscend`, off unless a row sets it.
+        straight_ascend: bool,
     }
 
     impl FixtureHost<'_> {
@@ -1781,6 +2069,37 @@ mod tests {
             self.bridges
                 .contains(&(native_cell(xy[0]), native_cell(xy[1])))
         }
+        fn jumpjet_climb_ignore_building(&self) -> bool {
+            self.climb_ignore_building
+        }
+        fn jumpjet_climb_predict_height(&self) -> bool {
+            self.climb_predict
+        }
+        fn jumpjet_climb_without_cut_out(&self) -> bool {
+            self.climb_without_cut_out
+        }
+        fn cell_occupy_height(&self, cell: (i16, i16)) -> i32 {
+            let centre = [
+                (i32::from(cell.0) << 8) + 128,
+                (i32::from(cell.1) << 8) + 128,
+            ];
+            let (level, slope) = Self::cell_terrain(centre);
+            let ground =
+                crate::util::lepton::ground_height_leptons(level, slope, centre[0], centre[1])
+                    .expect("fixture slope is supported");
+            self.tops
+                .iter()
+                .find(|(key, _)| *key == cell)
+                .map_or(0, |&(_, top)| top.wrapping_sub(ground))
+        }
+        fn cell_level_at(&self, cell: (i16, i16)) -> i32 {
+            let centre = [
+                (i32::from(cell.0) << 8) + 128,
+                (i32::from(cell.1) << 8) + 128,
+            ];
+            let (level, _) = Self::cell_terrain(centre);
+            i32::from(level)
+        }
         fn cell_top_height(&self, xy: [i32; 2]) -> i32 {
             let cell = (native_cell(xy[0]), native_cell(xy[1]));
             if let Some(&(_, top)) = self.tops.iter().find(|(key, _)| *key == cell) {
@@ -1800,6 +2119,12 @@ mod tests {
         }
         fn balloon_hover(&self) -> bool {
             self.balloon_hover
+        }
+        fn straight_ascend(&self) -> bool {
+            self.straight_ascend
+        }
+        fn set_straight_ascend(&mut self, on: bool) {
+            self.straight_ascend = on;
         }
         fn has_target(&self) -> bool {
             self.has_target
@@ -2001,6 +2326,10 @@ mod tests {
                 scatter_direction: 0,
                 can_enter: 0,
                 landing_latched: false,
+                climb_ignore_building: false,
+                climb_predict: false,
+                climb_without_cut_out: false,
+                straight_ascend: false,
             };
             let expected = row["output"]["frames"].as_array().expect("frames");
             let mut phase = STATE_TRANSLATE;
@@ -2102,6 +2431,8 @@ mod tests {
         /// relocation's display removal, the AircraftTracker removal and the
         /// `(0x117C, 0)` notice.
         impact_events: Vec<Value>,
+        /// Phobos `FootExt::JumpjetStraightAscend`.
+        straight_ascend: bool,
     }
 
     impl StatesHost<'_> {
@@ -2273,6 +2604,12 @@ mod tests {
         }
         fn balloon_hover(&self) -> bool {
             self.balloon_hover
+        }
+        fn straight_ascend(&self) -> bool {
+            self.straight_ascend
+        }
+        fn set_straight_ascend(&mut self, on: bool) {
+            self.straight_ascend = on;
         }
         fn has_target(&self) -> bool {
             self.has_target
@@ -2565,6 +2902,7 @@ mod tests {
                 crashing: false,
                 map_size: (0, 0),
                 impact_events: Vec::new(),
+                straight_ascend: false,
             };
 
             // `Move_To` ran before the first Process frame; take what it left
@@ -2767,6 +3105,7 @@ mod tests {
                 crashing: true,
                 map_size: (int(&map_size[0]) as i32, int(&map_size[1]) as i32),
                 impact_events: Vec::new(),
+                straight_ascend: false,
             };
 
             // The kill, from the state the flight left.
@@ -2919,6 +3258,10 @@ mod tests {
             scatter_direction: 0,
             can_enter: 0,
             landing_latched: false,
+            climb_ignore_building: false,
+            climb_predict: false,
+            climb_without_cut_out: false,
+            straight_ascend: false,
         }
     }
 
@@ -2943,6 +3286,26 @@ mod tests {
         );
         // Stationary: no look-ahead, and the current cell has no bridge.
         assert_eq!(reference_height(&eastbound_flight(0.0), &host, location), 0);
+    }
+
+    /// Phobos `JumpjetClimbIgnoreBuilding=` (hooks `0x54D820`/`0x54D859`/
+    /// `0x54D8EA`): the floor reference answers `GetCellFloorHeight` of the
+    /// owner's cell, so a building top and a bridge deck both stop counting.
+    #[test]
+    fn the_climb_ignore_building_key_answers_the_raw_ground() {
+        let trig = TrigTable::embedded();
+        let mut host = edge_host(trig, vec![((3, 3), 300)], Vec::new());
+        let location = host.location;
+        // Stationary: the current cell's building top is the reference.
+        assert_eq!(
+            reference_height(&eastbound_flight(0.0), &host, location),
+            300
+        );
+        host.climb_ignore_building = true;
+        assert_eq!(
+            reference_height(&eastbound_flight(0.0), &host, location),
+            JumpjetFlightHost::floor_height(&host, [location[0], location[1]])
+        );
     }
 
     /// While moving, a higher cell one step ahead along the facing wins.
@@ -2980,5 +3343,226 @@ mod tests {
         assert_eq!(error(0x4000), 64);
         assert_eq!(error(0xC000), 192);
         assert_eq!(error(0xFFFF), 0);
+    }
+
+    /// Phobos `JumpjetLocomotionPredictHeight` (`Ext/Unit/Hooks.Jumpjet.cpp:254-356`):
+    /// a far destination predicts five cells ahead, so an obstacle at the
+    /// fifth cell raises the reference; a high owner arms the stop skip.
+    #[test]
+    fn climb_prediction_samples_five_cells_and_arms_the_stop_skip() {
+        let floor = |_xy: [i32; 2]| 0;
+        let occupy = |cell: (i16, i16)| if cell == (5, 0) { 900 } else { 0 };
+        let level = |_cell: (i16, i16)| 0;
+        let exists = |cell: (i16, i16)| cell.0 >= 0 && cell.1 >= 0;
+        let location = [128, 128, 500];
+        let destination = Some([10 * 256 + 128, 128, 500]);
+        let (height, skip) = predict_reference_height(
+            4.0,
+            0x4000,
+            false,
+            location,
+            destination,
+            300,
+            false,
+            &floor,
+            &occupy,
+            &level,
+            &exists,
+        );
+        assert_eq!(height, 900);
+        assert!(
+            skip,
+            "the first sample is the current cell's clearance and arms the skip"
+        );
+        // A JumpjetHeight the owner is not clear of leaves the skip unarmed.
+        let (_, skip) = predict_reference_height(
+            4.0,
+            0x4000,
+            false,
+            location,
+            destination,
+            1000,
+            false,
+            &floor,
+            &occupy,
+            &level,
+            &exists,
+        );
+        assert!(!skip);
+        // The same prediction from high above arms the cut-out skip.
+        let (height, skip) = predict_reference_height(
+            4.0,
+            0x4000,
+            false,
+            [128, 128, 1200],
+            destination,
+            300,
+            false,
+            &floor,
+            &occupy,
+            &level,
+            &exists,
+        );
+        assert_eq!(height, 900);
+        assert!(skip);
+        // Ignore-building drops the obstacle back to the floor.
+        let (height, _) = predict_reference_height(
+            4.0,
+            0x4000,
+            false,
+            location,
+            destination,
+            300,
+            true,
+            &floor,
+            &occupy,
+            &level,
+            &exists,
+        );
+        assert_eq!(height, 0);
+    }
+
+    /// The predictor's anti-aliasing sample (`Ext/Unit/Hooks.Jumpjet.cpp:293-323`):
+    /// a diagonal step that leaves both the row and the column adds the side
+    /// cell, and straight moves never do.
+    #[test]
+    fn predict_anti_alias_picks_the_cell_the_diagonal_step_crosses() {
+        assert_eq!(
+            predict_anti_alias_cell([356, 356], [250, 250], [106, 106], [106, 106]),
+            Some((1, 0))
+        );
+        assert_eq!(
+            predict_anti_alias_cell([356, 300], [250, 200], [106, 100], [106, 100]),
+            Some((0, 1))
+        );
+        assert_eq!(
+            predict_anti_alias_cell([356, 250], [250, 250], [106, 0], [106, 0]),
+            None
+        );
+    }
+
+    /// Phobos `JumpjetClimbPredictHeight` (hook `0x54D827`): the reference
+    /// takes the predicted obstacle five cells ahead instead of the stock
+    /// one-step sample, so the owner climbs instead of descending.
+    #[test]
+    fn climb_predict_height_raises_the_reference_from_the_lookahead() {
+        let trig = TrigTable::embedded();
+        let params = JumpjetFlightParams::default();
+        // Facing 0x4000 moves along +X; an obstacle in cell (8,3), five cells
+        // from the owner at (3,3), is outside the stock one-step sample.
+        let destination = [(3 + 10) * 256 + 128, 3 * 256 + 128, 0];
+        let mut stock_host = edge_host(trig, vec![((8, 3), 900)], Vec::new());
+        let mut stock_flight = eastbound_flight(4.0);
+        update_coordinates_and_altitude(
+            STATE_TRANSLATE,
+            destination,
+            &params,
+            &mut stock_flight,
+            &mut stock_host,
+        );
+        let mut predict_host = edge_host(trig, vec![((8, 3), 900)], Vec::new());
+        predict_host.climb_predict = true;
+        let mut predict_flight = eastbound_flight(4.0);
+        update_coordinates_and_altitude(
+            STATE_TRANSLATE,
+            destination,
+            &params,
+            &mut predict_flight,
+            &mut predict_host,
+        );
+        assert!(stock_host.location[2] < 500, "stock descends");
+        assert!(predict_host.location[2] > 500, "the prediction climbs");
+    }
+
+    /// Phobos `JumpjetClimbWithoutCutOut` (hook `0x54D4C0`): a low owner
+    /// outside its destination cell keeps horizontal speed instead of being
+    /// stopped.
+    #[test]
+    fn climb_without_cut_out_keeps_speed_when_too_low_outside_destination() {
+        let trig = TrigTable::embedded();
+        let params = JumpjetFlightParams::default();
+        let destination = [3 * 256 + 128, 10 * 256 + 128, 0];
+        let mut stock_host = edge_host(trig, Vec::new(), Vec::new());
+        stock_host.location = [3 * 256 + 128, 3 * 256 + 128, 50];
+        let mut stock_flight = eastbound_flight(4.0);
+        stock_flight.lift_to(500);
+        update_coordinates_and_altitude(
+            STATE_TRANSLATE,
+            destination,
+            &params,
+            &mut stock_flight,
+            &mut stock_host,
+        );
+        assert_eq!(stock_flight.current_speed_bits, 0);
+        let mut cutout_host = edge_host(trig, Vec::new(), Vec::new());
+        cutout_host.location = [3 * 256 + 128, 3 * 256 + 128, 50];
+        cutout_host.climb_without_cut_out = true;
+        let mut cutout_flight = eastbound_flight(4.0);
+        cutout_flight.lift_to(500);
+        update_coordinates_and_altitude(
+            STATE_TRANSLATE,
+            destination,
+            &params,
+            &mut cutout_flight,
+            &mut cutout_host,
+        );
+        assert_ne!(cutout_flight.current_speed_bits, 0);
+    }
+
+    /// Phobos `JumpjetStraightAscend` MovementAI hook (`0x54D600`,
+    /// `Ext/Unit/Hooks.Jumpjet.cpp:413-437`): while the latch is set and the
+    /// owner is in state 0/1, MovementAI writes no horizontal location and snaps
+    /// no body facing, so only the altitude changes.
+    #[test]
+    fn a_straight_ascend_keeps_the_horizontal_position() {
+        let trig = TrigTable::embedded();
+        let params = JumpjetFlightParams::default();
+        let destination = [4 * 256 + 128, 3 * 256 + 128, 500];
+
+        let mut plain_host = edge_host(trig, Vec::new(), Vec::new());
+        let mut plain_flight = eastbound_flight(4.0);
+        let plain_before = plain_host.location;
+        update_coordinates_and_altitude(
+            STATE_ASCEND,
+            destination,
+            &params,
+            &mut plain_flight,
+            &mut plain_host,
+        );
+        assert!(
+            plain_host.location[0] > plain_before[0],
+            "without the latch the flight steps east"
+        );
+
+        let mut host = edge_host(trig, Vec::new(), Vec::new());
+        host.straight_ascend = true;
+        let mut flight = eastbound_flight(4.0);
+        let before = host.location;
+        update_coordinates_and_altitude(STATE_ASCEND, destination, &params, &mut flight, &mut host);
+        assert_eq!(
+            (host.location[0], host.location[1]),
+            (before[0], before[1]),
+            "the horizontal step is skipped"
+        );
+        assert!(host.straight_ascend, "the latch survives inside the ascend");
+    }
+
+    /// The same hook past the ascend: any state after 0/1 clears the latch and
+    /// the frame moves normally.
+    #[test]
+    fn a_state_past_the_ascend_clears_the_straight_ascend_latch() {
+        let trig = TrigTable::embedded();
+        let params = JumpjetFlightParams::default();
+        let destination = [4 * 256 + 128, 3 * 256 + 128, 500];
+        let mut host = edge_host(trig, Vec::new(), Vec::new());
+        host.straight_ascend = true;
+        let mut flight = eastbound_flight(4.0);
+        let before = host.location;
+        update_coordinates_and_altitude(STATE_HOLD, destination, &params, &mut flight, &mut host);
+        assert!(!host.straight_ascend, "the latch is one-shot");
+        assert!(
+            host.location[0] > before[0],
+            "past the ascend the step runs normally"
+        );
     }
 }

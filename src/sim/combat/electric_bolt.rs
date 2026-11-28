@@ -22,17 +22,29 @@ pub struct ElectricBoltBirth {
     /// replaces the palette colour of the first outer, second outer and
     /// centre strand. Always `None` when Ares does not play.
     pub colors: [Option<[u8; 3]>; 3],
+    /// Phobos `EBoltExt::Arcs` (`Ext/EBolt/Body.h:19`, constructor 8):
+    /// `EBolt_DrawArcs` stops the subdivision loop once `plotIndex` reaches
+    /// this count (`Ext/EBolt/Hooks.cpp:57..64`).
+    pub arcs: i32,
     /// The firer [`fired`] names for `EBolt::SetOwner @ 0x004C2BD0`
     /// (bolt `+0x20`/`+0x24`); the app keeps it only while the Unit holds
     /// no other bolt (`+0x6DC`).
     pub owner: Option<ElectricBoltOwner>,
+    /// `pBolt->Lifetime` (`EBoltExt::CreateEBolt`, `Ext/EBolt/Body.cpp:30`):
+    /// `1 << (Bolt.Duration - 1)`, 0x10000 for the stock 17. The tactical
+    /// pass shifts it right once per composite.
+    pub decay: i32,
 }
 
-/// A bolt's owner Unit and the weapon index its FLH is read for.
+/// A bolt's owner and the weapon index its FLH is read for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ElectricBoltOwner {
     pub unit: u64,
     pub weapon_index: i32,
+    /// A Unit owner also occupies `Unit+0x6DC`, so only its first live bolt
+    /// links; a non-Unit `Bolt.FollowFLH=yes` owner keeps every bolt in its
+    /// `TechnoExt::ElectricBolts` vector (`Ext/EBolt/Hooks.cpp:104-121`).
+    pub unit_slot: bool,
 }
 
 /// The source a bolt fired by `source`'s weapon `index` starts at: GetFLH
@@ -51,7 +63,7 @@ fn bolt_source(
         &super::fire_coord::FireSource::of_entity(source),
         object,
         index,
-        (source.seldom.weapon_burst.index() & 1) as u8,
+        source.seldom.weapon_burst.index() as u8,
         Default::default(),
     )
     .coord
@@ -111,19 +123,22 @@ pub(crate) fn fired(
         return;
     };
     let from = bolt_source(world, rules, source, object, index);
-    // `0x006FD5E2..0x006FD5FA` admits a live Unit (its `+0x6DC` slot is the
-    // app registry's); SetOwner (`0x004C2BF2`) then refuses one in Limbo.
-    // RESIDUAL: native has already stored the bolt in `+0x6DC` by then
-    // (`0x006FD600`), so a Limbo Unit's slot stays taken by an unowned bolt
-    // and its later bolts never follow; here the slot stays free. Trigger: a
-    // Limbo Unit firing an IsElectricBolt weapon; no retail case is known.
-    let owner = (source.category() == crate::map::entities::EntityCategory::Unit
-        && source.is_object_alive()
-        && !source.in_limbo())
-    .then_some(ElectricBoltOwner {
+    // Phobos `EBoltExt::_SetOwner` (`Ext/EBolt/Hooks.cpp:104-121`): the
+    // weapon's `Bolt.FollowFLH` overrides the stock Unit-only link, and the
+    // hook bypasses the native SetOwner checks at `0x4C2BF2` (InLimbo) and
+    // the Unit `+0x6DC` slot test at `0x006FD5F2`..`0x006FD600`, so every
+    // linked bolt follows and a Limbo Unit links as well.
+    let follow = selected
+        .weapon
+        .phobos_bolt_follow_flh
+        .unwrap_or(source.category() == crate::map::entities::EntityCategory::Unit);
+    let link = follow && source.is_object_alive();
+    let owner = link.then_some(ElectricBoltOwner {
         unit: source_id,
         weapon_index: index,
+        unit_slot: source.category() == crate::map::entities::EntityCategory::Unit,
     });
+    let visual_scatter = selected.weapon.phobos_visual_scatter();
     create(
         world,
         rules,
@@ -132,12 +147,16 @@ pub(crate) fn fired(
         selected.weapon,
         from,
         owner,
+        visual_scatter,
     );
 }
 
 /// TechnoClass::CreateElectricBolt6FD460 shared by FireAt's reselecting
 /// wrapper and direct SpawnShrapnel46A8CC/46ADB9 calls. The caller owns
 /// IsElectricBolt/IsLaser gating; this body uses its explicit weapon/source.
+/// `visual_scatter` is Phobos `VisualScatter=`: only `FireAt`'s own
+/// CreateEBolt call sets it, because the hook is gated on
+/// `FireAtTemp::FireBullet`, which a shrapnel or split-child draw lacks.
 pub(crate) fn create(
     world: &mut crate::sim::world::Simulation,
     rules: &crate::rules::ruleset::RuleSet,
@@ -146,19 +165,36 @@ pub(crate) fn create(
     weapon: &crate::rules::weapon_type::WeaponType,
     from: ProjectileCoord,
     owner: Option<ElectricBoltOwner>,
+    visual_scatter: bool,
 ) {
     let Some(source) = world.substrate.entities.get(source_id) else {
         return;
     };
+    let clamp_positive = crate::rules::phobos_beam_z_adjust::resolved_clamp(
+        weapon.phobos_ebolt_clamp_initial_depth_for_building,
+        rules
+            .phobos_beam_z_adjust
+            .ebolt_clamp_initial_depth_for_building,
+    );
     let z_adjust = super::fire_coord::effect_z_adjust(
         world,
         source,
         from,
         super::fire_coord::EffectDepthProjection::ClampedBuilding,
+        clamp_positive,
     );
-    let Some(to) = super::fire_coord::effect_target_coordinate(world, rules, target) else {
+    let Some(mut to) = super::fire_coord::effect_target_coordinate(world, rules, target) else {
         return;
     };
+    // Phobos `TechnoClass_DrawSth_DrawToInvisoFlakScatterLocation`
+    // (`0x6FD514`, `Ext/Techno/Hooks.WeaponEffects.cpp:220-248`). CreateEBolt
+    // hands the same coordinate to the bolt and to its spark system, so the
+    // replacement has to happen before `emit`.
+    if visual_scatter
+        && let Some(scattered) = super::fire_coord::visual_scatter_target(world, rules, target)
+    {
+        to = scattered;
+    }
     // Ares TechnoClass_FireEBolt (Ares.dll 10056350, hook 0x6FD469) creates
     // this body's bolt through CreateBolt, which registers the weapon's
     // WeaponTypeExt for the bolt hooks.
@@ -177,7 +213,6 @@ pub(crate) fn create(
 /// Phobos `BulletExt::SimulatedFiringElectricBolt`: explicit endpoints and no
 /// live source Techno, so an airburst/split child still draws after its firer
 /// expired.
-#[cfg(feature = "phobos")]
 pub(crate) fn create_effect(
     world: &mut crate::sim::world::Simulation,
     rules: &crate::rules::ruleset::RuleSet,
@@ -186,7 +221,10 @@ pub(crate) fn create_effect(
     weapon: &crate::rules::weapon_type::WeaponType,
     owner: Option<ElectricBoltOwner>,
 ) {
-    emit(world, rules, from, to, 0, weapon, owner, false);
+    // The birth (`emit`) adds `EBoltZAdjust` once; a simulated bolt starts
+    // from zero depth (`Ext/Bullet/Body.cpp:268-280`).
+    let z_adjust = 0;
+    emit(world, rules, from, to, z_adjust, weapon, owner, false);
 }
 
 /// `ares_ext` is whether the bolt carries the weapon's Ares WeaponTypeExt.
@@ -201,11 +239,24 @@ fn emit(
     ares_ext: bool,
 ) {
     let alternate_color = weapon.is_alternate_color;
+    // Phobos `EBolt_Draw_*` (`Ext/EBolt/Hooks.cpp:215`): the weapon's
+    // EBoltZAdjust else `[AudioVisual] EBoltZAdjust` adds to the bolt's
+    // zAdjust before the birth is retained.
+    let z_adjust = z_adjust.wrapping_add(crate::rules::phobos_beam_z_adjust::resolved(
+        weapon.phobos_ebolt_z_adjust,
+        rules.phobos_beam_z_adjust.ebolt,
+    ));
     let visuals = ares_ext.then_some(&weapon.ares_visuals);
     let colors = visuals.map_or([None; 3], |visuals| visuals.bolt_colors);
     // Init4C2AA3 draws from process Main, before constructing SparkSys. The
     // shared RNG owns every rejection retry. EBolt itself allocates no ID.
     let phase = world.main_rng.next_range_i32_inclusive(0, 256);
+    // `EBoltExt::CreateEBolt` (`Ext/EBolt/Body.cpp:30`): the constructor's
+    // Lifetime is the weapon's `Bolt.Duration` exponent, default 17.
+    let decay = 1_i32 << (weapon.phobos_bolt_duration.clamp(1, 31) - 1);
+    // `EBoltExt::CreateEBolt` copies the weapon's `Bolt.Arcs`
+    // (`Ext/EBolt/Body.cpp:29`); the constructor's 8 is the default.
+    let arcs = weapon.phobos_bolt_arcs;
     world
         .lifecycle_outputs
         .emit(crate::sim::world::LifecycleOutput::ElectricBoltCreated(
@@ -217,7 +268,9 @@ fn emit(
                 phase,
                 alternate_color,
                 colors,
+                arcs,
                 owner,
+                decay,
             },
         ));
     // Init4C2B30 supplies the copied TARGET, no owner/attachment and static

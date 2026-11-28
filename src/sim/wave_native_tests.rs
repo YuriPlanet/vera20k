@@ -163,7 +163,7 @@ fn retail_tele_and_mtnk_read_the_native_magnetic_and_lift_inputs() {
                 ]
             );
             let art = rules.art().get(&object.image).expect("firer art");
-            assert_eq!(art.turret_offset, integer(&native["turret_offset"]));
+            assert_eq!(art.turret_offset[0], integer(&native["turret_offset"]));
         }
         // Selected native D70..D94 block. Padding has no gameplay authority.
         let block = bytes::<40>(&native["jumpjet_block_hex"]);
@@ -343,10 +343,16 @@ fn sonic_damage_request_uses_the_native_b4_bridge_plane() {
         let (request, _) = store
             .advance_one(7, context(&row["input"]), Some(&terrain))
             .unwrap();
+        let request = request.unwrap();
         assert_eq!(
-            request.unwrap().wave_z,
+            request.wave_z,
             coord(&row["after"]["source"]).z,
             "native bridge-plane input comes from B4, independently of C0+50"
+        );
+        assert_eq!(
+            request.target,
+            Some(TargetKind::Entity(2)),
+            "the request carries Wave+0xAC for the Phobos target skip"
         );
     }
 }

@@ -340,6 +340,7 @@ pub(super) fn queue_area_guard_orders(
             sim,
             rules,
             entity_id,
+            None,
             voices_enabled,
         ) {
             sounds.push(event);
@@ -401,11 +402,17 @@ pub(super) fn queue_deploy_undeploy_for_selected(
         return;
     };
     let local_owner = sim.interner().get(&owner);
-    let commands = deploy_key_commands(
+    // Phobos `[Phobos] PriorityDeployFiltering=`: the client switch for the
+    // `LowDeployPriority` hook `0x730D0F`.
+    let priority_deploy_filtering = match_state.match_presentation.priority_deploy_filtering
+        && crate::app::state::active_rules(frontend, match_state)
+            .is_some_and(|rules| rules.phobos());
+    let commands = deploy_key_commands_filtered(
         sim,
         crate::app::state::active_rules(frontend, match_state),
         &selected_ids,
         local_owner,
+        priority_deploy_filtering,
     );
     // Selection730AF0 sends DEPLOY9 through Techno6FFE00. During
     // Planning Mode that reaches639FD0 and the NoDeploy refusal at638238,
@@ -455,6 +462,18 @@ pub(super) fn queue_deploy_undeploy_for_selected(
     }
 }
 
+/// The deploy key over the selection without the Phobos priority filter
+/// ([`deploy_key_commands_filtered`]); test entry point only.
+#[cfg(test)]
+pub(super) fn deploy_key_commands(
+    sim: &crate::sim::world::Simulation,
+    rules: Option<&crate::rules::ruleset::RuleSet>,
+    selection: &[u64],
+    local_owner: Option<crate::sim::intern::InternedId>,
+) -> Vec<Command> {
+    deploy_key_commands_filtered(sim, rules, selection, local_owner, false)
+}
+
 /// `Selection::IssueDeployCommand @ 0x00730AF0`, over the local player's
 /// selection in order.
 /// - A first selected building with occupants (`vt+0x408`, `0x004581F0`)
@@ -472,11 +491,17 @@ pub(super) fn queue_deploy_undeploy_for_selected(
 ///
 /// Its closing sound reads `Rules+0x72C`, which no INI key sets: the
 /// constructor's -1 (`0x0066606A`) plays nothing.
-pub(super) fn deploy_key_commands(
+///
+/// Phobos `[Phobos] PriorityDeployFiltering=yes` adds the
+/// `LowDeployPriority` filter: a low-priority object is dropped from a
+/// multi-object deploy when the selection also holds one that is not low
+/// priority (`Ext/Techno/Hooks.Misc.cpp:931-956`, hook `0x730D0F`).
+fn deploy_key_commands_filtered(
     sim: &crate::sim::world::Simulation,
     rules: Option<&crate::rules::ruleset::RuleSet>,
     selection: &[u64],
     local_owner: Option<crate::sim::intern::InternedId>,
+    priority_deploy_filtering: bool,
 ) -> Vec<Command> {
     let control = sim.control_projection();
     let selected = selection.iter().copied().filter(|id| {
@@ -512,6 +537,13 @@ pub(super) fn deploy_key_commands(
         }
     }
     let mixed = found_deployed && found_undeployed;
+    // Phobos `LowDeployPriority`: only a multi-object selection is filtered,
+    // and only when some selected object is not low priority.
+    let mixed_priority = priority_deploy_filtering
+        && selection.len() > 1
+        && selection
+            .iter()
+            .any(|&id| low_deploy_priority(sim, rules, id) == Some(false));
     selected
         .filter(|&id| {
             rules.is_none_or(|rules| {
@@ -523,9 +555,23 @@ pub(super) fn deploy_key_commands(
                 .get(id)
                 .is_some_and(|entity| !entity.berserk.is_active())
                 && !(mixed && deployed(id) == Some(true))
+                && !(mixed_priority && low_deploy_priority(sim, rules, id) == Some(true))
         })
         .filter_map(|id| deploy_key_command_with(sim, &control, rules, id, local_owner))
         .collect()
+}
+
+/// Phobos `LowDeployPriority=` (`Ext/TechnoType/Body.cpp:767`): whether the
+/// type asks the deploy key to skip it among higher-priority objects. Unknown
+/// types do not participate.
+fn low_deploy_priority(
+    sim: &crate::sim::world::Simulation,
+    rules: Option<&crate::rules::ruleset::RuleSet>,
+    id: u64,
+) -> Option<bool> {
+    let entity = sim.entities().get(id)?;
+    let object = sim.interner().object_type(entity.type_ref(), rules?)?;
+    Some(object.phobos_low_deploy_priority)
 }
 
 /// The deploy walk's deployer state: a `Deployer=` infantryman

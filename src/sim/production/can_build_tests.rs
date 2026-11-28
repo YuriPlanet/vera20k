@@ -762,3 +762,361 @@ fn retail_room_bans_refuse_the_spy_and_stolen_tech_units() {
         CanBuild::No
     );
 }
+
+/// Rules for the Phobos `BuildLimitGroup.*` gate. `UPG` is the asked
+/// BuildingType (an upgrade when `powers_up` is set); `Q` a plain
+/// VehicleType; `GT` a group member and `EX` an ExtraLimit type. `q_keys`
+/// (newline-terminated) is appended to `[UPG]`.
+fn build_limit_group_rules(q_keys: &str, powers_up: bool) -> RuleSet {
+    let mut ini = String::from(
+        "[Countries]\n0=C0\n[VehicleTypes]\n0=Q\n1=GT\n2=EX\n\
+         [BuildingTypes]\n0=UPG\n1=HOST\n\
+         [UPG]\nStrength=100\nTechLevel=1\n",
+    );
+    if powers_up {
+        ini.push_str("PowersUp.Buildings=HOST\n");
+    }
+    ini.push_str(q_keys);
+    ini.push_str(
+        "[HOST]\nStrength=100\nTechLevel=1\n\
+         [GT]\nStrength=100\nTechLevel=1\n\
+         [EX]\nStrength=100\nTechLevel=1\n",
+    );
+    RuleSet::from_ini(&IniFile::from_str(&ini)).unwrap()
+}
+
+/// Boundary 1: reaching the group cap refuses one more through both native
+/// owners, and only a `PowersUp.Buildings` item takes the CanBuild gate
+/// (`Hooks.Upgrade.cpp:104-108`).
+#[test]
+fn build_limit_group_reached_refuses_one_more() {
+    let rules = build_limit_group_rules("BuildLimitGroup.Types=GT\nBuildLimitGroup.Nums=2\n", true);
+    let upgrade = rules
+        .object_in_category(ObjectCategory::Building, "UPG")
+        .unwrap();
+    // owned(GT)=1 -> sum 1 < 2 -> still buildable.
+    let (sim, owner) = sim_for(&json!({"owned": [["unit", "GT", 1]]}), &rules);
+    assert_eq!(
+        can_build(&sim, &rules, owner, upgrade, true, true),
+        CanBuild::Yes
+    );
+    assert!(!check_build_limit(&sim, &rules, owner, upgrade));
+    // owned(GT)=2 -> sum 2 >= 2 + 1 - 1 -> TemporarilyUnbuildable.
+    let (sim, owner) = sim_for(&json!({"owned": [["unit", "GT", 2]]}), &rules);
+    assert_eq!(
+        can_build(&sim, &rules, owner, upgrade, true, true),
+        CanBuild::AtLimit
+    );
+    assert!(check_build_limit(&sim, &rules, owner, upgrade));
+
+    // The same keys without `PowersUp.Buildings`: the grey-out still caps the
+    // type, `CanBuild` does not (the native hook's own guard).
+    let plain =
+        build_limit_group_rules("BuildLimitGroup.Types=GT\nBuildLimitGroup.Nums=2\n", false);
+    let plain_upgrade = plain
+        .object_in_category(ObjectCategory::Building, "UPG")
+        .unwrap();
+    let (sim, owner) = sim_for(&json!({"owned": [["unit", "GT", 2]]}), &plain);
+    assert_eq!(
+        can_build(&sim, &plain, owner, plain_upgrade, true, true),
+        CanBuild::Yes
+    );
+    assert!(check_build_limit(&sim, &plain, owner, plain_upgrade));
+}
+
+/// Boundary 2: `ExtraLimit` appends a quota to every limit (MaxNum caps it).
+#[test]
+fn build_limit_group_extra_limit_adds_quota_and_maxnum_caps_it() {
+    let base = "BuildLimitGroup.Types=GT\nBuildLimitGroup.Nums=2\n\
+                BuildLimitGroup.ExtraLimit.Types=EX\nBuildLimitGroup.ExtraLimit.Nums=1\n";
+    let row = json!({"owned": [["unit", "GT", 3], ["unit", "EX", 2]]});
+    // Owning 2 EX adds 2*1 -> limit 4, so owned(GT)=3 stays under the cap.
+    let rules = build_limit_group_rules(base, true);
+    let upgrade = rules
+        .object_in_category(ObjectCategory::Building, "UPG")
+        .unwrap();
+    let (sim, owner) = sim_for(&row, &rules);
+    assert_eq!(
+        can_build(&sim, &rules, owner, upgrade, true, true),
+        CanBuild::Yes,
+        "ExtraLimit appends owned-EX quota so 3 group units are allowed"
+    );
+    assert!(!check_build_limit(&sim, &rules, owner, upgrade));
+
+    // MaxNum=3 caps the appended limit to 3, so the same 3 reach it.
+    let capped = build_limit_group_rules(
+        &format!("{base}BuildLimitGroup.ExtraLimit.MaxNum=3\n"),
+        true,
+    );
+    let upgrade = capped
+        .object_in_category(ObjectCategory::Building, "UPG")
+        .unwrap();
+    let (sim, owner) = sim_for(&row, &capped);
+    assert_eq!(
+        can_build(&sim, &capped, owner, upgrade, true, true),
+        CanBuild::AtLimit,
+        "MaxNum=3 caps the appended quota so 3 group units reach the limit"
+    );
+    assert!(check_build_limit(&sim, &capped, owner, upgrade));
+}
+
+/// Boundary 3: a queue-only reach greys the cameo regardless of
+/// `NotBuildableIfQueueMatch` (`ReachedBuildLimit` returns true on the
+/// queue-inclusive reach; the flag only picks `RemoveProduction`'s count),
+/// while `CanBuild` releases it in both settings (`UpgradeCheck`'s own queue
+/// pass never returns unbuildable for a queued reach).
+#[test]
+fn build_limit_group_queue_only_reach_greys_but_stays_buildable() {
+    let base = "BuildLimitGroup.Types=GT\nBuildLimitGroup.Nums=2\n";
+    // owned(GT)=1 (<2) plus one queued GT -> reached only by the queue.
+    let row = json!({
+        "owned": [["unit", "GT", 1]],
+        "factories": [{"kind": "vehicle", "object": "Q", "queued": ["GT"]}]
+    });
+    for extra in ["", "BuildLimitGroup.NotBuildableIfQueueMatch=yes\n"] {
+        let rules = build_limit_group_rules(&format!("{base}{extra}"), true);
+        let upgrade = rules
+            .object_in_category(ObjectCategory::Building, "UPG")
+            .unwrap();
+        let (sim, owner) = sim_for(&row, &rules);
+        assert_eq!(
+            can_build(&sim, &rules, owner, upgrade, true, true),
+            CanBuild::Yes,
+            "a queue-only reach stays buildable"
+        );
+        assert!(
+            check_build_limit(&sim, &rules, owner, upgrade),
+            "the grey-out counts the queued copy"
+        );
+    }
+}
+
+/// Boundary 4: the paired `Nums` branch (`UpgradeCheck:892-947`) ANDs the
+/// non-item slots on the first pass, then the second pass releases when any
+/// slot is below its threshold.
+#[test]
+fn build_limit_group_paired_nums_ands_and_releases() {
+    let rules = build_limit_group_rules(
+        "BuildLimitGroup.Types=GT,EX\nBuildLimitGroup.Nums=1,1\n",
+        true,
+    );
+    let upgrade = rules
+        .object_in_category(ObjectCategory::Building, "UPG")
+        .unwrap();
+    // Both slots at 1: the first pass's non-item slots reach, so unbuildable.
+    let (sim, owner) = sim_for(
+        &json!({"owned": [["unit", "GT", 1], ["unit", "EX", 1]]}),
+        &rules,
+    );
+    assert_eq!(
+        can_build(&sim, &rules, owner, upgrade, true, true),
+        CanBuild::AtLimit
+    );
+    // EX below its slot: the first pass fails; the second pass finds the
+    // order's second threshold unmet and releases.
+    let (sim, owner) = sim_for(&json!({"owned": [["unit", "GT", 1]]}), &rules);
+    assert_eq!(
+        can_build(&sim, &rules, owner, upgrade, true, true),
+        CanBuild::Yes
+    );
+    // The grey-out's own multi-limit formula is `owned * (Factor - limit)`
+    // (`ReachedBuildLimit:1142`); with Factor == limit every slot contributes
+    // 0 and the group reads reached even at zero owned. Kept as the native
+    // defect rather than the CanBuild answer.
+    assert!(check_build_limit(&sim, &rules, owner, upgrade));
+}
+
+/// Phobos `BuildingTypeExt::CanUpgrade`
+/// (`Ext/BuildingType/Hooks.Upgrade.cpp:21-25`) walks every
+/// `PowersUp.Buildings` entry; Ares `HouseOwnsSpecific100082B0` asks it per
+/// building prerequisite. The legacy `PowersUpBuilding` string is not the
+/// whole set: here it names `HOST_A`, which the list puts second.
+#[test]
+fn powers_up_buildings_prerequisite_accepts_any_declared_host() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[BuildingTypes]\n0=HOST_A\n1=HOST_B\n2=UPGRADE\n\
+         [HOST_A]\nStrength=100\nUpgrades=3\n\
+         [HOST_B]\nStrength=100\nUpgrades=3\n\
+         [UPGRADE]\nStrength=100\n\
+         PowersUpBuilding=HOST_A\nPowersUp.Buildings=HOST_B,HOST_A\n",
+    ))
+    .unwrap();
+    let index = rules.ares_find_building("UPGRADE").unwrap();
+    for (host, expected) in [
+        (None, false),
+        (Some("HOST_A"), true),
+        (Some("HOST_B"), true),
+    ] {
+        let (mut sim, owner) = sim_for(&json!({}), &rules);
+        if let Some(host) = host {
+            crate::sim::production::tests::spawn_structure(&mut sim, &rules, 1, "H0", host, 10, 10);
+            let upgrade = sim.interner.get("UPGRADE").unwrap();
+            sim.substrate
+                .entities
+                .get_mut(1)
+                .unwrap()
+                .set_building_upgrades_for_test(1, [None, None, Some(upgrade)]);
+        }
+        assert_eq!(
+            specific_prerequisite_on_map(&sim, &rules, sim.houses.get(&owner).unwrap(), index),
+            expected,
+            "host {host:?}"
+        );
+    }
+}
+
+/// Phobos `BuildingTypeExt::GetUpgradesAmount`
+/// (`Ext/BuildingType/Body.cpp:160-161`) sums the installed slots over every
+/// host, so Ares' `CountOwned10020AF0` build-limit census sees an upgrade
+/// installed on the second host too.
+#[test]
+fn powers_up_buildings_build_limit_counts_every_host() {
+    // `PowersUp.Buildings` is an Ares key and the limit census is Ares'
+    // `CountOwned10020AF0`: the fixture reads its Rules the Ares way.
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[BuildingTypes]\n0=HOST_A\n1=HOST_B\n2=UPGRADE\n\
+         [HOST_A]\nStrength=100\nUpgrades=3\n\
+         [HOST_B]\nStrength=100\nUpgrades=3\n\
+         [UPGRADE]\nStrength=100\nTechLevel=1\nBuildLimit=2\n\
+         PowersUpBuilding=HOST_A\nPowersUp.Buildings=HOST_B,HOST_A\n",
+    ))
+    .unwrap();
+    let (mut sim, owner) = sim_for(&json!({}), &rules);
+    let upgrade = sim.interner.get("UPGRADE").unwrap();
+    for (id, host, x) in [(1, "HOST_A", 10), (2, "HOST_B", 14)] {
+        crate::sim::production::tests::spawn_structure(&mut sim, &rules, id, "H0", host, x, 10);
+        sim.substrate
+            .entities
+            .get_mut(id)
+            .unwrap()
+            .set_building_upgrades_for_test(1, [None, None, Some(upgrade)]);
+    }
+    let upgrade_type = rules.object("UPGRADE").unwrap();
+    assert_eq!(
+        ares_owned_build_limit_count(&sim, &rules, sim.houses.get(&owner).unwrap(), upgrade_type),
+        2,
+        "one installed slot on each declared host"
+    );
+    assert_eq!(
+        can_build(&sim, &rules, owner, upgrade_type, true, true),
+        CanBuild::AtLimit,
+        "BuildLimit=2 is reached only when both hosts count"
+    );
+}
+
+fn queued_of(sim: &Simulation, owner: InternedId, category: ProductionCategory, name: &str) -> i32 {
+    let type_id = sim.interner.get(name).unwrap();
+    sim.production
+        .factories()
+        .count_total(owner, category, type_id)
+}
+
+/// `RemoveProduction @ Ext/House/Body.cpp:768-784`: a reached group drops the
+/// excess copies of the **queried** type from its factory and leaves the held
+/// product. Outside arm (the queried type is not a member) removes every copy.
+#[test]
+fn build_limit_group_reach_prunes_the_excess_queue() {
+    let rules = build_limit_group_rules("BuildLimitGroup.Types=GT\nBuildLimitGroup.Nums=2\n", true);
+    let row = json!({
+        "owned": [["unit", "GT", 2]],
+        "factories": [{"kind": "building", "object": "HOST", "queued": ["UPG", "UPG"]}]
+    });
+    let (mut sim, owner) = sim_for(&row, &rules);
+    let upgrade = rules.object("UPG").unwrap().clone();
+    assert!(
+        check_build_limit(&sim, &rules, owner, &upgrade),
+        "owned GT=2 reaches Nums=2"
+    );
+    assert_eq!(
+        queued_of(&sim, owner, ProductionCategory::Building, "UPG"),
+        2
+    );
+    phobos_trim_build_limit_group_queue(&mut sim, &rules, owner, &upgrade);
+    assert_eq!(
+        queued_of(&sim, owner, ProductionCategory::Building, "UPG"),
+        0,
+        "the outside arm passes -1, so every queued copy leaves"
+    );
+    assert_eq!(
+        queued_of(&sim, owner, ProductionCategory::Building, "HOST"),
+        1,
+        "the held product stays"
+    );
+}
+
+/// The tail prune of the multi-limit arm (`Body.cpp:1179`) only fires when
+/// `realReached || NotBuildableIfQueueMatch`; the flag is the difference.
+#[test]
+fn build_limit_group_tail_prune_follows_not_buildable_if_queue_match() {
+    let base = "BuildLimitGroup.Types=GT,EX\nBuildLimitGroup.Nums=2,1\n";
+    let row = json!({
+        "owned": [["unit", "GT", 1]],
+        "factories": [
+            {"kind": "vehicle", "object": "Q", "queued": ["GT"]},
+            {"kind": "building", "object": "HOST", "queued": ["UPG"]}
+        ]
+    });
+    for (extra, expected) in [
+        ("", 1),                                               // realReached=false: keep it
+        ("BuildLimitGroup.NotBuildableIfQueueMatch=yes\n", 0), // prune all
+    ] {
+        let rules = build_limit_group_rules(&format!("{base}{extra}"), true);
+        let upgrade = rules.object("UPG").unwrap().clone();
+        let (mut sim, owner) = sim_for(&row, &rules);
+        assert!(
+            check_build_limit(&sim, &rules, owner, &upgrade),
+            "the grey-out still reaches without the flag"
+        );
+        phobos_trim_build_limit_group_queue(&mut sim, &rules, owner, &upgrade);
+        assert_eq!(
+            queued_of(&sim, owner, ProductionCategory::Building, "UPG"),
+            expected,
+            "{extra:?}"
+        );
+    }
+}
+
+/// `BuildLimitGroupUpgradeCheck` trims too (`Body.cpp:896,943,962,995,1008`):
+/// a `PowersUp.Buildings` item outside the reached group drops every queued
+/// copy when `num >= 1 - factor`, and a group that never reaches leaves the
+/// queue alone.
+#[test]
+fn build_limit_group_upgrade_check_prunes_the_queue() {
+    let row = json!({
+        "owned": [["unit", "GT", 3]],
+        "factories": [{"kind": "building", "object": "HOST", "queued": ["UPG", "UPG"]}]
+    });
+    let reached =
+        build_limit_group_rules("BuildLimitGroup.Types=GT\nBuildLimitGroup.Nums=2\n", true);
+    let upgrade = reached.object("UPG").unwrap().clone();
+    let (sim, owner) = sim_for(&row, &reached);
+    let gate = build_limit_group_upgrade_gate(&sim, &reached, owner, &upgrade, true);
+    assert!(gate.reached, "owned GT=3 reaches Nums=2");
+    assert_eq!(gate.removals, vec![-1], "the outside arm passes -1");
+
+    let (mut sim, owner) = sim_for(&row, &reached);
+    phobos_trim_build_limit_group_queue(&mut sim, &reached, owner, &upgrade);
+    assert_eq!(
+        queued_of(&sim, owner, ProductionCategory::Building, "UPG"),
+        0,
+        "every queued copy leaves"
+    );
+
+    // Owned GT=1 is below Nums=2: neither gate reaches, so nothing is pruned.
+    let below = build_limit_group_rules("BuildLimitGroup.Types=GT\nBuildLimitGroup.Nums=2\n", true);
+    let upgrade = below.object("UPG").unwrap().clone();
+    let (mut sim, owner) = sim_for(
+        &json!({
+            "owned": [["unit", "GT", 1]],
+            "factories": [{"kind": "building", "object": "HOST", "queued": ["UPG"]}]
+        }),
+        &below,
+    );
+    phobos_trim_build_limit_group_queue(&mut sim, &below, owner, &upgrade);
+    assert_eq!(
+        queued_of(&sim, owner, ProductionCategory::Building, "UPG"),
+        1,
+        "an unreached group keeps the queue"
+    );
+}

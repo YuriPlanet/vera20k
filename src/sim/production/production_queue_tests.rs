@@ -1828,6 +1828,51 @@ fn build_time_inputs_read_owner_power_and_matching_factories() {
     assert!(!soviet_infantry.wall);
 }
 
+/// Phobos `BuildingTypeExt::ExcludeFromMultipleFactoryBonus`
+/// (`Ext/BuildingType/Body.cpp:198`) through the hooked
+/// `HouseClass::GetFactoryCount @ 0x00500910` (`Ext/House/Hooks.cpp:543-575`,
+/// `GetFactoryCountWithoutNonMFB` at `Ext/House/Body.cpp:505-536`): the
+/// excluded barracks still joins the house counter, but not the count
+/// production speed reads, so `Time_To_Build` sees one factory, not two.
+#[test]
+fn excluded_factory_stays_out_of_the_multiple_factory_bonus() {
+    use crate::sim::house_tracking::FactorySlot;
+
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[Countries]\n0=Americans\n[InfantryTypes]\n0=E1\n\
+         [BuildingTypes]\n0=GAPILE\n1=GAPILE2\n\
+         [E1]\nCost=1000\nStrength=100\nArmor=flak\nSpeed=4\nSight=5\n\
+         TechLevel=1\nOwner=Americans\n\
+         [GAPILE]\nPower=-20\nOwner=Americans\nFactory=InfantryType\n\
+         [GAPILE2]\nPower=-20\nOwner=Americans\nFactory=InfantryType\n\
+         ExcludeFromMultipleFactoryBonus=yes\n",
+    ))
+    .expect("exclusion rules");
+    let mut sim = Simulation::new();
+    sim.intern_rule_type_ids(&rules);
+    spawn_structure(&mut sim, &rules, 1, "Americans", "GAPILE", 10, 10);
+    spawn_structure(&mut sim, &rules, 2, "Americans", "GAPILE2", 12, 10);
+
+    let americans = sim.interner.intern("Americans");
+    let tracking = sim.houses.get(&americans).unwrap().tracking();
+    assert_eq!(
+        tracking.factories()[FactorySlot::Infantry as usize],
+        2,
+        "the excluded barracks still joins the house counter"
+    );
+    assert_eq!(
+        tracking.factory_count(FactorySlot::Infantry),
+        1,
+        "0x00500910 answers the count without the excluded factory"
+    );
+    let e1 = rules.object("E1").expect("E1");
+    assert_eq!(
+        super::factory::time_to_build_inputs(&sim, &rules, americans, e1).factory_count,
+        1,
+        "production speed reads one factory"
+    );
+}
+
 /// A `Wall=yes` building takes `WallBuildSpeedCoefficient=` (Time_To_Build's
 /// branch on BuildingType `+0x1571`, `0x006F4929..0x006F493D`); every building
 /// factory counts.

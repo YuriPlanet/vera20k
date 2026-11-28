@@ -96,7 +96,11 @@ fn places_for(
 pub(super) fn build(gui: &mut Gui, bar: NodeId) -> Result<[NodeId; 12], Refused> {
     let mut nodes = [bar; 12];
     for (command, node) in nodes.iter_mut().enumerate() {
-        let id = if command == 11 { 0xF0 } else { 0xD6 + command as u16 };
+        let id = if command == 11 {
+            0xF0
+        } else {
+            0xD6 + command as u16
+        };
         *node = drawn_button(gui, bar, id, if command < 3 { BOTH } else { LEFT })?;
     }
     Ok(nodes)
@@ -251,7 +255,11 @@ mod tests {
         // Team01,Team02,TypeSelect,Deploy,Guard,PlanningMode.
         let slots = vec![Some(0), Some(1), Some(3), Some(4), Some(6), Some(9)];
         let native = sidebar::SidebarFrame::native(800, 600);
-        let tips = tooltips(&places_for(Some(&(layout(true), slots.clone())), false, native));
+        let tips = tooltips(&places_for(
+            Some(&(layout(true), slots.clone())),
+            false,
+            native,
+        ));
         let labels: Vec<_> = tips.iter().map(|tip| (tip.0, tip.2)).collect();
         assert_eq!(
             labels,
@@ -281,23 +289,43 @@ mod tests {
         let native = sidebar::SidebarFrame::native(800, 600);
         let (mut gui, nodes) = test_layer();
         let bar = nodes.command_bar;
-        sync(&mut gui, &bar, &places_for(Some(&(layout(true), slots.clone())), false, native));
+        sync(
+            &mut gui,
+            &bar,
+            &places_for(Some(&(layout(true), slots.clone())), false, native),
+        );
         assert_eq!(rect_of(&gui, bar[0]), Some(Rect::new(32, 568, 52, 32)));
-        assert!(!enabled(&gui, bar[2]), "TypeSelect has no slot of its own here");
+        assert!(
+            !enabled(&gui, bar[2]),
+            "TypeSelect has no slot of its own here"
+        );
         // The press is silent and shows pressed; the release fires.
         assert!(edge(&mut gui, 40, 570, GuiButton::Left, true).1.is_empty());
         assert_eq!(gui.pressed_in(nodes.layer), Some(bar[0]));
         assert!(gui.shows_pressed_in(nodes.layer, bar[0]));
-        assert_eq!(edge(&mut gui, 40, 570, GuiButton::Left, false).1, [(0xD6, false)]);
+        assert_eq!(
+            edge(&mut gui, 40, 570, GuiButton::Left, false).1,
+            [(0xD6, false)]
+        );
         assert!(!gui.shows_pressed_in(nodes.layer, bar[0]));
         edge(&mut gui, 8, 570, GuiButton::Left, true);
-        assert_eq!(edge(&mut gui, 8, 570, GuiButton::Left, false).1, [(0xF0, false)]);
-        sync(&mut gui, &bar, &places_for(Some(&(layout(false), slots)), true, native));
+        assert_eq!(
+            edge(&mut gui, 8, 570, GuiButton::Left, false).1,
+            [(0xF0, false)]
+        );
+        sync(
+            &mut gui,
+            &bar,
+            &places_for(Some(&(layout(false), slots)), true, native),
+        );
         assert!(bar[..11].iter().all(|node| !enabled(&gui, *node)));
         assert_eq!(rect_of(&gui, bar[11]), Some(Rect::new(576, 568, 28, 32)));
         assert!(edge(&mut gui, 580, 570, GuiButton::Left, true).1.is_empty());
         assert_eq!(gui.pressed_in(nodes.layer), Some(bar[11]));
-        assert_eq!(edge(&mut gui, 580, 570, GuiButton::Left, false).1, [(0xF1, false)]);
+        assert_eq!(
+            edge(&mut gui, 580, 570, GuiButton::Left, false).1,
+            [(0xF1, false)]
+        );
         assert_eq!(gui.pressed_in(nodes.layer), None);
     }
 
@@ -307,7 +335,11 @@ mod tests {
         let native = sidebar::SidebarFrame::native(800, 600);
         let (mut gui, nodes) = test_layer();
         let bar = nodes.command_bar;
-        sync(&mut gui, &bar, &places_for(Some(&(layout(true), slots)), false, native));
+        sync(
+            &mut gui,
+            &bar,
+            &places_for(Some(&(layout(true), slots)), false, native),
+        );
         let team = rect_of(&gui, bar[0]).unwrap();
         let planning = rect_of(&gui, bar[9]).unwrap();
         // Team01's 0x55 fires on a right release with the right marker.
@@ -317,12 +349,31 @@ mod tests {
             [(0xD6, true)]
         );
         // PlanningMode's mask 5 takes no right button at all.
-        edge(&mut gui, planning.x + 1, planning.y + 1, GuiButton::Right, true);
+        edge(
+            &mut gui,
+            planning.x + 1,
+            planning.y + 1,
+            GuiButton::Right,
+            true,
+        );
         assert_eq!(gui.pressed_in(nodes.layer), None);
-        edge(&mut gui, planning.x + 1, planning.y + 1, GuiButton::Left, true);
+        edge(
+            &mut gui,
+            planning.x + 1,
+            planning.y + 1,
+            GuiButton::Left,
+            true,
+        );
         assert_eq!(gui.pressed_in(nodes.layer), Some(bar[9]));
         assert_eq!(
-            edge(&mut gui, planning.x + 1, planning.y + 1, GuiButton::Left, false).1,
+            edge(
+                &mut gui,
+                planning.x + 1,
+                planning.y + 1,
+                GuiButton::Left,
+                false
+            )
+            .1,
             [(0xDF, false)]
         );
     }

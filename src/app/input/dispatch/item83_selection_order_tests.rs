@@ -527,7 +527,7 @@ fn undeployable_building_band_commits_and_tracks_bunker_occupancy() {
         .unwrap();
     assert!(can_auto_deploy_here(&sim, tank, rules));
     assert_eq!(
-        sim.unit_building_click_action(tank, pill, rules),
+        sim.unit_building_click_action(tank, pill, false, rules),
         Some(crate::sim::world::EntryClickAction::Enter)
     );
     // Encounter order is supplied here; helpers' companion regression

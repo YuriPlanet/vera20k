@@ -200,8 +200,9 @@ impl Simulation {
             frame_profile: Default::default(),
             object_placement_scope_depth: Forked::new(0),
             buildup_bypass: Forked::new(false),
-            #[cfg(feature = "phobos")]
             reflected_warhead: Forked::new(None),
+            phobos_falling_down: Forked::new(Vec::new()),
+            auto_death_objects: Forked::new(Vec::new()),
             ares_made_up_rules: Forked::new(None),
             scenario_rng: Forked::new(SimRng::new(seed)),
             main_rng: Forked::new(SimRng::new(seed)),
@@ -238,8 +239,8 @@ impl Simulation {
             combat_light_requests: Forked::new(FrameChannel::default()),
             screen_shake_updates: Forked::new(FrameChannel::default()),
             projectiles: Forked::new(crate::sim::projectile::ProjectileStore::new()),
-            #[cfg(feature = "phobos")]
             warhead_anim_runtime: Default::default(),
+            phobos_all_map_detonation_active: Forked::new(None),
             waves: Forked::new(crate::sim::wave::WaveStore::new()),
             active_wave_links: Forked::new(BTreeMap::new()),
             object_custom_sounds: Forked::new(BTreeMap::new()),
@@ -252,6 +253,7 @@ impl Simulation {
             zone_grid: Forked::new(None),
             path_grid: Forked::new(None),
             structure_navigation_cells: Forked::new(BTreeSet::new()),
+            destroyable_obstacle_cells: Forked::new(BTreeSet::new()),
             resolved_terrain: Forked::new(None),
             shared_cell_dummy: Forked::new(SharedCellDummy::fresh()),
             native_local_cell_cursor: Forked::new(None),
@@ -287,6 +289,8 @@ impl Simulation {
             ares_tunnels: Default::default(),
             ion_blasts: Forked::new(Vec::new()),
             alpha_shapes: Default::default(),
+            particle_light_flash: Forked::new(false),
+            firing_anim_update_count: Forked::new(0),
             terrain_speed_config: Forked::new(terrain_speed::TerrainSpeedConfig::default()),
             input_delay_ticks: Forked::new(u64::from(
                 crate::util::config::default_input_delay_ticks(),
@@ -304,7 +308,9 @@ impl Simulation {
             frame_continuation: Forked::new(None),
             planning: Forked::new(planning::PlanningState::default()),
             replaying_recorded_commands: Forked::new(false),
+            super_weapon_chain_depth: Forked::new(Default::default()),
             trigger_runtime: Forked::new(TriggerRuntime::default()),
+            transport_reloaders: Forked::new(Default::default()),
             ext_modules: Default::default(),
         };
         debug_assert_eq!(out.scenario_rng.state(), out.main_rng.state());

@@ -3,6 +3,7 @@
 //! in production.
 
 use super::{ResolvedTerrainGrid, overlay_reduced_zone_type, recalc_zone_type, zone_class};
+use std::collections::BTreeSet;
 use crate::rules::overlay_types::{
     OverlayTypeFlags, retained_overlay_land, uses_early_recalc_land_branch,
 };
@@ -143,6 +144,46 @@ impl ResolvedTerrainGrid {
         );
         let changed = cell.zone_type != zone_type;
         cell.zone_type = zone_type;
+        changed
+    }
+
+    /// Reconcile the Phobos `IsDestroyableObstacle` cell class: while a marked
+    /// such building stands, its foundation cells answer class Destroyable
+    /// (`2`), the branch the native hook `0x483D8E` jumps to (`0x483CD4`,
+    /// `Ext/Building/Hooks.cpp:568`). On limbo the same cells return to
+    /// `RecalcZoneType`'s terrain answer (`0x445D87`). Answers whether any
+    /// class changed so the caller rebuilds zones.
+    pub(crate) fn reconcile_destroyable_obstacle_cells(
+        &mut self,
+        previous: &BTreeSet<(u16, u16)>,
+        current: &BTreeSet<(u16, u16)>,
+    ) -> bool {
+        let mut changed = false;
+        for &(x, y) in previous.difference(current) {
+            let Some(cell) = self.cell_mut(x, y) else {
+                continue;
+            };
+            let zone_type = recalc_zone_type(
+                cell.outside_playfield,
+                cell.overlay_zone_type,
+                cell.land_type,
+                cell.speed_costs.wheel,
+                cell.terrain_object_occupation,
+            );
+            if cell.zone_type != zone_type {
+                cell.zone_type = zone_type;
+                changed = true;
+            }
+        }
+        for &(x, y) in current {
+            let Some(cell) = self.cell_mut(x, y) else {
+                continue;
+            };
+            if cell.zone_type != zone_class::WALL {
+                cell.zone_type = zone_class::WALL;
+                changed = true;
+            }
+        }
         changed
     }
 

@@ -100,6 +100,26 @@ pub(crate) fn set_place_beacon_mode(
     };
     let can_place = beacons::local_house_index(&match_state.sim_runtime)
         .is_some_and(|house| match_state.match_presentation.beacons.can_place(house));
+    // Phobos `MouseClass_ToggleBeaconMode_AllUsed` (`0x4AC9B2`,
+    // `Ext/House/Hooks.cpp:874-903`): with every slot used and
+    // `AutoRemoveEarliestBeacon`, select and delete the oldest own beacon
+    // (the packet goes out because it is selected) and place over its slot.
+    let auto_remove_earliest = crate::app::state::active_rules(frontend, match_state)
+        .is_some_and(|rules| rules.phobos_globals.auto_remove_earliest_beacon);
+    let mut can_place = can_place;
+    if !can_place
+        && matches!(request, BeaconModeRequest::Toggle)
+        && auto_remove_earliest
+        && let Some(house) = beacons::local_house_index(&match_state.sim_runtime)
+        && let Some(slot) = match_state.match_presentation.beacons.earliest(house)
+    {
+        match_state
+            .match_presentation
+            .beacons
+            .set_selected(house, slot);
+        beacons::delete_beacon(match_state, BeaconTarget::Selected);
+        can_place = match_state.match_presentation.beacons.can_place(house);
+    }
     let Some(next) = place_beacon_mode_transition(
         request,
         modes,
@@ -128,7 +148,9 @@ pub(crate) fn set_place_beacon_mode(
 }
 
 /// `BeaconPlacementCommandClass::Execute 0x005370A0`: the key refuses
-/// GameMode 0 and 5.
+/// GameMode 0 and 5. Phobos `AllowBeaconHotKeyInSinglePlayer`
+/// (`Ext/Beacon/Hooks.cpp:3-9`) jumps over that refusal, so the command
+/// enters placement in every mode.
 pub(crate) fn execute_command(
     platform: &PlatformState,
     renderer: &RendererState,
@@ -139,7 +161,9 @@ pub(crate) fn execute_command(
     sfx_player: &mut Option<SfxPlayer>,
     persistence: &PersistenceState,
 ) {
-    if beacons::feedback_mode(match_state.session_mode()) {
+    let single_player_hotkey = crate::app::state::active_rules(frontend, match_state)
+        .is_some_and(|rules| rules.phobos_globals.allow_beacon_hotkey_in_single_player);
+    if beacons::feedback_mode(match_state.session_mode()) || single_player_hotkey {
         enter_placement_mode(
             platform,
             renderer,

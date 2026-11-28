@@ -302,6 +302,9 @@ pub struct RulesLayerStack {
     /// VERA: the player's Ares setting is Off, so no Ares key turns Ares on
     /// (`AssetManager::ares_setting`).
     ares_keys_off: bool,
+    /// The selected mod declares `[Extensions] Phobos=yes`, so the games this
+    /// stack processes play Phobos (`rules::phobos_switch`).
+    phobos_required: bool,
     /// VERA: the player's Kratos setting (`AssetManager::kratos_setting`);
     /// Auto lets the game's data decide (`rules::kratos_switch`).
     kratos_setting: crate::util::kratos_launch::KratosSetting,
@@ -314,12 +317,13 @@ impl RulesLayerStack {
                 kind: RulesLayerKind::RulesMd,
                 ini: rulesmd,
             }],
-            // The game's owner sets both from its asset manager
+            // The game's owner sets these launch inputs from its asset manager
             // (`NativeRulesProcessOwner::startup_layers`). A stack built
             // without saying stands for the game its thread reads
             // (`ares_switch::ares_way`), with the Ares setting Auto.
             ships_ares: crate::rules::ares_switch::ares_way(),
             ares_keys_off: false,
+            phobos_required: false,
             kratos_setting: crate::util::kratos_launch::KratosSetting::Auto,
         }
     }
@@ -340,6 +344,15 @@ impl RulesLayerStack {
     /// saying reads as Auto.
     pub fn with_ares_keys_off(mut self, off: bool) -> Self {
         self.ares_keys_off = off;
+        self
+    }
+
+    /// VERA: the stack of a game whose selected mod declares
+    /// `[Extensions] Phobos=yes`, so its rules play Phobos whatever keys they
+    /// hold. The game's owner sets it from the launch
+    /// (`NativeRulesProcessOwner::startup_layers`).
+    pub fn with_phobos_required(mut self, required: bool) -> Self {
+        self.phobos_required = required;
         self
     }
 
@@ -681,6 +694,7 @@ impl RulesLayerStack {
             native_type_construction_trace,
             ares_inputs,
             kratos_inputs,
+            phobos_required: self.phobos_required,
             npatch_inputs,
         }
     }
@@ -820,6 +834,7 @@ fn process_native_rules_cold_start_inner(
         selected_rules_root,
         fixed_art,
         fixed_sounds,
+        fixed_eva,
     );
     let after_building_bodies = processor.native_type_construction_events.len();
     let (_, trace) = processor.finish();
@@ -1030,11 +1045,24 @@ pub struct ProcessedRulesLayers {
     /// before the switch existed reads as no Kratos key.
     #[serde(default)]
     kratos_inputs: crate::rules::kratos_switch::KratosInputs,
+    /// The selected mod declared `[Extensions] Phobos=yes`: the projection
+    /// turns Phobos on even without a Phobos key. Saved with the rules, so a
+    /// loaded game projects the same answer.
+    #[serde(default)]
+    phobos_required: bool,
     /// What the passes give the per-game NPatch switch (the extension keys
     /// they read); saved with the rules for the same reason. A rules set
     /// saved before the switch existed reads as no NPatch key.
     #[serde(default)]
     npatch_inputs: crate::rules::npatch_switch::NPatchInputs,
+}
+
+impl ProcessedRulesLayers {
+    /// Whether the selected mod declares `[Extensions] Phobos=yes`
+    /// (`rules::phobos_switch`).
+    pub(crate) fn phobos_required(&self) -> bool {
+        self.phobos_required
+    }
 }
 
 #[cfg(all(test, tests_rules_a_n))]

@@ -10,8 +10,7 @@ use super::spark::{SparkMotionStep, resolve_collision};
 use super::spark_world::{SparkCollisionWorld, SparkWorldError, constructor_ground_height};
 use super::system_ai::SparkSystemTickError;
 use super::wind::{GAS_WIND_DX, GAS_WIND_DY};
-use crate::map::resolved_terrain::ResolvedTerrainGrid;
-use crate::rules::particle_type::{ParticleBehavesLike, ParticleType, ParticleTypeId};
+use crate::rules::particle_type::{ParticleBehavesLike, ParticleTypeId};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::{
     EntityDamageEvent, RAD_NO_ATTACKER, ReceiverCallFlags, TerrainDamageEvent,
@@ -71,8 +70,6 @@ impl Simulation {
     }
 }
 
-/// SystemAI62E6D0, and Firestorm 2.0 `ParticleSystemClass::AI_Web`
-/// 0x005A7170, whose two walks are the same ([`super::web`]).
 pub(super) fn tick_system(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -94,65 +91,69 @@ pub(super) fn tick_system(
         let Some(mut p) = sim.particle_systems().particle_for_tick(system, index, id) else {
             continue;
         };
-        match rules.particle_type(p.type_id).behaves_like {
-            ParticleBehavesLike::Gas => {
-                if let Err(error) = tick_particle(
-                    &mut p,
-                    sim,
-                    rules,
-                    owner_house,
-                    owner_entity,
-                    context.reborrow(),
-                ) {
-                    super::system_ai::retire_refused(&mut p, &error);
-                }
-                super::system_ai::finish_lifetime(&mut p);
+        if rules.particle_type(p.type_id).behaves_like == ParticleBehavesLike::Gas {
+            if let Err(error) = tick_particle(
+                &mut p,
+                sim,
+                rules,
+                owner_house,
+                owner_entity,
+                context.reborrow(),
+            ) {
+                super::system_ai::retire_refused(&mut p, &error);
             }
-            // A web's hits run in this system's frame, as Gas's do.
-            ParticleBehavesLike::Web => {
-                super::web::tick_particle(&mut p, sim, rules, context.reborrow());
-                super::system_ai::finish_lifetime(&mut p);
-            }
-            _ => super::system_ai::tick_particle(&mut p, sim, rules, owner_house, owner_entity),
+            super::system_ai::finish_lifetime(&mut p);
+        } else {
+            super::system_ai::tick_particle(&mut p, sim, rules, owner_house, owner_entity);
         }
         sim.substrate
             .particle_systems
             .commit_particle_tick(system, index, p);
     }
     sim.substrate.particle_systems.return_walk(walk);
-    // The Move and destroy walk takes in the births the AI walk appended.
-    let Some(count) = sim
-        .particle_systems()
-        .get(system)
-        .map(|sys| sys.particles.len())
+    let Some(walk) = sim
+        .substrate
+        .particle_systems
+        .take_reverse_walk(system, |_| true)
     else {
         return;
     };
-    super::system_ai::move_or_destroy_children(sim, rules, system, count, |sim, p| {
-        let pt = rules.particle_type(p.type_id);
-        if let Some(next) = pt.next_particle {
-            let coords = offset(p.coords, pt.next_particle_offset);
-            let mut child = Particle::new(next, coords, IVec3::ZERO, rules, sim);
-            //62E7EB..62E811 copies E4 and C0/C4/C8, not translucency
-            //or CC/D0/D4. The constructor still takes its lifetime draw.
-            child.velocity = p.velocity;
-            [child.drift_x, child.drift_y, child.drift_z] = [p.drift_x, p.drift_y, p.drift_z];
-            sim.substrate
+    for &(index, id) in &walk {
+        let Some(mut p) = sim.particle_systems().particle_for_tick(system, index, id) else {
+            continue;
+        };
+        if p.marked_for_deletion {
+            let pt = rules.particle_type(p.type_id);
+            if let Some(next) = pt.next_particle {
+                let coords = offset(p.coords, pt.next_particle_offset);
+                let mut child = Particle::new(next, coords, IVec3::ZERO, rules, sim);
+                //62E7EB..62E811 copies E4 and C0/C4/C8, not translucency
+                //or CC/D0/D4. The constructor still takes its lifetime draw.
+                child.velocity = p.velocity;
+                [child.drift_x, child.drift_y, child.drift_z] = [p.drift_x, p.drift_y, p.drift_z];
+                sim.substrate
+                    .particle_systems
+                    .get_mut(system)
+                    .unwrap()
+                    .particles
+                    .push(child);
+            }
+            let parent = sim
+                .substrate
                 .particle_systems
                 .get_mut(system)
-                .unwrap()
-                .particles
-                .push(child);
+                .and_then(|sys| sys.remove_expired_child(id));
+            if let Some(parent) = parent {
+                sim.retire_particle(parent, rules);
+            }
+        } else {
+            super::system_ai::move_dispatch(&mut p, sim, rules);
+            sim.substrate
+                .particle_systems
+                .commit_particle_tick(system, index, p);
         }
-        let parent = sim
-            .substrate
-            .particle_systems
-            .get_mut(system)
-            .and_then(|sys| sys.remove_expired_child(p.stable_id()));
-        if let Some(parent) = parent {
-            sim.retire_particle(parent, rules);
-        }
-    });
+    }
+    sim.substrate.particle_systems.return_walk(walk);
 }
 
 /// Complete Gas body; the dispatcher separately owns its word-EC tail.
@@ -180,8 +181,27 @@ pub(super) fn tick_particle(
             } else {
                 p.drift_y = p.drift_y.wrapping_add(delta);
             }
-            p.drift_x = p.drift_x.clamp(-2, 2);
-            p.drift_y = p.drift_y.clamp(-2, 2);
+            // `0x62BD9D` (`test al,7; jne 0x62BE60`) skips the whole block
+            // unless this draw is zero, so the stock clamp at
+            // `0x62BE30..0x62BE5F` - replaced by Phobos
+            // `ParticleClass_Gas_AI_DriftSpeed` (`0x62BE30`,
+            // `Ext/ParticleType/Hooks.cpp:4-30`) with the type's
+            // `Gas.MaxDriftSpeed` - runs only at mutation events. The explicit
+            // if/else keeps the native order for a negative bound.
+            {
+                let max = rules.particle_type(p.type_id).phobos_gas_max_drift_speed;
+                let min = max.wrapping_neg();
+                if p.drift_x > max {
+                    p.drift_x = max;
+                } else if p.drift_x < min {
+                    p.drift_x = min;
+                }
+                if p.drift_y > max {
+                    p.drift_y = max;
+                } else if p.drift_y < min {
+                    p.drift_y = min;
+                }
+            }
         }
         p.motion = [
             NativeF32Bits::POSITIVE_ZERO,
@@ -216,10 +236,7 @@ pub(super) fn tick_particle(
                 p.motion = vector;
             }
         }
-        let height = p
-            .coords
-            .z
-            .wrapping_sub(ground(sim.resolved_terrain.as_ref(), p.coords)?);
+        let height = p.coords.z.wrapping_sub(ground(sim, p.coords)?);
         p.drift_z = if height > 5 {
             p.drift_z.wrapping_sub(1).max(-5)
         } else {
@@ -499,24 +516,22 @@ fn damage_in_range(
     }
 }
 
-fn ground(terrain: Option<&ResolvedTerrainGrid>, coords: IVec3) -> Result<i32, SparkWorldError> {
-    Ok(constructor_ground_height(terrain, coords.x, coords.y)?.unwrap_or(0))
+fn ground(sim: &Simulation, coords: IVec3) -> Result<i32, SparkWorldError> {
+    Ok(constructor_ground_height(sim, coords.x, coords.y)?.unwrap_or(0))
 }
 
-/// MoveGas62D2A0. The frame and the terrain are all it reads of the world.
 pub(super) fn move_gas(
     p: &mut Particle,
-    pt: &ParticleType,
-    wind: i32,
-    frame: u32,
-    terrain: Option<&ResolvedTerrainGrid>,
+    sim: &Simulation,
+    rules: &RuleSet,
 ) -> Result<(), SparkWorldError> {
-    let frame = frame as i32;
+    let pt = rules.particle_type(p.type_id);
+    let frame = sim.session.binary_frame() as i32;
     let mut coords = p.coords;
     // gamemd divides by `10 / WindEffect` (zero above 10) and indexes its
     // eight-entry tables with `[General] WindDirection` unchecked. VERA gives
     // either value no wind, as Smoke does.
-    let wind = usize::try_from(wind)
+    let wind = usize::try_from(rules.general.wind_direction())
         .ok()
         .filter(|&i| i < GAS_WIND_DX.len());
     if pt.wind_effect > 0
@@ -535,12 +550,12 @@ pub(super) fn move_gas(
             X87::load_i32(coords.y),
             X87::load_f32(p.motion[1]),
         ));
-        let floor = ground(terrain, coords)?.wrapping_add(5);
+        let floor = ground(sim, coords)?.wrapping_add(5);
         if coords.z > floor {
             coords.z = coords.z.wrapping_sub(coords.z.wrapping_sub(floor).min(2));
         }
         coords = offset(coords, IVec3::new(p.drift_x, p.drift_y, p.drift_z));
-        coords.z = coords.z.max(ground(terrain, coords)?.wrapping_add(5));
+        coords.z = coords.z.max(ground(sim, coords)?.wrapping_add(5));
     }
     p.coords = coords;
     Ok(())

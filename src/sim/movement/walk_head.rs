@@ -18,7 +18,11 @@ pub(crate) fn selected_head(
     input_ground_z: i32,
     bridge: bool,
 ) -> DriveCoord {
-    head_at_surface(input, slot, ground_pose::z_at_height(input_ground_z, 0, bridge))
+    head_at_surface(
+        input,
+        slot,
+        ground_pose::z_at_height(input_ground_z, 0, bridge),
+    )
 }
 
 fn head_at_surface(input: DriveCoord, slot: u8, z: i32) -> DriveCoord {
@@ -46,8 +50,9 @@ pub(crate) fn raw_at(
         .map_or(RawCellKey::Real(cell.0, cell.1), |(t, c)| {
             RawCellKey::from_native(t, c)
         });
-    let deck_surface = ground_pose::ground_surface_z_at([coord.x, coord.y], true, terrain, fallback)
-        .unwrap_or_else(|| ground_pose::z_at_height(coord.z, 0, true));
+    let deck_surface =
+        ground_pose::ground_surface_z_at([coord.x, coord.y], true, terrain, fallback)
+            .unwrap_or_else(|| ground_pose::z_at_height(coord.z, 0, true));
     let structural = terrain.zip(identity).map_or_else(
         || {
             fallback

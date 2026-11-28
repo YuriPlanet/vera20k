@@ -1,8 +1,8 @@
 # Optional Phobos Shields
 
-Build with `--features phobos` to register `[ShieldTypes]`, bind a techno with
-`ShieldType=`, and read the warhead-side `Shield.*` overrides. Default builds
-have no shield state and keep gamemd's receiver untouched.
+Phobos is in every build; turn it on from a game's data to register `[ShieldTypes]` and bind a techno
+with `ShieldType=`. Default builds have no shield state and keep gamemd's
+receiver untouched.
 
 ```ini
 [ShieldTypes]
@@ -61,6 +61,10 @@ Shield.ReceivedDamage.Minimum=      ; integer
 Shield.ReceivedDamage.Maximum=      ; integer
 Shield.ReceivedDamage.MinMultiplier=1.0 ; floating point value
 Shield.ReceivedDamage.MaxMultiplier=1.0 ; floating point value
+
+The full warhead-side family (break, respawn/self-healing modifiers,
+attach/remove/replace) is documented in
+[Warhead shield modifiers](phobos-shield-warhead.md).
 ```
 
 A techno creates a shield only when the bound entry resolves and `Strength` is
@@ -147,7 +151,8 @@ object is immobilized, but its countdown continues until warp-in resumes AI.
   other extension catalogs.
 - `rules/ruleset.rs` — immutable projection, config hash and the `ShieldType=`
   bindings.
-- `sim/shield.rs` — the single owner of shield points and recovery timers.
+- `sim/shield.rs` — the single owner of shield points and recovery timers, and
+  of the target-armor substitution (`warhead_versus_armor`, see below).
 - `sim/combat/world_receiver.rs` / `receiver_call.rs` — the receiver pre-stage.
 - `sim/world/world_spawn/construction.rs` — creation at the techno constructor.
 - `app/presentation/ui_overlays.rs` — the shield bar commands; `render/selection_overlay.rs`
@@ -161,36 +166,63 @@ The shield state is saved, hashed under `phobos-shield-v1`, and a save records
 the build capability. A catalog without a bound entry leaves the object
 shield-less.
 
+## Target armor in targeting and threat
+
+`TechnoClass_ReplaceArmorWithShields` (`Ext/Techno/Hooks.cpp:480-515`)
+replaces the four stock armor loads (`mov eax,[eax+0x9c]`, `ObjectType+0x9C`)
+that feed a warhead's `Verses` read in target evaluation: `0x70CF39`,
+`0x6F7D31`, `0x6FCB64` and `0x708AEB`. While the object's shield is active
+(`ShieldClass::IsActive`, `HP > 0 && Online`) and the warhead cannot
+penetrate it (`ShieldClass::CanBePenetrated`), the armor that answers is the
+shield's `ShieldClass::GetArmorType` — the techno type's own armor when
+`InheritArmorFromTechno` admits that type, else `[ShieldTypes] Armor=`.
+
+`sim/shield.rs` owns that decision as `warhead_versus_armor` (over
+`shield_armor`, `can_be_penetrated` and the same `is_active` the damage paths
+use); it already answered the damage and EMP paths in
+`sim/combat/crit.rs` and `sim/combat/world_receiver.rs`. Four consumers now
+read it instead of the raw `armor_id()`:
+
+- `sim/combat/greatest_threat.rs`, the A term of
+  `TechnoClass_Calculate_Threat_Score` — the load at `0x70CF39` whose Verses
+  `fmul` sits at `0x0070CF49`. The B term keeps the scorer type's armor: native
+  reads it from `ebx` at `0x0070CEA8`/`0x0070CEBD`, which Phobos does not
+  patch, so the two terms stay asymmetric exactly as in the hooked game.
+- `sim/combat/greatest_threat.rs`, the G4 passive-acquisition floor of
+  `CanAutoTargetObject` (`0x6F7D31`).
+- `sim/combat/fire_error_world.rs`, the target armor of `GetFireError`
+  (`0x6FCB64`, Phobos names the hook `TechnoClass_CanFire`).
+- `sim/combat/combat_targeting.rs`, the source armor of `ShouldRetaliate`
+  (`0x708AEB`), which pairs the victim's selected warhead with the object that
+  damaged it.
+
+`ShieldClass::CanBeTargeted` (`src/New/Entity/ShieldClass.cpp:368..377`) is a
+separate owner, `sim::shield::can_be_targeted`, consumed by the weapon-selection
+arms (`0x6F36DB`). Regressions for the four armor sites are
+`sim/combat/phobos_shield_armor_tests.rs`; without the capability each site
+reads the techno type's armor as before.
+
 ## Residuals
 
-This chain owns damage, recovery, break/respawn state, the shield bar and the
-shield tint. The following Phobos shield behavior is not implemented yet and
-stays open:
+This chain owns damage, recovery, break/respawn state, the shield bar, the
+shield tint and the target-armor substitution above. The following Phobos
+shield behavior is not implemented yet and stays open:
 
 - Custom `Pips.Background`/per-type background names: only the stock PIPBRD
   strip is drawn.
 - A building slot anim whose type lacks `ShouldUseCellDrawer=` keeps its cell
   light without the shield `Tint.Intensity`; its colour word still carries
   `Tint.Color`.
-- `IsBrokenAndNonRespawning` gates the bar from the shield type's `Respawn=`
-  only; the warhead `Respawn` timer modifier that can override it is not read.
 - A negative hit on a shield does not remove the attacker's parasite
   (`ShieldClass.cpp` `ParasiteEatingMe` arm).
-- `BreakAnim`, `HitAnim`, `HitFlash*`, `IdleAnim*`, `Respawn.Anim` and the
-  `BreakWeapon`/`Respawn.Weapon` detonations: no animation or self-fire is
-  spawned.
+- `IdleAnim*`: no idle animation is spawned.
 - `SelfHealing.EnabledBy` and `AllowTransfer`/`AllowTransfer.Convert` are read
   but not consumed.
-- Type conversion/deploy transfer (`SyncShieldToAnother`, `ConvertCheck`) and
-  the warhead `Shield.Break`, `Shield.BreakAnim`, `Shield.BreakWeapon`,
-  `Shield.HitAnim`, `Shield.SkipHitAnim`, `Shield.HitFlash`,
-  `Shield.AttachTypes`/`RemoveTypes` effects are not ported.
+- Type conversion/deploy/sell shield transfer (`SyncShieldToAnother`,
+  `ConvertCheck`) is not ported; the deploy/sell hooks carry only
+  `SyncInvulnerability`.
 - Ares EMP does not yet offline a shield (`IsUnderEMP` in native); only the
   building power and warp paths gate it.
-- The shield-armour substitution in targeting/threat (`CanBeTargeted`,
-  `TechnoClass_ReplaceArmorWithShields` at `0x70CF39`/`0x6F7D31`/`0x6FCB64`/
-  `0x708AEB`) is not ported; acquisitions and threat still read the techno's
-  own armour.
 
-These do not change the absorbed/recovered points; they change how the shield
-looks, sounds and reacts to type changes.
+The warhead-side `Shield.*` keys live in
+[Warhead shield modifiers](phobos-shield-warhead.md).

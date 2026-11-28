@@ -432,6 +432,12 @@ impl move_mission::MoveHost for RowHost<'_> {
         self.sim.aircraft_nav_cell_free(OWNER, self.rules)
     }
 
+    /// The oracle rows carry no Phobos keys, so the stock own-cell test is
+    /// the one they exercise.
+    fn smooth_arrival(&mut self) -> move_mission::SmoothArrival {
+        move_mission::SmoothArrival::Stock
+    }
+
     fn epilogue(&mut self) -> i32 {
         Simulation::mission_rate_epilogue_for(
             &mut self.sim.scenario_rng,
@@ -686,6 +692,70 @@ fn retail_aircraft_types_are_not_carryalls() {
     }
 }
 
+/// Phobos `AircraftClass_Mission_Move_SmoothMoving`
+/// (`Ext/Aircraft/Hooks.cpp:511-526`, sites `0x4168C7` in state 2 and
+/// `0x416A0A` in state 4): a NavCom one cell away is beyond the stock own-cell
+/// arrival test, so the aircraft flies on; with
+/// `ExtendedAircraftMissions.SmoothMoving` on, the distance test
+/// (`SlowdownDistance / 2` = 500 > 256 leptons) takes the hook's arrived arm,
+/// which writes no state. The returned state is the whole difference:
+/// ContinueMoving writes 4 or 0, EnterIdleAndReturn writes nothing.
+#[test]
+fn smooth_moving_arrives_by_distance_instead_of_cell() {
+    use crate::sim::world::FrameEffects;
+    let rules_for = |master: &str| {
+        RuleSet::from_ini(&IniFile::from_str(&format!(
+            "[General]
+FlightLevel=1500
+ExtendedAircraftMissions={master}
+             [AircraftTypes]
+0=SMOOTH
+             [SMOOTH]
+Strength=150
+Speed=14
+Ammo=1
+Landable=yes
+             AirportBound=yes
+Fighter=yes
+SlowdownDistance=1000
+             Locomotor={{4A582746-9839-11d1-B709-00A024DDAFD1}}
+"
+        )))
+        .expect("rules")
+    };
+    let run = |master: &str| {
+        let rules = rules_for(master);
+        let mut sim = Simulation::new();
+        let owner = sim.interner.intern("Americans");
+        sim.houses
+            .register(crate::sim::house_state::HouseState::new(
+                owner, 0, None, true, 0, 10,
+            ));
+        let plane = sim
+            .spawn_object("SMOOTH", "Americans", 10, 10, 0, &rules)
+            .expect("aircraft");
+        // Fly toward a distant waypoint so Is_Moving answers yes, then let the
+        // arrival test read the adjacent cell's NavCom.
+        sim.assign_aircraft_destination(
+            plane,
+            Some(crate::sim::components::NavTargetRef::cell(14, 3)),
+            &rules,
+            &mut FrameEffects::empty(),
+        );
+        sim.substrate
+            .entities
+            .get_mut(plane)
+            .unwrap()
+            .navigation
+            .set_nav_com_for_test(Some(crate::sim::components::NavTargetRef::cell(11, 10)));
+        let (state, _) = sim.aircraft_move(plane, 2, &rules, &mut FrameEffects::empty());
+        state
+    };
+    // The stock own-cell test sees another cell and keeps the aircraft moving.
+    assert_ne!(run("no"), 2, "the stock own-cell test does not arrive");
+    // The distance test arrives: EnterIdleAndReturn writes no state.
+    assert_eq!(run("yes"), 2, "the distance test takes the arrived arm");
+}
 /// The fixture's HORNET (Landable, not Spawned, with `extra` rules) at
 /// (15, 15), a tree on `tree`, `order` applied, and the first Cell NavCom the
 /// aircraft takes within 200 frames.

@@ -33,7 +33,6 @@ use super::terrain_picture::{
 /// One isolated pass for the Phobos placement preview artwork. The texture is
 /// owned by a `RefCell` cache, so the pass must end inside this call and the
 /// caller recreates its own pass afterwards.
-#[cfg(feature = "phobos")]
 fn draw_placement_ghost_pass(
     encoder: &mut wgpu::CommandEncoder,
     view: &wgpu::TextureView,
@@ -81,6 +80,14 @@ pub(super) struct DrawPassData<'a> {
     /// `SidebarInstances::smooth_chrome` and `smooth_command_bar`.
     pub smooth_chrome: bool,
     pub smooth_command_bar: bool,
+    /// The frame the software cursor sprite was built from.
+    pub software_cursor: Option<crate::app::presentation::ui_overlays::SoftwareCursorDraw>,
+    /// Phobos `SurfaceExt::BlurRect`'s tooltip background rects
+    /// (`[x, y, w, h]` in composition pixels), empty when the switch or the
+    /// size keeps native's no-op.
+    pub tooltip_blur_rects: Vec<[f32; 4]>,
+    /// The resolved `ToolTip.Background.BlurSize` for those rects.
+    pub tooltip_blur_size: f32,
 }
 
 /// Draw the sidebar into its own surface, as gamemd draws `g_SidebarSurface`
@@ -1082,7 +1089,6 @@ pub(super) fn dispatch_draw_passes(
     // Phobos placement preview artwork (`0x6D528A`), after the PLACE cells.
     // The texture lives behind the cache's RefCell borrow, so end this pass
     // before releasing the guard and recreate it for the following stages.
-    #[cfg(feature = "phobos")]
     if let Some((buffer, count)) = pool.get("placement_ghost")
         && count > 0
     {
@@ -1208,6 +1214,30 @@ pub(super) fn dispatch_draw_passes(
             pool,
             Some(renderer.bit_font.atlas()),
             "super_timer_text",
+        );
+    }
+
+    // Phobos `TacticalClass_Render_Banner` (`0x6D4B25`, Hooks.UI.cpp:310):
+    // every banner draws after the timer lines, before the outcome banner.
+    // The shapes sample the shared banner atlas; the texts bind the font.
+    if text_in_frame {
+        draw_pooled_ui(
+            &mut pass,
+            &renderer.batch_renderer,
+            pool,
+            match_state
+                .match_presentation
+                .banner_art
+                .as_ref()
+                .map(|art| art.texture()),
+            "banner_fill",
+        );
+        draw_pooled_ui(
+            &mut pass,
+            &renderer.batch_renderer,
+            pool,
+            Some(renderer.bit_font.atlas()),
+            "banner_text",
         );
     }
 
@@ -1361,7 +1391,6 @@ pub(super) fn dispatch_draw_passes(
     pass.set_scissor_rect(0, 0, target_width, target_height);
     // Phobos SuperWeaponSidebar: left-edge screen-fixed layers. Drawn after
     // the right sidebar blit and before messages, like Phobos' own gadgets.
-    #[cfg(feature = "phobos")]
     {
         let presentation = &match_state.match_presentation;
         let chrome =
@@ -1458,11 +1487,45 @@ pub(super) fn dispatch_draw_passes(
         crate::app::ui_modules::paint::ModuleLayer::Overlay,
     );
     if text_in_frame {
-        for (texture, key) in [
-            (solid, "tooltip_fill"),
-            (solid, "tooltip_border"),
-            (font, "tooltip_text"),
-        ] {
+        draw_pooled_ui(
+            &mut pass,
+            &renderer.batch_renderer,
+            pool,
+            solid,
+            "tooltip_fill",
+        );
+        // Phobos `SurfaceExt::BlurRect` (`Ext/Surface/Body.cpp:9`) runs after
+        // the background fill (`Misc/PhobosToolTip.cpp:437-440`): the pass
+        // ends so the blur can sample the composition it just drew into, and
+        // the frame/frame border/text resume on a fresh load pass. The producer
+        // leaves both values empty/zero when `rules.phobos()` is off.
+        if !data.tooltip_blur_rects.is_empty() && data.tooltip_blur_size > 0.0 {
+            drop(pass);
+            if renderer.tooltip_blur.is_none() {
+                renderer.tooltip_blur =
+                    Some(crate::render::tooltip_blur::TooltipBlurRenderer::new(
+                        &renderer.gpu.device,
+                        renderer.combat_light_renderer.composition_texture(),
+                    ));
+            }
+            let composition_size = renderer.combat_light_renderer.composition_texture().size();
+            for rect in &data.tooltip_blur_rects {
+                renderer.tooltip_blur.as_mut().unwrap().draw(
+                    &renderer.gpu.device,
+                    &renderer.gpu.queue,
+                    encoder,
+                    view,
+                    [
+                        composition_size.width as f32,
+                        composition_size.height as f32,
+                    ],
+                    *rect,
+                    data.tooltip_blur_size,
+                );
+            }
+            pass = begin_main_load_pass(encoder, view, frame_depth);
+        }
+        for (texture, key) in [(solid, "tooltip_border"), (font, "tooltip_text")] {
             draw_pooled_ui(&mut pass, &renderer.batch_renderer, pool, texture, key);
         }
     }
@@ -1949,10 +2012,10 @@ mod tests {
         let timer_tail = &PRODUCTION[sparkle..outcome_start];
         assert_eq!(
             timer_tail.matches(".draw").count() + timer_tail.matches("draw_pooled").count(),
-            4,
-            "PixelFX, the two timer submissions and VERA's module battlefield layer \
-             precede the native result draw; the Phobos build description now draws \
-             at the RenderFrame_main tail"
+            6,
+            "PixelFX, the two timer submissions, the two Phobos banner submissions and \
+             VERA's module battlefield layer precede the native result draw; the Phobos \
+             build description now draws at the RenderFrame_main tail"
         );
         // Exhaustiveness: the description draws exactly once in the span from
         // tooltips to cursor, pinning it out of the tactical tail.

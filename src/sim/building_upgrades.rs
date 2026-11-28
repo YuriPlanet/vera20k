@@ -434,22 +434,31 @@ impl BuildingUpgrades {
 }
 
 impl Simulation {
-    /// Phobos BuildingTypeExt::GetUpgradesAmount (Ext/BuildingType/Body.cpp):
-    /// read the owning House's Building array and the host's installed types,
-    /// without counting the temporary/producing upgrade object. A non-upgrade
-    /// returns None so the caller can use the normal presence counters.
-    #[cfg(feature = "phobos")]
+    /// Phobos BuildingTypeExt::GetUpgradesAmount (`Ext/BuildingType/Body.cpp:128`):
+    /// sum the installed slots of this type over every owned
+    /// `PowersUp.Buildings` host, without counting the temporary/producing
+    /// upgrade object. A type with no host returns None so the caller can use
+    /// the normal presence counters.
     pub(crate) fn count_owned_building_upgrades(
         &self,
         owner: InternedId,
         upgrade: &ObjectType,
         rules: &RuleSet,
     ) -> Option<i32> {
-        let host = rules.object_in_category(
-            crate::rules::object_type::ObjectCategory::Building,
-            upgrade.building_upgrade().host()?,
-        )?;
-        let host_id = self.interner.get(&host.id)?;
+        // `GetUpgradesAmount @ Ext/BuildingType/Body.cpp:128-160` walks every
+        // `PowersUp_Buildings` host, not only the legacy single one.
+        let host_ids: Vec<crate::sim::intern::InternedId> = upgrade
+            .building_upgrade()
+            .powers_up_buildings()
+            .iter()
+            .filter_map(|name| {
+                rules.object_in_category(crate::rules::object_type::ObjectCategory::Building, name)
+            })
+            .filter_map(|host| self.interner.get(&host.id))
+            .collect();
+        if host_ids.is_empty() {
+            return None;
+        }
         let upgrade_id = self.interner.get(&upgrade.id)?;
         Some(self.houses.get(&owner).map_or(0, |house| {
             house
@@ -458,7 +467,8 @@ impl Simulation {
                 .iter()
                 .filter_map(|id| self.substrate.entities.get(*id))
                 .filter(|building| {
-                    building.type_ref() == host_id && building.building_upgrades().count() != 0
+                    host_ids.contains(&building.type_ref())
+                        && building.building_upgrades().count() != 0
                 })
                 .map(|building| {
                     building
@@ -484,18 +494,36 @@ impl Simulation {
         let Some(host) = self.substrate.entities.get(host_id) else {
             return false;
         };
-        if host.category() != EntityCategory::Structure || host.owner() != owner {
+        if host.category() != EntityCategory::Structure {
             return false;
         }
         let Some(host_type) = self.object_type(host.type_ref(), rules) else {
             return false;
         };
-        if !upgrade
-            .building_upgrade()
-            .host()
-            .is_some_and(|name| name.eq_ignore_ascii_case(&host_type.id))
+        // Phobos `BuildingTypeExt::CanUpgrade` (hooks `0x452678`/`0x4408EB`,
+        // `Ext/BuildingType/Hooks.Upgrade.cpp:6-34`): the upgrade's
+        // `PowersUp.Owner` filter decides the owner relation and the host
+        // must appear in its `PowersUp.Buildings` list (kept in sync with
+        // `PowersUpBuilding`).
         {
-            return false;
+            let upgrade_rules = upgrade.building_upgrade();
+            if !crate::sim::combat::can_target_house(
+                upgrade_rules.powers_up_owner(),
+                owner,
+                host.owner(),
+                &self.houses,
+                &self.house_alliances,
+                &self.interner,
+            ) {
+                return false;
+            }
+            if !upgrade_rules
+                .powers_up_buildings()
+                .iter()
+                .any(|name| name.eq_ignore_ascii_case(&host_type.id))
+            {
+                return false;
+            }
         }
         let count = host.building_upgrades().count();
         // Native can overrun its three-pointer array for malformed capacities.
@@ -651,5 +679,101 @@ impl Simulation {
             crate::sim::superweapon::update_owned_supers(self, rules, owner, effects);
         }
         removed
+    }
+}
+
+#[cfg(all(test, tests_sim_a_b))]
+mod phobos_powers_up_sim_tests {
+    use crate::map::entities::EntityCategory;
+    use crate::rules::ini_parser::IniFile;
+    use crate::rules::ruleset::RuleSet;
+    use crate::sim::game_entity::GameEntity;
+    use crate::sim::world::Simulation;
+
+    fn scene(upgrade_ini: &str, same_owner: bool) -> (Simulation, RuleSet, u64, u64) {
+        let rules = RuleSet::from_ini_with_fixed_art_for_test(
+            &IniFile::from_str(&format!(
+                "[BuildingTypes]\n0=HOST\n1=UPGRADE\n\
+                 [HOST]\nStrength=100\nUpgrades=3\n\
+                 [UPGRADE]\nStrength=100\nPowersUpToLevel=-1\n{upgrade_ini}"
+            )),
+            &IniFile::empty(),
+        )
+        .unwrap();
+        let mut sim = Simulation::new();
+        let host_type = sim.interner.intern("HOST");
+        let upgrade_type = sim.interner.intern("UPGRADE");
+        let owner = sim.interner.intern("OWNER");
+        let other = sim.interner.intern("OTHER");
+        let host_id = sim.substrate_mut_for_test().allocate_stable_id();
+        let upgrade_id = sim.substrate_mut_for_test().allocate_stable_id();
+        let mut host = GameEntity::test_default_of_category(
+            host_id,
+            "HOST",
+            "OWNER",
+            1,
+            1,
+            EntityCategory::Structure,
+        );
+        host.set_type_ref_for_test(host_type);
+        host.set_owner_for_test(owner);
+        host.set_building_upgrades_for_test(0, [None; 3]);
+        let mut upgrade = GameEntity::test_default_of_category(
+            upgrade_id,
+            "UPGRADE",
+            "OWNER",
+            1,
+            1,
+            EntityCategory::Structure,
+        );
+        upgrade.set_type_ref_for_test(upgrade_type);
+        upgrade.set_owner_for_test(if same_owner { owner } else { other });
+        sim.substrate.entities.insert(host);
+        sim.substrate.entities.insert(upgrade);
+        (sim, rules, host_id, upgrade_id)
+    }
+
+    fn admits(
+        sim: &Simulation,
+        rules: &RuleSet,
+        host: u64,
+        upgrade: u64,
+        owner: InternedId,
+    ) -> bool {
+        sim.can_install_building_upgrade(host, rules.object("UPGRADE").unwrap(), owner, rules)
+    }
+
+    use crate::sim::intern::InternedId;
+
+    /// Phobos `BuildingTypeExt::CanUpgrade` (hooks `0x452678`/`0x4408EB`):
+    /// the upgrade's `PowersUp.Buildings` list replaces the legacy host name
+    /// and `PowersUp.Owner` decides the installing owner's relation.
+    #[test]
+    fn powers_up_list_and_owner_filter_admit_the_install() {
+        let (sim, rules, host, upgrade) = scene("PowersUp.Buildings=HOST\n", true);
+        let owner = sim.substrate.entities.get(upgrade).unwrap().owner();
+        assert!(admits(&sim, &rules, host, upgrade, owner));
+
+        let (sim, rules, host, upgrade) =
+            scene("PowersUp.Buildings=OTHER\nPowersUp.Owner=all\n", true);
+        let owner = sim.substrate.entities.get(upgrade).unwrap().owner();
+        assert!(
+            !admits(&sim, &rules, host, upgrade, owner),
+            "a host outside the list is refused"
+        );
+
+        let (sim, rules, host, upgrade) = scene("PowersUp.Buildings=HOST\n", false);
+        let foreign = sim.substrate.entities.get(upgrade).unwrap().owner();
+        assert!(
+            !admits(&sim, &rules, host, upgrade, foreign),
+            "the default Owner filter refuses a foreign installer"
+        );
+        let (sim, rules, host, upgrade) =
+            scene("PowersUp.Buildings=HOST\nPowersUp.Owner=all\n", false);
+        let foreign = sim.substrate.entities.get(upgrade).unwrap().owner();
+        assert!(
+            admits(&sim, &rules, host, upgrade, foreign),
+            "an All filter admits a foreign installer"
+        );
     }
 }

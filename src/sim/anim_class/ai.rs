@@ -71,6 +71,12 @@ impl Simulation {
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: &mut FrameEffects<'_>,
     ) -> Result<bool, RuntimeOverlayError> {
+        // Phobos `AnimClass_AI_Early @ 0x423B95`
+        // (`Ext/Anim/Hooks.cpp:714-740`) runs before the stock AI's single
+        // instance read, so this visit sees the retype and new anchor.
+        if rules.phobos() && *self.firing_anim_update_count > 0 {
+            self.update_as_firing_anim(id, rules);
+        }
         // One read serves the visit's prefix and gates: most visits end at a
         // gate, and each step that may write the anim re-reads it (VERA-only,
         // results unchanged).
@@ -123,10 +129,11 @@ impl Simulation {
             // gate and compares instead: `GetContainedTiberiumValue() <=
             // abs(HideIfNoOre.Threshold)`. `wrapping_abs` keeps the native
             // two's-complement result for INT_MIN, where C++'s `abs` overflows.
-            #[cfg(feature = "phobos")]
-            let hidden = value <= config.hide_if_no_ore_threshold.wrapping_abs();
-            #[cfg(not(feature = "phobos"))]
-            let hidden = value == 0;
+            let hidden = if rules.phobos() {
+                value <= config.hide_if_no_ore_threshold.wrapping_abs()
+            } else {
+                value == 0
+            };
             self.substrate.set_anim_hidden(id, hidden);
         }
 
@@ -157,16 +164,14 @@ impl Simulation {
 
         // AnimAI4242A6/4242B0 gates only this producer on ObjectAlive and
         // inactive. Bounce above still runs before the retirement gate.
-        // The cadence test reads nothing of the anim, so it is asked before
-        // the delete queue (VERA-only, same answer).
         if let Some(trailer_name) = config.trailer_anim.as_deref()
             && !gates.inactive
+            && !self.substrate.pending_delete.contains_object(&id)
             && trailer_cadence_matches(
                 u64::from(self.session.binary_frame()),
                 config.trailer_seperation,
                 rules.ares(),
             )
-            && !self.substrate.pending_delete.contains_object(&id)
             && rules.art().anim_runtime_config(trailer_name).is_some()
         {
             // The trailer spawns at GetCoords after the body moved the anim.
@@ -275,22 +280,16 @@ impl Simulation {
             return Ok(false);
         }
 
-        let current_frame = self.session.binary_frame() as i32;
-        //42449B: power pause follows first-AI/delay gates and precedes timer advance;
-        //4244A9: the Temporal erase pause (+11A) right after it.
-        let waits =
-            gates.paused || gates.rate_reload == 0 || !gates.frame_timer.expired(current_frame);
-        // VERA-only, results unchanged: the retirement test below and this
-        // wait both end the visit with nothing written, and only the
-        // animated-Tiberium compare stands between them. A waiting anim of
-        // any other type leaves here, before the delete queue is asked.
-        if waits && !config.is_animated_tiberium {
-            return Ok(false);
-        }
         // AnimAI4243AE..4243B6 checks Object+90 after first-AI/delay.
         // FlamingGuyAI can retire this receiver before the ordinary tail.
         if self.substrate.pending_delete.contains_object(&id) {
             return Ok(false);
+        }
+        // Phobos `AnimClass_Update_VeinholeAttack` (hook `0x4243BC`,
+        // `Misc/Hooks.VeinholeMonster.cpp:59-67`): an `IsVeins=` anim runs
+        // the veinhole attack AI before the animated-tiberium check.
+        if config.is_veins {
+            self.vein_attack_ai(id, rules, overlay_registry, frame_effects)?;
         }
         // AnimAI4243BC..424427: compare the exact CellAnim type at virtual
         // GetCoords minus384 in XY. A mismatch writes inactive but falls
@@ -321,47 +320,49 @@ impl Simulation {
         }
         let mut action = VisitAction::None;
         let mut random_loop_delay = None;
-        if waits {
+        let current_frame = self.session.binary_frame() as i32;
+        //42449B: power pause follows first-AI/delay gates and precedes timer advance;
+        //4244A9: the Temporal erase pause (+11A) right after it.
+        if gates.paused || gates.rate_reload == 0 || !gates.frame_timer.expired(current_frame) {
             return Ok(false);
         }
-        let Some(anim) = self.substrate.anims.get_mut(id) else {
-            return Ok(false);
-        };
-        anim.runtime
-            .frame_timer
-            .start(current_frame, i32::from(anim.runtime.rate_reload));
-        anim.runtime.current_frame = anim
-            .runtime
-            .current_frame
-            .wrapping_add(anim.runtime.frame_step);
-        // VERA-only, results unchanged: the damage step and Middle are the
-        // only callbacks between this commit and the boundary tail. A visit
-        // with neither reaches the tail on the anim it already holds. One
-        // with either reads the anim again after each, as a callback may
-        // have retired it.
-        let mut bridge_state_changed = false;
-        let boundary = if !deals_frame_damage(config, anim) && !reaches_middle(config, anim) {
-            advance_anim_boundary(anim, config)
-        } else {
-            bridge_state_changed =
-                self.anim_frame_damage(id, config, rules, overlay_registry, frame_effects);
-            // AnimAI42464C checks only ObjectAlive after receiver callbacks.
-            // Ordinary Anim retirement queues retained storage; scalar deletion
-            // removes it. Owner expiry's inactive byte is a later-visit gate.
-            if self.anim(id).is_none() || self.substrate.pending_delete.contains_object(&id) {
-                return Ok(bridge_state_changed);
-            }
-            let middle = self
-                .anim(id)
-                .is_some_and(|anim| reaches_middle(config, anim));
-            if middle {
-                self.anim_middle(id, config, rules, overlay_registry);
-            }
+        {
             let Some(anim) = self.substrate.anims.get_mut(id) else {
-                return Ok(bridge_state_changed);
+                return Ok(false);
             };
-            advance_anim_boundary(anim, config)
+            anim.runtime
+                .frame_timer
+                .start(current_frame, i32::from(anim.runtime.rate_reload));
+            anim.runtime.current_frame = anim
+                .runtime
+                .current_frame
+                .wrapping_add(anim.runtime.frame_step);
+        }
+        let bridge_state_changed =
+            self.anim_frame_damage(id, &config, rules, overlay_registry, frame_effects);
+        // AnimAI42464C checks only ObjectAlive after receiver callbacks.
+        // Ordinary Anim retirement queues retained storage; scalar deletion
+        // removes it. Owner expiry's inactive byte is a later-visit gate.
+        if self.anim(id).is_none() || self.substrate.pending_delete.contains_object(&id) {
+            return Ok(bridge_state_changed);
+        }
+        let middle = self.anim(id).is_some_and(|anim| {
+            // `0x0042465D..0x00424687`: the committed stage reaching the
+            // type's middle frame (`+0x298`, zero meaning Start already ran
+            // Middle) calls Middle unless the anim is bouncing (`+0x194`, the
+            // constructor's byte, which a `Next=` switch keeps), before the boundary
+            // tail.
+            middle_frame(&config).is_some_and(|middle| {
+                config.start.wrapping_add(anim.runtime.current_frame) == middle
+            }) && anim.bounce.is_none()
+        });
+        if middle {
+            self.anim_middle(id, &config, rules, overlay_registry);
+        }
+        let Some(anim) = self.substrate.anims.get_mut(id) else {
+            return Ok(bridge_state_changed);
         };
+        let boundary = advance_anim_boundary(anim, &config);
         match boundary {
             AnimBoundary::Continue | AnimBoundary::Bounce => return Ok(bridge_state_changed),
             AnimBoundary::Loop => {
@@ -416,6 +417,131 @@ impl Simulation {
         Ok(bridge_state_changed)
     }
 
+    /// Phobos `AnimExt::VeinAttackAI` (`Ext/Anim/Body.cpp:164-195`, hook
+    /// `0x4243BC`): a `IsVeins=` anim on the fully grown weed overlay (index
+    /// 126, data >= 0x30, flat cell) retires itself when a precondition fails
+    /// and damages every low techno of its cell every other frame with
+    /// `[General] VeinDamage=` and `[General] VeinholeWarhead=`.
+    ///
+    /// RESIDUAL: native passes a null warhead when `VeinholeWarhead=` is
+    /// unset; a damage packet needs a live warhead, so an unset/unknown key
+    /// deals no damage (retail leaves it unset with `VeinDamage=0`). The TS
+    /// `VeinProof` ability has no YR type flag to read.
+    fn vein_attack_ai(
+        &mut self,
+        id: AnimId,
+        rules: &RuleSet,
+        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        effects: &mut FrameEffects<'_>,
+    ) -> Result<(), TiberiumImageError> {
+        const WEED_OVERLAY_INDEX: u8 = 126;
+        const FULLY_GROWN_FROM: u8 = 0x30;
+        let Some(location) = self.anim_absolute_coord(id) else {
+            return Ok(());
+        };
+        let (occupiers, retire) = {
+            let Some(terrain) = self.resolved_terrain.as_ref() else {
+                return Ok(());
+            };
+            let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
+            let identity = cells.lookup_world(location.x, location.y);
+            let (rx, ry) = cells.coord(identity);
+            let slope = match identity {
+                crate::map::cell_index::NativeCellIdentity::Real(index) => {
+                    terrain.cells()[index].slope_type
+                }
+                crate::map::cell_index::NativeCellIdentity::Dummy => {
+                    terrain.shared_cell_dummy().snapshot().slope_type
+                }
+            };
+            let (overlay, overlay_data) = self.anim_cell_overlay_fields(location);
+            let mut occupiers: Vec<u64> = Vec::new();
+            if let Some(cell) = self.substrate.occupancy.get(rx as u16, ry as u16) {
+                for layer in [
+                    crate::sim::movement::locomotor::MovementLayer::Ground,
+                    crate::sim::movement::locomotor::MovementLayer::Bridge,
+                    crate::sim::movement::locomotor::MovementLayer::Air,
+                    crate::sim::movement::locomotor::MovementLayer::Underground,
+                ] {
+                    for occupant in cell.iter_layer(layer) {
+                        occupiers.push(occupant.entity_id);
+                    }
+                }
+            }
+            // `pOccupier->GetHeight() > 0` for the cell list head blocks the
+            // anim from continuing.
+            let blocked = occupiers.iter().any(|&occupier| {
+                self.substrate.entities.get(occupier).is_some_and(|entity| {
+                    crate::sim::movement::air_movement::current_fly_height(entity, Some(terrain))
+                        > 0
+                })
+            });
+            let retire = occupiers.is_empty()
+                || blocked
+                || overlay != Some(WEED_OVERLAY_INDEX)
+                || overlay_data < FULLY_GROWN_FROM
+                || slope != 0;
+            (occupiers, retire)
+        };
+        // `pAnim->UnableToContinue = true`; the same next-visit retirement
+        // byte the animated-tiberium mismatch writes.
+        if retire && let Some(anim) = self.substrate.anims.get_mut(id) {
+            anim.runtime.inactive = true;
+        }
+        if !self.session.binary_frame().is_multiple_of(2) {
+            return Ok(());
+        }
+        let Some(warhead_name) = rules.phobos_globals.veinhole_warhead.as_deref() else {
+            return Ok(());
+        };
+        let Some(warhead) = rules.warhead(warhead_name) else {
+            return Ok(());
+        };
+        let warhead_ref = self.interner.intern(&warhead.id);
+        let damage = rules.general.vein_damage;
+        let terrain = self.resolved_terrain.as_ref();
+        let targets: Vec<u64> = occupiers
+            .into_iter()
+            .filter(|&occupier| {
+                let Some(entity) = self.substrate.entities.get(occupier) else {
+                    return false;
+                };
+                if !matches!(
+                    entity.category(),
+                    crate::map::entities::EntityCategory::Structure
+                        | crate::map::entities::EntityCategory::Unit
+                        | crate::map::entities::EntityCategory::Infantry
+                        | crate::map::entities::EntityCategory::Aircraft
+                ) {
+                    return false;
+                }
+                let Some(object) = self.object_type(entity.type_ref(), rules) else {
+                    return false;
+                };
+                !object.immune_to_veins
+                    && entity.health.current() > 0
+                    && entity.lifecycle.object_alive()
+                    && crate::sim::movement::air_movement::current_fly_height(entity, terrain) <= 5
+            })
+            .collect();
+        for occupant in targets {
+            let receiver = crate::sim::combat::EntityDamageEvent::direct_receiver(
+                occupant,
+                damage,
+                0,
+                crate::sim::combat::RAD_NO_ATTACKER,
+                None,
+                warhead_ref,
+                crate::sim::combat::ReceiverCallFlags {
+                    ignore_defenses: false,
+                    arg6: false,
+                },
+            );
+            self.commit_direct_damage_receiver(rules, overlay_registry, receiver, effects);
+        }
+        Ok(())
+    }
+
     /// AnimClass::AI424513..424647, after the stage/timer commit. Debit the
     /// retained fraction before GetCoords/AreaDamage can retire this emitter.
     /// The body adds no RNG request; receiver consequences keep their owners.
@@ -431,10 +557,11 @@ impl Simulation {
         let Some(anim) = self.anim(id) else {
             return false;
         };
-        if !deals_frame_damage(config, anim) {
+        let damage = f64::from_bits(config.damage.bits());
+        //424513..424532 rejects zero/negative/unordered, then instance+194.
+        if !(damage > 0.0) || anim.bounce.is_some() {
             return false;
         }
-        let damage = f64::from_bits(config.damage.bits());
         // 0x00424538..0x0042455E: an owner whose WhatAmI is Terrain (0x24)
         // scales Damage by 5.0 (0x007E3568). A tree owner is kept in
         // `owner_terrain`, never in `owner_entity`.
@@ -1142,12 +1269,18 @@ impl Simulation {
             .map_or((30, 30), |entry| {
                 (i32::from(entry.frame_width), i32::from(entry.frame_height))
             });
+        // 0x4250E1: the AnimType's Phobos key, else the `[General]` fallback.
+        let destroy_tiberium = !rules.phobos()
+            || config
+                .crater_destroy_tiberium
+                .unwrap_or(rules.phobos_globals.anim_crater_destroy_tiberium);
         let marks = crate::sim::combat::smudge_dispatch::AnimMiddleMarks {
             scorch: config.scorch,
             crater: config.crater,
             force_big_craters: config.force_big_craters,
             width,
             height,
+            destroy_tiberium,
         };
         let coord = crate::sim::smudge_grid::SimCoord {
             x: coord.x,
@@ -1271,23 +1404,6 @@ impl Simulation {
         }
         self.anim_start(id, config, rules, overlay_registry, frame_effects)
     }
-}
-
-/// The damage step's gate (`AnimClass::AI 0x00424513..0x00424532`): the
-/// type's Damage is above zero (zero, negative and unordered are refused) and
-/// the anim does not bounce (`+0x194`).
-fn deals_frame_damage(config: &AnimTypeRuntimeConfig, anim: &AnimObject) -> bool {
-    f64::from_bits(config.damage.bits()) > 0.0 && anim.bounce.is_none()
-}
-
-/// `0x0042465D..0x00424687`: the committed stage reaching the type's middle
-/// frame (`+0x298`, zero meaning Start already ran Middle) calls Middle
-/// unless the anim is bouncing (`+0x194`, the constructor's byte, which a
-/// `Next=` switch keeps), before the boundary tail.
-fn reaches_middle(config: &AnimTypeRuntimeConfig, anim: &AnimObject) -> bool {
-    middle_frame(config)
-        .is_some_and(|middle| config.start.wrapping_add(anim.runtime.current_frame) == middle)
-        && anim.bounce.is_none()
 }
 
 /// `AnimClass::Middle @ 0x00424F00`'s height gate (`0x00425057`).

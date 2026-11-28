@@ -108,7 +108,6 @@ pub(super) struct UiInstances {
     pub ground_strokes: Vec<SurfaceStroke>,
     pub placement: Vec<SpriteInstance>,
     /// Phobos placement preview artwork, drawn after the PLACE cells.
-    #[cfg(feature = "phobos")]
     pub placement_ghost: Vec<SpriteInstance>,
     pub target_line: Vec<SurfaceStroke>,
     pub tactical_line_calls: Vec<crate::app::presentation::airstrike_lines::TacticalLineCall>,
@@ -139,17 +138,11 @@ pub(super) struct SidebarInstances {
     pub label_overlay: Vec<SpriteInstance>,
     pub label_text: Vec<SpriteInstance>,
     pub text: Vec<SpriteInstance>,
-    #[cfg(feature = "phobos")]
     pub sw_sidebar_chrome: Vec<SpriteInstance>,
-    #[cfg(feature = "phobos")]
     pub sw_sidebar_cameo: Vec<SpriteInstance>,
-    #[cfg(feature = "phobos")]
     pub sw_sidebar_gclock: Vec<SpriteInstance>,
-    #[cfg(feature = "phobos")]
     pub sw_sidebar_hover: Vec<SpriteInstance>,
-    #[cfg(feature = "phobos")]
     pub sw_sidebar_overlay: Vec<SpriteInstance>,
-    #[cfg(feature = "phobos")]
     pub sw_sidebar_text: Vec<SpriteInstance>,
     pub minimap: Vec<SpriteInstance>,
     pub viewport_rect: Vec<SpriteInstance>,
@@ -599,7 +592,6 @@ pub(super) fn build_world_instances(
         let info_shift = crate::app::presentation::health_templates::family(
             crate::app::presentation::health_templates::Mark::InfoLabel,
         );
-        #[cfg(feature = "phobos")]
         let digital_shift = crate::app::presentation::health_templates::family(
             crate::app::presentation::health_templates::Mark::DigitalDisplay,
         );
@@ -679,7 +671,6 @@ pub(super) fn build_world_instances(
                 // Phobos DigitalDisplay: built here because the GAME.FNT atlas
                 // lives on the renderer; the value/position owner is
                 // presentation::digital_display.
-                #[cfg(feature = "phobos")]
                 if match_state.match_presentation.digital_display_enabled
                     && let Some(rules) = crate::app::state::active_rules(frontend, match_state)
                     && let Some(offset) = digital_shift
@@ -712,6 +703,28 @@ pub(super) fn build_world_instances(
                     );
                     status.digital_text = digital.texts;
                     status.digital_shapes = digital.shapes;
+                }
+                // Phobos `TechnoExt::DrawSelectBox` (`Ext/Techno/Body.Visuals.cpp:333-409`):
+                // the after-body box sprite rides this Extras pass, like the
+                // DigitalDisplay custom shapes.
+                if match_state.match_presentation.enable_select_box
+                    && let Some(rules) = crate::app::state::active_rules(frontend, match_state)
+                {
+                    let select_box = crate::app::presentation::select_box::select_box_sprites(
+                        sim,
+                        entity,
+                        rules,
+                        overlay,
+                        local_owner.as_deref(),
+                        crate::app::presentation::ui_overlays::StatusViewport {
+                            camera: [match_state.input.camera_x, match_state.input.camera_y],
+                            size: [sw, sh],
+                            zoom: match_state.input.zoom_level,
+                            ignore_visibility: match_state.sandbox_full_visibility,
+                        },
+                    );
+                    status.select_box = select_box.above;
+                    status.select_box_ground = select_box.ground;
                 }
                 if !entity.sinking.is_active() && !entity.passenger_role.is_inside_transport() {
                     if let (Some(frame), Some(shape)) = (
@@ -920,7 +933,9 @@ pub(super) fn build_world_instances(
                 sim,
                 frame,
                 rules: crate::app::state::active_rules(frontend, match_state),
-                player: local_owner.as_deref().and_then(|name| sim.interner().get(name)),
+                player: local_owner
+                    .as_deref()
+                    .and_then(|name| sim.interner().get(name)),
                 hovered: crate::app::presentation::ui_overlays::health_hover_target(hover),
                 viewport: crate::app::presentation::ui_overlays::StatusViewport {
                     camera: [match_state.input.camera_x, match_state.input.camera_y],
@@ -1377,9 +1392,8 @@ pub(super) fn build_ui_instances(
             if let Some(designation) = entity.place.airstrike_designation {
                 let _ = runtime;
                 let style = crate::app::presentation::airstrike_lines::FlareStyle {
-                    #[cfg(feature = "phobos")]
+                    phobos: runtime.resources.rules.phobos(),
                     color: designation.color,
-                    #[cfg(feature = "phobos")]
                     z_adjust: runtime.resources.rules.general.airstrike_line_z_adjust,
                 };
                 designations.insert(entity.stable_id(), (designation.coords, style));
@@ -1457,7 +1471,6 @@ pub(super) fn build_ui_instances(
         ground_marks,
         ground_strokes,
         placement: placement_preview.cells,
-        #[cfg(feature = "phobos")]
         placement_ghost: placement_preview.ghost,
         target_line,
         tactical_line_calls,
@@ -1548,7 +1561,6 @@ fn build_beacon_instances(match_state: &MatchState) -> Vec<Vec<SpriteInstance>> 
 /// The PLACE cells and, in Phobos builds, the preview artwork drawn after them.
 struct PlacementPreviewInstances {
     cells: Vec<SpriteInstance>,
-    #[cfg(feature = "phobos")]
     ghost: Vec<SpriteInstance>,
 }
 
@@ -1557,7 +1569,6 @@ struct PlacementPreviewInstances {
 /// or the pending frame1. Keep one ordered stream rather than regrouping
 /// overlapping cells by admitted color. `process_assets` serves the Phobos
 /// ghost only.
-#[cfg_attr(not(feature = "phobos"), allow(unused_variables))]
 fn build_placement_preview(
     platform: &PlatformState,
     renderer: &RendererState,
@@ -1568,7 +1579,6 @@ fn build_placement_preview(
 ) -> PlacementPreviewInstances {
     let mut out = PlacementPreviewInstances {
         cells: Vec::new(),
-        #[cfg(feature = "phobos")]
         ghost: Vec::new(),
     };
     let current = match_state.input.building_placement_preview.as_ref();
@@ -1594,21 +1604,17 @@ fn build_placement_preview(
     // has no filler cells and shares one current-cell presentation transport.
     // Phobos `0x47EFAE` selects the grid translucency from the rules global
     // plus the client switch, independently of the per-type preview gate.
-    #[cfg(feature = "phobos")]
     let alpha = crate::app::state::active_rules(frontend, match_state).map_or(1.0, |rules| {
         rules
             .placement_preview_globals()
             .effective_grid_translucency(match_state.match_presentation.show_placement_preview)
             .opacity()
     });
-    #[cfg(not(feature = "phobos"))]
-    let alpha = 1.0;
     if let Some(shape) = shape {
         out.cells = shape.build_building_preview(&draws, alpha);
     }
     // The ghost (`0x6D528A`) follows the current grid, inside the same
     // tactical-rect gate.
-    #[cfg(feature = "phobos")]
     if let Some(preview) = current.filter(|_| cursor_in) {
         out.ghost = build_placement_ghost(renderer, frontend, match_state, process_assets, preview);
     }
@@ -1618,7 +1624,6 @@ fn build_placement_preview(
 /// Phobos `TacticalClass_DrawPlacement_PlacementPreview 0x6D528A`: the
 /// per-type preview image at the current placement cell. The rules global,
 /// the client switch and the type's own `PlacementPreview=` must all admit it.
-#[cfg(feature = "phobos")]
 fn build_placement_ghost(
     renderer: &RendererState,
     frontend: &FrontendState,
@@ -1750,15 +1755,23 @@ pub(super) fn build_sidebar_instances(
 
     let (minimap, viewport_rect, content_boundary) = if minimap_visible {
         let markers = match_state.ui_modules.as_ref().map(|ui| {
-            let sim = match_state.sim_runtime.presentation().map(|rt| &rt.simulation);
+            let sim = match_state
+                .sim_runtime
+                .presentation()
+                .map(|rt| &rt.simulation);
             let frame = match_state.sim_runtime.frame();
             let player = crate::app::input::commands::preferred_local_owner_name(match_state);
-            let player = sim.and_then(|sim| player.as_deref().and_then(|name| sim.interner().get(name)));
+            let player =
+                sim.and_then(|sim| player.as_deref().and_then(|name| sim.interner().get(name)));
             let rules = crate::app::state::active_rules(frontend, match_state);
             crate::app::ui_modules::field::radar_markers(ui, |id| {
                 let entity = frame?.object(id)?;
                 crate::app::presentation::ui_overlays::module_status_anchor(
-                    sim?, entity, rules, player, match_state.sandbox_full_visibility,
+                    sim?,
+                    entity,
+                    rules,
+                    player,
+                    match_state.sandbox_full_visibility,
                 )?;
                 Some((entity.position.rx(), entity.position.ry()))
             })
@@ -1884,13 +1897,14 @@ pub(super) fn build_sidebar_instances(
     let cameo_layers = view
         .map(|v| build_sidebar_cameo_instances(renderer, frontend, match_state, v, status_labels))
         .unwrap_or_default();
-    #[cfg(feature = "phobos")]
     let sw_sidebar = crate::app::presentation::sw_sidebar_build::build(
         renderer,
         frontend,
         match_state,
         &mut huds.sw,
-        view.is_some(),
+        view.is_some()
+            && crate::app::state::active_rules(frontend, match_state)
+                .is_some_and(|rules| rules.phobos()),
         status_labels,
         ready_tint,
     );
@@ -1978,6 +1992,7 @@ pub(super) fn build_sidebar_instances(
         process_assets,
         persistence,
     );
+    let indicator_panel_rect = view.as_ref().map(|v| v.panel_rect);
     let layout_parts = &mut match_state.match_presentation.added_part_huds.side;
     layout_parts.draw(
         &placed,
@@ -2002,6 +2017,21 @@ pub(super) fn build_sidebar_instances(
     let smooth_chrome =
         crate::app::presentation::sidebar_render::current_sidebar_chrome(frontend, match_state)
             .is_some_and(|atlas| atlas.retarget_to_smooth(&mut chrome));
+
+    // Phobos draws its sidebar indicators on the same surface, from the same
+    // credits tick and with the same BitFont as the credits counter.
+    if crate::app::state::active_rules(frontend, match_state).is_some_and(|rules| rules.phobos())
+        && let Some(panel_rect) = indicator_panel_rect
+    {
+        status_text.extend(
+            crate::app::presentation::sidebar_text::build_sidebar_indicator_instances(
+                &renderer.bit_font,
+                &match_state.match_presentation.sidebar_indicator_text,
+                panel_rect,
+                [match_state.input.camera_x, match_state.input.camera_y],
+            ),
+        );
+    }
 
     // Preserve the pixels actually drawn online for a possible pre-due loss.
     // This is display history, separate from ongoing internal minimap updates.
@@ -2062,17 +2092,11 @@ pub(super) fn build_sidebar_instances(
         label_overlay: cameo_layers.label_overlay,
         label_text,
         text: status_text,
-        #[cfg(feature = "phobos")]
         sw_sidebar_chrome: sw_sidebar.chrome,
-        #[cfg(feature = "phobos")]
         sw_sidebar_cameo: sw_sidebar.cameo,
-        #[cfg(feature = "phobos")]
         sw_sidebar_gclock: sw_sidebar.gclock,
-        #[cfg(feature = "phobos")]
         sw_sidebar_hover: sw_sidebar.hover,
-        #[cfg(feature = "phobos")]
         sw_sidebar_overlay: sw_sidebar.overlay,
-        #[cfg(feature = "phobos")]
         sw_sidebar_text: sw_sidebar.text,
         minimap,
         viewport_rect,

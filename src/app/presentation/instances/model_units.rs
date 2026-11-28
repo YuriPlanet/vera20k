@@ -211,6 +211,7 @@ fn pose_matrices(declared: &DeclaredModel, pose: &ModelUnitPose) -> [glam::Mat4;
         Some(PoseTilt::Fly(angles)) => BodyTilt::Fly(angles),
         Some(PoseTilt::FlyNormal { pitch, roll }) => BodyTilt::FlyNormal { pitch, roll },
         Some(PoseTilt::Jumpjet(angles)) => BodyTilt::Jumpjet { angles, half_sizes },
+        Some(PoseTilt::JumpjetTilt(angles)) => BodyTilt::JumpjetTilt(angles),
         Some(PoseTilt::Rocket(pitch)) => BodyTilt::Rocket(pitch),
         None => {
             return ground(pose.ground.unwrap_or(GroundPose {

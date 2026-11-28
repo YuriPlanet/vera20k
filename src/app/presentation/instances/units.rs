@@ -469,18 +469,14 @@ fn aircraft_body_offset_y(
     };
     let height = entity.place.flight_height;
     let base = entity.place.landing_base;
-    let _ = rules;
     // MainTick renders before Logic55DC9E, then increments at55DE7E/81.
     // The next Draw_Point4CF8D8 reads that committed global frame directly.
-    // Original4CF8B1 tests TechnoType+0xC95; a Phobos build resolves
-    // FlyNoWobbles against [AudioVisual] instead.
-    #[cfg(feature = "phobos")]
-    let no_wobbles = rules.map_or_else(
-        || object.is_dropship(),
-        |rules| rules.fly_no_wobbles_for(object),
-    );
-    #[cfg(not(feature = "phobos"))]
-    let no_wobbles = object.is_dropship();
+    // Original4CF8B1 tests TechnoType+0xC95; Phobos resolves FlyNoWobbles
+    // against [AudioVisual] instead.
+    let no_wobbles = match rules {
+        Some(rules) if rules.phobos() => rules.fly_no_wobbles_for(object),
+        _ => object.is_dropship(),
+    };
     let delta = crate::render::locomotor_visual::fly_draw_point_y(
         frame, no_wobbles, taking_off, landing, height, base,
     ) as f32;
@@ -515,14 +511,20 @@ impl VehicleGeometry {
         let motion = motion.filter(|motion| motion.sampling());
         let kind = entity.locomotor.as_ref().map(|l| l.active_kind());
         let native = entity.pose;
+        let phobos = rules.is_some_and(|rules| rules.phobos());
         let native_tilt = body_pose_with_angles(
             entity,
             band,
             object.is_some_and(|o| o.tilt_crash_jumpjet),
-            native.angles,
-            native.rocket_pitch,
-            object,
-            native.fly_bank_direction,
+            BodyPoseContext {
+                angles: native.angles,
+                pitch: native.rocket_pitch,
+                object_type: object,
+                bank_direction: native.fly_bank_direction,
+                jumpjet_tilt: jumpjet_tilt_settings(rules, object),
+                phobos,
+                binary_frame: frame,
+            },
         );
         let location = entity.hud.location;
         let xyz = [location.x, location.y, location.z];
@@ -543,6 +545,7 @@ impl VehicleGeometry {
             tilt: match native_tilt {
                 Some(PoseTilt::FlyNormal { pitch, roll }) => [pitch, roll],
                 Some(PoseTilt::Jumpjet(angles)) => angles,
+                Some(PoseTilt::JumpjetTilt(angles)) => angles,
                 _ if surface_vehicle => native.angles,
                 _ => [0.0; 2],
             },
@@ -596,7 +599,12 @@ impl VehicleGeometry {
                 } else if kind == Some(LocomotorKind::Fly) {
                     Some(PoseTilt::FlyNormal { pitch, roll })
                 } else {
-                    Some(PoseTilt::Jumpjet(drawn.tilt))
+                    Some(match native_tilt {
+                        Some(PoseTilt::Jumpjet(_)) => PoseTilt::Jumpjet(drawn.tilt),
+                        Some(PoseTilt::JumpjetTilt(_)) => PoseTilt::JumpjetTilt(drawn.tilt),
+                        _ if phobos => PoseTilt::JumpjetTilt(drawn.tilt),
+                        _ => PoseTilt::Jumpjet(drawn.tilt),
+                    })
                 };
                 // A fractional bank is a frame-local pose. It cannot fill
                 // the native voxel image keyed by the endpoint's roll sign.
@@ -1042,7 +1050,7 @@ pub(crate) fn unit_visitor<'a>(
                         body_frames: body_frame_count(type_str, &atlas.frame_counts),
                         turret_offset: art_reg
                             .and_then(|art| art.get(type_str))
-                            .map_or(0, |entry| entry.turret_offset),
+                            .map_or(0, |entry| entry.turret_offset[0]),
                     });
                 let (anim_frame, turret_frame) = animation_frames_of(
                     entity,
@@ -1746,6 +1754,7 @@ pub(crate) fn drawn_model_id<'a>(
     rules: Option<&'a crate::rules::ruleset::RuleSet>,
     binary_frame: u32,
     observer: crate::render::draw_state::ObserverDrawContext,
+    water: bool,
 ) -> Cow<'a, str> {
     // VERA: a module's `ImageOverride` draws the object as another type of
     // its category, which then stands for its own in every arm below.
@@ -1757,6 +1766,20 @@ pub(crate) fn drawn_model_id<'a>(
         && let Some(unloading_type) = object.and_then(|object| object.unloading_class.as_deref())
     {
         return Cow::Borrowed(unloading_type);
+    }
+    // Phobos `Image.Condition*=`/`WaterImage.Condition*=` override the type the
+    // draw hooks below select, disguise and `NoSpawnAlt` included; a fully
+    // deployed Unit already left through `UnloadingClass=`.
+    if let (Some(rules), Some(object)) = (rules, object)
+        && let Some(damaged) = super::damaged_image::swap_health(
+            entity.category(),
+            entity.health.current(),
+            object,
+            rules,
+            water,
+        )
+    {
+        return Cow::Borrowed(damaged);
     }
     let no_spawn_alt = object.is_some_and(crate::rules::object_type::ObjectType::no_spawn_alt);
     if let Some(disguise_type) = entity
@@ -1801,7 +1824,7 @@ fn unit_body_draw<'a>(
     if entity.category() == EntityCategory::Unit && entity.unit_deploying() {
         return None;
     }
-    let model = drawn_model_id(entity, interner, rules, binary_frame, observer);
+    let model = drawn_model_id(entity, interner, rules, binary_frame, observer, false);
     if !super::helpers::drawn_type_uses_voxel(entity, &model, interner, rules) {
         return None;
     }
@@ -1816,7 +1839,7 @@ fn unit_body_draw<'a>(
     // custom combinations can draw the wrong gun or omit it. The ordinary
     // base pair serves the zero-count ROBO/MTNK water path.
     let turret_parts = object_draws_turret_parts(model_object, entity.current_turret_index());
-    let body = body_draw(entity, band, tilt_crash_jumpjet, turret_parts);
+    let body = body_draw(entity, band, binary_frame, tilt_crash_jumpjet, turret_parts);
     Some((model, body))
 }
 
@@ -1889,10 +1912,11 @@ pub(super) fn drawn_model_object<'r>(
 fn body_draw(
     entity: &crate::app::presentation::frame::ObjectRecord,
     band: EntityDrawBand,
+    binary_frame: u32,
     tilt_crash_jumpjet: bool,
     turret_parts: bool,
 ) -> BodyDraw {
-    if let Some(tilt) = body_pose(entity, band, tilt_crash_jumpjet) {
+    if let Some(tilt) = body_pose(entity, band, binary_frame, tilt_crash_jumpjet) {
         return BodyDraw::Pose(tilt);
     }
     if !turret_parts {
@@ -1916,12 +1940,26 @@ fn body_draw(
 fn body_pose(
     entity: &crate::app::presentation::frame::ObjectRecord,
     band: EntityDrawBand,
+    binary_frame: u32,
     tilt_crash_jumpjet: bool,
 ) -> Option<crate::render::unit_atlas::PoseTilt> {
     // The pose's rocking angles and rocket pitch.
     let angles = entity.pose.angles;
     let pitch = entity.pose.rocket_pitch;
-    body_pose_with_angles(entity, band, tilt_crash_jumpjet, angles, pitch, None, None)
+    body_pose_with_angles(
+        entity,
+        band,
+        tilt_crash_jumpjet,
+        BodyPoseContext {
+            angles,
+            pitch,
+            object_type: None,
+            bank_direction: None,
+            jumpjet_tilt: None,
+            phobos: false,
+            binary_frame,
+        },
+    )
 }
 
 /// Normal `FlyLocomotionClass::Draw_Matrix @ 0x004CF610`: its non-crash arm
@@ -1962,37 +2000,141 @@ fn normal_fly_pose(
     (pitch != 0.0 || roll != 0.0).then_some(PoseTilt::FlyNormal { pitch, roll })
 }
 
+/// The inputs the locomotor pose decision reads beyond the entity. `angles`
+/// and `pitch` are the sampled pose values (interpolated on the live draw).
+#[derive(Clone, Copy)]
+pub(crate) struct BodyPoseContext<'a> {
+    angles: [f32; 2],
+    pitch: f32,
+    object_type: Option<&'a crate::rules::object_type::ObjectType>,
+    bank_direction: Option<crate::sim::movement::facing_class::RotationDirection>,
+    /// Phobos `JumpjetTilt` after the per-type/global fallback; `None` keeps
+    /// the stock draw.
+    jumpjet_tilt: Option<crate::rules::phobos_jumpjet_tilt::ResolvedJumpjetTilt>,
+    /// Phobos' live crash rocking replaces the stock `TiltCrashJumpjet=` gate.
+    phobos: bool,
+    binary_frame: u32,
+}
+
 fn body_pose_with_angles(
     entity: &crate::app::presentation::frame::ObjectRecord,
     band: EntityDrawBand,
     tilt_crash_jumpjet: bool,
-    angles: [f32; 2],
-    pitch: f32,
-    object_type: Option<&crate::rules::object_type::ObjectType>,
-    bank_direction: Option<crate::sim::movement::facing_class::RotationDirection>,
+    context: BodyPoseContext<'_>,
 ) -> Option<crate::render::unit_atlas::PoseTilt> {
     use crate::render::unit_atlas::PoseTilt;
     use crate::rules::locomotor_type::LocomotorKind;
     // Normal Fly Draw_Matrix has its own airborne/speed gate and does not
     // depend on RockingState (native `Draw_Matrix @ 0x004CF610`).
-    if let Some(object_type) = object_type
-        && let Some(tilt) = normal_fly_pose(entity, band, object_type, bank_direction)
+    if let Some(object_type) = context.object_type
+        && let Some(tilt) = normal_fly_pose(entity, band, object_type, context.bank_direction)
     {
         return Some(tilt);
     }
     let locomotor = entity.locomotor.as_ref()?;
     if locomotor.rocket().is_some() {
-        return (pitch != 0.0).then_some(PoseTilt::Rocket(pitch));
+        return (context.pitch != 0.0).then_some(PoseTilt::Rocket(context.pitch));
     }
-    entity.rocking.as_ref()?;
     match locomotor.active_kind() {
         LocomotorKind::Fly if entity.crash.is_crashing() && band != EntityDrawBand::Ground => {
-            Some(PoseTilt::Fly(angles))
+            entity.rocking.as_ref()?;
+            Some(PoseTilt::Fly(context.angles))
         }
         LocomotorKind::Jumpjet
-            if tilt_crash_jumpjet && crate::map::voxel_pose::voxel_tilt_applies(angles) =>
+            if context.phobos && crate::map::voxel_pose::voxel_tilt_applies(context.angles) =>
         {
-            Some(PoseTilt::Jumpjet(angles))
+            entity.rocking.as_ref()?;
+            // Phobos moves the `TiltCrashJumpjet=` check to the crash itself
+            // (`Ext/Unit/Hooks.Jumpjet.cpp:159-165`) and its replacement
+            // matrix (`Ext/TechnoType/Hooks.MatrixOp.cpp:407-429`) rotates by
+            // the live angles for every jumpjet; airborne it drops the crash
+            // translation.
+            if entity
+                .locomotor
+                .as_ref()
+                .and_then(|l| l.jumpjet_draw())
+                .is_some_and(|draw| !draw.is_grounded())
+            {
+                return Some(PoseTilt::JumpjetTilt(context.angles));
+            }
+            Some(PoseTilt::Jumpjet(context.angles))
+        }
+        LocomotorKind::Jumpjet
+            if tilt_crash_jumpjet && crate::map::voxel_pose::voxel_tilt_applies(context.angles) =>
+        {
+            Some(PoseTilt::Jumpjet(context.angles))
+        }
+        LocomotorKind::Jumpjet if context.phobos => {
+            jumpjet_tilt_pose(entity, context.jumpjet_tilt?, context.binary_frame)
+        }
+        _ => None,
+    }
+}
+
+/// Phobos `JumpjetLocomotionClass_Draw_Matrix`'s default arm
+/// (`Ext/TechnoType/Hooks.MatrixOp.cpp:449-491`, vtable `0x7ECD8C`): a live
+/// Unit whose type enables `JumpjetTilt`, airborne, moving, healthy and not
+/// held by a Magnetron gets a pitch from its current speed and acceleration
+/// and, while its LocomotionFacing turns, a roll from the signed turn
+/// difference. The resulting pose is the plain facing matrix times the two
+/// rotations, so the crashed `TiltCrashJumpjet=` arm above keeps precedence.
+///
+/// RESIDUAL: the frame record does not carry the Magnetron grasp bit, so a
+/// magnetron-held jumpjet is tilted as if it were free.
+fn jumpjet_tilt_pose(
+    entity: &crate::app::presentation::frame::ObjectRecord,
+    settings: crate::rules::phobos_jumpjet_tilt::ResolvedJumpjetTilt,
+    binary_frame: u32,
+) -> Option<crate::render::unit_atlas::PoseTilt> {
+    if entity.category() != crate::map::entities::EntityCategory::Unit {
+        return None;
+    }
+    let draw = entity.locomotor.as_ref()?.jumpjet_draw()?;
+    if draw.is_grounded() || entity.health.current() <= 0 {
+        return None;
+    }
+    // Strict native `CurrentSpeed > 0.0`; NaN fails the comparison.
+    let current_speed = f64::from_bits(draw.current_speed_bits());
+    if !(current_speed > 0.0) {
+        return None;
+    }
+    let angles = settings.tilt_angles(
+        current_speed,
+        f32::from_bits(draw.accel_bits()),
+        draw.facing().is_rotating(binary_frame),
+        draw.facing().difference_raw(),
+    )?;
+    Some(crate::render::unit_atlas::PoseTilt::JumpjetTilt(angles))
+}
+
+/// Phobos `JumpjetTilt` settings for the drawn techno's own type
+/// (`TechnoExt::Fetch(linked)->GetTypeExtData()`,
+/// `Ext/TechnoType/Hooks.MatrixOp.cpp:447`). The per-type nullable fields
+/// fall back to the `[AudioVisual]` globals.
+fn jumpjet_tilt_settings(
+    rules: Option<&crate::rules::ruleset::RuleSet>,
+    object_type: Option<&crate::rules::object_type::ObjectType>,
+) -> Option<crate::rules::phobos_jumpjet_tilt::ResolvedJumpjetTilt> {
+    let rules = rules?;
+    if !rules.phobos() {
+        return None;
+    }
+    object_type?
+        .phobos_jumpjet_tilt
+        .resolve(&rules.phobos_jumpjet_tilt)
+}
+
+/// A body's resolved JumpjetTilt pose carries into its shadow only while the
+/// tilt is above the native cutoff (either angle reaches 0.005, `:733`,
+/// `:768`), so a smaller pose keeps the stock stencil too. Reuses the body's
+/// already-resolved pose rather than recomputing speed, acceleration or
+/// facing in the shadow path.
+fn shadow_tilt_for_body(body: &BodyDraw) -> Option<crate::render::unit_atlas::PoseTilt> {
+    match body {
+        BodyDraw::Pose(crate::render::unit_atlas::PoseTilt::JumpjetTilt(angles))
+            if crate::render::vxl_raster::shadow::tilt_is_active(*angles) =>
+        {
+            Some(crate::render::unit_atlas::PoseTilt::JumpjetTilt(*angles))
         }
         _ => None,
     }
@@ -2429,6 +2571,7 @@ fn prepare_unit_shadow(
                         128 + entry.offset_y as i32 + offset[1] as i32,
                     ],
                     posed: !matches!(source, UnitTextureSource::Stable(_)),
+                    tilt: None,
                 },
             )
             .collect();
@@ -2597,6 +2740,98 @@ fn emit_unit_shadow_sprite(
         draw_state,
         pieces,
     );
+}
+
+/// The two Phobos gun-shadow keys and their screen anchors.
+fn phobos_gun_shadow_keys(
+    turret_key: &UnitSpriteKey,
+    barrel_key: &UnitSpriteKey,
+    turret_offset: [f32; 2],
+    barrel_offset: [f32; 2],
+) -> [(UnitSpriteKey, [f32; 2]); 2] {
+    [
+        (
+            UnitSpriteKey {
+                layer: VxlLayer::ShadowTurret,
+                frame: 0,
+                barrel_pitch: 0,
+                ..turret_key.clone()
+            },
+            turret_offset,
+        ),
+        (
+            UnitSpriteKey {
+                layer: VxlLayer::ShadowBarrel,
+                frame: 0,
+                ..barrel_key.clone()
+            },
+            barrel_offset,
+        ),
+    ]
+}
+
+/// Phobos' turret and barrel shadow suffix (`Hooks.MatrixOp.cpp:803,870-892`).
+/// The stable ground path uses the atlas stencils; dynamic ground poses and
+/// lifted units keep the ordinary shadow until their live matrix is ported.
+fn emit_phobos_gun_shadows(
+    vxl_pose_frame_cache: &std::cell::RefCell<VxlPoseFrameCache>,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    atlas: &crate::render::unit_atlas::UnitAtlas,
+    drawer: VoxelDrawer,
+    entity: &crate::app::presentation::frame::ObjectRecord,
+    type_id: &str,
+    turret_key: &UnitSpriteKey,
+    barrel_key: &UnitSpriteKey,
+    turret_offset: [f32; 2],
+    barrel_offset: [f32; 2],
+    center: [f32; 2],
+    depth: f32,
+    voxel_adjust: f32,
+    draw_state: DrawState,
+    no_shadow: bool,
+    band: EntityDrawBand,
+    ground_pose: Option<crate::render::vxl_raster::GroundPose>,
+    pieces: &mut Vec<ObjectPieceInstance>,
+) {
+    let rules = crate::app::state::active_rules(frontend, match_state);
+    let Some(object) = rules.and_then(|rules| rules.object(type_id)) else {
+        return;
+    };
+    if !crate::render::unit_atlas::turret_shadow_enabled(rules, object)
+        || !unit_shadow_admitted(entity, no_shadow, band)
+        || has_lifted_unit_shadow(entity)
+        || ground_pose.is_some()
+    {
+        return;
+    }
+    for (key, offset) in
+        phobos_gun_shadow_keys(turret_key, barrel_key, turret_offset, barrel_offset)
+    {
+        let Some((entry, source)) = voxel_part_entry(
+            vxl_pose_frame_cache,
+            frontend,
+            match_state,
+            process_assets,
+            atlas,
+            drawer,
+            None,
+            &key,
+            None,
+        ) else {
+            continue;
+        };
+        emit_shadow_stencil(
+            entry,
+            source,
+            [center[0] + offset[0], center[1] + offset[1]],
+            depth,
+            voxel_adjust,
+            draw_state,
+            pieces,
+        );
+    }
 }
 
 /// One shadow draw through `TechnoClass::DrawVoxelShadow @ 0x00706BD0`
@@ -2784,6 +3019,7 @@ fn emit_lifted_unit_shadow(
                         128 + (sprite.position[1] - body_anchor[1]) as i32,
                     ],
                     posed,
+                    tilt: None,
                 })
             })
             .collect();
@@ -3422,6 +3658,28 @@ fn emit_turret_unit_sprites(
         draw_state,
         bounds,
     );
+    emit_phobos_gun_shadows(
+        &renderer.vxl_pose_frame_cache,
+        frontend,
+        match_state,
+        process_assets,
+        atlas,
+        drawer,
+        entity,
+        type_id,
+        &turret_key,
+        &barrel_key,
+        [tur_ox, tur_oy],
+        [barrel_ox, barrel_oy],
+        [center_x, center_y],
+        entity_depth,
+        voxel_adjust,
+        body_draw_state,
+        no_shadow,
+        band,
+        ground_pose,
+        pieces,
+    );
     if let Some((entry, texture_source)) = body_entry_opt {
         let sprite = SpriteInstance {
             position: [center_x + entry.offset_x, center_y + entry.offset_y],
@@ -3536,7 +3794,6 @@ fn harvest_overlay<'a>(
     let frame = sim.session().binary_frame();
     let facing = entity.body_facing_current(frame);
     let counter = entity.body_frame_counter.get();
-    #[cfg(feature = "phobos")]
     match gather_animation(rules, object, sim, entity) {
         Ok(Some((anim, frames_per_dir))) => {
             let (type_id, palette_context) = anim
@@ -3568,7 +3825,6 @@ fn harvest_overlay<'a>(
 /// empty `Tiberiums=` list means slot 0 for every resource; an empty `Anims=`
 /// list keeps OREGATH.SHP and only takes the custom frame count. `None` means
 /// the cell holds no resource, which leaves the stock draw.
-#[cfg(feature = "phobos")]
 fn gather_animation<'a>(
     rules: &'a crate::rules::ruleset::RuleSet,
     object: &'a crate::rules::object_type::ObjectType,
@@ -3847,8 +4103,9 @@ mod tests {
                     .with_colour_word(int(&row["word"]) as u16);
             sim.session_mut_for_test()
                 .set_binary_frame_for_test(int(&row["frame"]) as u32);
+            let record = ObjectRecord::of_test(&unit);
             let (lit_tint, lit) = crate::app::presentation::lighting::techno_effect_light(
-                &ObjectRecord::of_test(&unit),
+                &record,
                 tint,
                 light,
                 &sim,
@@ -4036,6 +4293,7 @@ mod tests {
             body_draw(
                 &ObjectRecord::of_test(&entity),
                 EntityDrawBand::Top,
+                0,
                 false,
                 false
             ),
@@ -4053,6 +4311,7 @@ mod tests {
                 body_draw(
                     &ObjectRecord::of_test(&entity),
                     EntityDrawBand::Top,
+                    0,
                     false,
                     turret_parts
                 ),
@@ -4064,6 +4323,7 @@ mod tests {
             body_draw(
                 &ObjectRecord::of_test(&entity),
                 EntityDrawBand::Ground,
+                0,
                 false,
                 false
             ),
@@ -4075,6 +4335,7 @@ mod tests {
             body_draw(
                 &ObjectRecord::of_test(&entity),
                 EntityDrawBand::Top,
+                0,
                 false,
                 true
             ),
@@ -4084,6 +4345,7 @@ mod tests {
             body_draw(
                 &ObjectRecord::of_test(&entity),
                 EntityDrawBand::Ground,
+                0,
                 true,
                 true
             ),
@@ -4100,6 +4362,7 @@ mod tests {
             body_draw(
                 &ObjectRecord::of_test(&entity),
                 EntityDrawBand::Top,
+                0,
                 true,
                 true
             ),
@@ -4323,6 +4586,7 @@ mod tests {
             body_draw(
                 &ObjectRecord::of_test(&level),
                 EntityDrawBand::Top,
+                0,
                 false,
                 false
             ),
@@ -4340,7 +4604,13 @@ mod tests {
         for band in [EntityDrawBand::Top, EntityDrawBand::Ground] {
             for turret_parts in [false, true] {
                 assert_eq!(
-                    body_draw(&ObjectRecord::of_test(&raised), band, false, turret_parts),
+                    body_draw(
+                        &ObjectRecord::of_test(&raised),
+                        band,
+                        0,
+                        false,
+                        turret_parts
+                    ),
                     BodyDraw::Pose(PoseTilt::Rocket(pitch))
                 );
             }

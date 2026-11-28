@@ -43,8 +43,9 @@ pub(crate) fn defence_divides_unfloored(damage: i32, divisors: &DefenceDivisors)
 
 /// Prepare the receiver packet without committing HP or predicting its result.
 /// A missing warhead takes the kernel's null-pointer exit at 4891A3.
-/// `distance_leptons` is the impact
-/// distance in the kernel lepton unit (256 leptons/cell).
+/// `distance_leptons` is the impact distance in the kernel lepton unit
+/// (256 leptons/cell). `negative_modifiers` is the Phobos warhead hook's
+/// permission to run the modifier path for a negative packet.
 pub(crate) fn receive_damage(
     incoming: i32,
     warhead: Option<DamageWarhead>,
@@ -54,6 +55,7 @@ pub(crate) fn receive_damage(
     distance_leptons: i32,
     scenario_no_damage: bool,
     max_damage: i32,
+    negative_modifiers: bool,
 ) -> DamageOutcome {
     let unaffected = DamageOutcome {
         readiness_damage: None,
@@ -99,6 +101,7 @@ pub(crate) fn receive_damage(
                 distance,
                 scenario_no_damage,
                 max_damage,
+                negative_modifiers,
             )
         })
     };
@@ -427,6 +430,7 @@ pub(crate) mod tests {
             0,
             false,
             MAXD,
+            false,
         );
         assert_eq!(unflagged.post_object_damage, Some(1));
         let flagged = receive_damage(
@@ -442,6 +446,7 @@ pub(crate) mod tests {
             0,
             false,
             MAXD,
+            false,
         );
         assert_eq!(flagged.post_object_damage, Some(0));
     }
@@ -460,6 +465,7 @@ pub(crate) mod tests {
             0,
             false,
             MAXD,
+            false,
         );
         assert_eq!(dead.hp_delta, 0);
         // Pre-kernel: the two armour divides are no-ops here, so 400 survives
@@ -488,6 +494,7 @@ pub(crate) mod tests {
             0,
             false,
             MAXD,
+            false,
         );
         assert_eq!(out.hp_delta, 0);
     }
@@ -504,6 +511,7 @@ pub(crate) mod tests {
             0,
             false,
             MAXD,
+            false,
         );
         assert_eq!(alive.hp_delta, 100);
     }
@@ -520,6 +528,7 @@ pub(crate) mod tests {
             0,
             false,
             MAXD,
+            false,
         );
         assert_eq!(o.hp_delta, 500);
     }
@@ -536,6 +545,7 @@ pub(crate) mod tests {
             0,
             false,
             MAXD,
+            false,
         );
         assert_eq!(o.hp_delta, 0);
     }
@@ -556,6 +566,7 @@ pub(crate) mod tests {
             0,
             false,
             MAXD,
+            false,
         );
         assert_eq!(o.hp_delta, 0);
         assert_eq!(o.psychedelic_value, Some(100));
@@ -576,6 +587,7 @@ pub(crate) mod tests {
             0,
             false,
             MAXD,
+            false,
         );
         assert_eq!(o.hp_delta, 0);
         assert_eq!(o.invulnerability_impact_damage, Some(200));

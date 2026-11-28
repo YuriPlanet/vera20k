@@ -396,7 +396,9 @@ impl App {
                 && let Err(error) =
                     crate::assets::ice_pack::install_editor_files(config.paths.settings_dir())
             {
-                log::warn!("Could not copy the installed terrain files for the map editor: {error}");
+                log::warn!(
+                    "Could not copy the installed terrain files for the map editor: {error}"
+                );
             }
             crate::map::source::set_downloaded_maps_dir(maps_dir);
             crate::render::locomotor_visual::set_high_terrain_building_lift(
@@ -769,7 +771,7 @@ impl App {
                     &resources.archives,
                 )
                 .and_then(|assets| assets.with_resource_config(&resources))
-                    .with_context(|| crate::i18n::tr("VERA:CannotLoadArchives")),
+                .with_context(|| crate::i18n::tr("VERA:CannotLoadArchives")),
                 &mut main_menu_shell_error,
             )
         });
@@ -898,6 +900,10 @@ impl App {
             .with_ares_setting(ares_setting)
             .with_kratos_setting(kratos_setting);
             process_assets.csf = startup_csf;
+            // Phobos parses `uimd.ini` once right after the archive mount
+            // (`src/Phobos.INI.cpp:135-170`); the loading screen's
+            // `[LoadingScreen]` read and the in-game tooltip config share it.
+            process_assets.load_phobos_tooltips_ui();
             let (startup_rules, startup_rules_projection) = startup_asset_manager
                 .as_ref()
                 .and_then(|assets| {
@@ -1119,9 +1125,9 @@ impl App {
                 // Player-supplied in-match music: read once at startup from
                 // <settings>/musics/music.ini. Any absence or error keeps the
                 // retail playlist; this is a VERA-only, data-gated extension.
-                let custom_music = game_config
-                    .as_ref()
-                    .and_then(|config| crate::audio::custom_music::load(&config.paths.musics_dir()));
+                let custom_music = game_config.as_ref().and_then(|config| {
+                    crate::audio::custom_music::load(&config.paths.musics_dir())
+                });
                 let mut startup_theme = crate::audio::theme::ThemeRuntime::default();
                 startup_theme.set_custom_music(custom_music);
                 let mut startup_audio_runtime = crate::app::audio_runtime::AppAudioRuntime {
@@ -1149,7 +1155,6 @@ impl App {
                 // the user's switches. Sealed capture keeps the source defaults, like
                 // the retail options snapshot, so operator profile state cannot change
                 // captured output.
-                #[cfg(feature = "phobos")]
                 let phobos_client = match game_config.as_ref() {
                     Some(config) if capture_dimensions.is_none() => {
                         crate::app::persistence::phobos_settings::read(config.paths.settings_dir())
@@ -1271,26 +1276,46 @@ impl App {
                     has_radar: false,
                     loaded_radar_housing: None,
                     selection_overlay: None,
-                    #[cfg(feature = "phobos")]
                     digital_display_enabled: phobos_client.digital_display_enabled,
-                    #[cfg(feature = "phobos")]
+                    enable_select_box: phobos_client.enable_select_box,
                     show_placement_preview: phobos_client.show_placement_preview,
-                    #[cfg(feature = "phobos")]
+                    tool_tip_descriptions: phobos_client.tool_tip_descriptions,
                     show_flash_on_selecting: phobos_client.show_flash_on_selecting,
-                    #[cfg(feature = "phobos")]
+                    hide_light_flash_effects: phobos_client.hide_light_flash_effects,
+                    hide_shake_effects: phobos_client.hide_shake_effects,
                     center_pause_menu_background: false,
-                    #[cfg(feature = "phobos")]
+                    sidebar_indicators:
+                        crate::rules::phobos_sidebar_indicators::SidebarIndicatorsUi::default(),
+                    sidebar_indicator_text: Vec::new(),
+                    show_power_delta: phobos_client.show_power_delta,
+                    show_harvester_counter: phobos_client.show_harvester_counter,
+                    show_weeds_counter: phobos_client.show_weeds_counter,
+                    priority_deploy_filtering: phobos_client.priority_deploy_filtering,
+                    priority_selection_filtering: phobos_client.priority_selection_filtering,
+                    real_time_timers: phobos_client.real_time_timers,
+                    real_time_timers_adaptive: phobos_client.real_time_timers_adaptive,
+                    message_apply_hover_state: phobos_client.message_apply_hover_state,
+                    hud_boards: crate::app::presentation::hud_boards::HudBoardsUi {
+                        message_display_in_center: phobos_client.message_display_in_center,
+                        message_board_opacity: phobos_client
+                            .message_display_in_center_board_opacity,
+                        message_labels: phobos_client.message_display_in_center_labels_count,
+                        message_records: phobos_client.message_display_in_center_records_count,
+                        show_game_time: phobos_client.show_game_time,
+                        game_time_board_opacity: phobos_client.show_game_time_board_opacity,
+                    },
                     show_power_plant_enhancer_range: phobos_client
                         .show_power_plant_enhancer_range,
-                    #[cfg(feature = "phobos")]
+                    show_designator_range: phobos_client.show_designator_range,
+                    briefing_dialog: Default::default(),
+                    briefing_at_start: false,
+                    show_briefing: phobos_client.show_briefing,
                     placement_preview_art: Default::default(),
-                    #[cfg(feature = "phobos")]
                     sw_sidebar: crate::app::presentation::sw_sidebar::SwSidebarState {
                         required_significance: phobos_client
                             .superweapon_sidebar_required_significance,
                         ..Default::default()
                     },
-                    #[cfg(feature = "phobos")]
                     sw_sidebar_art: None,
                     beacon_art: None,
                     shroud_buffer: None,
@@ -1330,6 +1355,11 @@ impl App {
                     ares_status_texts: None,
                     status_texts: Default::default(),
                     end_game_banner: None,
+                    banner_art: None,
+                    banners: Vec::new(),
+                    tool_tip_blur: phobos_client.tool_tip_blur,
+                    tooltip_blur_rects: Vec::new(),
+                    tooltip_blur_size: 0.0,
                     outcome_banner_presentation: Default::default(),
                     software_cursor: startup_software_cursor,
                 },
@@ -1489,6 +1519,7 @@ impl App {
                 vxl_pose_frame_cache: std::cell::RefCell::new(Default::default()),
                 model_frame: Default::default(),
                 retail_screenshot_frame_cache: Default::default(),
+                tooltip_blur: None,
                 terrain_picture: Default::default(),
                 native_z_seed: Default::default(),
                 hd_voxels_seen: false,

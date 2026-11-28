@@ -1039,7 +1039,6 @@ mod temporal;
 
 // Phobos `ROF.RandomDelay` (`0x006FD0B5`) redraws the full-rearm jitter, so
 // these stock goldens only hold without the capability.
-#[cfg(not(feature = "phobos"))]
 #[path = "gunner_temporal_oracle_tests.rs"]
 mod temporal_oracle;
 

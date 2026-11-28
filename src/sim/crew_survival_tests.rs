@@ -47,6 +47,7 @@ RefundPercent=50%
 [Warheads]
 0=KILLWH
 1=BLASTWH
+2=PWH
 [E1]
 Strength=125
 Speed=4
@@ -135,6 +136,11 @@ Cost=0
 Crewed=yes
 [KILLWH]
 Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
+[PWH]
+Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
+PreventCrewEscape=yes
+PreventPassengerEscape=yes
+PreventOccupantEscape=yes
 ";
 
 const ART: &str = "[GAPOWR]\nFoundation=2x2\n[GACNST]\nFoundation=3x3\n\
@@ -1353,7 +1359,18 @@ fn kill_by(
     attacker: u64,
     flags: ReceiverCallFlags,
 ) {
-    let warhead = sim.interner.intern("KILLWH");
+    kill_by_with(sim, rules, id, attacker, flags, "KILLWH");
+}
+
+fn kill_by_with(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    id: u64,
+    attacker: u64,
+    flags: ReceiverCallFlags,
+    warhead_name: &str,
+) {
+    let warhead = sim.interner.intern(warhead_name);
     let house = sim
         .substrate
         .entities
@@ -2822,5 +2839,120 @@ fn ares_fatal_aircraft_parachutes_crew_and_honors_explicit_no_crash() {
             .get(plane)
             .is_none_or(|aircraft| !aircraft.is_object_alive()),
         "Crashable=no skips the falling wreck and reaches UnInit now"
+    );
+}
+
+/// Phobos `TechnoClass_ReceiveDamage_RevengeWeapon`'s `PreventCrewEscape`
+/// arm (`Ext/Techno/Hooks.ReceiveDamage.cpp:273-274`, hook `0x702672`): a
+/// killing hit with that warhead latches the dying techno, and the latched
+/// crew-count queries answer zero.
+#[test]
+fn prevent_crew_escape_latches_on_the_killing_hit_and_suppresses_crew() {
+    let rules = rules();
+    let mut sim = sim_with_houses(5);
+    let mcv = spawn(&mut sim, &rules, "AMCV", "Americans", 10, 10);
+    let plant = spawn(&mut sim, &rules, "GAPOWR", "Americans", 14, 14);
+    let attacker = spawn(&mut sim, &rules, "AMCV", "Russians", 20, 10);
+    assert!(
+        sim.building_survivor_count(&rules, plant) > 0,
+        "a crewed building owes a survivor"
+    );
+    kill_by_with(&mut sim, &rules, mcv, attacker, ORDINARY, "PWH");
+    assert!(
+        sim.substrate
+            .entities
+            .get(mcv)
+            .is_some_and(|entity| entity.seldom.phobos_prevent_crew_escape),
+        "the killing warhead latches the victim"
+    );
+    sim.foot_mark_remove(mcv, &rules, None, &mut FrameEffects::default());
+    let before = sim.substrate.entities.keys_sorted();
+    sim.spawn_vehicle_crew(&rules, None, mcv, false, false, &mut FrameEffects::default());
+    assert!(
+        new_ids(&sim, &before).is_empty(),
+        "the latched vehicle spawns no crewman"
+    );
+    sim.substrate
+        .entities
+        .get_mut(plant)
+        .unwrap()
+        .seldom.phobos_prevent_crew_escape = true;
+    assert_eq!(
+        sim.building_survivor_count(&rules, plant),
+        0,
+        "the latched building owes no survivor"
+    );
+}
+
+/// Phobos `TechnoClass_ReceiveDamage_RevengeWeapon`'s
+/// `PreventPassengerEscape` arm (`Ext/Techno/Hooks.ReceiveDamage.cpp:276-277`,
+/// hook `0x702672`): a killing hit with that warhead kills the dying
+/// transport's cargo instead of releasing it.
+#[test]
+fn prevent_passenger_escape_kills_the_dying_transports_cargo() {
+    let rules = rules();
+    let mut sim = sim_on_arena(5, &rules);
+    let apc = spawn(&mut sim, &rules, "APC", "Americans", 10, 10);
+    let attacker = spawn(&mut sim, &rules, "AMCV", "Russians", 14, 10);
+    let passengers = load_passengers(&mut sim, &rules, apc, "Americans", 2);
+    kill_by_with(&mut sim, &rules, apc, attacker, ORDINARY, "PWH");
+    assert_eq!(cargo_len(&sim, apc), 0);
+    for id in passengers {
+        assert!(
+            sim.entities()
+                .get(id)
+                .is_none_or(|passenger| !passenger.is_object_alive()),
+            "passenger {id} is killed, not released"
+        );
+    }
+}
+
+/// Phobos `BuildingClass_ReceiveDamage_PreventOccupantEscape`
+/// (`Ext/Techno/Hooks.ReceiveDamage.cpp:282-297`, hook `0x442635`): a killing
+/// hit with that warhead kills the building's occupants where the stock
+/// building would release them.
+#[test]
+fn prevent_occupant_escape_kills_a_dying_buildings_occupants() {
+    let rules = rules();
+    let mut sim = sim_with_houses(5);
+    let plant = spawn(&mut sim, &rules, "YAPOWR", "Americans", 10, 10);
+    let attacker = spawn(&mut sim, &rules, "AMCV", "Russians", 16, 10);
+    let occupant = sim
+        .construct_object_limbo_at_height(
+            "E1",
+            "Americans",
+            10,
+            10,
+            0,
+            0,
+            &rules,
+            &mut FrameEffects::default(),
+        )
+        .expect("occupant");
+    sim.substrate
+        .entities
+        .get_mut(occupant)
+        .unwrap()
+        .passenger_role = PassengerRole::inside_for_test(plant, false);
+    sim.substrate
+        .entities
+        .get_mut(plant)
+        .unwrap()
+        .passenger_role
+        .set_occupants_for_test(vec![occupant], 0);
+    kill_by_with(&mut sim, &rules, plant, attacker, ORDINARY, "PWH");
+    assert!(
+        sim.entities().get(plant).is_none_or(|building| building
+            .passenger_role
+            .occupants()
+            .ids()
+            .is_empty()),
+        "the occupants are killed instead of released"
+    );
+    assert!(
+        sim.entities()
+            .get(occupant)
+            .is_none_or(|passenger| !passenger.is_object_alive()),
+        "the occupant is not placed outside"
     );
 }

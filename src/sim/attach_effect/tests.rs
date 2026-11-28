@@ -2047,7 +2047,7 @@ fn direct_hit(
     )
 }
 
-const ALL_HIT: &str = "Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n";
+pub(super) const ALL_HIT: &str = "Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n";
 
 /// Phobos `ExpireWeapon.TriggerOn=expire`: a terminal effect fires its
 /// weapon at its own owner when the duration runs out. The weapon is named

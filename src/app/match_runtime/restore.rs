@@ -174,6 +174,7 @@ pub(crate) fn commit_prepared_load(
         house_roster: committed.map.house_roster().clone(),
         lighting_config: committed.map.lighting().clone(),
         lighting_events: None,
+        fresh_startup: false,
         theater_name,
         theater_ext,
     };

@@ -265,6 +265,7 @@ impl Simulation {
             state,
             &self.substrate.entities,
             self.houses[&owner].base_projection().buildings(),
+            Some(self.houses[&owner].tracking()),
             rules,
             &self.interner,
             self.session.binary_frame(),
@@ -588,12 +589,7 @@ impl Simulation {
             return;
         };
         crate::sim::ra2_all02_diagnostic::on_owner_change(
-            self,
-            stable_id,
-            old_owner,
-            new_owner,
-            rules,
-            "BEFORE",
+            self, stable_id, old_owner, new_owner, rules, "BEFORE",
         );
         // FootChangeOwner4DBEFB removes at the current cell before its
         // Techno delegate, including the same-owner refusal at7014A0.
@@ -825,8 +821,7 @@ impl Simulation {
         if let Some(house) = self.houses.get_mut(&new_owner) {
             house.economy_mut().add_score(cost);
         }
-        #[cfg(feature = "phobos")]
-        self.phobos_tracking_change_owner(stable_id, new_owner);
+            self.phobos_tracking_change_owner(stable_id, new_owner, rules.phobos());
         // 7015E6 adds the object to its new House before the actor's owner store.
         HouseTracking::transfer_registration(
             &mut self.substrate,
@@ -835,12 +830,7 @@ impl Simulation {
             new_owner,
         );
         crate::sim::ra2_all02_diagnostic::on_owner_change(
-            self,
-            stable_id,
-            old_owner,
-            new_owner,
-            rules,
-            "AFTER",
+            self, stable_id, old_owner, new_owner, rules, "AFTER",
         );
         // Ares3.0 ChangeOwner7015EB ->1004E7F0 follows the two tracking
         // calls and precedes both the capture stats and owner pointer store.
@@ -899,7 +889,6 @@ impl Simulation {
             UninitContext::new(rules).with_effects(effects),
         );
         self.substrate.entities.change_owner(stable_id, new_owner);
-        #[cfg(feature = "phobos")]
         self.phobos_attach_effects_on_owner_change(stable_id, old_owner, new_owner, rules);
         *self.ownership_changed_since_output = true;
         self.spatial_threat_after_owner_change(stable_id, spatial_threat_cell, rules);

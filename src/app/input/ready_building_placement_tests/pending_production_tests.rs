@@ -158,7 +158,8 @@ fn pending_first_e2_right_holds_one_real_head_then_resumes_its_paid_exit() {
             assert_eq!(
                 fixture
                     .projection
-                    .model.saved_order()
+                    .model
+                    .saved_order()
                     .unwrap()
                     .prediction_categories(),
                 native_e2_category_gates("receive_produce_then_suspend", ares_way)
@@ -202,7 +203,8 @@ fn pending_first_e2_right_holds_one_real_head_then_resumes_its_paid_exit() {
             assert_eq!(
                 fixture
                     .projection
-                    .model.saved_order()
+                    .model
+                    .saved_order()
                     .unwrap()
                     .prediction_categories(),
                 native_e2_category_gates("left_held_resume", ares_way),
@@ -324,7 +326,8 @@ fn held_e2_resume_suppresses_a_vehicle_pending_request_before_dispatch() {
     assert!(
         fixture
             .projection
-            .model.saved_order()
+            .model
+            .saved_order()
             .unwrap()
             .prediction_categories()
             .is_empty()

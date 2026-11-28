@@ -223,3 +223,33 @@ fn retained_motion_and_walk_readiness_match_original_queries() {
         }
     }
 }
+/// `Is_Moving_Now 0x728A60` answers `State == 1` (`PreDigIn`) and nothing else.
+/// The gate used to answer `None` for Tunnel — "not moving" — so a unit that had
+/// just taken a Tunnel `Move_To` was ready to commence in the same tick.
+#[test]
+fn tunnel_readiness_reports_moving_only_while_pre_dig_in() {
+    use crate::sim::movement::locomotion::piggyback::LocomotorRuntimePayload;
+
+    let mut entity = entity_with(LocomotorKind::Tunnel);
+    let rules = crate::rules::ruleset::RuleSet::empty_for_test();
+    let interner = crate::sim::intern::test_interner();
+    let houses = crate::sim::houses::Houses::default();
+    let speed = crate::sim::movement::SpeedRules::new(&rules, &interner, &houses);
+
+    let idle = ready_state_for(&entity, speed, 100).expect("Tunnel has a producer now");
+    assert!(!idle.is_moving_now(), "Idle answers false");
+
+    // `Move_To 0x728AF0`'s tail arms `PreDigIn` on a grounded tunnel.
+    let LocomotorRuntimePayload::Tunnel(runtime) = entity
+        .locomotor
+        .as_mut()
+        .expect("the fixture installs a Tunnel locomotor")
+        .runtime_payload_mut()
+    else {
+        unreachable!("entity_with built a Tunnel payload")
+    };
+    runtime.move_to(false);
+
+    let pre_dig_in = ready_state_for(&entity, speed, 100).expect("Tunnel has a producer now");
+    assert!(pre_dig_in.is_moving_now(), "PreDigIn answers true");
+}

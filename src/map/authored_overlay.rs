@@ -2134,10 +2134,14 @@ mod tests {
             None,
         );
 
-        for (slope, expected) in [
-            (4, FinalizedOverlayCell::from_parts(0, 7)),
-            (5, FinalizedOverlayCell::default()),
-        ] {
+        // Phobos 0x47D36E clears cardinal ramps unless the projected
+        // AllowRamps flag admits them; this registry has no such flag.
+        let cardinal = if true {
+            FinalizedOverlayCell::default()
+        } else {
+            FinalizedOverlayCell::from_parts(0, 7)
+        };
+        for (slope, expected) in [(4, cardinal), (5, FinalizedOverlayCell::default())] {
             let mut terrain = flat_terrain(6, 6);
             terrain.cells_mut_for_test()[8].slope_type = slope;
             let mut recalc = LoadCellRecalcState::synthetic(&registry, terrain.cells().len());

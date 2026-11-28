@@ -317,6 +317,19 @@ pub enum ProjectileTarget {
     Terrain(u64),
 }
 
+/// Phobos `InterceptedStatus` flags (`Utilities/Enum.h:217-223`).
+pub mod intercepted_status {
+    pub const NONE: u8 = 0x0;
+    pub const TARGETED: u8 = 0x1;
+    pub const INTERCEPTED: u8 = 0x2;
+    pub const LOCKED: u8 = 0x4;
+}
+
+/// Serde default for the Phobos `DetonateOnInterception` constructor value.
+fn default_true() -> bool {
+    true
+}
+
 impl ProjectileTarget {
     /// The cell `MapClass::Get_CellClass` (`0x005657A0`) gives for `(rx, ry)`
     /// as a target ([`Self::of_cell`]); the lookup stamps a miss with the
@@ -403,7 +416,6 @@ pub struct ProjectileCollisionPolicy {
     pub floater: bool,
     /// Phobos `[Projectile] Gravity=` (`BulletTypeExt::GetAdjustedGravity`):
     /// the type's gravity bits, or `None` for the live Rules value.
-    #[cfg(feature = "phobos")]
     #[serde(default)]
     pub gravity: Option<crate::util::native_x87::NativeF64Bits>,
     /// BulletType +2C8, retained as exact binary64 bits for Eq/hash/save.
@@ -431,7 +443,6 @@ impl ProjectileCollisionPolicy {
         explodes_airburst: None,
         inaccurate: false,
         floater: false,
-        #[cfg(feature = "phobos")]
         gravity: None,
         elasticity_bits: 0x3fe8_0000_0000_0000,
         arcing: false,
@@ -447,14 +458,8 @@ impl ProjectileCollisionPolicy {
     }
 
     /// Phobos `[Projectile] Gravity=` bits, or `None` on the stock path.
-    #[cfg(feature = "phobos")]
     pub(crate) const fn gravity(&self) -> Option<crate::util::native_x87::NativeF64Bits> {
         self.gravity
-    }
-
-    #[cfg(not(feature = "phobos"))]
-    pub(crate) const fn gravity(&self) -> Option<crate::util::native_x87::NativeF64Bits> {
-        None
     }
 }
 
@@ -711,12 +716,19 @@ pub(crate) fn projectile_slope_reflect_double(
 /// direction of its low byte, truncated; the impact itself when either axis
 /// leaves the 512-cell map). So every cluster after the first lands around
 /// the impact, never around the previous cluster.
+///
+/// Phobos `BulletClass_Explode_Cluster` (`0x46902C`,
+/// `Ext/Bullet/Hooks.cpp:352`) draws `RandomRanged(min, max)` from the firing
+/// type's `ClusterScatter.Min=`/`Max=` instead, so the caller passes those
+/// bounds; stock builds pass `0x100`/`0x200`.
 pub fn projectile_next_cluster_coord(
     grid: crate::map::cell_index::CellGrid,
     impact: ProjectileCoord,
+    min: i32,
+    max: i32,
     scenario_rng: &mut SimRng,
 ) -> ProjectileCoord {
-    let distance = scenario_rng.next_range_i32_inclusive(0x100, 0x200);
+    let distance = scenario_rng.next_range_i32_inclusive(min, max);
     let (x, y) = crate::sim::combat::inviso_scatter::random_direction_coord(
         grid,
         scenario_rng,
@@ -1007,14 +1019,12 @@ pub struct ProjectilePayload {
     /// Phobos `BulletExt::FirepowerMult`, the firer's firepower multiplier at
     /// construction. `AirburstWeapon.ApplyFirepowerMult` scales child damage
     /// with it, and airburst children carry it onward.
-    #[cfg(feature = "phobos")]
     #[serde(default = "default_firepower_multiplier")]
     firepower_multiplier: crate::util::native_x87::NativeF64Bits,
     /// Phobos `BulletExt::Detonate`'s `pFiringHouse`: the House a simulated
     /// detonation keeps when the shot's invoker Techno is already gone
     /// (`WarheadTypeExt::DetonateAt`). Real bullets leave it unset and keep
     /// [`crate::sim::projectile::Projectile::phobos_firer_house`].
-    #[cfg(feature = "phobos")]
     #[serde(default)]
     source_house: Option<InternedId>,
     /// `BulletClass+0x150`, 1/256 units: `BulletClass::Construct` writes
@@ -1035,7 +1045,6 @@ pub struct ProjectilePayload {
     ares_range: Option<i32>,
 }
 
-#[cfg(feature = "phobos")]
 fn default_firepower_multiplier() -> crate::util::native_x87::NativeF64Bits {
     crate::util::native_x87::NativeF64Bits::ONE
 }
@@ -1058,9 +1067,7 @@ impl ProjectilePayload {
             installed_weapon: None,
             bright,
             damage_multiplier: Self::UNSCALED,
-            #[cfg(feature = "phobos")]
             firepower_multiplier: crate::util::native_x87::NativeF64Bits::ONE,
-            #[cfg(feature = "phobos")]
             source_house: None,
             ares_range: None,
         }
@@ -1113,14 +1120,12 @@ impl ProjectilePayload {
     }
 
     /// The firer's firepower multiplier captured at construction.
-    #[cfg(feature = "phobos")]
     pub const fn firepower_multiplier(&self) -> crate::util::native_x87::NativeF64Bits {
         self.firepower_multiplier
     }
 
     /// Carry another bullet's captured firepower multiplier, as Phobos's
     /// airburst children do.
-    #[cfg(feature = "phobos")]
     pub fn with_firepower_multiplier(
         mut self,
         firepower_multiplier: crate::util::native_x87::NativeF64Bits,
@@ -1131,12 +1136,10 @@ impl ProjectilePayload {
 
     /// The House a simulated detonation retains for its source-House
     /// fallback (`BulletExt::Detonate`'s `pFiringHouse`).
-    #[cfg(feature = "phobos")]
     pub fn source_house(&self) -> Option<InternedId> {
         self.source_house
     }
 
-    #[cfg(feature = "phobos")]
     pub fn with_source_house(mut self, house: Option<InternedId>) -> Self {
         self.source_house = house;
         self
@@ -1222,6 +1225,22 @@ pub struct ProjectileSpawn {
     pub collision: ProjectileCollisionPolicy,
 }
 
+/// Phobos parabomb descent state (`Ext/Bullet/Body.h:42,61` `ParabombFallRate`
+/// plus the type's resolved descent controls). A `Parachuted=` bullet is
+/// unlimboed under its canopy instead of flying (`Ext/Bullet/Hooks.cpp:573-583`)
+/// and its `BulletClass::AI` tail accumulates the fall rate
+/// (`:128-137`); the ordinary gravity/reflection commit is skipped
+/// (`:610-618`, hook 0x467AB2 -> 0x467B1A).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ParabombState {
+    /// `BulletExt::ParabombFallRate`, starts at 0 (`Body.h:61`).
+    pub accumulated_rate: i32,
+    /// `Parachuted.FallRate=`, the per-frame step (`Ext/BulletType/Body.cpp:80`).
+    pub fall_rate_step: i32,
+    /// `Parachuted.MaxFallRate.Get([General] ParachuteMaxFallRate)`.
+    pub max_fall_rate: i32,
+}
+
 /// Persistent state corresponding to one native `BulletClass` instance.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Projectile {
@@ -1281,7 +1300,6 @@ pub struct Projectile {
     /// Written by [`Simulation::construct_bullet_scheme`].
     ///
     /// [`Simulation::construct_bullet_scheme`]: crate::sim::world::Simulation::construct_bullet_scheme
-    #[cfg(feature = "phobos")]
     #[serde(default)]
     phobos_firer_house: Option<InternedId>,
     /// Ares BulletExt `+0x8` NukeSW: the superweapon type whose nuke this
@@ -1290,6 +1308,15 @@ pub struct Projectile {
     /// 10036930); read by NukeMaker (46B371) and the impact hook (467E59).
     #[serde(default)]
     ares_nuke_sw: Option<InternedId>,
+    /// Phobos `BulletExt::Trajectory`: the per-bullet trajectory instance
+    /// (`Ext/Bullet/Trajectories/PhobosTrajectory.h:146-160`).
+    #[serde(default)]
+    pub(crate) phobos_trajectory:
+        Option<crate::sim::world::phobos_trajectory::PhobosTrajectoryState>,
+    /// Phobos `Parachuted=` bullets: the descent state, `None` for an
+    /// ordinary flying bullet (`Ext/Bullet/Hooks.cpp:573-583`, `:128-137`).
+    #[serde(default)]
+    parabomb: Option<ParabombState>,
     /// Bullet `+0x158`: set at a `NUKE` impact (`0x00467F3C`), cleared when
     /// the wait ends (`0x0046676A`).
     #[serde(default)]
@@ -1297,6 +1324,31 @@ pub struct Projectile {
     /// Bullet `+0x154`: the anim the impact constructed (`0x00467F36`).
     #[serde(default)]
     awaited_anim: Option<AnimId>,
+    /// Phobos `BulletExt::CurrentStrength`: the bullet's interception hit
+    /// points, initialized from the BulletType's `Strength=` (`Ext/Bullet/
+    /// Hooks.cpp:30`) and reduced by `BulletExt::InterceptBullet`.
+    #[serde(default)]
+    current_strength: i32,
+    /// Phobos `BulletExt::InterceptedStatus` (`InterceptedStatus` flags:
+    /// Targeted `0x1`, Intercepted `0x2`, Locked `0x4`).
+    #[serde(default)]
+    intercepted_status: u8,
+    /// Phobos `BulletExt::DetonateOnInterception`, constructor `true`.
+    #[serde(default = "default_true")]
+    detonate_on_interception: bool,
+    /// Phobos `BulletExt::InterceptorTechnoType`: the interceptor bullet's
+    /// firing TechnoType, kept as its interned rules identity.
+    #[serde(default)]
+    interceptor_type: Option<InternedId>,
+    /// The bullet an interceptor is aimed at (native `BulletClass::Target`
+    /// when it names a Bullet); `None` otherwise.
+    #[serde(default)]
+    interceptor_target: Option<u64>,
+    /// Phobos `BulletExt::LaserTrails`, built by `InitializeLaserTrails`
+    /// (`Ext/Bullet/Body.cpp:121..133`) from the BulletType's
+    /// `LaserTrail.Types` unless the type is `Inviso`.
+    #[serde(default)]
+    laser_trails: Vec<crate::sim::laser_trail::LaserTrailState>,
 }
 
 impl Projectile {
@@ -1486,17 +1538,65 @@ impl Projectile {
     pub const fn on_bridge(&self) -> bool {
         self.on_bridge
     }
+    pub(crate) fn phobos_trajectory(
+        &self,
+    ) -> Option<&crate::sim::world::phobos_trajectory::PhobosTrajectoryState> {
+        self.phobos_trajectory.as_ref()
+    }
+
+    pub(crate) fn phobos_trajectory_mut(
+        &mut self,
+    ) -> Option<&mut crate::sim::world::phobos_trajectory::PhobosTrajectoryState> {
+        self.phobos_trajectory.as_mut()
+    }
+
+    pub(crate) fn set_phobos_trajectory(
+        &mut self,
+        state: Option<crate::sim::world::phobos_trajectory::PhobosTrajectoryState>,
+    ) {
+        self.phobos_trajectory = state;
+    }
+
+    pub(crate) fn has_phobos_trajectory(&self) -> bool {
+        self.phobos_trajectory.is_some()
+    }
+
+    pub(crate) fn set_position(&mut self, value: ProjectileCoord) {
+        self.position = value;
+    }
+
+    pub(crate) fn set_velocity(&mut self, value: ProjectileVelocity) {
+        self.velocity = value;
+    }
+
+    pub(crate) fn set_last_target_position(&mut self, value: ProjectileCoord) {
+        self.last_target_position = value;
+    }
+
+    pub(crate) fn set_target(&mut self, value: ProjectileTarget) {
+        self.target = value;
+    }
+
+    pub(crate) fn set_previous_cell(&mut self, value: (i16, i16)) {
+        self.previous_cell = value;
+    }
+
+    pub(crate) fn payload_mut(&mut self) -> &mut ProjectilePayload {
+        &mut self.payload
+    }
 
     /// The ids [`ProjectileStore::pointer_expired`] compares: the source
     /// (Owner `+0xB0`), target object (`+0x10C`) and awaited Anim (`+0x154`). A source already
     /// `RAD_NO_ATTACKER` stays so, which changes nothing. VERA-only: feeds the
     /// pointer-expiry listener index (`ExpiryListeners`); a field that
     /// callback compares must be named here too.
-    pub(crate) fn expiry_names(&self) -> [Option<u64>; 3] {
+    pub(crate) fn expiry_names(&self) -> [Option<u64>; 4] {
+        let interceptor_target = self.interceptor_target;
         [
             (self.source_id != crate::sim::combat::RAD_NO_ATTACKER).then_some(self.source_id),
             self.target.object_id(),
             self.awaited_anim,
+            interceptor_target,
         ]
     }
 
@@ -1508,7 +1608,6 @@ impl Projectile {
 
     /// Phobos `BulletExt::FirerHouse`: the owner's House retained at
     /// construction, independent of the palette-only `firer_house`.
-    #[cfg(feature = "phobos")]
     pub fn phobos_firer_house(&self) -> Option<InternedId> {
         self.phobos_firer_house
     }
@@ -1527,6 +1626,64 @@ impl Projectile {
     /// The anim a waiting bullet holds (`+0x154`).
     pub fn awaited_anim(&self) -> Option<AnimId> {
         self.awaited_anim
+    }
+
+    /// Phobos `BulletExt::CurrentStrength`: the interception hit points.
+    pub fn current_strength(&self) -> i32 {
+        self.current_strength
+    }
+
+    /// Phobos `BulletExt::InterceptedStatus` flags.
+    pub fn intercepted_status(&self) -> u8 {
+        self.intercepted_status
+    }
+
+    /// Phobos `BulletExt::DetonateOnInterception`.
+    pub fn detonate_on_interception(&self) -> bool {
+        self.detonate_on_interception
+    }
+
+    /// Phobos `Parachuted=` descent state, `None` for a flying bullet.
+    pub fn parabomb(&self) -> Option<ParabombState> {
+        self.parabomb
+    }
+
+    /// Phobos `BulletExt::InterceptorTechnoType`, as its interned rules id.
+    pub fn interceptor_type(&self) -> Option<InternedId> {
+        self.interceptor_type
+    }
+
+    /// The enemy bullet this interceptor is aimed at.
+    pub fn interceptor_target(&self) -> Option<u64> {
+        self.interceptor_target
+    }
+
+    /// Phobos `BulletExt::LaserTrails`.
+    pub(crate) fn phobos_laser_trails_mut(
+        &mut self,
+    ) -> &mut Vec<crate::sim::laser_trail::LaserTrailState> {
+        &mut self.laser_trails
+    }
+
+    pub(crate) fn phobos_laser_trails(&self) -> &[crate::sim::laser_trail::LaserTrailState] {
+        &self.laser_trails
+    }
+
+    /// Bombard's turning-point reset (`BombardTrajectory.cpp:233..236`,
+    /// `:558..561`): every trail's `LastLocation` becomes `middleLocation` so
+    /// the jump does not draw a long segment across the turn.
+    pub(crate) fn reset_phobos_laser_trail_locations(&mut self, location: [i32; 3]) {
+        for trail in &mut self.laser_trails {
+            trail.last_location = Some(location);
+        }
+    }
+
+    /// `BulletExt::InitializeLaserTrails`: a second call is a no-op once the
+    /// list exists (`Ext/Bullet/Body.cpp:123..124`).
+    pub(crate) fn initialize_phobos_laser_trails(&mut self, names: &[String]) {
+        if self.laser_trails.is_empty() {
+            self.laser_trails = crate::sim::laser_trail::LaserTrailState::from_names(names);
+        }
     }
 
     /// `BulletClass::AI`'s `NUKE` block (`0x00467E53..0x00467F99`) for the
@@ -1625,6 +1782,31 @@ pub enum ProjectileDetonationReason {
     /// `WarheadTypeExt::DetonateAt` builds a bullet with no weapon type and
     /// explodes it at the target (`Ext/WarheadType/Body.cpp:102..110`).
     CritWarhead,
+    /// Phobos `StraightTrajectory`'s own warhead detonations
+    /// (`WarheadTypeExt::DetonateAt`): the pass-through, proximity and
+    /// last-check hits, and the bullet's own trajectory-triggered detonation.
+    /// Appended after the upstream reasons to preserve their saved indices.
+    PhobosTrajectory,
+    /// Phobos ExtraWarheads' full-detonation arm
+    /// (`Ext/Bullet/Hooks.DetonateLogics.cpp:418-419`): the same
+    /// `WarheadTypeExt::DetonateAt` bullet, at the parent's impact.
+    ExtraWarhead,
+    /// Phobos `ApplyReturnWarhead`'s full arm (`Detonate.cpp:632-633`): a
+    /// `DetonateAt` bullet at the original firer's coordinates.
+    ReturnWarhead,
+    /// Phobos `SWTypeExt::ApplyDetonation`'s weapon or full-warhead arm
+    /// (`Ext/SWType/FireSuperWeapon.cpp:294-299`): a `BulletExt::Detonate`
+    /// bullet at the superweapon's target cell or launch building.
+    SwDetonate,
+    /// Phobos `TechnoClass_FireAt_FeedbackWeapon` (`0x6FF43F`,
+    /// `Ext/Techno/Hooks.Firing.cpp:809`): a `FeedbackWeapon=` detonating on
+    /// its own firer right after that shot, through the same
+    /// `WeaponTypeExt::DetonateAt` bullet.
+    FeedbackWeapon,
+    /// Phobos `AnimExt::HandleDebrisImpact` (`Ext/Anim/Body.cpp:256-263`):
+    /// an AnimType `Warhead.Detonate=yes` landing goes through
+    /// `WarheadTypeExt::DetonateAt` instead of `DamageArea`.
+    AnimWarheadDetonate,
 }
 
 /// One deferred `BulletClass::Detonate` handoff for combat to apply.
@@ -2049,6 +2231,12 @@ impl ProjectileStore {
             projectile.awaited_anim = None;
             changed = true;
         }
+        // Phobos interceptor target (`BulletClass::Target` naming a Bullet):
+        // the same PointerExpired broadcast clears it.
+        if projectile.interceptor_target == Some(expired_id) {
+            projectile.interceptor_target = None;
+            changed = true;
+        }
         //4685CC..46865D: only a PRESENT Bullet subscriber, control!=0,
         // expired RTTI8/current type.Scalable removes its FIRST matching
         // process-vector entry. Each subscriber can remove another duplicate;
@@ -2129,11 +2317,18 @@ impl ProjectileStore {
                 collision: ProjectileCollisionPolicy::NONE,
                 on_bridge: false,
                 firer_house: None,
-                #[cfg(feature = "phobos")]
                 phobos_firer_house: None,
                 ares_nuke_sw: None,
                 awaiting_anim: false,
                 awaited_anim: None,
+                phobos_trajectory: None,
+                parabomb: None,
+                current_strength: 0,
+                intercepted_status: intercepted_status::NONE,
+                detonate_on_interception: true,
+                interceptor_type: None,
+                interceptor_target: None,
+                laser_trails: Vec::new(),
             },
         );
         id
@@ -2222,7 +2417,6 @@ impl ProjectileStore {
     }
 
     /// Phobos `BulletExt::FirerHouse` at bullet initialization.
-    #[cfg(feature = "phobos")]
     pub(crate) fn set_phobos_firer_house(&mut self, id: u64, house: Option<InternedId>) {
         if let Some(projectile) = self.get_mut(id) {
             projectile.phobos_firer_house = house;
@@ -2231,7 +2425,6 @@ impl ProjectileStore {
 
     /// Phobos `BulletExt::InitializeState`'s `FirepowerMult`. A payload value
     /// other than 1.0 came from FireAt's launch capture and is kept.
-    #[cfg(feature = "phobos")]
     pub(crate) fn set_phobos_firepower_multiplier_if_default(
         &mut self,
         id: u64,
@@ -2245,12 +2438,126 @@ impl ProjectileStore {
         }
     }
 
-    /// Ares TechnoClass_Fire_FSW (`10024C00`) replaces only the Target
-    /// (`+0x10C`) of a bullet whose path crosses a firestorm wall.
-    pub(crate) fn ares_firestorm_retarget(&mut self, id: u64, target: ProjectileTarget) {
+    /// Phobos `BulletExt::CurrentStrength` at `BulletExt::InitializeState`.
+    pub(crate) fn set_phobos_current_strength(&mut self, id: u64, value: i32) {
+        if let Some(projectile) = self.get_mut(id) {
+            projectile.current_strength = value;
+        }
+    }
+
+    /// Replace the Phobos `InterceptedStatus` flag byte.
+    pub(crate) fn set_phobos_intercepted_status(&mut self, id: u64, value: u8) {
+        if let Some(projectile) = self.get_mut(id) {
+            projectile.intercepted_status = value;
+        }
+    }
+
+    /// OR one Phobos `InterceptedStatus` flag.
+    pub(crate) fn add_phobos_intercepted_status(&mut self, id: u64, bits: u8) {
+        if let Some(projectile) = self.get_mut(id) {
+            projectile.intercepted_status |= bits;
+        }
+    }
+
+    /// Clear the given Phobos `InterceptedStatus` flags.
+    pub(crate) fn clear_phobos_intercepted_status(&mut self, id: u64, bits: u8) {
+        if let Some(projectile) = self.get_mut(id) {
+            projectile.intercepted_status &= !bits;
+        }
+    }
+
+    pub(crate) fn set_phobos_detonate_on_interception(&mut self, id: u64, value: bool) {
+        if let Some(projectile) = self.get_mut(id) {
+            projectile.detonate_on_interception = value;
+        }
+    }
+
+    /// Phobos `BulletExt::InterceptBullet`'s WeaponOverride tail
+    /// (`Ext/Bullet/Body.cpp:52-77`): the bullet takes the override weapon's
+    /// damage, warhead, brightness and installed weapon; a projectile
+    /// replacement also swaps its BulletType and speed field.
+    pub(crate) fn apply_phobos_weapon_override(
+        &mut self,
+        id: u64,
+        base_damage: i32,
+        warhead: Option<InternedId>,
+        bright: bool,
+        installed_weapon: InternedId,
+        projectile_type: Option<InternedId>,
+        speed: Option<u16>,
+    ) {
+        let Some(projectile) = self.get_mut(id) else {
+            return;
+        };
+        projectile.payload.base_damage = base_damage;
+        if let Some(warhead) = warhead {
+            projectile.payload.warhead = warhead;
+        }
+        projectile.payload.bright = bright;
+        projectile.payload.installed_weapon = Some(installed_weapon);
+        if let Some(projectile_type) = projectile_type {
+            projectile.payload.projectile_type = Some(projectile_type);
+        }
+        if let Some(speed) = speed {
+            projectile.speed_leptons_per_frame = speed;
+        }
+    }
+
+    /// Phobos `BulletExt::InterceptBullet`'s trail reset
+    /// (`Ext/Bullet/Body.cpp:68..72`): a replaced BulletType clears the old
+    /// list and initializes the new type's, unless that type is `Inviso`.
+    pub(crate) fn reset_phobos_laser_trails(&mut self, id: u64, names: Option<&[String]>) {
+        if let Some(projectile) = self.get_mut(id) {
+            projectile.laser_trails.clear();
+            if let Some(names) = names {
+                projectile.laser_trails =
+                    crate::sim::laser_trail::LaserTrailState::from_names(names);
+            }
+        }
+    }
+
+    /// Phobos `InterceptorTechnoType` written by the FireAt late logic.
+    pub(crate) fn set_phobos_interceptor_type(&mut self, id: u64, value: Option<InternedId>) {
+        if let Some(projectile) = self.get_mut(id) {
+            projectile.interceptor_type = value;
+        }
+    }
+
+    pub(crate) fn set_phobos_interceptor_target(&mut self, id: u64, value: Option<u64>) {
+        if let Some(projectile) = self.get_mut(id) {
+            projectile.interceptor_target = value;
+        }
+    }
+
+    /// Phobos `ObjectClass_Unlimbo_Parachuted_Wrapper`
+    /// (`Ext/Bullet/Hooks.cpp:573-583`, replacing `BulletClass`'s Unlimbo call
+    /// at `0x468684`): a `Parachuted=` bullet is born under its canopy instead
+    /// of flying. `BulletClass_Unlimbo_Obstacles` (`Hooks.Obstacles.cpp:136-142`)
+    /// then zeroes its velocity, and its `ParabombFallRate` starts at 0
+    /// (`Ext/Bullet/Body.h:61`). The Unlimbo placement (including the
+    /// BulletType `+6C` ground clamp) is already committed, so only the
+    /// motion state changes here.
+    pub(crate) fn begin_parabomb(&mut self, id: u64, state: ParabombState) {
+        if let Some(projectile) = self.get_mut(id) {
+            projectile.velocity = ProjectileVelocity::new(0, 0, 0);
+            projectile.speed_leptons_per_frame = 0;
+            projectile.parabomb = Some(state);
+        }
+    }
+
+    /// Bullet `+0x10C` replacement: shared by the Ares firestorm wall
+    /// (`10024C00`) and the Phobos all-map detonation that re-points the
+    /// bullet at each target before its nested `Detonate`.
+    pub(crate) fn set_target(&mut self, id: u64, target: ProjectileTarget) {
         if let Some(projectile) = self.get_mut(id) {
             projectile.target = target;
         }
+    }
+
+    /// Ares TechnoClass_Fire_FSW (`10024C00`) replaces only the Target
+    /// (`+0x10C`) of a bullet whose path crosses a firestorm wall.
+    pub(crate) fn ares_firestorm_retarget(&mut self, id: u64, target: ProjectileTarget) {
+        self.set_target(id, target);
     }
 
     /// `BulletClass::Construct @ 0x004664C0`'s Owner (`+0xB0`) on a re-fired
@@ -2571,6 +2878,11 @@ impl ProjectileStore {
         let mut near_target = false;
 
         let mut ordinary_motion = None;
+        // Phobos `Parachuted=` bullets descend vertically by their accumulated
+        // `FallRate`; `BulletClass_AI_Parabomb` skips the ordinary
+        // gravity/reflection commit (`Ext/Bullet/Hooks.cpp:610-618`, hook
+        // 0x467AB2 -> 0x467B1A).
+        let parabomb = projectile.parabomb.is_some();
         // A module's step (RFC 0001 section 9) replaces whichever arm
         // follows; that arm's own detonation tests go with it.
         let mut candidate = if let Some(motion) = module_motion {
@@ -2586,6 +2898,29 @@ impl ProjectileStore {
                     projectile.position.z.wrapping_add(step.z),
                 )
             })
+        } else if parabomb {
+            let state = projectile
+                .parabomb
+                .as_mut()
+                .expect("checked parabomb state");
+            state.accumulated_rate =
+                crate::sim::movement::parachute_descent::parachuted_bullet_rate(
+                    state.accumulated_rate,
+                    state.fall_rate_step,
+                    state.max_fall_rate,
+                );
+            let rate = state.accumulated_rate;
+            let ground = projectile_ground_z(terrain, shared_cell_dummy, projectile.position);
+            let candidate = ProjectileCoord::new(
+                projectile.position.x,
+                projectile.position.y,
+                projectile.position.z.wrapping_add(rate),
+            );
+            if candidate.z <= ground {
+                impact_flag = true;
+                impact_reason = ProjectileDetonationReason::Collision;
+            }
+            candidate
         } else if projectile.guidance.is_some() {
             let step = homing::step(
                 projectile,
@@ -2674,15 +3009,10 @@ impl ProjectileStore {
         // gravity/reflection commits only at 467AB2; Vertical already
         // committed its ramp at 4672A3..4672B4 and skips that copyback.
         // A module-moved bullet takes this tail whatever its ROT, with the
-        // velocity the module left (RFC 0001 section 9).
-        if (projectile.guidance.is_none() || module_motion.is_some())
-            && let Some(ProjectileCollisionResponse::Ordinary {
-                candidate: selected,
-                velocity,
-                impact,
-                near_target: near,
-                left_map,
-            }) = collides_at(
+        // velocity the module left (RFC 0001 section 9). A parachuted bullet
+        // keeps Phobos's early skip unless a module replaced its motion.
+        let collision = if module_motion.is_some() || (!parabomb && projectile.guidance.is_none()) {
+            collides_at(
                 projectile,
                 candidate,
                 ProjectileCollisionPhase::Ordinary {
@@ -2698,6 +3028,16 @@ impl ProjectileStore {
                     }),
                 },
             )
+        } else {
+            None
+        };
+        if let Some(ProjectileCollisionResponse::Ordinary {
+            candidate: selected,
+            velocity,
+            impact,
+            near_target: near,
+            left_map,
+        }) = collision
         {
             candidate = selected;
             projectile.velocity = velocity;
@@ -3434,7 +3774,7 @@ fn ladder_detonation(
 }
 
 // YR BulletClass::Detonate linkage: only this handoff permits combat damage/effects.
-fn detonation(
+pub(crate) fn detonation(
     projectile: &Projectile,
     impact: ProjectileCoord,
     reason: ProjectileDetonationReason,
@@ -3456,7 +3796,6 @@ mod tests {
     /// Phobos `BulletClass_AI_ApplyGravity` (0x4671B9): a type `Gravity`
     /// replaces the Rules integer in flight, but a Floater shell still takes
     /// Rules x 0.5 from 0x48ACF0.
-    #[cfg(feature = "phobos")]
     #[test]
     fn phobos_type_gravity_drives_flight_except_for_a_floater() {
         use crate::util::native_x87::NativeF64Bits;
@@ -3474,6 +3813,60 @@ mod tests {
         };
         assert_eq!(fall(false), -12.0);
         assert_eq!(fall(true), -3.0);
+    }
+
+    /// Phobos `Parachuted=` (`Ext/Bullet/Hooks.cpp:573-583`, `:128-137`): a
+    /// bullet born under a canopy steps its Z by the accumulated fall rate
+    /// and skips the ordinary trajectory tail (`:610-618`, hook `0x467AB2` ->
+    /// `0x467B1A`). The Straight trajectory's 64-lepton step never moves it
+    /// horizontally, and it detonates once the next Z reaches the ground.
+    #[test]
+    fn a_parabomb_descends_by_its_fall_rate_and_grounds() {
+        let mut store = ProjectileStore::new();
+        let mut shot = spawn(ProjectileTarget::Cell { rx: 20, ry: 0 });
+        shot.origin = ProjectileCoord::new(0, 0, 100);
+        shot.speed_leptons_per_frame = 64;
+        let id = store.spawn(1, shot);
+        store.begin_parabomb(
+            id,
+            ParabombState {
+                accumulated_rate: 0,
+                fall_rate_step: 3,
+                max_fall_rate: -7,
+            },
+        );
+
+        let mut descent = Vec::new();
+        let mut detonation = None;
+        for frame in 0..20 {
+            let result = store.advance(
+                frame,
+                &BTreeMap::new(),
+                None,
+                &SharedCellDummy::fresh(),
+                |_, _| None,
+            );
+            match result.detonations.as_slice() {
+                [] => descent.push(store.get(id).expect("still descending").position()),
+                [impact] => {
+                    assert_eq!(impact.projectile_id, id);
+                    assert_eq!(impact.reason, ProjectileDetonationReason::Collision);
+                    detonation = Some(impact.impact);
+                    break;
+                }
+                many => panic!("one impact expected, got {}", many.len()),
+            }
+        }
+        assert_eq!(
+            descent.iter().map(|coord| coord.z).collect::<Vec<_>>(),
+            [97, 91, 84, 77, 70, 63, 56, 49, 42, 35, 28, 21, 14, 7],
+            "0-3, then the -7 terminal rate; the trajectory never flies"
+        );
+        assert!(
+            descent.iter().all(|coord| (coord.x, coord.y) == (0, 0)),
+            "a parachuted bullet keeps its Fire X/Y"
+        );
+        assert_eq!(detonation, Some(ProjectileCoord::new(0, 0, 0)));
     }
 
     fn flat_32_by_32() -> ResolvedTerrainGrid {
@@ -4259,6 +4652,8 @@ mod tests {
         let coordinate = projectile_next_cluster_coord(
             crate::map::cell_index::CellGrid::Retail,
             ProjectileCoord::new(20 * 256 + 128, 20 * 256 + 128, 77),
+            0x100,
+            0x200,
             &mut cluster_rng,
         );
         assert_eq!(

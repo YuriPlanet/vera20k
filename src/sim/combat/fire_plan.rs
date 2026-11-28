@@ -54,8 +54,7 @@ use crate::rules::weapon_type::WeaponType;
 use crate::sim::ext_modules::ModuleEvent;
 use crate::sim::ext_modules::projectiles::{SpecTarget, spec_target};
 use crate::sim::projectile::launch::{
-    FireAtLaunch, LaunchSpeedProjectile, fireat_launch, fireat_launch_distance,
-    weapon_launch_speed,
+    FireAtLaunch, LaunchSpeedProjectile, fireat_launch, fireat_launch_distance, weapon_launch_speed,
 };
 use crate::sim::projectile::{ProjectileCoord, ProjectileTarget, ProjectileVelocity};
 use crate::sim::world::Simulation;
@@ -104,6 +103,9 @@ pub(super) fn decide_fire_plan(
         other: match shot.target {
             TargetKind::Entity(id) => id,
             TargetKind::Cell(..) => 0,
+            // A projectile id is not an object reference; `cell` carries the
+            // bullet target's current coordinate, as for the delivered `Fire`.
+            TargetKind::Bullet(..) => 0,
         },
         cell: Some(shot.target_cell),
         value: shot.slot,
@@ -145,8 +147,7 @@ pub(super) fn launch_fire_plan(
                 shot.bullet.payload.with_projectile_type(Some(type_id)),
             ),
             id => {
-                let Some(weapon) = u32::try_from(id).ok().and_then(|id| rules.weapon_at(id))
-                else {
+                let Some(weapon) = u32::try_from(id).ok().and_then(|id| rules.weapon_at(id)) else {
                     continue;
                 };
                 let Some(warhead) = rules.weapon_warhead(weapon) else {
@@ -191,10 +192,8 @@ pub(super) fn launch_fire_plan(
                 native.z.wrapping_add(spec.origin[2]),
             )
         };
-        let as_native = Some(type_id) == native_type
-            && spec.target == 0
-            && !absolute
-            && spec.origin == [0; 3];
+        let as_native =
+            Some(type_id) == native_type && spec.target == 0 && !absolute && spec.origin == [0; 3];
         let bullet = if as_native {
             FiredBullet {
                 payload,
@@ -222,8 +221,7 @@ pub(super) fn launch_fire_plan(
             )
         };
         world.module_projectile_data(bullet_id, spec.data);
-        let admitted =
-            super::admit_techno_fired_bullet(world, rules, weapon, bullet_id, bullet);
+        let admitted = super::admit_techno_fired_bullet(world, rules, weapon, bullet_id, bullet);
         if !admitted || world.projectiles.get(bullet_id).is_none() {
             world.forget_module_projectile(bullet_id);
             if !admitted {
@@ -267,6 +265,7 @@ fn planned_bullet(
     )?
     .target_position;
     let delivery = classify_projectile_type(kind, weapon.speed, rules);
+    let arcing = delivery.ballistic;
     let speed = weapon_launch_speed(
         weapon.speed,
         Some(LaunchSpeedProjectile {
@@ -290,7 +289,7 @@ fn planned_bullet(
         radial_segments: 0,
         radial_index: 0,
         body_heading: 0,
-        arcing: delivery.ballistic,
+        arcing,
         gravity: crate::sim::projectile::projectile_gravity(
             rules.general.gravity,
             delivery.collision.gravity(),
@@ -299,6 +298,11 @@ fn planned_bullet(
         high_root: false,
         voxel_downward: None,
         building_pitch_height: None,
+        arcing_fix: arcing
+            && !kind
+                .phobos_arcing_allow_elevation_inaccuracy
+                .unwrap_or(rules.phobos_globals.arcing_allow_elevation_inaccuracy),
+        lobber: weapon.lobber,
     })?;
     let mut bullet = FiredBullet::launched(
         world,

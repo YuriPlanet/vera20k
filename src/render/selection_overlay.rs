@@ -75,10 +75,15 @@ pub struct SelectionOverlay {
     /// One optional custom SHP per `[DigitalDisplayTypes]` catalog entry, in
     /// catalog order. `None` for an entry without `Shape=` or a missing file;
     /// Phobos then draws that display with the game font.
-    #[cfg(feature = "phobos")]
     digital_shapes: Vec<Option<CenteredShapeStrip>>,
     /// Ares/Phobos custom insignia SHPs keyed by their normalized file name.
     insignia_shapes: NamedStrips,
+    /// One optional `[SelectBoxTypes]` `Shape=` per catalog entry, in catalog
+    /// order (`Ext/Techno/Body.Visuals.cpp:394-407`).
+    select_box_shapes: Vec<Option<CenteredShapeStrip>>,
+    /// One optional `[SelectBoxTypes]` `GroundShape=` per catalog entry
+    /// (`Ext/Techno/Body.Visuals.cpp:371-380`).
+    select_box_ground_shapes: Vec<Option<CenteredShapeStrip>>,
     /// Ares `IvanBomb.Image` SHPs keyed by their file name, MOUSEPAL like
     /// the BOMBCURS.SHP they replace; a name that did not load is absent.
     ares_bomb_images: NamedStrips,
@@ -679,9 +684,10 @@ impl SelectionOverlay {
             repair_wrench,
             power_off,
             pips,
-            #[cfg(feature = "phobos")]
             digital_shapes: Vec::new(),
             insignia_shapes: NamedStrips::default(),
+            select_box_shapes: Vec::new(),
+            select_box_ground_shapes: Vec::new(),
             ares_bomb_images: NamedStrips::default(),
         }
     }
@@ -750,7 +756,6 @@ impl SelectionOverlay {
 
     /// Load each `[DigitalDisplayTypes]` entry's `Shape=`/`Palette=` once per
     /// match, matching `DigitalDisplayTypeClass`'s retained `SHPStruct*`.
-    #[cfg(feature = "phobos")]
     pub(crate) fn load_digital_display_shapes(
         &mut self,
         device: &wgpu::Device,
@@ -787,9 +792,68 @@ impl SelectionOverlay {
     }
 
     /// One catalog entry's custom SHP, when loaded.
-    #[cfg(feature = "phobos")]
     pub(crate) fn digital_shape(&self, index: usize) -> Option<&CenteredShapeStrip> {
         self.digital_shapes.get(index)?.as_ref()
+    }
+
+    /// Load every `[SelectBoxTypes]` entry's `Shape=`/`Palette=` and
+    /// `GroundShape=`/`GroundPalette=` once per match, matching
+    /// `SelectBoxTypeClass`'s retained `SHPStruct*` pointers.
+    pub(crate) fn load_select_box_shapes(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        batch: &BatchRenderer,
+        assets: &AssetManager,
+        types: &[crate::rules::select_box_type::SelectBoxType],
+    ) {
+        let load = |entry: &crate::rules::select_box_type::SelectBoxType,
+                    shape: Option<&str>,
+                    palette: &str|
+         -> Option<CenteredShapeStrip> {
+            let shape = shape?;
+            // SelectBox keys name retained SHP resources, not interface pictures.
+            let strip = CenteredShapeStrip::from_assets_on_device(
+                device,
+                queue,
+                batch,
+                assets,
+                crate::render::interface_picture::PictureSizes::None,
+                shape,
+                palette,
+            );
+            if strip.is_none() {
+                log::warn!(
+                    "Phobos SelectBox {}: cannot load {shape} / {palette}",
+                    entry.name
+                );
+            }
+            strip
+        };
+        self.select_box_shapes = types
+            .iter()
+            .map(|entry| load(entry, entry.shape.as_deref(), entry.palette_name()))
+            .collect();
+        self.select_box_ground_shapes = types
+            .iter()
+            .map(|entry| {
+                load(
+                    entry,
+                    entry.ground_shape.as_deref(),
+                    entry.ground_palette_name(),
+                )
+            })
+            .collect();
+    }
+
+    /// One `[SelectBoxTypes]` entry's box SHP, when loaded.
+    pub(crate) fn select_box_shape(&self, index: usize) -> Option<&CenteredShapeStrip> {
+        self.select_box_shapes.get(index)?.as_ref()
+    }
+
+    /// One `[SelectBoxTypes]` entry's ground SHP, when loaded.
+    pub(crate) fn select_box_ground_shape(&self, index: usize) -> Option<&CenteredShapeStrip> {
+        self.select_box_ground_shapes.get(index)?.as_ref()
     }
 
     /// Load every TechnoType/`[InsigniaTypes]` insignia SHP once per match.
@@ -805,7 +869,6 @@ impl SelectionOverlay {
         rules: &crate::rules::ruleset::RuleSet,
     ) {
         let mut names = std::collections::BTreeSet::new();
-        #[cfg(feature = "phobos")]
         for object in rules.all_objects() {
             let insignia = &object.phobos_insignia;
             for variant in std::iter::once(&insignia.base)
@@ -815,13 +878,11 @@ impl SelectionOverlay {
                 names.extend(variant.images.iter().flatten().cloned());
             }
         }
-        #[cfg(feature = "phobos")]
         for entry in rules.insignia_types().entries() {
             names.extend(entry.images.iter().flatten().cloned());
         }
         // Ares's own draw runs only without Phobos's DrawInsignia, and its
         // keys are read only the Ares way.
-        #[cfg(not(feature = "phobos"))]
         for object in rules.all_objects().filter(|_| rules.ares_form()) {
             names.extend(object.ares_insignia.images.iter().flatten().cloned());
         }
@@ -1081,7 +1142,6 @@ fn generate_diamond_cell(color: [u8; 4]) -> Vec<u8> {
 /// (`src/New/Type/DigitalDisplayTypeClass.cpp:262, 275`), so the Shape still
 /// draws, in `PALETTE.PAL`. Residual: the reader's `~~~` theater suffix
 /// (`ApplyTheaterSuffixToString`) is not applied to the name.
-#[cfg(feature = "phobos")]
 fn digital_display_palette<'a>(assets: &AssetManager, name: &'a str) -> &'a str {
     use crate::render::shell_ui_style_assets::ui_art_candidates;
     if ui_art_candidates(assets, name).any(|asset| Palette::from_bytes(asset.bytes).is_ok()) {
@@ -1095,7 +1155,6 @@ fn digital_display_palette<'a>(assets: &AssetManager, name: &'a str) -> &'a str 
 mod tests {
     use super::*;
 
-    #[cfg(feature = "phobos")]
     #[test]
     fn a_digital_display_palette_that_does_not_load_draws_in_palette_pal() {
         let root = crate::map::source::test_support::TestDirectory::new("digital-display-palette");

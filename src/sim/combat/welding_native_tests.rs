@@ -129,7 +129,6 @@ fn rng(sim: &Simulation) -> [String; 3] {
     ]
 }
 
-#[cfg(not(feature = "phobos"))]
 fn restore_rng(sim: &mut Simulation, state: &Value) {
     *sim.main_rng = SimRng::from_native_state_hex_for_test(state["main"].as_str().unwrap());
     *sim.scenario_rng = SimRng::from_native_state_hex_for_test(state["scenario"].as_str().unwrap());
@@ -401,6 +400,9 @@ fn original_fireat_live_spark_guard_refuses_a_direct_shot_without_launch_side_ef
         target_coords: resolve_target_coords(&target, &sim).unwrap(),
         target_type_ref: sim.entities().get(roles["target"]).unwrap().type_ref(),
         is_garrison: false,
+        at_firing_frame: true,
+        // The raw FireAt paths run no class firing update.
+        pause_handled: false,
     };
     assert!(shot.selected.weapon.use_spark_particles);
     let before = sim.state_hash();
@@ -965,7 +967,6 @@ fn system_child_reference_expiry_retains_the_live_body_until_common_uninit() {
 
 // Phobos `ROF.RandomDelay` (`0x006FD0B5`) redraws the full-rearm jitter, so
 // this stock golden only holds without the capability.
-#[cfg(not(feature = "phobos"))]
 #[test]
 fn original_live_spark_rof_and_fireat_rearm_use_the_retained_link_and_exact_rng() {
     let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
@@ -999,21 +1000,23 @@ fn original_live_spark_rof_and_fireat_rearm_use_the_retained_link_and_exact_rng(
             None,
         );
         let ((rof, rearm), draws) = crate::sim::rng::trace_draws(|| {
-            let rof = fireat_get_rof(
+            let (rof, _) = fireat_get_rof(
                 &mut sim.scenario_rng,
                 &sim.substrate,
                 &sim.houses,
                 rules,
+                &sim.interner,
                 &snap,
                 object,
                 Some(&weapon),
                 int(&row["input"]["queried_burst"]),
             );
-            let tail_rof = fireat_get_rof(
+            let (tail_rof, _) = fireat_get_rof(
                 &mut sim.scenario_rng,
                 &sim.substrate,
                 &sim.houses,
                 rules,
+                &sim.interner,
                 &snap,
                 object,
                 Some(&weapon),

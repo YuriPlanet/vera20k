@@ -300,6 +300,8 @@ impl Simulation {
         super::super::foot_speed::owner_current_speed(
             entity,
             self.object_type(entity.type_ref(), rules),
+            rules,
+            &self.interner,
             rules.general.veteran_speed,
             &self.houses,
         )
@@ -651,6 +653,14 @@ impl Simulation {
                 id,
                 crate::sim::world::UninitContext::new(rules).with_effects(effects),
             );
+            // Phobos hook 0x514C07 (`Ext/Techno/Hooks.cpp:997-1006`): the
+            // shutdown calls DropAsBomb and then marks the techno, so the
+            // landing arm can tell a hover shutdown from a paradrop bomb.
+            if rules.phobos()
+                && let Some(entity) = self.substrate.entities.get_mut(id)
+            {
+                entity.mark_hover_shutdown();
+            }
         }
     }
 
@@ -1541,5 +1551,41 @@ mod tests {
             count += 1;
         }
         assert_eq!(count, 8);
+    }
+
+    /// Phobos hook `0x514C07` (`Ext/Techno/Hooks.cpp:997-1006`): the shutdown
+    /// calls `DropAsBomb` and then marks the techno, so the landing arm can
+    /// tell this drop from a paradrop bomb. A spin that ends over clear ground
+    /// neither drops nor marks.
+    #[test]
+    fn the_hover_shutdown_marks_the_techno_it_drops() {
+        let rules = RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str("")).unwrap();
+        for (land, z, drops) in [(0u8, 0i32, false), (2, -1000, true)] {
+            let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0);
+            let cell = sim
+                .resolved_terrain
+                .as_mut()
+                .unwrap()
+                .cell_mut_for_test(10, 10)
+                .unwrap();
+            cell.land_type = land;
+            let mut entity = GameEntity::test_default(1, "ROBO", "Americans", 10, 10);
+            entity.position.set_exact_z_leptons_for_test(Some(z));
+            let mut loco = crate::sim::movement::locomotor::LocomotorState::for_test_kind(
+                crate::rules::locomotor_type::LocomotorKind::Hover,
+            );
+            loco.set_powered_for_test(true);
+            let hover = loco.hover_runtime_mut().unwrap();
+            hover.shove_turning = true;
+            // One step left, so this `hover_shove` ends the spin and the tail
+            // reaches the water gate.
+            hover.shove_steps = 1;
+            entity.locomotor = Some(loco);
+            sim.substrate.entities.insert(entity);
+            sim.hover_spin_tail(1, &rules, &mut FrameEffects::default());
+            let entity = sim.substrate.entities.get(1).unwrap();
+            assert_eq!(entity.was_dropped_as_bomb(), drops, "land {land}");
+            assert_eq!(entity.hover_shutdown(), drops, "land {land}");
+        }
     }
 }

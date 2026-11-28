@@ -295,7 +295,10 @@ pub(super) fn push_rect_outline_px(
     tint: [f32; 3],
     depth: f32,
 ) {
-    for edge in vera20k_gui::shell::bar::outline_edges(rect).into_iter().flatten() {
+    for edge in vera20k_gui::shell::bar::outline_edges(rect)
+        .into_iter()
+        .flatten()
+    {
         push_solid_rect_px(out, white_pixel, edge, tint, depth);
     }
 }

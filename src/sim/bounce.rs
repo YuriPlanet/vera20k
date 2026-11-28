@@ -1105,7 +1105,7 @@ mod tests {
 
         let mut expected = SimRng::new(77);
         for _ in 0..3 {
-            expected.next_range_u32_inclusive(0, (0xFFFF - -0xFFFF) as u32);
+            expected.next_range_u32_inclusive(0, 0x1_FFFE);
         }
         assert_eq!(rng.logical_view(), expected.logical_view());
     }

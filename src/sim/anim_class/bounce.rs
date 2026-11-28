@@ -148,39 +148,33 @@ impl Simulation {
             return Ok(Some(false));
         }
         let position = body.position_leptons();
-        let location = AnimWorldCoord {
-            x: position.x,
-            y: position.y,
-            z: position.z,
-        };
-        // A chunk still in the air runs nothing between the body's store and
-        // the Location's (`0x00423AA8`), so one read of the anim takes both.
-        let falling = outcome == BounceOutcome::Falling;
         if let Some(anim) = self.substrate.anims.get_mut(id) {
             anim.bounce = Some(body);
-            if falling {
-                anim.world_coord = location;
-            }
-        }
-        if falling {
-            return Ok(None);
         }
         let mut bridge_state_changed = false;
-        if outcome == BounceOutcome::Bounced {
-            bridge_state_changed |= self.anim_bounce_contact(
-                id,
-                config,
-                rules,
-                overlay_registry,
-                position,
-                frame_effects,
-            );
-        } else {
-            // Stopped (`0x00423976`).
-            self.destroy_anim(id, rules);
+        match outcome {
+            BounceOutcome::Falling => {}
+            BounceOutcome::Bounced => {
+                bridge_state_changed |= self.anim_bounce_contact(
+                    id,
+                    config,
+                    rules,
+                    overlay_registry,
+                    position,
+                    frame_effects,
+                );
+            }
+            BounceOutcome::Stopped => self.destroy_anim(id, rules),
         }
         if let Some(anim) = self.substrate.anims.get_mut(id) {
-            anim.world_coord = location;
+            anim.world_coord = AnimWorldCoord {
+                x: position.x,
+                y: position.y,
+                z: position.z,
+            };
+        }
+        if outcome == BounceOutcome::Falling {
+            return Ok(None);
         }
         bridge_state_changed |=
             self.anim_bounce_landing(config, rules, overlay_registry, position, frame_effects)?;
@@ -385,6 +379,16 @@ impl Simulation {
                     (position.x / 256).wrapping_add(dx) as u16,
                     (position.y / 256).wrapping_add(dy) as u16,
                 );
+                let base = config
+                    .tiberium_spawn_type
+                    .as_deref()
+                    .and_then(|name| registry.id_for_name(name));
+                let ramp_type_allows = base.is_some_and(|id| {
+                    crate::sim::tiberium::tiberium_type_allows_ramps(
+                        rules,
+                        crate::rules::tiberium_type::TiberiumTypeId(id),
+                    )
+                });
                 let admitted = {
                     let (Some(terrain), Some(grid)) =
                         (self.resolved_terrain.as_ref(), self.overlay_grid.as_ref())
@@ -404,16 +408,13 @@ impl Simulation {
                         self.terrain_objects.spawning_cells(),
                         NewTiberiumAdmission::runtime(terrain, objects),
                         cell,
+                        ramp_type_allows,
                     )
                 };
                 let Some(cell) = admitted else {
                     continue;
                 };
-                let Some(base) = config
-                    .tiberium_spawn_type
-                    .as_deref()
-                    .and_then(|name| registry.id_for_name(name))
-                else {
+                let Some(base) = base else {
                     continue;
                 };
                 let variant = self.scenario_rng.next_range_i32_inclusive(0, 3);

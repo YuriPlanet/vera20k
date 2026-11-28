@@ -452,15 +452,97 @@ fn weapon_zero<'r>(
     rules: &'r RuleSet,
     entity: &crate::sim::game_entity::GameEntity,
 ) -> Option<&'r crate::rules::weapon_type::WeaponType> {
+    weapon_at(sim, rules, entity, 0)
+}
+
+/// `pThis->GetWeapon(weaponIndex)` from the EMPulse select-weapon hook
+/// (`Ext/Building/Hooks.cpp:186`); stock and Ares-only shots keep slot 0.
+fn weapon_at<'r>(
+    sim: &Simulation,
+    rules: &'r RuleSet,
+    entity: &crate::sim::game_entity::GameEntity,
+    index: i32,
+) -> Option<&'r crate::rules::weapon_type::WeaponType> {
     let object = sim.object_type(entity.type_ref(), rules)?;
     crate::sim::combat::combat_weapon::get_weapon(
         entity,
         object,
-        0,
+        index,
         &sim.substrate.entities,
         rules,
         &sim.interner,
     )
+}
+
+/// `BuildingClass_Mission_Missile_EMPulseSelectWeapon @ 0x44CEEC`
+/// (`Ext/Building/Hooks.cpp:132-189`). Consumes and clears
+/// `CurrentEMPulseSW`, resumes the SWs suspended for this firing type and
+/// erases that residue (`Ext/House/Body.h:66`), then answers the weapon slot:
+/// a non-negative `EMPulse.WeaponIndex`, else SelectWeapon against the
+/// EMPTarget cell. No latch means the stock/Ares slot 0.
+fn phobos_empulse_weapon_index(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    id: u64,
+    cell: (u16, u16),
+) -> i32 {
+    let Some(sw_type) = sim
+        .substrate
+        .entities
+        .get_mut(id)
+        .and_then(|entity| entity.take_phobos_current_empulse_sw())
+    else {
+        return 0;
+    };
+    let owner = sim.substrate.entities.get(id).map(|entity| entity.owner());
+    let name = sim.interner.resolve(sw_type).to_owned();
+    let Some(emp) = rules
+        .super_weapon_metadata(&name)
+        .map(|metadata| metadata.launch().emp_pulse().clone())
+    else {
+        return 0;
+    };
+    if emp.empulse_suspend_others {
+        if let Some(owner) = owner {
+            let held = sim
+                .houses
+                .get_mut(&owner)
+                .map(|house| house.release_emp_pulse_sws(sw_type))
+                .unwrap_or_default();
+            let frame = sim.session.binary_frame() as u32;
+            for ty in held {
+                if let Some(instance) = sim.super_weapons.instance_mut(&owner, &ty) {
+                    instance.phobos_set_suspended(false, frame);
+                }
+            }
+        }
+    }
+    if emp.empulse_weapon_index >= 0 {
+        return emp.empulse_weapon_index;
+    }
+    // Native asks SelectWeapon on the cell's content, else the cell itself
+    // (`Ext/Building/Hooks.cpp:143-158`). VERA's SelectWeapon owner takes the
+    // cell target; the content-first ordering is a documented residual.
+    let world: &Simulation = sim;
+    let Some(entity) = world.substrate.entities.get(id) else {
+        return 0;
+    };
+    let Some(object) = world.object_type(entity.type_ref(), rules) else {
+        return 0;
+    };
+    let target = TargetKind::Cell(cell.0, cell.1);
+    let picked = crate::sim::combat::combat_weapon::select_weapon_against(
+        rules,
+        entity,
+        object,
+        &crate::sim::combat::combat_weapon::attacker_facts(entity, object),
+        Some(&target),
+        world,
+        &world.interner,
+        world.resolved_terrain.as_ref(),
+        Some(&world.house_alliances),
+    );
+    picked.map_or(0, |(slot, _)| slot.max(0))
 }
 
 /// BuildingClass vt+0x2C8 (`0x0043E940`) for an EMP cannon whose weapon 0 is
@@ -489,11 +571,15 @@ fn emp_barrel_pitch(sim: &Simulation, rules: &RuleSet, id: u64, cell: (u16, u16)
 /// (`0x0044D4D4..0x0044D51A`); status 3, returns 1. A refused shot is deleted
 /// and the cannon parks.
 fn emp_shot(sim: &mut Simulation, rules: &RuleSet, id: u64, cell: (u16, u16)) -> i32 {
+    // `BuildingClass_Mission_Missile_EMPulseSelectWeapon @ 0x44CEEC`
+    // (`Ext/Building/Hooks.cpp:132-189`): the Phobos latch owns the weapon
+    // slot, the suspended-SW resume and the clear, all before the shot.
+    let weapon_index = phobos_empulse_weapon_index(sim, rules, id, cell);
     let Some(entity) = sim.substrate.entities.get(id) else {
         return 1;
     };
     let (Some(weapon), Some(object)) = (
-        weapon_zero(sim, rules, entity),
+        weapon_at(sim, rules, entity, weapon_index),
         sim.object_type(entity.type_ref(), rules),
     ) else {
         // Native dereferences the missing WeaponType (`0x0044D08A`).
@@ -516,7 +602,7 @@ fn emp_shot(sim: &mut Simulation, rules: &RuleSet, id: u64, cell: (u16, u16)) ->
         rules,
         &FireSource::of_entity(entity),
         object,
-        0,
+        weapon_index,
         0,
         Flh::default(),
     )
@@ -535,6 +621,48 @@ fn emp_shot(sim: &mut Simulation, rules: &RuleSet, id: u64, cell: (u16, u16)) ->
         speed,
         pitch,
     );
+    // Phobos `BuildingClass_Mission_Missile_BeforeMoveTo @ 0x44D46E`
+    // (`Ext/Bullet/Hooks.cpp:534-551`): an `Arcing=yes` bullet whose
+    // `Arcing.AllowElevationInaccuracy` refuses has its finished velocity
+    // recomputed by `BulletExt::ApplyArcingFix` from the vt+0x300 source to
+    // the target cell's ground coordinate before `MoveTo`.
+    let velocity =
+        {
+            let kind = weapon
+                .projectile
+                .as_deref()
+                .and_then(|name| rules.projectile(name));
+            let apply = kind.is_some_and(|kind| kind.arcing)
+                && !kind
+                    .and_then(|kind| kind.phobos_arcing_allow_elevation_inaccuracy)
+                    .unwrap_or(rules.phobos_globals.arcing_allow_elevation_inaccuracy);
+            if apply {
+                let target = cell_ground_coord(sim.resolved_terrain.as_ref(), cell.0, cell.1);
+                let delta = [
+                    target.x.wrapping_sub(source.x),
+                    target.y.wrapping_sub(source.y),
+                    target.z.wrapping_sub(source.z),
+                ];
+                let gravity = crate::sim::projectile::projectile_gravity(
+                    rules.general.gravity,
+                    kind.and_then(|kind| kind.gravity()),
+                    kind.is_some_and(|kind| kind.floater),
+                );
+                let fixed = crate::sim::projectile::launch::apply_arcing_fix(
+                    velocity
+                        .native()
+                        .map(|component| f64::from_bits(component.bits())),
+                    delta,
+                    f64::from_bits(gravity.bits()),
+                    weapon.lobber,
+                );
+                crate::sim::projectile::ProjectileVelocity::from_native(fixed.map(|value| {
+                    crate::util::native_x87::NativeF64Bits::from_bits(value.to_bits())
+                }))
+            } else {
+                velocity
+            }
+        };
     let Some(warhead) = weapon
         .warhead
         .as_deref()
@@ -1199,5 +1327,103 @@ mod tests {
             ],
             [ground.x, ground.y, ground.z + 416]
         );
+    }
+}
+
+#[cfg(all(test, tests_sim_world_techno))]
+mod arcing {
+    use super::*;
+    use crate::map::resolved_terrain::{ResolvedTerrainCell, test_flat_cell, test_grid};
+    use crate::rules::ini_parser::IniFile;
+    use crate::sim::house_state::HouseState;
+
+    /// An EMP cannon (`EMPulseCannon=yes`) whose weapon 0 fires a bullet with
+    /// `ARC`'s keys.
+    fn rules(arc_keys: &str) -> RuleSet {
+        let ini = crate::sim::arena_fixture::clear_ground_ini(&format!(
+            "[General]\n\
+             [InfantryTypes]\n[VehicleTypes]\n[AircraftTypes]\n\
+             [BuildingTypes]\n0=EMP\n\
+             [EMP]\nStrength=1000\nEMPulseCannon=yes\nPrimary=ArcShell\n\
+             [ArcShell]\nDamage=10\nROF=100\nRange=10\nSpeed=100\n\
+             Projectile=ARC\nWarhead=HIT\n\
+             [ARC]\n{arc_keys}\
+             [HIT]\nCellSpread=0\n\
+             Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n"
+        ));
+        let art = IniFile::from_str("[EMP]\nFoundation=1x1\n");
+        RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).expect("EMP rules")
+    }
+
+    fn world(rules: &RuleSet, target: (u16, u16)) -> (Simulation, u64) {
+        let mut sim = Simulation::with_seed(5);
+        sim.intern_rule_type_ids(rules);
+        sim.resolve_type_handles(rules);
+        let owner = sim.interner.intern("Russians");
+        sim.houses
+            .register(HouseState::new(owner, 1, None, true, 0, 10));
+        *sim.resolved_terrain = Some(test_grid(80, 220, |x, y| ResolvedTerrainCell {
+            level: if (x, y) == target { 2 } else { 0 },
+            ..test_flat_cell(x, y)
+        }));
+        crate::sim::arena_fixture::supply_native_map_keyed(&mut sim, (target, 2));
+        let cannon = sim
+            .spawn_object_at_height("EMP", "Russians", 20, 30, 0, 0, rules)
+            .expect("EMP cannon");
+        (sim, cannon)
+    }
+
+    /// Fire status 2 once and return the bullet's stored velocity bits plus the
+    /// launch origin.
+    fn shot(rules: &RuleSet, target: (u16, u16)) -> ([u64; 3], ProjectileCoord) {
+        let (mut sim, cannon) = world(rules, target);
+        emp_shot(&mut sim, rules, cannon, target);
+        let (_, bullet) = sim.projectiles.iter().next().expect("one shell");
+        let velocity = bullet.velocity().native().map(|bits| bits.bits());
+        let origin = bullet.launch_origin();
+        (velocity, ProjectileCoord::new(origin.x, origin.y, origin.z))
+    }
+
+    /// Phobos `BuildingClass_Mission_Missile_BeforeMoveTo @ 0x44D46E`
+    /// (`Ext/Bullet/Hooks.cpp:534-551`): an `Arcing=yes` bullet whose
+    /// `Arcing.AllowElevationInaccuracy` refuses is refolded from the vt+0x300
+    /// source to the target cell's ground coordinate; `Arcing=no` ignores the
+    /// key.
+    #[test]
+    fn the_emp_shell_folds_the_arcing_fix_when_elevation_inaccuracy_is_refused() {
+        let target = (50, 60);
+        let raw = rules("Arcing=yes\n");
+        let accepted = rules("Arcing=yes\nArcing.AllowElevationInaccuracy=yes\n");
+        let refused = rules("Arcing=yes\nArcing.AllowElevationInaccuracy=no\n");
+        let straight = rules("Arcing=no\nArcing.AllowElevationInaccuracy=no\n");
+        let (raw_velocity, origin) = shot(&raw, target);
+        let (accepted_velocity, _) = shot(&accepted, target);
+        let (refused_velocity, _) = shot(&refused, target);
+        let (straight_velocity, _) = shot(&straight, target);
+        assert_eq!(accepted_velocity, raw_velocity, "the default accepts");
+        assert_eq!(
+            straight_velocity, raw_velocity,
+            "no `Arcing=yes` bullet, no fold"
+        );
+        let (sim, _) = world(&raw, target);
+        let ground = cell_ground_coord(sim.resolved_terrain.as_ref(), target.0, target.1);
+        let delta = [
+            ground.x.wrapping_sub(origin.x),
+            ground.y.wrapping_sub(origin.y),
+            ground.z.wrapping_sub(origin.z),
+        ];
+        let gravity = crate::sim::projectile::projectile_gravity(raw.general.gravity, None, false);
+        let expected = crate::sim::projectile::launch::apply_arcing_fix(
+            raw_velocity.map(f64::from_bits),
+            delta,
+            f64::from_bits(gravity.bits()),
+            false,
+        )
+        .map(|value| value.to_bits());
+        assert_eq!(
+            refused_velocity, expected,
+            "the refused key folds the shared kernel over the FLH -> cell delta"
+        );
+        assert_ne!(refused_velocity, raw_velocity);
     }
 }

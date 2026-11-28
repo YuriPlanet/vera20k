@@ -302,6 +302,19 @@ impl JumpjetFlightHost for CruiseHost<'_> {
     fn balloon_hover(&self) -> bool {
         self.owner().locomotor.as_ref().unwrap().balloon_hover()
     }
+    /// Phobos `FootExt::JumpjetStraightAscend` (`Ext/Foot/Body.h:25`).
+    fn straight_ascend(&self) -> bool {
+        self.owner().jumpjet_straight_ascend()
+    }
+    fn set_straight_ascend(&mut self, on: bool) {
+        if let Some(owner) = self.sim.substrate.entities.get_mut(self.stable_id) {
+            if on {
+                owner.mark_jumpjet_straight_ascend();
+            } else {
+                owner.clear_jumpjet_straight_ascend();
+            }
+        }
+    }
     /// `Techno+0x2B4`, TarCom, is set.
     fn has_target(&self) -> bool {
         self.owner().attack_target.target().is_some()
@@ -309,6 +322,106 @@ impl JumpjetFlightHost for CruiseHost<'_> {
     /// `Foot+0x6AD`: a Magnetron lifted the owner.
     fn piggyback_active(&self) -> bool {
         self.owner().lift.swap_active()
+    }
+
+    /// Phobos `JumpjetRotateOnCrash=` (`Ext/TechnoType/Body.h:421`, ctor
+    /// unset `:841`) over `[JumpjetControls] RotateOnCrash` (constructor true,
+    /// `Ext/Rules/Body.h:56,596`); hook `0x54CB0E`
+    /// (`Ext/Unit/Hooks.Jumpjet.cpp:153-158`).
+    fn jumpjet_rotate_on_crash(&self) -> bool {
+        {
+            let object = self.sim.object_type(self.owner().type_ref(), self.rules);
+            object
+                .and_then(|object| object.phobos_jumpjet_rotate_on_crash)
+                .unwrap_or(self.rules.phobos_globals.jumpjet_rotate_on_crash)
+        }
+    }
+    /// Phobos `JumpjetClimbIgnoreBuilding=` (`Ext/TechnoType/Body.cpp:1179`,
+    /// ctor unset `Body.h:841`) over `[General] JumpjetClimbIgnoreBuilding`
+    /// (default false, `Ext/Rules/Body.cpp:338`); hooks `0x54D820`/
+    /// `0x54D859`/`0x54D8EA` (`Ext/Unit/Hooks.Jumpjet.cpp:439-457`).
+    fn jumpjet_climb_ignore_building(&self) -> bool {
+        {
+            let object = self.sim.object_type(self.owner().type_ref(), self.rules);
+            object
+                .and_then(|object| object.phobos_jumpjet_climb_ignore_building)
+                .unwrap_or(self.rules.phobos_globals.jumpjet_climb_ignore_building)
+        }
+    }
+    /// Phobos `[General] JumpjetClimbPredictHeight=`.
+    fn jumpjet_climb_predict_height(&self) -> bool {
+        { self.rules.phobos_globals.jumpjet_climb_predict_height }
+    }
+    /// Phobos `[General] JumpjetClimbWithoutCutOut=`.
+    fn jumpjet_climb_without_cut_out(&self) -> bool {
+        { self.rules.phobos_globals.jumpjet_climb_without_cut_out }
+    }
+    /// `GetJumpjetHeightWithOccupyTechno`: the first building's
+    /// `Dimension2.Z`, else 85 leptons for a present techno, plus the bridge
+    /// deck in the non-building arm (`Ext/Unit/Hooks.Jumpjet.cpp:234-252`).
+    fn cell_occupy_height(&self, (cx, cy): (i16, i16)) -> i32 {
+        if cx < 0 || cy < 0 {
+            return 0;
+        }
+        let (rx, ry) = (cx as u16, cy as u16);
+        let building_height = self
+            .sim
+            .substrate
+            .occupancy
+            .first_building_on_layer(rx, ry, MovementLayer::Ground)
+            .map(|id| {
+                self.sim
+                    .substrate
+                    .entities
+                    .get(id)
+                    .and_then(|building| {
+                        self.sim
+                            .interner
+                            .object_type(building.type_ref(), self.rules)
+                            .map(|object| self.rules.building_dimensions(object)[2])
+                    })
+                    .unwrap_or(0)
+            });
+        if let Some(height) = building_height {
+            return height;
+        }
+        let mut height = if self
+            .sim
+            .substrate
+            .occupancy
+            .get(rx, ry)
+            .is_some_and(|cell| cell.iter_layer(MovementLayer::Ground).next().is_some())
+        {
+            jumpjet_flight::CELL_OBJECT_LIFT
+        } else {
+            0
+        };
+        let has_bridge = self.terrain().is_some_and(|terrain| {
+            terrain.native_cell_flags(terrain.native_cell_identity((cx, cy))) & 0x100 != 0
+        });
+        if has_bridge {
+            height = height.wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS);
+        }
+        height
+    }
+    /// `CellClass::Level` of `cell`.
+    fn cell_level_at(&self, cell: (i16, i16)) -> i32 {
+        self.terrain()
+            .map_or(0, |terrain| match terrain.native_cell_identity(cell) {
+                NativeCellIdentity::Real(index) => i32::from(terrain.cells()[index].level),
+                NativeCellIdentity::Dummy => {
+                    i32::from(terrain.shared_cell_dummy().snapshot().level)
+                }
+            })
+    }
+    /// `MapClass::TryGetCellAt` answers null outside the map.
+    fn cell_exists(&self, (cx, cy): (i16, i16)) -> bool {
+        self.terrain().is_some_and(|terrain| {
+            cx >= 0
+                && cy >= 0
+                && (cx as u32) < u32::from(terrain.width())
+                && (cy as u32) < u32::from(terrain.height())
+        })
     }
     fn piggyback_arrival(&mut self, runtime: &mut JumpjetRuntime) {
         let Some(holder) = self.owner().lift.source() else {
@@ -1137,6 +1250,68 @@ mod tests {
             phase
         })
         .unwrap()
+    }
+
+    /// Phobos `JumpjetRotateOnCrash=` (`Ext/TechnoType/Body.h:421`, ctor unset
+    /// `:841`; `[JumpjetControls] RotateOnCrash` true `Ext/Rules/Body.h:596`):
+    /// hook `0x54CB0E` (`Ext/Unit/Hooks.Jumpjet.cpp:153-158`) sends state 5
+    /// past the `ADD CX,0x2D00` facing re-aim when the key is false.
+    #[test]
+    fn jumpjet_rotate_on_crash_false_skips_the_crash_spin() {
+        let run = |key: &str| {
+            let rules = RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(&format!(
+                "[VehicleTypes]\n0=JUMPJETUNIT\n\n[JUMPJETUNIT]\nStrength=200\n{key}"
+            )))
+            .expect("rules");
+            let mut sim = hovering_jumpjet(0x40);
+            sim.substrate
+                .entities
+                .get_mut(1)
+                .unwrap()
+                .crash
+                .set_crashing_for_test(true);
+            let facing = |sim: &Simulation| {
+                let entity = sim.substrate.entities.get(1).unwrap();
+                let runtime = entity
+                    .locomotor
+                    .as_ref()
+                    .unwrap()
+                    .jumpjet_runtime()
+                    .unwrap();
+                let flight = runtime.flight();
+                (flight.facing().current(0), flight.facing().destination())
+            };
+            let before = facing(&sim);
+            sim.with_jumpjet_process(1, |runtime, sim| {
+                let mut host = CruiseHost {
+                    sim,
+                    frame: 0,
+                    trig: TrigTable::embedded(),
+                    rules: &rules,
+                    frame_effects: FrameEffects::default(),
+                    stable_id: 1,
+                    touched_down: false,
+                    impact: false,
+                    crash_latched: false,
+                    bridge_state_changed: false,
+                    per_cell_error: None,
+                };
+                let _ = jumpjet_flight::state5_crash(runtime, &mut host);
+            });
+            (before, facing(&sim))
+        };
+        let seeded = u16::from(0x40u8) << 8;
+        let (before, after) = run("");
+        assert_eq!(before.0, seeded);
+        assert_eq!(
+            after.1,
+            seeded.wrapping_add(0x2D00),
+            "the stock crash re-aims the facing by 0x2D00"
+        );
+        assert_ne!(after.0, before.0, "and the facing starts turning");
+        let (before, after) = run("JumpjetRotateOnCrash=no\n");
+        assert_eq!(before.0, seeded);
+        assert_eq!(after, before, "the key keeps the facing still");
     }
 
     #[test]

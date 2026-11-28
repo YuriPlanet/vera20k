@@ -1,6 +1,6 @@
 # Optional Phobos prone movement speed
 
-Build with `--features phobos` to replace the two hardcoded prone speed
+Phobos is in every build; turn it on from a game's data to replace the two hardcoded prone speed
 multipliers in `InfantryClass::GetMovementSpeed` with configurable ones.
 
 ```ini

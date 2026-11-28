@@ -191,22 +191,31 @@ impl ModuleFacts {
     fn capture(entity: &GameEntity, at: &Capture<'_>, seen: Seen) -> Option<Box<Self>> {
         let facts = Self {
             tint: entity.module_tint(),
-            image: at.sim.ext_module_image(entity.stable_id()).and_then(|name| at.sim.interner().get(name)),
+            image: at
+                .sim
+                .ext_module_image(entity.stable_id())
+                .and_then(|name| at.sim.interner().get(name)),
             local_look: at
                 .local_looks
                 .get(&entity.stable_id())
                 .filter(|_| {
                     // A tracked object disguised as terrain offers no decoration anchor.
-                    !seen.disguise_hides_house && (!seen.disguised_to_observer
-                        || at.sim.forced_disguise_type(entity.stable_id(), at.rules())
-                            .and_then(|kind| at.sim.interner().object_type(kind, at.rules())).is_some())
+                    !seen.disguise_hides_house
+                        && (!seen.disguised_to_observer
+                            || at
+                                .sim
+                                .forced_disguise_type(entity.stable_id(), at.rules())
+                                .and_then(|kind| at.sim.interner().object_type(kind, at.rules()))
+                                .is_some())
                 })
                 .copied()
                 .unwrap_or_default(),
             status: at.status_amounts.then(|| StatusFacts::capture(entity, at)),
         };
-        let plain = facts.tint.is_none() && facts.image.is_none()
-            && facts.local_look == LocalLook::default() && facts.status.is_none();
+        let plain = facts.tint.is_none()
+            && facts.image.is_none()
+            && facts.local_look == LocalLook::default()
+            && facts.status.is_none();
         (!plain).then(|| Box::new(facts))
     }
 }
@@ -272,13 +281,10 @@ struct Answers {
     has_airstrike_marker: bool,
     building_cloak_stage: u8,
     driver_killed: bool,
-    #[cfg(feature = "phobos")]
     is_power_plant_enhancer_active: bool,
     emp_remaining: i32,
     is_under_emp: bool,
-    #[cfg(feature = "phobos")]
-    shield: Option<crate::sim::shield::ShieldState>,
-    #[cfg(feature = "phobos")]
+    shield: Option<Box<crate::sim::shield::ShieldState>>,
     phobos_attach_effects: crate::sim::attach_effect::AttachEffectList,
 }
 
@@ -302,13 +308,10 @@ impl Answers {
             has_airstrike_marker: entity.has_airstrike_marker(),
             building_cloak_stage: entity.building_cloak_stage(),
             driver_killed: entity.driver_killed(),
-            #[cfg(feature = "phobos")]
             is_power_plant_enhancer_active: entity.is_power_plant_enhancer_active(),
             emp_remaining: entity.emp_remaining(),
             is_under_emp: entity.is_under_emp(),
-            #[cfg(feature = "phobos")]
-            shield: entity.shield().cloned(),
-            #[cfg(feature = "phobos")]
+            shield: entity.shield().cloned().map(Box::new),
             phobos_attach_effects: entity.phobos_attach_effects().clone(),
         }
     }
@@ -316,7 +319,7 @@ impl Answers {
 
 /// What drawing reads of an object's locomotor, without its runtime
 /// payload, which most kinds keep on the heap.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub(crate) struct LocomotorView {
     kind: crate::rules::locomotor_type::LocomotorKind,
     fly_phase_callbacks: Option<(bool, bool)>,
@@ -330,6 +333,44 @@ pub(crate) struct LocomotorView {
     tunnel_runtime: Option<crate::sim::movement::tunnel_movement::TunnelRuntime>,
     /// A Drive locomotor's track destination and head.
     drive_track: Option<[Option<crate::sim::components::DriveCoord>; 2]>,
+    /// The fields Phobos `JumpjetTilt` reads, not the whole movement runtime.
+    jumpjet_draw: Option<JumpjetDraw>,
+}
+
+/// The retained Jumpjet flight values used by the Phobos draw matrices.
+#[derive(Clone, Debug)]
+pub(crate) struct JumpjetDraw {
+    grounded: bool,
+    current_speed_bits: u64,
+    accel_bits: u32,
+    facing: crate::sim::movement::facing_class::FacingClass,
+}
+
+impl JumpjetDraw {
+    fn of(runtime: &crate::sim::movement::jumpjet_movement::JumpjetRuntime) -> Self {
+        Self {
+            grounded: runtime.is_grounded(),
+            current_speed_bits: runtime.flight().current_speed_bits(),
+            accel_bits: runtime.params().accel_bits(),
+            facing: *runtime.flight().facing(),
+        }
+    }
+
+    pub(crate) const fn is_grounded(&self) -> bool {
+        self.grounded
+    }
+
+    pub(crate) const fn current_speed_bits(&self) -> u64 {
+        self.current_speed_bits
+    }
+
+    pub(crate) const fn accel_bits(&self) -> u32 {
+        self.accel_bits
+    }
+
+    pub(crate) const fn facing(&self) -> &crate::sim::movement::facing_class::FacingClass {
+        &self.facing
+    }
 }
 
 /// What a Rocket's draw reads of its `RocketLocomotionClass`.
@@ -366,7 +407,12 @@ impl LocomotorView {
                     locomotor.track_head(TrackFamily::Drive),
                 ]
             }),
+            jumpjet_draw: locomotor.jumpjet_runtime().map(JumpjetDraw::of),
         }
+    }
+
+    pub(crate) fn jumpjet_draw(&self) -> Option<&JumpjetDraw> {
+        self.jumpjet_draw.as_ref()
     }
 
     pub(crate) fn active_kind(&self) -> crate::rules::locomotor_type::LocomotorKind {
@@ -451,7 +497,6 @@ pub(crate) struct Place {
     /// `Simulation::ares_is_operated`.
     pub(crate) ares_operated: bool,
     /// `Simulation::airstrike_laser_target_color`.
-    #[cfg(feature = "phobos")]
     pub(crate) airstrike_laser_target_color: i32,
 }
 
@@ -460,7 +505,6 @@ pub(crate) struct Place {
 pub(crate) struct AirstrikeDesignation {
     pub(crate) coords: [crate::sim::components::DriveCoord; 2],
     /// `Simulation::airstrike_line_color`.
-    #[cfg(feature = "phobos")]
     pub(crate) color: [u8; 3],
 }
 
@@ -472,7 +516,6 @@ impl AirstrikeDesignation {
         }
         Some(Self {
             coords: at.sim.airstrike_designation_coordinates(id, at.rules())?,
-            #[cfg(feature = "phobos")]
             color: at.sim.airstrike_line_color(id, at.rules()),
         })
     }
@@ -561,6 +604,7 @@ impl Place {
                 *viewer,
                 sites,
                 at.cells.as_ref(),
+                at.rules(),
             )
         });
         // Only a selected object's line, a psychically detected one's and the
@@ -641,7 +685,6 @@ impl Place {
             // Read only by the DeactivateDim lighting, which runs when Ares plays.
             ares_operated: at.rules().ares()
                 && sim.ares_is_operated(entity.stable_id(), at.rules()),
-            #[cfg(feature = "phobos")]
             airstrike_laser_target_color: sim
                 .airstrike_laser_target_color(entity.stable_id(), at.rules()),
             contact0: entity
@@ -949,7 +992,6 @@ impl ObjectRecord {
         self.answers.driver_killed
     }
 
-    #[cfg(feature = "phobos")]
     pub(crate) fn is_power_plant_enhancer_active(&self) -> bool {
         self.answers.is_power_plant_enhancer_active
     }
@@ -968,9 +1010,8 @@ impl ObjectRecord {
         self.pose.recoil
     }
 
-    #[cfg(feature = "phobos")]
     pub(crate) fn shield(&self) -> Option<&crate::sim::shield::ShieldState> {
-        self.answers.shield.as_ref()
+        self.answers.shield.as_deref()
     }
 
     /// The simulation module's tint and intensity.
@@ -985,16 +1026,19 @@ impl ObjectRecord {
 
     /// A client module's local look of it.
     pub(crate) fn local_look(&self) -> LocalLook {
-        self.module.as_ref().map_or_else(LocalLook::default, |module| module.local_look)
+        self.module
+            .as_ref()
+            .map_or_else(LocalLook::default, |module| module.local_look)
     }
 
     /// What status templates read of it; `None` in a match without
     /// templates.
     pub(crate) fn status(&self) -> Option<&StatusFacts> {
-        self.module.as_ref().and_then(|module| module.status.as_ref())
+        self.module
+            .as_ref()
+            .and_then(|module| module.status.as_ref())
     }
 
-    #[cfg(feature = "phobos")]
     pub(crate) fn phobos_attach_effects(&self) -> &crate::sim::attach_effect::AttachEffectList {
         &self.answers.phobos_attach_effects
     }
@@ -1201,7 +1245,6 @@ impl Tether {
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct PassengerRole {
     inside_transport: bool,
-    #[cfg(feature = "phobos")]
     cargo: Option<Cargo>,
 }
 
@@ -1209,7 +1252,6 @@ impl PassengerRole {
     fn of(role: &crate::sim::passenger::PassengerRole) -> Self {
         Self {
             inside_transport: role.is_inside_transport(),
-            #[cfg(feature = "phobos")]
             cargo: role.cargo().map(|cargo| Cargo {
                 count: cargo.count(),
                 total_size: cargo.total_size(),
@@ -1221,21 +1263,18 @@ impl PassengerRole {
         self.inside_transport
     }
 
-    #[cfg(feature = "phobos")]
     pub(crate) fn cargo(&self) -> Option<&Cargo> {
         self.cargo.as_ref()
     }
 }
 
 /// A transport's `PassengerCargo` as drawing reads it.
-#[cfg(feature = "phobos")]
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Cargo {
     count: u32,
     total_size: i32,
 }
 
-#[cfg(feature = "phobos")]
 impl Cargo {
     pub(crate) fn count(&self) -> u32 {
         self.count
@@ -1484,7 +1523,13 @@ impl PresentationFrame {
         sidebar_types: &crate::app::sidebar_projection::SidebarTypes,
         status_rows: bool,
     ) -> Self {
-        Self::capture_with_looks(runtime, sidebar_types, status_rows, &LocalLooks::new(), false)
+        Self::capture_with_looks(
+            runtime,
+            sidebar_types,
+            status_rows,
+            &LocalLooks::new(),
+            false,
+        )
     }
 
     /// [`Self::capture`] with the client modules' local looks of objects.

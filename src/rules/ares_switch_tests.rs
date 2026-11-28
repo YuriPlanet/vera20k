@@ -56,12 +56,7 @@ fn retail_modes_and_maps_keep_ares_and_phobos_off() {
                 .unwrap();
         let rules = skirmish(&mut owner, mode_ini.as_ref(), &map.map.ini);
         assert!(!rules.ares(), "{}", mode.override_file);
-        // A build with the `phobos` feature plays Phobos in every game.
-        assert!(
-            crate::rules::PHOBOS_ENABLED || !rules.phobos(),
-            "{}",
-            mode.override_file
-        );
+        assert!(!rules.phobos(), "{}", mode.override_file);
     }
     let campaign = IniFile::from_bytes(assets.get_ref("ALL02UMD.MAP").unwrap()).unwrap();
     let early = assets
@@ -78,13 +73,12 @@ fn retail_modes_and_maps_keep_ares_and_phobos_off() {
         .into_parts()
         .0;
     assert!(!rules.ares());
-    assert!(crate::rules::PHOBOS_ENABLED || !rules.phobos());
+    assert!(!rules.phobos());
 }
 
 /// A map's Phobos-only key, the building queue limit a harder-AI file sets,
 /// turns Phobos on and leaves Ares off; `AllowParallelAIQueues=` alone, which
 /// Ares reads too, turns neither on.
-#[cfg(not(feature = "phobos"))]
 #[test]
 fn a_maps_phobos_key_turns_phobos_on() {
     let Some((_, assets)) = retail_assets() else {
@@ -198,6 +192,28 @@ fn ares_mix_turns_ares_on() {
     assert!(ares.ares());
     assert_ne!(
         ares.simulation_config_hash(),
+        stock.simulation_config_hash()
+    );
+}
+
+/// A mod declaring `[Extensions] Phobos=yes` plays Phobos even when its rules
+/// hold no Phobos key, and the answer is part of the game's configuration: a
+/// save, a replay and every peer keep it.
+#[test]
+fn a_mod_declaring_phobos_turns_phobos_on_without_a_phobos_key() {
+    use crate::rules::native_processing::RulesLayerStack;
+
+    let rules = |required: bool| {
+        let layers = RulesLayerStack::new(IniFile::from_str("[General]\nBuildSpeed=.7\n"))
+            .with_phobos_required(required);
+        RuleSet::from_processed_rules(&layers.process().unwrap()).unwrap()
+    };
+    let stock = rules(false);
+    assert!(!stock.phobos());
+    let phobos = rules(true);
+    assert!(phobos.phobos());
+    assert_ne!(
+        phobos.simulation_config_hash(),
         stock.simulation_config_hash()
     );
 }

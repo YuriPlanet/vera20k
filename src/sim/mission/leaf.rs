@@ -75,6 +75,20 @@ pub struct AircraftMissionLeaf {
     /// Overfly comes round again only while it is above 0 (`0x0041599F`).
     #[serde(default = "initial_paradrop_passes")]
     paradrop_passes: i8,
+    /// Phobos `AircraftExt::Strafe_BombsDroppedThisRound`
+    /// (`Ext/Aircraft/Body.h:14`, constructor 0): the bombs dropped by the
+    /// current strafing round, incremented by `AircraftExt::FireWeapon`
+    /// (`Ext/Aircraft/Body.cpp:34`) and by the spy plane's camera count
+    /// (`Ext/Aircraft/Hooks.cpp:1176`). The `Mission_Attack` entry hook resets
+    /// it outside the strafe states (`Hooks.cpp:26-30`).
+    #[serde(default)]
+    strafe_bombs_dropped_this_round: i32,
+    /// Phobos `AircraftExt::Strafe_TargetCell` (`Ext/Aircraft/Body.h:15`,
+    /// constructor null): the cell one strafing round fires at after its
+    /// release (`Ext/Aircraft/Hooks.cpp:234-235`), cleared when the round
+    /// ends (`:220`).
+    #[serde(default)]
+    strafe_target_cell: Option<(u16, u16)>,
 }
 
 const fn initial_paradrop_passes() -> i8 {
@@ -310,6 +324,36 @@ impl MissionLeafState {
         self.expect_aircraft_mut().action_latch = u8::from(active);
     }
 
+    /// Phobos `AircraftExt::Strafe_BombsDroppedThisRound` (`Ext/Aircraft/Body.h:14`);
+    /// 0 for any other category, which no writer reaches.
+    pub(crate) const fn aircraft_strafe_bombs_dropped_this_round(&self) -> i32 {
+        match self {
+            Self::Aircraft(leaf) => leaf.strafe_bombs_dropped_this_round,
+            _ => 0,
+        }
+    }
+
+    /// The three writers: `AircraftExt::FireWeapon` (`Body.cpp:34`), the spy
+    /// plane's `CheckSpyPlaneCameraCount` (`Hooks.cpp:1176`) and the
+    /// `Mission_Attack` entry hook's reset (`Hooks.cpp:26-30`).
+    pub(crate) fn set_aircraft_strafe_bombs_dropped_this_round(&mut self, value: i32) {
+        self.expect_aircraft_mut().strafe_bombs_dropped_this_round = value;
+    }
+
+    /// Phobos `AircraftExt::Strafe_TargetCell` (`Ext/Aircraft/Body.h:15`).
+    pub(crate) const fn aircraft_strafe_target_cell(&self) -> Option<(u16, u16)> {
+        match self {
+            Self::Aircraft(leaf) => leaf.strafe_target_cell,
+            _ => None,
+        }
+    }
+
+    /// The two writers: the `Strafing.TargetCell` store (`Hooks.cpp:235`) and
+    /// the round-end clear (`Hooks.cpp:220`).
+    pub(crate) fn set_aircraft_strafe_target_cell(&mut self, cell: Option<(u16, u16)>) {
+        self.expect_aircraft_mut().strafe_target_cell = cell;
+    }
+
     /// Mission_ParadropApproach's `DEC byte [+0x6D3]` (`0x00415950`).
     pub(crate) fn take_paradrop_pass(&mut self) {
         let leaf = self.expect_aircraft_mut();
@@ -431,6 +475,8 @@ impl MissionLeafState {
             action_latch,
             transition_ready_latch,
             paradrop_passes: initial_paradrop_passes(),
+            strafe_bombs_dropped_this_round: 0,
+            strafe_target_cell: None,
         })
     }
 
@@ -512,6 +558,8 @@ impl AircraftMissionLeaf {
             action_latch: 0,
             transition_ready_latch: 1,
             paradrop_passes: initial_paradrop_passes(),
+            strafe_bombs_dropped_this_round: 0,
+            strafe_target_cell: None,
         }
     }
 

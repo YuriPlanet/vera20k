@@ -80,7 +80,6 @@ fn custom_armor_selection_preserves_numeric_zero_and_secondary_first_order() {
             rules.object("TARGET").unwrap(),
             sim.resolved_terrain.as_ref(),
             false,
-            0,
             &rules,
             &sim.interner,
         );
@@ -147,7 +146,7 @@ fn custom_armor_passive_and_retaliation_flags_are_independent_of_each_other_and_
         );
         let (mut sim, scorer, target) = scene(&rules);
         assert_eq!(
-            combat_targeting::should_retaliate(&sim, &rules, scorer, target),
+            combat_targeting::should_retaliate(&sim, &rules, scorer, target, None),
             retaliate,
             "multiplier={multiplier}, passive={passive}, retaliate={retaliate}",
         );
@@ -221,7 +220,7 @@ fn custom_armor_threat_score_consumes_both_effectiveness_terms() {
             },
             greatest_threat::ThreatReference::NullCoord,
             None,
-            0,
+            None,
         )
         .unwrap();
         MaskedX87Chop53::store_f64_masked_chop(result)

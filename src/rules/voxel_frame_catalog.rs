@@ -37,6 +37,16 @@ pub enum VxlLayer {
     /// flattened onto z = 0 and shifted by the shadow light vector, always at
     /// motion frame 0. See `render::vxl_raster::render_vxl_shadow`.
     Shadow,
+    /// Ground shadow of the turret voxel (`{IMAGE}TUR.VXL`), section zero, drawn
+    /// at the turret's own facing: Phobos' `TurretShadow=`
+    /// (`Ext/TechnoType/Body.cpp:1323`) makes `Ext/TechnoType/Hooks.MatrixOp.cpp:870`
+    /// call `DrawVoxelShadow` a second time with `mtx_turret`
+    /// (`ApplyTurretOffsetUnit` plus `RotateZ(secondary - primary)`, `:860-861`).
+    ShadowTurret,
+    /// Ground shadow of the barrel voxel (`{IMAGE}BARL.VXL`), section zero,
+    /// at the turret facing and barrel pitch. Phobos draws it after the
+    /// turret shadow (`Ext/TechnoType/Hooks.MatrixOp.cpp:876-892`).
+    ShadowBarrel,
 }
 
 pub const NO_SPAWN_ALT_SUFFIX: &str = "WO";
@@ -304,7 +314,10 @@ pub fn detect_hva_frame_count(
     turret_index: i32,
     rules: Option<&RuleSet>,
 ) -> u32 {
-    if layer == VxlLayer::Shadow {
+    if matches!(
+        layer,
+        VxlLayer::Shadow | VxlLayer::ShadowTurret | VxlLayer::ShadowBarrel
+    ) {
         return 1;
     }
     if rules.and_then(|rules| rules.object(type_id)).is_some() {
@@ -324,7 +337,7 @@ pub fn detect_hva_frame_count(
                 .and_then(|i| model.indexed_parts(i).1),
             VxlLayer::Turret => model.auxiliary(),
             VxlLayer::Barrel => model.barrel(),
-            VxlLayer::Shadow => None,
+            VxlLayer::Shadow | VxlLayer::ShadowTurret | VxlLayer::ShadowBarrel => None,
         };
         return part
             .and_then(|part| part.hva())
@@ -350,7 +363,7 @@ pub fn detect_hva_frame_count(
             // The shadow is rendered from motion frame 0 regardless of the body's
             // HVA length (`Get_Layer_Matrix(layer, 0)` in the TS shadow path, and
             // the RA2 shadow key folds only slope and facing: 0x0055A7D0).
-            VxlLayer::Shadow => return 1,
+            VxlLayer::Shadow | VxlLayer::ShadowTurret | VxlLayer::ShadowBarrel => return 1,
         }
     };
 

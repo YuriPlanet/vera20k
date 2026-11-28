@@ -84,6 +84,7 @@ use crate::sim::scenario_session::ScenarioSession;
 use crate::sim::world::FrameEffects;
 use crate::sim::world::ObjectSubstrate;
 use crate::sim::world::{PlacementEvidence, Simulation};
+use crate::util::direction::DIRECTION_DELTAS;
 
 /// The computer's production state on its House.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -823,6 +824,15 @@ fn append_perimeter_run(
 /// drained (`+0x577B`). Returns the plant's BuildingType index: the side 0
 /// house's `GDIPowerPlant=`, the side 2 house's `ThirdPowerPlant=`, any other
 /// side's `NodAdvancedPower=` when `0x00505360` admits it, else
+/// `NodRegularPower=`. With `ares`, [`ares_power_plant`] chooses instead.
+/// The surplus left after the candidate building's drain, compared against a
+/// target floor. Native holds both power totals in signed DWORDs and subtracts
+/// with wrapping arithmetic; the stock floor is `0`, Phobos raises it to
+/// `HouseClass::PowerSurplus`.
+fn power_surplus_short(output: i32, total_drain: i32, new_drain: i32, floor: i32) -> bool {
+    output.wrapping_sub(total_drain).wrapping_sub(new_drain) < floor
+}
+
 /// `NodRegularPower=`. In a game read the Ares way, [`ares_power_plant`]
 /// chooses instead.
 ///
@@ -837,6 +847,29 @@ fn power_plant_to_splice(
     let unpowered = PowerState::default();
     let power = sim.power_states.get(&owner).unwrap_or(&unpowered);
     let drain = ty.power_drain();
+    // Phobos `HouseExt::CalculatePowerSurplus` (`Ext/House/Body.cpp:655-674`,
+    // recomputed by `HouseClass_UpdatePower_AfterBuildings` at `0x508D8D`):
+    // with `EnablePowerSurplus` the plant splice wants the post-drain surplus
+    // to stay at or above the house's `PowerSurplus` target instead of merely
+    // non-negative. `ScaleToDrainAmount > 0` scales that target by
+    // `PowerDrain / scale`.
+    let surplus_floor = if rules.phobos_globals.enable_power_surplus {
+        let scale = rules.phobos_globals.power_surplus_scale_to_drain_amount;
+        if scale > 0 {
+            (f64::from(rules.phobos_globals.power_surplus) * f64::from(power.total_drain())
+                / f64::from(scale)) as i32
+        } else {
+            rules.phobos_globals.power_surplus
+        }
+    } else {
+        0
+    };
+    let short = power_surplus_short(
+        power.total_output(),
+        power.total_drain(),
+        drain,
+        surplus_floor,
+    );
     // `0x004FE6FC..0x004FE71D`: dword SUB, ADD and a signed compare.
     let output = power
         .total_output()
@@ -988,7 +1021,28 @@ pub(crate) fn exit_building(
     let node = rules
         .building_type_index(&ty.id)
         .and_then(|index| find_node(sim, rules, owner, index, registry));
+    // `0x004451F8` with `AIForbidConYard`: the node is written `Placed = true`
+    // and `Attempts = 0`, and the exit answers BuildFailed, leaving the
+    // product in limbo (`Ext/BuildingType/Hooks.Placing.cpp:72-92`).
+    if rules.phobos_globals.ai_forbid_conyard && ty.construction_yard {
+        if let Some(index) = node
+            && let Some(house) = sim.houses.get_mut(&owner)
+        {
+            house.base_plan_mut().mark_placed(index);
+        }
+        return BuildingExit::Failed;
+    }
     let site = building_site(sim, rules, owner, ty, node);
+    // `0x004451F8` with `AICleanWallNode`: a `Wall=` product needs one of the
+    // eight neighbours of its top-left cell to hold a `ProtectWithWall=`
+    // building, else `CanNotBuild` (`Ext/BuildingType/Hooks.Placing.cpp:94-115`).
+    if rules.phobos_globals.ai_clean_wall_node
+        && ty.wall
+        && !wall_touches_protected_building(sim, rules, site)
+    {
+        forget_failed_site(&mut sim.houses, rules, owner, node, site);
+        return BuildingExit::Failed;
+    }
     match flush_for_placement(sim, rules, registry, ty, site, owner, effects) {
         Flush::Scattered => {
             // `0x00445237..0x004452C3`.
@@ -1273,6 +1327,26 @@ pub(crate) fn suggest_new_object<'r>(
     }
 }
 
+/// `0x004451F8` with `AICleanWallNode`: any of the eight `CellClass`
+/// neighbours of the wall's top-left cell holds a building whose type is
+/// `ProtectWithWall=`.
+fn wall_touches_protected_building(sim: &Simulation, rules: &RuleSet, site: (i16, i16)) -> bool {
+    DIRECTION_DELTAS.iter().any(|&(dx, dy)| {
+        let (Ok(rx), Ok(ry)) = (
+            u16::try_from(i32::from(site.0) + dx),
+            u16::try_from(i32::from(site.1) + dy),
+        ) else {
+            return false;
+        };
+        sim.substrate
+            .occupancy
+            .first_building_on_layer(rx, ry, MovementLayer::Ground)
+            .and_then(|id| sim.substrate.entities.get(id))
+            .and_then(|building| sim.object_type(building.type_ref(), rules))
+            .is_some_and(|ty| ty.protect_with_wall)
+    })
+}
+
 /// `BaseClass::Find_Node @ 0x0042EB50` for BuildingType index `wanted`, or
 /// the first open node when `wanted` is -1. A node is open when
 /// [`node_satisfied`] rejects it. The nonzero mode arm for -1 (`0x0042EB76`)
@@ -1290,6 +1364,18 @@ pub(crate) fn find_node(
     // The count is re-read every step (`0x0042EBAE`).
     while index < sim.houses.get(&owner)?.base_plan().nodes().len() {
         let node = plan_node(&sim.houses, owner, index);
+        // `0x0042EB8E` with `AIForbidConYard`: a placed node of a
+        // `ConstructionYard=` type answers Invalid before stock `0x0050CAD0`
+        // (`Ext/BuildingType/Hooks.Placing.cpp:121-137`).
+        if rules.phobos_globals.ai_forbid_conyard
+            && node.filled
+            && rules
+                .building_type_at(node.type_or_control)
+                .is_some_and(|ty| ty.construction_yard)
+        {
+            index += 1;
+            continue;
+        }
         if wanted == -1 {
             if !node_satisfied(sim, rules, owner, &node, registry) {
                 if policy == AiBasePolicy::RetainAuthoredNodes || !node.filled {

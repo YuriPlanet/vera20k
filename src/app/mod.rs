@@ -71,6 +71,7 @@ mod handler;
 mod hidden_run;
 mod in_game;
 mod initialize;
+pub(crate) mod briefing_start;
 pub(crate) mod input;
 
 /// Android's hardware pointing-device bridge (the JNI entry point in the

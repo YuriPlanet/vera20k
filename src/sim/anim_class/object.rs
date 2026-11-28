@@ -2,7 +2,7 @@
 //! state, and the owner-relative coordinates and display sort keys derived
 //! from it.
 
-use super::{AnimId, AnimWorldCoord, flaming_guy};
+use super::{AnimId, AnimSpawnError, AnimWorldCoord, FiringAnimState, flaming_guy};
 use crate::rules::house_colors::HouseColorIndex;
 use crate::sim::bounce::BounceState;
 use crate::sim::intern::InternedId;
@@ -128,6 +128,10 @@ pub struct AnimObject {
     /// and UnInit4255DA suppress effects, independently of drawing/Middle.
     #[serde(default)]
     pub(super) no_effects: bool,
+    /// Present only on a muzzle anim `Anim.Update` keeps following its firer
+    /// (`Ext/Anim/Hooks.cpp:714-740`); every other anim leaves it None.
+    #[serde(default)]
+    pub(super) firing_anim: Option<FiringAnimState>,
     /// Anim+188. Normal ctor421FA4/421FC8 seeds1; default ctor4227FD/
     ///42280F and Next424877/424885 seed0. Load425280 retains saved bytes.
     /// Binary64 keeps the reader's fractional precision and full accumulator
@@ -180,6 +184,28 @@ pub struct AnimObject {
     /// rides its missile this way.
     #[serde(default)]
     pub(super) attached_bullet: Option<u64>,
+    /// Phobos `AnimExt::Invoker` (`Ext/Anim/Body.h:28`): the Techno whose
+    /// `SetInvoker` named this anim. `InvalidateTechnoPointers`
+    /// (`Body.cpp:497`) clears it when that Techno is destroyed; VERA keeps
+    /// the identity and a stable-id lookup answers absent instead.
+    #[serde(default)]
+    pub(super) invoker: Option<u64>,
+    /// Phobos `AnimExt::InvokerHouse` (`Ext/Anim/Body.h:29`).
+    #[serde(default)]
+    pub(super) invoker_house: Option<InternedId>,
+    /// Phobos `AnimExt::FromDeathUnit` (`Ext/Anim/Body.h`): the anim came
+    /// from `AnimTypeExt::ProcessDestroyAnims` (`Ext/AnimType/Body.cpp:55`).
+    #[serde(default)]
+    pub(super) from_death_unit: bool,
+    /// Phobos `AnimExt::DeathUnitFacing`: the destroyed unit's body direction.
+    #[serde(default)]
+    pub(super) death_unit_facing: Option<u8>,
+    /// Phobos `AnimExt::DeathUnitHasTurret`.
+    #[serde(default)]
+    pub(super) death_unit_has_turret: bool,
+    /// Phobos `AnimExt::DeathUnitTurretFacing`.
+    #[serde(default)]
+    pub(super) death_unit_turret_facing: Option<u8>,
     /// `AnimClass+0xCC` when it names a `TerrainClass`: a tree's fire, which
     /// only the Ares terrain fire attaches (`sim::terrain_fire`). VERA keeps
     /// a terrain owner apart from `owner_entity` and its stored coordinate
@@ -407,6 +433,15 @@ impl AnimObject {
         &self.runtime
     }
 
+    pub(crate) fn set_under_temporal(&mut self, under: bool) {
+        self.runtime.temporal_paused = under;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn runtime_frame_for_test(&self) -> i32 {
+        self.runtime.current_frame
+    }
+
     pub const fn draw_runtime(&self) -> AnimDrawRuntime {
         self.draw_runtime
     }
@@ -468,6 +503,69 @@ impl AnimObject {
         self.building_anim
     }
 
+    /// `Phobos AnimExt::UpdateAsFiringAnim` `pThis->Type = pNewType`
+    /// (`Ext/Anim/Body.cpp:88-92`): a changed firing direction swaps the anim's
+    /// own type on the spot. `AnimClass` keeps the frame counters, not the type,
+    /// so the running frame, step and delay carry over while only the
+    /// type-owned bounds (`Type->End`, `Type->LoopEnd`) are re-derived.
+    /// `TechnoClass_Fire_Anim @ 0x6FF42B` stores the weapon, barrel and
+    /// burst the muzzle came from; the per-frame pass then keeps the flash
+    /// on the firer (`0x423B95`, `Ext/Anim/Hooks.cpp:714-740`).
+    pub(crate) fn set_firing_anim(&mut self, state: FiringAnimState) {
+        self.firing_anim = Some(state);
+    }
+
+    pub(crate) fn firing_anim(&self) -> Option<FiringAnimState> {
+        self.firing_anim
+    }
+
+    /// `AnimClass::SetLocation` (`ObjectClass+0x9C..+0xA4`): Phobos
+    /// `UpdateAsFiringAnim` writes `GetFLH - GetRenderCoords`
+    /// (`Ext/Anim/Body.cpp:93..103`) while the muzzle anim is owner-attached,
+    /// so the stored coordinate stays owner-relative.
+    pub(crate) fn set_stored_location(&mut self, coord: AnimWorldCoord) {
+        self.world_coord = coord;
+    }
+
+    pub(crate) fn retype_for_firing_anim(
+        &mut self,
+        type_id: InternedId,
+        type_name: &str,
+        config: &crate::rules::art_data::AnimTypeRuntimeConfig,
+    ) -> Result<(), AnimSpawnError> {
+        let (end, loop_end) = super::spawn::effective_bounds(config)
+            .ok_or_else(|| AnimSpawnError::UnboundType(type_name.to_owned()))?;
+        self.type_id = type_id;
+        self.effective_end = end;
+        self.effective_loop_end = loop_end;
+        Ok(())
+    }
+
+    /// Phobos `AnimExt::SetInvoker` (`Ext/Anim/Body.cpp:28-45`): store the
+    /// invoker Techno and its House together. RESIDUAL: the native per-Techno
+    /// `AnimRefCount` and `InvalidateTechnoPointers` (clearing a destroyed
+    /// invoker) are not modeled; a stable-id lookup answers absent instead.
+    pub(crate) fn set_invoker(&mut self, invoker: Option<u64>, house: Option<InternedId>) {
+        self.invoker = invoker;
+        self.invoker_house = house;
+    }
+
+    /// Phobos `AnimTypeExt::ProcessDestroyAnims`' death-unit facts
+    /// (`Ext/AnimType/Body.cpp:55-70`): `FromDeathUnit` and the inherited
+    /// facing/turret facts a `CreateUnit` anim consumes.
+    pub(crate) fn set_death_facts(
+        &mut self,
+        from_death_unit: bool,
+        facing: Option<u8>,
+        has_turret: bool,
+        turret_facing: Option<u8>,
+    ) {
+        self.from_death_unit = from_death_unit;
+        self.death_unit_facing = facing;
+        self.death_unit_has_turret = has_turret;
+        self.death_unit_turret_facing = turret_facing;
+    }
+
     /// Building45199B..4519A2 marks the slot animation and replaces its
     /// constructor YSortAdjust with the building slot's retained value.
     /// The Anim store touch invalidates the existing Ground key cache.
@@ -511,6 +609,7 @@ impl AnimObject {
             remap: None,
             effective_end: 1,
             effective_loop_end: 1,
+            firing_anim: None,
             runtime,
             draw_runtime: AnimDrawRuntime::default(),
             viewer_hidden: None,
@@ -531,6 +630,12 @@ impl AnimObject {
             flaming_guy: None,
             owner_house: None,
             attached_bullet: None,
+            invoker: None,
+            invoker_house: None,
+            from_death_unit: false,
+            death_unit_facing: None,
+            death_unit_has_turret: false,
+            death_unit_turret_facing: None,
             owner_terrain: None,
             presentation: None,
             presentation_order: 0,
@@ -544,9 +649,38 @@ impl AnimObject {
     }
 
     /// The owning House (`AnimClass+0x180`).
-    #[cfg(test)]
     pub fn owner_house(&self) -> Option<InternedId> {
         self.owner_house
+    }
+
+    /// The invoker Techno (`AnimExt::Invoker`).
+    pub fn invoker(&self) -> Option<u64> {
+        self.invoker
+    }
+
+    /// The invoker House (`AnimExt::InvokerHouse`).
+    pub fn invoker_house(&self) -> Option<InternedId> {
+        self.invoker_house
+    }
+
+    /// Phobos `AnimExt::FromDeathUnit`: a destruction-animation receipt.
+    pub fn from_death_unit(&self) -> bool {
+        self.from_death_unit
+    }
+
+    /// Phobos `AnimExt::DeathUnitFacing`: the destroyed unit's body DirType.
+    pub fn death_unit_facing(&self) -> Option<u8> {
+        self.death_unit_facing
+    }
+
+    /// Phobos `AnimExt::DeathUnitHasTurret`.
+    pub fn death_unit_has_turret(&self) -> bool {
+        self.death_unit_has_turret
+    }
+
+    /// Phobos `AnimExt::DeathUnitTurretFacing`.
+    pub fn death_unit_turret_facing(&self) -> Option<u8> {
+        self.death_unit_turret_facing
     }
 
     /// The bullet whose expiry ends this anim (`AnimClass+0x17C`).
@@ -603,11 +737,31 @@ impl AnimObject {
             b"anim-damage-accumulator-v1".hash(hasher);
             self.damage_accumulator.hash(hasher);
         }
+        if let Some(state) = &self.firing_anim {
+            b"anim-firing-anim-v1".hash(hasher);
+            state.hash(hasher);
+        }
         // Unset links add no bytes, preserving earlier streams.
         if self.owner_house.is_some() || self.attached_bullet.is_some() {
             b"anim-owner-house-bullet-v1".hash(hasher);
             self.owner_house.hash(hasher);
             self.attached_bullet.hash(hasher);
+        }
+        if self.invoker.is_some() || self.invoker_house.is_some() {
+            b"anim-invoker-v1".hash(hasher);
+            self.invoker.hash(hasher);
+            self.invoker_house.hash(hasher);
+        }
+        if self.from_death_unit
+            || self.death_unit_facing.is_some()
+            || self.death_unit_has_turret
+            || self.death_unit_turret_facing.is_some()
+        {
+            b"anim-death-unit-v1".hash(hasher);
+            self.from_death_unit.hash(hasher);
+            self.death_unit_facing.hash(hasher);
+            self.death_unit_has_turret.hash(hasher);
+            self.death_unit_turret_facing.hash(hasher);
         }
         if let Some(state) = &self.flaming_guy {
             b"anim-flaming-guy-v1".hash(hasher);

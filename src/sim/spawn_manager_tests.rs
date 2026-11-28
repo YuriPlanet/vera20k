@@ -17,7 +17,7 @@ use crate::map::resolved_terrain::ResolvedTerrainCell;
 use crate::rules::missile_spawn::MissileFamily;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::TargetKind;
-use crate::sim::spawn_manager::{SpawnManagerMode, SpawnSlotState, spawn_manager_ai};
+use crate::sim::spawn_manager::{MissionType, SpawnManagerMode, SpawnSlotState, spawn_manager_ai};
 use crate::sim::timer::CdTimer;
 use crate::sim::world::Simulation;
 use crate::util::fixed_math::SimFixed;
@@ -3101,5 +3101,579 @@ fn ares_own_detach_all_keeps_the_docked_missile() {
             .unwrap()
             .lifecycle
             .object_alive()
+    );
+}
+
+/// Phobos `InitialSpawnsNumber=` (`Ext/TechnoType/Body.cpp:1117`,
+/// `Ext/Techno/Hooks.Misc.cpp:162-178`): only the first N nodes start live;
+/// the tail waits `SpawnRegenRate` before regenerating; unset uses
+/// `SpawnsNumber`.
+#[test]
+fn initial_spawns_number_leaves_the_tail_dead_until_regen() {
+    let initial = |keys: &str| {
+        let rules = spawner_rules_with_carrier_keys(keys);
+        let mut interner = crate::sim::intern::test_interner();
+        let obj = rules.object("CARRIER").expect("carrier");
+        crate::sim::spawn_manager::init_spawn_manager(obj, &rules, &mut interner, 100)
+            .expect("spawn pool")
+    };
+    let manager = initial("InitialSpawnsNumber=2");
+    assert_eq!(manager.slots().len(), 3);
+    assert!(manager.slots()[0].timer.expired(100));
+    assert!(manager.slots()[1].timer.expired(100));
+    assert!(
+        !manager.slots()[2].timer.expired(100),
+        "the dead tail waits for its regeneration timer"
+    );
+    assert!(!manager.slots()[2].timer.expired(699));
+    assert!(manager.slots()[2].timer.expired(700), "SpawnRegenRate=600");
+
+    let manager = initial("");
+    assert!(
+        manager.slots().iter().all(|slot| slot.timer.expired(100)),
+        "an unset key starts every SpawnsNumber node live"
+    );
+}
+
+/// Rules with extra `Spawner.*` keys on `[CARRIER]`.
+fn spawner_rules_with_carrier_keys(keys: &str) -> RuleSet {
+    let text = spawner_rules_text().replace("[CARRIER]", &format!("[CARRIER]\n{keys}\n"));
+    RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(&text))
+        .expect("spawner phobos rules should parse")
+}
+
+/// Run the manager once with its update gate forced open.
+fn phobos_tick(sim: &mut Simulation, rules: &RuleSet, carrier: u64) {
+    if let Some(manager) = sim
+        .substrate
+        .entities
+        .get_mut(carrier)
+        .and_then(|e| e.spawn_manager.as_mut())
+    {
+        manager.update_timer = CdTimer::default();
+    }
+    spawn_manager_ai(
+        sim,
+        rules,
+        carrier,
+        &mut crate::sim::world::FrameEffects::default(),
+    );
+}
+
+/// Phobos `Spawner.DelayFrames` replaces both native launch spacings and the
+/// launching AI gate with `min(delay, 10)` (`0x6B73A8/0x6B73B9`, `0x6B7265`).
+#[test]
+fn spawner_delay_frames_spaces_launches_and_the_ai_gate() {
+    for (delay, spacing, gate) in [(3, 3, 3), (25, 25, 10)] {
+        let rules = spawner_rules_with_carrier_keys(&format!("Spawner.DelayFrames={delay}"));
+        let mut sim = flat_sim();
+        sim.session.set_binary_frame_for_test(100);
+        let carrier = sim
+            .spawn_object("CARRIER", "Americans", 10, 10, 0, &rules)
+            .expect("spawn CARRIER");
+        let target = sim
+            .spawn_object("TARGET", "Yuri", 20, 10, 0, &rules)
+            .expect("spawn TARGET");
+        if let Some(manager) = sim
+            .substrate
+            .entities
+            .get_mut(carrier)
+            .and_then(|e| e.spawn_manager.as_mut())
+        {
+            manager.set_target(Some(TargetKind::Entity(target)));
+        }
+        // Frame 100 promotes the target into Launching.
+        phobos_tick(&mut sim, &rules, carrier);
+        sim.session.set_binary_frame_for_test(110);
+        phobos_tick(&mut sim, &rules, carrier);
+        let manager = sim
+            .substrate
+            .entities
+            .get(carrier)
+            .and_then(|e| e.spawn_manager.as_ref())
+            .expect("carrier manager");
+        assert_eq!(manager.mode, SpawnManagerMode::Launching);
+        assert_eq!(
+            manager.spawn_timer().duration(),
+            spacing,
+            "the hook replaces the native spacing (delay {delay})"
+        );
+        assert_eq!(
+            manager.update_timer().duration(),
+            gate,
+            "the launching gate is min(delay, 10) (delay {delay})"
+        );
+    }
+}
+
+/// Phobos `Spawner.AttackImmediately` sends a freshly launched aircraft at
+/// the manager's target with an immediately commenced attack mission instead
+/// of the north-hold Move (`0x6B7600`).
+#[test]
+fn spawner_attack_immediately_launches_the_child_at_the_target() {
+    let launch = |keys: &str| {
+        let rules = spawner_rules_with_carrier_keys(keys);
+        let mut sim = flat_sim();
+        sim.session.set_binary_frame_for_test(100);
+        let carrier = sim
+            .spawn_object("CARRIER", "Americans", 10, 10, 0, &rules)
+            .unwrap();
+        let target = sim
+            .spawn_object("TARGET", "Yuri", 20, 10, 0, &rules)
+            .unwrap();
+        if let Some(manager) = sim
+            .substrate
+            .entities
+            .get_mut(carrier)
+            .and_then(|e| e.spawn_manager.as_mut())
+        {
+            manager.set_target(Some(TargetKind::Entity(target)));
+        }
+        phobos_tick(&mut sim, &rules, carrier);
+        sim.session.set_binary_frame_for_test(110);
+        phobos_tick(&mut sim, &rules, carrier);
+        let child = sim
+            .substrate
+            .entities
+            .get(carrier)
+            .and_then(|e| e.spawn_manager.as_ref())
+            .and_then(|m| {
+                m.slots
+                    .iter()
+                    .find(|slot| slot.state == SpawnSlotState::InFlight)
+                    .and_then(|slot| slot.spawn)
+            })
+            .expect("a Hornet is off the deck");
+        let child = sim.substrate.entities.get(child).unwrap();
+        (child.attack_target.target(), child.mission.current())
+    };
+
+    let (attack_target, mission) = launch("Spawner.AttackImmediately=yes");
+    assert!(attack_target.is_some(), "the child holds the target");
+    assert_eq!(
+        mission,
+        crate::sim::mission::MissionId::from_known(MissionType::Attack),
+        "the attack mission commences at once"
+    );
+
+    let (attack_target, mission) = launch("");
+    assert!(
+        attack_target.is_none(),
+        "without the key the child only holds position"
+    );
+    assert_ne!(
+        mission,
+        crate::sim::mission::MissionId::from_known(MissionType::Attack)
+    );
+}
+
+/// Phobos `Spawner.RecycleRange` (`Leptons`, cells x 256) replaces the legacy
+/// same-cell dock test, and `Spawner.RecycleAnim` plays once at the dock point.
+#[test]
+fn spawner_recycle_range_and_anim_control_the_dock() {
+    let text = spawner_rules_text().replace(
+        "[CARRIER]",
+        "[CARRIER]\nSpawner.RecycleRange=0.5\nSpawner.RecycleAnim=RECYANIM\n",
+    );
+    let text = text.replace(
+        "[BuildingTypes]",
+        "[Animations]\n0=RECYANIM\n\n[BuildingTypes]",
+    );
+    let mut rules =
+        RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(&text)).expect("rules");
+    rules.install_art_data(crate::rules::art_data::ArtRegistry::empty());
+
+    for (offset, docks) in [(512, false), (100, true)] {
+        let mut sim = flat_sim();
+        sim.session.set_binary_frame_for_test(100);
+        let carrier = sim
+            .spawn_object("CARRIER", "Americans", 10, 10, 0, &rules)
+            .unwrap();
+        let target = sim
+            .spawn_object("TARGET", "Yuri", 20, 10, 0, &rules)
+            .unwrap();
+        for _ in 0..2 {
+            if let Some(manager) = sim
+                .substrate
+                .entities
+                .get_mut(carrier)
+                .and_then(|e| e.spawn_manager.as_mut())
+            {
+                manager.set_target(Some(TargetKind::Entity(target)));
+            }
+            phobos_tick(&mut sim, &rules, carrier);
+        }
+        let (slot, hornet) = sim
+            .substrate
+            .entities
+            .get(carrier)
+            .and_then(|e| e.spawn_manager.as_ref())
+            .and_then(|m| {
+                m.slots
+                    .iter()
+                    .position(|s| s.state == SpawnSlotState::InFlight)
+                    .map(|index| (index, m.slots[index].spawn.expect("launched child")))
+            })
+            .expect("a Hornet is off the deck");
+        let carrier_position = sim.substrate.entities.get(carrier).unwrap().position;
+        {
+            let manager = sim
+                .substrate
+                .entities
+                .get_mut(carrier)
+                .and_then(|e| e.spawn_manager.as_mut())
+                .unwrap();
+            manager.set_target(None);
+            manager.current_target = None;
+            manager.slots[slot].state = SpawnSlotState::ComingHome;
+        }
+        {
+            let child = sim.substrate.entities.get_mut(hornet).unwrap();
+            child.position = carrier_position;
+            let [cx, cy] = crate::sim::movement::ground_pose::position_world_xy(&carrier_position);
+            child.position.put_world_xy([cx.wrapping_add(offset), cy]);
+        }
+        let before = sim.substrate.anims.iter().count();
+        phobos_tick(&mut sim, &rules, carrier);
+        let manager = sim
+            .substrate
+            .entities
+            .get(carrier)
+            .and_then(|e| e.spawn_manager.as_ref())
+            .unwrap();
+        let docked = manager.slots[slot].state == SpawnSlotState::Reloading;
+        assert_eq!(docked, docks, "offset {offset} leptons");
+        assert_eq!(
+            sim.substrate.anims.iter().count() == before + 1,
+            docks,
+            "the recycle anim plays only on a dock"
+        );
+        if docks {
+            let position = sim.substrate.entities.get(hornet).unwrap().position;
+            assert_eq!(
+                (
+                    position.rx(),
+                    position.ry(),
+                    position.sub_x(),
+                    position.sub_y(),
+                    position.z()
+                ),
+                (
+                    carrier_position.rx(),
+                    carrier_position.ry(),
+                    carrier_position.sub_x(),
+                    carrier_position.sub_y(),
+                    carrier_position.z()
+                ),
+                "SetLocation(carrier) precedes the limbo"
+            );
+        }
+    }
+}
+
+/// Phobos `Spawner.LimitRange` drops a live target farther than the strongest
+/// `Spawner=yes` weapon range (`ApplySpawnLimitRange`, `0x6F9E50` early block).
+#[test]
+fn spawner_limit_range_drops_a_target_beyond_the_weapon_range() {
+    for (keys, target_cell, height, dropped) in [
+        ("Spawner.LimitRange=yes", 34u16, 0, false),
+        ("Spawner.LimitRange=yes", 36, 0, true),
+        // `DistanceFrom` is planar: a tall target at 24 cells stays inside the
+        // 25-cell range even though its 3D distance is larger.
+        ("Spawner.LimitRange=yes", 34, 3000, false),
+        ("", 36, 0, false),
+    ] {
+        let rules = spawner_rules_with_carrier_keys(keys);
+        let mut sim = flat_sim();
+        let carrier = sim
+            .spawn_object("CARRIER", "Americans", 10, 10, 0, &rules)
+            .unwrap();
+        let target = sim
+            .spawn_object("MOBILE", "Yuri", target_cell, 10, 0, &rules)
+            .unwrap();
+        if height != 0 {
+            sim.substrate
+                .entities
+                .get_mut(target)
+                .unwrap()
+                .position
+                .set_exact_z_leptons_for_test(Some(height));
+        }
+        let manager = sim
+            .substrate
+            .entities
+            .get_mut(carrier)
+            .and_then(|e| e.spawn_manager.as_mut())
+            .unwrap();
+        manager.current_target = Some(TargetKind::Entity(target));
+        manager.queued_target = None;
+
+        sim.apply_spawn_limit_range(
+            carrier,
+            &rules,
+            None,
+            &mut crate::sim::world::FrameEffects::default(),
+        );
+
+        let manager = sim
+            .substrate
+            .entities
+            .get(carrier)
+            .and_then(|e| e.spawn_manager.as_ref())
+            .unwrap();
+        assert_eq!(
+            manager.current_target.is_none(),
+            dropped,
+            "keys {keys:?} at cell {target_cell} height {height}"
+        );
+    }
+}
+
+/// Phobos `SpawnManagerClass_AI_PromoteSpawns @ 0x6B7282`: on the manager's
+/// AI pass, a per-type `Promote.IncludeSpawns` (falling back to the
+/// `[General]` global) lifts every slot child below the owner's Veterancy to
+/// the owner's value.
+#[test]
+fn promote_include_spawns_lifts_children_to_the_owner_rank() {
+    for (carrier_keys, general_keys, lifted) in [
+        ("Promote.IncludeSpawns=yes\n", "", true),
+        ("", "Promote.IncludeSpawns=yes\n", true),
+        (
+            "Promote.IncludeSpawns=no\n",
+            "Promote.IncludeSpawns=yes\n",
+            false,
+        ),
+        ("", "", false),
+    ] {
+        let text = spawner_rules_text()
+            .replace("[General]\n", &format!("[General]\n{general_keys}"))
+            .replace(
+                "[CARRIER]\nName=",
+                &format!("[CARRIER]\n{carrier_keys}Name="),
+            );
+        let rules = RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(&text))
+            .expect("spawner rules");
+        let mut sim = flat_sim();
+        let carrier = sim
+            .spawn_object("CARRIER", "Americans", 10, 10, 0, &rules)
+            .unwrap();
+        let children: Vec<u64> = sim
+            .substrate
+            .entities
+            .get(carrier)
+            .and_then(|e| e.spawn_manager.as_ref())
+            .expect("a Spawns= pool")
+            .slots
+            .iter()
+            .filter_map(|slot| slot.spawn)
+            .collect();
+        assert_eq!(children.len(), 3, "SpawnsNumber=3");
+        sim.substrate
+            .entities
+            .get_mut(carrier)
+            .unwrap()
+            .veterancy
+            .set_elite();
+        phobos_tick(&mut sim, &rules, carrier);
+        let owner_raw = sim.substrate.entities.get(carrier).unwrap().veterancy.raw();
+        for id in children {
+            let child = sim.substrate.entities.get(id).unwrap();
+            let rank = child.veterancy.rank_kind();
+            assert_eq!(
+                rank == crate::sim::combat::veterancy::VeterancyRank::Elite,
+                lifted,
+                "carrier {carrier_keys:?} general {general_keys:?}"
+            );
+            if lifted {
+                assert_eq!(
+                    child.veterancy.raw().bits(),
+                    owner_raw.bits(),
+                    "Add(owner - child) stores the owner's value"
+                );
+            } else {
+                assert_eq!(rank, crate::sim::combat::veterancy::VeterancyRank::Rookie);
+            }
+        }
+    }
+}
+
+/// Phobos `SpawnManagerClass_Init_Spawns @ 0x6B6D44`
+/// (`Ext/Techno/Hooks.Misc.cpp:162-185`): slot `i` is built as
+/// `Spawns_Queue[i]` while the queue has that index; later slots keep the
+/// pool's `Spawns=` type.
+#[test]
+fn spawns_queue_seeds_the_constructor_slots_in_order() {
+    let rules = spawner_rules_with_carrier_keys("Spawns.Queue=V3ROCKET,DMISL");
+    let mut sim = flat_sim();
+    let carrier = sim
+        .spawn_object("CARRIER", "Americans", 10, 10, 0, &rules)
+        .expect("spawn CARRIER");
+
+    assert_eq!(
+        spawn_slot_type_names(&sim, carrier),
+        ["V3ROCKET", "DMISL", "HORNET"]
+    );
+}
+
+/// Phobos `SpawnManagerClass_Update_Spawns @ 0x6B78D3`
+/// (`Ext/Techno/Hooks.Misc.cpp:187-214`): a regenerating slot takes the first
+/// queued type that no live node currently carries; once every queued type is
+/// alive it falls back to the pool's `Spawns=` type.
+#[test]
+fn spawns_queue_regeneration_skips_types_that_are_still_alive() {
+    let rules = spawner_rules_with_carrier_keys("Spawns.Queue=V3ROCKET,V3ROCKET");
+    let mut sim = flat_sim();
+    let carrier = sim
+        .spawn_object("CARRIER", "Americans", 10, 10, 0, &rules)
+        .expect("spawn CARRIER");
+    assert_eq!(
+        spawn_slot_type_names(&sim, carrier),
+        ["V3ROCKET", "V3ROCKET", "HORNET"]
+    );
+
+    // Slot 0 lost its child while slot 1 still carries V3ROCKET: both queue
+    // entries are alive, so the regeneration uses the pool type.
+    let manager = sim
+        .substrate
+        .entities
+        .get_mut(carrier)
+        .and_then(|entity| entity.spawn_manager.as_mut())
+        .expect("carrier manager");
+    manager.slots[0].spawn = None;
+    manager.slots[0].state = SpawnSlotState::Regenerating;
+    manager.slots[0].timer = CdTimer::default();
+    phobos_tick(&mut sim, &rules, carrier);
+    assert_eq!(
+        spawn_slot_type_names(&sim, carrier),
+        ["HORNET", "V3ROCKET", "HORNET"]
+    );
+
+    // With no V3ROCKET left, the next regeneration takes the queue again.
+    let manager = sim
+        .substrate
+        .entities
+        .get_mut(carrier)
+        .and_then(|entity| entity.spawn_manager.as_mut())
+        .expect("carrier manager");
+    manager.slots[1].spawn = None;
+    manager.slots[1].state = SpawnSlotState::Regenerating;
+    manager.slots[1].timer = CdTimer::default();
+    phobos_tick(&mut sim, &rules, carrier);
+    assert_eq!(
+        spawn_slot_type_names(&sim, carrier),
+        ["HORNET", "V3ROCKET", "HORNET"]
+    );
+}
+
+fn spawn_slot_type_names(sim: &Simulation, owner: u64) -> Vec<String> {
+    let manager = sim
+        .substrate
+        .entities
+        .get(owner)
+        .and_then(|entity| entity.spawn_manager.as_ref())
+        .expect("spawn manager");
+    manager
+        .slots
+        .iter()
+        .map(|slot| {
+            let child = slot.spawn.expect("every slot is filled");
+            sim.interner
+                .resolve(sim.substrate.entities.get(child).expect("child").type_ref())
+                .to_string()
+        })
+        .collect()
+}
+
+/// `[CombatDamage] MissileSpawnAttackCell=` (`Ext/Rules/Body.cpp:449`, its
+/// constructed value true): `SpawnManagerClass_AI_SetDestinationForMissiles
+/// @ 0x006B75AC` (`Misc/Hooks.BugFixes.cpp:840-870`) answers a missile's
+/// destination with the target's centre Cell, except for a Building target,
+/// whose object stays the destination to keep its footprint accurate.
+#[test]
+fn missile_spawn_attack_cell_sends_the_missile_to_the_target_cell() {
+    use crate::sim::components::NavTargetRef;
+
+    let launch_destination = |attack_cell: bool, target_type: &str| {
+        let mut rules = make_spawner_rules();
+        rules.phobos_globals.missile_spawn_attack_cell = attack_cell;
+        let mut sim = flat_sim();
+        let v3 = sim
+            .spawn_object("V3", "Russians", 10, 10, 0, &rules)
+            .expect("spawn V3");
+        let target = sim
+            .spawn_object(target_type, "Yuri", 20, 20, 0, &rules)
+            .expect("spawn the target");
+        let child = sim
+            .substrate
+            .entities
+            .get(v3)
+            .and_then(|e| e.spawn_manager.as_ref())
+            .and_then(|m| m.slots[0].spawn)
+            .expect("child");
+        if let Some(manager) = sim
+            .substrate
+            .entities
+            .get_mut(v3)
+            .and_then(|e| e.spawn_manager.as_mut())
+        {
+            manager.set_target(Some(TargetKind::Entity(target)));
+        }
+        for _ in 0..3 {
+            if let Some(manager) = sim
+                .substrate
+                .entities
+                .get_mut(v3)
+                .and_then(|e| e.spawn_manager.as_mut())
+            {
+                manager.update_timer = CdTimer::default();
+            }
+            spawn_manager_ai(
+                &mut sim,
+                &rules,
+                v3,
+                &mut crate::sim::world::FrameEffects::default(),
+            );
+            if !sim
+                .substrate
+                .entities
+                .get(child)
+                .is_some_and(|child| child.lifecycle.in_limbo())
+            {
+                break;
+            }
+        }
+        let child = sim.substrate.entities.get(child).expect("child alive");
+        assert!(!child.lifecycle.in_limbo(), "the launch happened");
+        let destination = child.navigation.nav_com();
+        let target_cell = (
+            sim.substrate
+                .entities
+                .get(target)
+                .expect("target alive")
+                .position
+                .rx(),
+            sim.substrate
+                .entities
+                .get(target)
+                .expect("target alive")
+                .position
+                .ry(),
+        );
+        (destination, NavTargetRef::object(target), target_cell)
+    };
+
+    let (destination, object, cell) = launch_destination(true, "MOBILE");
+    assert_eq!(
+        destination,
+        Some(NavTargetRef::cell(cell.0, cell.1)),
+        "a Unit target is reduced to its Cell"
+    );
+    let (destination, object, cell) = launch_destination(false, "MOBILE");
+    assert_eq!(destination, Some(object), "the key off keeps the object");
+    let (destination, object, _) = launch_destination(true, "TARGET");
+    assert_eq!(
+        destination,
+        Some(object),
+        "a Building target keeps the object"
     );
 }

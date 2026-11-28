@@ -955,7 +955,10 @@ mod tests {
         let local = stores.anims.allocate_local_id();
         stores.anims.insert(presentation_anim(local));
         stores.anims.set_owner_entity_for_test(local, Some(3));
-        let _ = stores.anims.get_mut(local).expect("the local anim is stored");
+        let _ = stores
+            .anims
+            .get_mut(local)
+            .expect("the local anim is stored");
         assert_eq!(reach(&mut index, &mut stores, 3), [3]);
     }
 

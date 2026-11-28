@@ -467,6 +467,7 @@ impl Fixture {
                 self.sim.power_states.get_mut(&house).unwrap(),
                 &self.sim.substrate.entities,
                 self.sim.houses[&house].base_projection().buildings(),
+                Some(self.sim.houses[&house].tracking()),
                 &self.rules,
                 &self.sim.interner,
                 self.sim.session.binary_frame(),
@@ -1558,9 +1559,6 @@ impl Fixture {
 fn original_ready_mtnk_shot_runs_building_fires_crew_and_deferred_cleanup() {
     // Stock oracle; Ares replaces the Unit tail (737F97) and GetCrew (707D20),
     // and Phobos `ROF.RandomDelay` (`0x006FD0B5`) redraws the rearm jitter.
-    if crate::rules::ares_switch::ares_way() || crate::rules::PHOBOS_ENABLED {
-        return;
-    }
     for path in [
         "tools/spatial_oracle/building_death_anims_joined.json",
         "tools/spatial_oracle/building_death_anims_joined_stock_smudges.json",
@@ -1581,6 +1579,9 @@ fn assert_ready_fatal_routes(corpus: &Value) {
     {
         let label = format!("original seed{}", int(&route["input"]["seed"]));
         let mut fixture = Fixture::new(corpus, &route["before"]);
+        if fixture.rules.ares() || fixture.rules.phobos() {
+            continue;
+        }
         fixture.receiver_birth_floor = i32::MIN;
         fixture.assert_live_frame(
             route,

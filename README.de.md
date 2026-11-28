@@ -110,8 +110,8 @@ Einstellungen in `VERA.INI`. Die VERA-spezifischen Optionen stehen im Abschnitt 
 
 Lobby-Einstellungen, Mods und Karten können die Regeln einer Partie ändern. Mods und Karten können
 über ihre INI-Dateien unterstützte Funktionen von [Ares](docs/ares.md), [Phobos](docs/phobos.md) und [Kratos](docs/kratos.md)
-aktivieren. Eine Mod kann Ares auch aktivieren, indem sie `ares.mix` mitliefert. Einige
-Phobos-Funktionen erfordern weiterhin eine mit `--features phobos` kompilierte Spielversion.
+aktivieren. Eine Mod kann Ares auch aktivieren, indem sie `ares.mix` mitliefert. Phobos ist in jedem Build enthalten und wird über die INI eines Mods oder einer Map
+aktiviert.
 
 Wie du deine eigene Mod erstellst, zeigt die [Modding-Anleitung](docs/modding.md).
 

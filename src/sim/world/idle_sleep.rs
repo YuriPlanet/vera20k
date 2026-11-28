@@ -196,7 +196,17 @@ impl Simulation {
         // the sound prefix (`FootClass::AI`'s edge sounds) and the commit
         // that publishes pending overlay Recalcs and smudge dirt.
         effects.flush_sound(self, rules);
-        let _ = self.commit_no_fire(rules, effects);
+        if self
+            .overlay_grid
+            .as_ref()
+            .is_some_and(|grid| grid.has_synchronous_navigation_cells())
+            || self
+                .smudge_grid
+                .as_ref()
+                .is_some_and(|grid| grid.has_dirty())
+        {
+            let _ = self.commit_no_fire(rules, effects);
+        }
         SleepVisit::Counted
     }
 
@@ -332,9 +342,9 @@ impl Simulation {
     }
 
     /// Whether an extension's per-visit steps, which this module has not
-    /// sorted, can run in this game: Ares plays, or the build carries Phobos.
+    /// sorted, can run in this game: Ares plays, or Phobos plays.
     pub(super) fn extension_steps_unsorted(&self, rules: &RuleSet) -> bool {
-        rules.ares() || crate::rules::PHOBOS_ENABLED
+        rules.ares() || rules.phobos()
     }
 
     /// The frame plain idle building `id` may sleep until and its owner
@@ -460,13 +470,10 @@ impl Simulation {
     /// frame FootClass::AI applies it (`0x004DA554..0x004DA629`).
     fn infantry_disturbed(&self, id: u64, rules: &RuleSet) -> bool {
         // With the Phobos capability nothing sleeps.
-        #[cfg(feature = "phobos")]
         let radiation = {
             let _ = rules;
             true
         };
-        #[cfg(not(feature = "phobos"))]
-        let radiation = crate::sim::combat::world_receiver::radiation_reaches_foot(self, rules, id);
         radiation
             || self
                 .substrate

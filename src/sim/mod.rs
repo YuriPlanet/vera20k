@@ -22,11 +22,14 @@
 
 // --- Core types: entity storage, components, commands, RNG, interning ---
 pub(crate) mod abduction; // Ares Abductor= weapons (conductAbduction 10054A80)
+#[cfg(all(test, tests_sim_a_b))]
+mod affects_underground_tests;
 pub(crate) mod ai_base_building;
 pub(crate) mod ai_base_defense;
 pub(crate) mod ai_base_site;
 pub mod ammo;
 pub mod anim_class;
+pub mod anim_create_unit;
 #[cfg(any(test, feature = "test-support"))]
 pub mod arena_fixture;
 pub(crate) mod ares_degrade; // Ares low-power degrading (DamageDelay 100247A0)
@@ -41,6 +44,8 @@ pub(crate) mod ares_transports; // Ares InitialPayload (10043C10), Hospital evic
 pub(crate) mod ares_tunnel; // Ares building tunnels (TunnelTypes.cpp, 100097D0)
 pub(crate) mod ares_veterancy; // Ares UpdateVeterancy 10046AF0 and academies
 pub mod attach_effect;
+pub(crate) mod auto_death;
+pub mod banner;
 pub(crate) mod base_plan;
 pub(crate) mod base_plan_generation;
 pub mod bomb;
@@ -56,6 +61,8 @@ pub mod campaign_carry_over; // the record 0x008A38E0 one campaign mission hands
 pub mod capture_manager;
 #[cfg(feature = "debug-tools")]
 pub mod cheats;
+#[cfg(all(test, tests_sim_c_g))]
+mod cloak_anim_tests;
 pub mod cloak_disguise;
 pub mod command;
 pub mod command_queue;
@@ -73,6 +80,7 @@ pub mod entity_store;
 pub(crate) mod estimated_health;
 pub(crate) mod factory_owners;
 pub(crate) mod flashing;
+pub mod flying_text;
 pub mod frame_profile;
 pub mod game_entity;
 #[cfg(any(test, feature = "test-support"))]
@@ -81,6 +89,7 @@ pub(crate) mod house_threat;
 pub(crate) mod hunter_seeker;
 pub mod intern;
 pub(crate) mod kamikaze; // missiles out of their launcher's control (0x00ABC5F8)
+pub(crate) mod laser_trail; // Phobos LaserTrailClass::Update for bullets, voxel debris and attach effects
 pub(crate) mod lifecycle_request;
 pub mod light_sources;
 pub(crate) mod limpet; // Tiberian Sun limpets (Firestorm 2.0 Fire_At 0x006301A0)
@@ -88,15 +97,24 @@ pub(crate) mod locomotor_lift; // the Magnetron's IsLocomotor= lift (ImbueLocomo
 pub mod multiplayer_checksum;
 pub mod native_identity;
 pub(crate) mod object_fall;
+pub(crate) mod phobos_drop_crate;
+pub(crate) mod phobos_no_rearm;
+pub(crate) mod phobos_start_facing;
 pub(crate) mod powered_by; // Ares PoweredBy= power sources (PoweredUnitClass 1006A6F0)
 pub(crate) mod powered_unit; // Robot Tanks offline without a PowersUnit= building (Deactivate 0x0070FC90)
 pub(crate) mod radar_jammer; // Ares RadarJamRadius= jammers (JammerClass 10068500)
 pub(crate) mod reverse_engineering; // Ares grinder reverse engineering (10022360)
 #[cfg(feature = "telemetry")]
 pub mod telemetry;
+pub(crate) mod tiberium_eater;
+#[cfg(all(test, tests_sim_t_z))]
+mod tiberium_eater_tests;
 pub(crate) mod vehicle_theft;
 // A wasm build has no threads (the browser package, the headless WASI run)
 // unless the browser package opts into its Web Worker pool.
+pub(crate) mod building_display_income; // Phobos BuildingExt::DisplayIncomeString
+pub(crate) mod grinding; // Phobos BuildingExt CanGrindTechno / DoGrindingExtras (Grinding.*)
+pub(crate) mod kill_weapon; // Phobos TechnoExt::ApplyKillWeapon (KillWeapon.*, 0x702672)
 #[cfg_attr(
     all(target_arch = "wasm32", not(feature = "wasm-threads")),
     path = "parallel_web.rs"
@@ -105,6 +123,7 @@ pub mod parallel; // order-preserving work over scoped threads
 #[cfg(all(test, tests_sim_p_s, feature = "wasm", not(target_arch = "wasm32")))]
 #[path = "parallel_web.rs"]
 mod parallel_web_tests;
+pub(crate) mod passenger_deletion; // Phobos TechnoExt::EatPassengers (PassengerDeletion.*)
 pub mod rng;
 pub mod scenario_bootstrap;
 pub mod scenario_post_map;
@@ -112,10 +131,23 @@ pub mod scenario_session; // app->sim launch descriptor (per-match seed pipeline
 pub mod score;
 pub(crate) mod secret_lab;
 pub mod sensor_lifecycle;
+pub(crate) mod shared_ammo; // Phobos Ammo.Shared hand-out at StartReloading (0x6FB080)
 pub mod spy_infiltration; // BuildingClass::Infiltrate (a spy's effects on the building it enters)
 pub(crate) mod stage;
 pub use stage::StageClass;
 pub(crate) mod state_hasher; // parallel digests over util::state_hasher
+pub(crate) mod storage_class; // one owner of StorageClass GetTotalAmount/Add_Amount
+#[cfg(all(test, tests_sim_t_z))]
+#[path = "weed_storage_tests.rs"]
+mod weed_storage_tests;
+
+#[cfg(all(test, tests_sim_t_z))]
+#[path = "units_repair_tests.rs"]
+mod units_repair_tests;
+
+#[cfg(all(test, tests_sim_a_b))]
+#[path = "adjacent_tests.rs"]
+mod adjacent_tests;
 pub mod temporal;
 pub(crate) mod tesla_charging;
 pub mod timer; // signed frame-anchored countdown primitive
@@ -157,7 +189,6 @@ pub mod house_eva; // HouseClass::Update EVA advice timers (funds nag, low power
 pub mod power_system;
 pub mod superweapon;
 pub mod vision;
-#[cfg(feature = "phobos")]
 pub mod warhead_anim;
 
 // --- Animation, building overlays, bridge state ---
@@ -196,12 +227,12 @@ pub mod smudge_grid;
 pub mod radiation;
 
 // --- Phobos Shields: per-object shield points, absorption and recovery ---
-#[cfg(feature = "phobos")]
 pub mod digital_display;
-#[cfg(feature = "phobos")]
+pub mod self_heal;
 pub mod shield;
 
 // --- Passengers, transport, slaves ---
+pub mod keep_target_on_move;
 pub mod parity_digest;
 pub mod passenger;
 pub(crate) mod slave_deposit;

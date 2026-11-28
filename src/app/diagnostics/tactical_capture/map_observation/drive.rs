@@ -708,7 +708,11 @@ impl TacticalCaptureSession {
                         .map(|(_, nodes)| nodes);
                 // What the press reached: the node it fired, pressed or
                 // passed on, else the holder.
-                let routed = state.match_state.match_presentation.in_game_chrome.last_route;
+                let routed = state
+                    .match_state
+                    .match_presentation
+                    .in_game_chrome
+                    .last_route;
                 // A consumed chrome press still reaches the shared physical
                 // button owner; only tactical capture depends on its route.
                 let physical_press_observed =

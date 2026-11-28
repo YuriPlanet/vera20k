@@ -317,6 +317,35 @@ fn native_mirage_ring_tail_uses_current_house_or_campaign_control_flags() {
     assert_eq!(rows.len(), 7);
 }
 
+/// `ApplyOwnerChange` places the ring at the target's `Location`
+/// (`Ext/WarheadType/Detonate.cpp:504`): a 2x2 building anchors at its
+/// top-left cell, not at GetCoords' foundation centre.
+#[test]
+fn a_building_ring_anchors_at_its_location() {
+    let rules = enhanced_rules(&[]);
+    let mut sim = sim(9);
+    let plant = spawn(&mut sim, &rules, "GAPOWR", "Americans", 14, 10);
+    sim.attach_control_ring(plant, "MINDANIM", &rules);
+    let ring = sim
+        .substrate
+        .entities
+        .get(plant)
+        .unwrap()
+        .seldom
+        .mind_control
+        .ring_anim
+        .expect("ring");
+    let coord = sim.anim_absolute_coord(ring).expect("coord");
+    let entity = sim.substrate.entities.get(plant).unwrap();
+    let location =
+        crate::sim::movement::ground_pose::object_location(entity, sim.resolved_terrain.as_ref());
+    assert_eq!((coord.x, coord.y), (location.x, location.y));
+    assert_eq!(
+        coord.z,
+        location.z + 3 * crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS
+    );
+}
+
 /// A network game's clients each test their own PlayerPtr in the ring tail
 /// (Unit746A9C..746B19): the owner's client shows a disguised unit's ring and
 /// every other client hides it, whichever client this is.
@@ -597,7 +626,6 @@ fn a_single_link_controller_releases_its_victim_first() {
 
 /// Native CaptureUnit's single-link release (`0x00471D8A`) has no infinite
 /// test: an `InfiniteMindControl=yes` weapon with `Damage=1` still replaces.
-#[cfg(not(feature = "phobos"))]
 #[test]
 fn an_infinite_single_link_controller_still_replaces_its_victim() {
     let rules = rules_from(&RULES.replacen(
@@ -1117,6 +1145,10 @@ fn native_overload_update_corpus() {
     for case in cases {
         let input = &case["input"];
         let name = input["name"].as_str().unwrap();
+        // Original `471A50` keeps row zero when a single-row Count table's
+        // bound is exceeded; Phobos' rewritten walk (`Hooks.cpp:131-139`)
+        // selects row one. The production Phobos walk has its own case in
+        // `phobos_overload_tables_sound_and_particle_count_override_the_rules`.
         let (count, damage, frames) = match input.get("tables") {
             Some(tables) => (
                 ints(&tables["count"]),
@@ -1324,11 +1356,8 @@ fn native_overload_update_corpus() {
                 .unwrap()
                 .rocking
                 .map_or(0, |state| state.native_bits()[2]);
-            assert_eq!(
-                rate,
-                (final_state["lean"].as_f64().unwrap() as f32).to_bits(),
-                "{name}: final native sideways rate"
-            );
+            let native_rate = (final_state["lean"].as_f64().unwrap() as f32).to_bits();
+            assert_eq!(rate, native_rate, "{name}: final native sideways rate");
             let manager = sim
                 .substrate
                 .entities
@@ -2378,6 +2407,9 @@ fn a_killing_overload_frees_the_captives_before_the_sparks() {
     for _ in &captives {
         fate_draw(&mut replay);
     }
+    // Phobos draws the spark offsets only when the spark system resolves
+    // (`Ext/CaptureManager/Hooks.cpp:167`); this fixture defines none, so
+    // the stock-only ten draws disappear.
     for _ in 0..10 {
         let _ = replay.next_range_i32_inclusive(-200, 200);
     }
@@ -2729,9 +2761,8 @@ fn yuri_prime_building_capture_and_release_request_atlas_refresh() {
 // `MindControl.Anim=` override. The stock fixture is patched only where a test
 // needs the key.
 
-#[cfg(feature = "phobos")]
 fn enhanced_rules(replacements: &[(&str, &str)]) -> RuleSet {
-    let mut text = RULES.to_owned();
+    let mut text = RULES.replace("[General]\n", "[General]\nAIFireSale=yes\n");
     for (from, to) in replacements {
         assert!(text.contains(from), "fixture anchor {from:?}");
         text = text.replace(from, to);
@@ -2739,7 +2770,6 @@ fn enhanced_rules(replacements: &[(&str, &str)]) -> RuleSet {
     rules_from(&text)
 }
 
-#[cfg(feature = "phobos")]
 #[test]
 fn mind_control_size_limits_finite_capacity_and_release_victim() {
     let rules = enhanced_rules(&[
@@ -2792,7 +2822,6 @@ fn mind_control_size_limits_finite_capacity_and_release_victim() {
     assert_eq!(sim.capture_effective_count(tower, &release), Some(2));
 }
 
-#[cfg(feature = "phobos")]
 #[test]
 fn mind_control_ignore_size_true_keeps_node_count() {
     let rules = enhanced_rules(&[(
@@ -2814,7 +2843,6 @@ fn mind_control_ignore_size_true_keeps_node_count() {
     );
 }
 
-#[cfg(feature = "phobos")]
 #[test]
 fn multi_mind_control_release_victim_frees_at_node_capacity() {
     let base = enhanced_rules(&[]);
@@ -2830,7 +2858,13 @@ fn multi_mind_control_release_victim_frees_at_node_capacity() {
     for &tank in &tanks[..3] {
         assert!(sim.capture_unit(tower, tank, &base, None, &mut FrameEffects::default()));
     }
-    assert!(sim.capture_unit(tower, tanks[3], &release, None, &mut FrameEffects::default()));
+    assert!(sim.capture_unit(
+        tower,
+        tanks[3],
+        &release,
+        None,
+        &mut FrameEffects::default()
+    ));
     assert_eq!(
         victims(&sim, tower),
         vec![tanks[1], tanks[2], tanks[3]],
@@ -2838,7 +2872,6 @@ fn multi_mind_control_release_victim_frees_at_node_capacity() {
     );
 }
 
-#[cfg(feature = "phobos")]
 #[test]
 fn mind_control_ignore_size_false_drives_the_overload_count() {
     let rules = enhanced_rules(&[
@@ -2879,11 +2912,16 @@ fn mind_control_ignore_size_false_drives_the_overload_count() {
     let first = spawn(&mut sim, &nodes_only, "HTNK", "Americans", 11, 10);
     let second = spawn(&mut sim, &nodes_only, "HTNK", "Americans", 12, 10);
     assert!(sim.capture_unit(mind, first, &nodes_only, None, &mut FrameEffects::default()));
-    assert!(sim.capture_unit(mind, second, &nodes_only, None, &mut FrameEffects::default()));
+    assert!(sim.capture_unit(
+        mind,
+        second,
+        &nodes_only,
+        None,
+        &mut FrameEffects::default()
+    ));
     assert_eq!(sim.capture_effective_count(mind, &nodes_only), Some(2));
 }
 
-#[cfg(feature = "phobos")]
 #[test]
 fn mind_control_range_limit_frees_only_distant_victims() {
     let rules = enhanced_rules(&[(
@@ -2944,7 +2982,6 @@ fn mind_control_range_limit_frees_only_distant_victims() {
     );
 }
 
-#[cfg(feature = "phobos")]
 #[test]
 fn mind_control_link_visibility_uses_type_then_global() {
     let rules = enhanced_rules(&[(
@@ -2974,7 +3011,6 @@ fn mind_control_link_visibility_uses_type_then_global() {
     );
 }
 
-#[cfg(feature = "phobos")]
 #[test]
 fn warhead_mind_control_anim_overrides_the_global_ring() {
     let rules = enhanced_rules(&[
@@ -3060,6 +3096,92 @@ fn warhead_mind_control_anim_overrides_the_global_ring() {
     );
 }
 
+/// Phobos `BulletClass_Detonate` (`0x4692BD`,
+/// `Ext/Bullet/Hooks.DetonateLogics.cpp:41-56`) passes
+/// `MindControl_ThreatDelay.Get([General] MindControl.ThreatDelay)`;
+/// `CaptureManagerExt::CaptureUnit` arms `BeControlledThreatFrame` for a
+/// positive value and `FreeUnit` clears it
+/// (`Ext/CaptureManager/Body.cpp:142,200-201`).
+#[test]
+fn mind_control_threat_delay_arms_the_shield_and_free_unit_clears_it() {
+    let detonate = |sim: &mut Simulation, rules: &RuleSet| {
+        let yuri = spawn(sim, rules, "YURI", "YuriCountry", 10, 10);
+        let tank = spawn(sim, rules, "HTNK", "Americans", 11, 10);
+        let warhead = sim.interner.intern("Controller");
+        let detonation = crate::sim::projectile::ProjectileDetonation {
+            projectile_id: 0,
+            source_id: yuri,
+            target: crate::sim::projectile::ProjectileTarget::Entity(tank),
+            impact: crate::sim::projectile::ProjectileCoord::new(0, 0, 0),
+            payload: crate::sim::projectile::ProjectilePayload::new(1, warhead, None, false),
+            reason: crate::sim::projectile::ProjectileDetonationReason::ReachedTarget,
+        };
+        sim.mind_control_detonation(detonation, rules, None, &mut FrameEffects::default());
+        (yuri, tank)
+    };
+    let frame = |sim: &Simulation, id: u64| {
+        sim.substrate
+            .entities
+            .get(id)
+            .unwrap()
+            .seldom
+            .phobos_be_controlled_threat_frame
+    };
+
+    let warhead_key = enhanced_rules(&[
+        ("[General]\n", "[General]\nMindControl.ThreatDelay=9\n"),
+        (
+            "[Controller]\nMindControl=yes\n",
+            "[Controller]\nMindControl=yes\nMindControl.ThreatDelay=5\n",
+        ),
+    ]);
+    let mut first = sim(7);
+    let (yuri, tank) = detonate(&mut first, &warhead_key);
+    assert_eq!(
+        frame(&first, tank),
+        5,
+        "the warhead's 5 beats the general's 9"
+    );
+    assert!(first.free_unit(yuri, tank, &warhead_key, None, &mut FrameEffects::default()));
+    assert_eq!(frame(&first, tank), 0, "FreeUnit clears the shield");
+
+    let general_key = enhanced_rules(&[("[General]\n", "[General]\nMindControl.ThreatDelay=9\n")]);
+    let mut second = sim(7);
+    let (_, tank) = detonate(&mut second, &general_key);
+    assert_eq!(
+        frame(&second, tank),
+        9,
+        "an unset warhead key falls back to [General]"
+    );
+
+    let zero_key = enhanced_rules(&[
+        ("[General]\n", "[General]\nMindControl.ThreatDelay=9\n"),
+        (
+            "[Controller]\nMindControl=yes\n",
+            "[Controller]\nMindControl=yes\nMindControl.ThreatDelay=0\n",
+        ),
+    ]);
+    let mut third = sim(7);
+    let (_, tank) = detonate(&mut third, &zero_key);
+    assert_eq!(frame(&third, tank), 0, "an explicit 0 disables the shield");
+
+    let mut fourth = sim(7);
+    let tower = spawn(&mut fourth, &general_key, "YAPSYT", "YuriCountry", 10, 10);
+    let tank = spawn(&mut fourth, &general_key, "HTNK", "Americans", 11, 10);
+    assert!(fourth.capture_unit(
+        tower,
+        tank,
+        &general_key,
+        None,
+        &mut FrameEffects::default()
+    ));
+    assert_eq!(
+        frame(&fourth, tank),
+        0,
+        "only the warhead detonation passes a delay"
+    );
+}
+
 /// TechnoClass::ChangeOwner deselects the local player's selected object
 /// before the owner swap (`0x007014B9..0x007014CF`); another house's
 /// selected byte is left alone.
@@ -3109,7 +3231,6 @@ fn a_captured_selected_unit_of_the_local_player_is_deselected() {
 /// and must never honor InfiniteMindControl. YR keeps the weapon-derived value.
 #[test]
 fn ra2_mind_control_capacity_is_one_regardless_of_damage() {
-
     let mut rules = rules_from(&RULES.replace("Damage=1\nROF=200", "Damage=10\nROF=200"));
 
     rules.set_ra2_for_test(true);
@@ -3127,4 +3248,336 @@ fn ra2_mind_control_capacity_is_one_regardless_of_damage() {
     assert!(mind.infinite, "YR keeps InfiniteMindControl");
     let yuri = init_capture_manager(rules.object("YURI").unwrap(), &rules).unwrap();
     assert_eq!(yuri.max_control, 10, "YR reads the edited Damage=10");
+}
+
+/// Phobos `CaptureManagerClass_Overload_AI` (`Ext/CaptureManager/Hooks.cpp:
+/// 111-219`): the controller type's `NullableVector` lists replace the Rules
+/// tables when present, its registered death sound and particle system
+/// override the stock keys, `Overload.ParticleSysCount` replaces the five
+/// stock spark systems, and an unknown sound falls back to the stock voice.
+/// The rewritten row walk also selects row one for a single-row table whose
+/// bound the count exceeds, which the original walk keeps at row zero.
+#[test]
+fn phobos_overload_tables_sound_and_particle_count_override_the_rules() {
+    let run = |type_lines: &str, captives: usize| {
+        let text = RULES
+            .replace("[General]\n", "[General]\nAIFireSale=yes\n")
+            .replace(
+                "[MIND]\nStrength=500",
+                &format!("[MIND]\nStrength=50000\n{type_lines}"),
+            )
+            + "[ParticleSystems]\n0=SparkSys\n[SparkSys]\nBehavesLike=Spark\nLifetime=5\n";
+        let rules = RuleSet::from_ini_with_fixed_art_and_sounds_for_test(
+            &IniFile::from_str(&text),
+            &IniFile::from_str(ART),
+            &[
+                "YuriMindControl",
+                "MindCleared",
+                "MasterMindOverloadVoice",
+                "TypeVoice",
+            ],
+        )
+        .expect("overload rules");
+        let mut sim = sim(1);
+        let mind = spawn(&mut sim, &rules, "MIND", "YuriCountry", 10, 10);
+        let mut manager = CaptureManagerState::with_victims_for_test(10, true, &[]);
+        manager.nodes = (0..captives as u64)
+            .map(|index| ControlNode {
+                victim: 1_000_000 + index,
+                original_owner: InternedId::default(),
+                line_timer: Default::default(),
+            })
+            .collect();
+        manager.overload_countdown = 0;
+        sim.substrate
+            .entities
+            .get_mut(mind)
+            .unwrap()
+            .capture_manager = Some(Box::new(manager));
+        let before = sim.entities().get(mind).unwrap().health.current();
+        sim.sound_events.clear_for_test();
+        let rng_before = sim.scenario_rng.logical_state();
+        sim.capture_manager_update(mind, &rules, None, &mut FrameEffects::default());
+        let entity = sim.entities().get(mind).unwrap();
+        let damaged = before - entity.health.current();
+        let countdown = entity.capture_manager.as_ref().unwrap().overload_countdown;
+        let sparks = sim.particle_systems().iter().count();
+        let lean = entity
+            .rocking
+            .map(|state| state.native_bits()[2] & 0x7fff_ffff);
+        let voices: Vec<String> = sim
+            .sound_events()
+            .iter()
+            .filter_map(|event| match event {
+                crate::sim::world::SimSoundEvent::VocAt { sound_id, .. } => {
+                    Some(sound_id.name_in(&rules).to_owned())
+                }
+                _ => None,
+            })
+            .collect();
+        (
+            damaged,
+            countdown,
+            sparks,
+            lean,
+            voices,
+            sim.scenario_rng.logical_state() != rng_before,
+        )
+    };
+
+    let (damaged, countdown, sparks, _, voices, drew) = run(
+        "Overload.Count=1\nOverload.Damage=40\nOverload.Frames=7\n\
+         Overload.DeathSound=TypeVoice\nOverload.ParticleSys=SparkSys\n\
+         Overload.ParticleSysCount=2",
+        2,
+    );
+    assert_eq!(damaged, 40, "type damage row");
+    assert_eq!(countdown, 7, "type frames row");
+    assert_eq!(sparks, 2, "type spark count");
+    assert_eq!(voices, ["TypeVoice"], "type death sound");
+    assert!(drew, "two spark systems draw two coordinate pairs each");
+
+    // A name outside the fixed Voc catalog leaves the key unset, so the stock
+    // overload voice still plays.
+    let (damaged, _, _, _, voices, _) =
+        run("Overload.Damage=40\nOverload.DeathSound=MissingVoice\n", 2);
+    assert_eq!(damaged, 40);
+    assert_eq!(voices, ["MasterMindOverloadVoice"]);
+
+    // A present empty Count list disables the overload checks entirely.
+    let (damaged, countdown, sparks, lean, voices, drew) =
+        run("Overload.Count=,,,\nOverload.Damage=40\n", 2);
+    assert_eq!((damaged, sparks, lean), (0, 0, None));
+    assert_eq!(countdown, 0);
+    assert!(voices.is_empty());
+    assert!(!drew);
+
+    // `Overload.Count=2` with five captives picks row one, clamps every table
+    // read to its only entry, and still plays that row's 0.03 lean.
+    let (damaged, countdown, sparks, lean, voices, drew) = run(
+        "Overload.Count=2\nOverload.Damage=10\nOverload.Frames=5\n",
+        5,
+    );
+    assert_eq!((damaged, countdown, sparks), (10, 5, 0));
+    assert_eq!(
+        lean,
+        Some(0x3cf5_c28f),
+        "row one lean under the Phobos walk"
+    );
+    assert_eq!(voices, ["MasterMindOverloadVoice"]);
+    assert!(drew, "the lean sign draw still runs");
+}
+
+/// Phobos `CaptureManagerClass_Overload_AI` (`Ext/CaptureManager/Hooks.cpp:
+/// 139-143`): a row is selected only while the link count strictly exceeds
+/// its `Overload.Count` bound, so `Overload.Count=2` stays on the quiet row
+/// with two captives and overloads on the third.
+#[test]
+fn phobos_overload_count_needs_more_links_than_the_bound() {
+    let run = |captives: usize| {
+        let text = RULES
+            .replace("[General]\n", "[General]\nAIFireSale=yes\n")
+            .replace(
+                "[MIND]\nStrength=500",
+                "[MIND]\nStrength=50000\nOverload.Count=2\nOverload.Damage=0,25\n\
+                 Overload.Frames=7",
+            );
+        let rules = RuleSet::from_ini_with_fixed_art_and_sounds_for_test(
+            &IniFile::from_str(&text),
+            &IniFile::from_str(ART),
+            &["YuriMindControl", "MindCleared", "MasterMindOverloadVoice"],
+        )
+        .expect("overload rules");
+        let mut sim = sim(1);
+        let mind = spawn(&mut sim, &rules, "MIND", "YuriCountry", 10, 10);
+        let mut manager = CaptureManagerState::with_victims_for_test(10, true, &[]);
+        manager.nodes = (0..captives as u64)
+            .map(|index| ControlNode {
+                victim: 1_000_000 + index,
+                original_owner: InternedId::default(),
+                line_timer: Default::default(),
+            })
+            .collect();
+        manager.overload_countdown = 0;
+        sim.substrate
+            .entities
+            .get_mut(mind)
+            .unwrap()
+            .capture_manager = Some(Box::new(manager));
+        let before = sim.entities().get(mind).unwrap().health.current();
+        sim.sound_events.clear_for_test();
+        sim.capture_manager_update(mind, &rules, None, &mut FrameEffects::default());
+        let entity = sim.entities().get(mind).unwrap();
+        (
+            before - entity.health.current(),
+            entity.capture_manager.as_ref().unwrap().overload_countdown,
+            voc_sounds(&rules, &sim),
+        )
+    };
+
+    // Two links do not exceed the bound: row zero's 0 damage re-arms the
+    // voice, and the frames row still reloads the countdown.
+    let (damaged, countdown, voices) = run(2);
+    assert_eq!((damaged, countdown), (0, 7));
+    assert!(voices.is_empty());
+
+    // The third link selects row one and plays the stock voice.
+    let (damaged, countdown, voices) = run(3);
+    assert_eq!((damaged, countdown), (25, 7));
+    assert_eq!(voices, ["MasterMindOverloadVoice"]);
+}
+
+/// A full overload episode on type rows (`Ext/CaptureManager/Hooks.cpp:
+/// 150-169`): `Overload.Frames=2` checks every third visit and
+/// `Overload.Damage=25` kills a 75-health controller on the third check. The
+/// type's death sound plays once for the whole episode, and the death frees
+/// the captives with the release voice.
+#[test]
+fn phobos_overload_episode_kills_on_the_type_rows_with_one_voice() {
+    let text = RULES
+        .replace("[General]\n", "[General]\nAIFireSale=yes\n")
+        .replace(
+            "[MIND]\nStrength=500",
+            "[MIND]\nStrength=50000\nOverload.Count=1\nOverload.Damage=25\n\
+             Overload.Frames=2\nOverload.DeathSound=TypeVoice",
+        );
+    let rules = RuleSet::from_ini_with_fixed_art_and_sounds_for_test(
+        &IniFile::from_str(&text),
+        &IniFile::from_str(ART),
+        &[
+            "YuriMindControl",
+            "MindCleared",
+            "MasterMindOverloadVoice",
+            "TypeVoice",
+        ],
+    )
+    .expect("overload rules");
+    let mut sim = sim(1);
+    let mind = spawn(&mut sim, &rules, "MIND", "YuriCountry", 10, 10);
+    let captives = [
+        spawn(&mut sim, &rules, "E1", "Russians", 12, 10),
+        spawn(&mut sim, &rules, "E1", "Russians", 13, 10),
+    ];
+    for &gi in &captives {
+        assert!(sim.capture_unit(mind, gi, &rules, None, &mut FrameEffects::default()));
+    }
+    let entity = sim.substrate.entities.get_mut(mind).unwrap();
+    entity.health.set_for_test(75);
+    entity.capture_manager.as_mut().unwrap().overload_countdown = 0;
+
+    let mut voices = Vec::new();
+    let mut health = Vec::new();
+    for _ in 0..7 {
+        sim.sound_events.clear_for_test();
+        sim.capture_manager_update(mind, &rules, None, &mut FrameEffects::default());
+        voices.extend(voc_sounds(&rules, &sim));
+        health.push(sim.entities().get(mind).map_or(0, |e| e.health.current()));
+    }
+    // Checks land on visits 1, 4 and 7; the two visits between them only
+    // decrement the type's two-frame countdown.
+    assert_eq!(health, [50, 50, 50, 25, 25, 25, 0]);
+    assert_eq!(
+        voices,
+        ["TypeVoice", "MindCleared", "MindCleared"],
+        "the overload voice latches for the episode; the death frees each captive"
+    );
+    assert!(
+        sim.substrate
+            .entities
+            .get(mind)
+            .is_none_or(|entity| !entity.lifecycle.object_alive()),
+        "the third check kills"
+    );
+    assert!(captives.iter().all(|&gi| owner(&sim, gi) == "Russians"));
+}
+
+/// Phobos `PermaMC_FreeUnit_SetContext` (`Misc/Hooks.Ares.cpp:120-124`): the
+/// victim an Ares `MindControl.Permanent=yes` capture replaces is freed
+/// through `FreeUnit(silent)`, so its `MindClearedSound` plays only when the
+/// flag is off.
+#[test]
+fn ares_perma_mc_replace_respects_the_free_silent_flag() {
+    use crate::sim::world::FrameEffects;
+
+    for silent in [false, true] {
+        let rules = rules();
+        let mut sim = sim(11);
+        let yuri = spawn(&mut sim, &rules, "YURI", "YuriCountry", 10, 10);
+        let gi = spawn(&mut sim, &rules, "E1", "Americans", 12, 10);
+        assert!(sim.capture_unit(yuri, gi, &rules, None, &mut FrameEffects::default()));
+        sim.sound_events.clear_for_test();
+        let americans = sim.interner.get("Americans").unwrap();
+        assert!(sim.ares_apply_perma_mc(
+            gi,
+            americans,
+            &rules,
+            None,
+            &mut FrameEffects::default(),
+            silent,
+        ));
+        let sounds = voc_sounds(&rules, &sim);
+        assert_eq!(
+            sounds.iter().any(|sound| sound == "MindCleared"),
+            !silent,
+            "silent={silent}: {sounds:?}"
+        );
+    }
+}
+
+/// The silent flag's source at the permanent-capture detonation: the warhead's
+/// `RemoveMindControl.Silent=` (`Nullable<bool>`) over
+/// `[AudioVisual] MindControl.Permanent.ReplaceSilent=`
+/// (`Ext/Rules/Body.h:50,329` and `:503,999`), the fallback Phobos installs at
+/// the same call.
+#[test]
+fn ares_perma_mc_replace_silent_follows_the_warhead_then_the_global() {
+    use crate::sim::world::FrameEffects;
+
+    // `MindControl.Permanent` is an Ares warhead key: the fixture reads its
+    // Rules the Ares way.
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    for (warhead_key, global, silent) in [
+        ("", false, false),
+        ("", true, true),
+        ("RemoveMindControl.Silent=yes\n", false, true),
+        ("RemoveMindControl.Silent=no\n", true, false),
+    ] {
+        let text = format!(
+            "{}\n[PERMA]\nMindControl.Permanent=yes\n{warhead_key}",
+            RULES.replacen(
+                "[Warheads]\n0=Controller\n1=Super\n2=KILLWH",
+                "[Warheads]\n0=Controller\n1=Super\n2=KILLWH\n3=PERMA",
+                1
+            )
+        );
+        let mut rules = rules_from(&text);
+        rules.phobos_globals.mind_control_permanent_replace_silent = global;
+        let warhead = rules.warhead("PERMA").expect("PERMA warhead").clone();
+        assert!(
+            warhead
+                .ares_combat()
+                .is_some_and(|combat| combat.mind_control_permanent())
+        );
+
+        let mut sim = sim(13);
+        let yuri = spawn(&mut sim, &rules, "YURI", "YuriCountry", 10, 10);
+        let gi = spawn(&mut sim, &rules, "E1", "Americans", 12, 10);
+        assert!(sim.capture_unit(yuri, gi, &rules, None, &mut FrameEffects::default()));
+        sim.sound_events.clear_for_test();
+        let americans = sim.interner.get("Americans").unwrap();
+        assert!(sim.apply_ares_perma_mc_detonation(
+            Some(gi),
+            Some(americans),
+            &warhead,
+            &rules,
+            None,
+            &mut FrameEffects::default(),
+        ));
+        let sounds = voc_sounds(&rules, &sim);
+        assert_eq!(
+            sounds.iter().any(|sound| sound == "MindCleared"),
+            !silent,
+            "warhead={warhead_key:?} global={global}: {sounds:?}"
+        );
+    }
 }

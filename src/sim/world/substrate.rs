@@ -482,7 +482,6 @@ pub struct ObjectSubstrate {
     /// The authoritative object store — serialized verbatim (NOT skipped).
     pub(in crate::sim) entities: Forked<EntityStore>,
     /// Synchronous Phobos limbo hook controls; stable saves restore enabled/idle.
-    #[cfg(feature = "phobos")]
     #[serde(skip)]
     pub(crate) phobos_limbo_control: Forked<crate::sim::house_tracking::PhobosLimboControl>,
     /// Separate AnimClass registry sharing the global object ID namespace and
@@ -549,7 +548,6 @@ impl ObjectSubstrate {
             air_slots: Forked::new(AirSlotGrid::default()),
             base_reservations: Forked::new(CellReservationGrid::new()),
             entities: Forked::new(EntityStore::new()),
-            #[cfg(feature = "phobos")]
             phobos_limbo_control: Default::default(),
             anims: Forked::new(AnimStore::default()),
             voxel_anims: Forked::new(VoxelAnimStore::default()),
@@ -731,7 +729,6 @@ super::fork::fork_helpers! {
     air_slots,
     base_reservations,
     entities,
-    #[cfg(feature = "phobos")]
     phobos_limbo_control,
     anims,
     voxel_anims,

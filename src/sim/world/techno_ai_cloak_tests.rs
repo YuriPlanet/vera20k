@@ -127,7 +127,8 @@ fn stock_cloak_producer_weapons_factory_contact_blocks_entry() {
         .entities
         .get_mut(id)
         .unwrap()
-        .seldom.radio_contacts
+        .seldom
+        .radio_contacts
         .insert(yard);
     tick_stock_cloak_producer(
         &mut sim,
@@ -152,7 +153,8 @@ fn stock_cloak_producer_weapons_factory_contact_blocks_entry() {
         .entities
         .get_mut(id)
         .unwrap()
-        .seldom.radio_contacts
+        .seldom
+        .radio_contacts
         .remove(yard);
     tick_stock_cloak_producer(
         &mut sim,
@@ -437,7 +439,8 @@ fn already_cloaked_object_is_refused_by_can_auto_cloak_step_two() {
         let entity = sim.substrate.entities.get_mut(targeter).unwrap();
         let attack = TargetKind::Entity(cloaker);
         entity
-            .seldom.rearm_timer
+            .seldom
+            .rearm_timer
             .set_for_test(crate::sim::timer::CdTimer::started(0, 17));
         entity.seldom.weapon_burst.complete_shot(4);
         entity
@@ -527,7 +530,8 @@ fn the_weapon_rearm_countdown_blocks_the_next_auto_cloak() {
         .entities
         .get_mut(id)
         .unwrap()
-        .seldom.rearm_timer
+        .seldom
+        .rearm_timer
         .set_for_test(crate::sim::timer::CdTimer::started(0, 20));
 
     for frame in 0..20 {
@@ -1063,7 +1067,8 @@ fn a_non_player_object_leaves_the_selection_as_it_cloaks_and_while_unsensed() {
             .entities
             .get(id)
             .unwrap()
-            .seldom.selection
+            .seldom
+            .selection
             .is_selected()
     };
     let select = |sim: &mut Simulation, id| {
@@ -1071,7 +1076,8 @@ fn a_non_player_object_leaves_the_selection_as_it_cloaks_and_while_unsensed() {
             .entities
             .get_mut(id)
             .unwrap()
-            .seldom.selection
+            .seldom
+            .selection
             .set_selected_for_test(true);
     };
     select(&mut sim, own);
@@ -1162,7 +1168,6 @@ fn a_dive_breaks_contact_zero_only_with_a_house_its_owner_is_not_allied_with() {
 /// into the two cloak decisions (`Hooks.Cloak.cpp`): the effect can install
 /// the runtime for a type without `Cloakable=`, and a forced decloak vetoes
 /// the ready check while requesting the decloak.
-#[cfg(feature = "phobos")]
 #[test]
 fn attach_effect_cloakable_and_force_decloak_move_the_gates() {
     let rules = RuleSet::from_ini(&IniFile::from_str(

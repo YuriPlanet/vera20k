@@ -545,6 +545,12 @@ pub enum ObjectAction {
 pub const VERA_EJECT_BUNKER_OPCODE: u8 = 0x31;
 pub const VERA_PAID_SUPER_OPCODE: u8 = 0x30;
 pub const VERA_CYCLE_PRODUCER_OPCODE: u8 = 0x32;
+/// VERA-only Phobos `ExtendedPlayerRepair` toggle: the issuing human House
+/// sets its `PlayerAutoRepair` byte to the payload bit. Phobos adds a custom
+/// `EventClass` type for this; VERA keeps a one-byte wire record so the flag
+/// stays synchronized and replayable. `0x35` follows upstream's published
+/// `0x34` client-module message; the two payloads are not interchangeable.
+pub const VERA_PLAYER_AUTO_REPAIR_OPCODE: u8 = 0x35;
 pub const VERA_PAID_SUPER_PAYLOAD_LEN: u8 = 21;
 pub const TARGET_HOUSE_OPCODE: u8 = 0x33;
 pub const TARGET_HOUSE_PAYLOAD_LEN: u8 = 2 + VERA_PAID_SUPER_PAYLOAD_LEN;
@@ -575,6 +581,7 @@ pub(crate) fn event_body_len(opcode: u8) -> Option<u8> {
         // Constructor4C65E0's object token, as SELL carries.
         VERA_EJECT_BUNKER_OPCODE => event_body_len(ObjectAction::Sell.opcode()),
         VERA_CYCLE_PRODUCER_OPCODE => Some(VERA_CYCLE_PRODUCER_PAYLOAD_LEN),
+        VERA_PLAYER_AUTO_REPAIR_OPCODE => Some(1),
         TARGET_HOUSE_OPCODE => Some(TARGET_HOUSE_PAYLOAD_LEN),
         VERA_MODULE_MESSAGE_OPCODE => Some(VERA_MODULE_MESSAGE_PAYLOAD_LEN),
         // Ares 3.0 1006A130: TrenchRedirectClick (0x60) carries 10 bytes. Only
@@ -855,6 +862,36 @@ impl CycleProducerRecord {
             house_id: record.house_id(),
             frame: record.frame_stamp(),
             category,
+        })
+    }
+}
+
+/// Phobos `EventExt::RespondToTogglePlayerAutoRepair`
+/// (`Ext/Event/Body.cpp:109-128`): the issuing House flips its own
+/// `PlayerAutoRepair` switch; the wire carries the requested state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PlayerAutoRepairRecord {
+    pub house_id: i8,
+    pub frame: i32,
+    pub enabled: bool,
+}
+impl PlayerAutoRepairRecord {
+    pub fn encode(self) -> Result<CommandRecord, CommandRecordError> {
+        CommandRecord::encode(
+            VERA_PLAYER_AUTO_REPAIR_OPCODE,
+            i32::from(self.house_id),
+            self.frame,
+            &[u8::from(self.enabled)],
+        )
+    }
+    pub fn decode(record: &CommandRecord) -> Option<Self> {
+        if record.opcode() != VERA_PLAYER_AUTO_REPAIR_OPCODE {
+            return None;
+        }
+        Some(Self {
+            house_id: record.house_id(),
+            frame: record.frame_stamp(),
+            enabled: record.payload()[0] != 0,
         })
     }
 }
@@ -1922,6 +1959,13 @@ pub enum Command {
     /// module's next `on_message`. Appended to preserve existing serialized
     /// variant indices.
     ModuleMessage { source: u8, data: Vec<u8> },
+    /// Phobos `ExtendedPlayerRepair`: the sidebar repair button toggles the
+    /// issuing house's house-wide auto repair instead of entering the cursor
+    /// repair mode (`Ext/Event/Body.cpp:116-128`, `Ext/House/Hooks.cpp:776-824`).
+    /// The building visit then starts or stops each building of that human
+    /// house. Appended after every upstream variant so released command saves
+    /// keep their original serialized indices.
+    TogglePlayerAutoRepair { enabled: bool },
 }
 
 impl Command {
@@ -1969,6 +2013,7 @@ impl Command {
             | Self::ToggleInfantryDeploy { .. }
             | Self::ForceAttackCell { .. }
             | Self::SellWallAtCell { .. }
+            | Self::TogglePlayerAutoRepair { .. }
             | Self::ExitMatch
             | Self::SetGameSpeed { .. }
             | Self::PlaceProducedMobile { .. }
@@ -2019,6 +2064,7 @@ impl Command {
             | Self::CancelProductionByType { .. }
             | Self::SellBuilding { .. }
             | Self::ToggleRepair { .. }
+            | Self::TogglePlayerAutoRepair { .. }
             | Self::EjectBunker { .. }
             | Self::UnloadPassengers { .. }
             | Self::CaptureBuilding { .. }

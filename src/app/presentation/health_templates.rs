@@ -224,18 +224,8 @@ const AT_POINT: Places = &[("", 0, (0, 0))];
 /// The rank insignia from the object's point: the stock leaf
 /// (`70AA20..AA4F`) and Ares' (`1004E1D7`) put an infantry's at (5,2) and
 /// every other object's at (10,6).
-#[cfg(not(feature = "phobos"))]
-const RANK_PLACES: Places = &[
-    (".infantry", class_bit(HealthClass::Infantry), (5, 2)),
-    (
-        ".other",
-        class_bit(HealthClass::Vehicle) | class_bit(HealthClass::Building),
-        (10, 6),
-    ),
-];
 /// Phobos' `DrawInsignia` places the insignia from its own INI
 /// adjustments, which the engine adds to the point.
-#[cfg(feature = "phobos")]
 const RANK_PLACES: Places = AT_POINT;
 
 /// The self-heal marker from the object's point (`70A5EC`): health's
@@ -541,6 +531,32 @@ pub(crate) fn scale_pips(
             code: u16::try_from(pip.frame).unwrap_or(u16::MAX),
             lift: pip.lift,
         }));
+        // An authored `AmmoPipSize=`/`AmmoPipOffset=` pair re-places the
+        // strip from these points instead of the built-in template.
+        let authored = pips.iter().any(|pip| {
+            pip.offset_pixels
+                != [
+                    i32::try_from(pip.slot)
+                        .unwrap_or(i32::MAX)
+                        .wrapping_mul(4),
+                    10 + i32::from(pip.lift),
+                ]
+        });
+        if authored {
+            for pip in pips {
+                let stock_x = i32::try_from(pip.slot)
+                    .unwrap_or(i32::MAX)
+                    .wrapping_mul(4);
+                out(
+                    pip.frame,
+                    (
+                        anchor.0 + pip.offset_pixels[0] as f32 - stock_x as f32,
+                        anchor.1 - 10.0 + pip.offset_pixels[1] as f32,
+                    ),
+                );
+            }
+            return;
+        }
         let object = view(Some(class), SCALE, &[], slots);
         painted(&BUILT_IN.scale, &object, |rect, art| {
             out(art.0 as usize, placed(anchor, rect))
@@ -574,7 +590,6 @@ pub(crate) fn mark(
 /// bracket, a unit's lowered by its bracket delta) as the built-in shield
 /// templates lay them out: each pip's frame and point to `out`, in order.
 /// `frames` are the frames the shield type picks for each pip in turn.
-#[cfg(feature = "phobos")]
 pub(crate) fn shield_pips(
     class: HealthClass,
     frames: impl IntoIterator<Item = usize>,
@@ -605,7 +620,6 @@ pub(crate) fn family(family: Mark) -> Option<[i32; 2]> {
 }
 
 /// `instances` moved by a template's `offset`, where it has one.
-#[cfg(feature = "phobos")]
 pub(crate) fn shift_instances<'a>(
     instances: impl IntoIterator<Item = &'a mut crate::render::batch::SpriteInstance>,
     offset: [i32; 2],
@@ -693,8 +707,13 @@ mod tests {
     #[test]
     fn a_scale_row_starts_at_its_class_place_and_keeps_its_lift() {
         let row = [
-            ScalePipDraw { slot: 0, frame: 1, lift: 0 },
-            ScalePipDraw { slot: 2, frame: 13, lift: -3 },
+            ScalePipDraw { slot: 0, frame: 1, lift: 0, offset_pixels: [0, 10] },
+            ScalePipDraw {
+                slot: 2,
+                frame: 13,
+                lift: -3,
+                offset_pixels: [8, 7],
+            },
         ];
         let mut out = Vec::new();
         for class in [HealthClass::Vehicle, HealthClass::Infantry, HealthClass::Building] {
@@ -731,17 +750,6 @@ mod tests {
             super::mark(Mark::SelfHeal, Some(HealthClass::Infantry), 0x0D),
             Some((0x0D, [15, -25]))
         );
-        #[cfg(not(feature = "phobos"))]
-        {
-            assert_eq!(
-                super::mark(Mark::Rank, Some(HealthClass::Infantry), 14),
-                Some((14, [5, 2]))
-            );
-            assert_eq!(
-                super::mark(Mark::Rank, Some(HealthClass::Building), 15),
-                Some((15, [10, 6]))
-            );
-        }
         let point = (-0.0f32, 12.5f32);
         let kept = shifted(point, [0, 0]);
         assert_eq!((kept.0.to_bits(), kept.1.to_bits()), (point.0.to_bits(), point.1.to_bits()));

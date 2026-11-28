@@ -26,6 +26,7 @@ pub(super) fn publish_fresh_track_target(
     terrain_speed: &TerrainSpeedConfig,
     next_cell: (u16, u16),
     road: bool,
+    damaged_speed: NativeF64Bits,
 ) {
     let Some(loco) = entity.locomotor.as_ref() else {
         return;
@@ -72,8 +73,25 @@ pub(super) fn publish_fresh_track_target(
         terrain,
         terrain_speed,
         below_yellow,
+        damaged_speed,
     );
     publish_target_fraction(entity, requested);
+}
+
+/// Phobos `DamagedSpeed` (`Ext/UnitType/Body.cpp:32`,
+/// `Ext/Rules/Body.cpp:414`): the locomotion's below-Condition-Yellow speed
+/// multiplier is the type's nullable, else `[General]` (default 0.75). The
+/// native hooks replace the stock constant at `0x4B3DF0` (Drive) and
+/// `0x6A343F` (Ship).
+pub(super) fn damaged_speed_factor(object: &ObjectType, rules: &RuleSet) -> NativeF64Bits {
+    if !rules.phobos() {
+        return NativeF64Bits::from_bits(0.75_f64.to_bits());
+    }
+    {
+        object
+            .phobos_damaged_speed
+            .unwrap_or(rules.phobos_globals.damaged_speed)
+    }
 }
 
 /// Drive4B3DFA..3E21 / Ship twin: a selector below 64 keeps the request on
@@ -166,6 +184,7 @@ pub(super) fn advance(
     entity: &mut GameEntity,
     object: Option<&ObjectType>,
     rules: &RuleSet,
+    interner: &crate::sim::intern::StringInterner,
     houses: &crate::sim::houses::Houses,
     terrain: Option<&ResolvedTerrainGrid>,
     grid: Option<&PathGrid>,
@@ -177,8 +196,14 @@ pub(super) fn advance(
     if !matches!(kind, LocomotorKind::Drive | LocomotorKind::Ship) {
         return (0, None);
     }
-    let speed =
-        super::foot_speed::adjusted_speed(entity, object, rules.general.veteran_speed, houses);
+    let speed = super::foot_speed::adjusted_speed(
+        entity,
+        object,
+        rules,
+        interner,
+        rules.general.veteran_speed,
+        houses,
+    );
     let family = TrackFamily::from_kind(kind).unwrap();
     let destination = loco.track_destination(family);
     let selector = loco.track_progress(family).map_or(-1, |p| p.turn_index());
@@ -204,6 +229,14 @@ pub(super) fn advance(
         slowdown_distance: object.map_or(0, |o| o.slowdown_distance),
         sinking: entity.sinking.is_active(),
         crush_slowdown: entity.foot_speed.crush_slowdown(),
+        crush_slowdown_cap: if rules.phobos() {
+            object
+                .and_then(|object| object.phobos_crush_slowdown_multiplier)
+                .unwrap_or(rules.phobos_globals.crush_slowdown_multiplier)
+        } else {
+            NativeF64Bits::from_bits(0.2_f64.to_bits())
+        },
+        skip_crush_slowdown: rules.phobos() && rules.skip_crush_slowdown_for(object),
     };
     if let Some(target) = retained_target {
         let step = super::drive_locomotion::track_speed_prefix(
@@ -281,6 +314,7 @@ mod tests {
                     Some(object),
                     &rules,
                     &Default::default(),
+                    &Default::default(),
                     None,
                     None
                 ),
@@ -295,10 +329,78 @@ mod tests {
                     Some(object),
                     &rules,
                     &Default::default(),
+                    &Default::default(),
                     None,
                     None
                 ),
                 (11, None)
+            );
+        }
+    }
+
+    /// Phobos `UnitTypeExt::SkipCrushSlowdown` (`Ext/UnitType/Body.cpp:74`,
+    /// unset taking `[General] SkipCrushSlowdown`, `Ext/Rules/Body.cpp:274`)
+    /// consumed by the Drive/Ship WhileMoving crush arm
+    /// (`Ext/Unit/Hooks.Crushing.cpp:104-109`, hooks `0x4B1146`/`0x6A0809`):
+    /// the skip jumps past the Foot+6B5 cap and its class+50 store, so the
+    /// retained target keeps its pre-crush value and the flag stays set.
+    #[test]
+    fn skip_crush_slowdown_skips_the_flag_cap_and_its_setter() {
+        use crate::util::native_x87::NativeF64Bits;
+
+        let rules = |unit_key: Option<&str>, global: Option<&str>| {
+            let unit_line = unit_key
+                .map(|value| format!("SkipCrushSlowdown={value}\n"))
+                .unwrap_or_default();
+            let general_line = global
+                .map(|value| format!("SkipCrushSlowdown={value}\n"))
+                .unwrap_or_default();
+            RuleSet::from_ini(&IniFile::from_str(&format!(
+                "[General]\n{general_line}[VehicleTypes]\n0=MTNK\n[MTNK]\nSpeed=6\n\
+                 Strength=100\n{unit_line}"
+            )))
+            .unwrap()
+        };
+        let cap = NativeF64Bits::from_bits(0x3fc9_9999_9999_999a);
+        let one = NativeF64Bits::from_bits(0x3ff0_0000_0000_0000);
+        for (unit_key, global, capped) in [
+            (None, None, true),
+            (Some("yes"), None, false),
+            (None, Some("yes"), false),
+            (Some("no"), Some("yes"), true),
+        ] {
+            let rules = rules(unit_key, global);
+            let mut mover = entity(LocomotorKind::Drive, 0, SIM_ONE);
+            mover.foot_speed.set_speed_fraction(SIM_ONE);
+            mover.foot_speed.set_crush_slowdown_for_test(true);
+            advance(
+                &mut mover,
+                rules.object("MTNK"),
+                &rules,
+                &Default::default(),
+                &Default::default(),
+                None,
+                None,
+            );
+            let target = mover
+                .locomotor
+                .as_ref()
+                .unwrap()
+                .track_target_fraction_native(TrackFamily::Drive)
+                .unwrap();
+            assert_eq!(
+                target,
+                if capped { cap } else { one },
+                "{unit_key:?} {global:?}"
+            );
+            assert_eq!(
+                mover.foot_speed.native_applied_fraction(),
+                if capped { cap } else { one },
+                "{unit_key:?} {global:?}"
+            );
+            assert!(
+                mover.foot_speed.crush_slowdown(),
+                "the skip arm neither reads nor clears Foot+6B5"
             );
         }
     }
@@ -344,6 +446,7 @@ mod tests {
                 &speed,
                 next,
                 road,
+                NativeF64Bits::from_bits(0.75_f64.to_bits()),
             );
             mover
                 .locomotor
@@ -395,6 +498,7 @@ mod tests {
                     &mut mover,
                     rules.object("MTNK"),
                     &rules,
+                    &Default::default(),
                     &Default::default(),
                     None,
                     None
@@ -451,6 +555,7 @@ mod tests {
                 &mut entity,
                 rules.object("MTNK"),
                 &rules,
+                &Default::default(),
                 &Default::default(),
                 None,
                 None,
@@ -532,7 +637,9 @@ mod tests {
     /// invocation budget from the production getter of the resulting fraction.
     #[test]
     fn speed_prefix_matches_original_rows_exactly() {
-        use crate::sim::movement::drive_locomotion::{TrackSpeedPrefix, track_speed_prefix};
+        use crate::sim::movement::drive_locomotion::{
+            CRUSH_SLOWDOWN_CAP, TrackSpeedPrefix, track_speed_prefix,
+        };
         use crate::util::native_x87::{NativeF32Bits, NativeF64Bits};
         let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
             "tools/spatial_oracle/track_speed_native.json",
@@ -559,6 +666,8 @@ mod tests {
                 slowdown_distance: integer(input, "slowdown", 500),
                 sinking: input["sinking"].as_bool().unwrap_or(false),
                 crush_slowdown: input["crush"].as_bool().unwrap_or(false),
+                crush_slowdown_cap: CRUSH_SLOWDOWN_CAP,
+                skip_crush_slowdown: input["skip_crush"].as_bool().unwrap_or(false),
             };
             let mut measured = false;
             let step = track_speed_prefix(
@@ -617,5 +726,39 @@ mod tests {
             compared += 1;
         }
         assert_eq!(compared, 118);
+    }
+
+    /// Phobos `DamagedSpeed` (`Ext/UnitType/Body.cpp:32`,
+    /// `Ext/Rules/Body.cpp:414`): the UnitType nullable else `[General]`,
+    /// whose constructor is the stock 0.75; the Drive/Ship hook
+    /// (`0x4B3DF0`/`0x6A343F`) multiplies this value instead of the constant.
+    #[test]
+    fn phobos_damaged_speed_reads_the_type_then_the_general() {
+        use crate::rules::ruleset::RuleSet;
+        use crate::util::native_x87::NativeF64Bits;
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[General]\nDamagedSpeed=0.5\n\
+             [VehicleTypes]\n0=TYPED\n1=GLOBAL\n\
+             [TYPED]\nStrength=100\nDamagedSpeed=0.25\n\
+             [GLOBAL]\nStrength=100\n",
+        ))
+        .unwrap();
+        let bits = |id: &str| damaged_speed_factor(rules.object(id).unwrap(), &rules);
+        assert_eq!(bits("TYPED"), NativeF64Bits::from_bits(0.25f64.to_bits()));
+        assert_eq!(
+            bits("GLOBAL"),
+            NativeF64Bits::from_bits(0.5f64.to_bits()),
+            "the general value applies to an unset type key"
+        );
+
+        let defaults = RuleSet::from_ini(&IniFile::from_str(
+            "[VehicleTypes]\n0=PLAIN\n[PLAIN]\nStrength=100\n",
+        ))
+        .unwrap();
+        assert_eq!(
+            damaged_speed_factor(defaults.object("PLAIN").unwrap(), &defaults),
+            NativeF64Bits::from_bits(0.75f64.to_bits()),
+            "the global constructor keeps the stock factor"
+        );
     }
 }

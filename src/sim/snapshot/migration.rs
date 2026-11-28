@@ -88,8 +88,42 @@ const HELD_IMAGES: u32 = 0xAA20_1352;
 // Earlier saves gain their neutral encoding. The loader discards both
 // fields; see snapshot::retired_driver.
 const DRIVER_POLICY: u32 = 0xD5A9_6CCA;
-// This writer saves Techno+270 independently of its erase head and locomotor.
+// The Phobos branch's merged writer already holds its own fields and the
+// upstream module state, but predates the independent Techno+270 flag.
+const PHOBOS_MERGE: u32 = 0xC3A0_2A31;
+// This upstream writer saves Techno+270 independently of its erase head and locomotor.
 const SHARED_WARP_OUT: u32 = 0xC0BB_86C8;
+
+fn historical_layouts() -> &'static [u32] {
+    &[
+        V0_3_8_AND_0_3_9,
+        V0_4_0,
+        ALPHA_SHAPE_LISTENER,
+        ALTERNATE_THEATER_ART,
+        BRIDGE_DECK_AND_FLY_SPIN,
+        HOUSE_DEGRADES,
+        TS_ICE,
+        TERRAIN_DENT,
+        TS_LIMPETS,
+        TS_ANIM_SOUNDS,
+        KRATOS_FLH,
+        TS_WEBS,
+        WASM_MODULES,
+        ART_IMAGE_SWAP,
+        MODULES_AND_IMAGE_SWAP,
+        CONTROL_POINTS,
+        NPATCH_INPUTS,
+        MODULES_SWAP_AND_NPATCH,
+        CONTROL_POINTS_SWAP_AND_NPATCH,
+        CLIENT_MESSAGES,
+        HELD_ANIMS,
+        HELD_DOORS,
+        HELD_IMAGES,
+        DRIVER_POLICY,
+        PHOBOS_MERGE,
+        SHARED_WARP_OUT,
+    ]
+}
 
 /// The rules digest a converted save carries: the loader takes the rules the
 /// game has instead of proving the digest the old writer computed, whose
@@ -123,10 +157,55 @@ pub fn supports(header: &GameSnapshotHeader) -> bool {
         && previous_layout(header.layout).is_some()
         && header.compatibility().matches_build()
         && SNAPSHOT_ENVELOPE_VERSION == MIGRATION_ENVELOPE_VERSION
-        && snapshot_layout() == SHARED_WARP_OUT
+        && current_layout_is_audited()
 }
 
-fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
+/// The merged writer combines Phobos's saved transport-reloader queue with
+/// upstream's independent warp-out flag beside the module state. Its traced
+/// layout hash is new, so audit the owning fields directly rather than reusing
+/// either branch's old hash.
+fn current_layout_is_audited() -> bool {
+    static AUDITED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *AUDITED.get_or_init(|| {
+        let Ok(description) = save_codec::layout::describe::<GameSnapshot>() else {
+            return false;
+        };
+        let has_warp_out = description.lines().any(|line| {
+            let Some((name, fields)) = line.split_once(" struct{") else {
+                return false;
+            };
+            name == "GameEntity"
+                && fields.strip_suffix('}').is_some_and(|fields| {
+                    fields
+                        .split(',')
+                        .any(|field| field.starts_with("being_warped_out:"))
+                })
+        });
+        has_warp_out
+            && description.lines().any(|line| {
+                let Some((_, fields)) = line.split_once("struct{") else {
+                    return false;
+                };
+                let Some(fields) = fields.strip_suffix('}') else {
+                    return false;
+                };
+                let mut trailing = fields.rsplit(',');
+                trailing
+                    .next()
+                    .is_some_and(|field| field.starts_with("ext_modules:"))
+                    && trailing
+                        .next()
+                        .is_some_and(|field| field.starts_with("transport_reloaders:"))
+            })
+    })
+}
+
+fn layout_fields(
+    source: u32,
+) -> Option<(
+    &'static [(&'static str, &'static [&'static str])],
+    &'static [(&'static str, &'static [&'static str])],
+)> {
     const IMAGE_FLAGS: (&str, &[&str]) = ("ObjectImageState", &["alternate_theater_art"]);
     const ALPHA_LISTENER: (&str, &[&str]) = ("AlphaShape", &["anim_listener"]);
     const DECK: (&str, &[&str]) = ("BridgeCellFacts", &["fixed_deck_level"]);
@@ -161,7 +240,263 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
     const IMAGES: (&str, &[&str]) = ("ActionHeld", &["images"]);
     const POLICY: (&str, &[&str]) = ("HouseState", &["driver_policy"]);
     const WARP_OUT: (&str, &[&str]) = ("GameEntity", &["being_warped_out"]);
-    let absent_fields: &'static [_] = match source {
+    type AbsentField = (&'static str, &'static [&'static str]);
+
+    // Every upstream writer represented by `previous_layout` lacks the Phobos
+    // branch's independent additions. Keep the upstream timeline intact and
+    // add this common tail once when building the audited table. The Phobos
+    // merge writer already holds these fields, so only its warp-out flag is
+    // absent. The codec's all-zero absent-field encoding is unchanged; no
+    // layout hash or field default is invented here. Skipped caches are not
+    // wire fields and stay out.
+    const PHOBOS_FIELDS: &[AbsentField] = &[
+        ("BasicSection", &["show_briefing"]),
+        ("HouseDefinition", &["repair_base_nodes"]),
+        ("ShpVehicleTurret", &["frame_count"]),
+        (
+            "BuildingUpgradeRules",
+            &["powers_up_owner", "powers_up_buildings"],
+        ),
+        ("ProcessedRulesLayers", &["phobos_required"]),
+        (
+            "NativeRulesRegistryState",
+            &["rules_timer_blink_color_scheme", "rules_missing_cameo"],
+        ),
+        (
+            "ProcessedType",
+            &[
+                "phobos_shadow_indices",
+                "phobos_shadow_indices_frames",
+                "phobos_shadow_index_frame",
+                "phobos_turret_shadow",
+                "phobos_object",
+                "super_weapon_phobos_chaining",
+                "super_weapon_phobos_detonate",
+                "super_weapon_phobos_limbo",
+                "super_weapon_phobos_messages",
+                "super_weapon_phobos_availability",
+                "ore_gathering",
+                "phobos_insignia",
+                "phobos_deploying_anims",
+            ],
+        ),
+        ("WeaponSlots", &["multi_weapon", "multi_weapon_read"]),
+        ("InfantryArt", &["phobos_land_sequences"]),
+        (
+            "ShieldType",
+            &[
+                "idle_anim",
+                "idle_anim_damaged",
+                "idle_anim_offline_action",
+                "idle_anim_temporal_action",
+                "allow_transfer",
+                "allow_transfer_convert",
+            ],
+        ),
+        ("ProjectileArtState", &["laser_trail_types"]),
+        (
+            "AresEMPulseRules",
+            &["empulse_weapon_index", "empulse_suspend_others"],
+        ),
+        (
+            "PhobosSuperWeaponAvailability",
+            &["shots", "range_minimum", "range_maximum"],
+        ),
+        (
+            "TerrainTypeReadState",
+            &[
+                "destroy_anim",
+                "destroy_sound",
+                "has_damaged_frames",
+                "has_crumbling_frames",
+                "crumbling_sound",
+                "animation_length",
+                "minimap_color",
+            ],
+        ),
+        (
+            "WeaponOffsets",
+            &[
+                "phobos_alternate",
+                "alternate_flh_on_turret",
+                "alternate_flh_apply_vehicle",
+                "burst",
+                "deployed_burst",
+                "prone_burst",
+                "deployed_simple",
+                "prone_simple",
+            ],
+        ),
+        ("HouseTeamCreation", &["team_delay"]),
+        (
+            "AnimObject",
+            &[
+                "firing_anim",
+                "invoker",
+                "invoker_house",
+                "from_death_unit",
+                "death_unit_facing",
+                "death_unit_has_turret",
+                "death_unit_turret_facing",
+            ],
+        ),
+        (
+            "AttachEffectInstance",
+            &[
+                "anim",
+                "should_be_discarded",
+                "firing_count",
+                "received_damage_count",
+                "last_sequence_check",
+                "armor_multiplier_timer",
+                "reflect_damage_timer",
+                "reset_anim",
+                "trail_last_location",
+            ],
+        ),
+        ("CloakRuntime", &["pending_anim"]),
+        (
+            "WeaponBurst",
+            &["force_full_rearm", "last_rearm_was_full_delay"],
+        ),
+        (
+            "GattlingState",
+            &[
+                "rate_down_accumulated",
+                "rate_down_should_update",
+                "rate_down_last_target",
+            ],
+        ),
+        ("Economy", &["owned_weed"]),
+        (
+            "Seldom",
+            &[
+                "grinding_weapon_accumulated_credits",
+                "grinding_weapon_last_fired_frame",
+                "phobos_accumulated_income",
+                "phobos_delayed_fire_start_frame",
+                "phobos_delayed_fire_duration",
+                "phobos_delayed_fire_weapon_index",
+                "phobos_delayed_fire_sequence_paused",
+                "phobos_delayed_fire_anim",
+                "phobos_delayed_fire_remove_anim_on_no_delay",
+                "phobos_skip_target_change_reset_sequence",
+                "phobos_keep_target_on_move",
+                "phobos_random_factor",
+                "phobos_drop_crate",
+                "phobos_drop_crate_type",
+                "created_from_map_file",
+                "phobos_infantry_undeploy_converted",
+                "phobos_infantry_deploy_converted",
+                "phobos_attack_move_follower_temp_count",
+                "phobos_construction_start_facing",
+                "unlimbo_detonate",
+                "phobos_turret_anim",
+                "phobos_current_empulse_sw",
+                "jumpjet_straight_ascend",
+                "phobos_be_controlled_threat_frame",
+                "auto_death_timer",
+                "should_be_dead",
+                "phobos_original_passenger_owner",
+                "phobos_revert_on_exit_latch",
+                "phobos_prevent_crew_escape",
+                "phobos_last_weapon_type",
+                "phobos_extra_threat_last_target_crd",
+                "phobos_extra_threat_last_target_clear_timer",
+                "passenger_deletion_timer",
+                "phobos_tiberium_eater_timer",
+                "phobos_attach_effects",
+                "phobos_stat_multipliers",
+                "shield",
+                "phobos_placement",
+                "wh_anim_remaining_creation_interval",
+            ],
+        ),
+        ("TurretSelection", &["phobos_charge_turret_timer"]),
+        (
+            "HouseState",
+            &[
+                "repair_base_nodes",
+                "ai_superweapon_delay_timer",
+                "combat_alert_timer",
+                "player_auto_repair",
+                "suspended_emp_pulse_sws",
+            ],
+        ),
+        ("TrackingFacts", &["exclude_from_multiple_factory_bonus"]),
+        (
+            "HouseTracking",
+            &[
+                "phobos_limbo_counts",
+                "limbo_delivered",
+                "non_mfb_factories",
+            ],
+        ),
+        (
+            "AircraftMissionLeaf",
+            &["strafe_bombs_dropped_this_round", "strafe_target_cell"],
+        ),
+        ("TeleportState", &["distance_leptons"]),
+        (
+            "ChronoWarp",
+            &["chrono_sphered", "warp_in_delay_pending", "warp_in_delay"],
+        ),
+        ("TunnelRuntime", &["ground_z"]),
+        ("ObjectFallState", &["hover_shutdown", "on_parachuted"]),
+        (
+            "Projectile",
+            &[
+                "phobos_trajectory",
+                "parabomb",
+                "current_strength",
+                "intercepted_status",
+                "detonate_on_interception",
+                "interceptor_type",
+                "interceptor_target",
+                "laser_trails",
+                "source_house",
+                "phobos_firer_house",
+            ],
+        ),
+        ("ScenarioSession", &["banners"]),
+        (
+            "ShieldTimers",
+            &["self_healing_wh_modifier", "respawn_wh_modifier"],
+        ),
+        (
+            "ShieldState",
+            &[
+                "respawn_modifier",
+                "self_healing_modifier",
+                "idle_anim",
+                "attached",
+            ],
+        ),
+        ("SpawnManagerState", &["spawn_queue"]),
+        ("TeamTypeIniMetadata", &["para_drop_aircraft"]),
+        (
+            "TerrainObjectState",
+            &["passable", "can_be_built_on", "is_crumbling"],
+        ),
+        ("TriggerRuntime", &["globals_values", "locals_values"]),
+        ("VoxelAnimObject", &["trailer_spawn_timer", "laser_trails"]),
+        ("AlphaShape", &["light_flash"]),
+        ("RegisteredBuilding", &["restricted"]),
+        ("HouseBaseState", &["restricted_plants"]),
+        (
+            "Simulation",
+            &[
+                "auto_death_objects",
+                "warhead_anim_runtime",
+                "phobos_all_map_detonation_active",
+                "particle_light_flash",
+                "firing_anim_update_count",
+                "transport_reloaders",
+            ],
+        ),
+    ];
+
+    let upstream_fields: &[(&str, &[&str])] = match source {
         V0_3_8_AND_0_3_9 | V0_4_0 => &[
             WARP_OUT,
             POLICY,
@@ -434,9 +769,36 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
         HELD_ANIMS => &[WARP_OUT, POLICY, DOORS_AND_IMAGES],
         HELD_DOORS => &[WARP_OUT, POLICY, IMAGES],
         HELD_IMAGES => &[WARP_OUT, POLICY],
-        DRIVER_POLICY => &[WARP_OUT],
+        DRIVER_POLICY | PHOBOS_MERGE => &[WARP_OUT],
+        SHARED_WARP_OUT => &[],
         _ => return None,
     };
+    let phobos_fields: &[AbsentField] = if source == PHOBOS_MERGE {
+        &[]
+    } else {
+        PHOBOS_FIELDS
+    };
+    Some((upstream_fields, phobos_fields))
+}
+
+fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
+    type AbsentField = (&'static str, &'static [&'static str]);
+
+    static FIELDS: std::sync::OnceLock<std::collections::BTreeMap<u32, Box<[AbsentField]>>> =
+        std::sync::OnceLock::new();
+    let fields = FIELDS.get_or_init(|| {
+        historical_layouts()
+            .iter()
+            .map(|&source| {
+                let (upstream, phobos) =
+                    layout_fields(source).expect("every historical layout has a field table");
+                let mut absent = upstream.to_vec();
+                absent.extend_from_slice(phobos);
+                (source, absent.into_boxed_slice())
+            })
+            .collect()
+    });
+    let absent_fields = fields.get(&source)?;
     Some(save_codec::PreviousLayout {
         absent_fields,
         // v0.4.0 appended Mech without changing the earlier discriminants.
@@ -450,7 +812,7 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
 /// only its stock Arctic setting and latch. Keep both exactly as saved.
 pub fn migrate(bytes: &mut Vec<u8>) -> Result<(), MigrationError> {
     let target = snapshot_layout();
-    if SNAPSHOT_ENVELOPE_VERSION != MIGRATION_ENVELOPE_VERSION || target != SHARED_WARP_OUT {
+    if SNAPSHOT_ENVELOPE_VERSION != MIGRATION_ENVELOPE_VERSION || !current_layout_is_audited() {
         return Err(MigrationError::UnsupportedTarget(target));
     }
 
@@ -572,57 +934,61 @@ mod tests {
 
     #[test]
     fn migration_leaves_unsupported_and_invalid_snapshots_byte_exact() {
-        let wrong_layout = V0_3_8_AND_0_3_9 ^ 1;
-        let mut bytes = save_codec::serialize(&GameSnapshotPreamble {
-            product_magic: SNAPSHOT_PRODUCT_MAGIC,
-            envelope_version: SNAPSHOT_ENVELOPE_VERSION,
-            layout: wrong_layout,
-        })
-        .unwrap();
-        let original = bytes.clone();
-        let error = migrate(&mut bytes).unwrap_err();
-        assert_eq!(bytes, original);
-        if SNAPSHOT_ENVELOPE_VERSION != MIGRATION_ENVELOPE_VERSION
-            || snapshot_layout() != SHARED_WARP_OUT
-        {
-            assert!(matches!(error, MigrationError::UnsupportedTarget(_)));
-            return;
-        }
-        assert!(
-            matches!(error, MigrationError::UnsupportedSource(layout) if layout == wrong_layout)
-        );
+        crate::test_fixture::on_game_stack(|| {
+            let wrong_layout = V0_3_8_AND_0_3_9 ^ 1;
+            let mut bytes = save_codec::serialize(&GameSnapshotPreamble {
+                product_magic: SNAPSHOT_PRODUCT_MAGIC,
+                envelope_version: SNAPSHOT_ENVELOPE_VERSION,
+                layout: wrong_layout,
+            })
+            .unwrap();
+            let original = bytes.clone();
+            let error = migrate(&mut bytes).unwrap_err();
+            assert_eq!(bytes, original);
+            if SNAPSHOT_ENVELOPE_VERSION != MIGRATION_ENVELOPE_VERSION
+                || !current_layout_is_audited()
+            {
+                assert!(matches!(error, MigrationError::UnsupportedTarget(_)));
+                return;
+            }
+            assert!(
+                matches!(error, MigrationError::UnsupportedSource(layout) if layout == wrong_layout)
+            );
 
-        // The empty world as the v0.3.8 writer wrote it, without the fields
-        // that writer lacked.
-        let current = GameSnapshot::save_validated(&Simulation::new(), 0, 0, "migration", 0);
-        let snapshot: GameSnapshot = save_codec::deserialize(&current).unwrap();
-        let mut bytes =
-            save_codec::serialize_previous(&snapshot, &previous_layout(V0_3_8_AND_0_3_9).unwrap())
-                .unwrap();
-        let old_preamble = save_codec::serialize(&GameSnapshotPreamble {
-            product_magic: SNAPSHOT_PRODUCT_MAGIC,
-            envelope_version: SNAPSHOT_ENVELOPE_VERSION,
-            layout: V0_3_8_AND_0_3_9,
-        })
-        .unwrap();
-        bytes[..old_preamble.len()].copy_from_slice(&old_preamble);
-        let before = bytes.clone();
-        assert!(supports(&GameSnapshot::read_metadata(&before).unwrap()));
-        assert!(matches!(
-            migrate(&mut bytes),
-            Err(MigrationError::HeaderOrState(
-                SnapshotError::MissingScenarioResources
-            ))
-        ));
-        assert_eq!(bytes, before);
+            // The empty world as the v0.3.8 writer wrote it, without the fields
+            // that writer lacked.
+            let current = GameSnapshot::save_validated(&Simulation::new(), 0, 0, "migration", 0);
+            let snapshot: GameSnapshot = save_codec::deserialize(&current).unwrap();
+            let mut bytes = save_codec::serialize_previous(
+                &snapshot,
+                &previous_layout(V0_3_8_AND_0_3_9).unwrap(),
+            )
+            .unwrap();
+            let old_preamble = save_codec::serialize(&GameSnapshotPreamble {
+                product_magic: SNAPSHOT_PRODUCT_MAGIC,
+                envelope_version: SNAPSHOT_ENVELOPE_VERSION,
+                layout: V0_3_8_AND_0_3_9,
+            })
+            .unwrap();
+            bytes[..old_preamble.len()].copy_from_slice(&old_preamble);
+            let before = bytes.clone();
+            assert!(supports(&GameSnapshot::read_metadata(&before).unwrap()));
+            assert!(matches!(
+                migrate(&mut bytes),
+                Err(MigrationError::HeaderOrState(
+                    SnapshotError::MissingScenarioResources
+                ))
+            ));
+            assert_eq!(bytes, before);
 
-        bytes.push(0);
-        let before = bytes.clone();
-        assert!(matches!(
-            migrate(&mut bytes),
-            Err(MigrationError::TrailingBytes)
-        ));
-        assert_eq!(bytes, before);
+            bytes.push(0);
+            let before = bytes.clone();
+            assert!(matches!(
+                migrate(&mut bytes),
+                Err(MigrationError::TrailingBytes)
+            ));
+            assert_eq!(bytes, before);
+        });
     }
 
     #[test]
@@ -637,19 +1003,21 @@ mod tests {
         objects.insert(target);
         objects.insert(GameEntity::test_default(head, "CLEG", "Russians", 5, 7));
 
-        // The frame-60000 ALL06 save uses this layout. Its target holds +278
-        // and no independent +270. Decode the original entity-store wire.
-        let previous = previous_layout(DRIVER_POLICY).expect("pre-overlap save layout");
-        let bytes = save_codec::serialize_previous(&objects, &previous).unwrap();
-        let (restored, rest) = save_codec::deserialize_previous::<
-            crate::sim::entity_store::EntityStore,
-        >(&bytes, previous, &mut Vec::new())
-        .unwrap();
-        assert!(rest.is_empty());
-        let target = restored.get(1).unwrap();
-        assert_eq!(target.temporal.chain_head(), Some(head));
-        assert!(target.is_warped_out());
-        assert!(!restored.get(head).unwrap().is_warped_out());
+        // The frame-60000 ALL06 save and the Phobos merge writer both predate
+        // the independent +270 flag. Their targets hold +278 and no +270.
+        for source in [DRIVER_POLICY, PHOBOS_MERGE] {
+            let previous = previous_layout(source).expect("pre-overlap save layout");
+            let bytes = save_codec::serialize_previous(&objects, &previous).unwrap();
+            let (restored, rest) = save_codec::deserialize_previous::<
+                crate::sim::entity_store::EntityStore,
+            >(&bytes, previous, &mut Vec::new())
+            .unwrap();
+            assert!(rest.is_empty());
+            let target = restored.get(1).unwrap();
+            assert_eq!(target.temporal.chain_head(), Some(head));
+            assert!(target.is_warped_out());
+            assert!(!restored.get(head).unwrap().is_warped_out());
+        }
     }
 
     #[test]
@@ -658,27 +1026,23 @@ mod tests {
 
         let computer = HouseState::new(Default::default(), 0, None, false, 500, 10);
         let neutral = save_codec::serialize(&computer).unwrap();
-        let mut old =
-            save_codec::serialize_previous(&computer, &previous_layout(HELD_IMAGES).unwrap())
-                .unwrap();
+        // Isolate the retired controller replacement from the independent
+        // Phobos fields that every released layout also lacks.
+        let previous = || save_codec::PreviousLayout {
+            absent_fields: &[("HouseState", &["driver_policy"])],
+            absent_variant: None,
+        };
+        let mut old = save_codec::serialize_previous(&computer, &previous()).unwrap();
         let mut added = Vec::new();
-        save_codec::deserialize_previous::<HouseState>(
-            &old,
-            previous_layout(HELD_IMAGES).unwrap(),
-            &mut added,
-        )
-        .unwrap();
+        save_codec::deserialize_previous::<HouseState>(&old, previous(), &mut added).unwrap();
         let &[(policy_offset, 4)] = added.as_slice() else {
             panic!("the old house lacks only its four neutral policy bytes");
         };
         // The preceding byte was the external controller's ownership flag.
         old[policy_offset - 1] = 1;
-        let (before_policy, rest) = save_codec::deserialize_previous::<HouseState>(
-            &old,
-            previous_layout(HELD_IMAGES).unwrap(),
-            &mut Vec::new(),
-        )
-        .unwrap();
+        let (before_policy, rest) =
+            save_codec::deserialize_previous::<HouseState>(&old, previous(), &mut Vec::new())
+                .unwrap();
         assert!(rest.is_empty());
 
         // The #4576 writer added the Hard grant, drip, binary32 scale and floor.

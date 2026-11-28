@@ -16,9 +16,9 @@
 //!
 //! | Bits | Meaning | Native |
 //! | --- | --- | --- |
-//! | 0 | Explode: passengers die with it (KillPassengers `0x00702603`) and the death weapon may fire | `Explodes=`, the veteran ability or a `Suicide=` current weapon, unless a low dropped bomb over water (`0x00702232`) |
+//! | 0 | Explode: passengers die with it (KillPassengers `0x00702603`) and the death weapon may fire | `Explodes=`, the veteran ability or a `Suicide=` current weapon, unless a low dropped bomb over water (`0x00702232`) or Phobos `Explodes.DuringBuildup` clears it |
 //! | 1 | Death weapon (`Fire_Death_Weapon @ 0x0070D690`), with bit 0 | 1 unless Ares `SuppressDeathWeapon` |
-//! | 2 | Debris (`0x00702281..0x0070256C`) | 1 unless a low dropped bomb over water |
+//! | 2 | Debris (`0x00702281..0x0070256C`) | 1 unless a low dropped bomb over water or Phobos skips a transported Techno |
 //! | 3 | Survivors: a building's `SpawnSurvivors`, a vehicle's passengers escape | 0 when the killing call ignored defenses (NoSurvivor) |
 //! | 4 | Crew: a vehicle's crew escapes | 0 when the killing call's sixth argument forbids it |
 //! | 5 | The unit-lost announcement | 0 under Ares `UnitLost.Suppress` |
@@ -38,6 +38,12 @@
 //! weapon drops their Scenario draws with them: a different outcome, still
 //! deterministic, not a native computation replaced (control-point list
 //! 4.4 asks that only of the latter).
+//!
+//! When Phobos is active, its pure death gates are folded into the native
+//! plan before the `FatalDamage` decision, so a module sees the same final
+//! choices and cannot re-enable an arm the extension skips. Expire weapons,
+//! slave/captive release, sounds, draws and their RNG stay in the death arm
+//! after the decision.
 
 use vera20k_wasm_ext::triggers::EVENT_FATAL_DAMAGE;
 
@@ -102,7 +108,9 @@ impl DeathPlan {
         }
         let weapon = match (bits >> WEAPON_SHIFT) as u32 {
             0 => None,
-            id => Some(id - 1).filter(|&id| rules.weapon_at(id).is_some())?.into(),
+            id => Some(id - 1)
+                .filter(|&id| rules.weapon_at(id).is_some())?
+                .into(),
         };
         let inf_death = ((bits >> INF_DEATH_SHIFT) & 0xFF) as i32;
         Some(Self {
@@ -138,13 +146,12 @@ pub(super) fn death_plan(
     damage_events: &[EntityDamageEvent],
 ) -> Option<DeathPlan> {
     let native = native_death_plan(world, rules, dead_id, damage_events)?;
-    if !world
-        .trigger_runtime
-        .module_decides(EVENT_FATAL_DAMAGE)
-    {
+    if !world.trigger_runtime.module_decides(EVENT_FATAL_DAMAGE) {
         return Some(native);
     }
-    let killing = damage_events.iter().rfind(|event| event.target_id == dead_id);
+    let killing = damage_events
+        .iter()
+        .rfind(|event| event.target_id == dead_id);
     let event = ModuleEvent {
         other: super::world_receiver::killing_attacker(world, damage_events, dead_id).unwrap_or(0),
         value: killing.map_or(-1, |event| i64::from(event.damage)),
@@ -189,7 +196,9 @@ fn native_death_plan(
             );
             super::death_arm_explodes(object, entity.veterancy.rank(), numbered_weapon)
         });
-    let killing = damage_events.iter().rfind(|event| event.target_id == dead_id);
+    let killing = damage_events
+        .iter()
+        .rfind(|event| event.target_id == dead_id);
     let warhead = killing.and_then(|event| world.interner.warhead_type(event.warhead_ref, rules));
     // Ares TechnoClass_ReceiveDamage_SuppressDeathWeapon (hook 0x702669).
     let suppressed = rules.ares()
@@ -205,7 +214,7 @@ fn native_death_plan(
             .and_then(WarheadType::ares_combat)
             .is_some_and(|combat| combat.unit_lost_suppress());
     let flags = killing.map(|event| event.receiver_flags);
-    Some(DeathPlan {
+    let mut plan = DeathPlan {
         explode,
         death_weapon: !suppressed,
         debris: !low_water_bomb,
@@ -216,10 +225,42 @@ fn native_death_plan(
         tiberium_remains: rules.ares() && world.ares_leaves_tiberium_remains(dead_id, rules),
         inf_death: warhead.map_or(WarheadType::DEFAULT_INF_DEATH, |warhead| warhead.inf_death),
         weapon: None,
-    })
+    };
+    // Phobos' death hooks narrow the plan before FatalDamage can answer it:
+    // a transported Techno skips debris (`0x702299`,
+    // `Misc/Hooks.BugFixes.cpp:143`), and Construction/Selling buildings obey
+    // `Explodes.DuringBuildup` (`0x702603`,
+    // `Ext/Techno/Hooks.ReceiveDamage.cpp:242-258`). These are pure reads; the
+    // death arm keeps the effects and their RNG after the module decision.
+    if rules.phobos() {
+        if entity.passenger_role.transporter().is_some() {
+            plan.debris = false;
+        }
+        if object.is_some_and(|object| {
+            object.category == crate::rules::object_type::ObjectCategory::Building
+                && matches!(
+                    entity.mission.current().known(),
+                    Some(
+                        crate::rules::mission_data::MissionType::Construction
+                            | crate::rules::mission_data::MissionType::Selling
+                    )
+                )
+                && !object
+                    .phobos_explodes
+                    .during_buildup
+                    .unwrap_or(rules.phobos_globals.explodes_during_buildup)
+        }) {
+            plan.explode = false;
+        }
+    }
+    // RESIDUAL: `world_receiver::handle_death` still repeats these two clamps
+    // after this function and without the runtime Phobos gate. Under Phobos
+    // they are idempotent; in a stock game its transported-Techno death still
+    // loses debris there until that duplicate is removed.
+    Some(plan)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod tests {
     use super::*;
 

@@ -231,19 +231,19 @@ pub(super) fn hash_entity_owed(
         entity.seldom.building_entry.hash(hasher);
     }
     let latches = entity.house_tracking_latches();
-    #[cfg(feature = "phobos")]
-    {
+    // Phobos runtime state folds once, in this entity owner. Constructor-default
+    // values add no bytes, preserving the retail hash stream.
+    if entity.seldom.phobos_placement != Default::default() {
         b"phobos-techno-placement-v1".hash(hasher);
         entity.seldom.phobos_placement.hash(hasher);
-        if let Some(shield) = &entity.seldom.shield {
-            b"phobos-shield-v1".hash(hasher);
-            shield.hash(hasher);
-        }
-        entity
-            .seldom
-            .wh_anim_remaining_creation_interval
-            .hash_state(hasher);
     }
+    if let Some(shield) = &entity.seldom.shield {
+        b"phobos-shield-v1".hash(hasher);
+        shield.hash(hasher);
+    }
+    entity
+        .seldom.wh_anim_remaining_creation_interval
+        .hash_state(hasher);
     if entity.tracking_facts().naval_combatant() {
         // Retained across reload: later Remove_Tracking must use the same
         // Naval/Passengers admission as construction, even while in limbo.
@@ -463,7 +463,6 @@ pub(super) fn hash_entity_owed(
         entity.seldom.ares.ares_self_heal_combat.hash(hasher);
     }
     entity.hash_attach_effects(hasher);
-    #[cfg(feature = "phobos")]
     entity.hash_phobos_attach_effects(hasher);
     // Infantry gameplay reads its class-owned Doing/Stage fields.
     // A restored presentation component is not a second state owner.

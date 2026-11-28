@@ -50,7 +50,8 @@ pub(crate) fn destination(entity: &GameEntity) -> Option<crate::sim::components:
         LocomotorKind::Fly => loco.fly_runtime()?.destination(),
         LocomotorKind::Jumpjet => loco.jumpjet_runtime()?.destination(),
         LocomotorKind::Teleport => loco.teleport_runtime()?.armed_destination().unwrap_or(null),
-        //728A90: Destination while moving, else the linked Object+9C.
+        // Destination 0x728A90 answers the stored Coords while moving and the
+        // object's own position when Idle.
         LocomotorKind::Tunnel => loco
             .tunnel_runtime()?
             .destination_or(super::foot_coordinate::current_coordinate(entity)),
@@ -83,6 +84,8 @@ pub fn is_moving(entity: &GameEntity) -> Option<bool> {
         LocomotorKind::Rocket => locomotor
             .rocket_runtime()
             .map(super::rocket_movement::RocketRuntime::is_moving),
+        // Is_Moving 0x728A50: any state but Idle.
+        LocomotorKind::Tunnel => Some(locomotor.tunnel_runtime()?.is_moving()),
         LocomotorKind::Tunnel => locomotor
             .tunnel_runtime()
             .map(super::tunnel_movement::TunnelRuntime::is_moving),
@@ -149,6 +152,11 @@ pub fn is_moving_now(entity: &GameEntity, rules: super::SpeedRules<'_>, binary_f
         LocomotorKind::Rocket => locomotor
             .rocket_runtime()
             .is_some_and(super::rocket_movement::RocketRuntime::is_moving_now),
+        // Is_Moving_Now 0x728A60 answers `State == 1` (`PreDigIn`) only, so a
+        // tunnel does not report moving-now while sunk or travelling.
+        LocomotorKind::Tunnel => locomotor
+            .tunnel_runtime()
+            .is_some_and(super::tunnel_movement::TunnelRuntime::is_moving_now),
         _ => super::ready_producer::ready_state_for(entity, rules, binary_frame)
             .is_some_and(super::locomotor_ready::LocomotorReadyState::is_moving_now),
     }
@@ -156,8 +164,11 @@ pub fn is_moving_now(entity: &GameEntity, rules: super::SpeedRules<'_>, binary_f
 
 /// `Is_Really_Moving_Now` (ILocomotion+0xA8) of the active locomotor: Walk
 /// answers its class byte +0x36 (`0x0075CB20`); every other locomotor's slot
-/// is the base `0x004B4C50`, which asks [`is_moving_now`]. Its one native
-/// caller is the Infantry locomotion action tail (`0x00521161`).
+/// is the base `0x004B4C50`, which asks [`is_moving_now`]. Its native callers
+/// are the Infantry locomotion action tail (`0x00521161`) and the Phobos
+/// `UnitClass_UpdateFiring_FireUp` hook (`0x736F61`,
+/// `Ext/Unit/Hooks.Firing.cpp:23-31`), which drops a unit's `FireUp` firing
+/// sequence while the hull still moves.
 pub(crate) fn is_really_moving_now(
     entity: &GameEntity,
     rules: super::SpeedRules<'_>,

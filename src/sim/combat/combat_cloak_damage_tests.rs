@@ -193,7 +193,6 @@ fn a_hit_on_an_already_dead_cloaked_dolphin_never_reaches_the_uncloak() {
 /// Phobos `TechnoClass_ReceiveDamage_Decloak @ 0x00702819`: the warhead's
 /// `DecloakDamagedTargets` value replaces the retail unconditional
 /// `StartUncloaking(0)`.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_decloak_damaged_targets_no_keeps_a_surviving_cloaked_victim_hidden() {
     let rules = dolphin_rules();

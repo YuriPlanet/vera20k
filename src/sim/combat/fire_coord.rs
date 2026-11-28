@@ -83,6 +83,39 @@ pub(crate) fn effect_target_coordinate(
     }
 }
 
+/// Phobos `TechnoClass_DrawSth_DrawToInvisoFlakScatterLocation`
+/// (`Ext/Techno/Hooks.WeaponEffects.cpp:220-248`, hooks `0x6FD38D`
+/// CreateLaser, `0x6FD514` CreateEBolt and `0x6FD70D` CreateRBeam): a
+/// `VisualScatter=` weapon's *drawn* effect ends at a random point near the
+/// bullet's firing coordinate while the shot keeps its real target. The
+/// radius is one `RandomRanged([AudioVisual] VisualScatter.Min, .Max)`; the
+/// point is `MapClass::GetRandomCoordsNear(firingCoords, radius, false)`.
+/// Both draws come from the Scenario RNG, so the jitter stays synchronized
+/// across peers. The hooks only fire while `FireAtTemp::FireBullet` is set,
+/// i.e. inside `FireAt`, never for a shrapnel or split-child draw.
+///
+/// RESIDUAL: none on the point — `GetRandomCoordsNear` (`0x0049F420`) is the
+/// [`crate::sim::combat::inviso_scatter::random_direction_coord`] owner, reached
+/// through [`crate::sim::projectile::launch::random_coords_near`], so this draw
+/// and every other Phobos caller share one angle formula.
+pub(crate) fn visual_scatter_target(
+    world: &mut Simulation,
+    rules: &RuleSet,
+    target: ProjectileTarget,
+) -> Option<ProjectileCoord> {
+    let point = effect_target_coordinate(world, rules, target)?;
+    let radius = world.scenario_rng.next_range_i32_inclusive(
+        rules.phobos_globals.visual_scatter_min,
+        rules.phobos_globals.visual_scatter_max,
+    );
+    Some(crate::sim::projectile::launch::random_coords_near(
+        world.cell_grid(),
+        point,
+        radius,
+        &mut world.scenario_rng,
+    ))
+}
+
 /// Native policies sharing the effect source/anchor projection. RadBeam's
 /// raw-Y test and unclamped delta6FD696 differ from laser/bolt6FD210/6FD460.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -100,6 +133,7 @@ pub(crate) fn effect_z_adjust(
     source: &GameEntity,
     from: ProjectileCoord,
     projection: EffectDepthProjection,
+    clamp_positive: bool,
 ) -> i32 {
     if projection == EffectDepthProjection::ClampedBuilding
         && source.category() != EntityCategory::Structure
@@ -119,7 +153,15 @@ pub(crate) fn effect_z_adjust(
     let project_y = |x, y, z| crate::util::lepton::absolute_leptons_to_screen(x, y, z).1 as i32;
     let delta = project_y(from.x, from.y, from.z).wrapping_sub(project_y(base.x, base.y, base.z));
     match projection {
-        EffectDepthProjection::ClampedBuilding => delta.min(0),
+        // Stock `0x6FD4E4..0x6FD4ED` clamps a positive delta; Phobos'
+        // `EBoltZAdjust.ClampInitialDepthForBuilding=no` keeps it.
+        EffectDepthProjection::ClampedBuilding => {
+            if clamp_positive {
+                delta.min(0)
+            } else {
+                delta
+            }
+        }
         EffectDepthProjection::ChangedY => delta,
     }
 }
@@ -146,6 +188,15 @@ pub(crate) struct FireSource {
     /// TarCom (`+0x2B4`) as the shot reads it; a building's fire facings aim
     /// at it.
     pub tar_com: Option<TargetKind>,
+    /// `DelayedFire.AnimOffset` (`Ext/Techno/Body.cpp:727-733`): when set, the
+    /// FLH handed to `GetFLHAbsoluteCoords`, replacing the selected weapon
+    /// FLH instead of adding to it. Only the wind-up anim sets this; every
+    /// shot passes `None`.
+    pub flh_override: Option<Flh>,
+    /// `GetFLHAbsoluteCoords`'s `isOnTurret` (`Ext/Techno/Body.cpp:680`,
+    /// `Ext/Techno/Body.Internal.cpp:68-76`). Stock callers keep the regular
+    /// arm's `true`; the wind-up anim passes `DelayedFire.AnimOnTurret`.
+    pub on_turret: bool,
 }
 
 impl FireSource {
@@ -166,6 +217,8 @@ impl FireSource {
             veterancy: entity.veterancy.rank(),
             garrison_fire_index: None,
             tar_com: entity.attack_target.target(),
+            flh_override: None,
+            on_turret: true,
         }
     }
 }
@@ -188,6 +241,8 @@ impl From<&AttackerSnapshot> for FireSource {
             // A building's FireAt runs inside the visit whose TarCom its shot
             // carries (`world_fire::fireat_tarcom`).
             tar_com: snap.building_shot.map(|shot| shot.target()),
+            flh_override: None,
+            on_turret: true,
         }
     }
 }
@@ -265,7 +320,7 @@ pub fn turret_pivot_coordinate(
     } else {
         (0, 0)
     };
-    let offset = base.art.map_or(0, |art| art.turret_offset);
+    let offset = base.art.map_or(0, |art| art.turret_offset[0]);
     let delta = if entity.locomotor.is_some() {
         // Authored TurretOffset is not clamped by the ART reader; ftol keeps
         // the low dword of an out-of-range coordinate, as native does.
@@ -273,7 +328,7 @@ pub fn turret_pivot_coordinate(
             0,
             0,
             0,
-            offset,
+            [offset, 0, 0],
             base.facings,
             0,
             base.locomotor_basis,
@@ -293,7 +348,9 @@ pub fn turret_pivot_coordinate(
 /// Non-buildings: `TechnoClass::GetFLH @ 0x006F3AD0`, the type's `FLH` rotated
 /// by the aim facing about the turret offset. Its base argument
 /// (`base_coords`) adds to the FLH's forward, lateral and height before the
-/// burst mirror and the rotation (`0x006F3B37..0x006F3B58`). Fire_At
+/// burst mirror and the rotation (`0x006F3B37..0x006F3B58`). Under `phobos` the
+/// hook reverses those two: the selected FLH is mirrored first
+/// (`Hooks.Firing.cpp:1058`), then the base is added (`:1083`). Fire_At
 /// (`0x006FE24B..0x006FE260`), the aircraft approach and the Prism support
 /// pass zero; the spawn launch passes `SecondSpawnOffset=`. The Building
 /// (`0x00453840`) and Infantry (`0x00523250`) overrides call it with zero
@@ -358,6 +415,11 @@ pub fn turret_pivot_coordinate(
 /// (`0x006F3C1A`): identity, world-X TurretOffset, then one turn by vt+0x2A8
 /// ([`building_fire_facings`]) less a quarter. The authored body heading does
 /// not supply a second matrix rotation.
+///
+/// `burst_index` is the signed `CurrentBurstIndex` narrowed to its byte. It
+/// selects a Phobos burst ART offset when one is authored; otherwise only its
+/// low bit reaches GetFLH, which mirrors the lateral FLH on odd shots. A
+/// selected burst offset is absolute and keeps its lateral component.
 pub(crate) fn fire_coordinate(
     world: &Simulation,
     rules: &RuleSet,
@@ -367,7 +429,14 @@ pub(crate) fn fire_coordinate(
     burst_index: u8,
     base_coords: Flh,
 ) -> FireCoordinate {
-    if snap.category == EntityCategory::Infantry
+    // Phobos's UnitClass GetFLH override (`Ext/Techno/Hooks.Firing.cpp:1004-1028`,
+    // vtable `0x7F5D20`) lets a Unit passenger fire from its open-topped
+    // carrier's AlternateFLH when the carrier type's
+    // `AlternateFLH.ApplyVehicle` (else `[General]`, default no) is on. An
+    // Infantry rider keeps the stock unconditional port
+    // (`InfantryClass::GetFLH @ 0x00523250`).
+    let unit_port = snap.category == EntityCategory::Unit;
+    if (snap.category == EntityCategory::Infantry || unit_port)
         && let Some(fire) = open_topped_port_coordinate(world, rules, snap)
     {
         return fire;
@@ -385,9 +454,37 @@ pub(crate) fn fire_coordinate(
     let aim_facing16 = base.fire_facing;
     let art = base.art;
 
+    // Phobos `TechnoClass::GetFLH @ 0x006F3AEB`: a burst-index-specific ART
+    // offset replaces the slot's FLH, then an infantry deployed/prone override,
+    // and only the burst offset is absolute — the hook mirrors whatever it
+    // selected when `GetBurstFLH` found nothing (`Hooks.Firing.cpp:1050-1059`),
+    // which covers the state override as well as the GetWeapon record.
+    let (deployed, crawling) = world
+        .substrate
+        .entities
+        .get(snap.stable_id)
+        .map(infantry_flh_states)
+        .unwrap_or((false, false));
+    let burst_flh = obj.burst_flh(
+        weapon_index,
+        snap.veterancy >= super::veterancy::RANK_ELITE_U16,
+        if deployed {
+            crate::rules::weapon_offsets::InfantryFlhState::Deployed
+        } else if crawling {
+            crate::rules::weapon_offsets::InfantryFlhState::Crouched
+        } else {
+            crate::rules::weapon_offsets::InfantryFlhState::Ordinary
+        },
+        burst_index,
+    );
+    let simple_flh = obj.infantry_state_flh(weapon_index, deployed, crawling);
     // GetFLH6F3B28 reads virtual GetWeapon's complete record, including an
     // installed upgrade's normal FLH (Building4526F0), at this query point.
-    let flh = if weapon_index < 0 {
+    let selected_flh = if let Some(burst) = burst_flh {
+        burst
+    } else if let Some(simple) = simple_flh {
+        simple
+    } else if weapon_index < 0 {
         obj.alternate_fire_flh((-i64::from(weapon_index) - 1) as usize)
     } else {
         let record = if let Some(entity) = world.substrate.entities.get(snap.stable_id) {
@@ -404,16 +501,70 @@ pub(crate) fn fire_coordinate(
         };
         record.map_or_else(Flh::default, |record| record.flh)
     };
+    // `DelayedFire.AnimOffset` is assigned to `firingCoords`, replacing
+    // `GetWeapon(weaponIndex)->FLH` before `GetFLHAbsoluteCoords`
+    // (`Ext/Techno/Body.cpp:727-733`). The override takes the same matrix and
+    // world-Y mirror as any FLH and does not pass through the Phobos GetFLH
+    // hook's lateral negation.
+    let flh = snap.flh_override.unwrap_or(selected_flh);
+    // Phobos's hook negates the lateral of the FLH it selected
+    // (`Hooks.Firing.cpp:1058`) and only then adds the base argument (`:1083`),
+    // so the base is never mirrored, and its alternate arm (`weaponIndex < 0`,
+    // `:1062-1071`) takes no mirror at all. The unhooked body VERA ports
+    // otherwise adds the base first and mirrors the combined triple
+    // (`0x006F3B37..0x006F3B58`, `0x006F3C82`).
+    let (mirrored_lateral, burst_parity) = (
+        if snap.flh_override.is_some() || burst_flh.is_some() || weapon_index < 0 {
+            flh.lateral
+        } else {
+            crate::util::flh_transform::flh_lateral_for_burst(flh.lateral, burst_index)
+        },
+        0,
+    );
     let flh = Flh {
         forward: flh.forward.wrapping_add(base_coords.forward),
-        lateral: flh.lateral.wrapping_add(base_coords.lateral),
+        lateral: mirrored_lateral.wrapping_add(base_coords.lateral),
         height: flh.height.wrapping_add(base_coords.height),
     };
+    // Phobos `allowOnTurret` (`Ext/Techno/Hooks.Firing.cpp:1069-1070`) is read
+    // from the firing type's ART `AlternateFLH.OnTurret`, else `[General]`
+    // (default yes), and only the alternate arm (`weaponIndex < 0`) changes
+    // it. `GetFLHAbsoluteCoords` then applies the turret matrix only when
+    // `isOnTurret && (pType->Turret || !isFoot)` (`Ext/Techno/Body.Internal.cpp:54`);
+    // otherwise the FLH stays hull-relative: no `TurretOffset` and the body
+    // facing instead of the turret aim. The regular arm keeps
+    // `isOnTurret = true` and still needs the type's `Turret`.
+    let allow_on_turret = if weapon_index < 0 {
+        obj.alternate_flh_on_turret()
+            .unwrap_or(rules.phobos_globals.alternate_flh_on_turret)
+    } else {
+        snap.on_turret
+    };
+    let hull_space =
+        !(allow_on_turret && (snap.category == EntityCategory::Structure || obj.has_turret));
+    let (turret_offset, flh_facings) = if hull_space {
+        (
+            [0, 0, 0],
+            crate::util::flh_transform::FlhFacings {
+                aim: base.facings.body,
+                ..base.facings
+            },
+        )
+    } else {
+        // Phobos `TechnoClass_GetFLH` (`Ext/Techno/Hooks.Firing.cpp:1076-1084`)
+        // hands `GetFLHAbsoluteCoords` an extra-turret index when the firing
+        // Unit's `BurstPerTurret=` is positive, and
+        // `UnitTypeExt::ApplyTurretOffsetUnit` (`Ext/UnitType/Body.cpp:5-14`)
+        // translates the matrix by `ExtraTurretOffset<n>=` instead of the
+        // stock art `TurretOffset=`.
+        let offset = phobos_turret_pivot_offset(world, snap, obj, burst_index, art);
+        (offset, base.facings)
+    };
     let flh_delta = flh_world_delta(
-        art.map_or(0, |art| art.turret_offset),
+        turret_offset,
         flh,
-        base.facings,
-        burst_index,
+        flh_facings,
+        burst_parity,
         base.locomotor_basis,
     )
     .unwrap_or((0, 0, 0));
@@ -485,6 +636,136 @@ pub(crate) fn fire_coordinate(
         aim_facing16,
         offset_y: flh_delta.1.wrapping_add(voxel_y),
     }
+}
+
+/// Phobos `TechnoClass_GetFLH` (`Ext/Techno/Hooks.Firing.cpp:1076-1084`):
+/// a Unit whose `BurstPerTurret=` is positive picks the turret pivot from the
+/// live `CurrentBurstIndex`:
+///
+/// ```text
+/// turretIndex = ((CurrentBurstIndex / BurstPerTurret) % (BurstPerTurret + 1)) - 1
+/// ```
+///
+/// `TechnoExt::GetFLHAbsoluteCoords` passes that index to
+/// `UnitTypeExt::ApplyTurretOffsetUnit` (`Ext/UnitType/Body.cpp:5-14`), which
+/// translates the matrix by `ExtraTurretOffset<n>=` when the index is
+/// non-negative and by the stock art `TurretOffset=` otherwise. Non-Units and
+/// a zero `BurstPerTurret=` keep the stock pivot; the type's reader only
+/// reads `BurstPerTurret=` when `ExtraTurretCount=` is positive.
+///
+/// Native indexes `ExtraTurretOffsets` unchecked, so a `BurstPerTurret=`
+/// larger than `ExtraTurretCount=` reads adjacent heap memory once the
+/// quotient passes the vector. VERA keeps the stock pivot for that index
+/// rather than inventing an offset.
+fn phobos_turret_pivot_offset(
+    world: &Simulation,
+    snap: &FireSource,
+    obj: &ObjectType,
+    burst_index: u8,
+    art: Option<&ArtEntry>,
+) -> [i32; 3] {
+    let stock = [art.map_or(0, |art| art.turret_offset[0]), 0, 0];
+    if snap.category != EntityCategory::Unit {
+        return stock;
+    }
+    let set = &obj.phobos_turret_barrel;
+    if set.burst_per_turret <= 0 {
+        return stock;
+    }
+    // The native divisor reads the full signed `CurrentBurstIndex`; callers
+    // pass it narrowed to its byte, and Phobos `UpdateAsFiringAnim` passes
+    // the burst it recorded instead of the live one.
+    let burst = i32::from(burst_index);
+    let divisor = set.burst_per_turret;
+    let index = ((burst / divisor) % divisor.wrapping_add(1)) - 1;
+    usize::try_from(index)
+        .ok()
+        .and_then(|index| set.extra_turret_offsets.get(index))
+        .copied()
+        .unwrap_or(stock)
+}
+
+/// Phobos `TechnoExt::GetFLHAbsoluteCoords` (`Ext/Techno/Body.Internal.cpp:80`,
+/// "reversed from `0x006F3D60`"): the world coordinate of an arbitrary FLH.
+/// Unlike [`fire_coordinate`] there is no weapon slot, burst mirror or
+/// building pixel-port arm: the FLH is rotated by the body matrix, plus — when
+/// `on_turret` — the `TurretOffset` and the turret's rotation relative to the
+/// body (a building's turret angle is its own heading, absolute, so the
+/// no-locomotor quarter-turn term is cancelled by adding it). Used by
+/// `Spawner.RecycleCoord`'s dock point and destination offset.
+///
+/// RESIDUAL: the building arm assumes the native turret pivot is the type's
+/// `TurretOffset` and its angle the object's PrimaryFacing; a building whose
+/// ART declares a voxel-barrel pivot chain is not re-projected here.
+pub(crate) fn custom_flh_coordinate(
+    world: &Simulation,
+    rules: &RuleSet,
+    snap: &FireSource,
+    obj: &ObjectType,
+    flh: Flh,
+    on_turret: bool,
+) -> Option<crate::sim::components::DriveCoord> {
+    let base = fire_coordinate_base(world, rules, snap, obj);
+    let structure = snap.category == EntityCategory::Structure;
+    // `isOnTurret && (pType->Turret || !isFoot)`: a building always takes the
+    // arm (its turret angle is its own heading); a foot only with a real
+    // turret type, not merely because aircraft construction gives every
+    // aircraft a SecondaryFacing.
+    let has_turret = world
+        .substrate
+        .entities
+        .get(snap.stable_id)
+        .is_some_and(|entity| {
+            entity
+                .building_upgrades()
+                .has_turret(obj, rules, &world.interner)
+        });
+    let turret_arm = on_turret && (structure || has_turret);
+    let turret_offset = if turret_arm {
+        base.art.map_or(0, |art| art.turret_offset[0])
+    } else {
+        0
+    };
+    // `native_flh_world_delta`'s no-locomotor arm subtracts the quarter turn
+    // (`aim_step - 8`); a building never passes through the relative form, so
+    // adding that quarter back makes its rotation the absolute heading.
+    let aim = if structure {
+        base.facings.body.wrapping_add(0x4000)
+    } else if turret_arm {
+        base.fire_facing
+    } else {
+        base.facings.body
+    };
+    let (dx, dy, dz) = crate::util::flh_transform::native_flh_world_delta(
+        flh.forward,
+        flh.lateral,
+        flh.height,
+        [turret_offset, 0, 0],
+        crate::util::flh_transform::FlhFacings {
+            aim,
+            body: base.facings.body,
+            matrix: base.facings.matrix,
+        },
+        0,
+        base.locomotor_basis,
+    )?;
+    Some(crate::sim::components::DriveCoord {
+        x: base.x.wrapping_add(dx),
+        y: base.y.wrapping_add(dy),
+        z: base.z.wrapping_add(dz),
+    })
+}
+
+/// Phobos `InfantryClass` states the firing offset reads: `IsDeployed` wins
+/// over `Crawling`, and neither applies to another TechnoType.
+pub(crate) fn infantry_flh_states(source: &crate::sim::game_entity::GameEntity) -> (bool, bool) {
+    if source.category() != EntityCategory::Infantry {
+        return (false, false);
+    }
+    (
+        source.is_fully_deployed(),
+        source.infantry.as_ref().is_some_and(|run| run.is_prone()),
+    )
 }
 
 /// What every GetFLH arm starts from: the object coordinate (`vtable+0xAC`),
@@ -839,9 +1120,9 @@ fn coords_xy(
 }
 
 /// `TechnoClass::GetFLH @ 0x006F3AD0`'s transform of one FLH triple about
-/// the object's turret offset.
+/// the object's turret pivot.
 fn flh_world_delta(
-    turret_offset: i32,
+    turret_offset: [i32; 3],
     flh: crate::rules::flh::Flh,
     facings: crate::util::flh_transform::FlhFacings,
     burst_index: u8,
@@ -865,9 +1146,17 @@ fn flh_world_delta(
 /// transport's GetFLH (vtable `+0xB0`, `TechnoClass::GetFLH` for a Unit) for
 /// weapon `-k` with a zero offset: `AlternateFLH[k-1]` of the transport's
 /// type for `k <= 5`, else a zero FLH (`0x006F3AF5..0x006F3B21`), through
-/// the transport's matrix, facings and burst parity (`+0x3B8`) from the
-/// transport's coordinate. The shot keeps the rider's aim facing for its
-/// muzzle animation (`Fire_At` picks it from the firer).
+/// the transport's matrix and facings and, in the unhooked body, its burst
+/// parity (`+0x3B8`), from the transport's coordinate. The shot keeps the
+/// rider's aim facing for its muzzle animation (`Fire_At` picks it from the
+/// firer).
+///
+/// Phobos also installs the UnitClass GetFLH override
+/// (`Ext/Techno/Hooks.Firing.cpp:1004-1028`, vtable `0x7F5D20`): a Unit
+/// passenger takes the same carrier port only while the carrier type's ART
+/// `AlternateFLH.ApplyVehicle` (else `[General]`, default no) is on. The
+/// carrier's ART `AlternateFLH.OnTurret` (else `[General]`, default yes)
+/// decides whether the port is transformed in turret space or hull space.
 fn open_topped_port_coordinate(
     world: &Simulation,
     rules: &RuleSet,
@@ -884,15 +1173,48 @@ fn open_topped_port_coordinate(
         .iter()
         .position(|&id| id == snap.stable_id)?;
     let transport_obj = world.interner.object_type(transport.type_ref(), rules)?;
+    // `_GetFLH` tests the carrier's extension, not the passenger's
+    // (`Ext/Techno/Hooks.Firing.cpp:1012`).
+    if rider.category() == EntityCategory::Unit
+        && !transport_obj
+            .alternate_flh_apply_vehicle()
+            .unwrap_or(rules.phobos_globals.alternate_flh_apply_vehicle)
+    {
+        return None;
+    }
     let source = FireSource::of_entity(transport);
     let base = fire_coordinate_base(world, rules, &source, transport_obj);
     let flh = transport_obj.alternate_fire_flh(port);
-    let burst_index = (transport.seldom.weapon_burst.index() & 1) as u8;
+    // Phobos's consolidated hook takes `AlternateFLHs[index]` and skips the
+    // burst parity entirely (`Hooks.Firing.cpp:1062-1071`), so a port offset
+    // keeps its lateral on every shot; the unhooked body mirrors it.
+    let burst_parity = 0;
+    // `allowOnTurret` (`Hooks.Firing.cpp:1069-1070`) with false keeps the port
+    // hull-relative: no `TurretOffset` and the body facing, not the turret aim.
+    // The consolidated transform also needs the carrier type's `Turret`
+    // (`Ext/Techno/Body.Internal.cpp:54`).
+    let turret_space = transport_obj
+        .alternate_flh_on_turret()
+        .unwrap_or(rules.phobos_globals.alternate_flh_on_turret)
+        && (source.category == EntityCategory::Structure || transport_obj.has_turret);
+    let (turret_offset, facings) = if turret_space {
+        (base.art.map_or(0, |art| art.turret_offset[0]), base.facings)
+    } else {
+        (
+            0,
+            crate::util::flh_transform::FlhFacings {
+                aim: base.facings.body,
+                ..base.facings
+            },
+        )
+    };
     let delta = flh_world_delta(
-        base.art.map_or(0, |art| art.turret_offset),
+        // The alternate-FLH path keeps the stock scalar `TurretOffset=`,
+        // which is the matrix pivot's X component.
+        [turret_offset, 0, 0],
         flh,
-        base.facings,
-        burst_index,
+        facings,
+        burst_parity,
         base.locomotor_basis,
     )
     .unwrap_or((0, 0, 0));
@@ -1072,15 +1394,19 @@ mod tests {
     fn rules() -> RuleSet {
         let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
             &IniFile::from_str(
-                "[InfantryTypes]\n0=E1\n1=INIT\n[VehicleTypes]\n[AircraftTypes]\n\
+                "[InfantryTypes]\n0=E1\n1=INIT\n[VehicleTypes]\n0=ALT\n1=ALT2\n2=TUR\n[AircraftTypes]\n\
              [BuildingTypes]\n0=BUNK\n1=TOWER\n\
              [Animations]\n0=F0\n1=F1\n2=F2\n3=F3\n4=F4\n5=F5\n6=F6\n7=F7\n8=GUNFIRE\n9=SPARE\n\
              [E1]\nStrength=125\nImage=GI\nPrimary=M60\nSecondary=ONE\n\
              [INIT]\nStrength=125\nPrimary=JAB\n\
+             [ALT]\nStrength=200\nPrimary=CANNON\n\
+             [ALT2]\nStrength=200\nPrimary=CANNON\n\
+             [TUR]\nStrength=200\nPrimary=CANNON\nTurret=yes\n\
              [BUNK]\nStrength=500\nCanBeOccupied=yes\n\
              [TOWER]\nStrength=500\nPrimary=M60\nSecondary=BARE\n\
              [M60]\nDamage=25\nROF=20\nRange=5\nWarhead=SA\nOccupantAnim=UCFLASH\n\
              Anim=F0,F1,F2,F3,F4,F5,F6,F7\n\
+             [CANNON]\nDamage=10\nROF=20\nRange=5\nWarhead=SA\n\
              [ONE]\nDamage=25\nROF=20\nRange=5\nWarhead=SA\nAnim=GUNFIRE,SPARE\n\
              [BARE]\nDamage=25\nROF=20\nRange=5\nWarhead=SA\n\
              [JAB]\nDamage=25\nROF=20\nRange=5\nWarhead=SA\nOpenToppedAnim=GUNFIRE\n\
@@ -1088,6 +1414,7 @@ mod tests {
             ),
             &IniFile::from_str(
                 "[GI]\nPrimaryFireFLH=0,0,105\nSecondaryFireFLH=0,0,90\n\
+             [ALT]\nPrimaryFireFLH=100,20,30\n\
              [BUNK]\nMuzzleFlash0=30,15\nMuzzleFlash1=-30,15\n\
              [TOWER]\nPrimaryFirePixelOffset=30,15\nPrimaryFireDualOffset=yes\n",
             ),
@@ -1095,6 +1422,9 @@ mod tests {
         .unwrap();
         rules.replace_art_registry_for_test(ArtRegistry::from_ini(&IniFile::from_str(
             "[GI]\nPrimaryFireFLH=0,0,105\nSecondaryFireFLH=0,0,90\n\
+             [ALT]\nPrimaryFireFLH=100,20,30\n\
+             [ALT2]\nPrimaryFireFLH=200,80,40\n\
+             [TUR]\nPrimaryFireFLH=100,20,30\nTurretOffset=20\n\
              [BUNK]\nMuzzleFlash0=30,15\nMuzzleFlash1=-30,15\n\
              [TOWER]\nPrimaryFirePixelOffset=30,15\nPrimaryFireDualOffset=yes\n",
         )));
@@ -1116,6 +1446,8 @@ mod tests {
             veterancy: 0,
             garrison_fire_index: None,
             tar_com: None,
+            flh_override: None,
+            on_turret: true,
         }
     }
 
@@ -1303,30 +1635,305 @@ mod tests {
             rules.art().get("BSUB").unwrap().second_spawn_offset,
             Flh::from(triple(&native["types"]["BSUB"]["second_spawn_offset"]))
         );
-        let [x, y, z] = triple(&native["supplied"]["origin"]);
-        let heading = native["supplied"]["primary_and_secondary_heading"]
-            .as_u64()
-            .unwrap() as u16;
-        let mut shooter = source(EntityCategory::Unit);
-        (shooter.rx, shooter.ry) = ((x / 256) as u16, (y / 256) as u16);
-        (shooter.sub_x, shooter.sub_y) = (SimFixed::from_num(x % 256), SimFixed::from_num(y % 256));
-        shooter.exact_z_leptons = Some(z);
-        shooter.hull_facing = crate::sim::movement::FacingClass::new(heading, 0);
+        let shooter = supplied_get_flh_shooter(&native["supplied"]);
         let world = Simulation::new();
         for row in native["get_flh"].as_array().unwrap() {
             let obj = rules.object(row["owner"].as_str().unwrap()).unwrap();
+            let burst_index = int(&row["burst_index"]) as u8;
+            let base = Flh::from(triple(&row["base"]));
+            if burst_index % 2 == 1 && base.lateral != 0 {
+                // Phobos's hook mirrors the FLH it selected and adds the base
+                // afterwards (`Hooks.Firing.cpp:1058` then `:1083`), so this
+                // unhooked row is not its expectation.
+                // `phobos_get_flh_adds_the_base_after_the_mirror` pins the
+                // hooked order on the synthetic `[ALT]` fixture, which is the
+                // only place this ordering has an executable check.
+                continue;
+            }
             let shot = fire_coordinate(
                 &world,
                 &rules,
                 &shooter,
                 obj,
                 int(&row["weapon_index"]),
-                int(&row["burst_index"]) as u8,
-                Flh::from(triple(&row["base"])),
+                burst_index,
+                base,
             );
             let [x, y, z] = triple(&row["coordinate"]);
             assert_eq!(shot.coord, ProjectileCoord::new(x, y, z), "{row}");
         }
+    }
+
+    /// The firer the capture supplied: the BSUB origin and hull heading it used.
+    fn supplied_get_flh_shooter(supplied: &serde_json::Value) -> FireSource {
+        let int = |value: &serde_json::Value| value.as_i64().unwrap() as i32;
+        let [x, y, z] = [
+            int(&supplied["origin"][0]),
+            int(&supplied["origin"][1]),
+            int(&supplied["origin"][2]),
+        ];
+        let mut shooter = source(EntityCategory::Unit);
+        (shooter.rx, shooter.ry) = ((x / 256) as u16, (y / 256) as u16);
+        (shooter.sub_x, shooter.sub_y) = (SimFixed::from_num(x % 256), SimFixed::from_num(y % 256));
+        shooter.exact_z_leptons = Some(z);
+        shooter.hull_facing = crate::sim::movement::FacingClass::new(
+            supplied["primary_and_secondary_heading"].as_u64().unwrap() as u16,
+            0,
+        );
+        shooter
+    }
+
+    /// Phobos's `TechnoClass::GetFLH @ 0x006F3AEB` negates the selected FLH's
+    /// lateral (`src/Ext/Techno/Hooks.Firing.cpp:1058`) and adds the base
+    /// argument after it (`:1083`), so an odd shot with a base of twice the
+    /// lateral lands on exactly the same triple as an even shot with no base.
+    /// The unhooked body mirrors `FLH + base`, where those two never meet.
+    #[test]
+    fn phobos_get_flh_adds_the_base_after_the_mirror() {
+        let rules = rules();
+        let world = Simulation::new();
+        let shooter = source(EntityCategory::Unit);
+        let obj = rules.object("ALT").unwrap();
+        let shot = |burst_index: u8, base: Flh| {
+            fire_coordinate(&world, &rules, &shooter, obj, 0, burst_index, base).coord
+        };
+        assert_ne!(
+            shot(0, Flh::default()),
+            shot(1, Flh::default()),
+            "the fixture's 20-lepton lateral FLH has to alternate"
+        );
+        assert_eq!(
+            shot(1, Flh::from([0, 40, 0])),
+            shot(0, Flh::default()),
+            "-20 + 40 and +20 + 0 are the same triple before the rotation"
+        );
+    }
+
+    /// The hook's alternate arm (`weaponIndex < 0`, `Hooks.Firing.cpp:1062-1071`)
+    /// reads `AlternateFLHs[index]` outside the `!found` block, so it takes no
+    /// burst parity at all and a port offset keeps its lateral on every shot.
+    /// The unhooked body mirrors it, which is what `open_topped_port_coordinate`
+    /// keeps for a non-phobos build.
+    #[test]
+    fn phobos_alternate_flh_takes_no_burst_mirror() {
+        let rules = rules();
+        let world = Simulation::new();
+        let shooter = source(EntityCategory::Unit);
+        let obj = rules.object("ALT").unwrap();
+        let shot = |index: i32, burst_index: u8| {
+            fire_coordinate(
+                &world,
+                &rules,
+                &shooter,
+                obj,
+                index,
+                burst_index,
+                Flh::default(),
+            )
+            .coord
+        };
+        assert_ne!(
+            shot(0, 0),
+            shot(0, 1),
+            "the record arm still alternates, so the fixture has a lateral to mirror"
+        );
+        assert_eq!(
+            shot(-1, 0),
+            shot(-1, 1),
+            "the alternate arm takes no parity shift"
+        );
+    }
+
+    /// Rules and ART for the two `AlternateFLH.*` gates. `global_on_turret`
+    /// supplies `[General] AlternateFLH.OnTurret`; `None` keeps the default
+    /// yes. `SHIP_*` are Unit types with and without `Turret=`, whose alternate
+    /// FLH and `TurretOffset` differ between hull and turret space; `CARRY_*`
+    /// are open-topped transports; `RIDE` is a Unit passenger with its own ART
+    /// `AlternateFLH.ApplyVehicle=yes`, which must be ignored.
+    fn alternate_flh_rules(global_on_turret: Option<bool>) -> RuleSet {
+        let general = global_on_turret
+            .map(|on| {
+                format!(
+                    "[General]\nAlternateFLH.OnTurret={}\n",
+                    if on { "yes" } else { "no" }
+                )
+            })
+            .unwrap_or_default();
+        let ini = IniFile::from_str(&format!(
+            "{general}[InfantryTypes]\n0=GI\n\
+             [VehicleTypes]\n0=SHIP_OFF\n1=SHIP_YES\n2=RIDE\n3=CARRY_YES\n4=CARRY_NO\n5=CARRY_DEF\n\
+             6=SHIP_NOTURRET\n\
+             [AircraftTypes]\n[BuildingTypes]\n\
+             [GI]\nStrength=100\nArmor=none\n\
+             [SHIP_OFF]\nStrength=300\nTurret=yes\nPrimary=CANNON\n\
+             [SHIP_YES]\nStrength=300\nTurret=yes\nPrimary=CANNON\n\
+             [SHIP_NOTURRET]\nStrength=300\nTurret=no\nPrimary=CANNON\n\
+             [RIDE]\nStrength=100\nArmor=none\nPrimary=CANNON\n\
+             [CARRY_YES]\nStrength=500\nArmor=none\nTurret=yes\nOpenTopped=yes\nPassengers=1\n\
+             [CARRY_NO]\nStrength=500\nArmor=none\nTurret=yes\nOpenTopped=yes\nPassengers=1\n\
+             [CARRY_DEF]\nStrength=500\nArmor=none\nTurret=yes\nOpenTopped=yes\nPassengers=1\n\
+             [CANNON]\nDamage=10\nROF=20\nRange=5\nWarhead=SA\n\
+             [SA]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n"
+        ));
+        let art = IniFile::from_str(
+            "[SHIP_OFF]\nAlternateFLH0=100,0,0\nTurretOffset=50\n\
+             [SHIP_YES]\nAlternateFLH0=100,0,0\nTurretOffset=50\nAlternateFLH.OnTurret=yes\n\
+             [SHIP_NOTURRET]\nAlternateFLH0=100,0,0\nTurretOffset=50\nAlternateFLH.OnTurret=yes\n\
+             [RIDE]\nPrimaryFireFLH=0,0,7\nAlternateFLH.ApplyVehicle=yes\n\
+             [CARRY_YES]\nAlternateFLH0=100,0,0\nTurretOffset=50\nAlternateFLH.ApplyVehicle=yes\n\
+             [CARRY_NO]\nAlternateFLH0=100,0,0\nTurretOffset=50\nAlternateFLH.ApplyVehicle=no\n\
+             [CARRY_DEF]\nAlternateFLH0=100,0,0\nTurretOffset=50\n",
+        );
+        let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
+        rules.replace_art_registry_for_test(ArtRegistry::from_ini(&art));
+        rules
+    }
+
+    /// A carrier at (10,10) with one rider at the same cell, so the port
+    /// coordinate (carrier base) and the rider's own FLH (same base, +7 Z)
+    /// differ without moving either object.
+    fn carried_world(
+        carrier_type: &str,
+        rider_type: &str,
+        rider_category: EntityCategory,
+    ) -> (Simulation, u64) {
+        use crate::sim::passenger::{PassengerCargo, PassengerRole};
+        const CARRIER_ID: u64 = 1;
+        const RIDER_ID: u64 = 2;
+        let mut world = Simulation::new();
+        world
+            .substrate
+            .entities
+            .insert(crate::sim::game_entity::GameEntity::test_default(
+                CARRIER_ID,
+                carrier_type,
+                "Americans",
+                10,
+                10,
+            ));
+        world.substrate.entities.insert(
+            crate::sim::game_entity::GameEntity::test_default_of_category(
+                RIDER_ID,
+                rider_type,
+                "Americans",
+                10,
+                10,
+                rider_category,
+            ),
+        );
+        let mut cargo = PassengerCargo::new(1, 0.0);
+        cargo.set_passengers_for_test(vec![RIDER_ID]);
+        {
+            let carrier = world.substrate.entities.get_mut(CARRIER_ID).unwrap();
+            carrier.passenger_role = PassengerRole::transport(cargo);
+            carrier.body_facing = crate::sim::movement::FacingClass::new(0x3FFF, 0);
+            carrier.barrel_facing = Some(crate::sim::movement::FacingClass::new(0xBE00, 0));
+        }
+        world
+            .substrate
+            .entities
+            .get_mut(RIDER_ID)
+            .unwrap()
+            .passenger_role = PassengerRole::boarded_for_test(CARRIER_ID, true);
+        *world.interner = crate::sim::intern::test_interner();
+        (world, RIDER_ID)
+    }
+
+    fn carried_shot(rules: &RuleSet, carrier_type: &str, rider_type: &str) -> ProjectileCoord {
+        let rider_category = if rider_type == "GI" {
+            EntityCategory::Infantry
+        } else {
+            EntityCategory::Unit
+        };
+        let (world, rider_id) = carried_world(carrier_type, rider_type, rider_category);
+        let rider = world.substrate.entities.get(rider_id).unwrap();
+        let obj = world.interner.object_type(rider.type_ref(), rules).unwrap();
+        let snap = FireSource::of_entity(rider);
+        fire_coordinate(&world, rules, &snap, obj, 0, 0, Flh::default()).coord
+    }
+
+    /// `AlternateFLH.OnTurret` (`Ext/Techno/Hooks.Firing.cpp:1069-1070`) is the
+    /// type's ART `Nullable<bool>`, else `[General]` (default yes). The negative
+    /// weapon index is the alternate arm: with a turreted Unit whose body is
+    /// 0x3FFF (matrix identity) and barrel 0xBE00 (180 degrees), turret space
+    /// keeps `TurretOffset=50` in hull space and rotates `AlternateFLH0=100,0,0`
+    /// by the barrel's half turn to -100 (native sine/cosine table, so the sum
+    /// -49.99999 truncates to -49); hull space drops both, +100 X.
+    #[test]
+    fn alternate_flh_on_turret_gates_hull_and_turret_space() {
+        let shot = |rules: &RuleSet, type_id: &str, index: i32| {
+            let world = Simulation::new();
+            let mut snap = source(EntityCategory::Unit);
+            snap.exact_z_leptons = Some(0);
+            snap.hull_facing = crate::sim::movement::FacingClass::new(0x3FFF, 0);
+            snap.barrel_facing = Some(crate::sim::movement::FacingClass::new(0xBE00, 0));
+            let obj = rules.object(type_id).unwrap();
+            fire_coordinate(&world, rules, &snap, obj, index, 0, Flh::default()).coord
+        };
+        let global_no = alternate_flh_rules(Some(false));
+        assert_eq!(
+            shot(&global_no, "SHIP_OFF", -1),
+            ProjectileCoord::new(X + 100, Y, 0),
+            "the unset type key takes the global no and stays hull-relative"
+        );
+        assert_eq!(
+            shot(&global_no, "SHIP_YES", -1),
+            ProjectileCoord::new(X - 49, Y, 0),
+            "the type yes overrides the global no and uses turret space"
+        );
+        assert_eq!(
+            shot(&global_no, "SHIP_NOTURRET", -1),
+            ProjectileCoord::new(X + 100, Y, 0),
+            "GetFLHAbsoluteCoords needs pType->Turret as well as the key"
+        );
+        let stock = alternate_flh_rules(None);
+        assert_eq!(
+            shot(&stock, "SHIP_OFF", -1),
+            ProjectileCoord::new(X - 49, Y, 0),
+            "the constructor default yes keeps the existing turret-space FLH"
+        );
+        assert_eq!(
+            shot(&stock, "SHIP_NOTURRET", 0),
+            ProjectileCoord::new(X, Y, 0),
+            "a regular weapon FLH on a turretless Foot also skips TurretOffset"
+        );
+    }
+
+    /// `AlternateFLH.ApplyVehicle` (`Ext/Techno/Hooks.Firing.cpp:1012`) is read
+    /// from the open-topped carrier's type: yes lets a Unit passenger fire from
+    /// the carrier's `AlternateFLH0`, no (the global default, and also the
+    /// `CARRY_DEF` unset key) keeps the Unit's own `PrimaryFireFLH`. The
+    /// passenger's own ART says yes in every case and must not matter. An
+    /// Infantry rider keeps the stock unconditional port
+    /// (`InfantryClass::GetFLH @ 0x00523250`).
+    #[test]
+    fn alternate_flh_apply_vehicle_gates_the_open_topped_port() {
+        let rules = alternate_flh_rules(None);
+        // Turret space: the carrier's TurretOffset +50 (hull space) plus the
+        // half-turn-rotated port -100 truncates to -49 from the carrier's cell
+        // centre (2688).
+        let port = ProjectileCoord::new(2639, 2688, 0);
+        let own = ProjectileCoord::new(2688, 2688, 7);
+        assert_eq!(
+            carried_shot(&rules, "CARRY_YES", "RIDE"),
+            port,
+            "the carrier's yes lends AlternateFLH0 in turret space"
+        );
+        assert_eq!(
+            carried_shot(&rules, "CARRY_NO", "RIDE"),
+            own,
+            "the carrier's no keeps the Unit's own weapon FLH"
+        );
+        assert_eq!(
+            carried_shot(&rules, "CARRY_DEF", "RIDE"),
+            own,
+            "the global default (no) keeps the stock Unit path"
+        );
+        assert_eq!(
+            carried_shot(&rules, "CARRY_NO", "GI"),
+            port,
+            "an Infantry rider keeps the stock unconditional port"
+        );
     }
 
     #[test]
@@ -1709,6 +2316,172 @@ mod tests {
         assert_eq!(building_muzzle_z_adjust(-130, false), 0);
         assert_eq!(building_muzzle_z_adjust(-130, true), -200);
     }
+    /// A Unit with the Phobos multi-turret block: `TurretOffset=50` in art,
+    /// two `ExtraTurretOffset<n>=` pivots and `BurstPerTurret=`.
+    fn turret_barrel_world(
+        extra_turret_count: i32,
+        burst_per_turret: i32,
+    ) -> (Simulation, RuleSet, FireSource) {
+        let art_ini = IniFile::from_str(&format!(
+            "[MTNK]\nTurretOffset=50\n\
+             ExtraTurretCount={extra_turret_count}\n\
+             ExtraTurretOffset0=100,10,5\n\
+             ExtraTurretOffset1=-100,0,7\n\
+             BurstPerTurret={burst_per_turret}\n"
+        ));
+        let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
+            &IniFile::from_str("[VehicleTypes]\n0=MTNK\n[MTNK]\nTurret=yes\n"),
+            &art_ini,
+        )
+        .unwrap();
+        rules.install_art_data(ArtRegistry::from_ini(&art_ini));
+        let world = Simulation::new();
+        let mut snap = source(EntityCategory::Unit);
+        snap.exact_z_leptons = Some(0);
+        snap.hull_facing = crate::sim::movement::FacingClass::new(0x3FFF, 0);
+        snap.barrel_facing = Some(crate::sim::movement::FacingClass::new(0x3FFF, 0));
+        (world, rules, snap)
+    }
+
+    /// Phobos `TechnoClass_GetFLH` (`Ext/Techno/Hooks.Firing.cpp:1076-1084`)
+    /// with `UnitTypeExt::ApplyTurretOffsetUnit` (`Ext/UnitType/Body.cpp:5-14`):
+    /// `BurstPerTurret=` cycles the matrix's pivot through 0 (the stock
+    /// `TurretOffset=`), then `ExtraTurretOffset0=`, `ExtraTurretOffset1=`, ….
+    #[test]
+    fn burst_per_turret_cycles_the_extra_turret_pivot() {
+        let (world, rules, snap) = turret_barrel_world(2, 2);
+        let obj = rules.object("MTNK").unwrap();
+        let shot =
+            |burst: u8| fire_coordinate(&world, &rules, &snap, obj, 0, burst, Flh::default()).coord;
+        assert_eq!(
+            shot(0),
+            ProjectileCoord::new(X + 50, Y, 0),
+            "index -1 keeps the stock TurretOffset="
+        );
+        assert_eq!(
+            shot(2),
+            ProjectileCoord::new(X + 100, Y - 10, 5),
+            "the first extra turret pivot"
+        );
+        assert_eq!(
+            shot(4),
+            ProjectileCoord::new(X - 100, Y, 7),
+            "the second extra turret pivot"
+        );
+        assert_eq!(
+            shot(6),
+            ProjectileCoord::new(X + 50, Y, 0),
+            "the cycle wraps back to the stock pivot"
+        );
+    }
+
+    /// Native `ApplyTurretOffsetUnit` indexes `ExtraTurretOffsets[turIdx]`
+    /// unchecked; a `BurstPerTurret=` beyond `ExtraTurretCount=` reads past
+    /// the list. VERA keeps the stock pivot instead of an invented offset.
+    #[test]
+    fn a_burst_turret_index_past_the_authored_list_keeps_the_stock_pivot() {
+        let (world, rules, snap) = turret_barrel_world(1, 3);
+        let obj = rules.object("MTNK").unwrap();
+        let shot =
+            |burst: u8| fire_coordinate(&world, &rules, &snap, obj, 0, burst, Flh::default()).coord;
+        assert_eq!(
+            shot(3),
+            ProjectileCoord::new(X + 100, Y - 10, 5),
+            "((3 / 3) % 4) - 1 = 0 selects the one authored extra turret"
+        );
+        assert_eq!(
+            shot(6),
+            ProjectileCoord::new(X + 50, Y, 0),
+            "((6 / 3) % 4) - 1 = 1 is past the authored list"
+        );
+    }
+
+    /// `DelayedFire.AnimOffset` is **assigned** to `firingCoords`
+    /// (`Ext/Techno/Body.cpp:727-733`), replacing
+    /// `GetWeapon(weaponIndex)->FLH`; `GetFLHAbsoluteCoords`
+    /// (`Body.Internal.cpp:80-89`) then transforms it. Two VehicleTypes whose
+    /// ART `PrimaryFireFLH` differs must therefore land on the same anim
+    /// coordinate when the override is the same; an added base would separate
+    /// them by the FLH difference.
+    #[test]
+    fn delafire_anim_offset_replaces_the_weapon_flh_instead_of_adding_it() {
+        let rules = rules();
+        let world = crate::sim::arena_fixture::rival_arena(&rules, 17);
+        let mut source = source(EntityCategory::Unit);
+        source.flh_override = Some(Flh {
+            forward: 10,
+            lateral: 5,
+            height: 30,
+        });
+        let overridden = |name: &str, src: &FireSource| {
+            fire_coordinate(
+                &world,
+                &rules,
+                src,
+                rules.object(name).unwrap(),
+                0,
+                0,
+                Flh::default(),
+            )
+            .coord
+        };
+        assert_eq!(
+            overridden("ALT", &source),
+            overridden("ALT2", &source),
+            "the override ignores the type's own FLH"
+        );
+        source.flh_override = None;
+        assert_ne!(
+            overridden("ALT", &source),
+            overridden("ALT2", &source),
+            "the fixture types do have different weapon FLHs"
+        );
+    }
+
+    /// `DelayedFire.AnimOnTurret` is `GetFLHAbsoluteCoords`'s `isOnTurret`
+    /// (`Ext/Techno/Body.cpp:680`, `Body.Internal.cpp:54`): `no` keeps the FLH
+    /// on the hull — body facing, no ART `TurretOffset` — and ignores the
+    /// barrel heading; `yes` follows the turret.
+    #[test]
+    fn delafire_anim_on_turret_false_uses_the_hull_basis() {
+        let rules = rules();
+        let world = crate::sim::arena_fixture::rival_arena(&rules, 17);
+        let mut source = source(EntityCategory::Unit);
+        source.hull_facing = crate::sim::movement::FacingClass::new(0x4000, 0);
+        source.barrel_facing = Some(crate::sim::movement::FacingClass::new(0, 0));
+        source.flh_override = Some(Flh {
+            forward: 10,
+            lateral: 5,
+            height: 30,
+        });
+        let coord = |src: &FireSource| {
+            fire_coordinate(
+                &world,
+                &rules,
+                src,
+                rules.object("TUR").unwrap(),
+                0,
+                0,
+                Flh::default(),
+            )
+            .coord
+        };
+        source.on_turret = true;
+        let turret = coord(&source);
+        source.on_turret = false;
+        let hull = coord(&source);
+        assert_ne!(turret, hull, "the two bases differ for a rotated turret");
+        // On the hull basis the barrel heading is irrelevant.
+        let mut east = source.clone();
+        east.barrel_facing = Some(crate::sim::movement::FacingClass::new(0x4000, 0));
+        assert_eq!(
+            hull,
+            coord(&east),
+            "`AnimOnTurret=no` does not read the barrel facing"
+        );
+        east.on_turret = true;
+        assert_ne!(turret, coord(&east));
+    }
 }
 
 #[cfg(all(test, tests_sim_combat_d_z))]
@@ -1742,6 +2515,24 @@ mod control_link_port_tests {
             .as_u64()
             .unwrap() as u16;
         for row in data["cases"].as_array().unwrap() {
+            // Phobos's hook takes `AlternateFLHs[index]` in its negative arm
+            // (`src/Ext/Techno/Hooks.Firing.cpp:1062-1071`) with no odd-burst
+            // mirror, so an odd row whose port has a lateral is the unhooked
+            // expectation. `phobos_alternate_flh_takes_no_burst_mirror` pins the
+            // hooked behavior on the synthetic fixture.
+            let unhooked_only = {
+                let port = (-1 - row["weapon_index"].as_i64().unwrap()).max(0) as usize;
+                row["burst_index"].as_u64().unwrap() % 2 == 1
+                    && row["alternate_flh"]
+                        .get(port)
+                        .and_then(|flh| flh.get(1))
+                        .and_then(serde_json::Value::as_i64)
+                        .unwrap_or(0)
+                        != 0
+            };
+            if unhooked_only {
+                continue;
+            }
             let mut art = retail_art.clone();
             let mut overrides = String::from("[DRED]\n");
             for (port, flh) in row["alternate_flh"].as_array().unwrap().iter().enumerate() {

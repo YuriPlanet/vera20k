@@ -6,7 +6,6 @@ use crate::rules::ini_parser::{IniSection, is_native_none_type_name};
 use crate::rules::sound_ini::SoundRegistry;
 use crate::util::native_x87::NativeF64Bits;
 
-#[cfg(feature = "phobos")]
 use super::PhobosOreGathering;
 use super::WEAPON_SLOT_PRIMARY;
 #[cfg(any(test, feature = "test-support"))]
@@ -29,7 +28,6 @@ impl ObjectType {
     /// Phobos `AllowAirstrike` as the cursor and `CanFire` tests read it: an
     /// explicit value wins, a building otherwise follows `CanC4`, and every
     /// other kind is targetable by default.
-    #[cfg(feature = "phobos")]
     pub fn allows_airstrike(&self, is_building: bool) -> bool {
         self.allow_airstrike
             .unwrap_or(if is_building { self.can_c4 } else { true })
@@ -38,7 +36,6 @@ impl ObjectType {
     /// The weapon-choice reading of `AllowAirstrike`. Its vanilla default also
     /// refuses a building that is both a resource destination and a resource
     /// gatherer (`0x6F3477`), which the cursor test above does not apply.
-    #[cfg(feature = "phobos")]
     pub fn allows_airstrike_weapon(&self, is_building: bool) -> bool {
         self.allow_airstrike.unwrap_or(if is_building {
             self.can_c4 && (!self.resource_destination || !self.resource_gatherer)
@@ -57,6 +54,42 @@ impl ObjectType {
     /// GetFLH6F3B28 after GetWeapon has qualified the base or elite record.
     pub fn weapon_flh(&self, index: i32, use_elite: bool) -> crate::rules::flh::Flh {
         self.weapon_offsets.weapon(index, use_elite)
+    }
+
+    /// Phobos `GetBurstFLH`: the retained WeaponOffsets owner selects the
+    /// burst/state row; `None` leaves the slot's FLH in force.
+    pub(crate) fn burst_flh(
+        &self,
+        index: i32,
+        elite: bool,
+        state: crate::rules::weapon_offsets::InfantryFlhState,
+        burst_index: u8,
+    ) -> Option<crate::rules::flh::Flh> {
+        self.weapon_offsets.burst(index, elite, state, burst_index)
+    }
+
+    /// Phobos `InfantryExt::GetSimpleFLH` (`Ext/Infantry/Body.cpp:8-41`).
+    pub(crate) fn infantry_state_flh(
+        &self,
+        index: i32,
+        deployed: bool,
+        crawling: bool,
+    ) -> Option<crate::rules::flh::Flh> {
+        self.weapon_offsets.state_flh(index, deployed, crawling)
+    }
+
+    pub(crate) fn burst_flh_rows(&self) -> [&crate::rules::weapon_offsets::BurstFlhRows; 3] {
+        self.weapon_offsets.burst_row_sets()
+    }
+
+    /// Phobos ART `AlternateFLH.OnTurret=` (`Ext/TechnoType/Body.cpp:1365`).
+    pub(crate) fn alternate_flh_on_turret(&self) -> Option<bool> {
+        self.weapon_offsets.alternate_flh_on_turret()
+    }
+
+    /// Phobos ART `AlternateFLH.ApplyVehicle=` (`Ext/TechnoType/Body.cpp:1366`).
+    pub(crate) fn alternate_flh_apply_vehicle(&self) -> Option<bool> {
+        self.weapon_offsets.alternate_flh_apply_vehicle()
     }
 
     /// The Kratos crawling offsets retained by this type.
@@ -135,14 +168,16 @@ impl ObjectType {
 
     /// Phobos `UnitTypeExt`'s gather-overlay lists. Every list is empty for a
     /// type that authors none, which is the constructor state.
-    #[cfg(feature = "phobos")]
     pub fn ore_gathering(&self) -> &PhobosOreGathering {
         &self.ore_gathering
     }
 
-    #[cfg(feature = "phobos")]
     pub(crate) fn project_ore_gathering(&mut self, gathering: &PhobosOreGathering) {
         self.ore_gathering = gathering.clone();
+    }
+
+    pub(crate) fn project_phobos_deploying_anims(&mut self, anims: &[String]) {
+        self.phobos_deploying_anims = anims.to_vec();
     }
     pub(crate) fn emp_rules(&self) -> Option<&crate::rules::ares_emp::EmpTypeRules> {
         self.emp.as_ref()
@@ -352,6 +387,14 @@ impl ObjectType {
         self.chronoshift = retained.chronoshift;
     }
 
+    pub(crate) fn bind_phobos_designator_ranges(
+        &mut self,
+        retained: &crate::rules::superweapon_influence::TechnoSuperWeaponRules,
+    ) {
+        self.designator_range = retained.designator_range;
+        self.inhibitor_range = retained.inhibitor_range;
+    }
+
     /// TechnoTypeExt `Chronoshift.Allow`/`.IsVehicle`/`.Crushable`.
     pub(crate) fn ares_chronoshift(&self) -> crate::rules::superweapon_influence::ChronoshiftRules {
         self.chronoshift
@@ -361,11 +404,11 @@ impl ObjectType {
         self.hunter_seeker_ignore
     }
 
-    pub(crate) fn designator_range(&self) -> Option<i32> {
+    pub fn designator_range(&self) -> Option<i32> {
         self.designator_range
     }
 
-    pub(crate) fn inhibitor_range(&self) -> Option<i32> {
+    pub fn inhibitor_range(&self) -> Option<i32> {
         self.inhibitor_range
     }
 
@@ -676,127 +719,107 @@ impl ObjectType {
     }
 
     /// Phobos `ShieldType=`: the bound `[ShieldTypes]` entry name.
-    #[cfg(feature = "phobos")]
     pub(crate) fn shield_type(&self) -> Option<&str> {
         self.shield_type.as_deref()
     }
 
     /// Phobos `TechnoTypeExt::ImmuneToCrit`.
-    #[cfg(feature = "phobos")]
     pub fn immune_to_crit(&self) -> bool {
         self.immune_to_crit
     }
 
     /// Phobos `TechnoTypeExt::VeteranCritChance`; `None` inherits
     /// `[General] VeteranCritChance`.
-    #[cfg(feature = "phobos")]
     pub fn veteran_crit_chance(&self) -> Option<f64> {
         self.veteran_crit_chance
     }
 
     /// Phobos extension rank abilities (`ReadAdditionalAbilities`).
-    #[cfg(feature = "phobos")]
     pub fn phobos_abilities(&self) -> &crate::rules::phobos_crit::PhobosAbilityFlags {
         &self.phobos_abilities
     }
 
     /// Phobos `DigitalDisplayTypes=`, in authored list order.
-    #[cfg(feature = "phobos")]
     pub fn digital_display_types(&self) -> &[String] {
         &self.digital_display_types
     }
 
     /// Phobos `AttachEffect.AttachTypes`, in authored list order.
-    #[cfg(feature = "phobos")]
     pub fn attach_effect_attach_types(&self) -> &[String] {
         &self.attach_effect_attach_types
     }
 
     /// Phobos `AttachEffect.DurationOverrides`, paired by index with
     /// [`Self::attach_effect_attach_types`]; the last value covers the rest.
-    #[cfg(feature = "phobos")]
     pub fn attach_effect_duration_overrides(&self) -> &[i32] {
         &self.attach_effect_duration_overrides
     }
 
     /// Phobos `AttachEffect.Delays`, paired by index with
     /// [`Self::attach_effect_attach_types`].
-    #[cfg(feature = "phobos")]
     pub fn attach_effect_delays(&self) -> &[i32] {
         &self.attach_effect_delays
     }
 
     /// Phobos `AttachEffect.InitialDelays`, paired by index with
     /// [`Self::attach_effect_attach_types`].
-    #[cfg(feature = "phobos")]
     pub fn attach_effect_initial_delays(&self) -> &[i32] {
         &self.attach_effect_initial_delays
     }
 
     /// Phobos `AttachEffect.RecreationDelays`, paired by index with
     /// [`Self::attach_effect_attach_types`].
-    #[cfg(feature = "phobos")]
     pub fn attach_effect_recreation_delays(&self) -> &[i32] {
         &self.attach_effect_recreation_delays
     }
 
     /// Phobos `DigitalDisplay.Disable=`.
-    #[cfg(feature = "phobos")]
     pub fn digital_display_disable(&self) -> bool {
         self.digital_display_disable
     }
 
     /// Phobos `TechnoTypeExt::OpenTopped_UseTransportRangeModifiers`;
     /// `None` inherits `[General] OpenTopped.UseTransportRangeModifiers`.
-    #[cfg(feature = "phobos")]
     pub fn open_topped_use_transport_range_modifiers(&self) -> Option<bool> {
         self.open_topped_use_transport_range_modifiers
     }
 
     /// Phobos `DigitalDisplay.Health.FakeAtDisguise=`, `None` when inheriting.
-    #[cfg(feature = "phobos")]
     pub fn digital_display_health_fake_at_disguise(&self) -> Option<bool> {
         self.digital_display_health_fake_at_disguise
     }
 
     /// Phobos `PlacementPreview=` (per building type).
-    #[cfg(feature = "phobos")]
     pub fn placement_preview(&self) -> bool {
         self.placement_preview
     }
 
     /// Phobos `PlacementPreview.Shape=`.
-    #[cfg(feature = "phobos")]
     pub fn placement_preview_shape(&self) -> Option<&str> {
         self.placement_preview_shape.as_deref()
     }
 
     /// Phobos `PlacementPreview.ShapeFrame=`.
-    #[cfg(feature = "phobos")]
     pub fn placement_preview_shape_frame(&self) -> Option<i32> {
         self.placement_preview_shape_frame
     }
 
     /// Phobos `PlacementPreview.Offset=` in leptons.
-    #[cfg(feature = "phobos")]
     pub fn placement_preview_offset(&self) -> [i32; 3] {
         self.placement_preview_offset
     }
 
     /// Phobos `PlacementPreview.Remap=`.
-    #[cfg(feature = "phobos")]
     pub fn placement_preview_remap(&self) -> bool {
         self.placement_preview_remap
     }
 
     /// Phobos `PlacementPreview.Palette=`.
-    #[cfg(feature = "phobos")]
     pub fn placement_preview_palette(&self) -> Option<&str> {
         self.placement_preview_palette.as_deref()
     }
 
     /// Phobos `PlacementPreview.Translucency=`; `None` inherits the global.
-    #[cfg(feature = "phobos")]
     pub fn placement_preview_translucency(
         &self,
     ) -> Option<crate::rules::phobos_placement_preview::Translucency> {
@@ -812,6 +835,30 @@ impl ObjectType {
         self.voxel_shadow_index = index;
     }
 
+    /// Phobos `ShadowIndices=`'s HVA sections (`Ext/TechnoType/Body.cpp:1325`);
+    /// empty leaves the type's single `ShadowIndex` alone.
+    pub fn phobos_shadow_indices(&self) -> &[i32] {
+        &self.phobos_shadow_indices
+    }
+
+    /// Phobos `ShadowIndex.Frame`, default 0.
+    pub fn phobos_shadow_index_frame(&self) -> i32 {
+        self.phobos_shadow_index_frame
+    }
+
+    pub(crate) fn set_phobos_shadow_index_frame(&mut self, frame: i32) {
+        self.phobos_shadow_index_frame = frame;
+    }
+
+    pub fn phobos_shadow_indices_frames(&self) -> &[i32] {
+        &self.phobos_shadow_indices_frames
+    }
+
+    pub(crate) fn set_phobos_shadow_indices(&mut self, indices: Vec<i32>, frames: Vec<i32>) {
+        self.phobos_shadow_indices = indices;
+        self.phobos_shadow_indices_frames = frames;
+    }
+
     /// Type+C95 also selects Fly's flat shadow-matrix arm (4CFB4B).
     pub const fn is_dropship(&self) -> bool {
         self.is_dropship
@@ -819,31 +866,26 @@ impl ObjectType {
 
     /// Phobos `InfantryTypeExt::InfantryAutoDeploy`, unset when the key is
     /// absent.
-    #[cfg(feature = "phobos")]
     pub(crate) const fn infantry_auto_deploy(&self) -> Option<bool> {
         self.infantry_auto_deploy
     }
 
     /// Phobos `InfantryTypeExt::ProneSpeed`, unset when the key is absent.
-    #[cfg(feature = "phobos")]
     pub(crate) const fn prone_speed(&self) -> Option<f64> {
         self.prone_speed
     }
 
     /// Phobos `AircraftTypeExt::FlyNoWobbles`, unset when the key is absent.
-    #[cfg(feature = "phobos")]
     pub(crate) const fn fly_no_wobbles(&self) -> Option<bool> {
         self.fly_no_wobbles
     }
 
     /// Phobos `TechnoTypeExt::LaserTargetColor`, unset when the key is absent.
-    #[cfg(feature = "phobos")]
     pub(crate) const fn laser_target_color(&self) -> Option<i32> {
         self.laser_target_color
     }
 
     /// Phobos `TechnoTypeExt::AirstrikeLineColor`, unset when the key is absent.
-    #[cfg(feature = "phobos")]
     pub(crate) const fn airstrike_line_color(&self) -> Option<[u8; 3]> {
         self.airstrike_line_color
     }
@@ -886,7 +928,6 @@ impl ObjectType {
     /// `PowerPlantEnhancer.PowerPlants` list is non-empty and its `Amount` or
     /// `Factor` actually changes the output (`src/Ext/Building/Hooks.cpp`:
     /// Unlimbo `0x441553`, SetOwningHouse `0x449197`).
-    #[cfg(feature = "phobos")]
     pub fn is_power_plant_enhancer(&self) -> bool {
         !self.power_plant_enhancer_power_plants.is_empty()
             && (self.power_plant_enhancer_amount != 0 || self.power_plant_enhancer_factor != 1.0)
@@ -894,7 +935,6 @@ impl ObjectType {
 
     /// Whether this enhancer's `PowerPlantEnhancer.PowerPlants` list names
     /// `building_type` (case-insensitive, like `BuildingTypeClass::Find`).
-    #[cfg(feature = "phobos")]
     pub fn power_plant_enhancer_enhances(&self, building_type: &str) -> bool {
         self.power_plant_enhancer_power_plants
             .iter()
@@ -903,31 +943,26 @@ impl ObjectType {
 
     /// `PowerPlantEnhancer.Range` in leptons (`Valueable<Leptons>`); 0
     /// disables the ring.
-    #[cfg(feature = "phobos")]
     pub const fn power_plant_enhancer_range(&self) -> i32 {
         self.power_plant_enhancer_range
     }
 
-    #[cfg(feature = "phobos")]
     pub(crate) const fn power_plant_enhancer_amount(&self) -> i32 {
         self.power_plant_enhancer_amount
     }
 
-    #[cfg(feature = "phobos")]
     pub(crate) const fn power_plant_enhancer_factor(&self) -> f32 {
         self.power_plant_enhancer_factor
     }
 
     /// Signed `PowerPlantEnhancer.MaxCount`; a non-positive value means no
     /// per-type limit.
-    #[cfg(feature = "phobos")]
     pub(crate) const fn power_plant_enhancer_max_count(&self) -> i32 {
         self.power_plant_enhancer_max_count
     }
 
     /// `PowerPlant.DamageFactor`, the multiplier on the health-driven output
     /// loss; 1.0 is the stock curve.
-    #[cfg(feature = "phobos")]
     pub(crate) const fn power_plant_damage_factor(&self) -> f64 {
         self.power_plant_damage_factor
     }
@@ -1218,6 +1253,38 @@ impl ObjectType {
             .as_deref()
     }
 
+    /// VoiceAttack7090F8..70914A after Phobos replaces the index test with
+    /// `TechnoTypeExt::IsSecondary` (`Hooks.MultiWeapon.cpp:103`).
+    pub fn voice_attack_override_secondary(&self, secondary: bool, elite: bool) -> Option<&str> {
+        self.voice_attack_overrides[usize::from(secondary) * 2 + usize::from(elite)].as_deref()
+    }
+
+    /// Phobos `GetVoiceAttack`'s slot-voice fallback
+    /// (`Ext/TechnoType/Hooks.MultiWeapon.cpp:103-112`): an elite slot
+    /// without its `VoiceEliteWeaponAttack` answers the normal slot voice,
+    /// then the caller draws from `VoiceAttack`.
+    pub fn phobos_voice_attack_override(&self, secondary: bool, elite: bool) -> Option<&str> {
+        let index = usize::from(secondary) * 2;
+        let normal = self.voice_attack_overrides[index].as_deref();
+        if elite {
+            self.voice_attack_overrides[index + 1].as_deref().or(normal)
+        } else {
+            normal
+        }
+    }
+
+    /// Phobos `TechnoTypeExt::VoiceIFVRepair` (`Ext/TechnoType/Body.h:394`),
+    /// the type's repairing-weapon voice, else `[AudioVisual]`.
+    pub fn phobos_voice_ifv_repair(&self) -> Option<&str> {
+        self.phobos_multi_weapon.voice_ifv_repair.as_deref()
+    }
+
+    /// Phobos per-slot `VoiceWeapon%dAttack` / `VoiceEliteWeapon%dAttack`
+    /// (`Ext/TechnoType/Body.cpp:421-462`).
+    pub fn phobos_voice_weapon_attack(&self, slot: i32, elite: bool) -> Option<&str> {
+        self.phobos_multi_weapon.voice_weapon_attack(slot, elite)
+    }
+
     /// Bind the existing native type reader's list and scalar slots against
     /// the one fixed catalog and its reached processed-section history.
     pub(crate) fn bind_order_voice_references(
@@ -1242,6 +1309,12 @@ impl ObjectType {
             "VoiceSecondaryEliteWeaponAttack",
         ]
         .map(|key| section.and_then(|section| sounds.read_rules_reference(section, key, None)));
+        // Phobos `TechnoTypeExt::LoadFromINIFile`'s voice block
+        // (`Ext/TechnoType/Body.cpp:1448-1450`): the type repair voice and the
+        // per-slot attack voices, the latter gated by the MultiWeapon latch.
+        let (turret_count, weapon_count) = (self.turret_count, self.weapon_count);
+        self.phobos_multi_weapon
+            .bind_voice_references(section, sounds, turret_count, weapon_count);
         if crate::rules::ares_switch::ares_way() {
             self.ares_voice_repair = section
                 .and_then(|section| sounds.read_rules_reference(section, "VoiceRepair", None));
@@ -1694,8 +1767,7 @@ impl ObjectType {
     /// 3.0 BuildingClass_CanBeSelectedNow_MassSelectable 10013CF0 lets
     /// `MassSelectable=` override it.
     pub fn band_selectable(&self) -> bool {
-        self.building_type_ext
-            .mass_selectable(self.is_1x1_with_undeploy())
+        self.building_type_ext.mass_selectable(self.is_vehicle())
     }
 
     /// The slot the per-class House and HouseType factor getters select by the
@@ -1731,7 +1803,7 @@ impl ObjectType {
         }
         self.category == ObjectCategory::Building
             && (self.undeploys_into.is_none() || !self.resource_gatherer)
-            && !self.is_1x1_with_undeploy()
+            && !self.is_vehicle()
     }
 
     /// gamemd's TechnoTypeClass `+0xC8F`: whether `AI_Update` runs the per-tick
@@ -1762,5 +1834,237 @@ impl ObjectType {
     /// `10041560`): a `CloningFacility=` building answers true.
     fn ares_cloning_facility(&self) -> bool {
         self.production.cloning_facility()
+    }
+
+    /// Phobos `CrushForwardTiltPerFrame=` narrowed once to the native float.
+    pub(crate) fn crush_forward_tilt_per_frame(
+        &self,
+        stock: crate::util::native_x87::NativeF32Bits,
+    ) -> crate::util::native_x87::NativeF32Bits {
+        self.phobos_crush_forward_tilt_per_frame
+            .map_or(stock, |value| {
+                crate::util::native_x87::NativeF32Bits::from_bits((value as f32).to_bits())
+            })
+    }
+
+    /// Phobos `TiltsWhenCrushes.Vehicles=` (`Ext/UnitType/Body.cpp:69`).
+    pub(crate) fn tilts_when_crushes_vehicles(&self) -> bool {
+        self.phobos_tilts_when_crushes_vehicles
+            .unwrap_or(self.tilts_when_crushes)
+    }
+
+    /// Phobos `TiltsWhenCrushes.Overlays=` (`Ext/UnitType/Body.cpp:70`).
+    pub(crate) fn tilts_when_crushes_overlays(&self) -> bool {
+        self.phobos_tilts_when_crushes_overlays
+            .unwrap_or(self.tilts_when_crushes)
+    }
+
+    /// Phobos `GetRestrictedFactoryPlantMult` (`Ext/House/Body.cpp:585`) reads
+    /// the shared Ares `FactoryPlant.Multiplier` and narrows it to float.
+    pub(crate) fn factory_plant_multiplier_f32(&self) -> crate::util::native_x87::NativeF32Bits {
+        crate::util::native_x87::NativeF32Bits::from_bits(
+            (f64::from_bits(self.ares_production().factory_plant_multiplier().bits()) as f32)
+                .to_bits(),
+        )
+    }
+
+    /// Phobos `OpenTopped.*` (`Ext/TechnoType/Body.cpp:879-889`).
+    pub fn phobos_open_topped(&self) -> &crate::rules::phobos_open_topped::PhobosOpenTopped {
+        &self.phobos_open_topped
+    }
+
+    /// Phobos `DebrisTypes.Limit=`.
+    pub fn phobos_debris_types_limit(&self) -> Option<bool> {
+        self.phobos_debris_types_limit
+    }
+
+    /// Phobos `AmphibiousEnter=` (`Ext/TechnoType/Body.cpp:1043`).
+    pub fn amphibious_enter(&self, rules: &crate::rules::ruleset::RuleSet) -> bool {
+        self.phobos_amphibious_enter
+            .unwrap_or(rules.phobos_globals.amphibious_enter)
+    }
+
+    /// Phobos `AmphibiousUnload=` (`Ext/TechnoType/Body.cpp:1044`).
+    pub fn amphibious_unload(&self, rules: &crate::rules::ruleset::RuleSet) -> bool {
+        self.phobos_amphibious_unload
+            .unwrap_or(rules.phobos_globals.amphibious_unload)
+    }
+
+    /// Phobos rider-side `OpenTransport.*` values.
+    pub fn phobos_open_transport(
+        &self,
+    ) -> &crate::rules::phobos_open_transport::PhobosOpenTransport {
+        &self.phobos_open_transport
+    }
+
+    /// Phobos `EVA.Sold=` (`Ext/TechnoType/Body.cpp:844`): unset, silent, or cue.
+    pub fn phobos_eva_sold(&self) -> Option<Option<&str>> {
+        self.phobos_eva_sold.as_ref().map(|value| value.as_deref())
+    }
+
+    pub(crate) fn bind_phobos_eva_sold(&mut self, value: Option<Option<String>>) {
+        self.phobos_eva_sold = value;
+    }
+
+    /// Phobos `ExtendedAircraftMissions.*` (`Ext/AircraftType/Body.cpp:30-35`).
+    pub(crate) const fn phobos_extended_aircraft_missions(
+        &self,
+    ) -> &crate::rules::phobos_extended_aircraft_missions::PhobosExtendedAircraftMissions {
+        &self.phobos_extended_aircraft_missions
+    }
+
+    /// Phobos `EmptyAmmoPipFrame` (`Ext/TechnoType/Body.cpp:1003`).
+    pub const fn empty_ammo_pip_frame(&self) -> i32 {
+        self.empty_ammo_pip_frame
+    }
+
+    /// Phobos `AmmoPipFrame` (`Ext/TechnoType/Body.cpp:1002`).
+    pub const fn ammo_pip_frame(&self) -> i32 {
+        self.ammo_pip_frame
+    }
+
+    /// Phobos `AmmoPipWrapStartFrame` (`Ext/TechnoType/Body.cpp:1004`).
+    pub const fn ammo_pip_wrap_start_frame(&self) -> i32 {
+        self.ammo_pip_wrap_start_frame
+    }
+
+    /// Phobos `AmmoPipSize` (`Ext/TechnoType/Body.cpp:1005`).
+    pub const fn ammo_pip_size(&self) -> Option<[i32; 2]> {
+        self.ammo_pip_size
+    }
+
+    /// Phobos `AmmoPipOffset` (`Ext/TechnoType/Body.cpp:1006`).
+    pub const fn ammo_pip_offset(&self) -> [i32; 2] {
+        self.ammo_pip_offset
+    }
+
+    /// Phobos `ShowSpawnsPips` (`Ext/TechnoType/Body.cpp:1008`).
+    pub const fn phobos_show_spawns_pips(&self) -> bool {
+        self.phobos_show_spawns_pips
+    }
+
+    /// Phobos `SpawnsPipFrame` (`Ext/TechnoType/Body.cpp:1009`).
+    pub const fn phobos_spawns_pip_frame(&self) -> i32 {
+        self.phobos_spawns_pip_frame
+    }
+
+    /// Phobos `EmptySpawnsPipFrame` (`Ext/TechnoType/Body.cpp:1010`).
+    pub const fn phobos_empty_spawns_pip_frame(&self) -> i32 {
+        self.phobos_empty_spawns_pip_frame
+    }
+
+    /// Phobos `SpawnsPipSize` (`Ext/TechnoType/Body.cpp:1011`).
+    pub const fn phobos_spawns_pip_size(&self) -> Option<[i32; 2]> {
+        self.phobos_spawns_pip_size
+    }
+
+    /// Phobos `SpawnsPipOffset` (`Ext/TechnoType/Body.cpp:1012`).
+    pub const fn phobos_spawns_pip_offset(&self) -> [i32; 2] {
+        self.phobos_spawns_pip_offset
+    }
+
+    /// Phobos `IsRoofExitTechno` (`Ext/Building/Hooks.cpp:1051-1054`).
+    pub fn exits_through_roof(&self) -> bool {
+        self.phobos_exit_through_roof
+            .exits_through_roof(self.jumpjet, self.balloon_hover)
+    }
+
+    /// Phobos roof-exit draw gate (`0x43D0CF`).
+    pub fn draws_through_roof(&self) -> bool {
+        self.phobos_exit_through_roof
+            .draws_through_roof(self.jumpjet)
+    }
+
+    /// Phobos `AircraftTypeExt::VoicePickup` (`Ext/AircraftType/Body.cpp:23`).
+    pub(crate) fn phobos_voice_pickup(&self) -> Option<&str> {
+        self.phobos_voice_pickup.as_deref()
+    }
+
+    /// Phobos `AircraftTypeExt::RetreatToEdge`.
+    pub(crate) fn phobos_retreat_to_edge(&self) -> Option<crate::rules::ini_value::PhobosEdgeType> {
+        self.phobos_retreat_to_edge
+    }
+
+    /// Phobos `AircraftTypeExt::SpawnDistanceFromTarget`.
+    pub(crate) fn phobos_spawn_distance_from_target(&self) -> Option<i32> {
+        self.phobos_spawn_distance_from_target
+    }
+
+    /// Phobos `AircraftTypeExt::FiringForceScatter`.
+    pub(crate) fn phobos_firing_force_scatter(&self) -> Option<bool> {
+        self.phobos_firing_force_scatter
+    }
+
+    /// Phobos `TechnoTypeExt::AIParadropMission` fallback.
+    pub(crate) fn phobos_paradrop_mission(
+        &self,
+    ) -> Option<crate::rules::mission_data::MissionType> {
+        self.phobos_paradrop_mission
+    }
+
+    /// Phobos `AircraftTypeExt::ParadropEndDelay`.
+    pub(crate) fn phobos_paradrop_end_delay(&self) -> Option<i32> {
+        self.phobos_paradrop_end_delay
+    }
+
+    /// Phobos `TechnoTypeExt::MaxGuardRange`, in cells.
+    pub(crate) fn phobos_max_guard_range(&self) -> i32 {
+        self.phobos_max_guard_range
+            .map_or(4096, |range| range.to_bits() >> 8)
+    }
+
+    /// Phobos `BuildingTypeExt::DisableDamageSound` (`Ext/BuildingType/Body.cpp:245`).
+    pub const fn disable_damage_sound(&self) -> bool {
+        self.disable_damage_sound
+    }
+
+    /// Phobos `BuildingTypeExt::AircraftDockingDirs` (`Body.cpp:287-305`).
+    pub fn aircraft_docking_dirs(&self) -> &[Option<u8>] {
+        &self.aircraft_docking_dirs
+    }
+
+    /// Phobos `TechnoTypeClass_CanAttackMove_IgnoreWeapon` at `0x00711E90`.
+    pub fn can_attack_move_with(&self, ignore_weapon_check: bool) -> bool {
+        self.can_attack_move()
+            || (ignore_weapon_check
+                && matches!(
+                    self.category,
+                    ObjectCategory::Infantry | ObjectCategory::Vehicle
+                )
+                && !self.prevent_attack_move)
+    }
+
+    /// Phobos `BuildingTypeExt::BarracksExitCell` (`Body.cpp:240`).
+    pub const fn barracks_exit_cell(&self) -> Option<(i32, i32)> {
+        self.barracks_exit_cell
+    }
+
+    /// Phobos `BuildingTypeExt::SellBuildupLength` (`Body.cpp:220`).
+    pub const fn sell_buildup_length(&self) -> i32 {
+        self.sell_buildup_length
+    }
+
+    /// Phobos `ConsideredVehicle` (`Ext/BuildingType/Hooks.cpp:154-168`, hook
+    /// `0x465D40`), otherwise the stock `BuildingTypeClass::IsVehicle` body.
+    pub fn is_vehicle(&self) -> bool {
+        self.considered_vehicle
+            .unwrap_or_else(|| self.is_1x1_with_undeploy())
+    }
+
+    /// Phobos `BuildingTypeExt::ExcludeFromMultipleFactoryBonus` (`Body.cpp:198`).
+    pub const fn exclude_from_multiple_factory_bonus(&self) -> bool {
+        self.exclude_from_multiple_factory_bonus
+    }
+
+    /// Phobos `BuildingTypeExt::GuardRetryDelay` (`Body.cpp:258`).
+    pub const fn guard_retry_delay(&self) -> Option<crate::rules::ini_value::PartialIntPair> {
+        self.guard_retry_delay
+    }
+
+    /// Phobos `Harvester.Counted=` (`Ext/TechnoType/Body.cpp:797-798`).
+    pub fn harvester_counted(&self) -> bool {
+        self.harvester_counted.unwrap_or(
+            self.enslaves.is_some() || (self.category == ObjectCategory::Vehicle && self.harvester),
+        )
     }
 }

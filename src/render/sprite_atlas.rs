@@ -2259,6 +2259,16 @@ fn insert_object_keys(
                         }
                     }
                 }
+                // A non-voxel turreted Unit without `<image>TUR.SHP` draws
+                // its body's `WalkFrames * Facings` turret block
+                // (`0x73C7AC`/`0x73CCF4`). That block need not coincide with
+                // a Stand or Walk sequence (e.g. `StandingFrames=0`), so
+                // request it explicitly; an absent atlas key draws nothing.
+                if let Some(turret) = set.shp_vehicle_turret() {
+                    for frame_offset in 0..turret.frame_count {
+                        insert(turret.start_frame + frame_offset);
+                    }
+                }
             } else {
                 // Fallback: hardcoded default layout (stand=0-7, walk=8-55).
                 // Use facing=0 for all keys — frame index encodes direction.
@@ -2525,6 +2535,47 @@ fn insert_new_object_keys(
                             ..body_key
                         }),
                 );
+            }
+        }
+
+        // Phobos `UnitTypeClass_ReadINI_TurretShape` (`0x747A2E`): a non-voxel
+        // turreted UnitType may carry `<image>TUR.SHP`. Bind its frames under
+        // the derived stem; an absent file leaves the body-slice fallback.
+        // `rules::shp_vehicle_sequence::shp_vehicle_turret_shape_file` owns
+        // the type gate, the `ArtImageSwap` name and the file existence test.
+        if category == EntityCategory::Unit
+            && let Some(rules) = rules
+            && let Some(file) = crate::rules::shp_vehicle_sequence::shp_vehicle_turret_shape_file(
+                rules,
+                asset_manager,
+                type_str,
+            )
+            && let Some(turret_id) = rules.unit_turret_shp_id(type_str)
+            && let Some(data) = asset_manager.get_shared(&file)
+        {
+            let frame_count = rules
+                .animation_sequence_in_category(
+                    crate::rules::object_type::ObjectCategory::Vehicle,
+                    type_str,
+                )
+                .and_then(|set| set.shp_vehicle_turret())
+                .map_or(0, |def| def.frame_count);
+            if frame_count > 0 {
+                match ShpSource::decode(data, file.clone(), (0, 0)) {
+                    Ok(source) => {
+                        sources.insert((ShpImageKind::Object, turret_id.clone()), Some(source));
+                        for frame in 0..frame_count {
+                            needed.insert(ShpSpriteKey {
+                                palette_context: ShpPaletteContext::Legacy,
+                                type_id: turret_id.clone().into(),
+                                facing: 0,
+                                frame,
+                                house_color: *color_idx,
+                            });
+                        }
+                    }
+                    Err(error) => log::warn!("Failed to parse {file}: {error}"),
+                }
             }
         }
     }
@@ -3625,7 +3676,6 @@ pub(crate) fn prepare_sprite_atlas(
 
     // Rules and theater bindings are fixed for this atlas's lifetime; a
     // refresh retains its registered files and resident custom gather frames.
-    #[cfg(feature = "phobos")]
     if previous_atlas.is_none()
         && let Some(rules) = rules
     {
@@ -4916,7 +4966,6 @@ pub fn canonical_infantry_facing(facing: u8) -> u8 {
 /// palette rows and caller-context placement; no second image cache is needed.
 /// Source: Phobos b90ab4bc, src/Ext/TechnoType/Hooks.cpp
 /// (UnitClass_DrawIt_OreGath).
-#[cfg(feature = "phobos")]
 fn register_custom_harvest_frames(
     needed: &mut HashSet<ShpSpriteKey>,
     files: &mut ShpFiles,

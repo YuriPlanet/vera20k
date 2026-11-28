@@ -63,10 +63,8 @@ pub struct InfantryRuntime {
     /// Infantry Mission_Move restart `0x00520FF1` and save/load `0x00521D0F`.
     #[serde(default)]
     cell_entry_blocked: bool,
-    /// Whether a web has held this man. The web timer itself is a
-    /// [`WebTimer`] in the object's seldom part; this byte, in the record's
-    /// padding, spares every man never webbed that read. Only
-    /// [`GameEntity::renew_web`] sets it, with the timer.
+    /// Whether a web has held this man. The timer itself lives in the
+    /// object's seldom part; this byte spares every man never webbed that read.
     #[serde(default)]
     webbed: bool,
 }

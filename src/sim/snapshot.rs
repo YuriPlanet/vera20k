@@ -130,7 +130,6 @@ pub struct SavedSidebarOrder {
     active_tab: u8,
     /// Phobos `ScenarioExt::SWSidebar_Enable`, false while the left sidebar is
     /// collapsed. Companion state to this local presentation envelope.
-    #[cfg(feature = "phobos")]
     sw_sidebar_expanded: bool,
 }
 
@@ -149,19 +148,16 @@ impl SavedSidebarOrder {
             prediction_categories: Vec::new(),
             active_tab: 0,
             // `ScenarioExt::SWSidebar_Enable { true }` in Phobos's constructor.
-            #[cfg(feature = "phobos")]
             sw_sidebar_expanded: true,
         }
     }
 
     /// Phobos stores `SWSidebar_Enable` in the scenario extension, outside the
     /// strips; this envelope carries it beside them for the same save.
-    #[cfg(feature = "phobos")]
     pub fn sw_sidebar_expanded(&self) -> bool {
         self.sw_sidebar_expanded
     }
 
-    #[cfg(feature = "phobos")]
     pub fn set_sw_sidebar_expanded(&mut self, expanded: bool) {
         self.sw_sidebar_expanded = expanded;
     }
@@ -245,7 +241,6 @@ impl SavedSidebarOrder {
             factory_links: self.factory_links,
             prediction_categories: self.prediction_categories,
             active_tab: self.active_tab,
-            #[cfg(feature = "phobos")]
             sw_sidebar_expanded: self.sw_sidebar_expanded,
         }
     }
@@ -261,7 +256,6 @@ pub struct SavedSidebarOrderParts {
     pub factory_links: [Vec<Option<crate::sim::production::ProductionFactoryVisit>>; 4],
     pub prediction_categories: Vec<crate::sim::production::ProductionCategory>,
     pub active_tab: u8,
-    #[cfg(feature = "phobos")]
     pub sw_sidebar_expanded: bool,
 }
 

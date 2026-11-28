@@ -231,6 +231,11 @@ impl Reader<'_> {
                 None => 0,
                 Some(TargetKind::Entity(target)) => target as i64,
                 Some(TargetKind::Cell(x, y)) => cell_ref(x, y),
+                Some(TargetKind::Bullet(id)) => {
+                    super::control::target_fields(&self.sim, Some(TargetKind::Bullet(id)))
+                        .1
+                        .map_or(0, |(x, y)| cell_ref(x, y))
+                }
             },
             "Experience" => {
                 let raw = f32::from_bits(entity.veterancy.raw().bits());

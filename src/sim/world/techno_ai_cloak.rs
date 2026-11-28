@@ -22,6 +22,27 @@ pub(crate) struct SensorCloakReevaluation {
 }
 
 impl Simulation {
+    /// Phobos `DetachOnCloak=` (`Ext/AnimType/Body.cpp:112`, `Valueable<bool>`
+    /// constructor `true`): `Detach_All(false)` on a cloaking object detaches
+    /// every attached anim (`TechnoClass::Do_Cloak @ 0x703789` reaches vtable
+    /// `+0xDC`), and the hook `AnimClass_Detach_Cloak @ 0x425174`
+    /// (`Ext/Anim/Hooks.cpp:663-684`) suppresses that detach only for a type
+    /// whose key reads `no`.
+    pub(crate) fn detach_attached_anims_for_cloak(&mut self, owner_id: u64, rules: &RuleSet) {
+        let ids: Vec<_> = self
+            .anims()
+            .filter(|(_, anim)| anim.owner_entity() == Some(owner_id))
+            .filter(|(_, anim)| {
+                let name = self.interner.resolve(anim.type_id());
+                crate::sim::anim_class::anim_type_detach_on_cloak(rules, name)
+            })
+            .map(|(&id, _)| id)
+            .collect();
+        for id in ids {
+            self.detach_anim_from_owner(id, rules);
+        }
+    }
+
     /// InfantryLoad521A0C and the other Techno class loads call NoInit6F4300
     /// for every retained object. Invoke this at the player-file boundary;
     /// internal continuations retain their progress clocks.
@@ -629,6 +650,7 @@ pub(super) fn cloak_field_ai_step(
     rules: &RuleSet,
     registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
 ) {
+    sim.drain_cloak_anim(id, rules);
     // An object with no cloak runtime is in state 0 and cannot pass
     // CanAutoCloak (`stock_cloak_tick_facts`), so the callback would do
     // nothing for it; skipping it keeps the field lookup out of the AI loop.
@@ -697,6 +719,9 @@ fn start_cloaking_detach(
     effects: &mut FrameEffects<'_>,
 ) {
     sim.detach_all(id, false, UninitContext::new(rules).with_effects(effects));
+    // Detach_All's anim arm, gated per anim type by Phobos `DetachOnCloak=`
+    // (`Ext/AnimType/Body.cpp:112`, hook `0x425174`).
+    sim.detach_attached_anims_for_cloak(id, rules);
     let player = sim.session.current_house();
     if sim
         .substrate

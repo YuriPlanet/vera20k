@@ -237,7 +237,28 @@ impl Simulation {
             ];
             // `0x00442586`: the truncated length against 0x100.
             let far = d.iter().map(|v| v * v).sum::<i64>() >= 0x100 * 0x100;
-            if far && !helipad {
+            // Phobos `BuildingClass_ReceiveDamage_NoDestroyLink`
+            // (`Ext/Aircraft/Hooks.cpp:1072-1093`, hook `0x4425B6`, arm
+            // `0x44259D`): a helipad's linked aircraft whose type resolves
+            // `ExtendedAircraftMissions.FastScramble` takes the RUN_AWAY arm
+            // instead of the `Strength * 10` C4 kill, even when it sits within
+            // 0x100 of the building.
+            let fast_scramble = rules.phobos()
+                && helipad
+                && self
+                    .substrate
+                    .entities
+                    .get(contact)
+                    .is_some_and(|contact| contact.category() == EntityCategory::Aircraft)
+                && self
+                    .substrate
+                    .entities
+                    .get(contact)
+                    .and_then(|contact| self.object_type(contact.type_ref(), rules))
+                    .is_some_and(|object| {
+                        rules.extended_aircraft_missions_for(object).fast_scramble
+                    });
+            if (far && !helipad) || fast_scramble {
                 #[cfg(any(test, feature = "test-support"))]
                 self.trace_lifecycle_for_test(LifecycleTestEvent::BuildingNowDeadRunAway {
                     building_id,

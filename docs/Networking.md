@@ -1349,7 +1349,9 @@ command stream above is an intentional adaptation.
   `sim::command`: 0x30 paid superweapon, 0x31 bunker eject (still decoded so older
   recordings play; no input sends it), 0x32 producer cycle, and 0x33 explicit
   target-House economic order. Record 0x34 carries a client module message with
-  a source byte, a length byte and a 96-byte data field. The 0x33 body is a native House slot byte, an
+  a source byte, a length byte and a 96-byte data field. Record 0x35 carries
+  Phobos player-wide auto-repair with one requested-state byte; its event header
+  authenticates the issuing House. The 0x33 body is a native House slot byte, an
   inner economic opcode byte, and 21 bytes of inner payload with zero padding.
   The event header still authenticates the issuing source. The simulation
   requires FullControl over the target. Ordinary production, placement and

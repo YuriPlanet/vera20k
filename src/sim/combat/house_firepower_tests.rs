@@ -145,7 +145,6 @@ fn threat_estimate_uses_the_attacking_house_firepower() {
 }
 
 #[test]
-#[cfg(feature = "phobos")]
 fn phobos_firepower_multiplier_folds_the_constructor_stages() {
     use crate::util::native_x87::{NativeF32Bits, NativeF64Bits};
 

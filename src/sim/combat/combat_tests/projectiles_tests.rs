@@ -245,6 +245,8 @@ fn inviso_detonation_draws(
     let _ = crate::sim::projectile::projectile_next_cluster_coord(
         crate::map::cell_index::CellGrid::Retail,
         ProjectileCoord::new(0, 0, 0),
+        0x100,
+        0x200,
         rng,
     );
     effect
@@ -252,7 +254,6 @@ fn inviso_detonation_draws(
 
 // Phobos `ROF.RandomDelay` (`0x006FD0B5`) redraws the full-rearm jitter, so
 // this stock golden only holds without the capability.
-#[cfg(not(feature = "phobos"))]
 #[test]
 fn inviso_scatter_uses_scenario_rng_only_for_effect_and_paired_smudge() {
     let mut rules = inviso_weapon_rules(true, true);
@@ -308,7 +309,6 @@ fn inviso_scatter_uses_scenario_rng_only_for_effect_and_paired_smudge() {
 /// fire. The shooter fires from its centre.
 // Phobos `ROF.RandomDelay` (`0x006FD0B5`) redraws the full-rearm jitter, so
 // this stock golden only holds without the capability.
-#[cfg(not(feature = "phobos"))]
 #[test]
 fn a_flak_burst_goes_off_where_fire_moved_it() {
     let mut rules = shooter_rules(
@@ -401,7 +401,6 @@ fn inviso_empty_animlist_still_consumes_one_draw() {
 
 // Phobos `ROF.RandomDelay` (`0x006FD0B5`) redraws the full-rearm jitter, so
 // this stock golden only holds without the capability.
-#[cfg(not(feature = "phobos"))]
 #[test]
 fn gsi_08_05_non_inviso_projectile_advances_scenario_rng_by_the_reload_jitter() {
     let rules = inviso_weapon_rules(false, true);
@@ -449,7 +448,6 @@ fn gsi_08_05_non_inviso_projectile_advances_scenario_rng_by_the_reload_jitter() 
 /// detonates next frame.
 // Phobos `ROF.RandomDelay` (`0x006FD0B5`) redraws the full-rearm jitter, so
 // this stock golden only holds without the capability.
-#[cfg(not(feature = "phobos"))]
 #[test]
 fn two_inviso_attackers_fire_in_live_order_and_the_second_bullet_waits_a_frame() {
     let mut rules = inviso_weapon_rules(true, true);
@@ -521,7 +519,6 @@ fn inviso_special_rules(special_key: &str) -> RuleSet {
 /// Magnetron's `[MagneticBeam]` dealt 5000 to the vehicle it should lift.
 // Phobos `ROF.RandomDelay` (`0x006FD0B5`) redraws the full-rearm jitter, so
 // this stock golden only holds without the capability.
-#[cfg(not(feature = "phobos"))]
 #[test]
 fn inviso_special_arms_claim_the_impact_and_keep_the_shared_tail() {
     // DirectRocker is the chain's one conditional arm; TARGET is a UnitClass.

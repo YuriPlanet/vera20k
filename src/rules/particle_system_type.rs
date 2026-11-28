@@ -93,6 +93,14 @@ pub struct ParticleSystemType {
     pub(crate) alpha_image: String,
     /// System-level behavior dispatch — selects the per-tick spawn / AI branch.
     pub behaves_like: ParticleSystemBehavesLike,
+    /// Phobos `AdjustTargetCoordsOnRotation=` (`Valueable<bool>`, default
+    /// **true**; `Ext/ParticleSystemType/Body.cpp:22`, `Body.h:25,28`): the
+    /// gate for FireAI's rotated-target-coordinate sweep
+    /// (`Ext/Techno/Hooks.WeaponEffects.cpp:63-74`, hook `0x62FA41`
+    /// `ParticleSystemClass_FireAI_TargetCoords`); false freezes the fire
+    /// system's target coordinates and its aim-swing spawn cadence while the
+    /// owner rotates.
+    pub adjust_target_coords_on_rotation: bool,
 
     // ── Core spawn / lifetime ────────────────────────────────────────
     /// Resolved `HoldsWhat` reference (the particle this system spawns),
@@ -190,6 +198,8 @@ impl ParticleSystemType {
             alpha_image: section.read_object_alpha_image(""),
             behaves_like,
             holds_what,
+            adjust_target_coords_on_rotation: section
+                .read_bool("AdjustTargetCoordsOnRotation", true),
             spawns: section.read_bool("Spawns", false),
             spawn_frames: section.read_int("SpawnFrames", 1),
             // Float fields (`FSTP dword` at `0x0064439F..0x006443DD`).

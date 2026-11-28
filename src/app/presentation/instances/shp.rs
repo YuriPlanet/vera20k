@@ -506,6 +506,7 @@ pub(crate) fn shp_visitor<'a>(
                 rules,
                 sim.session().binary_frame(),
                 observer,
+                false,
             )
         } else {
             std::borrow::Cow::Borrowed(
@@ -811,16 +812,6 @@ pub(crate) fn shp_visitor<'a>(
                 art.palette,
             ))
         });
-        // Firestorm 2.0 `InfantryClass::Get_Image_Data` 0x004D9030: a man
-        // doing Struggle draws `[AudioVisual] WebbedInfantry=`'s image, at
-        // his own Struggle frame (docs/ts-webs.md). The atlas plans it for
-        // each type with a Struggle record.
-        let webbed_image = entity
-            .infantry_sprite_pose()
-            .filter(|&(doing, _)| doing == crate::rules::infantry_sequence::DO_STRUGGLE)
-            .and(rules)
-            .and_then(|rules| rules.general.webbed_infantry.as_deref())
-            .map(|name| name.to_ascii_uppercase_smolstr());
         let key: ShpSpriteKey = match &door_body {
             Some((name, half, _, palette)) => ShpSpriteKey {
                 palette_context: *palette,
@@ -836,8 +827,7 @@ pub(crate) fn shp_visitor<'a>(
             },
             None => ShpSpriteKey {
                 palette_context: crate::render::sprite_atlas::ShpPaletteContext::Legacy,
-                type_id: webbed_image
-                    .unwrap_or_else(|| make_type_id.as_deref().unwrap_or(type_str).into()),
+                type_id: make_type_id.as_deref().unwrap_or(type_str).into(),
                 facing: 0,
                 frame: shp_frame,
                 house_color: hc,
@@ -979,7 +969,7 @@ pub(crate) fn shp_visitor<'a>(
                 Some((_, _, z_adjust, _)) => *z_adjust,
                 None => structure_entry.map_or(0, |a| a.normal_z_adjust),
             };
-            let point_move = building_zshape_point_move(entity, structure_entry);
+            let point_move = building_zshape_point_move(entity, structure_entry, rules);
             let foundation: (u16, u16) = object_type
                 .map(|o| o.foundation.dimensions())
                 .unwrap_or((1, 1));
@@ -1409,7 +1399,7 @@ pub(crate) fn shp_visitor<'a>(
                         turret_facing: render_pose.body,
                         barrel_elevation: render_pose.barrel,
                         recoil: render_pose.recoil.0,
-                        turret_offset: art_entry.map_or(0, |art| art.turret_offset),
+                        turret_offset: art_entry.map_or(0, |art| art.turret_offset[0]),
                         anchor: [
                             sx + rules_obj.turret_anim_x as f32,
                             sy + rules_obj.turret_anim_y as f32,
@@ -1434,7 +1424,7 @@ pub(crate) fn shp_visitor<'a>(
                 && building_voxel_turret_visible(entity, rules_obj.artillary)
                 && let Some(unit_atlas) = input.unit_atlas
             {
-                let turret_offset = art_entry.map_or(0, |art| art.turret_offset);
+                let turret_offset = art_entry.map_or(0, |art| art.turret_offset[0]);
                 // TechnoClass::Draw's curtain arm (`0x0070678D..0x007067E2`)
                 // and BuildingClass::Draw's colour word (`0x0043DC1C..
                 // 0x0043DDF1`, DrawBody's) on the voxel cache blit.
@@ -2096,7 +2086,17 @@ fn factory_unload_art<'a>(
         .contact0
         .as_ref()
         .and_then(|product| sim.interner().object_type(product.type_ref, rules))
-        .is_some_and(|object| object.jumpjet || object.balloon_hover);
+        .is_some_and(|object| {
+            // Phobos `BuildingClass_DrawUnderDoorAnim_ExitThroughRoof`
+            // @ 0x43D363 (`Ext/Building/Hooks.cpp:1051-1075`): the produced
+            // unit's `ExitThroughRoof=` overrides the vanilla
+            // `JumpJet || BalloonHover` gate for the roof art pair.
+            if rules.phobos() {
+                object.exits_through_roof()
+            } else {
+                object.jumpjet || object.balloon_hover
+            }
+        });
     let door = &art.factory_door;
     let (body, under_door) = if roof {
         (
@@ -2470,13 +2470,21 @@ pub(crate) fn build_building_anim_instances(
 }
 
 /// `BuildingClass::DrawIt` adds `ZShapePointMove=` to the BUILDNGZ origin
-/// except during Construction or Selling (`0x0043D6DB..0x0043D712`).
+/// except during Construction or Selling (`0x0043D6DB..0x0043D712`), unless
+/// Phobos' `ZShapePointMove.OnBuildup=` keeps it for the type.
 fn building_zshape_point_move(
     entity: &crate::app::presentation::frame::ObjectRecord,
     art: Option<&crate::rules::art_data::ArtEntry>,
+    rules: Option<&crate::rules::ruleset::RuleSet>,
 ) -> (i32, i32) {
     if entity.building_up() || entity.building_down() {
-        (0, 0)
+        if rules.is_some_and(crate::rules::ruleset::RuleSet::phobos) {
+            // `0x43D6E5`: Mission Construction (`0x12`) and Selling (`0x13`)
+            // skip the move unless the type sets `ZShapePointMove.OnBuildup=`.
+            art.map_or((0, 0), |art| art.z_shape_point_move_while_buildup())
+        } else {
+            (0, 0)
+        }
     } else {
         art.map_or((0, 0), |art| art.z_shape_point_move)
     }
@@ -2598,6 +2606,7 @@ fn emit_building_anims(
             i32::from(art.frame_count.unwrap_or(0)),
             detail_level,
             draw_runtime,
+            false,
         ) else {
             continue;
         };
@@ -2675,6 +2684,7 @@ fn emit_building_anims(
                     false,
                     instance.remap().as_ref(),
                     1000,
+                    crate::app::presentation::lighting::alt_palette_default_scheme(rules),
                 ),
             )
         };

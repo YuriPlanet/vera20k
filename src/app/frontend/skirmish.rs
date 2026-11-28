@@ -657,6 +657,7 @@ mod tests {
                     ui_name: None,
                     allies: 0,
                     base_plan: Default::default(),
+                    repair_base_nodes: [None; 3],
                 },
                 HouseDefinition {
                     name: "Americans".to_string(),
@@ -668,6 +669,7 @@ mod tests {
                     ui_name: None,
                     allies: 0,
                     base_plan: Default::default(),
+                    repair_base_nodes: [None; 3],
                 },
             ],
         }

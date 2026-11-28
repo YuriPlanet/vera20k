@@ -248,6 +248,9 @@ pub struct ArtEntry {
     /// Image filename override (from art.ini `Image=` key).
     /// None means use the section name as the filename base.
     pub image: Option<String>,
+    /// Phobos `UnitTypeExt` multi-barrel / multi-turret block
+    /// (`Ext/UnitType/Body.cpp:100-134`), read from this ART section.
+    pub phobos_turret_barrel: crate::rules::phobos_turret_barrel::PhobosTurretBarrel,
     /// VERA-only, experimental: `Picture=` and `PictureSize=`.
     pub picture: Option<PictureDecl>,
     /// VERA-only, experimental: `PictureSize=`, with or without `Picture=`:
@@ -293,14 +296,34 @@ pub struct ArtEntry {
     pub frame_height: u16,
     /// Render as VXL+HVA model (true) or SHP sprite (false).
     pub voxel: bool,
-    /// Optional voxel turret/barrel forward/backward alignment tweak.
-    pub turret_offset: i32,
+    /// Phobos `TurretOffset` FLH pivot (`CoordStruct`, all three terms).
+    pub turret_offset: [i32; 3],
     /// Extra Y pixel offset for sprite rendering.
     pub y_draw_offset: i32,
     /// Extra X pixel offset for sprite rendering.
     pub x_draw_offset: i32,
     /// Building animation overlays (ActiveAnim, IdleAnim, etc.).
     pub building_anims: Vec<BuildingAnimConfig>,
+    /// Phobos `RoofProductionAnim*` ART overrides (`Ext/BuildingType/Body.cpp:325-335`):
+    /// the roof-exit production animation and its placement/power values.
+    pub roof_production_anim: crate::rules::phobos_roof_production_anim::PhobosRoofProductionAnim,
+    /// Phobos `FireUp.ResetInRetarget=` (`Ext/UnitType/Body.cpp:94`,
+    /// `Valueable<bool>` constructed true at `Ext/UnitType/Body.h:67,128`):
+    /// a turretless Unit with an active firing sequence clears it when the
+    /// target setter runs (`TechnoClass_SetTarget_After`, hook `0x6FCF3E`,
+    /// `Ext/Techno/Hooks.cpp:1164-1184`), unless the key is false and the new
+    /// target is already within the selected weapon's range.
+    pub phobos_fire_up_reset_in_retarget: bool,
+    /// Phobos `UnitTypeExt::FireUp=` (`Ext/UnitType/Body.cpp:93`,
+    /// `Valueable<int>` declared at `Ext/UnitType/Body.h:66`, constructed -1
+    /// at `Body.h:127`; read from this ART section after the rules reads): the
+    /// body firing-sequence frame an SHP non-turreted Unit waits for before
+    /// launching (`UnitClass_UpdateFiring_FireUp @ 0x736F61`,
+    /// `Ext/Unit/Hooks.Firing.cpp:23-101`). -1 keeps stock behavior.
+    ///
+    /// This is not the InfantryType ART `FireUp=` discharge frame of
+    /// [`read_infantry_discharge_frames`].
+    pub phobos_fire_up: i32,
     /// All21 native records exist even when their selected names are empty.
     pub building_anim_power: [BuildingAnimPowerFlags; 21],
     /// Signed GateStages (BuildingType+16F8): constructor45E1F0 defaults to9;
@@ -343,8 +366,21 @@ pub struct ArtEntry {
     pub primary_fire_dual_offset: bool,
     /// Building fire is held behind the SpecialAnim before weapon emission.
     pub is_anim_delayed_fire: bool,
+    /// Phobos `IsAnimDelayedBurst=` (`Ext/BuildingType/Body.cpp:374` reads it
+    /// from the ART section; `Valueable<bool>` at `Body.h:69`, constructed
+    /// **true** at `Body.h:202`): when false, only the first shot of a burst
+    /// waits for the SpecialAnim and a burst already in progress fires
+    /// immediately (`Ext/Building/Hooks.cpp:868-873`, hook `0x44B630`:
+    /// `CurrentBurstIndex != 0 && !IsAnimDelayedBurst` jumps to `0x44B6C4`,
+    /// the JustFire arm).
+    pub is_anim_delayed_burst: bool,
     /// BuildingType+16A8, ART ReadBool461169, constructor45E0BA false.
     pub silo_damage: bool,
+    /// Phobos `Refinery.UseNormalActiveAnim=` (`Ext/BuildingType/Body.cpp:309`,
+    /// `Ext/BuildingType/Body.h:106`, constructor false `:227`): a refinery
+    /// skips the storage-fill ActiveAnim3..6 arms at `0x00445FE4` and
+    /// `0x00450DAA` and resolves the normal opening anims instead.
+    pub refinery_use_normal_active_anim: bool,
     /// Signed number of Building AI visits used by the delayed-fire latch.
     pub delayed_fire_delay: i32,
     /// SHP vehicle: walk animation frame count per facing (from `WalkFrames=`).
@@ -383,6 +419,11 @@ pub struct ArtEntry {
     /// `UseBuffer=`, with ReadBool from the ART INI under the type's own ID.
     /// Projected onto `ObjectType::can_be_hidden`.
     pub can_be_hidden: bool,
+    /// Phobos `AircraftDockingDir.DefaultToPoseDir=` (`Nullable<bool>`,
+    /// `Ext/BuildingType/Body.cpp:307`, `Body.h:72`): a building's own
+    /// override of the landing-direction global; projected onto
+    /// `ObjectType::phobos_aircraft_docking_dir_default_to_pose_dir`.
+    pub aircraft_docking_dir_default_to_pose_dir: Option<bool>,
     /// `QueueingCell=` (BuildingType+0x1618/+0x161C): `ReadMinMax @ 0x00529880`
     /// on the ARTMD section at `0x00461506`, default `(0, 0)`. Mission_Harvest
     /// adds the low words to the dock's NW cell for the waiting miner's staging
@@ -424,6 +465,13 @@ pub struct ArtEntry {
     /// (`BuildingClass_DrawBody 0x0043D6EF..0x0043D77A`). Retail sets it on
     /// ten tall structures; default 0,0.
     pub z_shape_point_move: (i32, i32),
+    /// Phobos `ZShapePointMove.OnBuildup=` (`Ext/BuildingType/Body.cpp:375`,
+    /// ART, `Valueable<bool>` constructed **false** `Body.h:64,196`): keep
+    /// applying `ZShapePointMove` while the building plays its build-up or
+    /// sell-down. Native `BuildingClass::Draw` (`0x43D6E5`,
+    /// `Ext/Building/Hooks.cpp:364-377`) skips the move for Mission
+    /// Construction (`0x12`) and Selling (`0x13`) unless this is set.
+    pub z_shape_point_move_on_buildup: bool,
     /// `NormalZAdjust=` (`BuildingTypeClass +0x1520`, read at `0x004613A6`):
     /// the building body's own Z term before the height lift is cancelled.
     /// Retail sets it only on GAFSDF (-10); default 0.
@@ -509,10 +557,45 @@ pub struct AnimTypeRuntimeConfig {
     pub tiberium_chain_reaction: bool,
     pub is_tiberium: bool,
     pub hide_if_no_ore: bool,
+    /// Phobos `AnimTypeExt` keys (`Ext/AnimType/Body.cpp:93-118`) whose
+    /// consumers are the anim-runtime fire-anim, wake and palette paths.
+    pub phobos_attached_anim_position: crate::rules::phobos_anim_type_ext::AttachedAnimPosition,
+    pub phobos_wake_anim: Vec<String>,
+    pub phobos_visible_to: Option<crate::rules::phobos_shields::AffectedHouse>,
+    /// Phobos `VisibleTo.ConsiderInvokerAsOwner=` (`Ext/AnimType/Body.cpp:110`,
+    /// `Valueable<bool>` constructed false `Body.h:65,117`): the draw
+    /// visibility gate uses the anim's invoker (or invoker house) instead of
+    /// its owner object's house (`AnimClass_DrawIt_Visibility`, hook
+    /// `0x423061`, `Ext/Anim/Hooks.cpp:556-564`).
+    pub phobos_visible_to_consider_invoker_as_owner: bool,
+    pub phobos_fire_anim_disallowed_land_types:
+        Option<crate::rules::phobos_anim_type_ext::LandTypeFlags>,
+    pub phobos_attach_fire_anims_to_parent: Option<bool>,
+    /// Phobos fire-spawn keys (`Ext/AnimType/Body.cpp:115,118-125`) behind
+    /// `AnimExt::SpawnFireAnims` (`Ext/Anim/Body.cpp:309-405`): the small and
+    /// large fire loops a `Scorch=`/`Flamer=` anim runs when it completes.
+    pub phobos_constrain_fire_anims_to_cell_spots: bool,
+    pub phobos_small_fire_count: Option<i32>,
+    pub phobos_small_fire_anims: Vec<String>,
+    pub phobos_small_fire_chances: Vec<NativeF64Bits>,
+    pub phobos_small_fire_distances: Vec<NativeF64Bits>,
+    pub phobos_large_fire_count: i32,
+    pub phobos_large_fire_anims: Vec<String>,
+    pub phobos_large_fire_chances: Vec<NativeF64Bits>,
+    pub phobos_large_fire_distances: Vec<NativeF64Bits>,
+    pub phobos_theater_palette: Option<bool>,
+    /// Phobos `DetachOnCloak=` (`Ext/AnimType/Body.cpp:112`, `Valueable<bool>`
+    /// constructor `true`, `Ext/AnimType/Body.h:67`): the attached anim stays
+    /// on a cloaking owner (`Ext/Anim/Hooks.cpp:663-684`, hook `0x425174`).
+    pub phobos_detach_on_cloak: bool,
+    /// Phobos `RestrictVisibilityIfCloaked=` (`Ext/AnimType/Body.cpp:111`,
+    /// `Valueable<bool>` constructor `false`, `Ext/AnimType/Body.h:66`): an
+    /// anim attached to a cloaked techno hides from an unallied, unsensing
+    /// viewer (`Ext/Anim/Hooks.cpp:524-570`, `0x423061`).
+    pub phobos_restrict_visibility_if_cloaked: bool,
     /// Phobos `AnimTypeExt::HideIfNoOre_Threshold` (`src/Ext/AnimType/Body.h`,
     /// read as a `Valueable<int>` with constructor default 0): the smallest
     /// contained tiberium value at which a `HideIfNoOre=` anim still draws.
-    #[cfg(feature = "phobos")]
     pub hide_if_no_ore_threshold: i32,
     /// Fixed ARTMD `IsAnimatedTiberium=`, AnimType+0x360: constructor427530
     /// defaults false; ReadINI427D00 retains the prior bool on absent input.
@@ -532,7 +615,6 @@ pub struct AnimTypeRuntimeConfig {
     pub make_infantry: i32,
     /// Phobos `AnimTypeExt::MakeInfantryOwner` (`OwnerHouseKind`, default
     /// `Victim`): the House a `MakeInfantry=` animation takes.
-    #[cfg(feature = "phobos")]
     pub(crate) phobos_make_infantry_owner: crate::rules::ares_warhead::HouseSelector,
     /// Ares AnimTypeExt+8 `MakeInfantryOwner` (Valueable<OwnerHouseKind>,
     /// constructor Invoker; LoadFromINI 1000A4B0), the House
@@ -547,11 +629,10 @@ pub struct AnimTypeRuntimeConfig {
     /// whose Image names this AnimType; `AresCustomPalettes` in the sprite
     /// atlas loads it for both.
     pub(crate) ares_custom_palette: Option<String>,
-    /// Phobos `CreateUnit=` + `CreateUnit.Owner` (default `Victim`) +
-    /// `CreateUnit.RemapAnim` (default no): `Some` when the animation names a
-    /// unit type, which overrides the owner kind and permits remap.
-    #[cfg(feature = "phobos")]
-    pub(crate) phobos_create_unit: Option<(crate::rules::ares_warhead::HouseSelector, bool)>,
+    /// Phobos `CreateUnit.*` (`Ext/AnimType/Body.cpp:130-149`): every key of
+    /// the animation's `CreateUnitTypeClass`. `Some` only while the
+    /// `Nullable<TechnoTypeClass*>` `CreateUnit=` is set.
+    pub(crate) phobos_create_unit: Option<crate::rules::phobos_create_unit::CreateUnitSettings>,
     pub bouncer: bool,
     pub spawns: Option<String>,
     pub spawn_count: i32,
@@ -610,6 +691,33 @@ pub struct AnimTypeRuntimeConfig {
     /// art.ini `ForceBigCraters=`, `AnimTypeClass+0x36E`, read by
     /// `AnimClass::Middle @ 0x00424F00`.
     pub force_big_craters: bool,
+    /// Phobos `AnimTypeExt::Warhead.Detonate=` (`Valueable<bool>`, default
+    /// `false`, `Ext/AnimType/Body.cpp:100`): the landing explosion routes
+    /// its warhead through `WarheadTypeExt::DetonateAt` instead of
+    /// `DamageArea` + `FlashbangWarheadAt` (`Ext/Anim/Body.cpp:245-307`).
+    pub phobos_warhead_detonate: bool,
+    /// Phobos `SplashAnims=` (`Ext/AnimType/Body.cpp:102`,
+    /// `Ext/AnimType/Body.h:57`, a `NullableVector<AnimTypeClass*>`): the
+    /// entries replace the stock `[CombatDamage] SplashList=` on a water
+    /// landing; `None` for an absent or `<default>` read.
+    pub splash_anims: Option<Vec<String>>,
+    /// Phobos `SplashAnims.PickRandom=` (`Ext/AnimType/Body.cpp:103`,
+    /// `Body.h:58`, constructor false): the water landing draws
+    /// `RandomRanged(0, last)` instead of the meteor/first default.
+    pub splash_anims_pick_random: bool,
+    /// Phobos `ExplodeOnWater=` (`Ext/AnimType/Body.cpp:99`, `Body.h:54`,
+    /// `Valueable<bool>` constructed **false** `Body.h:106`): a water impact
+    /// takes the explosion arm — the warhead and `ExpireAnim=` — instead of the
+    /// wake/splash arm (`Ext/Anim/Body.cpp:252`, `:273-290`).
+    /// The VoxelAnimType twin (`Ext/VoxelAnimType/Body.cpp:13`,
+    /// `Ext/VoxelAnim/Hooks.cpp:42`) is not ported: that class has no Phobos
+    /// extension in VERA yet.
+    pub explode_on_water: bool,
+    /// Phobos `Crater.DestroyTiberium=` (`Ext/AnimType/Body.cpp:126`,
+    /// `Ext/AnimType/Body.h:81`, a `Nullable<bool>`): unset keeps the
+    /// `[General] AnimCraterDestroyTiberium=` fallback; false makes
+    /// `0x4250E1` skip the crater's `CellClass::Reduce_Tiberium(6)` call.
+    pub crater_destroy_tiberium: Option<bool>,
     /// art.ini `Sticky=`, `AnimTypeClass+0x36F`.
     pub sticky: bool,
     /// art.ini `PsiWarning=`, `AnimTypeClass+0x373`, read by `AnimClass::AI`.
@@ -637,13 +745,33 @@ pub struct AnimTypeRuntimeConfig {
     pub(crate) ares_spawns_particle_range: [i32; 2],
     /// Ares AnimTypeExt+0x24 `Damage.Delay` (Valueable<int>, constructor 0):
     /// above zero, an anim whose `Damage=` is at least 1 delivers its whole
+    /// Damage once every this many frames. Phobos's replaced anim damage
+    /// body (`Ext/Anim/Hooks.cpp:48`) reads the same key.
     /// Damage once every this many frames.
     pub(crate) ares_damage_delay: i32,
     /// Ares AnimTypeExt+0x20 `Weapon` (Valueable<WeaponTypeClass*>, Find
     /// only, constructor null): the weapon whose bullet the anim's damage
     /// detonates instead of the area damage. The ordered Rules processor
+    /// resolves it with the ART body (`AnimTypeReferences`). Phobos's
+    /// replaced anim damage body reads the same key
+    /// (`Ext/Anim/Hooks.cpp:140`).
     /// resolves it with the ART body (`AnimTypeReferences`).
     pub(crate) ares_weapon: Option<String>,
+    /// Phobos `Damage.DealtByInvoker=` (`Ext/AnimType/Body.cpp:96`,
+    /// `Nullable<bool>`, default unset with the `[CombatDamage]
+    /// AnimDamage.DealtByInvoker` global defaulting `false`): the anim-loop
+    /// damage's attacker becomes the stored invoker (`Ext/Anim/Hooks.cpp:102`).
+    pub(crate) damage_dealt_by_invoker: Option<bool>,
+    /// Phobos `Damage.ApplyFirepowerMult=` (`Ext/AnimType/Body.cpp:98`,
+    /// `Nullable<bool>`; global `[CombatDamage] AnimDamage.ApplyFirepowerMult`
+    /// defaults false): the anim-loop damage is scaled by the invoker's
+    /// current firepower multiplier (`Ext/Anim/Hooks.cpp:119-128`).
+    pub(crate) damage_apply_firepower_mult: Option<bool>,
+    /// Phobos `Damage.ApplyOncePerLoop=` (`Ext/AnimType/Body.cpp:97`,
+    /// `Valueable<bool>`, constructor `false`): damage lands only on the
+    /// loop's first frame, `max(Damage.Delay-1, 1)`
+    /// (`Ext/Anim/Hooks.cpp:56-66`).
+    pub(crate) damage_apply_once_per_loop: bool,
     /// art.ini `ShouldFogRemove=`, `AnimTypeClass+0x374`.
     /// Constructor default **true**.
     pub should_fog_remove: bool,
@@ -659,13 +787,51 @@ pub struct AnimTypeRuntimeConfig {
     pub random_loop_delay: Option<(i32, i32)>,
     pub random_rate_logic_frames: Option<(u16, u16)>,
     pub y_draw_offset: i32,
+    /// Phobos `XDrawOffset.*`/`YDrawOffset.*` selection-bracket keys
+    /// (`Ext/AnimType/Body.cpp:82-90`), consumed by
+    /// `AnimClass_DrawIt_DrawOffset` (`0x423122`/`0x422CD8`). The plain
+    /// `XDrawOffset` is included because the atlas bakes it into the frame
+    /// offset that the bracket X assignment natively overwrites.
+    pub phobos_draw_offset: crate::rules::phobos_anim_draw_offset::PhobosAnimDrawOffset,
     pub z_adjust: i32,
     pub y_sort_adjust: i32,
     pub layer: AnimLayer,
+    /// Phobos `Layer.UseObjectLayer=` (`Ext/AnimType/Body.cpp:92`,
+    /// `Nullable<bool>`, unset at `Ext/AnimType/Body.h:47,99`): on an attached
+    /// anim, true takes the owner object's `InWhichLayer`, false the type's
+    /// own `Layer` (`AnimClass_InWhichLayer`, hook `0x424CB0`,
+    /// `Ext/Anim/Hooks.cpp:354-375`). Unset keeps the stock attached Ground.
+    pub phobos_layer_use_object_layer: Option<bool>,
     pub flat: bool,
     pub tiled: bool,
-    /// Raw art.ini `Translucency=` value; zero when omitted.
+    /// Phobos `Tiled.Interval=` (`Ext/AnimType/Body.cpp:128`,
+    /// `Valueable<int>` constructed 0 at `Ext/AnimType/Body.h:83,135`): the
+    /// hook at `0x423654` replaces DrawIt's frame-height term for a Tiled
+    /// anim when positive, driving both the row step and the Z fall.
+    pub phobos_tiled_interval: i32,
+    /// Phobos `Tiled.AlignToCenter=` (`Ext/AnimType/Body.cpp:129`,
+    /// `Valueable<bool>` constructed false at `Ext/AnimType/Body.h:84,136`):
+    /// the hook at `0x423660` zeroes the `height / 2` term, so the column
+    /// starts on the draw point and falls by `height` per tile.
+    pub phobos_tiled_align_to_center: bool,
+    /// Raw art.ini `Translucency=` value; zero when omitted. The Phobos draw
+    /// arm reads the keyframe track below; this stays the stock integer read
+    /// for a build without Phobos.
     pub translucency: i32,
+    /// Phobos `Translucency=` as `Animatable<TranslucencyLevel>`
+    /// (`Ext/AnimType/Body.cpp:113`, `Utilities/Template.h:560-594`): the
+    /// keyframe track `AnimClass_DrawIt_Translucency` (`0x423183`,
+    /// `Ext/Anim/Hooks.cpp:573-615`) queries at `currentFrame / End`. Always
+    /// carries at least the plain key's `0.0` entry, whose level is
+    /// `BlitterFlags::None` when the key is absent or not one of
+    /// `0/25/50/75`.
+    pub phobos_translucency: crate::rules::phobos_translucency_track::TranslucencyTrack,
+    /// Phobos `Translucency.Cloaked=` as `Animatable<TranslucencyLevel>`
+    /// (`Ext/AnimType/Body.cpp:114`, read with `requireParsedFallback`): while
+    /// the anim's Techno owner is Cloaking or Cloaked this track answers
+    /// instead of `phobos_translucency`. An empty track means the key is
+    /// absent or its value did not parse, and the plain track keeps answering.
+    pub phobos_translucency_cloaked: crate::rules::phobos_translucency_track::TranslucencyTrack,
     /// Raw art.ini `TranslucencyDetailLevel=` value; zero when omitted.
     pub translucency_detail_level: i32,
     pub translucent: bool,
@@ -681,6 +847,13 @@ pub struct AnimTypeRuntimeConfig {
     /// counts. The doc previously said 41, which no scan of the retail file
     /// reproduces.)
     pub alt_palette: bool,
+    /// Phobos art.ini `AltPalette.ApplyLighting=` (`Ext/AnimType/Body.cpp:105`,
+    /// `Nullable<bool>` with no global fallback, `Ext/AnimType/Body.h:112`): the
+    /// `0x4232E2` hook steps `ColorScheme::Array`'s index by one
+    /// (`Ext/Anim/Hooks.cpp:632-645`), from the colour's one-shade scheme to its
+    /// 53-shade scheme 鈥?`0x68C710`'s two per-`[Colors]`-entry call sites push
+    /// `1` (`0x6277D7`) and `0x35` (`0x627849`) with the same HSV.
+    pub alt_palette_apply_lighting: bool,
     /// art.ini `UseNormalLight=`. The retail art.ini documents this as "does this
     /// anim always draw at 100% brightness? (def=no)", and gamemd's animation draw
     /// matches: it initialises the shape's brightness argument to full
@@ -698,6 +871,12 @@ pub struct AnimTypeRuntimeConfig {
     /// `KTSTLEXP`, `PULSEFX1/2`, `EMP_FX01`, `BEHIND`.
     pub use_normal_light: bool,
     pub shadow: bool,
+    /// Phobos `ExtraShadow=` (`Ext/AnimType/Body.h:62`, `Valueable<bool>`
+    /// constructed **true** `Body.h:114`, read `Body.cpp:107`): the
+    /// `AnimClass::DrawIt` extra ground shadow (`0x423365`, hook
+    /// `Ext/Anim/Hooks.cpp:463-480`) is skipped when false. It never touches
+    /// `shadow`'s SHP second-half frame split.
+    pub extra_shadow: bool,
     pub ping_pong: bool,
     pub reverse: bool,
     /// The sound `AnimClass::Start @ 0x00424CE0` plays (AnimType +2F8),
@@ -713,6 +892,11 @@ pub struct AnimTypeRuntimeConfig {
     /// them as it does `StopSound=`. See docs/ts-anim-sounds.md.
     pub bounce_sound: Option<String>,
     pub expire_sound: Option<String>,
+    /// Phobos `AnimTypeExt::DetachedReport` (`Ext/AnimType/Body.cpp:108`,
+    /// `ValueableIdx<VocClass>`): a one-shot positional report played at
+    /// `AnimClass::Start` outside the attached audio handle (`0x424CF1`,
+    /// `Ext/Anim/Hooks.cpp:269-276`).
+    pub detached_report: Option<String>,
 }
 
 /// Every field folds in declaration order, as the derive did, and the Ares
@@ -739,17 +923,14 @@ impl std::hash::Hash for AnimTypeRuntimeConfig {
             tiberium_chain_reaction,
             is_tiberium,
             hide_if_no_ore,
-            #[cfg(feature = "phobos")]
             hide_if_no_ore_threshold,
             is_animated_tiberium,
             tiberium_spread_radius,
             tiberium_spawn_type,
             make_infantry,
-            #[cfg(feature = "phobos")]
             phobos_make_infantry_owner,
             ares_make_infantry_owner,
             ares_custom_palette,
-            #[cfg(feature = "phobos")]
             phobos_create_unit,
             bouncer,
             spawns,
@@ -804,6 +985,7 @@ impl std::hash::Hash for AnimTypeRuntimeConfig {
             stop_sound,
             bounce_sound,
             expire_sound,
+            ..
         } = self;
         art_body_read.hash(state);
         image.hash(state);
@@ -823,15 +1005,12 @@ impl std::hash::Hash for AnimTypeRuntimeConfig {
         tiberium_chain_reaction.hash(state);
         is_tiberium.hash(state);
         hide_if_no_ore.hash(state);
-        #[cfg(feature = "phobos")]
         hide_if_no_ore_threshold.hash(state);
         is_animated_tiberium.hash(state);
         tiberium_spread_radius.hash(state);
         tiberium_spawn_type.hash(state);
         make_infantry.hash(state);
-        #[cfg(feature = "phobos")]
         phobos_make_infantry_owner.hash(state);
-        #[cfg(feature = "phobos")]
         phobos_create_unit.hash(state);
         bouncer.hash(state);
         spawns.hash(state);
@@ -1127,6 +1306,10 @@ fn parse_anim_runtime_config(section: &IniSection) -> AnimTypeRuntimeConfig {
     let explicit_loop_end = section
         .is_present("LoopEnd")
         .then(|| section.read_int("LoopEnd", 0));
+    // `AnimTypeExt::LoadFromINIFile` reads both translucency tracks with
+    // `absoluteLength = OwnerObject()->End` (`Ext/AnimType/Body.cpp:113-114`):
+    // the `End` this INI read produced, before asset binding replaces it.
+    let anim_end = explicit_end.unwrap_or(0);
     AnimTypeRuntimeConfig {
         art_body_read: true,
         image: section.read_string("Image", &section.name, 0x19),
@@ -1134,7 +1317,7 @@ fn parse_anim_runtime_config(section: &IniSection) -> AnimTypeRuntimeConfig {
         start: section.read_int("Start", 0),
         loop_start: section.read_int("LoopStart", 0),
         loop_end: explicit_loop_end.unwrap_or(0),
-        end: explicit_end.unwrap_or(0),
+        end: anim_end,
         explicit_end,
         explicit_loop_end,
         raw_shp_frame_count: None,
@@ -1147,7 +1330,6 @@ fn parse_anim_runtime_config(section: &IniSection) -> AnimTypeRuntimeConfig {
         tiberium_chain_reaction: section.read_bool("TiberiumChainReaction", false),
         is_tiberium: section.read_bool("IsTiberium", false),
         hide_if_no_ore: section.read_bool("HideIfNoOre", false),
-        #[cfg(feature = "phobos")]
         hide_if_no_ore_threshold: crate::rules::ares_switch::not_ares_read(|| {
             section.read_ares_int("HideIfNoOre.Threshold", 0)
         }),
@@ -1160,7 +1342,6 @@ fn parse_anim_runtime_config(section: &IniSection) -> AnimTypeRuntimeConfig {
         // [`ArtRegistry::apply_anim_type_references`].
         tiberium_spawn_type: None,
         make_infantry: section.read_int("MakeInfantry", -1),
-        #[cfg(feature = "phobos")]
         phobos_make_infantry_owner: crate::rules::ares_switch::not_ares_read(|| {
             crate::rules::ares_warhead::HouseSelector::Victim.read(section, "MakeInfantryOwner")
         }),
@@ -1179,16 +1360,13 @@ fn parse_anim_runtime_config(section: &IniSection) -> AnimTypeRuntimeConfig {
         // `CreateUnit` is a `Nullable<TechnoTypeClass*>`: `none` clears it and
         // an authored name is a presence signal here. A name no factory
         // resolves is treated as present (the type itself is not modeled).
-        #[cfg(feature = "phobos")]
         phobos_create_unit: crate::rules::ares_switch::not_ares_read(|| {
             section
                 .read_name("CreateUnit", 0x80)
                 .filter(|name| !crate::rules::ini_parser::is_native_none_type_name(name))
-                .map(|_| {
-                    (
-                        crate::rules::ares_warhead::HouseSelector::Victim
-                            .read(section, "CreateUnit.Owner"),
-                        section.read_ares_bool("CreateUnit.RemapAnim", false),
+                .map(|unit_type| {
+                    crate::rules::phobos_create_unit::CreateUnitSettings::from_section(
+                        section, unit_type.to_owned(),
                     )
                 })
         }),
@@ -1211,6 +1389,11 @@ fn parse_anim_runtime_config(section: &IniSection) -> AnimTypeRuntimeConfig {
         scorch: section.read_bool("Scorch", false),
         crater: section.read_bool("Crater", false),
         force_big_craters: section.read_bool("ForceBigCraters", false),
+        phobos_warhead_detonate: section.read_bool("Warhead.Detonate", false),
+        splash_anims: section.read_phobos_nullable_type_list("SplashAnims"),
+        splash_anims_pick_random: section.read_bool("SplashAnims.PickRandom", false),
+        explode_on_water: section.read_bool("ExplodeOnWater", false),
+        crater_destroy_tiberium: section.read_phobos_nullable_bool("Crater.DestroyTiberium", None),
         sticky: section.read_bool("Sticky", false),
         psi_warning: section.read_bool("PsiWarning", false),
         double_thick: section.read_bool("DoubleThick", false),
@@ -1233,6 +1416,10 @@ fn parse_anim_runtime_config(section: &IniSection) -> AnimTypeRuntimeConfig {
             0
         },
         ares_weapon: None,
+        damage_dealt_by_invoker: section.read_phobos_nullable_bool("Damage.DealtByInvoker", None),
+        damage_apply_firepower_mult: section
+            .read_phobos_nullable_bool("Damage.ApplyFirepowerMult", None),
+        damage_apply_once_per_loop: section.read_bool("Damage.ApplyOncePerLoop", false),
         // Both constructor defaults are 1, not 0.
         should_fog_remove: section.read_bool("ShouldFogRemove", true),
         should_use_cell_drawer: section.read_bool("ShouldUseCellDrawer", true),
@@ -1250,27 +1437,104 @@ fn parse_anim_runtime_config(section: &IniSection) -> AnimTypeRuntimeConfig {
         }),
         random_rate_logic_frames: read_random_rate(section),
         y_draw_offset: section.read_int("YDrawOffset", 0),
+        phobos_draw_offset:
+            crate::rules::phobos_anim_draw_offset::PhobosAnimDrawOffset::from_section(section),
+        phobos_attached_anim_position:
+            crate::rules::phobos_anim_type_ext::PhobosAnimTypeExt::attached_anim_position(section),
+        phobos_wake_anim: crate::rules::phobos_anim_type_ext::PhobosAnimTypeExt::wake_anim(section),
+        phobos_visible_to: crate::rules::phobos_anim_type_ext::PhobosAnimTypeExt::visible_to(
+            section,
+        ),
+        phobos_visible_to_consider_invoker_as_owner: section
+            .read_bool("VisibleTo.ConsiderInvokerAsOwner", false),
+        phobos_fire_anim_disallowed_land_types:
+            crate::rules::phobos_anim_type_ext::PhobosAnimTypeExt::fire_anim_disallowed_land_types(
+                section,
+            ),
+        phobos_attach_fire_anims_to_parent:
+            crate::rules::phobos_anim_type_ext::PhobosAnimTypeExt::attach_fire_anims_to_parent(
+                section,
+            ),
+        phobos_constrain_fire_anims_to_cell_spots:
+            crate::rules::phobos_anim_type_ext::PhobosAnimTypeExt::constrain_fire_anims_to_cell_spots(
+                section,
+            ),
+        phobos_small_fire_count:
+            crate::rules::phobos_anim_type_ext::PhobosAnimTypeExt::small_fire_count(section),
+        phobos_small_fire_anims:
+            crate::rules::phobos_anim_type_ext::PhobosAnimTypeExt::small_fire_anims(section),
+        phobos_small_fire_chances: crate::rules::phobos_anim_type_ext::PhobosAnimTypeExt::small_fire_chances(section)
+            .into_iter()
+            .map(|value| NativeF64Bits::from_bits(value.to_bits()))
+            .collect(),
+        phobos_small_fire_distances: crate::rules::phobos_anim_type_ext::PhobosAnimTypeExt::small_fire_distances(section)
+            .into_iter()
+            .map(|value| NativeF64Bits::from_bits(value.to_bits()))
+            .collect(),
+        phobos_large_fire_count:
+            crate::rules::phobos_anim_type_ext::PhobosAnimTypeExt::large_fire_count(section),
+        phobos_large_fire_anims:
+            crate::rules::phobos_anim_type_ext::PhobosAnimTypeExt::large_fire_anims(section),
+        phobos_large_fire_chances: crate::rules::phobos_anim_type_ext::PhobosAnimTypeExt::large_fire_chances(section)
+            .into_iter()
+            .map(|value| NativeF64Bits::from_bits(value.to_bits()))
+            .collect(),
+        phobos_large_fire_distances: crate::rules::phobos_anim_type_ext::PhobosAnimTypeExt::large_fire_distances(section)
+            .into_iter()
+            .map(|value| NativeF64Bits::from_bits(value.to_bits()))
+            .collect(),
+        phobos_theater_palette:
+            crate::rules::phobos_anim_type_ext::PhobosAnimTypeExt::theater_palette(section),
+        phobos_detach_on_cloak:
+            crate::rules::phobos_anim_type_ext::PhobosAnimTypeExt::detach_on_cloak(section),
+        phobos_restrict_visibility_if_cloaked:
+            crate::rules::phobos_anim_type_ext::PhobosAnimTypeExt::restrict_visibility_if_cloaked(
+                section,
+            ),
         z_adjust: section.read_int("ZAdjust", 0),
         // AnimType ctor42765B initializes0; ReadINI428147 uses ReadInt5276D0.
         y_sort_adjust: section.read_int("YSortAdjust", 0),
         layer: AnimLayer::from_ini(section),
+        phobos_layer_use_object_layer: section
+            .read_phobos_nullable_bool("Layer.UseObjectLayer", None),
         flat: section.read_bool("Flat", false),
         tiled: section.read_bool("Tiled", false),
+        phobos_tiled_interval: section.read_int("Tiled.Interval", 0),
+        phobos_tiled_align_to_center: section.read_bool("Tiled.AlignToCenter", false),
         translucency: section.read_int("Translucency", 0),
+        phobos_translucency: crate::rules::phobos_translucency_track::TranslucencyTrack::read(
+            section,
+            "Translucency",
+            anim_end,
+            false,
+        ),
+        phobos_translucency_cloaked:
+            crate::rules::phobos_translucency_track::TranslucencyTrack::read(
+                section,
+                "Translucency.Cloaked",
+                anim_end,
+                true,
+            ),
         translucency_detail_level: section.read_int("TranslucencyDetailLevel", 0),
         translucent: section.read_bool("Translucent", false),
         alt_palette: section.read_bool("AltPalette", false),
+        alt_palette_apply_lighting: section
+            .read_bool("AltPalette.ApplyLighting", false),
         // AnimTypeClass's constructor zeroes this field before the INI read and
         // the read passes the current field back as its own default, so an
         // omitted key leaves it false.
         use_normal_light: section.read_bool("UseNormalLight", false),
         shadow: section.read_bool("Shadow", false),
+        extra_shadow: section.read_bool("ExtraShadow", true),
         ping_pong: section.read_bool("PingPong", false),
         reverse: section.read_bool("Reverse", false),
         start_sound: None,
         stop_sound: None,
         bounce_sound: None,
         expire_sound: None,
+        detached_report: section
+            .read_name("DetachedReport", 0x80)
+            .map(str::to_ascii_uppercase),
     }
 }
 
@@ -1398,6 +1662,9 @@ pub struct ArtRegistry {
     /// animation on the other side of [`smudge_frame_is_large`] than the
     /// retail copy's ([`Self::populate_anim_frame_dims`]).
     smudge_folder_files: BTreeSet<String>,
+    /// Phobos `[LaserTrailTypes]`, read from this ART layer at rules load.
+    laser_trail_types: crate::rules::phobos_laser_trail::LaserTrailTypeRegistry,
+    damage_fire_offsets_valid: bool,
 }
 
 /// An AnimType runtime config's place in its [`ArtRegistry`]: an index, so a
@@ -1587,10 +1854,7 @@ impl AnimTypeRuntimeConfig {
     /// its chain.
     fn affects_play(&self) -> bool {
         let damage = self.damage.bits() & !(1 << 63) != 0;
-        #[cfg(feature = "phobos")]
         let creates_unit = self.phobos_create_unit.is_some();
-        #[cfg(not(feature = "phobos"))]
-        let creates_unit = false;
         !self.art_body_read
             || damage
             || self.ares_damage_delay != 0
@@ -1639,6 +1903,19 @@ pub(crate) fn read_infantry_discharge_frames(section: &IniSection, frames: &mut 
     frames[3] = section.read_int("SecondaryProne", frames[3]);
 }
 
+impl ArtEntry {
+    /// `ZShapePointMove` as `BuildingClass::Draw` applies it while the
+    /// building is under construction or selling: the native hook
+    /// (`0x43D6E5`) skips the move unless `ZShapePointMove.OnBuildup=`.
+    pub fn z_shape_point_move_while_buildup(&self) -> (i32, i32) {
+        if self.z_shape_point_move_on_buildup {
+            self.z_shape_point_move
+        } else {
+            (0, 0)
+        }
+    }
+}
+
 impl ArtRegistry {
     /// Parse all sections from an art.ini IniFile into the registry.
     pub fn from_ini(ini: &IniFile) -> Self {
@@ -1681,7 +1958,10 @@ impl ArtRegistry {
             let crater: bool = section.read_bool("Crater", false);
             let force_big_craters: bool = section.read_bool("ForceBigCraters", false);
             let voxel: bool = section.read_bool("Voxel", false);
-            let turret_offset: i32 = section.read_int("TurretOffset", 0);
+            // Phobos `Valueable<PartialVector3D<int>>` (`Ext/TechnoType/Body.h:56`)
+            // uses the partial three-integer scan: retail's bare `-20` fills X
+            // and leaves Y/Z at zero, while `256,128,-24` fills all three.
+            let turret_offset: [i32; 3] = section.read_phobos_int_triple("TurretOffset", [0, 0, 0]);
             let y_draw_offset: i32 = section.read_int("YDrawOffset", 0);
             let x_draw_offset: i32 = section.read_int("XDrawOffset", 0);
             let building_anims: Vec<BuildingAnimConfig> = parse_building_anims(section, ini);
@@ -1837,7 +2117,14 @@ impl ArtRegistry {
             let remove_occupy = parse_numbered_cell_offsets(section, "RemoveOccupy");
             let [z_shape_x, z_shape_y] = section.read_minmax("ZShapePointMove", [0, 0]);
             let z_shape_point_move: (i32, i32) = (z_shape_x, z_shape_y);
+            // Phobos reads `ZShapePointMove.OnBuildup` straight after the
+            // move itself; `Valueable<bool>` keeps the constructor's false.
+            let z_shape_point_move_on_buildup: bool =
+                section.read_bool("ZShapePointMove.OnBuildup", false);
             let normal_z_adjust: i32 = section.read_int("NormalZAdjust", 0);
+
+            let phobos_turret_barrel =
+                crate::rules::phobos_turret_barrel::PhobosTurretBarrel::from_section(section);
 
             let section_key = section_name.to_uppercase();
             let vera_only = vera_only_section(section);
@@ -1857,6 +2144,7 @@ impl ArtRegistry {
                 section_name.to_owned(),
                 ArtEntry {
                     image,
+                    phobos_turret_barrel,
                     picture,
                     picture_size,
                     model,
@@ -1879,6 +2167,14 @@ impl ArtRegistry {
                     y_draw_offset,
                     x_draw_offset,
                     building_anims,
+                    roof_production_anim:
+                        crate::rules::phobos_roof_production_anim::PhobosRoofProductionAnim::from_section(
+                            section,
+                        ),
+                    phobos_fire_up_reset_in_retarget: section.read_bool("FireUp.ResetInRetarget", true),
+                    // `Body.cpp:93` reads `FireUp` from the same ART section,
+                    // one line before the reset key; the keys are independent.
+                    phobos_fire_up: section.read_int("FireUp", -1),
                     building_anim_power: {
                         let mut records = [BuildingAnimPowerFlags::default(); 21];
                         read_building_anim_power(section, &mut records);
@@ -1899,7 +2195,10 @@ impl ArtRegistry {
                     secondary_fire_pixel_offset,
                     primary_fire_dual_offset,
                     is_anim_delayed_fire,
+                    is_anim_delayed_burst: section.read_bool("IsAnimDelayedBurst", true),
                     silo_damage: section.read_bool("SiloDamage", false),
+                    refinery_use_normal_active_anim: section
+                        .read_bool("Refinery.UseNormalActiveAnim", false),
                     delayed_fire_delay,
                     walk_frames,
                     firing_frames,
@@ -1911,6 +2210,8 @@ impl ArtRegistry {
                     disable_voxel_cache: section.read_bool("DisableVoxelCache", false),
                     disable_shadow_cache: section.read_bool("DisableShadowCache", false),
                     can_be_hidden: section.read_bool("CanBeHidden", true),
+                    aircraft_docking_dir_default_to_pose_dir: section
+                        .read_phobos_nullable_bool("AircraftDockingDir.DefaultToPoseDir", None),
                     queueing_cell,
                     pads,
                     damage_fire_offsets,
@@ -1922,6 +2223,7 @@ impl ArtRegistry {
                     undeploy_frames,
                     deployed_fire_frames,
                     z_shape_point_move,
+            z_shape_point_move_on_buildup,
                     normal_z_adjust,
                     building_double_thick: section.read_bool("DoubleThick", false),
                 },
@@ -1929,6 +2231,11 @@ impl ArtRegistry {
         }
 
         log::info!("ArtRegistry: {} entries loaded from art.ini", entries.len());
+        let laser_trail_types = if ini.section("LaserTrailTypes").is_some() {
+            crate::rules::phobos_laser_trail::LaserTrailTypeRegistry::from_ini(ini)
+        } else {
+            crate::rules::phobos_laser_trail::LaserTrailTypeRegistry::default()
+        };
         let mut registry = ArtRegistry {
             entries,
             entry_names,
@@ -1943,6 +2250,8 @@ impl ArtRegistry {
             anim_types_affecting_play: LookupSet::default(),
             anim_folder_files: BTreeMap::new(),
             smudge_folder_files: BTreeSet::new(),
+            laser_trail_types,
+            damage_fire_offsets_valid: true,
         };
         registry.refresh_anim_types_affecting_play();
         registry
@@ -1964,7 +2273,17 @@ impl ArtRegistry {
             anim_types_affecting_play: LookupSet::default(),
             anim_folder_files: BTreeMap::new(),
             smudge_folder_files: BTreeSet::new(),
+            laser_trail_types: Default::default(),
+            damage_fire_offsets_valid: true,
         }
+    }
+
+    /// Phobos `[LaserTrailTypes]` entry by name.
+    pub fn laser_trail(
+        &self,
+        name: &str,
+    ) -> Option<&crate::rules::phobos_laser_trail::LaserTrailType> {
+        self.laser_trail_types.get(name)
     }
 
     /// Look up art entry for an image ID (case-insensitive).
@@ -2170,8 +2489,8 @@ impl ArtRegistry {
     }
 
     /// Rebuild [`Self::anim_types_affecting_play`]: the types that affect
-    /// play themselves, then, walking `Next=`/`TrailerAnim=`/`ExpireAnim=`/
-    /// `BounceAnim=` backwards, every type that can become or make one. A
+    /// play themselves, then, walking `Next=`/`TrailerAnim=`/`ExpireAnim=`
+    /// /`BounceAnim=` backwards, every type that can become or make one. A
     /// link to a name with no AnimType leads nowhere. One pass over the
     /// configs and their links, whatever their chains or cycles.
     fn refresh_anim_types_affecting_play(&mut self) {
@@ -4050,6 +4369,44 @@ mod anim_runtime_metadata_tests {
                 .unwrap()
                 .random_rate_logic_frames,
             Some((1, 1))
+        );
+    }
+
+    /// Phobos art.ini `AltPalette.ApplyLighting=` (`Ext/AnimType/Body.cpp:105`,
+    /// `Nullable<bool>`, so an omitted key means no): the `0x4232E2` hook
+    /// (`Ext/Anim/Hooks.cpp:632-645`) steps the `ColorScheme::Array` index by
+    /// one, and `0x68C710`'s two per-entry call sites (`0x6277D7` pushing 1,
+    /// `0x627849` pushing 0x35) build the entry as a one-shade and a 53-shade
+    /// scheme from the same HSV.
+    #[test]
+    fn alt_palette_apply_lighting_reads_the_anim_section() {
+        let ini = IniFile::from_str(
+            "[UNSET]\n\
+             AltPalette=yes\n\
+             [LIT]\n\
+             AltPalette=yes\n\
+             AltPalette.ApplyLighting=yes\n\
+             [OFF]\n\
+             AltPalette=yes\n\
+             AltPalette.ApplyLighting=no\n",
+        );
+        let reg = ArtRegistry::from_ini(&ini);
+
+        assert!(
+            !reg.anim_runtime_config("UNSET")
+                .unwrap()
+                .alt_palette_apply_lighting,
+            "an unset key leaves the flag false"
+        );
+        assert!(
+            reg.anim_runtime_config("LIT")
+                .unwrap()
+                .alt_palette_apply_lighting
+        );
+        assert!(
+            !reg.anim_runtime_config("OFF")
+                .unwrap()
+                .alt_palette_apply_lighting
         );
     }
 

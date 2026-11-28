@@ -124,7 +124,6 @@ fn advance_lethal_shot(sim: &mut Simulation, rules: &RuleSet, attacker: u64, vic
 // Phobos `ROF.RandomDelay` (`0x006FD0B5`) redraws the full-rearm jitter, and
 // Ares simulates the SparkSys itself (hooks 0x62DF05, 0x62FD60) with its own
 // draws, so this stock golden holds only in a stock game without Phobos.
-#[cfg(not(feature = "phobos"))]
 #[test]
 fn ordinary_lethal_fire_commits_debris_animations_and_sparks_once() {
     let rules = consequence_rules();

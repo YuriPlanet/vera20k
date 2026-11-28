@@ -57,8 +57,12 @@ impl Simulation {
             listener.seldom.suspended_attack_target.target(),
             listener.archive_target(),
         ] {
-            if let Some(TargetKind::Entity(id)) = target {
-                name(id)?;
+            match target {
+                Some(TargetKind::Entity(id)) => name(id)?,
+                // A Bullet TarCom is cleared by the same pointer-expiry
+                // broadcast when the projectile uninitializes.
+                Some(TargetKind::Bullet(id)) => name(id)?,
+                _ => {}
             }
         }
         listener
@@ -495,10 +499,14 @@ impl Simulation {
         let Some(listener) = self.substrate.entities.get(listener_id) else {
             return;
         };
-        let current_target_matches = listener
-            .attack_target
-            .target()
-            .is_some_and(|target| matches!(target, TargetKind::Entity(id) if id == expired_id));
+        let current_target_matches =
+            listener
+                .attack_target
+                .target()
+                .is_some_and(|target| match target {
+                    TargetKind::Entity(id) | TargetKind::Bullet(id) => id == expired_id,
+                    TargetKind::Cell(..) => false,
+                });
         let listener_owner = listener.owner();
         let mission_is_suspended =
             listener.mission.suspended() != crate::sim::mission::MissionId::NONE;
@@ -617,10 +625,14 @@ impl Simulation {
         // `+0x2B8` is cleared on an exact match under `allowClear` alone — the
         // same-owner exemption applies only to `+0x2B4`.
         let clear_suspended_target = allow_clear
-            && matches!(
-                listener.seldom.suspended_attack_target.target(),
-                Some(TargetKind::Entity(id)) if id == expired_id
-            );
+            && listener
+                .seldom
+                .suspended_attack_target
+                .target()
+                .is_some_and(|target| match target {
+                    TargetKind::Entity(id) | TargetKind::Bullet(id) => id == expired_id,
+                    TargetKind::Cell(..) => false,
+                });
         // Techno707AC2..707AD7 clears eight retained effect pointers on an
         // exact match, including damage-Smoke+310. It precedes the control
         // gate707AE7 and is independent of the target's sensor/owner guards.

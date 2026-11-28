@@ -126,7 +126,7 @@ pub(super) fn emit(world: &mut Simulation, rules: &RuleSet, detonation: &Project
                 .get(house)
                 .is_some_and(|state| state.is_defeated())
         })
-        .or_else(|| neutral_house(world));
+        .or_else(|| world.neutral_house());
     let Some(owner_house) = owner_house else {
         return;
     };
@@ -443,17 +443,22 @@ fn spawn_child(
     admit_firing_effects(
         world,
         rules,
-        context,
+        context.weapon,
+        context.child_type,
+        context.source_id,
+        context.owner_house,
         origin,
         target,
         target_coords,
         velocity,
+        context.ext.use_firing_effects(context.globals),
+        context.ext.splits,
     );
 }
 
 /// `BulletExt::SimulatedFiringUnlimbo`'s velocity: Phobos' Arcing solver, a
 /// direct head-to-target vector, or the drop-down arm.
-fn simulated_velocity(
+pub(super) fn simulated_velocity(
     world: &mut Simulation,
     rules: &RuleSet,
     child_type: &crate::rules::projectile_type::ProjectileType,
@@ -558,17 +563,6 @@ fn trig(angle: f64) -> (f64, f64) {
     let sin = X::store_f64(table.sin_from_table(radians)).expect("finite table sine");
     let cos = X::store_f64(table.cos_from_table(radians)).expect("finite table cosine");
     (f64::from_bits(sin.bits()), f64::from_bits(cos.bits()))
-}
-
-/// YRpp `HouseClass::FindNeutral`: the first House whose type is the
-/// `Neutral` country (`FindByCountryName`); none without one.
-fn neutral_house(world: &Simulation) -> Option<InternedId> {
-    let neutral = world.interner.get("Neutral")?;
-    world
-        .houses
-        .in_order()
-        .find(|house| house.house_type_id() == neutral)
-        .map(|house| house.name())
 }
 
 /// `CellRangeIterator<CellClass>`: a square of `floor(radius + 0.99) * 2 + 1`
@@ -683,14 +677,30 @@ fn select_even_clusters(cells: &[ProjectileTarget], cluster_count: i32) -> Vec<P
         .collect()
 }
 
-/// Phobos' copy of `Helpers::Alex::getCellSpreadItemsExt(..., includeInAir =
-/// true, ...)`, returning Technos in native UniqueID order.
-fn cell_spread_technos(
+/// Phobos' shared `Helpers::Alex::getCellSpreadItemsExt(..., includeInAir =
+/// true, ...)`, returning Technos in native UniqueID order. Airburst's clusters
+/// and the warhead per-target pass both visit this collection.
+pub(crate) fn cell_spread_technos(
     world: &Simulation,
     rules: &RuleSet,
     coords: ProjectileCoord,
     spread_cells: f64,
     ignore_height: bool,
+) -> Vec<u64> {
+    cell_spread_technos_with_air(world, rules, coords, spread_cells, ignore_height, true)
+}
+
+/// The same walk with the `includeInAir` switch exposed for
+/// `AttackMove.Follow.IncludeAir=` (`Ext/Techno/Hooks.cpp:1299-1300`). The
+/// ground arm does not depend on it: a flying object is not in a Cell's
+/// content list, so only the AircraftTracker arm below adds airborne Technos.
+pub(crate) fn cell_spread_technos_with_air(
+    world: &Simulation,
+    rules: &RuleSet,
+    coords: ProjectileCoord,
+    spread_cells: f64,
+    ignore_height: bool,
+    include_air: bool,
 ) -> Vec<u64> {
     let mut found: BTreeMap<i32, u64> = BTreeMap::new();
     let spread_leptons = spread_cells * f64::from(LEPTONS_PER_CELL_I32);
@@ -771,6 +781,12 @@ fn cell_spread_technos(
             // duplicate id collapses to the first insertion.
             found.entry(entity.native_unique_id()).or_insert(id);
         }
+    }
+
+    // `includeInAir=false` stops here: everything the tracker would add is
+    // airborne by definition.
+    if !include_air {
+        return found.into_values().collect();
     }
 
     // The AircraftTracker arm. Phobos applies the cylindrical flag here and
@@ -862,7 +878,10 @@ fn target_get_coords(world: &Simulation, target: ProjectileTarget) -> Option<Pro
 
 /// The current coordinate of a child target, delegating the Cell/Entity/
 /// Terrain arms to the shared +0x58 owner.
-fn target_coord(world: &Simulation, target: ProjectileTarget) -> Option<ProjectileCoord> {
+pub(super) fn target_coord(
+    world: &Simulation,
+    target: ProjectileTarget,
+) -> Option<ProjectileCoord> {
     let terrain = world.resolved_terrain.as_ref();
     let coord = match target {
         ProjectileTarget::Entity(id) | ProjectileTarget::Terrain(id) => {
@@ -941,9 +960,8 @@ fn splits_projectile_check(
 }
 
 /// `IsAllowedSplitsTarget`. Without weapon targeting the weapon's warhead
-/// applies its `Affects[Owner/Allies/Enemies]` gate; with it, `LegalTarget`,
-/// the warhead's Verses against the target's (or shield's) armor and the
-/// weapon's `CanTargetHouses` apply, and the warhead Affects gate is skipped.
+/// applies its `Affects[Owner/Allies/Enemies]` gate; with it, the shared
+/// weapon-picking admission applies.
 fn allowed_splits_target(
     world: &Simulation,
     rules: &RuleSet,
@@ -954,10 +972,10 @@ fn allowed_splits_target(
     target: u64,
     use_weapon_targeting: bool,
 ) -> bool {
-    let Some(entity) = world.substrate.entities.get(target) else {
-        return false;
-    };
     if !use_weapon_targeting {
+        let Some(entity) = world.substrate.entities.get(target) else {
+            return false;
+        };
         return crate::sim::shield::can_target_house(
             warhead,
             Some(owner_house),
@@ -965,10 +983,66 @@ fn allowed_splits_target(
             world,
         );
     }
+    weapon_picking_allows(
+        world,
+        rules,
+        source_id,
+        owner_house,
+        weapon,
+        warhead,
+        target,
+    )
+}
+
+/// The `UseWeaponTargeting` arm shared with `Shrapnel.UseWeaponTargeting`
+/// (`Ext/Bullet/Hooks.cpp:309-345`): `LegalTarget`, the warhead's Verses
+/// against the target's (or shield's) armor, the weapon's `CanTargetHouses`,
+/// then the canonical `CanTarget` cell/techno bits, health range, veterancy
+/// and AttachEffect gates. The warhead Affects gate is skipped.
+pub(super) fn weapon_picking_allows(
+    world: &Simulation,
+    rules: &RuleSet,
+    source_id: u64,
+    owner_house: InternedId,
+    weapon: &WeaponType,
+    warhead: &crate::rules::warhead_type::WarheadType,
+    target: u64,
+) -> bool {
+    weapon_picking_allows_with(
+        world,
+        rules,
+        source_id,
+        owner_house,
+        weapon,
+        warhead,
+        target,
+        true,
+    )
+}
+
+/// [`weapon_picking_allows`] with the two gates a caller may not read:
+/// `include_stock_gates` covers `LegalTarget` (`Ext/Bullet/Hooks.cpp:314`) and
+/// `CanTargetVeterancy` (`:328`), which shrapnel's `IsAllowedSplitsTarget`
+/// reads but `MultiWeaponCanFire` (`Ext/Techno/WeaponHelpers.cpp:419-434`)
+/// does not.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn weapon_picking_allows_with(
+    world: &Simulation,
+    rules: &RuleSet,
+    source_id: u64,
+    owner_house: InternedId,
+    weapon: &WeaponType,
+    warhead: &crate::rules::warhead_type::WarheadType,
+    target: u64,
+    include_stock_gates: bool,
+) -> bool {
+    let Some(entity) = world.substrate.entities.get(target) else {
+        return false;
+    };
     let Some(object) = world.interner.object_type(entity.type_ref(), rules) else {
         return false;
     };
-    if !object.legal_target {
+    if include_stock_gates && !object.legal_target {
         return false;
     }
     let armor = crate::sim::shield::warhead_armor_for_target(world, rules, entity, warhead);
@@ -1005,14 +1079,17 @@ fn allowed_splits_target(
         targeting.can_target,
         Some(techno_content),
         world.cell_has_bridge_head(cell),
-    ) || !super::crit::techno_eligible(entity.category(), targeting.can_target)
-        || !super::health_in_threshold(
-            entity.health.current(),
-            object.strength,
-            targeting.min_health,
-            targeting.max_health,
-        )
-        || !veterancy_allowed(targeting.veterancy, entity.veterancy.rank_kind())
+    ) || !super::crit::techno_eligible(
+        entity.category(),
+        targeting.can_target,
+        object.is_vehicle(),
+    ) || !super::health_in_threshold(
+        entity.health.current(),
+        object.strength,
+        targeting.min_health,
+        targeting.max_health,
+    ) || (include_stock_gates
+        && !veterancy_allowed(targeting.veterancy, entity.veterancy.rank_kind()))
     {
         return false;
     }
@@ -1024,77 +1101,90 @@ fn allowed_splits_target(
     )
 }
 
-/// `EnumFunctions::CanTargetVeterancy` (`src/Utilities/EnumFunctions.cpp:18`).
+/// `EnumFunctions::CanTargetVeterancy` (`src/Utilities/EnumFunctions.cpp:18`),
+/// through the shared warhead-trigger owner.
 fn veterancy_allowed(flags: AffectedVeterancy, rank: VeterancyRank) -> bool {
-    if flags == AffectedVeterancy::ALL {
-        return true;
-    }
-    let bit = match rank {
-        VeterancyRank::Elite => AffectedVeterancy::ELITE,
-        VeterancyRank::Veteran => AffectedVeterancy::VETERAN,
-        VeterancyRank::Rookie => AffectedVeterancy::ROOKIE,
-    };
-    flags.contains(bit)
+    super::affected_veterancy_allows(flags, rank)
 }
 
-/// `SimulatedFiringEffects`: firing Anim/Report when requested, then the
-/// always-on laser, electric bolt, radiation beam and particle system.
-fn admit_firing_effects(
+/// `BulletExt::SimulatedFiringEffects` for one simulated child: the firing
+/// Anim/Report when `firing_effects` requests them, then the always-on
+/// laser, electric bolt, radiation beam and particle system.
+///
+/// `firing_effects` is Phobos' `firingEffect` argument (`SimulatedFiringAnim`
+/// + `SimulatedFiringReport`); `ignore_shooter` is `Splits`'s laser-RT
+/// `ignoreShooter`, which keeps a `Firer`/`All` mode laser from following the
+/// firer. `ReturnWeapon` (`Hooks.DetonateLogics.cpp:497`) passes
+/// `firingEffect=false, visualEffect=true`, i.e. the visual half only.
+pub(super) fn admit_firing_effects(
     world: &mut Simulation,
     rules: &RuleSet,
-    context: &ChildContext<'_>,
+    weapon: &WeaponType,
+    child_type: &crate::rules::projectile_type::ProjectileType,
+    source_id: u64,
+    owner_house: InternedId,
     origin: ProjectileCoord,
     target: ProjectileTarget,
     target_coords: ProjectileCoord,
     velocity: ProjectileVelocity,
+    firing_effects: bool,
+    ignore_shooter: bool,
 ) {
-    if context.ext.use_firing_effects(context.globals) {
-        firing_anim(
-            world,
-            rules,
-            context.weapon,
-            origin,
-            velocity,
-            context.owner_house,
-        );
-        firing_report(world, rules, context.weapon, context.source_id, origin);
+    if firing_effects {
+        firing_anim(world, rules, weapon, origin, velocity, owner_house);
+        firing_report(world, rules, weapon, source_id, origin);
     }
     // `BulletExt::GetTargetCoordsForFiring`: an Inviso + FlakScatter child
     // reports its own (scattered) unlimbo location rather than the target's,
     // and a surviving target reports its live coordinates.
-    let effect_to = if context.child_type.inviso && context.child_type.flak_scatter {
+    let effect_to = if child_type.inviso && child_type.flak_scatter {
         origin
     } else {
         target_coords
     };
-    if context.weapon.is_laser {
-        super::laser::create_effect(
-            world,
-            Some(context.owner_house),
-            origin,
-            effect_to,
-            context.weapon,
-        );
+    if weapon.is_laser {
+        // BulletExt::SimulatedFiringLaser's LaserRT arm. `Splits` children pass
+        // `ignoreShooter`, so their `Firer`/`All` modes never follow the firer.
+        let track = {
+            let follow = weapon.laser_position_update;
+            if follow == crate::rules::phobos_laser_tracking::PositionFollow::None {
+                None
+            } else {
+                super::laser::build_track(
+                    world,
+                    rules,
+                    source_id,
+                    target,
+                    0,
+                    follow,
+                    weapon
+                        .laser_position_update_stop_on_firer_convert
+                        .unwrap_or(rules.phobos_laser_tracking.stop_on_firer_convert),
+                    origin,
+                    ignore_shooter,
+                )
+            }
+        };
+        let birth =
+            super::laser::create_effect(world, Some(owner_house), origin, effect_to, weapon);
+        birth.track = track;
     }
-    if context.weapon.is_electric_bolt {
-        super::electric_bolt::create_effect(world, rules, origin, effect_to, context.weapon, None);
+    if weapon.is_electric_bolt {
+        super::electric_bolt::create_effect(world, rules, origin, effect_to, weapon, None);
     }
-    if context.weapon.is_rad_beam {
+    if weapon.is_rad_beam {
         let mode = if rules
-            .weapon_warhead(context.weapon)
+            .weapon_warhead(weapon)
             .is_some_and(|warhead| warhead.temporal)
         {
             super::radiation_beam::CopiedBeamMode::Chrono
         } else {
             super::radiation_beam::CopiedBeamMode::Radiation
         };
-        let house = context
-            .weapon
-            .phobos_beam_is_house_color
-            .then_some(context.owner_house);
+        let house = weapon.phobos_beam_is_house_color.then_some(owner_house);
         super::radiation_beam::create_endpoints(world, rules, origin, effect_to, 0, mode, house);
     }
-    if let Some(type_name) = context.weapon.attached_particle_system.as_deref()
+    if let Some(type_name) = weapon.attached_particle_system.as_deref()
         && let Some(type_id) = rules.ps_type_id_by_name(type_name)
     {
         let target_kind = match target {
@@ -1108,9 +1198,9 @@ fn admit_firing_effects(
             type_id,
             glam::IVec3::new(origin.x, origin.y, origin.z),
             target_kind,
-            (context.source_id != 0).then_some(context.source_id),
+            (source_id != 0).then_some(source_id),
             glam::IVec3::new(effect_to.x, effect_to.y, effect_to.z),
-            Some(context.owner_house),
+            Some(owner_house),
             rules,
         );
     }

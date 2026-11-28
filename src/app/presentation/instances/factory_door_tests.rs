@@ -347,3 +347,62 @@ fn an_unloading_factory_takes_over_its_products_draw() {
         assert_eq!(planned[1].drawn_by_tether, unload, "unload {unload}");
     }
 }
+
+/// A synthetic war factory whose art carries both art pairs, so the
+/// `ExitThroughRoof=` value can be varied per product type.
+fn exit_roof_rules(product: &str, product_keys: &str) -> RuleSet {
+    // A repeated `[MTNK]`/`[SHAD]` section is a later physical duplicate the
+    // INI owner ignores (first section wins), so the key lands in the type's
+    // own section.
+    let tank_key = if product == "MTNK" { product_keys } else { "" };
+    let hawk_key = if product == "SHAD" { product_keys } else { "" };
+    let rules = crate::rules::ini_parser::IniFile::from_str(&format!(
+        "[Clear]\nBuildable=yes\n[General]\nAIFireSale=yes\n\
+         [InfantryTypes]\n\
+         [VehicleTypes]\n0=MTNK\n\
+         [AircraftTypes]\n0=SHAD\n\
+         [BuildingTypes]\n0=GAWEAP\n\
+         [MTNK]\nName=Tank\nStrength=300\nSpeed=6\n{tank_key}\
+         Locomotor={{4A582741-9839-11d1-B709-00A024DDAFD1}}\n\
+         [SHAD]\nName=Night Hawk\nStrength=200\nSpeed=14\nJumpJet=yes\nMovementZone=Fly\n{hawk_key}\
+         Locomotor={{4A582746-9839-11d1-B709-00A024DDAFD1}}\n\
+         [GAWEAP]\nName=War Factory\nStrength=1000\nFoundation=3x3\nFactory=UnitType\n"
+    ));
+    let art = crate::rules::ini_parser::IniFile::from_str(
+        "[GAWEAP]\nDeployingAnim=GDOOR\nRoofDeployingAnim=GROOF\n\
+         UnderDoorAnim=GUNDER\nUnderRoofDoorAnim=GUROOF\n",
+    );
+    let mut rules =
+        RuleSet::from_ini_with_fixed_art_for_test(&rules, &art).expect("exit-through-roof fixture");
+    rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
+    rules
+}
+
+/// Phobos `BuildingClass_DrawUnderDoorAnim_ExitThroughRoof @ 0x43D363`
+/// (`Ext/Building/Hooks.cpp:1051-1075`): the produced unit's
+/// `ExitThroughRoof=` overrides the vanilla `JumpJet || BalloonHover` roof
+/// choice in both directions. Without the key the same fixture keeps the
+/// vanilla choice (covered by the retail test above).
+#[test]
+fn exit_through_roof_overrides_the_vanilla_locomotor_gate() {
+    for (product, keys, expected) in [
+        (
+            "MTNK",
+            "ExitThroughRoof=yes",
+            [Some("GROOF -40".to_owned()), Some("GUROOF".to_owned())],
+        ),
+        (
+            "SHAD",
+            "ExitThroughRoof=no",
+            [Some("GDOOR -20".to_owned()), Some("GUNDER".to_owned())],
+        ),
+    ] {
+        let rules = exit_roof_rules(product, keys);
+        let (sim, factory) = unloading_factory(&rules, product, true);
+        assert_eq!(
+            selected_art(&sim, &rules, factory),
+            Some(expected),
+            "{product} {keys}"
+        );
+    }
+}

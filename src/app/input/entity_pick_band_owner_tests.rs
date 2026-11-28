@@ -106,6 +106,7 @@ fn band(source: impl PickSource, sim: &Simulation, local_owner: Option<&str>) ->
         Some(sim.houses()),
         Some(sim.interner()),
         false,
+        false,
     )
     .expect("the box covers drawn objects")
 }

@@ -4,7 +4,7 @@
 
 use super::*;
 
-fn building_damage_state_aoe_rules() -> RuleSet {
+pub(super) fn building_damage_state_aoe_rules() -> RuleSet {
     let ini: IniFile = IniFile::from_str(
         "\
 [InfantryTypes]\n\n\
@@ -226,7 +226,7 @@ fn lifecycle_authority_animated_combat_handoff_changes_only_health_and_sequence(
     );
 }
 
-fn considered_aircraft_weapon_rules() -> RuleSet {
+pub(super) fn considered_aircraft_weapon_rules() -> RuleSet {
     let ini_str: &str = "\
 [InfantryTypes]
 0=ROCK
@@ -478,7 +478,6 @@ fn gsi_04_07_damage_wad_precedes_wall_and_wood_armor_routing() {
 
 // Phobos `ROF.RandomDelay` (`0x006FD0B5`) redraws the full-rearm jitter, so
 // this stock golden only holds without the capability.
-#[cfg(not(feature = "phobos"))]
 #[test]
 fn gsi_04_07_damage_wall_dies_in_the_tail_after_both_attackers_fire() {
     let ini = IniFile::from_str(

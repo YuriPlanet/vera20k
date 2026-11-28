@@ -237,12 +237,6 @@ impl Simulation {
         if let Some(id) = observed_direct {
             crate::sim::combat::receiver_fixture::observe_fire_visit(self, id, "entry");
         }
-        // A visit that holds no target emits nothing, so its transaction would
-        // commit nothing: it ends here (VERA-only, results unchanged).
-        if crate::sim::combat::world_fire::visit_without_target(self, &visit, rules, frame_effects)
-        {
-            return self.commit_no_fire(rules, frame_effects);
-        }
         let mut run =
             crate::sim::combat::world_receiver::ReceiverRun::default().with_effects(frame_effects);
         let mut emit = crate::sim::combat::CombatEmit::default();
@@ -262,6 +256,7 @@ impl Simulation {
             // The receiver already committed these inline before returning.
             damage_events: _,
             remove_attack: _,
+            unit_facing: _,
             spawn_target_updates: _,
             drain_links: _,
         } = emit;
@@ -287,10 +282,6 @@ impl Simulation {
         rules: &RuleSet,
         frame_effects: &mut FrameEffects<'_>,
     ) -> damage_consequences::DamageCommitReceipt {
-        // With neither pending, the commit writes nothing.
-        if !self.commit_work_pending() {
-            return damage_consequences::DamageCommitReceipt::default();
-        }
         damage_consequences::DamageConsequences::live_fire(
             Default::default(),
             Vec::new(),
@@ -377,7 +368,8 @@ impl Simulation {
         let target = match event.target {
             // FireAt aims at the target's vt+0xA4 (`0x006FE1EE`), including
             // a Building's TargetCoordOffset. Wave AI later reads +58 instead.
-            crate::sim::combat::TargetKind::Entity(_) => {
+            crate::sim::combat::TargetKind::Entity(_)
+            | crate::sim::combat::TargetKind::Bullet(_) => {
                 crate::sim::combat::fire_coord::effect_target_coordinate(
                     self,
                     rules,
@@ -732,6 +724,7 @@ impl Simulation {
                                 self.resolved_terrain.as_mut(),
                                 crate::sim::overlay_grid::WallPointerTarget::Real(rx, ry),
                                 raw_ambient_damage,
+                                crate::sim::overlay_grid::adjacent_wall_damage_for(rules),
                                 &mut self.scenario_rng,
                                 Some(&mut host),
                             )
@@ -946,15 +939,17 @@ impl Simulation {
     /// the self-destruct that ends a flying locomotor's owner when it has
     /// nowhere to go, in Fly's Stop_Moving (`0x004CD0CD`) and landing retry
     /// (`0x004CEBC7`) and Jumpjet's Stop_Moving (`0x0054B6B6`). Native passes
-    /// the Health field itself; this uses the shared bridge_ground stock
-    /// C4Warhead=Super fatal-path quotient, not general aliased packet
-    /// support: override-only early damage-pointer writes remain outside it.
+    /// the Health field itself and its sixth argument; this uses the shared
+    /// bridge_ground stock C4Warhead=Super fatal-path quotient, not general
+    /// aliased packet support: override-only early damage-pointer writes remain
+    /// outside it.
     pub fn receive_own_health_c4(
         &mut self,
         id: u64,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: &mut FrameEffects<'_>,
+        arg6: bool,
     ) {
         let Some(health) = self.substrate.entities.get(id).map(|e| e.health.current()) else {
             return;
@@ -972,7 +967,7 @@ impl Simulation {
                 warhead,
                 crate::sim::combat::ReceiverCallFlags {
                     ignore_defenses: true,
-                    arg6: true,
+                    arg6,
                 },
             ),
             frame_effects,

@@ -144,7 +144,10 @@ fn roundtrip_fixture_save(fixture: &mut Fixture, label: &str) {
     )
     .expect("paid production world restores through the app owner");
     let committed = prepared.commit_into(&mut runtime);
-    fixture.projection.model.restore_order(committed.sidebar_order);
+    fixture
+        .projection
+        .model
+        .restore_order(committed.sidebar_order);
     fixture.sim = runtime.simulation;
 }
 
@@ -173,7 +176,9 @@ fn paid_ready_fixture_from(
     let options = production::all_build_options_for_owner(&sim, &rules, "Americans");
     let candidates = cameo_candidates(&sim, &rules, None, owner, &options, &[]);
     let additions = production::initial_construction_options(&sim, &rules);
-    projection.model.reconcile_cameos(owner, &candidates, 12, &additions, false);
+    projection
+        .model
+        .reconcile_cameos(owner, &candidates, 12, &additions, false);
     let starting_credits = production::credits_for_owner(&sim, "Americans");
     let total_cost: i32 = ["GAPOWR", "GAPILL"]
         .iter()
@@ -214,7 +219,9 @@ fn paid_ready_fixture_from(
             )
             .expect("ordinary paid production frame");
         for fact in output.lifecycle_outputs {
-            projection.model.apply_lifecycle_output(&fact, Some(owner), rules.ares());
+            projection
+                .model
+                .apply_lifecycle_output(&fact, Some(owner), rules.ares());
         }
         if production::ready_buildings_for_owner(&sim, &rules, "Americans").len() == 2 {
             break;
@@ -264,7 +271,8 @@ fn refresh_fixture_sidebar(
     // changes cannot admit a new cameo without its real House lifecycle pass.
     let seed_additions = fixture
         .projection
-        .model.needs_cameo_seed(fixture.owner)
+        .model
+        .needs_cameo_seed(fixture.owner)
         .then(|| production::initial_construction_options(&fixture.sim, &fixture.rules))
         .unwrap_or_default();
     fixture.projection.model.reconcile_cameos(
@@ -276,10 +284,12 @@ fn refresh_fixture_sidebar(
     );
     fixture
         .projection
-        .model.reconcile_factory_links(&fixture.sim, fixture.owner);
+        .model
+        .reconcile_factory_links(&fixture.sim, fixture.owner);
     fixture
         .projection
-        .model.advance_cameo_requests(&fixture.sim, fixture.owner);
+        .model
+        .advance_cameo_requests(&fixture.sim, fixture.owner);
     let armed = fixture
         .input
         .targeting_mode
@@ -387,10 +397,9 @@ fn press_cameo(
     };
     // The chrome's cameo pool on the view's items: the press fires cameo
     // `ID_CAMEO_BASE + slot`, with the right marker for the right button.
-    let (fired_slot, right_marker) = crate::app::input::chrome_input::press_cameo(
-        &rects, x, y, is_right,
-    )
-    .expect("the cameo fires on the press");
+    let (fired_slot, right_marker) =
+        crate::app::input::chrome_input::press_cameo(&rects, x, y, is_right)
+            .expect("the cameo fires on the press");
     assert_eq!(fired_slot, slot);
     assert_eq!(right_marker, is_right);
     let action = hit_test_item(&view.items[fired_slot], right_marker, shift);
@@ -417,7 +426,8 @@ fn press_cameo(
         fixture.sim.interner().get(&type_id),
         fixture
             .projection
-            .model.cameo_factory(
+            .model
+            .cameo_factory(
                 &fixture.sim,
                 fixture.owner,
                 fixture.sim.interner().get(&type_id).unwrap(),
@@ -425,7 +435,8 @@ fn press_cameo(
             .map(|factory| factory.cameo_state()),
         fixture
             .projection
-            .model.cameo_request(fixture.sim.interner().get(&type_id).unwrap()),
+            .model
+            .cameo_request(fixture.sim.interner().get(&type_id).unwrap()),
         dispatched_press,
         at_build_limit,
     );
@@ -455,7 +466,8 @@ fn press_ready_cameo(fixture: &mut Fixture, name: &str, tab: SidebarTab) -> bool
     assert!(!click.clear_building_placement);
     let type_id = fixture
         .projection
-        .model.cameo_factory(
+        .model
+        .cameo_factory(
             &fixture.sim,
             fixture.owner,
             fixture.sim.interner().get(name).unwrap(),
@@ -563,7 +575,8 @@ fn ares_ready_buildings_wait_for_a_powered_construction_yard() {
         let power_plant = fixture.sim.interner().get("GAPOWR").unwrap();
         fixture
             .projection
-            .model.factory_statuses(&fixture.sim, &fixture.rules, fixture.owner)
+            .model
+            .factory_statuses(&fixture.sim, &fixture.rules, fixture.owner)
             .iter()
             .find(|status| status.type_id == power_plant)
             .is_some_and(|status| status.is_ready)
@@ -695,9 +708,17 @@ fn cancel_envelope(fixture: &Fixture, name: &str) -> CommandEnvelope {
 fn advance_commands(fixture: &mut Fixture, commands: &[CommandEnvelope]) -> SimFrameOutput {
     fixture.sim.queue_commands(commands.iter().cloned());
     let due = fixture.sim.take_due_commands();
-    let visits = fixture.projection.model.production_factory_visits(&fixture.sim);
+    let visits = fixture
+        .projection
+        .model
+        .production_factory_visits(&fixture.sim);
     let projection = std::cell::RefCell::new(&mut fixture.projection);
-    let mut clear_request = |type_id| projection.borrow_mut().model.clear_production_request(type_id);
+    let mut clear_request = |type_id| {
+        projection
+            .borrow_mut()
+            .model
+            .clear_production_request(type_id)
+    };
     fixture
         .sim
         .advance_app_frame(
@@ -725,7 +746,8 @@ fn submitted_building_is_not_reoffered_by_tab_before_place_receipt() {
     assert_eq!(
         fixture
             .projection
-            .model.ready_building_for_tab(&fixture.sim, owner, SidebarTab::Building,),
+            .model
+            .ready_building_for_tab(&fixture.sim, owner, SidebarTab::Building,),
         Some((type_id, product)),
     );
 
@@ -737,7 +759,8 @@ fn submitted_building_is_not_reoffered_by_tab_before_place_receipt() {
     assert_eq!(
         fixture
             .projection
-            .model.ready_building_for_tab(&fixture.sim, owner, SidebarTab::Building,),
+            .model
+            .ready_building_for_tab(&fixture.sim, owner, SidebarTab::Building,),
         None,
         "a submitted product is not offered again while PLACE awaits receipt",
     );
@@ -773,9 +796,11 @@ fn loaded_ready_tabs_wait_for_the_saved_factory_changed_edge() {
         // PostLoad6851D9 clears734270 without changing the saved Factory
         // byte or retained links. Completeness still drives the tab flash.
         assert_eq!(
-            fixture
-                .projection
-                .model.ready_building_for_tab(&fixture.sim, owner, SidebarTab::Building,),
+            fixture.projection.model.ready_building_for_tab(
+                &fixture.sim,
+                owner,
+                SidebarTab::Building,
+            ),
             None,
         );
         assert_eq!(
@@ -789,9 +814,11 @@ fn loaded_ready_tabs_wait_for_the_saved_factory_changed_edge() {
         let published = advance_commands(&mut fixture, &[]);
         consume_frame_outputs(&mut fixture, &published, Some(owner));
         assert_eq!(
-            fixture
-                .projection
-                .model.ready_building_for_tab(&fixture.sim, owner, SidebarTab::Building,),
+            fixture.projection.model.ready_building_for_tab(
+                &fixture.sim,
+                owner,
+                SidebarTab::Building,
+            ),
             (!already_published).then_some((type_id, product)),
             "only the unconsumed changed edge registers the loaded reference",
         );
@@ -823,7 +850,8 @@ fn building_and_defense_tab_history_outlives_the_single_saved_retry() {
         [SidebarTab::Building, SidebarTab::Defense].map(|tab| {
             fixture
                 .projection
-                .model.ready_building_for_tab(&fixture.sim, owner, tab)
+                .model
+                .ready_building_for_tab(&fixture.sim, owner, tab)
         }),
         [None, None],
         "the overwritten retry does not resurrect the Building tab reference",
@@ -840,7 +868,8 @@ fn building_and_defense_tab_history_outlives_the_single_saved_retry() {
     let defense =
         fixture
             .projection
-            .model.ready_building_for_tab(&fixture.sim, owner, SidebarTab::Defense);
+            .model
+            .ready_building_for_tab(&fixture.sim, owner, SidebarTab::Defense);
     assert!(defense.is_some());
     let cancel = cancel_envelope(&fixture, "GAPOWR");
     for commands in [&[cancel][..], &[][..]] {
@@ -850,13 +879,15 @@ fn building_and_defense_tab_history_outlives_the_single_saved_retry() {
     assert_eq!(
         fixture
             .projection
-            .model.ready_building_for_tab(&fixture.sim, owner, SidebarTab::Building),
+            .model
+            .ready_building_for_tab(&fixture.sim, owner, SidebarTab::Building),
         None,
     );
     assert_eq!(
         fixture
             .projection
-            .model.ready_building_for_tab(&fixture.sim, owner, SidebarTab::Defense),
+            .model
+            .ready_building_for_tab(&fixture.sim, owner, SidebarTab::Defense),
         defense,
     );
 }
@@ -905,7 +936,8 @@ fn pending_produce_right_click_suspends_on_arrival_without_duplicate_orders() {
         assert!(
             fixture
                 .projection
-                .model.cameo_factory(&fixture.sim, fixture.owner, type_id)
+                .model
+                .cameo_factory(&fixture.sim, fixture.owner, type_id)
                 .is_none()
         );
 
@@ -1087,12 +1119,14 @@ fn pending_alternating_clicks_retain_native_hold_request_and_resume_on_arrival()
                 .collect();
             let mut actual: Vec<_> = fixture
                 .projection
-                .model.cameo_strips()
+                .model
+                .cameo_strips()
                 .requested_ids()
                 .filter_map(|id| match id {
                     CameoId::Object(id) => fixture
                         .projection
-                        .model.cameo_request(id)
+                        .model
+                        .cameo_request(id)
                         .map(|state| (id, state)),
                     CameoId::SuperWeapon(_) => None,
                 })
@@ -1159,9 +1193,11 @@ fn consume_lifecycle_output(
     local_house: Option<InternedId>,
 ) -> bool {
     let ares = fixture.rules.ares();
-    if let Some(cursor_clear) = fixture
-        .projection
-        .model.apply_lifecycle_output(output, local_house, ares)
+    if let Some(cursor_clear) =
+        fixture
+            .projection
+            .model
+            .apply_lifecycle_output(output, local_house, ares)
     {
         fixture
             .input
@@ -1876,7 +1912,8 @@ fn assert_old_infantry_cameo_released(fixture: &mut Fixture, order: u64) {
     let successor = fixture.sim.interner().get("ENGINEER").unwrap();
     let factory = fixture
         .projection
-        .model.cameo_factory(&fixture.sim, fixture.owner, successor)
+        .model
+        .cameo_factory(&fixture.sim, fixture.owner, successor)
         .expect("Begin links the promoted ENGINEER to the retained Factory");
     assert_eq!(factory.construction_order(), order);
     assert_eq!(factory.object.unwrap().type_id, successor);
@@ -1884,14 +1921,16 @@ fn assert_old_infantry_cameo_released(fixture: &mut Fixture, order: u64) {
     assert!(
         fixture
             .projection
-            .model.cameo_factory(&fixture.sim, fixture.owner, old_type)
+            .model
+            .cameo_factory(&fixture.sim, fixture.owner, old_type)
             .is_none(),
         "HouseAbandon4FAB74→Strip6ABBDF clears E1 before successor promotion"
     );
     assert!(
         fixture
             .projection
-            .model.factory_statuses(&fixture.sim, &fixture.rules, fixture.owner)
+            .model
+            .factory_statuses(&fixture.sim, &fixture.rules, fixture.owner)
             .iter()
             .all(|status| status.type_id != old_type),
         "the old cameo must not draw the successor's clock or Hold"
@@ -1927,7 +1966,8 @@ fn mixed_infantry_cancel_clears_old_cameo_before_same_factory_promotion() {
     assert_eq!(
         fixture
             .projection
-            .model.cameo_factory(
+            .model
+            .cameo_factory(
                 &fixture.sim,
                 owner,
                 fixture.sim.interner().get("E1").unwrap()
@@ -3007,7 +3047,8 @@ fn unlinked_abandon_clears_current_before_product_expiry() {
         assert!(
             fixture
                 .projection
-                .model.cameo_factory(&fixture.sim, owner, power_type)
+                .model
+                .cameo_factory(&fixture.sim, owner, power_type)
                 .is_none()
         );
         let history = "local_unlinked_strip_clear_active_abandon_order";
@@ -3040,7 +3081,8 @@ fn unlinked_abandon_clears_current_before_product_expiry() {
             if let Some(cursor_clear) =
                 fixture
                     .projection
-                    .model.apply_lifecycle_output(output, Some(owner), ares_way)
+                    .model
+                    .apply_lifecycle_output(output, Some(owner), ares_way)
             {
                 clears += 1;
                 fixture
@@ -3074,7 +3116,8 @@ fn unlinked_abandon_clears_current_before_product_expiry() {
         assert_eq!(
             fixture
                 .projection
-                .model.cameo_factory(&fixture.sim, owner, pill_type)
+                .model
+                .cameo_factory(&fixture.sim, owner, pill_type)
                 .unwrap()
                 .construction_order(),
             pill_order

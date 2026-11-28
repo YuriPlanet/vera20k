@@ -347,7 +347,7 @@ mod tests {
                 FactorySlot::Building,
                 FactorySlot::Naval,
             ]
-            .map(|slot| tracking.factory_count(slot))
+            .map(|slot| tracking.factories()[slot as usize])
         };
         assert_eq!(counts(&sim, owner), [1, 2, 0, 0, 1]);
         assert_eq!(sim.houses[&owner].tracking().funds_nag_factories(), 3);

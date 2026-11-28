@@ -1,0 +1,486 @@
+//! Phobos's sidebar text indicators, all three drawn by the one hook
+//! `DEFINE_HOOK(0x4A25E0, CreditsClass_GraphicLogic_HarvesterCounter)`
+//! (`src/Misc/Hooks.UI.cpp`). This module owns the keys; the presentation
+//! owner turns them into the strings and colours the sidebar text lane draws.
+//!
+//! Two INI layers feed one draw site:
+//! - `uimd.ini [Sidebar]` / `[ToolTips]` — the mod-wide switches, thresholds
+//!   and label keys, read once at startup (`src/Phobos.INI.cpp:159-199`).
+//! - `rulesmd.ini [<Side ID>] Sidebar.<Indicator>.*` — per-side offset, colours
+//!   and alignment, read for every registered side by `SideExt::LoadFromINIFile`
+//!   (`src/Ext/Side/Body.cpp:21-47`, driven from the `SideClass_LoadAllFromINI`
+//!   hook at `0x679A10`).
+//!
+//! The label keys go through `GeneralUtils::LoadStringOrDefault`, not
+//! `LoadStringUnlessMissing`, so a key the CSF table does not hold keeps native's
+//! visible `MISSING:'<key>'` text and only a blank value keeps the glyph default.
+//! RESIDUAL: `Sidebar.PowerDelta.Align=none` selects Phobos' `TextAlign::None`
+//! (`0xFFF`), which ORs the font nibble, all four shadow bits, both alignment
+//! bits and `Background` into the draw flags at once. VERA treats that spelling
+//! as rejected text and keeps the previous value, because no sidebar string in
+//! VERA decodes the `TextPrintType` font or shadow selection; recorded with its
+//! reason in `docs/phobos-power-delta-indicator.md`.
+
+use super::ini_parser::{IniFile, IniSection, is_native_none_type_name};
+
+/// The alignment bits `Sidebar.PowerDelta.Align=` selects, which Phobos ORs
+/// straight into the `TextPrintType` flags (`src/Utilities/Enum.h:234-241`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum SidebarTextAlign {
+    /// `0x000` — the string starts at the anchor.
+    #[default]
+    Left,
+    /// `0x100` — the string is centred on the anchor.
+    Center,
+    /// `0x200` — the string ends at the anchor.
+    Right,
+}
+
+impl SidebarTextAlign {
+    /// Phobos' `read<TextAlign>` (`src/Utilities/TemplateDef.h:1089-1099`):
+    /// `_stricmp` against `left`, `center`, `centre` and `right`.
+    pub fn parse(raw: &str) -> Option<Self> {
+        Some(if raw.eq_ignore_ascii_case("left") {
+            Self::Left
+        } else if raw.eq_ignore_ascii_case("center") || raw.eq_ignore_ascii_case("centre") {
+            Self::Center
+        } else if raw.eq_ignore_ascii_case("right") {
+            Self::Right
+        } else {
+            return None;
+        })
+    }
+}
+
+/// `uimd.ini [Sidebar] PowerDelta.*` (`src/Phobos.INI.cpp:192-199`). Phobos
+/// keeps both thresholds as `double` and compares them against a `double`
+/// ratio, so VERA holds `f64` here too; a `%` suffix is scaled by `ReadDouble`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PowerDeltaUi {
+    /// `PowerDelta.Show=`, default `no`.
+    pub show: bool,
+    /// `PowerDelta.ConditionYellow=`, default `0.75`.
+    pub condition_yellow: f64,
+    /// `PowerDelta.ConditionRed=`, default `1.0`.
+    pub condition_red: f64,
+}
+
+impl Default for PowerDeltaUi {
+    fn default() -> Self {
+        Self {
+            show: false,
+            condition_yellow: 0.75,
+            condition_red: 1.0,
+        }
+    }
+}
+
+/// `uimd.ini [Sidebar] HarvesterCounter.*` (`src/Phobos.INI.cpp:174-185`).
+/// The two thresholds compare against the *working-to-total* ratio as `double`s.
+#[derive(Debug, Clone, PartialEq)]
+pub struct HarvesterCounterUi {
+    /// `HarvesterCounter.Show=`, default `no`.
+    pub show: bool,
+    /// `HarvesterCounter.Label=`, resolved text, default the `⛏` glyph
+    /// (U+26CF, `Phobos.INI.cpp:177-178`).
+    pub label: String,
+    /// `HarvesterCounter.ConditionYellow=`, default `0.99`.
+    pub condition_yellow: f64,
+    /// `HarvesterCounter.ConditionRed=`, default `0.5`.
+    pub condition_red: f64,
+}
+
+impl Default for HarvesterCounterUi {
+    fn default() -> Self {
+        Self {
+            show: false,
+            label: HARVESTER_LABEL_DEFAULT.to_string(),
+            condition_yellow: 0.99,
+            condition_red: 0.5,
+        }
+    }
+}
+
+impl HarvesterCounterUi {
+    fn from_section(section: &IniSection, lookup: &dyn Fn(&str) -> Option<String>) -> Self {
+        let defaults = Self::default();
+        Self {
+            show: section.read_bool("HarvesterCounter.Show", defaults.show),
+            label: load_string_or_default(
+                section,
+                "HarvesterCounter.Label",
+                HARVESTER_LABEL_DEFAULT,
+                lookup,
+            ),
+            condition_yellow: section.read_double(
+                "HarvesterCounter.ConditionYellow",
+                defaults.condition_yellow,
+            ),
+            condition_red: section
+                .read_double("HarvesterCounter.ConditionRed", defaults.condition_red),
+        }
+    }
+}
+
+/// `⛏`, the `defaultValue` of `Phobos.INI.cpp:178`.
+const HARVESTER_LABEL_DEFAULT: &str = "\u{26CF}";
+
+/// `uimd.ini [Sidebar] WeedsCounter.*` (`src/Phobos.INI.cpp:186-187`). The
+/// weeds branch reads one switch: it has no label key, no thresholds and no
+/// alignment key, unlike the harvester and power-delta branches.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct WeedsCounterUi {
+    /// `WeedsCounter.Show=`, default `no` (`ReadBool(..., false)`).
+    pub show: bool,
+}
+
+impl Default for WeedsCounterUi {
+    fn default() -> Self {
+        Self { show: false }
+    }
+}
+
+impl WeedsCounterUi {
+    fn from_section(section: &IniSection) -> Self {
+        let defaults = Self::default();
+        Self {
+            show: section.read_bool("WeedsCounter.Show", defaults.show),
+        }
+    }
+}
+
+/// `uimd.ini [Sidebar] ProducingProgress.Show` (`Phobos.INI.cpp:189-190`,
+/// `SIDEBAR_SECTION`): the `0x6A6EB1 SidebarClass_DrawIt_ProducingProgress`
+/// hook's admission gate. `ReadBool(..., false)` makes the four
+/// `TabProducingProgress[i]` progress strips opt-in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ProducingProgressUi {
+    pub show: bool,
+}
+
+impl Default for ProducingProgressUi {
+    fn default() -> Self {
+        Self { show: false }
+    }
+}
+
+impl ProducingProgressUi {
+    fn from_section(section: &IniSection) -> Self {
+        Self {
+            show: section.read_bool("ProducingProgress.Show", false),
+        }
+    }
+}
+
+/// Everything `uimd.ini` contributes to the indicator hook, with the two
+/// `[ToolTips]` labels already resolved to text.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SidebarIndicatorsUi {
+    pub power_delta: PowerDeltaUi,
+    pub harvester: HarvesterCounterUi,
+    pub weeds: WeedsCounterUi,
+    /// `[Sidebar] ProducingProgress.Show=`, default `no`.
+    pub producing_progress: ProducingProgressUi,
+    /// `[ToolTips] PowerLabel=`, default the `⚡` glyph (U+26A1).
+    pub power_label: String,
+    /// `[ToolTips] PowerBlackoutLabel=`, default `⚡❌` (U+26A1 U+274C).
+    pub power_blackout_label: String,
+    /// `[Sidebar] CreditsIndicator.MaxStep=` (`Phobos.INI.cpp:237`), default
+    /// 143: the largest per-frame step; a value at or below zero removes the
+    /// upper bound.
+    pub credits_max_step: i32,
+    /// `[Sidebar] CreditsIndicator.Smooth=` (`Phobos.INI.cpp:240`), default
+    /// `yes`: when off the counter snaps to the balance without stepping.
+    pub credits_smooth: bool,
+}
+
+impl Default for SidebarIndicatorsUi {
+    /// Phobos always reaches the `[ToolTips]` read, so even an absent `uimd.ini`
+    /// ends up with the two glyph labels rather than empty strings.
+    fn default() -> Self {
+        Self {
+            power_delta: PowerDeltaUi::default(),
+            harvester: HarvesterCounterUi::default(),
+            weeds: WeedsCounterUi::default(),
+            producing_progress: ProducingProgressUi::default(),
+            power_label: POWER_LABEL_DEFAULT.to_string(),
+            power_blackout_label: POWER_BLACKOUT_LABEL_DEFAULT.to_string(),
+            credits_max_step: 143,
+            credits_smooth: true,
+        }
+    }
+}
+
+impl SidebarIndicatorsUi {
+    /// Phobos loads `uimd.ini` once at startup
+    /// (`src/Phobos.INI.cpp:136-137`), so an unreadable file leaves every
+    /// default in place rather than failing the load. `lookup` resolves a
+    /// `[ToolTips]` key through the loaded CSF table, which Phobos'
+    /// `StringTable::LoadString` asks at the same moment.
+    pub fn from_uimd_bytes(bytes: &[u8], lookup: &dyn Fn(&str) -> Option<String>) -> Self {
+        let Ok(ini) = IniFile::from_bytes(bytes) else {
+            log::warn!("Could not parse UIMD.INI for sidebar indicators");
+            return Self::default();
+        };
+        Self::from_ini(&ini, lookup)
+    }
+
+    pub fn from_ini(ini: &IniFile, lookup: &dyn Fn(&str) -> Option<String>) -> Self {
+        let tooltips = ini.section("ToolTips");
+        let label = |key: &str, default: &str| {
+            tooltips.map_or_else(
+                || default.to_string(),
+                |section| load_string_or_default(section, key, default, lookup),
+            )
+        };
+        Self {
+            power_delta: ini
+                .section("Sidebar")
+                .map(PowerDeltaUi::from_section)
+                .unwrap_or_default(),
+            harvester: ini
+                .section("Sidebar")
+                .map(|section| HarvesterCounterUi::from_section(section, lookup))
+                .unwrap_or_default(),
+            weeds: ini
+                .section("Sidebar")
+                .map(WeedsCounterUi::from_section)
+                .unwrap_or_default(),
+            producing_progress: ini
+                .section("Sidebar")
+                .map(ProducingProgressUi::from_section)
+                .unwrap_or_default(),
+            power_label: label("PowerLabel", POWER_LABEL_DEFAULT),
+            power_blackout_label: label("PowerBlackoutLabel", POWER_BLACKOUT_LABEL_DEFAULT),
+            credits_max_step: ini.section("Sidebar").map_or(143, |section| {
+                section.read_int("CreditsIndicator.MaxStep", 143)
+            }),
+            credits_smooth: ini
+                .section("Sidebar")
+                .is_none_or(|section| section.read_bool("CreditsIndicator.Smooth", true)),
+        }
+    }
+}
+
+/// `⚡`, the `defaultValue` of `Phobos.INI.cpp:160`.
+const POWER_LABEL_DEFAULT: &str = "\u{26A1}";
+/// `⚡❌`, the `defaultValue` of `Phobos.INI.cpp:163`.
+const POWER_BLACKOUT_LABEL_DEFAULT: &str = "\u{26A1}\u{274C}";
+
+/// `GeneralUtils::LoadStringOrDefault` (`src/Utilities/GeneralUtils.cpp:37-43`):
+/// `IsValidString` (`:12-17`) rejects null, empty and `INIClass::IsBlank` text —
+/// `<none>` and bare `none`, case-insensitive (`CCINIClass.h`), the same pair the
+/// type factories answer null for — and only those keep the default. Anything
+/// else is asked of the string table, whose miss stays visible.
+pub(crate) fn load_string_or_default(
+    section: &IniSection,
+    key: &str,
+    default: &str,
+    lookup: &dyn Fn(&str) -> Option<String>,
+) -> String {
+    let raw = section.read_string(key, "<none>", 2048);
+    if raw.is_empty() || is_native_none_type_name(&raw) {
+        return default.to_string();
+    }
+    lookup(&raw).unwrap_or_else(|| default.to_string())
+}
+
+impl PowerDeltaUi {
+    fn from_section(section: &IniSection) -> Self {
+        let defaults = Self::default();
+        Self {
+            show: section.read_bool("PowerDelta.Show", defaults.show),
+            condition_yellow: section
+                .read_double("PowerDelta.ConditionYellow", defaults.condition_yellow),
+            condition_red: section.read_double("PowerDelta.ConditionRed", defaults.condition_red),
+        }
+    }
+}
+
+/// `rulesmd.ini [<Side ID>] Sidebar.PowerDelta.*` (`src/Ext/Side/Body.cpp:42-47`,
+/// types and defaults at `Body.h:38-43` and `:69-74`). Every field is a
+/// `Valueable`, so each has a stored default and no fallback colour.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct PowerDeltaSideSettings {
+    /// `Sidebar.PowerDelta.Offset=`, `Point2D` (`Read2Integers`), default
+    /// `0,0`, added to the hook's own anchor.
+    pub offset: [i32; 2],
+    /// `ColorGreen=`, default `0,255,0`.
+    pub color_green: [u8; 3],
+    /// `ColorYellow=`, default `255,255,0`. Also the colour when both output
+    /// and drain are zero.
+    pub color_yellow: [u8; 3],
+    /// `ColorRed=`, default `255,0,0`.
+    pub color_red: [u8; 3],
+    /// `ColorGrey=`, default `128,128,128`: the spy / force-shield blackout.
+    pub color_grey: [u8; 3],
+    /// `Align=`, default `left`.
+    pub align: SidebarTextAlign,
+}
+
+impl Default for PowerDeltaSideSettings {
+    fn default() -> Self {
+        Self {
+            offset: [0, 0],
+            color_green: [0, 255, 0],
+            color_yellow: [255, 255, 0],
+            color_red: [255, 0, 0],
+            color_grey: [128, 128, 128],
+            align: SidebarTextAlign::default(),
+        }
+    }
+}
+
+impl PowerDeltaSideSettings {
+    /// A side with no section keeps the constructor defaults, as `SideExt`'s
+    /// `if (!pINI->GetSection(pSection)) return;` does.
+    pub(crate) fn from_section(section: &IniSection) -> Self {
+        let defaults = Self::default();
+        let mut this = Self {
+            offset: section
+                .read_int_fields_complete::<2>("Sidebar.PowerDelta.Offset", 2048)
+                .unwrap_or(defaults.offset),
+            color_green: section
+                .read_phobos_color("Sidebar.PowerDelta.ColorGreen", defaults.color_green),
+            color_yellow: section
+                .read_phobos_color("Sidebar.PowerDelta.ColorYellow", defaults.color_yellow),
+            color_red: section.read_phobos_color("Sidebar.PowerDelta.ColorRed", defaults.color_red),
+            color_grey: section
+                .read_phobos_color("Sidebar.PowerDelta.ColorGrey", defaults.color_grey),
+            align: defaults.align,
+        };
+        let raw = section.read_string("Sidebar.PowerDelta.Align", "", 2048);
+        if let Some(align) = SidebarTextAlign::parse(&raw) {
+            this.align = align;
+        }
+        this
+    }
+}
+
+/// `rulesmd.ini [<Side ID>] Sidebar.HarvesterCounter.*`
+/// (`src/Ext/Side/Body.cpp:33-38`, types and defaults at `Body.h:29-34` and
+/// `:60-65`).
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct HarvesterCounterSideSettings {
+    /// `Sidebar.HarvesterCounter.Offset=`, `Point2D`, default `0,0`.
+    pub offset: [i32; 2],
+    /// `HideMaxValue=`, default `no`: drop the `/total` half and show only the
+    /// working count. It wins when both switches are set.
+    pub hide_max_value: bool,
+    /// `OnlyMaxValue=`, default `no`: show only the total count. Native requires
+    /// `HideMaxValue=no` for it to have any effect, which the format branch
+    /// reproduces.
+    pub only_max_value: bool,
+    /// `ColorGreen=` is a `Nullable<ColorStruct>`: unset falls back to the
+    /// current sidebar tooltip colour.
+    pub color_green: Option<[u8; 3]>,
+    /// `ColorYellow=`, default `255,255,0`.
+    pub color_yellow: [u8; 3],
+    /// `ColorRed=`, default `255,0,0`.
+    pub color_red: [u8; 3],
+}
+
+impl Default for HarvesterCounterSideSettings {
+    fn default() -> Self {
+        Self {
+            offset: [0, 0],
+            hide_max_value: false,
+            only_max_value: false,
+            color_green: None,
+            color_yellow: [255, 255, 0],
+            color_red: [255, 0, 0],
+        }
+    }
+}
+
+impl HarvesterCounterSideSettings {
+    pub(crate) fn from_section(section: &IniSection) -> Self {
+        let defaults = Self::default();
+        Self {
+            offset: section
+                .read_int_fields_complete::<2>("Sidebar.HarvesterCounter.Offset", 2048)
+                .unwrap_or(defaults.offset),
+            hide_max_value: section.read_bool(
+                "Sidebar.HarvesterCounter.HideMaxValue",
+                defaults.hide_max_value,
+            ),
+            only_max_value: section.read_bool(
+                "Sidebar.HarvesterCounter.OnlyMaxValue",
+                defaults.only_max_value,
+            ),
+            color_green: section
+                .read_phobos_nullable_color("Sidebar.HarvesterCounter.ColorGreen", None),
+            color_yellow: section.read_phobos_color(
+                "Sidebar.HarvesterCounter.ColorYellow",
+                defaults.color_yellow,
+            ),
+            color_red: section
+                .read_phobos_color("Sidebar.HarvesterCounter.ColorRed", defaults.color_red),
+        }
+    }
+}
+
+/// `rulesmd.ini [<Side ID>] Sidebar.WeedsCounter.*`
+/// (`src/Ext/Side/Body.cpp:39-40`, types at `Body.h:35-36`, defaults at
+/// `:66-67`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct WeedsCounterSideSettings {
+    /// `Sidebar.WeedsCounter.Offset=`, `Valueable<Point2D>`, default `0,0`.
+    pub offset: [i32; 2],
+    /// `Sidebar.WeedsCounter.Color=`, `Nullable<ColorStruct>`: unset falls back
+    /// to `Drawing::TooltipColor` at the draw (`Hooks.UI.cpp:179`). The branch
+    /// has no colour thresholds, so this is the only colour it reads.
+    pub color: Option<[u8; 3]>,
+}
+
+impl Default for WeedsCounterSideSettings {
+    fn default() -> Self {
+        Self {
+            offset: [0, 0],
+            color: None,
+        }
+    }
+}
+
+impl WeedsCounterSideSettings {
+    pub(crate) fn from_section(section: &IniSection) -> Self {
+        let defaults = Self::default();
+        Self {
+            offset: section
+                .read_int_fields_complete::<2>("Sidebar.WeedsCounter.Offset", 2048)
+                .unwrap_or(defaults.offset),
+            color: section.read_phobos_nullable_color("Sidebar.WeedsCounter.Color", None),
+        }
+    }
+}
+
+/// `rulesmd.ini [<Side ID>] Sidebar.ProducingProgress.Offset=`
+/// (`src/Ext/Side/Body.cpp:41`, `Valueable<Point2D>` declared at
+/// `Side/Body.h:37`, constructor default `{0,0}`). The `0x6A6EB1
+/// SidebarClass_DrawIt_ProducingProgress` hook adds it to
+/// `XBase = (Sidebar_GDIPositions ? 26 : 20) + offset.X` and
+/// `YBase = 197 + offset.Y` (`Ext/Sidebar/Hooks.cpp:39-42`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ProducingProgressSideSettings {
+    pub offset: [i32; 2],
+}
+
+impl Default for ProducingProgressSideSettings {
+    fn default() -> Self {
+        Self { offset: [0, 0] }
+    }
+}
+
+impl ProducingProgressSideSettings {
+    pub(crate) fn from_section(section: &IniSection) -> Self {
+        Self {
+            offset: section
+                .read_int_fields_complete::<2>("Sidebar.ProducingProgress.Offset", 2048)
+                .unwrap_or([0, 0]),
+        }
+    }
+}
+
+#[cfg(all(test, tests_rules_o_z))]
+#[path = "phobos_sidebar_indicators_tests.rs"]
+mod tests;

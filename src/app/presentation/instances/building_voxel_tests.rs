@@ -176,7 +176,7 @@ fn retail_building_guns_draw_the_native_crop_at_the_native_origin() {
             rules
                 .art()
                 .resolve_metadata_entry(building, &object.image)
-                .map_or(0, |art| art.turret_offset),
+                .map_or(0, |art| art.turret_offset[0]),
             0,
             "{building}"
         );

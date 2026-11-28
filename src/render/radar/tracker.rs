@@ -154,6 +154,40 @@ pub(super) fn radar_combat_flash_inverts(
     remaining > 0 && (remaining - 1) / period % 2 == 1 && current_player == Some(entity.owner())
 }
 
+/// Phobos `RadarClass_ProcessPoint_RadarInvisible` (`Ext/Techno/Hooks.cpp:985`)
+/// asks `EnumFunctions::CanTargetHouse(RadarInvisibleToHouse.Get(Enemies),
+/// pTechno->Owner, CurrentPlayer)`. `source` is the techno's owner and `target`
+/// the viewing house, matching the native argument order; the ladder itself is
+/// the shared `phobos_shields::can_target_house_ladder` owner.
+fn radar_invisible_to_house(
+    object: &crate::rules::object_type::ObjectType,
+    source: InternedId,
+    target: InternedId,
+    houses: &crate::sim::houses::Houses,
+    alliances: &crate::map::houses::HouseAllianceMap,
+    interner: Option<&crate::sim::intern::StringInterner>,
+) -> bool {
+    use crate::rules::phobos_shields::AffectedHouse;
+    let flags = object
+        .phobos_radar_invisible_to_house
+        .unwrap_or(AffectedHouse::ENEMIES);
+    let allied = interner.is_some_and(|interner| {
+        crate::map::houses::is_allied_with(
+            alliances,
+            interner.resolve(source),
+            interner.resolve(target),
+        )
+    });
+    crate::rules::phobos_shields::can_target_house_ladder(
+        flags,
+        source == target,
+        houses
+            .get(&target)
+            .is_some_and(|house| house.multiplay_passive()),
+        allied,
+    )
+}
+
 /// RenderCellPixel's test of one tracker entry. `pixel_cell` is the cell its
 /// inverse (`0x00655CB8..0x00655D03`) names for the entry's pixel.
 pub(super) fn radar_pixel_candidate_eligible(
@@ -187,15 +221,24 @@ pub(super) fn radar_pixel_candidate_eligible(
         }
         // RenderCellPixel @ 0x00655DFF tests RadarInvisible before the later
         // Insignificant/RadarVisible branch. RadarVisible cannot rescue a
-        // hostile RadarInvisible object.
-        // `PlayerPtr->Is_Ally_ByObject(object)` (`0x00655E09`), asked only of
-        // a RadarInvisible object: nothing else in this test reads it.
-        if object.is_some_and(|object| object.radar_invisible)
-            && entity.owner() != local_owner
-            && !interner
-                .is_some_and(|interner| alliances.is_allied(interner, local_owner, entity.owner()))
-        {
-            return false;
+        // hostile RadarInvisible object. Phobos
+        // `RadarClass_ProcessPoint_RadarInvisible` (0x655DDD) replaces the
+        // hostile test with the type's `RadarInvisibleToHouse` (default
+        // Enemies).
+        if object.is_some_and(|object| object.radar_invisible) {
+            let hides = object.is_some_and(|object| {
+                radar_invisible_to_house(
+                    object,
+                    entity.owner(),
+                    local_owner,
+                    houses,
+                    alliances.as_map(),
+                    interner,
+                )
+            });
+            if hides {
+                return false;
+            }
         }
     }
 

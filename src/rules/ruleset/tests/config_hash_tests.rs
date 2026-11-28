@@ -533,7 +533,6 @@ fn simulation_config_hash_covers_effective_projectile_launch_art_and_load() {
     }
 }
 
-#[cfg(feature = "phobos")]
 #[test]
 fn simulation_config_hash_covers_phobos_warhead_animation_rules() {
     let make = |keys: &str, general: &str| {
@@ -560,7 +559,6 @@ fn simulation_config_hash_covers_phobos_warhead_animation_rules() {
     );
 }
 
-#[cfg(feature = "phobos")]
 #[test]
 fn simulation_config_hash_covers_warhead_jumpjet_overrides() {
     let make = |keys: &str| {
@@ -579,7 +577,6 @@ fn simulation_config_hash_covers_warhead_jumpjet_overrides() {
     );
 }
 
-#[cfg(feature = "phobos")]
 #[test]
 fn simulation_config_hash_covers_mind_control_enhancements() {
     let make = |general: &str, unit: &str, warhead: &str| {

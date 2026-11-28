@@ -623,7 +623,10 @@ pub fn personality_for_house(
     }
     match catalog.index_of_name(requested) {
         Some(index) => {
-            if catalog.get(index).is_some_and(|definition| definition.admits(country)) {
+            if catalog
+                .get(index)
+                .is_some_and(|definition| definition.admits(country))
+            {
                 return Some(index);
             }
             // `STANDARD` has no `Country=`, so `admits` accepts it everywhere

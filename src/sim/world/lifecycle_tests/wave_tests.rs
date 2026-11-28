@@ -138,6 +138,7 @@ fn wave_pointer_expiry_owner_allows_dying_damage_then_uninit_nulls_later_calls()
         firer_id: owner_id,
         recorded_cells: vec![WaveRecordedCell::real(4, 5)],
         wave_z: 0,
+        target: None,
         ares_weapon: None,
     };
     assert!(

@@ -150,6 +150,31 @@ pub(crate) fn resolved_superweapon_eva<'a>(
     stock
 }
 
+/// `SWTypeExt::ApplyActivatedMessage`/`ApplyActivatedEva`'s column pick
+/// (`Ext/SWType/FireSuperWeapon.cpp:495-499`, `:516-520`): the launching
+/// House's relation to the *listening* client's current player.
+///
+/// `IsControlledByCurrentPlayer` is the sim's own predicate (a campaign
+/// `PlayerControl=` House counts); the ally test is the same
+/// `IsAlliedWith(CurrentPlayer)` the rest of the app reads. A client with no
+/// local player has no column to pick: the dispatcher drops the fact first,
+/// and this answers the enemy column for `None` so it stays total.
+pub(crate) fn activated_audience(
+    launcher_owned_by_current_player: bool,
+    launcher_name: &str,
+    local_name: Option<&str>,
+    alliances: &HouseAllianceMap,
+) -> crate::rules::phobos_sw_messages::PhobosActivatedAudience {
+    use crate::rules::phobos_sw_messages::PhobosActivatedAudience as A;
+    if launcher_owned_by_current_player {
+        return A::Owner;
+    }
+    match local_name {
+        Some(local) if is_allied_with(alliances, launcher_name, local) => A::Allies,
+        _ => A::Enemies,
+    }
+}
+
 /// `EVA_NewRallyPointEstablished` (string `0x00818E58`), spoken at
 /// `0x00443A69` by the click handler.
 pub(crate) const EVA_NEW_RALLY_POINT_ESTABLISHED: &str = "EVA_NewRallyPointEstablished";
@@ -446,6 +471,47 @@ pub(crate) fn rally_point_announces(obj: &ObjectType) -> bool {
 #[cfg(all(test, tests_app_match))]
 mod tests {
     use super::*;
+
+    /// `SWTypeExt::ApplyActivatedMessage`/`ApplyActivatedEva`'s column pick
+    /// (`Ext/SWType/FireSuperWeapon.cpp:495-499`, `:516-520`): the Owner arm
+    /// is the sim's `IsControlledByCurrentPlayer`, then the launching House's
+    /// own `IsAlliedWith(CurrentPlayer)` bitfield, else the enemy column.
+    #[test]
+    fn activated_column_follows_the_launchers_relation_to_the_local_player() {
+        use crate::map::houses::HouseAllianceMap;
+        use crate::rules::phobos_sw_messages::PhobosActivatedAudience as A;
+        let mut alliances = HouseAllianceMap::new();
+        alliances.insert(
+            "RUSSIANS".to_owned(),
+            ["AMERICANS".to_owned()].into_iter().collect(),
+        );
+
+        assert_eq!(
+            activated_audience(true, "Americans", Some("Americans"), &alliances),
+            A::Owner,
+            "IsControlledByCurrentPlayer wins over the ally test"
+        );
+        assert_eq!(
+            activated_audience(true, "Americans", Some("Russians"), &alliances),
+            A::Owner,
+            "a campaign PlayerControl House is still the owner column"
+        );
+        assert_eq!(
+            activated_audience(false, "Russians", Some("Americans"), &alliances),
+            A::Allies,
+            "the launcher's own bitfield names the local player"
+        );
+        assert_eq!(
+            activated_audience(false, "Americans", Some("Russians"), &alliances),
+            A::Enemies,
+            "the reverse direction was never set"
+        );
+        assert_eq!(
+            activated_audience(false, "Russians", None, &alliances),
+            A::Enemies,
+            "no local player falls through to the enemy column"
+        );
+    }
 
     #[test]
     fn ready_table_follows_the_type_index_jump_table() {

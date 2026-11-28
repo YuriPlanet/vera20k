@@ -121,6 +121,7 @@ pub(crate) fn create(
         source,
         from,
         super::fire_coord::EffectDepthProjection::ChangedY,
+        true,
     );
     let Some(to) = super::fire_coord::effect_target_coordinate(world, rules, target) else {
         return;

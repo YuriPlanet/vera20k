@@ -679,7 +679,7 @@ impl Host<'_, '_> {
 }
 
 /// Path arithmetic the flight tests (`ext_modules_flight_tests`) check.
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 pub(crate) mod tests_support {
     use super::*;
 

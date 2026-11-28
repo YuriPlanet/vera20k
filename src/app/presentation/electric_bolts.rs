@@ -39,7 +39,9 @@ impl ElectricBolts {
     pub(crate) fn create(&mut self, mut birth: ElectricBoltBirth) {
         // SpawnElectricBoltEffect (`0x006FD5F2..0x006FD606`) links a bolt
         // only into an empty Unit `+0x6DC`; the slot holds the Unit's live
-        // owned bolt until that bolt's last pass (`0x004C29A9`).
+        // owned bolt until that bolt's last pass (`0x004C29A9`). The
+        // Phobos `TechnoClass_InitEBolt` hook skips the whole slot test and
+        // stores every bolt in `TechnoExt::ElectricBolts` instead.
         if let Some(owner) = birth.owner
             && self
                 .live
@@ -103,6 +105,7 @@ impl ElectricBolts {
                     phase: bolt.phase,
                     alternate_color: bolt.birth.alternate_color,
                     colors: bolt.birth.colors,
+                    arcs: bolt.birth.arcs,
                 };
                 // EBoltMgr::UpdateAndDrawAll @ 0x004C2830 calls Draw4C1F20
                 // before incrementing phase at4C293D, then shifts decay at

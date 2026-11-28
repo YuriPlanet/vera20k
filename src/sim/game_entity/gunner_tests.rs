@@ -235,3 +235,32 @@ fn ares_passenger_turret_follows_the_passenger_count() {
     };
     assert_eq!((turret(0), turret(1), turret(4)), (0, 1, 2));
 }
+
+/// Phobos `ChargeTurret.Delays` (`Ext/Techno/Hooks.Firing.cpp:936-976`): the
+/// just-fired burst shot's list item overrides the saved `+2F8` denominator
+/// and starts the ext `ChargeTurretTimer`, whose remainder drives the turret
+/// progress until it expires while the real rearm keeps the native duration;
+/// an item `<= 0` keeps the native value.
+#[test]
+fn phobos_charge_turret_delays_override_the_progress_and_expire() {
+    let object = object(&corpus(), true, 4, true, false);
+    let mut entity = GameEntity::test_default(1, "FV", "A", 5, 5);
+    entity.rearm_after_fire(10, 90);
+    entity.phobos_set_charge_turret_delay(10, 1, &[40, 20, 80]);
+    assert_eq!(entity.seldom.turret_selection.charge_turret_delay, 20);
+    // Frame 15: the ext timer has 15 of 20 left, so 4 * 15 / 20 = 3, where
+    // the untouched 90-frame rearm would show 0. The rearm itself is intact.
+    entity.update_charge_turret(15, &object);
+    assert_eq!(entity.current_turret_index(), 3);
+    assert_eq!(entity.seldom.rearm_timer.remaining(15), 85);
+    // Past the ext timer's expiry the rearm remainder answers through the
+    // overridden denominator again.
+    entity.update_charge_turret(40, &object);
+    assert_eq!(entity.current_turret_index(), 3);
+    // A non-positive item keeps the native denominator and starts no timer.
+    entity.rearm_after_fire(100, 90);
+    entity.phobos_set_charge_turret_delay(100, 0, &[0, 20]);
+    assert_eq!(entity.seldom.turret_selection.charge_turret_delay, 90);
+    entity.update_charge_turret(105, &object);
+    assert_eq!(entity.current_turret_index(), 4 * 85 / 90);
+}

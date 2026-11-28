@@ -363,8 +363,11 @@ pub(super) fn throw_debris_for_death(
         min_debris: object_type.min_debris,
         debris_types: &debris_types,
         debris_maximums: &object_type.debris_maximums,
+        debris_minimums: &object_type.debris_minimums,
+        debris_types_limit: object_type.phobos_debris_types_limit(),
         debris_anim_count: object_type.debris_anims.len(),
         metallic_debris_count: rules.general.metallic_debris.len(),
+        phobos: rules.phobos(),
     };
     // Native702443/70254B lifts SHP debris by20 leptons. Voxel74950C
     // applies its own10-lepton lift through the existing numeric owner.
@@ -410,6 +413,7 @@ impl<'r> DeathDebrisWorldHost<'_, 'r> {
         use crate::sim::voxel_anim::ShpDebrisSource;
         match source {
             ShpDebrisSource::TypeDebrisAnims => self.object_type.debris_anims.get(index),
+            ShpDebrisSource::WarheadDebrisAnims => None,
             ShpDebrisSource::RulesMetallicDebris => self.rules.general.metallic_debris.get(index),
         }
         .map(String::as_str)
@@ -427,8 +431,13 @@ impl crate::sim::voxel_anim::ShpDebrisHost for DeathDebrisWorldHost<'_, '_> {
         index: usize,
     ) -> Result<(), crate::util::native_x87::NativeX87Error> {
         let name = self.debris_name(source, index);
-        self.world
-            .emit_debris_anim(self.rules, name, self.anim_coord, self.explosion_effects)
+        self.world.emit_debris_anim(
+            self.rules,
+            name,
+            self.anim_coord,
+            None,
+            self.explosion_effects,
+        )
     }
 }
 

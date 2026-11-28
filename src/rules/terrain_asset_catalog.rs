@@ -30,6 +30,10 @@ struct TerrainShapeBinding {
     /// Immutable physical timing metadata for the already saved per-ID timer.
     /// Only IsAnimated/SpawnsTiberium types have this gameplay projection.
     frame_count: Option<u16>,
+    /// Phobos `TerrainClass::Draw/AI` frame math reads the type's SHP total
+    /// frames for every shape, not only spawners (HasDamagedFrames /
+    /// AnimationLength / crumbling). Not part of the spawner timer hash.
+    display_frame_count: Option<u16>,
 }
 
 /// One asset result per Terrain type. Filenames represent native shape residency;
@@ -109,6 +113,12 @@ impl TerrainAssetCatalog {
                     current = IniSection::read_color_rgb_value(raw, current);
                 }
             }
+            // Phobos `MinimapColor=` (`Ext/TerrainType/Body.cpp:75`) replaces
+            // the `Image`/`RadarColor=` result when set
+            // (`Ext/TerrainType/Hooks.cpp:334-337`).
+            if let Some(color) = terrain.minimap_color {
+                current = color;
+            }
             // Saved Type fields retain these historical read results. Loading
             // reconstructs presentation without performing another Rules read.
             terrain.radar_color = current;
@@ -168,6 +178,7 @@ impl TerrainAssetCatalog {
                         && (phase == TerrainAssetLoadPhase::Fresh || terrain.uses_theater_shape()))
                     .then_some(filename),
                     frame_count: spawner.then_some(count).flatten(),
+                    display_frame_count: count,
                 },
             );
         }
@@ -184,6 +195,11 @@ impl TerrainAssetCatalog {
         canonical_type_id(name).and_then(|name| self.bindings.get(&name)?.frame_count)
     }
 
+    /// The type's SHP total frame count for the draw/AI frame math.
+    pub fn display_frame_count(&self, name: &str) -> Option<u16> {
+        canonical_type_id(name).and_then(|name| self.bindings.get(&name)?.display_frame_count)
+    }
+
     /// Resident shape after fresh or saved resource binding. The atlas consumes
     /// this result; it cannot select another image or invent a fallback.
     pub fn shape_filename(&self, name: &str) -> Option<&str> {
@@ -193,7 +209,9 @@ impl TerrainAssetCatalog {
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_for_test(&mut self, name: &str, frame_count: u16) {
         if let Some(name) = canonical_type_id(name) {
-            self.bindings.entry(name).or_default().frame_count = Some(frame_count);
+            let binding = self.bindings.entry(name).or_default();
+            binding.frame_count = Some(frame_count);
+            binding.display_frame_count = Some(frame_count);
         }
     }
 }

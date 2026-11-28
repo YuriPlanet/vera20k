@@ -259,6 +259,11 @@ pub(crate) trait RocketHost {
     /// `VocClass::PlayAt @ 0x007509E0` of the owner type's `AuxSound1=`
     /// (`+0x52C`) at `coord`, with no handle.
     fn aux_sound(&mut self, coord: [i32; 3]);
+    /// Phobos `AircraftTypeExt::Missile.*` of the linked owner's type; `None`
+    /// when Phobos is off keeps the rules block's takeoff settings.
+    fn phobos_missile(&self) -> Option<crate::rules::phobos_missile::PhobosMissileRules> {
+        None
+    }
     /// The owner's cell (GetCell, vtable `+0x1BC` -> `0x005F6960`): its own
     /// GetCoords Z (`0x00486840`) when it carries a structural bridge
     /// (`+0x140 & 0x100`), else `None`.
@@ -322,7 +327,20 @@ pub(crate) fn process(
     let frame = host.binary_frame() as i32;
     match rocket.mission_state {
         STATE_PAUSE => pause(rocket, block, cmisl, ext, frame, host),
-        STATE_TILT => tilt(rocket, block, ext, frame, host),
+        STATE_TILT => {
+            // Phobos `_CruiseMissileRaise` (hook `0x662720` at the state-2
+            // entry): a `Missile.Cruise=yes` type runs the raise body instead
+            // of the tilt. The stock CMisl bool only chooses pause's next
+            // state; it never promotes from the tilt.
+            if host
+                .phobos_missile()
+                .is_some_and(|settings| settings.cruise)
+            {
+                raise(rocket, block, ext, frame, host);
+            } else {
+                tilt(rocket, block, ext, frame, host);
+            }
+        }
         STATE_CLIMB => climb(rocket, block, host),
         STATE_CRUISE => {
             if !cruise(rocket, block, ext, host) {
@@ -354,9 +372,10 @@ fn pause(
     rocket.spawner_is_elite = host.spawn_owner_is_elite();
     if cmisl {
         if rocket.trailer_timer.remaining(frame) == 0 {
-            // Ares Takeoff1 (hook 0x66238A, Ares.dll 10061120) names it.
-            takeoff_puff(ext, host);
-            rocket.trailer_timer = CdTimer::started(frame, 0x18);
+            // Ares Takeoff1 (hook 0x66238A, Ares.dll 10061120) names it;
+            // Phobos only replaces the state-1 interval (hook 0x6623FC).
+            takeoff_puff(ext, host, false);
+            rocket.trailer_timer = CdTimer::started(frame, takeoff_separation(ext, host));
         }
         if rocket.resubmit_latch {
             host.mark(false);
@@ -392,7 +411,7 @@ fn tilt(
             host.tracker_add();
         }
         // Ares Takeoff3 (hook 0x6627E5, Ares.dll 10061200).
-        takeoff_puff(ext, host);
+        takeoff_puff(ext, host, false);
         host.aux_sound(host.location());
         return;
     }
@@ -541,9 +560,10 @@ fn raise(
 ) {
     rocket.spawner_is_elite = host.spawn_owner_is_elite();
     if rocket.trailer_timer.remaining(frame) == 0 {
-        // Ares Takeoff2 (hook 0x662512, Ares.dll 10061190).
-        takeoff_puff(ext, host);
-        rocket.trailer_timer = CdTimer::started(frame, 0x18);
+        // Ares Takeoff2 (hook 0x662512, Ares.dll 10061190), replaced by
+        // Phobos `_CustomMissileTakeoff` (hook 0x6624FB).
+        takeoff_puff(ext, host, true);
+        rocket.trailer_timer = CdTimer::started(frame, takeoff_separation(ext, host));
     }
     let here = host.location();
     if !rocket.mission_timer_done(frame) {
@@ -599,11 +619,29 @@ fn tail(
 }
 
 /// `new AnimClass(V3TAKOFF, &Location, 2, 1, 0x600, -10, 0)`, the takeoff
-/// puff of states 1, 2 and 6; an Ares game names the type's anim and puffs
-/// nothing for a null one.
-fn takeoff_puff(ext: &RocketTypeExt<'_>, host: &mut impl RocketHost) {
-    if let Some(anim) = ext.takeoff_anim {
+/// puff of states 1, 2 and 6; Ares builds name the type's anim and puff
+/// nothing for a null one. `use_phobos_anim` is the raise state alone, whose
+/// puff Phobos replaces (hook 0x6624FB).
+fn takeoff_puff(ext: &RocketTypeExt<'_>, host: &mut impl RocketHost, use_phobos_anim: bool) {
+    let settings = if use_phobos_anim {
+        host.phobos_missile()
+    } else {
+        None
+    };
+    let (anim, _) =
+        crate::rules::phobos_missile::takeoff_settings(settings.as_ref(), ext.takeoff_anim);
+    if let Some(anim) = anim {
         host.anim(anim, host.location(), 2, -10);
+    }
+}
+
+/// The takeoff trailer-timer separation: Phobos
+/// `Missile.TakeOffSeparation=` (hook `0x6623FC`, default 24), else the stock
+/// 24-frame timer.
+fn takeoff_separation(ext: &RocketTypeExt<'_>, host: &impl RocketHost) -> i32 {
+    {
+        let settings = host.phobos_missile();
+        crate::rules::phobos_missile::takeoff_settings(settings.as_ref(), ext.takeoff_anim).1
     }
 }
 
@@ -877,6 +915,17 @@ mod tests {
             self.events
                 .push(json!(["aux_sound", self.input["aux_sound"], coord]));
         }
+        fn phobos_missile(&self) -> Option<crate::rules::phobos_missile::PhobosMissileRules> {
+            let value = &self.input["phobos_missile"];
+            if value.is_null() {
+                return None;
+            }
+            Some(crate::rules::phobos_missile::PhobosMissileRules {
+                cruise: value["cruise"].as_bool().unwrap_or(false),
+                takeoff_separation: value["separation"].as_i64().unwrap_or(24) as i32,
+                takeoff_anim: value["anim"].as_str().map(str::to_owned),
+            })
+        }
         fn structural_bridge_floor_and_deck(&self) -> Option<(i32, i32)> {
             let (x, y) = cell_of(self.location);
             self.input["bridge_cells"]
@@ -1067,7 +1116,60 @@ mod tests {
         }
     }
 
-    /// An Ares game names the owner type's puffs and spaces the trailer by its
+    /// Phobos `Missile.Cruise=yes` (`Ext/Techno/Hooks.cpp:2300-2315`, hook
+    /// `0x662720`): the state-2 entry runs the raise body instead of the
+    /// tilt, and the raise puff uses the type's `Missile.TakeOffAnim` and
+    /// `Missile.TakeOffSeparation` (hook `0x6624FB`).
+    #[test]
+    fn phobos_cruise_promotes_the_tilt_state_into_the_raise_arm() {
+        let trig = TrigTable::embedded();
+        let rows: Value = serde_json::from_str(&crate::test_fixture::text(
+            "tools/rocket_oracle/flight.json",
+        ))
+        .expect("corpus parses");
+        let rows = rows.as_array().expect("row list");
+        let mut input = rows[0]["input"].clone();
+        input["phobos_missile"] = json!({"cruise": true, "separation": 5, "anim": "PHOBTAKE"});
+        let rules = rules(&input);
+        let (block, cmisl) = rules.rocket_block("OWNER");
+        let first_frame = int(&input["first_frame"]) as u32;
+        let mut facing = FacingClass::new(0, int(&input["rot"]) as i32);
+        facing.snap(int(&input["facing"]) as u16, first_frame);
+        let mut host = FixtureHost {
+            input: &input,
+            frame: first_frame + 1,
+            trig,
+            location: coord(&input["start"]),
+            facing,
+            health: int(&input["health"]) as i32,
+            tracker_cell: (0, 0),
+            events: Vec::new(),
+            uninit: false,
+        };
+        let mut rocket = RocketRuntime::constructed(first_frame);
+        let [x, y, z] = coord(&input["destination"]);
+        move_to(&mut rocket, block, DriveCoord { x, y, z }, first_frame);
+        rocket.mission_state = STATE_TILT;
+        rocket.trailer_timer = CdTimer::started(first_frame as i32, 0);
+        process(&mut rocket, block, cmisl, &RocketTypeExt::STOCK, &mut host);
+        // The native jump enters the raise body without rewriting +0x38, so
+        // the state field stays 2 while the raise runs; its puff and timer
+        // are the observable effects.
+        assert_eq!(
+            rocket.trailer_timer.duration(),
+            5,
+            "the type separation starts the trailer timer"
+        );
+        assert_eq!(
+            host.events
+                .iter()
+                .find(|event| event[0] == "anim")
+                .map(|event| event[1].clone()),
+            Some(json!("PHOBTAKE"))
+        );
+    }
+
+    /// Ares builds name the owner type's puffs and space the trailer by its
     /// `Missile.TrailerSeparation` (hooks 0x66238A..0x662D85), and a custom
     /// missile's `Missile.Weapon` replaces Detonate's explosion, light and
     /// area damage (0x663218). The first corpus flight, with that type.

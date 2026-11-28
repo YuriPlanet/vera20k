@@ -3,26 +3,23 @@ use super::*;
 /// A frame is captured for every object before each lent tick: its record
 /// copies what drawing reads, not whole components. A new field that pushes
 /// it past the ceiling copies more than drawing needs.
-#[cfg(all(
-    target_pointer_width = "64",
-    not(any(feature = "phobos", feature = "debug-tools"))
-))]
+#[cfg(all(target_pointer_width = "64", not(feature = "debug-tools")))]
 #[test]
 fn the_draw_record_stays_under_its_ceiling() {
     let size = std::mem::size_of::<ObjectRecord>();
     assert!(size <= CEILING, "ObjectRecord is {size} bytes");
 }
 
-#[cfg(all(
-    target_pointer_width = "64",
-    not(any(feature = "phobos", feature = "debug-tools"))
-))]
+#[cfg(all(target_pointer_width = "64", not(feature = "debug-tools")))]
 // 824 since an SHP Unit's draw reads three more of its fields: the body's
 // current facing (`shp_body_facing`), the Foot occupation enable and
 // IsOnCarryall. Four bytes of state, one alignment step of the record.
 // 832 since the modules' looks and status amounts (`ModuleFacts`):
 // one pointer, the facts themselves boxed for the few objects that have any.
-const CEILING: usize = 832;
+// 960 since Phobos draw state is present in every build: shields are boxed
+// because few objects have one, and JumpjetTilt retains only its speed,
+// acceleration, facing and grounded bit rather than the movement runtime.
+const CEILING: usize = 960;
 
 /// A record is found by its stable id and a missing id is not.
 #[test]
@@ -172,7 +169,6 @@ fn a_frame_lists_the_objects_that_can_draw_a_line() {
     let origin = crate::sim::components::DriveCoord { x: 0, y: 0, z: 0 };
     designating.place.airstrike_designation = Some(AirstrikeDesignation {
         coords: [origin; 2],
-        #[cfg(feature = "phobos")]
         color: [0; 3],
     });
     assert!(designating.may_draw_a_line());

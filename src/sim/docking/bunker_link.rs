@@ -86,6 +86,9 @@ impl BunkerLinks {
 /// `SpeedType=` (`+0x67C`) is not Hover (3), and a Foot is not being eaten by
 /// a parasite (`+0x694`, `0x0070FBAF..0x0070FBC3`). For a Foot the weapon
 /// test is [`crate::sim::combat::combat_weapon::is_armed`]'s.
+/// Phobos `BunkerableAnyway=` (hook `0x70FB73`) keeps only the `Bunkerable=`
+/// and parasite gates and drops the turret, weapon and SpeedType tests
+/// (`Ext/Techno/Hooks.Misc.cpp:913-929`).
 ///
 /// Native callers: the bunker's radio receiver (`0x0043C512`, CAN_LOAD's
 /// Bunker arm in [`crate::sim::radio::receive::can_load`]; `0x0043C86A`)
@@ -99,17 +102,33 @@ pub fn can_auto_deploy_here(sim: &Simulation, unit_id: u64, rules: &RuleSet) -> 
     let Some(obj) = sim.object_type(unit.type_ref(), rules) else {
         return false;
     };
-    obj.bunkerable
-        && obj.has_turret
-        && crate::sim::combat::combat_weapon::is_armed(
-            unit,
-            obj,
-            &sim.substrate.entities,
-            rules,
-            &sim.interner,
-        )
-        && obj.speed_type != crate::rules::locomotor_type::SpeedType::Hover
-        && unit.parasite.eater().is_none()
+    let armed = crate::sim::combat::combat_weapon::is_armed(
+        unit,
+        obj,
+        &sim.substrate.entities,
+        rules,
+        &sim.interner,
+    );
+    // Phobos `FootClass_IsBunkerableNow_Dehardcode` (`0x70FB73`,
+    // `Ext/Techno/Hooks.Misc.cpp:915-929`): the type's locomotor must be
+    // Drive/Walk/(Tunnel)/Teleport/Jumpjet, and BunkerableAnyway skips the
+    // turret, current-weapon and SpeedType requirements. VERA models no
+    // Tunnel locomotor kind.
+    {
+        use crate::rules::locomotor_type::{LocomotorKind, SpeedType};
+        obj.bunkerable
+            && (!rules.phobos()
+                || matches!(
+                    obj.locomotor,
+                    LocomotorKind::Drive
+                        | LocomotorKind::Walk
+                        | LocomotorKind::Teleport
+                        | LocomotorKind::Jumpjet
+                ))
+            && unit.parasite.eater().is_none()
+            && ((rules.phobos() && obj.phobos_bunkerable_anyway)
+                || (obj.has_turret && armed && obj.speed_type != SpeedType::Hover))
+    }
 }
 
 /// Bunker install state 5 (459301..459337): reciprocal links, deselection,
@@ -627,7 +646,8 @@ mod tests {
 
     fn rules_with(extra: &str) -> RuleSet {
         RuleSet::from_ini(&IniFile::from_str(&format!(
-            "[VehicleTypes]\n0=TANK\n1=NOGUN\n2=NOTURRET\n3=HOVER\n4=NOBUNKER\n\n\
+            "[VehicleTypes]\n0=TANK\n1=NOGUN\n2=NOTURRET\n3=HOVER\n4=NOBUNKER\n\
+             5=ANYWAY\n6=ANYWAYOFF\n7=NOANYWAYBUNK\n8=FLYANYWAY\n\n\
              [InfantryTypes]\n0=GI\n\n[AircraftTypes]\n\n\
              [BuildingTypes]\n0=NATBNK\n\n\
              [TANK]\nStrength=400\nArmor=heavy\nSpeed=6\nTurret=yes\nPrimary=120mm\n\n\
@@ -637,6 +657,12 @@ mod tests {
              SpeedType=Hover\n\n\
              [NOBUNKER]\nStrength=400\nArmor=heavy\nSpeed=6\nTurret=yes\nPrimary=120mm\n\
              Bunkerable=no\n\n\
+             [ANYWAY]\nStrength=400\nArmor=heavy\nSpeed=6\nBunkerableAnyway=yes\n\n\
+             [ANYWAYOFF]\nStrength=400\nArmor=heavy\nSpeed=6\n\n\
+             [NOANYWAYBUNK]\nStrength=400\nArmor=heavy\nSpeed=6\nTurret=yes\n\
+             Primary=120mm\nBunkerable=no\nBunkerableAnyway=yes\n\n\
+             [FLYANYWAY]\nStrength=400\nArmor=heavy\nSpeed=6\nBunkerableAnyway=yes\n\
+             Locomotor={{4A582746-9839-11D1-B709-00A024DDAFD1}}\n\n\
              [GI]\nStrength=125\nSpeed=4\nTurret=yes\nPrimary=120mm\n\n\
              [NATBNK]\nStrength=1000\nArmor=heavy\nBunker=yes\n{extra}",
         )))
@@ -804,6 +830,30 @@ mod tests {
         }
         spawn_tank(&mut sim, 7, "Americans", "GI");
         assert!(!can_auto_deploy_here(&sim, 7, &rules));
+    }
+
+    /// Phobos `FootClass_IsBunkerableNow_Dehardcode` (`0x70FB73`,
+    /// `Ext/Techno/Hooks.Misc.cpp:915-929`): the locomotor whitelist gates every
+    /// admission and `BunkerableAnyway=yes` skips the turret, current-weapon
+    /// and SpeedType requirements, without bypassing `Bunkerable=no`.
+    #[test]
+    fn bunkerable_anyway_skips_the_turret_and_weapon_checks() {
+        let rules = rules_with("");
+        let mut sim = Simulation::new();
+        spawn_tank(&mut sim, 1, "Americans", "ANYWAY");
+        assert!(can_auto_deploy_here(&sim, 1, &rules));
+        spawn_tank(&mut sim, 2, "Americans", "ANYWAYOFF");
+        assert!(!can_auto_deploy_here(&sim, 2, &rules));
+        spawn_tank(&mut sim, 3, "Americans", "NOANYWAYBUNK");
+        assert!(
+            !can_auto_deploy_here(&sim, 3, &rules),
+            "Bunkerable=no still refuses"
+        );
+        spawn_tank(&mut sim, 4, "Americans", "FLYANYWAY");
+        assert!(
+            !can_auto_deploy_here(&sim, 4, &rules),
+            "a Fly locomotor is not whitelisted"
+        );
     }
 
     #[test]

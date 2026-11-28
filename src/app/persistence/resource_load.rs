@@ -462,10 +462,6 @@ impl PreparedSavedGame {
 mod tests;
 
 // These files were written by the stock desktop release configurations.
-#[cfg(all(
-    test,
-    tests_app,
-    not(any(feature = "phobos", feature = "verax", feature = "npbug"))
-))]
+#[cfg(all(test, tests_app))]
 #[path = "release_save_tests.rs"]
 mod release_save_tests;

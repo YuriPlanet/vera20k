@@ -496,22 +496,14 @@ impl RuleSet {
 
     /// Phobos `WarheadTypeExt::AllowDamageOnSelf.Get([General] ...)`: the
     /// warhead's own nullable value, then the global, defaulting to false.
-    #[cfg(feature = "phobos")]
     pub fn allow_damage_on_self_for(&self, warhead: &WarheadType) -> bool {
         warhead
             .allow_damage_on_self()
             .unwrap_or(self.general.allow_damage_on_self)
     }
 
-    /// Phobos is compiled out: the native `DamageSelf` gate stays final.
-    #[cfg(not(feature = "phobos"))]
-    pub fn allow_damage_on_self_for(&self, _warhead: &WarheadType) -> bool {
-        false
-    }
-
     /// Phobos `WarheadTypeExt::DecloakDamagedTargets.Get([General] ...)`: the
     /// warhead's own nullable value, then the global, defaulting to true.
-    #[cfg(feature = "phobos")]
     pub fn decloak_damaged_targets_for(&self, warhead: &WarheadType) -> bool {
         warhead
             .decloak_damaged_targets()
@@ -522,7 +514,6 @@ impl RuleSet {
     /// Approach_Target`'s hook resolves it: the TechnoType's own value, then
     /// `[General]`, defaulting to `false` (the retail YR behaviour). `true`
     /// re-enables the deploy arm at original `0x00522434`.
-    #[cfg(feature = "phobos")]
     pub fn infantry_auto_deploy_for(&self, ty: &ObjectType) -> bool {
         ty.infantry_auto_deploy()
             .unwrap_or(self.general.infantry_auto_deploy)
@@ -531,7 +522,6 @@ impl RuleSet {
     /// Phobos `ProneSpeed`, resolved the way the hook at original `0x00521D94`
     /// resolves it: the InfantryType's own value, then the global that the
     /// type's `Crawls=` selects.
-    #[cfg(feature = "phobos")]
     pub fn prone_speed_for(&self, ty: &ObjectType) -> f64 {
         ty.prone_speed().unwrap_or(if ty.crawls {
             self.general.prone_speed_crawls
@@ -542,7 +532,6 @@ impl RuleSet {
 
     /// Phobos `MindControl.IgnoreSize`: the type's own nullable, then
     /// `[General]`, constructor default true.
-    #[cfg(feature = "phobos")]
     pub fn mind_control_ignore_size_for(&self, ty: &ObjectType) -> bool {
         ty.mind_control_ignore_size
             .unwrap_or(self.mind_control.mind_control_ignore_size)
@@ -550,7 +539,6 @@ impl RuleSet {
 
     /// Phobos `MultiMindControl.ReleaseVictim`: the type's own nullable, then
     /// `[General]`, constructor default false.
-    #[cfg(feature = "phobos")]
     pub fn multi_mind_control_release_victim_for(&self, ty: &ObjectType) -> bool {
         ty.multi_mind_control_release_victim
             .unwrap_or(self.mind_control.multi_mind_control_release_victim)
@@ -558,7 +546,6 @@ impl RuleSet {
 
     /// Phobos `MindControlLink.VisibleToHouse`: the type's own nullable, then
     /// `[General]`, constructor default All.
-    #[cfg(feature = "phobos")]
     pub fn mind_control_link_visible_to_house_for(
         &self,
         ty: &ObjectType,
@@ -571,35 +558,22 @@ impl RuleSet {
     ///
     /// The native ID match (`0x00732C30`) admits a building of a listed type
     /// when CanBeSelectedNow (vt+0x13C) answers true or its type has
-    /// `UndeploysInto=` (`0x00732C61..0x00732C83`). A building's
-    /// CanBeSelectedNow (`0x00459C00`) first asks `0x00465D40`, true only for
-    /// a 1x1 `UndeploysInto=` type, so retail admits exactly the
-    /// `UndeploysInto=` buildings. Phobos's hook makes `0x00465D40` answer true
-    /// during the ID match under `BuildingTypeSelectable`, with Ares loaded.
-    /// RESIDUAL: with the switch on, native still applies CanBeSelectedNow's
-    /// TechnoClass checks (`0x006FC030`); this admits every building of the
-    /// type.
+    /// `UndeploysInto=` (`0x00732C61..0x00732C83`). This is the ID match's
+    /// independent building arm; Phobos's `BuildingTypeSelectable` hook lifts
+    /// the separate CanBeSelectedNow type query only for that ID-match call.
     pub fn structure_type_selectable(&self, id: &str) -> bool {
-        #[cfg(feature = "phobos")]
-        {
-            if self.ares && self.general.building_type_selectable {
-                return true;
-            }
-        }
         self.object(id)
             .is_some_and(|object| object.undeploys_into.is_some())
     }
 
     /// Phobos `[AudioVisual] MissingCameo=`: the file a cameo with no art
     /// falls back to.
-    #[cfg(feature = "phobos")]
     pub fn missing_cameo(&self) -> &str {
         &self.general.missing_cameo
     }
 
     /// Phobos `Sidebar.GDIPositions=` for a native side index. A missing or
     /// out-of-range side falls back to the first-side default (index 0 true).
-    #[cfg(feature = "phobos")]
     pub fn side_gdi_positions(&self, index: i32) -> bool {
         usize::try_from(index)
             .ok()
@@ -611,7 +585,6 @@ impl RuleSet {
     /// resolves it: the TechnoType's own value, then `[AudioVisual]`, then the
     /// retail rule that branch reads in an unmodified game (`IsDropship`).
     /// `true` skips the `FlyLocomotionClass::Draw_Point` wobble.
-    #[cfg(feature = "phobos")]
     pub fn fly_no_wobbles_for(&self, ty: &ObjectType) -> bool {
         crate::rules::phobos_fly_wobble::resolve(
             ty.fly_no_wobbles(),
@@ -622,7 +595,6 @@ impl RuleSet {
 
     /// Phobos `[SIDE] SuperWeaponSidebar.*PCX=` for a native side index.
     /// Missing sides have no artwork, which is valid.
-    #[cfg(feature = "phobos")]
     pub fn side_sw_sidebar_art(
         &self,
         index: i32,
@@ -962,7 +934,7 @@ impl RuleSet {
     }
 
     /// Case-insensitive country lookup (gamemd parity), exact key first.
-    pub(super) fn country_rules(&self, id: &str) -> Option<&CountryRules> {
+    pub(crate) fn country_rules(&self, id: &str) -> Option<&CountryRules> {
         let index = self.country_index(id)?;
         self.countries.get(self.country_name(index)?)
     }

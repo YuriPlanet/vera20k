@@ -50,6 +50,41 @@ pub(super) fn marked_structure_movement_cells<'a>(
         .flatten()
 }
 
+/// The base foundation cells of every marked Phobos `IsDestroyableObstacle`
+/// building. Native `BuildingTypeExt::IsDestroyableObstacle` makes
+/// `CellClass::RecalcZoneType` answer class Destroyable (`2`) for these cells
+/// (`Ext/Building/Hooks.cpp:568`, hook `0x483D8E` -> `0x483CD4`), and
+/// `BuildingClass::Unlimbo`/`Limbo` recompute their zones (`0x440D01`,
+/// `0x445D87`). Foundation cells, not the bib-relaxed movement set.
+pub(super) fn destroyable_obstacle_cells(
+    entities: &EntityStore,
+    interner: &StringInterner,
+    rules: &RuleSet,
+) -> BTreeSet<(u16, u16)> {
+    let mut cells = BTreeSet::new();
+    for entity in entities.values() {
+        if entity.category() != EntityCategory::Structure || !entity.lifecycle.cell_marked() {
+            continue;
+        }
+        let Some(object) = interner.object_type(entity.type_ref(), rules) else {
+            continue;
+        };
+        if !object.phobos_destroyable_obstacle {
+            continue;
+        }
+        for cell in crate::sim::production::building_base_foundation_cells(
+            entity.position.rx(),
+            entity.position.ry(),
+            &object.foundation,
+        ) {
+            cells.insert(cell);
+        }
+    }
+    cells
+}
+
+/// Without the `phobos` feature the building key is not read.
+
 /// Structure presence over every marked structure. Consumers are
 /// order-insensitive (cell blocks, sets and presence tests). The store's
 /// category column picks the structures, so no other object is loaded.

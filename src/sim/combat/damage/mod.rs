@@ -92,8 +92,11 @@ pub(crate) struct ImmunityInputs {
     /// Ares replaces the stock attacker-only ally gate with WarheadExt's
     /// House policy, including a house-only source. None keeps stock behavior.
     pub ares_house_damage_allowed: Option<bool>,
-    /// Target owner IsAlliedWith sourceHouse (Psychedelic operand).
-    pub source_house_is_allied: bool,
+    /// Whether the Psychedelic branch's allied test rejects the hit: under
+    /// Phobos its own hook's attacker-first house (`0x701D2E`,
+    /// `Ext/Techno/Hooks.ReceiveDamage.cpp:535`), otherwise the stock
+    /// SourceHouse test (`0x701CE5`).
+    pub psychedelic_allied_rejection: bool,
     /// Warhead Psychedelic/MindControl (warhead+0x16d).
     pub psychedelic: bool,
     /// Target ImmuneToPsionics.

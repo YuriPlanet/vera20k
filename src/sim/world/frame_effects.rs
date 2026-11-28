@@ -231,6 +231,15 @@ impl<'a> FrameEffects<'a> {
     pub fn for_sound(sound: &'a mut dyn SoundBoundary) -> Self {
         Self {
             sound: Some(sound),
+            tactical_radar: None,
+            outcome_wait: None,
+            local_planning: None,
+            network_commands: None,
+            before_logic: None,
+            command_applied: None,
+            bounty_text: None,
+            production_factories: &[],
+            production_request_cleared: None,
             ..Self::empty()
         }
     }
@@ -313,7 +322,7 @@ impl<'a> FrameEffects<'a> {
         &mut self,
         sim: &Simulation,
         rules: &RuleSet,
-        text: crate::sim::bounty::BountyText,
+        text: crate::sim::flying_text::BountyText,
     ) {
         if let Some(boundary) = self.bounty_text.as_deref_mut() {
             boundary(sim, rules, text);

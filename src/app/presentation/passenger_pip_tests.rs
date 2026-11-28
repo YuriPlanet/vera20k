@@ -415,3 +415,77 @@ fn ares_passenger_pips_clip_an_overfull_hold_and_step_once_after_the_gunner() {
     assert_eq!(draws("Gunner=yes\n"), [(5, 0), (3, 2), (3, 3)]);
     assert_eq!(draws("Passengers.BySize=no\n"), [(5, 0), (0, 1), (0, 2)]);
 }
+
+/// Phobos `Pips.Tiberiums.*` (`Ext/Rules/Body.cpp:164-168`, consumer
+/// `Ext/Techno/Hooks.Pips.cpp:306-410`): per-`[Tiberiums]` counts rounded on
+/// their own, drawn in `DisplayOrder`, `Frames[index]` per class, and
+/// `EmptyFrame` for a slot nothing fills. A 10-unit hold of 6 ore / 2 gems
+/// rounds to 3 + 1 pips at GetPipMax 5; a weeder rounds the whole hold (8
+/// bales) instead.
+#[test]
+fn the_tiberium_pip_globals_drive_the_strip() {
+    use crate::rules::ini_parser::IniFile;
+
+    let scene = |extra: &str| {
+        let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
+            "[General]\nGatherWhenMCVDeploy=yes\n\
+             [VehicleTypes]\n0=HARVTEST\n\
+             [HARVTEST]\nStrength=100\nSpeed=4\nStorage=10\nPipScale=Tiberium\n\
+             Harvester=yes\n{extra}\
+             [Tiberiums]\n0=Riparius\n1=Cruentus\n2=Vinifera\n3=Aboreus\n\
+             [Riparius]\n[Cruentus]\n[Vinifera]\n[Aboreus]\n"
+        )))
+        .expect("tiberium pip rules");
+        assert_eq!(rules.tiberium_types.len(), 4);
+        let mut sim = Simulation::new();
+        crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
+        sim.intern_rule_type_ids(&rules);
+        sim.resolve_type_handles(&rules);
+        let id = sim
+            .spawn_object("HARVTEST", OWNER, 16, 16, 64, &rules)
+            .expect("harvester");
+        crate::sim::arena_fixture::install_status_miner_cargo(
+            sim.entities_mut_for_test().get_mut_for_test(id).unwrap(),
+            rules.object("HARVTEST").unwrap(),
+            &rules,
+            6,
+            2,
+        );
+        assert!(sim.apply_command(
+            OWNER,
+            &Command::Select {
+                entity_ids: vec![id],
+                additive: false,
+            },
+            Some(&rules),
+        ));
+        frames(&sim, &rules, id, None)
+    };
+
+    assert_eq!(
+        scene(""),
+        [2, 2, 2, 5, 0],
+        "the default scan order draws Riparius before gems"
+    );
+    assert_eq!(
+        scene("[AudioVisual]\nPips.Tiberiums.DisplayOrder=1,0\n"),
+        [5, 2, 2, 2, 0],
+        "DisplayOrder puts gems first"
+    );
+    assert_eq!(
+        scene(
+            "[AudioVisual]\nPips.Tiberiums.DisplayOrder=1,0\n\
+             Pips.Tiberiums.Frames=7,8\nPips.Tiberiums.EmptyFrame=9\n"
+        ),
+        [8, 7, 7, 7, 9],
+        "Frames per index, EmptyFrame for the unfilled slot"
+    );
+    assert_eq!(
+        scene(
+            "Weeder=yes\n[AudioVisual]\nPips.Tiberiums.WeedFrame=4\n\
+             Pips.Tiberiums.WeedEmptyFrame=6\n"
+        ),
+        [4, 4, 4, 4, 6],
+        "a weeder draws its whole hold with the weed frames"
+    );
+}

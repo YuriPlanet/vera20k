@@ -838,7 +838,12 @@ fn slave_deposit_matches_the_original_payment() {
     for (row, name) in rows(&corpus, "deposit") {
         let mut s = row_scene(&row["input"]);
         let slave = s.slaves[&0];
-        s.scene.sim.slave_deposit(slave, s.master, &s.scene.rules);
+        s.scene.sim.slave_deposit(
+            slave,
+            s.master,
+            &s.scene.rules,
+            &mut crate::sim::world::FrameEffects::default(),
+        );
         compare_state(&s, row, &name);
     }
 }

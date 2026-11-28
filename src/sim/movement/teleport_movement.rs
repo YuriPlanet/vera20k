@@ -80,12 +80,108 @@ impl crate::sim::world::Simulation {
         }
     }
 
-    /// `AnimClass([General] WarpOut=, Location, 0, 1, 0x600, 0, 0)` at the
-    /// owner's exact Location (`+0x9C`), constructed inside the mover's own
-    /// turn: the ordinary warp's departure and arrival (`0x00719442`,
-    /// `0x00719791`) and the Chronosphere's states 2 and 5 (`0x00719873`,
-    /// `0x00719B7C`).
-    pub(crate) fn teleport_warp_out(&mut self, id: u64, rules: &crate::rules::ruleset::RuleSet) {
+    /// The four native warp-animation blocks
+    /// (`Ext/TechnoType/Hooks.Teleport.cpp:13-140`): select the type's Phobos
+    /// list for this endpoint, falling back to the unchanged `[General]`
+    /// animation. The caller passes which endpoint it is at.
+    pub(crate) fn teleport_warp_anim(
+        &mut self,
+        id: u64,
+        rules: &crate::rules::ruleset::RuleSet,
+        kind: WarpAnimKind,
+    ) {
+        if rules.phobos() && self.spawn_phobos_warp_anim(id, rules, kind) {
+            return;
+        }
+        self.spawn_general_warp_anim(id, rules);
+    }
+
+    /// A random animation from the type's Phobos warp list
+    /// (`AnimExt::CreateRandomAnim(list, Location, nullptr, pLinked->Owner)`):
+    /// unresolvable tokens never reached the native vector, so only names the
+    /// loaded AnimType registry declares take part in
+    /// `RandomRanged(0, size - 1)`; a list with no resolvable name falls
+    /// through to the `[General]` animation without a draw. Answers whether a
+    /// list claimed the endpoint.
+    fn spawn_phobos_warp_anim(
+        &mut self,
+        id: u64,
+        rules: &crate::rules::ruleset::RuleSet,
+        kind: WarpAnimKind,
+    ) -> bool {
+        let (owner_house, location, mut candidates) = {
+            let Some(entity) = self.substrate.entities.get(id) else {
+                return false;
+            };
+            let Some(object) = self.interner.object_type(entity.type_ref(), rules) else {
+                return false;
+            };
+            let lists = &object.phobos_warp_anim;
+            let mut candidates: Vec<&Vec<String>> = Vec::with_capacity(2);
+            match kind {
+                WarpAnimKind::OrdinaryOut => candidates.push(&lists.warp_out),
+                WarpAnimKind::OrdinaryIn => candidates.push(&lists.warp_in),
+                WarpAnimKind::ChronoOut => {
+                    candidates.push(&lists.chronoshift_warp_out);
+                    candidates.push(&lists.warp_out);
+                }
+                WarpAnimKind::ChronoIn => {
+                    candidates.push(&lists.chronoshift_warp_in);
+                    candidates.push(&lists.warp_in);
+                }
+            }
+            (
+                entity.owner(),
+                super::ground_pose::object_location(entity, self.resolved_terrain.as_ref()),
+                std::mem::take(&mut candidates),
+            )
+        };
+        // A load-time `ValueableVector` drops unresolvable names, so an
+        // authored list that resolves to nothing leaves the next list of the
+        // priority chain in charge; only a non-empty resolved list draws.
+        let mut picked = None;
+        for names in candidates.drain(..) {
+            let anims: Vec<&str> = names
+                .iter()
+                .map(String::as_str)
+                .filter(|name| rules.has_anim_type(name))
+                .collect();
+            if anims.is_empty() {
+                continue;
+            }
+            let index =
+                self.scenario_rng
+                    .next_range_i32_inclusive(0, anims.len() as i32 - 1) as usize;
+            picked = Some(anims[index]);
+            break;
+        }
+        let Some(name) = picked else {
+            return false;
+        };
+        let type_name = self.interner.intern(name);
+        let world = crate::sim::anim_class::AnimWorldCoord {
+            x: location.x,
+            y: location.y,
+            z: location.z,
+        };
+        let (rx, ry, sub_x, sub_y, z) = world.to_cell_sub_z();
+        let descriptor = AnimClassSpawnDescriptor::new(type_name, rx, ry, sub_x, sub_y, z);
+        // `pLinked` is the house owner only: `CreateRandomAnim` passes a null
+        // invoker and no owner object. The shared constructor owns the instance;
+        // install its House through that owner's post-construction tail.
+        if let Ok(anim) = self.spawn_anim_at_world(rules, descriptor, world) {
+            self.install_anim_owner_house(rules, type_name, anim, owner_house);
+        }
+        true
+    }
+
+    /// The pre-Phobos fallback: `AnimClass([General] WarpOut=, Location, 0, 1,
+    /// 0x600, 0, 0)` at the owner's exact Location (`+0x9C`), constructed
+    /// inside the mover's own turn: the ordinary warp's departure and arrival
+    /// (`0x00719442`, `0x00719791`) and the Chronosphere's states 2 and 5
+    /// (`0x00719873`, `0x00719B7C`). Kept unchanged for stock builds and for a
+    /// Phobos type whose lists resolve to nothing.
+    fn spawn_general_warp_anim(&mut self, id: u64, rules: &crate::rules::ruleset::RuleSet) {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
         };
@@ -113,6 +209,137 @@ impl crate::sim::world::Simulation {
                 rules.general.warp_out.name
             );
         }
+    }
+}
+
+/// One of the four `Ext/TechnoType/Hooks.Teleport.cpp` warp-animation sites.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum WarpAnimKind {
+    /// Ordinary departure `0x7193F6`: type `WarpOut` > `[General] WarpOut`.
+    OrdinaryOut,
+    /// Ordinary arrival `0x719742`: type `WarpIn` > `[General] WarpOut`
+    /// (VERA's existing fallback; native's is `[General] WarpIn`).
+    OrdinaryIn,
+    /// Chronosphere departure `0x719827`: `Chronoshift.WarpOut` > type
+    /// `WarpOut` > `[General] WarpOut`.
+    ChronoOut,
+    /// Chronosphere arrival `0x719B1E`: `Chronoshift.WarpIn` > type `WarpIn`
+    /// > `[General] WarpOut` (native's last fallback is `[General] WarpIn`).
+    ChronoIn,
+}
+
+impl crate::sim::world::Simulation {
+    /// Phobos `TeleportLocomotionClass_ILocomotion_Process_WarpInAnim
+    /// @ 0x719742` (`Ext/TechnoType/Hooks.Teleport.cpp:74-98`), which runs
+    /// after the arrival `WarpIn` animation constructs:
+    ///
+    /// - `WarpInMinRangeWeapon` replaces `WarpInWeapon` when the stored
+    ///   `FootExt::LastWarpDistance` is below
+    ///   `[General] ChronoRangeMinimum`, falling back while unset.
+    /// - The chosen weapon detonates at the arrived object with that object as
+    ///   both target and owner (`WeaponTypeExt::DetonateAt(weapon, pLinked,
+    ///   pLinked, damage)`), so the warhead's house logic sees its owner.
+    /// - `WarpInWeapon.UseDistanceAsDamage` replaces the weapon's `Damage=`
+    ///   with `distance / 256`.
+    pub(crate) fn apply_warp_in_weapon(
+        &mut self,
+        id: u64,
+        distance_leptons: i32,
+        rules: &crate::rules::ruleset::RuleSet,
+        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        mut effects: crate::sim::world::FrameEffects<'_>,
+    ) {
+        if !rules.phobos() {
+            return;
+        }
+        let (settings, coords) = {
+            let Some(entity) = self.substrate.entities.get(id) else {
+                return;
+            };
+            let Some(object) = self.interner.object_type(entity.type_ref(), rules) else {
+                return;
+            };
+            (
+                object.phobos_warp_in_weapon.clone(),
+                super::ground_pose::object_get_coords(entity, self.resolved_terrain.as_ref()),
+            )
+        };
+        // `TeleportLocomotionClass_ILocomotion_Process_WarpInAnim @ 0x719742`
+        // (`Ext/TechnoType/Hooks.Teleport.cpp:88-95`): the arriving type's
+        // nullable `ChronoRangeMinimum` overrides the `[General]` fallback.
+        let chrono_range_minimum = settings
+            .chrono_range_minimum
+            .unwrap_or(rules.general.chrono_range_minimum);
+        let name = if distance_leptons < chrono_range_minimum {
+            settings
+                .warp_in_min_range_weapon
+                .as_deref()
+                .or(settings.warp_in_weapon.as_deref())
+        } else {
+            settings.warp_in_weapon.as_deref()
+        };
+        let Some(name) = name else {
+            return;
+        };
+        let Some(weapon) = rules.weapon(name) else {
+            return;
+        };
+        let damage = if settings.use_distance_as_damage {
+            distance_leptons / crate::util::lepton::LEPTONS_PER_CELL_I32
+        } else {
+            weapon.damage
+        };
+        let Some(detonation) =
+            self.weapon_detonation_at(weapon, id, id, None, [coords.x, coords.y, coords.z], damage)
+        else {
+            return;
+        };
+        self.commit_attach_effect_detonations(&[detonation], rules, registry, &mut effects);
+    }
+
+    /// Phobos `TeleportLocomotionClass_ILocomotion_Process_WarpOutWeapon`
+    /// (hook `0x7193F6`, `Ext/TechnoType/Hooks.Teleport.cpp:22-32`): the
+    /// departure of an ordinary self-teleport detonates the type's
+    /// `WarpOutWeapon=` at the departing object with itself as both target
+    /// and owner (`WeaponTypeExt::DetonateAt(weapon, pLinked, pLinked)`), at
+    /// the pre-relocation Location, before the departure WarpOut. The
+    /// Chronosphere's chronoshift departure (`0x719827`) plays no weapon.
+    pub(crate) fn apply_warp_out_weapon(
+        &mut self,
+        id: u64,
+        rules: &crate::rules::ruleset::RuleSet,
+        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        mut effects: crate::sim::world::FrameEffects<'_>,
+    ) {
+        if !rules.phobos() {
+            return;
+        }
+        let (name, coords) = {
+            let Some(entity) = self.substrate.entities.get(id) else {
+                return;
+            };
+            let Some(object) = self.interner.object_type(entity.type_ref(), rules) else {
+                return;
+            };
+            (
+                object.phobos_warp_in_weapon.warp_out_weapon.clone(),
+                super::ground_pose::object_get_coords(entity, self.resolved_terrain.as_ref()),
+            )
+        };
+        let Some(weapon) = name.as_deref().and_then(|name| rules.weapon(name)) else {
+            return;
+        };
+        let Some(detonation) = self.weapon_detonation_at(
+            weapon,
+            id,
+            id,
+            None,
+            [coords.x, coords.y, coords.z],
+            weapon.damage,
+        ) else {
+            return;
+        };
+        self.commit_attach_effect_detonations(&[detonation], rules, registry, &mut effects);
     }
 }
 
@@ -156,6 +383,13 @@ pub struct TeleportState {
     /// it does not pause merely because the infantry has no active AI turn.
     /// Native7194B1..719573 starts it;719BF0 checks globalFrame-start.
     delay_timer: crate::sim::timer::CdTimer,
+    /// `FootExt::LastWarpDistance` in leptons: the departure-to-arrival
+    /// distance the warp-out step 0x7193F6 stores and the warp-in weapon step
+    /// 0x719742 reads (`Ext/TechnoType/Hooks.Teleport.cpp:30-32,88-94`).
+    /// VERA measures it when the warp arms, from the same owner GetCoords and
+    /// destination while the owner still stands at the departure point.
+    #[serde(default)]
+    distance_leptons: i32,
 }
 
 impl TeleportState {
@@ -185,7 +419,17 @@ impl TeleportState {
             phase,
             destination: Some(DriveCoord::cell(rx, ry, 0)),
             delay_timer: crate::sim::timer::CdTimer::started(0, ticks as i32),
+            distance_leptons: 0,
         }
+    }
+
+    /// `FootExt::LastWarpDistance` the warp-in weapon step reads.
+    pub(crate) fn warp_distance_leptons(&self) -> i32 {
+        self.distance_leptons
+    }
+
+    pub(crate) fn set_warp_distance_leptons_for_test(&mut self, distance: i32) {
+        self.distance_leptons = distance;
     }
 
     #[cfg(any(test, feature = "test-support"))]
@@ -253,6 +497,18 @@ pub struct ChronoWarp {
     /// Techno `+0x271` WarpingIn: set by state 2, cleared by TimerCheck's
     /// expiry and state 7.
     warping_in: bool,
+    /// Phobos `FootExt::IsBeingChronoSphered` (`Ext/Foot/Body.h:21`): set by
+    /// the Chronosphere pre-delay (`0x7197E4`), so reinforcement members and
+    /// later plain warps never take `ChronoSphereDelay`.
+    #[serde(default)]
+    chrono_sphered: bool,
+    /// Phobos `FootExt::HasRemainingWarpInDelay` (`Ext/Foot/Body.h:19`).
+    #[serde(default)]
+    warp_in_delay_pending: bool,
+    /// Phobos `FootExt::LastWarpInDelay` (`Ext/Foot/Body.h:20`): the frames
+    /// still to run, decremented once per tick (`Ext/Foot/Body.cpp:149-164`).
+    #[serde(default)]
+    warp_in_delay: i32,
 }
 
 impl std::hash::Hash for ChronoWarp {
@@ -268,6 +524,14 @@ impl std::hash::Hash for ChronoWarp {
         if self.pending_state != 0 {
             b"chrono-pending-v376".hash(state);
             self.pending_state.hash(state);
+        }
+        // Phobos's warp-in delay keeps every earlier byte's hash and adds its
+        // own fold only when one of its fields is non-default.
+        if self.chrono_sphered || self.warp_in_delay_pending || self.warp_in_delay != 0 {
+            b"chrono-sphere-in-delay-v1".hash(state);
+            self.chrono_sphered.hash(state);
+            self.warp_in_delay_pending.hash(state);
+            self.warp_in_delay.hash(state);
         }
     }
 }
@@ -287,6 +551,9 @@ impl ChronoWarp {
             latched: true,
             legacy_warped_out: false,
             warping_in: false,
+            chrono_sphered: true,
+            warp_in_delay_pending: false,
+            warp_in_delay: 0,
         }
     }
 
@@ -297,6 +564,9 @@ impl ChronoWarp {
         Self {
             latched: false,
             warping_in: true,
+            // Only the Chronosphere's own pre-delay sets the Phobos byte
+            // (`0x7197E4`); a reinforcement never runs it.
+            chrono_sphered: false,
             ..Self::new(destination, frame)
         }
     }
@@ -367,6 +637,38 @@ impl ChronoWarp {
     /// Techno `+0x271`, cleared by TimerCheck's expiry and state 7.
     pub(crate) fn set_warping_in(&mut self, warping_in: bool) {
         self.warping_in = warping_in;
+    }
+
+    /// Phobos `FootExt::IsBeingChronoSphered` (`Ext/Foot/Body.h:21`).
+    pub(crate) fn chrono_sphered(&self) -> bool {
+        self.chrono_sphered
+    }
+
+    /// Phobos `0x719BD9` (`Ext/TechnoType/Hooks.Teleport.cpp:165-188`): a
+    /// chrono-sphered arrival with a positive `ChronoSphereDelay` records
+    /// `max(delay, LastWarpInDelay)`; its caller keeps the shared +270 byte set.
+    pub(crate) fn extend_warp_in_delay(&mut self, delay: i32) {
+        if delay > 0 {
+            self.warp_in_delay_pending = true;
+            self.warp_in_delay = self.warp_in_delay.max(delay);
+        } else {
+            self.chrono_sphered = false;
+        }
+    }
+
+    /// `FootExt::UpdateWarpInDelay` (`Ext/Foot/Body.cpp:149-164`): one tick's
+    /// countdown. Answers whether the delay is still running.
+    pub(crate) fn tick_warp_in_delay(&mut self) -> bool {
+        if !self.warp_in_delay_pending {
+            return false;
+        }
+        if self.warp_in_delay > 0 {
+            self.warp_in_delay -= 1;
+            return true;
+        }
+        self.warp_in_delay_pending = false;
+        self.chrono_sphered = false;
+        false
     }
 }
 
@@ -1242,6 +1544,9 @@ fn arm_teleport(
             crate::sim::timer::PAUSED_START_FRAME,
             chrono_ticks as i32,
         ),
+        // `FootExt::LastWarpDistance`: the same GetCoords-vs-destination
+        // measure the warp-outs use for the delay.
+        distance_leptons,
     };
     let Some(runtime) = entity
         .locomotor
@@ -1533,6 +1838,7 @@ mod tests {
                     input["timer_start"].as_i64().unwrap() as i32,
                     input["timer_duration"].as_i64().unwrap() as i32,
                 ),
+                distance_leptons: 0,
             }));
             sim.session
                 .set_binary_frame_for_test(input["frame"].as_u64().unwrap() as u32);

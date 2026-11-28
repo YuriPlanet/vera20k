@@ -72,6 +72,7 @@ pub(super) fn disguise_inputs(
             crate::app::state::active_rules(frontend, match_state),
             sim.session().binary_frame(),
             observer,
+            false,
         );
         let voxel = instances::drawn_type_uses_voxel(
             entity,

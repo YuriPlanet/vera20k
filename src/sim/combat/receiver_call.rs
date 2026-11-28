@@ -324,7 +324,7 @@ pub(super) fn apply_building_receive_prelude(
     {
         return BuildingReceivePrelude::ReturnZero;
     }
-    if event.attacker_id == RAD_NO_ATTACKER || target_type.is_1x1_with_undeploy() {
+    if event.attacker_id == RAD_NO_ATTACKER || target_type.is_vehicle() {
         return BuildingReceivePrelude::Continue;
     }
     if let Some(owner) = houses.get_mut(&target.owner()) {
@@ -511,13 +511,27 @@ pub(super) fn resolve_receive_damage_with_input(
     // shield stage may have replaced it with the surviving damage.
 
     let allied = |asker: InternedId, other: InternedId| alliances.is_allied(interner, asker, other);
-    // Techno701CA1 asks the live attacker's House about the target;
-    // Psychedelic701CE5 asks the target's House about the literal sourceHouse argument.
+    // The stock Psychedelic test (`0x701CD7..0x701CF8`) reads only the call's
+    // SourceHouse (`[esp+0xE0]`). Phobos removes it with the LJMP at
+    // `0x701CE5` and re-adds the check at its own hook `0x701D2E`, where the
+    // other house is the live attacker's owner and the SourceHouse only
+    // without an attacker, and `[CombatDamage] AllowBerzerkOnAllies=yes`
+    // lets the allied hit through
+    // (`Ext/Techno/Hooks.ReceiveDamage.cpp:528-539`).
+    let psychedelic_allied_rejection = if rules.phobos() {
+        !rules.phobos_globals.allow_berzerk_on_allies
+            && source
+                .map(|entity| entity.owner())
+                .or(event.source_house)
+                .is_some_and(|owner| allied(target.owner(), owner))
+    } else {
+        event
+            .source_house
+            .is_some_and(|owner| allied(target.owner(), owner))
+    };
+    // Techno701CA1 asks the live attacker's House about the target.
     let attacker_is_allied =
         source.is_some_and(|attacker| allied(attacker.owner(), target.owner()));
-    let source_house_is_allied = event
-        .source_house
-        .is_some_and(|owner| allied(target.owner(), owner));
     // Installed Ares TechnoClass_ReceiveDamage_Abilities1004A950 (hook
     // 0x701BFE): the rank's RADIMMUNE, PSIONICWEAPONIMMUNE, POISONIMMUNE and
     // PSIONICSIMMUNE join the type flags, and `ImmuneToBerserk` overrides the
@@ -541,6 +555,10 @@ pub(super) fn resolve_receive_damage_with_input(
     // a live attacker's owner wins over arg7 sourceHouse. CanTargetHouse10051B70
     // replaces the stock ally gate after Poison and before Psychedelic, including
     // ignoreDefenses calls. Reuse the EMP/AttachEffect policy's retained owner.
+    // Phobos' retained invoker house extends the Ares CanTargetHouse gate to
+    // the source house a shot keeps after its attacker is gone: the live
+    // attacker's owner wins, the retained house answers without one. An Ares
+    // game keeps Ares' own settings.
     let ares_house_damage_allowed = if rules.ares() {
         warhead.and_then(|warhead| {
             let settings = warhead.ares_rules()?;
@@ -552,6 +570,13 @@ pub(super) fn resolve_receive_damage_with_input(
                 warhead.affects_allies,
             ))
         })
+    } else if rules.phobos() {
+        let owner = source.map(|entity| entity.owner()).or(event.source_house);
+        Some(
+            warhead.is_none_or(|warhead| warhead.affects_allies)
+                || !owner
+                    .is_some_and(|owner| owner == target.owner() || allied(owner, target.owner())),
+        )
     } else {
         None
     };
@@ -641,7 +666,7 @@ pub(super) fn resolve_receive_damage_with_input(
         affects_allies: warhead.is_none_or(|warhead| warhead.affects_allies),
         attacker_is_allied,
         ares_house_damage_allowed,
-        source_house_is_allied,
+        psychedelic_allied_rejection,
         psychedelic: warhead.is_some_and(|warhead| warhead.psychedelic),
         // The Psychedelic gate is berserk (`ImmunityFlags` bit 6).
         psionics_immune: target.module_immune(
@@ -690,6 +715,7 @@ pub(super) fn resolve_receive_damage_with_input(
         distance_leptons,
         scenario_no_damage,
         rules.combat_damage.max_damage,
+        warhead.is_some_and(|warhead| warhead.apply_modifiers_on_negative_damage(rules)),
     );
     // Ares TechnoClass_ReceiveDamage_IronCurtainFlash (10053B50, hook
     // 0x701A5C): `IronCurtain.Flash=` (default `[AudioVisual]
@@ -727,6 +753,79 @@ pub(super) fn resolve_receive_damage_with_input(
         outcome,
         invulnerability_impact,
     })
+}
+
+/// Inspect the value left in WaveClass::DamageArea's shared per-cell damage
+/// local by one concrete Techno receiver. The receiver commit immediately
+/// following this call runs the same pure ABI resolver against the same live
+/// state; exposing the pointer result here avoids fabricating immutable damage
+/// inputs for later occupants.
+pub(crate) fn wave_post_object_damage(
+    event: &EntityDamageEvent,
+    entities: &EntityStore,
+    rules: &RuleSet,
+    interner: &StringInterner,
+    houses: &crate::sim::houses::Houses,
+    alliances: &HouseAlliances,
+    scenario_no_damage: bool,
+    current_tick: u64,
+    terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
+    simulation: Option<&crate::sim::world::Simulation>,
+) -> Option<i32> {
+    let event = prepare_infantry_receiver(event, entities, rules, interner, terrain);
+    // The receiver runs the Phobos damage-multiplier block before the shield
+    // stage, so this preview of the shared per-cell damage applies it first
+    // (`Ext/Techno/Hooks.ReceiveDamage.cpp:48-82`).
+    let event = match simulation {
+        Some(simulation) => {
+            let mut scaled = event;
+            scaled.damage =
+                super::damage_multiplier::apply(simulation, rules, &scaled, scaled.damage);
+            scaled
+        }
+        None => event,
+    };
+    // The shield hook writes its surviving value into the caller pointer
+    // before Techno's body; preview the stage without committing it, because
+    // the receiver commit that follows applies the absorption exactly once.
+    let shield_remaining = simulation.and_then(|simulation| {
+        crate::sim::shield::preview_receive_damage(simulation, rules, &event, event.damage)
+    });
+    let resolved = match shield_remaining {
+        Some(remaining) => resolve_receive_damage_with_input(
+            &event,
+            entities,
+            rules,
+            interner,
+            houses,
+            alliances,
+            scenario_no_damage,
+            current_tick,
+            terrain,
+            remaining,
+            remaining == 0,
+            None,
+        ),
+        None => resolve_receive_damage(
+            &event,
+            entities,
+            rules,
+            interner,
+            houses,
+            alliances,
+            scenario_no_damage,
+            current_tick,
+            terrain,
+            None,
+        ),
+    };
+    match shield_remaining {
+        // A later Techno body write, when there is one, wins over the shield's.
+        Some(remaining) => {
+            resolved.map(|resolved| resolved.outcome.post_object_damage.unwrap_or(remaining))
+        }
+        None => resolved.and_then(|resolved| resolved.outcome.post_object_damage),
+    }
 }
 
 /// TechnoClass::ReceiveDamage builds the anger-node increment from the final

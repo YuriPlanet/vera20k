@@ -2,6 +2,10 @@
 //! users draw it, and the credits counter's depth and words (placed by
 //! `app::presentation::sidebar_text`).
 
+use crate::render::batch::SpriteInstance;
+use crate::render::bit_font::BitFont;
+use crate::ui::sidebar::Rect;
+
 /// A side text colour as a draw tint.
 pub fn side_text_tint(rgb: [u8; 3]) -> [f32; 3] {
     rgb.map(|channel| f32::from(channel) / 255.0)
@@ -67,6 +71,47 @@ pub fn format_observer_clock(seconds: i32, format: &str) -> String {
     )
 }
 
+/// Colour the credits counter is drawn in: the side-dependent sidebar text
+/// colour, the same one the cameo status labels use, packed through the
+/// surface's loss/shift masks before the draw like every B0FA1C user.
+pub fn credits_tint(theme: crate::render::sidebar_chrome::SidebarTheme) -> [f32; 3] {
+    native_outline_from(crate::ui::sidebar::SidebarChromeLayoutSpec::for_theme(theme).side_text)
+}
+
+/// Build one Phobos sidebar indicator string as GAME.FNT glyph quads.
+///
+/// `CreditsClass_GraphicLogic_HarvesterCounter @ 0x4A25E0` anchors every
+/// indicator on the sidebar surface midpoint plus its own hardcoded base
+/// (`-70` for the power delta, `+50` for the harvester and weeds counters), on
+/// the literal row `y = 2` — the same row as the credits counter. `align`
+/// carries the bits Phobos ORs in from `Sidebar.PowerDelta.Align`: left starts
+/// the string at the anchor, centre pulls it back half its *measured* width and
+/// right ends it at the anchor.
+pub fn build_indicator_instances(
+    font: &BitFont,
+    text: &str,
+    panel_rect: Rect,
+    anchor_x: i32,
+    anchor_y: i32,
+    align: crate::rules::phobos_sidebar_indicators::SidebarTextAlign,
+    tint: [f32; 3],
+    camera_offset: [f32; 2],
+) -> Vec<SpriteInstance> {
+    use crate::rules::phobos_sidebar_indicators::SidebarTextAlign;
+    let text_w = font.text_width(text) as i32;
+    let surface_w = panel_rect.w.round() as i32;
+    // The alignment pulls the measured string back from the anchor: nothing for
+    // left, half its width for centre, all of it for right. Each term is an
+    // integer, as the native flag helper's halvings are.
+    let pull = match align {
+        SidebarTextAlign::Left => 0,
+        SidebarTextAlign::Center => text_w / 2,
+        SidebarTextAlign::Right => text_w,
+    };
+    let x = panel_rect.x.round() + (surface_w / 2 + anchor_x - pull) as f32;
+    let y = panel_rect.y.round() + anchor_y as f32;
+    font.build_text(text, x, y, 1.0, CREDITS_DEPTH, tint, camera_offset)
+}
 #[cfg(all(test, tests_render_s_z))]
 mod tests {
     use super::*;
@@ -84,6 +129,7 @@ mod tests {
             (SidebarTheme::Yuri, [248, 252, 0], [255, 255, 0]),
         ] {
             let tint = native_outline_from(SidebarChromeLayoutSpec::for_theme(theme).side_text);
+            assert_eq!(credits_tint(theme), tint, "theme={theme:?}");
             let bytes = tint.map(|c| (c * 255.0).round() as u8);
             assert_eq!(bytes, display_bytes, "theme={theme:?}");
             assert_eq!(

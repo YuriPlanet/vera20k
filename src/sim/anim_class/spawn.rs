@@ -7,7 +7,7 @@ use super::bounce::{BOUNCER_GRAVITY, bouncer_launch};
 use super::{
     AnimDisplayState, AnimId, AnimObject, AnimOccupationOperation, AnimRemap, AnimRuntime,
     AnimSpawnError, AnimWorldCoord, COMBAT_EXPLOSION_DRAW_FLAGS, COMBAT_EXPLOSION_Z_ADJUST,
-    anim_world_coords, apply_anim_raw_occupation,
+    TRAILER_DRAW_FLAGS, anim_world_coords, apply_anim_raw_occupation,
 };
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::rules::art_data::AnimTypeRuntimeConfig;
@@ -31,6 +31,99 @@ impl Simulation {
 
     pub fn anims(&self) -> impl Iterator<Item = (&AnimId, &AnimObject)> {
         self.substrate.anims.iter()
+    }
+
+    /// Phobos `AnimClass_DrawIt_Visibility @ 0x423061`
+    /// (`Ext/Anim/Hooks.cpp:520-570`): the `RestrictVisibilityIfCloaked=`
+    /// skip followed by the `VisibleTo` owner-house gate.
+    /// `VisibleTo.ConsiderInvokerAsOwner` replaces the owner object's house
+    /// with the anim's invoker (or invoker house) first.
+    ///
+    /// RESIDUAL: the cloak arm's trailer-anim fallback
+    /// (`pExt->IsTechnoTrailerAnim` then `Invoker` when `OwnerObject` is not a
+    /// techno) has no trailer-anim marker in VERA; such an anim keeps the
+    /// non-techno answer.
+    pub fn anim_visibility_skipped(
+        &self,
+        id: AnimId,
+        rules: &RuleSet,
+        viewer: Option<InternedId>,
+    ) -> bool {
+        use crate::rules::phobos_shields::AffectedHouse;
+        if !rules.phobos() {
+            return false;
+        }
+        let Some(anim) = self.anim(id) else {
+            return false;
+        };
+        let Some(config) = rules
+            .art()
+            .anim_runtime_config(self.interner.resolve(anim.type_id()))
+        else {
+            return false;
+        };
+        let visible_to = config.phobos_visible_to.unwrap_or(AffectedHouse::ALL);
+        if !config.phobos_restrict_visibility_if_cloaked && visible_to == AffectedHouse::ALL {
+            return false;
+        }
+        let Some(viewer) = viewer.or_else(|| self.session().current_house()) else {
+            return false;
+        };
+        if self.session().is_observer_house(viewer) {
+            return false;
+        }
+        if config.phobos_restrict_visibility_if_cloaked
+            && let Some(owner_id) = anim.owner_entity()
+            && let Some(owner) = self.entities().get(owner_id)
+            && matches!(owner.cloak.as_ref().map_or(0, |cloak| cloak.state()), 1 | 2)
+            && !self
+                .house_alliances()
+                .is_allied(self.interner(), viewer, owner.owner())
+            // `pTechno->GetCell()->Sensors_InclHouse(current)`: a sensor over
+            // the owner's cell reveals it regardless of the alliance.
+            && !self
+                .fog()
+                .has_sensor_for_house(viewer, owner.position.rx(), owner.position.ry())
+        {
+            return true;
+        }
+        // `pOwner = OwnerObject ? OwnerObject->GetOwningHouse() : pThis->Owner`.
+        let mut owner = anim
+            .owner_entity()
+            .and_then(|owner_id| self.entities().get(owner_id))
+            .map(|entity| entity.owner())
+            .or_else(|| anim.owner_house());
+        if config.phobos_visible_to_consider_invoker_as_owner {
+            if let Some(invoker) = anim.invoker() {
+                owner = self.entities().get(invoker).map(|entity| entity.owner());
+            } else if let Some(house) = anim.invoker_house() {
+                owner = Some(house);
+            }
+        }
+        let Some(owner) = owner else {
+            return false;
+        };
+        !crate::sim::combat::can_target_house(
+            visible_to,
+            viewer,
+            owner,
+            self.houses(),
+            self.house_alliances(),
+            self.interner(),
+        )
+    }
+
+    /// The anim's entity owner is Cloaking (1) or Cloaked (2): the
+    /// `Translucency.Cloaked` gate in `AnimClass_DrawIt_Translucency`
+    /// (`0x423183`, `Ext/Anim/Hooks.cpp:573-615`). The presentation caller
+    /// must apply the `rules.phobos()` switch to this Phobos-only query.
+    pub fn anim_owner_is_cloaked(&self, id: u64) -> bool {
+        let Some(owner_id) = self.anim(id).and_then(AnimObject::owner_entity) else {
+            return false;
+        };
+        self.entities().get(owner_id).is_some_and(|owner| {
+            matches!(owner.cloak.as_ref().map_or(0, |cloak| cloak.state()), 1 | 2)
+        })
     }
 
     /// An anim's stage (`AnimClass+0xAC`) and its image's frame count (the
@@ -269,30 +362,7 @@ impl Simulation {
         ) {
             Ok(id) => {
                 if let Some(house) = owner_house {
-                    self.substrate.set_anim_owner_house(id, house);
-                    // `SetAnimOwnerHouseKind` updates LightConvert only for a
-                    // `MakeInfantry=` type or a `CreateUnit=` type with
-                    // `CreateUnit.RemapAnim=`, and not for a defeated House.
-                    #[cfg(feature = "phobos")]
-                    {
-                        let (make_infantry, create_unit) = {
-                            let name = self.interner.resolve(type_name);
-                            rules
-                                .art()
-                                .anim_runtime_config(name)
-                                .map_or((false, None), |config| {
-                                    (config.make_infantry > -1, config.phobos_create_unit)
-                                })
-                        };
-                        let remaps = make_infantry || create_unit.is_some_and(|(_, remap)| remap);
-                        let defeated = self
-                            .houses
-                            .get(&house)
-                            .is_some_and(|state| state.is_defeated());
-                        if remaps && !defeated {
-                            self.substrate.anims.set_anim_house_remap(id, house);
-                        }
-                    }
+                    self.install_anim_owner_house(rules, type_name, id, house);
                 }
                 Some(id)
             }
@@ -307,6 +377,174 @@ impl Simulation {
                 );
                 None
             }
+        }
+    }
+
+    /// `AnimExt::CreateRandomAnim`'s construction half: a new anim at
+    /// `world_coord` with the `AnimClass` constructor defaults (`loop=1`,
+    /// flags `0x600`) and `owner_house` installed through the same
+    /// `SetAnimOwnerHouseKind(..., false, true)` tail the combat producer
+    /// `SetAnimOwnerObject` (native `ownedObject=true`). RESIDUAL: a
+    /// `MakeInfantry=`/`CreateUnit=` type re-selects its own owner kind here;
+    /// this owner keeps the invoker House, like the existing combat producer.
+    /// `invoker` is `CreateRandomAnim`'s `pTechno` under its `invoker` flag
+    /// (the same object may or may not also be the `ownedObject`).
+    pub(crate) fn spawn_owned_anim(
+        &mut self,
+        rules: &RuleSet,
+        type_name: InternedId,
+        world_coord: AnimWorldCoord,
+        owner_house: InternedId,
+        owner_object: Option<u64>,
+        invoker: Option<u64>,
+    ) -> Option<AnimId> {
+        let (rx, ry, sub_x, sub_y, z) = world_coord.to_cell_sub_z();
+        let descriptor = AnimClassSpawnDescriptor {
+            draw_flags: 0x600,
+            owner: owner_object,
+            ..AnimClassSpawnDescriptor::new(type_name, rx, ry, sub_x, sub_y, z)
+        };
+        let id = self
+            .spawn_anim_at_world(rules, descriptor, world_coord)
+            .ok()?;
+        self.install_anim_owner_house(rules, type_name, id, owner_house);
+        if let Some(invoker) = invoker {
+            self.substrate
+                .set_anim_invoker(id, Some(invoker), Some(owner_house));
+        }
+        Some(id)
+    }
+
+    /// Phobos `VoxelAnimClass_AI_Trailer @ 0x74A70E`
+    /// (`Ext/VoxelAnim/Hooks.cpp:47-67`): `GameCreate<AnimClass>(TrailerAnim,
+    /// Location, 1, 1)` then `SetAnimOwnerHouseKind(OwnerHouse, nullptr,
+    /// false, true)`. A null owner house leaves the anim unowned, as the
+    /// default kind does.
+    ///
+    /// RESIDUAL: a `MakeInfantry=`/`CreateUnit=` trailer type re-selects its
+    /// own owner kind in native, as [`Self::spawn_owned_anim`] records; this
+    /// keeps the invoker house like the combat producer.
+    pub(crate) fn spawn_trailer_anim(
+        &mut self,
+        rules: &RuleSet,
+        type_name: InternedId,
+        world_coord: AnimWorldCoord,
+        owner_house: Option<InternedId>,
+    ) -> Option<AnimId> {
+        let (rx, ry, sub_x, sub_y, z) = world_coord.to_cell_sub_z();
+        let descriptor = AnimClassSpawnDescriptor {
+            delay: 1,
+            draw_flags: TRAILER_DRAW_FLAGS,
+            ..AnimClassSpawnDescriptor::new(type_name, rx, ry, sub_x, sub_y, z)
+        };
+        let id = self
+            .spawn_anim_at_world(rules, descriptor, world_coord)
+            .ok()?;
+        if let Some(house) = owner_house {
+            self.install_anim_owner_house(rules, type_name, id, house);
+        }
+        Some(id)
+    }
+
+    /// `AnimExt::CreateRandomAnim`'s name/random half
+    /// (`Ext/Anim/Body.cpp:407-432`), shared by the Phobos consumers: an
+    /// unresolvable `ValueableVector<AnimTypeClass*>` token never reached the
+    /// native vector, so only names with a type take part in
+    /// `RandomRanged(0, size - 1)`; an empty list draws nothing.
+    pub(crate) fn resolve_random_anim_name<'n>(
+        &mut self,
+        rules: &RuleSet,
+        names: &'n [String],
+    ) -> Option<&'n str> {
+        let anims: Vec<&str> = names
+            .iter()
+            .map(String::as_str)
+            .filter(|name| rules.has_anim_type(name))
+            .collect();
+        if anims.is_empty() {
+            return None;
+        }
+        let pick = self
+            .scenario_rng
+            .next_range_i32_inclusive(0, anims.len() as i32 - 1) as usize;
+        Some(anims[pick])
+    }
+
+    /// [`Self::resolve_random_anim_name`] plus construction with the owner
+    /// house and owner object.
+    pub(crate) fn spawn_random_owned_anim(
+        &mut self,
+        rules: &RuleSet,
+        names: &[String],
+        world_coord: AnimWorldCoord,
+        owner_house: InternedId,
+        owner_object: Option<u64>,
+        invoker: Option<u64>,
+    ) -> Option<AnimId> {
+        let name = self.resolve_random_anim_name(rules, names)?;
+        let type_name = self.interner.intern(name);
+        self.spawn_owned_anim(
+            rules,
+            type_name,
+            world_coord,
+            owner_house,
+            owner_object,
+            invoker,
+        )
+    }
+
+    /// `AnimExt::SetAnimOwnerHouseKind(anim, house, None, false, true)`'s
+    /// post-construction tail: install the owner House and, for a
+    /// `MakeInfantry=` or remapping `CreateUnit=` type, its light conversion.
+    pub(crate) fn install_anim_owner_house(
+        &mut self,
+        rules: &RuleSet,
+        type_name: InternedId,
+        id: AnimId,
+        owner_house: InternedId,
+    ) {
+        self.substrate.set_anim_owner_house(id, owner_house);
+        let remaps = self.interner.resolve(type_name);
+        let remaps = rules
+            .art()
+            .anim_runtime_config(remaps)
+            .is_some_and(|config| {
+                config.make_infantry > -1
+                    || (rules.phobos()
+                        && config
+                            .phobos_create_unit
+                            .as_ref()
+                            .is_some_and(|settings| settings.remap_anim))
+            });
+        let defeated = self
+            .houses
+            .get(&owner_house)
+            .is_some_and(|state| state.is_defeated());
+        if remaps && !defeated {
+            self.substrate.anims.set_anim_house_remap(id, owner_house);
+        }
+    }
+
+    /// `0x6FF42B` marks the anim the muzzle block just built and counts it
+    /// into `FiringAnimUpdateCount`; the anim also holds it for its own AI.
+    pub(crate) fn attach_firing_anim(
+        &mut self,
+        id: AnimId,
+        state: crate::sim::anim_class::FiringAnimState,
+    ) {
+        if let Some(anim) = self.substrate.anims.get_mut(id) {
+            anim.set_firing_anim(state);
+            *self.firing_anim_update_count = self.firing_anim_update_count.saturating_add(1);
+        }
+    }
+
+    pub fn firing_anim_update_count(&self) -> u32 {
+        *self.firing_anim_update_count
+    }
+
+    pub(crate) fn release_firing_anim_count(&mut self, anim: &AnimObject) {
+        if anim.firing_anim().is_some() {
+            *self.firing_anim_update_count = self.firing_anim_update_count.saturating_sub(1);
         }
     }
 
@@ -754,6 +992,7 @@ impl Simulation {
             use_cell_drawer: descriptor.use_cell_drawer,
             terrain_attached: descriptor.terrain_attached,
             no_effects: false,
+            firing_anim: None,
             damage_accumulator: NativeF64Bits::ONE,
             in_logic_vector: false,
             owner_entity: None,
@@ -776,6 +1015,12 @@ impl Simulation {
             flaming_guy: None,
             owner_house: None,
             attached_bullet: None,
+            invoker: None,
+            invoker_house: None,
+            from_death_unit: false,
+            death_unit_facing: None,
+            death_unit_has_turret: false,
+            death_unit_turret_facing: None,
             owner_terrain: None,
             presentation: presentation.then_some(None),
             presentation_order: 0,

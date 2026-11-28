@@ -83,8 +83,7 @@ const POOL_ENTRY_PINS: &[(&str, usize, &str)] = &[
         "sim/movement/path_batch.rs",
         1,
         "detached: each batched search runs inside `detached`; outside it a task \
-         reads only its step counters. The work the pass answers beside its \
-         searches is its caller's (`world/object_turn.rs`)",
+         reads only its step counters",
     ),
     (
         "sim/parallel.rs",
@@ -133,14 +132,6 @@ const POOL_ENTRY_PINS: &[(&str, usize, &str)] = &[
         "sim/world/mod.rs",
         1,
         "never looks a cell up: syncs the presentation copy's parts side by side",
-    ),
-    (
-        "sim/world/object_turn.rs",
-        1,
-        "detached: the live object pass's target scans, answered beside its path \
-         searches or by themselves. Each scan runs inside `detached_stamps`, one \
-         that stamped is dropped for its turn, and the due check before it reads \
-         the object (`techno_ai::scan_batch`)",
     ),
     (
         "sim/world/sim_construction.rs",

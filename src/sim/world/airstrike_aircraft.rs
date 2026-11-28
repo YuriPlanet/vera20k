@@ -9,7 +9,6 @@
 //! A failed Unlimbo deletes that plane and returns the prior count minus one.
 
 use super::{FrameEffects, PlacementEvidence, Simulation};
-#[cfg(feature = "phobos")]
 use crate::map::entities::EntityCategory;
 use crate::rules::locomotor_type::{MovementZone, SpeedType};
 use crate::rules::ruleset::RuleSet;
@@ -49,10 +48,7 @@ impl Simulation {
         //`AirstrikeClass_Fire_SetAirstrike` (`0x41D97B`) keeps that path for a
         //building only; every other target stays the object itself, so the
         //aircraft follow a moving unit instead of the cell it stood on.
-        #[cfg(feature = "phobos")]
         let keep_object = target_entity.category() != EntityCategory::Structure;
-        #[cfg(not(feature = "phobos"))]
-        let keep_object = false;
         let target = if keep_object {
             TargetKind::Entity(target)
         } else {
@@ -63,12 +59,30 @@ impl Simulation {
                 crate::util::lepton::lepton_to_cell_packed(coord.y) as u16,
             )
         };
+        // Phobos `AircraftExt::PlaceReinforcementAircraft` (`Ext/Aircraft/Body.cpp:63`)
+        // reads the target's `GetCoords`, not its cell.
+        let target_leptons =
+            ground_pose::object_get_coords(target_entity, self.resolved_terrain.as_ref());
         let (authored, waypoint) = self.houses.get(&house_id).map_or((-1, 0), |house| {
             (house.authored_edge(), house.waypoint_edge())
         });
         let edge = super::edge_cell::Edge::authored_or_waypoint(authored, waypoint);
         let Some(seed) = self.aircraft_edge_cell(edge) else {
             return result;
+        };
+        // Phobos `SpawnDistanceFromTarget=` (`Ext/AircraftType/Body.cpp:26`):
+        // the spawn cell moves `distance` leptons from the target on the
+        // edge-to-target line instead of staying on the edge (`:65-68`).
+        let seed = match rules
+            .object(type_id)
+            .and_then(|aircraft| aircraft.phobos_spawn_distance_from_target())
+        {
+            Some(distance) => super::edge_cell::spawn_distance_cell(
+                seed,
+                (target_leptons.x, target_leptons.y),
+                distance,
+            ),
+            None => seed,
         };
         for _ in 0..count {
             let plane = self.with_object_placement_scope(|sim| {
@@ -200,7 +214,6 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "phobos")]
     #[test]
     fn a_non_building_target_keeps_the_object_instead_of_its_cell() {
         let Some((rules, mut sim, boris, _)) = world() else {
@@ -256,6 +269,87 @@ mod tests {
         assert_eq!(sortie.count, 0);
         assert!(sortie.aircraft.is_empty());
         assert_eq!(sim.scenario_rng.logical_state(), expected.logical_state());
+    }
+
+    /// Phobos `SpawnDistanceFromTarget=` (`Ext/AircraftType/Body.cpp:26`,
+    /// `Ext/Aircraft/Body.cpp:61-69`): the airstrike plane spawns on the cell
+    /// `CalculateCoordsFromDistance(edgeCell, target, 5 cells)` names instead
+    /// of on the picked edge cell; the edge pick and its draws are unchanged.
+    #[test]
+    fn spawn_distance_from_target_moves_the_airstrike_seed_off_the_edge() {
+        let Some((mut rules, mut sim, boris, target)) = world() else {
+            return;
+        };
+        let Some((_, mut replay, boris_replay, target_replay)) = world() else {
+            return;
+        };
+        let owner = replay.substrate.entities.get(boris_replay).unwrap().owner();
+        let (authored, waypoint) = replay.houses.get(&owner).map_or((-1, 0), |house| {
+            (house.authored_edge(), house.waypoint_edge())
+        });
+        let edge = Edge::authored_or_waypoint(authored, waypoint);
+        let seed = replay.aircraft_edge_cell(edge).expect("edge cell");
+        let at = ground_pose::object_get_coords(
+            replay.substrate.entities.get(target_replay).unwrap(),
+            replay.resolved_terrain.as_ref(),
+        );
+        let distance = 5 * crate::util::lepton::LEPTONS_PER_CELL_I32;
+        let expected = super::super::edge_cell::spawn_distance_cell(seed, (at.x, at.y), distance);
+        assert_ne!(expected, seed, "the spawn leaves the edge cell");
+        rules.set_object_spawn_distance_from_target_for_test("BPLN", distance);
+        let sortie = sim.create_airstrike_aircraft(
+            boris,
+            target,
+            "BPLN",
+            1,
+            &rules,
+            &mut FrameEffects::default(),
+        );
+        assert_eq!(sortie.count, 1);
+        let plane = sim.substrate.entities.get(sortie.aircraft[0]).unwrap();
+        assert_eq!((plane.position.rx(), plane.position.ry()), expected);
+    }
+
+    /// The key reads as a cell count on an AircraftType section only
+    /// (`read<Leptons>`: `5.5` cells store 1408 leptons) and `<default>`
+    /// clears it.
+    #[test]
+    fn spawn_distance_from_target_reads_cells_as_leptons_for_aircraft_only() {
+        use crate::rules::ini_parser::IniFile;
+        use crate::rules::ruleset::RuleSet;
+
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[AircraftTypes]\n0=BPLN\n[VehicleTypes]\n0=MTNK\n\
+             [BPLN]\nSpeed=14\nSpawnDistanceFromTarget=5.5\n\
+             [MTNK]\nSpeed=6\nSpawnDistanceFromTarget=5\n",
+        ))
+        .unwrap();
+        assert_eq!(
+            rules
+                .object("BPLN")
+                .unwrap()
+                .phobos_spawn_distance_from_target(),
+            Some(1408)
+        );
+        assert_eq!(
+            rules
+                .object("MTNK")
+                .unwrap()
+                .phobos_spawn_distance_from_target(),
+            None,
+            "an AircraftType-only reader"
+        );
+        let cleared = RuleSet::from_ini(&IniFile::from_str(
+            "[AircraftTypes]\n0=BPLN\n[BPLN]\nSpeed=14\nSpawnDistanceFromTarget=<default>\n",
+        ))
+        .unwrap();
+        assert_eq!(
+            cleared
+                .object("BPLN")
+                .unwrap()
+                .phobos_spawn_distance_from_target(),
+            None
+        );
     }
 
     #[test]

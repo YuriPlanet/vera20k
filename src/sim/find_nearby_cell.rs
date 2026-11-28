@@ -701,6 +701,8 @@ fn candidate_passes(
             reservations: None,
             occupancy: q.occupancy,
             terrain_object_cells: None,
+            terrain_objects: None,
+            ai_build_location: false,
             resolved_terrain: q.resolved_terrain,
             overlay_grid: q.overlay_grid,
             playfield_bounds: q.playfield_bounds,

@@ -15,7 +15,6 @@ use crate::sim::timer::CdTimer;
 use serde_json::Value;
 
 /// Retail RULESMD.INI's `[ColorAdd]`, as the oracle's Rules hold it.
-#[cfg(not(feature = "phobos"))]
 const RETAIL_COLOR_ADD: &str = "[ColorAdd]\nNone=0,0,0\nStrongRed=31,0,0\nStrongGreen=0,63,0\n\
     StrongBlue=0,0,31\nHighRed=24,0,0\nHighGreen=0,56,0\nHighBlue=0,0,24\n\
     BrightWhite=31,63,31\nLowWhite=7,7,7\nHighWhite=24,56,24\nMidWhite=14,28,14\n\
@@ -59,7 +58,6 @@ fn curtained(row: &Value) -> GameEntity {
 /// A building under the row's curtain: a Force Shield when IronCurtain wrote
 /// its byte 1, else an Iron Curtain (`+0x1C4` holds 0 or 1; a 2 reads as not
 /// shielded, as the Iron Curtain's 0 does).
-#[cfg(not(feature = "phobos"))]
 fn shielded(row: &Value) -> GameEntity {
     let mut entity = GameEntity::test_default_of_category(
         1,
@@ -81,7 +79,6 @@ fn shielded(row: &Value) -> GameEntity {
     entity
 }
 
-#[cfg(not(feature = "phobos"))]
 fn rules(force_color: i32) -> RuleSet {
     let ini = IniFile::from_str(&format!(
         "{RETAIL_COLOR_ADD}[AudioVisual]\nForceShieldColor={force_color}\nLaserTargetColor=4\n"
@@ -229,7 +226,6 @@ fn the_building_anim_light_matches_native() {
 /// give the same low 16 bits, which are [`shp_colour_word`]'s building arm.
 /// Retail only: Phobos's `BuildingClass_Draw_TintColor` replaces the
 /// airstrike part of this word.
-#[cfg(not(feature = "phobos"))]
 #[test]
 fn the_building_colour_word_matches_native() {
     let oracle = oracle();
@@ -245,10 +241,11 @@ fn the_building_colour_word_matches_native() {
         }
         sim.session_mut_for_test()
             .set_binary_frame_for_test(int(&row["frame"]) as u32);
+        let rules = rules(int(&row["force_color"]));
         let word = shp_colour_word(
-            &ObjectRecord::of_test(&shielded(row)),
+            &ObjectRecord::of_test_in(&shielded(row), None, &rules),
             &sim,
-            &rules(int(&row["force_color"])),
+            &rules,
             || row["shrouded"].as_bool().unwrap(),
         );
         assert_eq!(u64::from(word), native, "{row}");
@@ -464,7 +461,6 @@ fn ordinary_stock_gas_refresh_and_expiry_reach_the_infantry_shp_material() {
 /// rows stand in for VERA's cell lookup (`instances/shp.rs`
 /// `anim_colour_word`), which is read, not replayed. Retail only, like
 /// [`the_building_colour_word_matches_native`].
-#[cfg(not(feature = "phobos"))]
 #[test]
 fn the_anim_colour_word_matches_native() {
     let oracle = oracle();
@@ -480,10 +476,11 @@ fn the_anim_colour_word_matches_native() {
         } else {
             sim.session_mut_for_test()
                 .set_binary_frame_for_test(int(&row["frame"]) as u32);
+            let rules = rules(int(&row["force_color"]));
             let word = shp_colour_word(
-                &ObjectRecord::of_test(&shielded(row)),
+                &ObjectRecord::of_test_in(&shielded(row), None, &rules),
                 &sim,
-                &rules(int(&row["force_color"])),
+                &rules,
                 || row["shrouded"].as_bool().unwrap(),
             );
             assert_eq!(u64::from(word), native, "{row}");
@@ -654,11 +651,11 @@ fn building_animation_retains_the_pre_techno_airstrike_sample() {
 /// `LaserTargetColor` (else `[AudioVisual]`) through `GetColorFromColorAdd`,
 /// whose switch keeps only the RGB565 arm: `31,0,0` is `0xF800`, where the
 /// stock fall-through gives `0xFC00`.
-#[cfg(feature = "phobos")]
 #[test]
 fn airstrike_tint_uses_the_strike_owner_types_laser_target_color() {
     let rules = RuleSet::from_ini(&IniFile::from_str(
-        "[ColorAdd]\nNone=0,0,0\nStrongRed=31,0,0\nDarkRed=24,0,0\n\
+        "[General]\nAIFireSale=yes\n\
+         [ColorAdd]\nNone=0,0,0\nStrongRed=31,0,0\nDarkRed=24,0,0\n\
          [AudioVisual]\nLaserTargetColor=2\n\
          [InfantryTypes]\n0=BORIS\n1=PLAIN\n[BORIS]\nLaserTargetColor=1\n[PLAIN]\n",
     ))
@@ -697,5 +694,42 @@ fn airstrike_tint_uses_the_strike_owner_types_laser_target_color() {
         word(&sim),
         24 << 11,
         "an owner type without the key takes the global"
+    );
+}
+
+/// Phobos `[AudioVisual] ColorAddUse8BitRGB` (`Phobos.INI.cpp` read,
+/// `GeneralUtils::GetColorFromColorAdd:286`): the entry is 8-bit RGB and packs
+/// through `Drawing::RGB_To_Int`, so `255,64,8` is `0xFA01` instead of the raw
+/// `0xF808`.
+#[test]
+fn airstrike_tint_reads_the_entry_as_8bit_rgb_with_the_switch() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[General]\nAIFireSale=yes\n\
+         [ColorAdd]\nEighty=255,64,8\n\
+         [AudioVisual]\nLaserTargetColor=0\nColorAddUse8BitRGB=yes\n\
+         [InfantryTypes]\n0=BORIS\n[BORIS]\n",
+    ))
+    .unwrap();
+    let mut sim = Simulation::new();
+    let boris_type = sim.interner_mut_for_test().intern("BORIS");
+    let power_type = sim.interner_mut_for_test().intern("GAPOWR");
+    let mut owner = GameEntity::test_default(1, "BORIS", "Americans", 10, 10);
+    owner.set_type_ref_for_test(boris_type);
+    let mut target = GameEntity::test_default_of_category(
+        2,
+        "GAPOWR",
+        "Russians",
+        12,
+        10,
+        EntityCategory::Structure,
+    );
+    target.set_type_ref_for_test(power_type);
+    target.seldom.airstrike.set_test_link(Some(1));
+    sim.entities_mut_for_test().insert(owner);
+    sim.entities_mut_for_test().insert(target);
+    let owner = crate::app::presentation::frame::ObjectRecord::of_test_sim(&sim, &rules, 2);
+    assert_eq!(
+        shp_colour_word(&owner, &sim, &rules, || false),
+        0xF800 | 16 << 5 | 1
     );
 }

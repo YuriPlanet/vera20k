@@ -12,6 +12,9 @@
 use crate::sim::game_options::GameOptions;
 use crate::sim::stage::StageClass;
 
+/// The stock stage literal at `0x4511D6` (`0x17`), which the sale rows use
+/// as the type's `SellBuildupLength` default.
+#[cfg(test)]
 const ARCHIVE_LESS_UNDEPLOY_STAGE: i32 = 0x17;
 
 /// Begin_Mode's body modes. Construction and sale use 0 and 1; a nuclear
@@ -192,7 +195,7 @@ impl BuildingBody {
         &self,
         stage: &mut StageClass,
         now: i32,
-        archive_less_sale: bool,
+        archive_less_sale: Option<i32>,
         ready_allowed: bool,
         options: &GameOptions,
     ) -> bool {
@@ -206,7 +209,7 @@ impl BuildingBody {
         let [start, count, control_rate] = self.control();
         let end = start.wrapping_add(count);
         let done = stage.value() == end.wrapping_sub(1)
-            || (archive_less_sale && stage.value() == ARCHIVE_LESS_UNDEPLOY_STAGE);
+            || archive_less_sale.is_some_and(|mark| stage.value() == mark);
         if stage.value() >= end {
             stage.restart(start, now, options.speed_normalize(control_rate));
         }
@@ -499,6 +502,42 @@ mod tests {
     /// timer and rate, and `+0x6DD`, under Construction and Selling (with the
     /// archive-less UndeploysInto sale's stage-0x17 completion) and past the
     /// last frame (the wrap through SpeedNormalize).
+    /// Phobos `BuildingTypeExt::SellBuildupLength`
+    /// (`Ext/BuildingType/Body.cpp:220`, constructed 23 at
+    /// `Ext/BuildingType/Body.h:197`): hook `0x4511D6`
+    /// (`Ext/Building/Hooks.cpp:381-388`) answers the stock `cmp +0xF8, 0x17`
+    /// with the type's value, so the archive-less `UndeploysInto=` sale's
+    /// `+0x6DD` write (0x4511DF) lands on the authored stage.
+    #[test]
+    fn archive_less_sale_opens_at_the_types_sell_buildup_length() {
+        let (_, rules, _) = crate::sim::world::entry_test_fixture::fixture_with_rules_and_fixed_art(
+            "[BuildingTypes]\n1=GAPILE\n2=GAPOWR\n\
+             [GAPILE]\nStrength=500\n\
+             [GAPOWR]\nStrength=750\nSellBuildupLength=5\n",
+            &crate::rules::ini_parser::IniFile::from_str(""),
+        );
+        for (name, mark) in [("GAPILE", 23), ("GAPOWR", 5)] {
+            let object = rules.object(name).unwrap();
+            assert_eq!(object.sell_buildup_length(), mark, "{name}: reader");
+            // A control whose stock end (frame 40) lies past both marks.
+            for wanted in [Some(mark), None] {
+                let mut body = BuildingBody::default();
+                body.bind_control([0, 40, 1]);
+                let mut stage = StageClass::constructed(0);
+                body.begin(BuildingBodyMode::Construction, &mut stage, 0, false);
+                for frame in 1..=30 {
+                    let done = body.update(&mut stage, frame, wanted, true, &options(0));
+                    assert_eq!(i64::from(stage.value()), i64::from(frame), "{name}: stage");
+                    assert_eq!(
+                        done,
+                        wanted == Some(frame),
+                        "{name} frame {frame}: opens at the type's mark only"
+                    );
+                }
+            }
+        }
+    }
+
     #[test]
     fn stepping_matches_the_original_update_animation() {
         let corpus = corpus();
@@ -511,7 +550,8 @@ mod tests {
             let origin = frames[0]["timer"][0].as_i64().unwrap() as i32;
             let mission = input["mission"].as_str().unwrap_or("construction");
             let archive_less_sale =
-                mission == "selling" && input["undeploys"] == true && input["archive"] != true;
+                (mission == "selling" && input["undeploys"] == true && input["archive"] != true)
+                    .then_some(ARCHIVE_LESS_UNDEPLOY_STAGE);
             let mut body = BuildingBody::default();
             body.bind_control(control(input));
             let mut stage = StageClass::constructed(origin);
@@ -570,7 +610,11 @@ mod tests {
 
     /// Replays one route row's Sell visits from the order at frame 0;
     /// `tethered` is the building's `+0x418` at each frame's stage-1 visit.
-    fn replay_sell_visits(row: &Value, archive_less_sale: bool, tethered: impl Fn(i32) -> bool) {
+    fn replay_sell_visits(
+        row: &Value,
+        archive_less_sale: Option<i32>,
+        tethered: impl Fn(i32) -> bool,
+    ) {
         let input = &row["input"];
         let name = input["name"].as_str().unwrap();
         let mut actor = actor(0);
@@ -654,7 +698,11 @@ mod tests {
             if input["route"] != "sale" {
                 continue;
             }
-            replay_sell_visits(row, input["archive"] != true, |_| false);
+            replay_sell_visits(
+                row,
+                (input["archive"] != true).then_some(ARCHIVE_LESS_UNDEPLOY_STAGE),
+                |_| false,
+            );
             compared += 1;
         }
         assert_eq!(compared, 8);
@@ -679,7 +727,7 @@ mod tests {
                 continue;
             }
             let tether_until = input["tether_until"].as_i64();
-            replay_sell_visits(row, false, |now| {
+            replay_sell_visits(row, None, |now| {
                 tether_until.is_some_and(|until| i64::from(now) < until)
             });
             compared += 1;

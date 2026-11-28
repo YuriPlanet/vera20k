@@ -310,9 +310,25 @@ pub(crate) fn try_to_deploy(
 /// arms: a base-building computer house's unit queues Unload. Its caller
 /// returns the Guard epilogue (`ftol(Rate * 900) + RandomRanged(0, 2)`).
 pub(crate) fn guard_queues_unload(sim: &Simulation, id: u64, rules: &RuleSet) -> bool {
-    sim.substrate.entities.get(id).is_some_and(|entity| {
-        deploys_into_build_const(sim, entity, rules) && owner_builds_its_own_base(sim, entity)
-    })
+    let Some(entity) = sim.substrate.entities.get(id) else {
+        return false;
+    };
+    if !deploys_into_build_const(sim, entity, rules) || !owner_builds_its_own_base(sim, entity) {
+        return false;
+    }
+    // `Ext/BuildingType/Hooks.Placing.cpp:5-13`, hook `0x00740A11`:
+    // `!AIAutoDeployMCV && pMCV->Owner->NumConYards > 0` skips the arm to
+    // `0x00740A50`. The house's live BuildConst vector is NumConYards here
+    // (`BuildingClass::Unlimbo`'s append/expire removal).
+    if !rules.phobos_globals.ai_auto_deploy_mcv
+        && sim
+            .houses
+            .get(&entity.owner())
+            .is_some_and(|house| !house.build_const_order().is_empty())
+    {
+        return false;
+    }
+    true
 }
 
 pub(crate) fn is_mcv(sim: &Simulation, entity: &GameEntity, rules: &RuleSet) -> bool {
@@ -326,7 +342,8 @@ pub(crate) fn is_mcv(sim: &Simulation, entity: &GameEntity, rules: &RuleSet) -> 
                 obj.deploys_into
                     .as_deref()
                     .is_some_and(|name| rules.object(name).is_some())
-                    && obj.passengers == 0
+                    && (obj.passengers == 0
+                        || crate::sim::deploy::phobos_unload_skips_passengers(sim, entity, rules))
                     && !obj.harvester
             })
 }

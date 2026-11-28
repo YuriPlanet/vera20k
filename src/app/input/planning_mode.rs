@@ -823,11 +823,13 @@ pub(crate) fn refuse_press_at_cursor(
         return false;
     };
     let selected = selected_planning_actors(frontend, match_state);
-    let Some(refusal) = match_state
-        .sim_runtime
-        .runtime()
-        .and_then(|rt| rt.simulation.planning_press_refusal(&selected, point))
-    else {
+    let Some(refusal) = match_state.sim_runtime.runtime().and_then(|rt| {
+        rt.simulation.planning_press_refusal(
+            &selected,
+            point,
+            crate::app::state::active_rules(frontend, match_state),
+        )
+    }) else {
         return false;
     };
     refuse(

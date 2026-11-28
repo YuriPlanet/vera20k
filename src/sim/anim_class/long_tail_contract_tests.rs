@@ -1,5 +1,17 @@
 use super::*;
 
+/// The answer a single-entry `Translucency` fallback track gives for an
+/// authored integer (`Utilities/Constructs.h:481-501`): only the three
+/// translucent stages survive, everything else is `BlitterFlags::None`.
+fn plain_level(value: i32) -> Option<u8> {
+    match value {
+        25 => Some(25),
+        50 => Some(50),
+        75 => Some(75),
+        _ => None,
+    }
+}
+
 /// `0x0042319A..0x004231BC`: only an exact `Translucency=` 25, 50 or 75
 /// selects a stage; any other value draws without one.
 /// `0x0042306B`: the `+0x119` arm ORs 75% for a `DoubleThick=` type,
@@ -16,6 +28,9 @@ fn forced_translucency_reads_double_thick_and_falls_through() {
         current_frame: 0,
         end_frame: 10,
         explicit_translucency,
+        translucency_level: plain_level(explicit_translucency),
+        translucency_cloaked_level: None,
+        cloaked_translucency_answers: false,
         instance_ramp,
     };
     for (double_thick, explicit, ramp, expected) in [
@@ -51,6 +66,9 @@ fn instance_ramp_bands_draw_at_25_then_50_then_not_at_all() {
             current_frame: 0,
             end_frame: 10,
             explicit_translucency: 0,
+            translucency_level: None,
+            translucency_cloaked_level: None,
+            cloaked_translucency_answers: false,
             instance_ramp,
         });
         assert_eq!(
@@ -77,6 +95,9 @@ fn translucent_ramp_takes_75_percent_at_three_fifths() {
             current_frame,
             end_frame: 15,
             explicit_translucency: 0,
+            translucency_level: None,
+            translucency_cloaked_level: None,
+            cloaked_translucency_answers: false,
             instance_ramp: 0,
         });
         assert_eq!(
@@ -110,6 +131,9 @@ fn only_exact_fixed_translucency_values_select_a_stage() {
                 current_frame: 0,
                 end_frame: 10,
                 explicit_translucency,
+                translucency_level: plain_level(explicit_translucency),
+                translucency_cloaked_level: None,
+                cloaked_translucency_answers: false,
                 instance_ramp: 0,
             }),
             AnimTranslucencyResult { draw: true, flags },

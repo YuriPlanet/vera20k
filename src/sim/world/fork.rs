@@ -112,8 +112,9 @@ fork_helpers! {
     frame_profile,
     object_placement_scope_depth,
     buildup_bypass,
-    #[cfg(feature = "phobos")]
     reflected_warhead,
+    phobos_falling_down,
+    auto_death_objects,
     ares_made_up_rules,
     scenario_rng,
     main_rng,
@@ -150,8 +151,8 @@ fork_helpers! {
     combat_light_requests,
     screen_shake_updates,
     projectiles,
-    #[cfg(feature = "phobos")]
     warhead_anim_runtime,
+    phobos_all_map_detonation_active,
     waves,
     active_wave_links,
     object_custom_sounds,
@@ -173,6 +174,7 @@ fork_helpers! {
     zone_grid,
     path_grid,
     structure_navigation_cells,
+    destroyable_obstacle_cells,
     resolved_terrain,
     shared_cell_dummy,
     native_local_cell_cursor,
@@ -206,6 +208,8 @@ fork_helpers! {
     ares_tunnels,
     ion_blasts,
     alpha_shapes,
+    particle_light_flash,
+    firing_anim_update_count,
     terrain_speed_config,
     input_delay_ticks,
     quit_requested,
@@ -221,7 +225,9 @@ fork_helpers! {
     frame_continuation,
     planning,
     replaying_recorded_commands,
+    super_weapon_chain_depth,
     trigger_runtime,
+    transport_reloaders,
     {ext_modules},
 }
 

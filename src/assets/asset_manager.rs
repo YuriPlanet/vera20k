@@ -427,6 +427,9 @@ pub struct AssetManager {
     /// VERA: names every lookup reads from fixed archives alone
     /// ([`Self::pin_names`]); `None` reads all names as found.
     pinned_names: Option<PinnedNames>,
+    /// VERA: the selected mod declares `[Extensions] Phobos=yes`, so its games
+    /// play Phobos (`rules::phobos_switch`).
+    requires_phobos: bool,
 }
 
 /// Test fixtures open the retail install once per test process and hand each
@@ -461,6 +464,7 @@ impl Clone for AssetManager {
             ares_setting: self.ares_setting,
             kratos_setting: self.kratos_setting,
             pinned_names: self.pinned_names.clone(),
+            requires_phobos: self.requires_phobos,
         }
     }
 }
@@ -642,6 +646,7 @@ impl AssetManager {
             self.mod_dir = Some(folder.clone());
         }
         self.client_install = config.client_install.clone();
+        self.requires_phobos = config.requires_phobos;
         self
     }
 
@@ -780,6 +785,13 @@ impl AssetManager {
         crate::util::ares_launch::open_for_play(self.ships_ares());
     }
 
+    /// Whether the selected mod declares `[Extensions] Phobos=yes`
+    /// (`rules::phobos_switch`): its games play Phobos even when their rules
+    /// carry no Phobos key of their own.
+    pub fn requires_phobos(&self) -> bool {
+        self.requires_phobos
+    }
+
     /// Read-only INI tooling without a complete retail installation. No game
     /// archives are implicitly registered; the probe may explicitly use the
     /// existing load_all_disk_mixes widening. Not a gameplay constructor.
@@ -818,6 +830,7 @@ impl AssetManager {
             ares_setting: Default::default(),
             kratos_setting: Default::default(),
             pinned_names: None,
+            requires_phobos: false,
         })
     }
 
@@ -931,11 +944,7 @@ impl AssetManager {
         // — a ra2 launch plays the base game, not a mod's md expansion stack.
         let ra2_names = ArchiveNames::ra2();
         let ra2_mode = crate::util::ra2_launch::enabled();
-        let archive_names = if ra2_mode {
-            &ra2_names
-        } else {
-            archive_names
-        };
+        let archive_names = if ra2_mode { &ra2_names } else { archive_names };
         // RA2 shipped movies/maps as a numbered family from the discs
         // (MOVIES01.., MAPS01..), not YR's single index-3 slot. The wildcard
         // mode mounts the whole family, so use it for a ra2 launch unless the
@@ -988,6 +997,13 @@ impl AssetManager {
 
         manager.select_audio_pair();
 
+        // Init_Game's 0x0052C307 pass wildcard-mounts `ECACHE*.MIX` and then
+        // `ELOCAL*.MIX` (FindFirstFileA/FindNextFileA over the literals at
+        // `0x826620` and `0x826614`), after the `EXPANDMD%02d` slots and the
+        // audio selection and ahead of the named bulk archives at 0x0052C59C.
+        // Mods ship extra art inside these families; omitting them left that
+        // art unresolvable (a total-conversion install keeps its tech-oil-derrick
+        // SHPs in `ecachemd97.mix`).
         // Init_External_Cache_Local_Mixes @ 0x00530000 (Init_Game call at
         // 0x0052C307, after Init_Base_Mix_Files at 0x0052BB64 and before
         // Init_Mix_Files at 0x0052C59C): every `ECACHE*.MIX`, then every
@@ -3393,6 +3409,7 @@ mod tests {
             ares_setting: Default::default(),
             kratos_setting: Default::default(),
             pinned_names: None,
+            requires_phobos: false,
         };
         manager.rebuild_indexes();
 
@@ -3483,6 +3500,7 @@ mod tests {
             ares_setting: Default::default(),
             kratos_setting: Default::default(),
             pinned_names: None,
+            requires_phobos: false,
         };
         manager.rebuild_indexes();
         manager
@@ -3563,6 +3581,7 @@ mod tests {
             ares_setting: Default::default(),
             kratos_setting: Default::default(),
             pinned_names: None,
+            requires_phobos: false,
         };
         manager.rebuild_indexes();
 
@@ -3611,6 +3630,7 @@ mod tests {
             ares_setting: Default::default(),
             kratos_setting: Default::default(),
             pinned_names: None,
+            requires_phobos: false,
         };
         manager.rebuild_indexes();
         manager.catalog_named_nested_archives();
@@ -3657,6 +3677,7 @@ mod tests {
             ares_setting: Default::default(),
             kratos_setting: Default::default(),
             pinned_names: None,
+            requires_phobos: false,
         };
         manager.rebuild_indexes();
 
@@ -3704,6 +3725,7 @@ mod tests {
             ares_setting: Default::default(),
             kratos_setting: Default::default(),
             pinned_names: None,
+            requires_phobos: false,
         };
         manager.rebuild_indexes();
 
@@ -3748,6 +3770,7 @@ mod tests {
             ares_setting: Default::default(),
             kratos_setting: Default::default(),
             pinned_names: None,
+            requires_phobos: false,
         };
         manager.rebuild_indexes();
 
@@ -3811,6 +3834,7 @@ mod tests {
             ares_setting: Default::default(),
             kratos_setting: Default::default(),
             pinned_names: None,
+            requires_phobos: false,
         };
         manager.rebuild_indexes();
 
@@ -3874,6 +3898,38 @@ mod tests {
         assert_eq!(
             manager.registered_archive_names(),
             ["temperat.mix", "isotemmd.mix"]
+        );
+    }
+
+    /// Init_Game's `0x0052C307` pass wildcard-mounts `ECACHE*.MIX` then
+    /// `ELOCAL*.MIX` (the `0x826620` / `0x826614` literals driven by
+    /// FindFirstFileA/FindNextFileA). A total-conversion install keeps its
+    /// tech-oil-derrick SHPs in `ecachemd97.mix`, so a missing family left the
+    /// building body unresolvable.
+    #[test]
+    fn startup_mounts_the_ecache_and_elocal_wildcard_families() {
+        let dir = audio_test_install("ecache-elocal-mounts");
+        dir.write_mix("ecachemd97.mix", "ZAOILD.SHP", b"ecache-md-art");
+        dir.write_mix("ecache97.mix", "ECACHE97.BIN", b"ecache-art");
+        dir.write_mix("elocal01.mix", "ELOCAL.BIN", b"elocal-art");
+        dir.write_mix("ecache.mix", "ECACHE.BIN", b"bare-ecache");
+        let manager =
+            AssetManager::new(dir.path(), MediaArchiveMode::STOCK_DIGITAL).expect("startup");
+        assert_eq!(
+            manager.get("ZAOILD.SHP").as_deref(),
+            Some(&b"ecache-md-art"[..])
+        );
+        assert_eq!(
+            manager.get("ECACHE97.BIN").as_deref(),
+            Some(&b"ecache-art"[..])
+        );
+        assert_eq!(
+            manager.get("ELOCAL.BIN").as_deref(),
+            Some(&b"elocal-art"[..])
+        );
+        assert_eq!(
+            manager.get("ECACHE.BIN").as_deref(),
+            Some(&b"bare-ecache"[..])
         );
     }
 }

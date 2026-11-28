@@ -20,6 +20,7 @@ mod building_missions;
 mod building_retaliation;
 mod common_body;
 mod foot_patrol;
+mod interceptor;
 pub(crate) use building_missions::AresPrismForwarding;
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) use building_missions::PendingBuildingFire;
@@ -214,6 +215,14 @@ impl Simulation {
                 .map(|coords| ProjectileCoord::new(coords.x, coords.y, coords.z))
             }
             Some(TargetKind::Cell(rx, ry)) => Some(self.wave_cell_target_position(rx, ry)),
+            Some(target @ TargetKind::Bullet(..)) => {
+                crate::sim::movement::ground_pose::target_get_target_coords(
+                    target,
+                    self,
+                    self.resolved_terrain.as_ref(),
+                )
+                .map(|coords| ProjectileCoord::new(coords.x, coords.y, coords.z))
+            }
             None => None,
         };
         let target_is_unit = match wave.target_ref() {
@@ -416,6 +425,16 @@ impl Simulation {
         ctx: &mut ObjectAiCtx<'_>,
     ) -> ObjectAiOutcome {
         let mut outcome = ObjectAiOutcome::visited();
+        // Phobos `BulletClass_AI` 0x4666F7 interceptor block and the
+        // 0x4668BD Inviso skip, before the stock AI prefix.
+        if rules.phobos() && self.bullet_interceptor_pretick(id, rules, &mut ctx.reborrow()) {
+            return outcome;
+        }
+        // Phobos `BulletClass_AI`'s trail block (`Ext/Bullet/Hooks.cpp:99..126`),
+        // inside the same 0x4666F7 hook and before the stock movement.
+        if rules.phobos() {
+            self.update_projectile_laser_trails(id, rules);
+        }
         // BulletClass::AI opens with ObjectClass::AI, which Ares'
         // `ObjectClass_Update_AlphaLight` (`0x005F3E70`, `10047730`) heads.
         if rules.ares() {
@@ -482,7 +501,7 @@ impl Simulation {
             let reaches = {
                 let world = super::projectile_collision::ProjectileCollisionWorld {
                     terrain: self.resolved_terrain.as_ref(),
-                    dummy: &shared_cell_dummy,
+                    dummy: shared_cell_dummy,
                     occupancy: &self.substrate.occupancy,
                     entities: &self.substrate.entities,
                     terrain_objects: self.terrain_objects.objects(),
@@ -540,9 +559,56 @@ impl Simulation {
         let entities = &self.substrate.entities;
         let interner = &self.interner;
         let house_alliances = &self.house_alliances;
+        // Phobos `PhobosTrajectory.cpp:436-608`: a bullet carrying a
+        // trajectory runs its own `OnAI`/velocity/hit checks instead of the
+        // stock arms. The detonations keep the normal projectile boundary.
+        if rules.phobos()
+            && self
+                .projectiles
+                .get(id)
+                .is_some_and(|projectile| projectile.has_phobos_trajectory())
+        {
+            let trajectory = self.step_phobos_trajectory(id, rules, ctx.overlay_registry);
+            // The shared trajectory trail hook runs after `OnAI` with the
+            // bullet's current Location and Velocity
+            // (`PhobosTrajectory.cpp:502..531`); a detonation returned by
+            // `OnAI` jumps to the stock Detonate path before that hook.
+            if trajectory.detonations.is_empty()
+                && trajectory.extra_detonations.is_empty()
+                && !trajectory.expired
+            {
+                self.update_trajectory_laser_trails(id, rules);
+            }
+            outcome.bridge_state_changed |= self.commit_logic_projectile_detonations(
+                rules,
+                ctx.overlay_registry,
+                &trajectory.extra_detonations,
+                &mut ctx.effects,
+            );
+            outcome.bridge_state_changed |= self.commit_logic_projectile_detonations(
+                rules,
+                ctx.overlay_registry,
+                &trajectory.detonations,
+                &mut ctx.effects,
+            );
+            outcome.bridge_state_changed |= self.commit_direct_damage_events(
+                rules,
+                ctx.overlay_registry,
+                &trajectory.direct_damage,
+                ctx.effects.reborrow(),
+            );
+            if trajectory.expired || !trajectory.detonations.is_empty() {
+                let retired = self.retire_non_entity_object(
+                    id,
+                    super::UninitContext::new(rules).with_effects(&mut ctx.effects),
+                );
+                debug_assert!(retired);
+            }
+            return outcome;
+        }
         let collision_world = super::projectile_collision::ProjectileCollisionWorld {
             terrain,
-            dummy: &shared_cell_dummy,
+            dummy: shared_cell_dummy.clone(),
             occupancy,
             entities,
             terrain_objects: self.terrain_objects.objects(),
@@ -776,12 +842,12 @@ impl Simulation {
         // `BuildingClass_AI_Radiation @ 0x43FB23` follows that edge sample and
         // runs for every live building each frame. Phobos owns the branch;
         // retail leaves buildings untouched by radiation.
-        #[cfg(feature = "phobos")]
-        if self
-            .substrate
-            .entities
-            .get(id)
-            .is_some_and(|entity| entity.category() == EntityCategory::Structure)
+        if rules.phobos()
+            && self
+                .substrate
+                .entities
+                .get(id)
+                .is_some_and(|entity| entity.category() == EntityCategory::Structure)
             && let Some(receipt) = crate::sim::combat::world_receiver::apply_building_radiation(
                 self,
                 rules,
@@ -871,6 +937,52 @@ impl Simulation {
 
         let category = entity.category();
         techno_ai_shell(self, id, category, rules, ctx, &mut outcome);
+        // Phobos `FootClass_AI`'s tail (`src/Ext/Techno/Hooks.cpp:42-47`,
+        // hook `0x4DA54E`): `UpdateTiberiumEater`, `AmmoAutoConvertActions`,
+        // then `HealthAutoConvertActions`, before the follower count ages
+        // (`UpdateWarpInDelay` is not ported).
+        if rules.phobos() && category != EntityCategory::Structure {
+            self.phobos_update_tiberium_eater(
+                id,
+                rules,
+                ctx.overlay_registry,
+                &mut ctx.effects.reborrow(),
+            );
+            self.phobos_ammo_auto_convert(id, rules, &mut ctx.effects.reborrow());
+            self.phobos_health_auto_convert(id, rules, &mut ctx.effects.reborrow());
+        }
+        // Phobos `FootClass_AI`'s tail (`src/Ext/Techno/Hooks.cpp:50-51`,
+        // hook `0x4DA54E`): the follower count ages by one per frame, so a
+        // leader that stopped being followed frees its slots again.
+        if rules.phobos()
+            && category != EntityCategory::Structure
+            && let Some(entity) = self.substrate.entities.get_mut(id)
+            && entity.phobos_attack_move_follower_temp_count() != 0
+        {
+            let count = entity.phobos_attack_move_follower_temp_count();
+            entity.set_phobos_attack_move_follower_temp_count(count - 1);
+        }
+        // `UnitClass_AI` hook `0x736480`, after `FootClass::AI`: Phobos
+        // `DepletedAmmoActions` queues Unload inside the auto-deploy band and
+        // cancels it outside. Native never reaches the hook for a warped-out
+        // or AI-frozen object, whose shell returned first.
+        if rules.phobos()
+            && category == EntityCategory::Unit
+            && let Some(entity) = self.substrate.entities.get(id)
+            && !entity.ai_frozen()
+            && !entity.is_warped_out()
+        {
+            // `UnitClass_AI` hook `0x736480` runs UpdateKeepTargetOnMove
+            // before DepletedAmmoActions.
+            crate::sim::keep_target_on_move::update_keep_target_on_move(
+                self,
+                id,
+                rules,
+                ctx.overlay_registry,
+                &mut ctx.effects.reborrow(),
+            );
+            crate::sim::unit_simple_deploy::depleted_ammo_actions(self, id, rules);
+        }
         outcome
     }
 
@@ -993,8 +1105,15 @@ fn techno_ai_shell(
         turret_rotate_sample = sim.sample_building_turret_rotation(id, rules);
     }
     // A quiet unit is neither warped nor warping (`world::quiet_units`).
-    let temporal_frozen = !sim.quiet(id)
+    let temporal_visit = !sim.quiet(id);
+    let temporal_frozen = temporal_visit
         && sim.temporal_ai_prologue(id, rules, ctx, &mut outcome.bridge_state_changed);
+    // Phobos `ShieldClass::AI_Temporal` runs from the Temporal prologue even
+    // when the leaf is frozen; a thawed Infantry can then reach normal AI and
+    // clear the shield's temporal flag in the same visit.
+    if temporal_visit && rules.phobos() {
+        crate::sim::shield::tick_temporal(sim, id, rules);
+    }
     if temporal_frozen {
         return;
     }
@@ -1033,13 +1152,14 @@ fn techno_ai_shell(
         sim.substrate.infantry_health_reset(id);
     }
     // `TechnoClass_AI @ 0x6F9E50+0x5 -> TechnoExt::OnEarlyUpdate ->
-    // ApplyMindControlRangeLimit`, after the leaf's own steps and before the
-    // common Techno body's estimated-health recover.
-    #[cfg(feature = "phobos")]
-    {
+    // ApplySpawnLimitRange`, then ApplyMindControlRangeLimit, after the
+    // leaf's own steps and before the common Techno body's estimated-health
+    // recover.
+    if rules.phobos() {
         // OnEarlyUpdate runs UpdateShield first, after the leaf's freeze and
         // death returns. A thawed object can reach it with an erase head.
         crate::sim::shield::tick(sim, id, rules);
+        sim.apply_spawn_limit_range(id, rules, ctx.overlay_registry, &mut ctx.effects);
         sim.apply_mind_control_range_limit(id, rules, ctx.overlay_registry, &mut ctx.effects);
     }
     // Techno6F9F6E..9F precedes veterancy promotion, missions and acquisition for every
@@ -1150,6 +1270,16 @@ fn techno_ai_shell(
             }
             // The Gattling block after the Techno AI (`0x0043FE5B..0x0043FF8B`).
             techno_common_post(sim, id, rules, &mut ctx.effects);
+            // Phobos `BuildingClass_AI` hook `0x43FE69`: the periodic
+            // `DisplayIncome` label, right after `TechnoClass_AI`.
+            if rules.phobos() {
+                crate::sim::building_display_income::display_income_string(
+                    sim,
+                    id,
+                    rules,
+                    &mut ctx.effects.reborrow(),
+                );
+            }
             // Ares BuildingClass_Update_SensorArray10016E30 (hook43FE69),
             // after Update's IsAlive test.
             if rules.ares() && ai_alive(&sim.substrate, id) {
@@ -1363,7 +1493,122 @@ fn techno_ai_shell(
                 return;
             }
             techno_common_post(sim, id, rules, &mut ctx.effects);
+            // Phobos `AircraftClass_Update_UnlandableDamage`
+            // (`Ext/Aircraft/Hooks.cpp:735-794`, hook `0x414DA8`, after
+            // FootClass_Update).
+            if rules.phobos() {
+                aircraft_unlandable_damage_step(sim, id, rules, ctx.reborrow());
+            }
         }
+    }
+}
+
+/// Phobos `AircraftClass_Update_UnlandableDamage`
+/// (`Ext/Aircraft/Hooks.cpp:735-794`, hook `0x414DA8`, after
+/// `FootClass::Update`): an alive, AirportBound aircraft that is no airstrike
+/// loses health while it is in the air and cannot land.
+///
+/// The hook reads `ExtendedAircraftMissions_UnlandDamage.Get(Global())` on
+/// every frame:
+/// - `> 0`: every fourth frame, chosen by
+///   `(CurrentFrame - LastFireBulletFrame + UniqueID) & 3 == 0`, it takes that
+///   much damage from the `[CombatDamage] C4Warhead=` at itself with no
+///   attacker (`ReceiveDamage(&damage, 0, C4Warhead, nullptr, true, false,
+///   nullptr)`; VERA's receiver flags keep `ignore_defenses` and clear the
+///   second call flag to match those arguments);
+/// - `< 0` **and** the master switch resolved on: `Crash(nullptr)`, which is
+///   the kill-while-unlandable arm. A negative value with the master off is
+///   stock behaviour (nothing here).
+///
+/// An aircraft holding a `DockNowHeadingTo` (`Aircraft+0x6CC`, VERA's
+/// [`TechnoAmmo::dock`](crate::sim::ammo::TechnoAmmo::dock)) takes neither
+/// damage arm (`:762`).
+///
+/// RESIDUAL: the hook's other arms are not ported. With the master switch on
+/// it first re-targets an aircraft whose `ArchiveTarget` lies farther than
+/// `GetGuardRange(1) * 1.1` from it (clear Target, set destination to the
+/// archive) and calls `TryNearestDockBuilding(&Type->Dock, 0, 0)`; with the
+/// switch off, the positive-damage arm refuses the damage when that dock search
+/// answers; and an Area-Guarding aircraft holding a `DockNowHeadingTo` with a
+/// `MissionStatus` clears its archive and enters idle mode. Trigger:
+/// `ExtendedAircraftMissions=yes` (or a positive UnlandDamage with the switch
+/// off) for an AirportBound aircraft in the air. Effect: the guard-return
+/// redirect, the dock-search refusal and the Area-Guard idle exit are missing,
+/// so VERA can damage an aircraft Phobos would send to a dock first, and does
+/// not pull a distant Area-Guard aircraft back to its archive cell. Frequency:
+/// only for a mod that turns the switch on or sets a positive UnlandDamage;
+/// the retail defaults (switch `no`, damage `0`) are dormant.
+fn aircraft_unlandable_damage_step(
+    sim: &mut Simulation,
+    id: u64,
+    rules: &RuleSet,
+    mut ctx: ObjectAiCtx<'_>,
+) {
+    let Some(entity) = sim.substrate.entities.get(id) else {
+        return;
+    };
+    if entity.health.current() <= 0 || entity.airstrike_link().is_some() {
+        return;
+    }
+    let Some(object) = sim.entity_object_type(entity, rules) else {
+        return;
+    };
+    // `pType->AirportBound`, and `!pThis->IsALoaner` (VERA has no IsALoaner
+    // writer: the Phobos `IsALoaner=` type key is a separate key and the
+    // native field stays false).
+    if !object.airport_bound {
+        return;
+    }
+    // `if (pThis->DockNowHeadingTo)` (`:762-770`): an aircraft already heading
+    // to a dock (`Aircraft+0x6CC`, `TechnoAmmo::dock`) takes neither damage
+    // arm. Only an Area-Guarding one with a `MissionStatus` clears its
+    // archive and enters idle mode there; VERA lacks that arm (residual).
+    if entity.ammo().and_then(|ammo| ammo.dock()).is_some() {
+        return;
+    }
+    let flags = rules.extended_aircraft_missions_for(object);
+    if flags.unland_damage == 0 {
+        return;
+    }
+    if !crate::sim::movement::air_movement::is_high_flying(
+        entity,
+        sim.resolved_terrain.as_ref(),
+        Some((rules, &sim.interner)),
+    ) {
+        return;
+    }
+    let frame = sim.session.binary_frame() as i32;
+    let damage = flags.unland_damage;
+    if damage > 0 {
+        // `(Unsorted::CurrentFrame - LastFireBulletFrame + UniqueID) & 0x3`.
+        let entity = sim.substrate.entities.get(id).unwrap();
+        let last_fire = entity.last_fire_frame.frame() as i32;
+        let tick = frame
+            .wrapping_sub(last_fire)
+            .wrapping_add(entity.native_unique_id());
+        if tick & 0x3 != 0 {
+            return;
+        }
+        let Some(warhead) = rules.warhead(&rules.bridge_warheads.c4_name) else {
+            return;
+        };
+        let warhead = sim.interner.intern(&warhead.id);
+        let event = crate::sim::combat::EntityDamageEvent::direct_receiver(
+            id,
+            damage,
+            0,
+            crate::sim::combat::RAD_NO_ATTACKER,
+            None,
+            warhead,
+            crate::sim::combat::ReceiverCallFlags {
+                ignore_defenses: true,
+                arg6: false,
+            },
+        );
+        sim.commit_direct_damage_receiver(rules, ctx.overlay_registry, event, &mut ctx.effects);
+    } else if flags.master {
+        // `pThis->Crash(nullptr)`, guarded by the master switch.
+        sim.foot_crash(id, None, rules, &mut ctx.effects);
     }
 }
 
@@ -1410,5 +1655,59 @@ use super::bridge_test_evidence;
 mod promotion_sound_tests;
 
 #[cfg(all(test, tests_sim_world_techno))]
+#[path = "techno_ai/promote_anim_tests.rs"]
+mod promote_anim_tests;
+
+#[cfg(all(test, tests_sim_world_techno))]
 #[path = "techno_ai/surface_conversion_tests.rs"]
 mod surface_conversion_tests;
+
+/// Phobos `TechnoExt::ShowPromoteAnim` (`Ext/Techno/Body.Visuals.cpp:863-874`)
+/// from the `TechnoClass_AI_PromoteAnim @ 0x6FA07A` hook
+/// (`Ext/Techno/Hooks.cpp:158-170`).
+///
+/// The type's list replaces the global `[AudioVisual]` list of its tier when
+/// non-empty. The veteran list plays only at `Rank::Veteran` (the native
+/// `GetRemainingLevel == 1`); the `else if` fires the elite list for every
+/// other tier, including a demotion to Rookie, and also for a Veteran
+/// crossing whose veteran list is empty. One
+/// `AnimExt::CreateRandomAnim` (`RandomRanged(0, size - 1)`) spawns at
+/// `GetCenterCoords()` with the object as owner-object and its owner House.
+///
+/// RESIDUAL: the anim sits at `GetCoords` (`object_get_coords`) instead of
+/// `GetCenterCoords`'s centre-height point — visual only, the same residual
+/// as the delayed-fire `CenterAnimOnFirer` arm.
+fn show_promote_anim(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    id: u64,
+    owner: crate::sim::intern::InternedId,
+    level: i8,
+) {
+    use crate::sim::combat::veterancy::LEVEL_VETERAN;
+
+    let (chosen, world) = {
+        let Some(entity) = sim.substrate.entities.get(id) else {
+            return;
+        };
+        let Some(object) = sim.object_type(entity.type_ref(), rules) else {
+            return;
+        };
+        let promote = &object.phobos_promote;
+        let veteran = promote.veteran_animation(&rules.phobos_globals.promote_veteran_animation);
+        let elite = promote.elite_animation(&rules.phobos_globals.promote_elite_animation);
+        let chosen = if level == LEVEL_VETERAN && !veteran.is_empty() {
+            veteran
+        } else if !elite.is_empty() {
+            elite
+        } else {
+            return;
+        };
+        let world = crate::sim::movement::ground_pose::object_get_coords(
+            entity,
+            sim.resolved_terrain.as_ref(),
+        );
+        (chosen.to_vec(), world)
+    };
+    sim.spawn_random_owned_anim(rules, &chosen, world.into(), owner, Some(id), Some(id));
+}

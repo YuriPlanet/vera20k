@@ -54,6 +54,14 @@ pub struct BasicSection {
     pub alt_home_cell: Option<i32>,
     /// Theme/music id requested by the map.
     pub theme: Option<String>,
+    /// Phobos `ScenarioExt::ShowBriefing` (`Ext/Scenario/Body.cpp:167`,
+    /// declared `Body.h:27`, constructor `Body.h:62` defaults false):
+    /// `[Basic] ShowBriefing=` arms the scenario-start briefing dialog
+    /// (`DEFINE_HOOK(0x683E41, ScenarioClass_Start_ShowBriefing, 0x6)` in
+    /// `src/Misc/Hooks.UI.cpp:345-373`). An absent key keeps the constructor
+    /// value; `Ext/Scenario/Hooks.cpp:21` also reads the same flag under the
+    /// scenario's own MISSIONMD section.
+    pub show_briefing: Option<bool>,
     /// Declared INI format version used by the map.
     pub new_ini_format: Option<i32>,
     /// Whether tiberium/ore growth is enabled for this map (TiberiumGrowthEnabled=).
@@ -242,6 +250,7 @@ pub fn parse_basic_section(ini: &IniFile) -> BasicSection {
             .is_present("AltHomeCell")
             .then(|| section.read_int("AltHomeCell", 699)),
         theme: section.read_name("Theme", 0x80).map(str::to_string),
+        show_briefing: section.read_bool_value("ShowBriefing"),
         // ReadInt(0) at `0x0068A151`.
         new_ini_format: section
             .is_present("NewINIFormat")
@@ -408,6 +417,19 @@ fn is_string_table_name(value: &str) -> bool {
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;
+
+    /// Phobos `Ext/Scenario/Body.cpp:167`: the `[Basic] ShowBriefing` read
+    /// keeps the false constructor when the key is absent, and accepts an
+    /// explicit yes/no.
+    #[test]
+    fn the_basic_show_briefing_flag_defaults_to_absent_and_reads_both_spellings() {
+        let absent = parse_basic_section(&IniFile::from_str("[Basic]\nName=Test\n"));
+        assert_eq!(absent.show_briefing, None);
+        let yes = parse_basic_section(&IniFile::from_str("[Basic]\nShowBriefing=yes\n"));
+        assert_eq!(yes.show_briefing, Some(true));
+        let no = parse_basic_section(&IniFile::from_str("[Basic]\nShowBriefing=no\n"));
+        assert_eq!(no.show_briefing, Some(false));
+    }
 
     #[test]
     fn fresh_destination_reads_retain_missing_and_physical_empty_keys() {

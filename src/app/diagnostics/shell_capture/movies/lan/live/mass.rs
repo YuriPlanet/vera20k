@@ -576,6 +576,7 @@ fn local_combatants(frontend: &FrontendState, match_state: &MatchState) -> Resul
                     sim.entities(),
                     Some(rules),
                     Some(sim.interner()),
+                    false,
                 )
                 && sim.object_is_selectable(entity.stable_id(), rules)
         })

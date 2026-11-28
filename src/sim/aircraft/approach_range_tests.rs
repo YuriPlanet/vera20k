@@ -109,6 +109,7 @@ fn fixture(row: &Value) -> (Simulation, RuleSet) {
     source.attack_target.set_for_test(Some(match target {
         TargetKind::Entity(id) => TargetKind::Entity(id),
         TargetKind::Cell(x, y) => TargetKind::Cell(x, y),
+        TargetKind::Bullet(id) => TargetKind::Bullet(id),
     }));
     sim.substrate.entities.insert(source);
     *sim.interner = test_interner();

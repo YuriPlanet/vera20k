@@ -1221,6 +1221,11 @@ fn tactical_left_up(
                     let preflight_order = band_preflight_order
                         .as_deref()
                         .unwrap_or(screen_order.as_slice());
+                    // Phobos `[Phobos] PrioritySelectionFiltering=`: the band
+                    // walk skips `LowSelectionPriority=` objects once the
+                    // rectangle holds a higher-priority one.
+                    let priority_selection_filtering =
+                        match_state.match_presentation.priority_selection_filtering;
                     queued_selection = compute_box_selection_snapshot_with_playfield(
                         crate::app::input::entity_pick::presented(
                             platform,
@@ -1242,6 +1247,7 @@ fn tactical_left_up(
                         Some(sim.houses()),
                         Some(sim.interner()),
                         sim.playfield_bounds().is_some(),
+                        priority_selection_filtering,
                     );
                 }
             }

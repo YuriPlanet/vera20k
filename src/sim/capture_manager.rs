@@ -135,7 +135,7 @@ impl CaptureManagerState {
         }
     }
 
-    fn constructed(max_control: i32, infinite: bool) -> Self {
+    pub(crate) fn constructed(max_control: i32, infinite: bool) -> Self {
         Self {
             max_control,
             infinite,
@@ -144,6 +144,40 @@ impl CaptureManagerState {
             overload_countdown: OVERLOAD_FIRST_CHECK_FRAMES,
             overload_pip_countdown: 0,
         }
+    }
+
+    /// Phobos `FootExt::UpdateTypeData`'s capture arm: adopt the new type's
+    /// limits and return the nodes beyond a finite limit, newest first, in
+    /// the `CaptureManagerClass::FreeUnit` order the caller frees them.
+    pub(crate) fn phobos_reset_for_new_type(
+        &mut self,
+        max_control: i32,
+        infinite: bool,
+    ) -> Vec<u64> {
+        self.max_control = max_control;
+        self.infinite = infinite;
+        if infinite {
+            return Vec::new();
+        }
+        let limit = usize::try_from(max_control.max(0)).unwrap_or(0);
+        // The nodes stay in the manager: the caller frees each victim through
+        // `free_unit`, which removes that victim's nodes in FreeUnit order.
+        self.nodes
+            .iter()
+            .skip(limit)
+            .rev()
+            .map(|node| node.victim)
+            .collect()
+    }
+
+    /// Seed a controlled victim for conversion fixtures.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn seed_node_for_test(&mut self, victim: u64, original_owner: InternedId) {
+        self.nodes.push(ControlNode {
+            victim,
+            original_owner,
+            line_timer: crate::sim::timer::CdTimer::default(),
+        });
     }
 
     /// `IsFull @ 0x004722A0`: a finite manager at its limit. Gates
@@ -184,7 +218,6 @@ impl CaptureManagerState {
 
     /// Phobos `GetControlledTotalSize`: the sum of the live nodes'
     /// `MindControlSize=`. A missing victim contributes 0, like a null node.
-    #[cfg(feature = "phobos")]
     pub(crate) fn controlled_total_size(&self, mut size_of: impl FnMut(u64) -> i32) -> i32 {
         self.nodes.iter().fold(0_i32, |total, node| {
             total.wrapping_add(size_of(node.victim))
@@ -275,7 +308,6 @@ pub struct CaptureLinkCoordinates {
     pub owner: InternedId,
     /// Phobos `MindControlLink.VisibleToHouse=` resolved for the controller
     /// type; presentation compares it with the local viewer.
-    #[cfg(feature = "phobos")]
     pub visible_to: crate::rules::phobos_shields::AffectedHouse,
 }
 
@@ -301,7 +333,6 @@ impl Simulation {
             return Vec::new();
         };
         let selected = controller.seldom.selection.is_selected();
-        #[cfg(feature = "phobos")]
         let visible_to = rules.mind_control_link_visible_to_house_for(object);
         // Rendering queries isolate the canonical fallback CellClass.
         self.effective_shared_cell_dummy().detached(|| {
@@ -343,7 +374,6 @@ impl Simulation {
                         },
                         to,
                         owner: controller.owner(),
-                        #[cfg(feature = "phobos")]
                         visible_to,
                     })
                 })
@@ -417,6 +447,12 @@ impl MindControlLink {
         self.permanent
     }
 
+    /// Phobos `WarheadTypeExt::ApplyOwnerChange`'s `MindControlledByAUnit`
+    /// (Techno+0x2C4) write on a `ChangeOwner.SetAsMindControl` capture.
+    pub(crate) fn mark_permanent_control(&mut self) {
+        self.permanent = true;
+    }
+
     pub(crate) fn house_controller(&self) -> Option<InternedId> {
         self.house_controller
     }
@@ -473,7 +509,7 @@ impl MindControlLink {
 pub(crate) struct CaptureVictimFacts {
     owner: InternedId,
     capturable: bool,
-    /// Phobos `MindControlSize=`; 1 in non-Phobos builds.
+    /// Phobos `MindControlSize=`; the stock default is 1.
     mind_control_size: i32,
 }
 
@@ -503,10 +539,7 @@ impl CaptureVictimFacts {
             );
         // Ares CanCapture10048FB8 refuses a killed driver for every consumer.
         let refused = refused || (ares && target.driver_killed());
-        #[cfg(feature = "phobos")]
         let mind_control_size = target_obj.mind_control_size;
-        #[cfg(not(feature = "phobos"))]
-        let mind_control_size = 1;
         Self {
             owner: target.owner(),
             capturable: !refused,
@@ -536,7 +569,6 @@ impl CaptureControllerFacts {
     /// other weapon is would crash there, which no stock type authors.
     pub(crate) fn of(world: &Simulation, controller: &GameEntity, rules: &RuleSet) -> Option<Self> {
         let manager = controller.capture_manager.as_ref()?;
-        #[cfg(feature = "phobos")]
         let (ignore_size, release_victim) = {
             let object = world.object_type(controller.type_ref(), rules)?;
             (
@@ -544,21 +576,13 @@ impl CaptureControllerFacts {
                 rules.multi_mind_control_release_victim_for(object),
             )
         };
-        #[cfg(not(feature = "phobos"))]
-        let (ignore_size, release_victim) = {
-            let _ = (world, rules);
-            (true, false)
-        };
         // Phobos sums sizes only in CanCapture's finite multi-slot
         // `IgnoreSize=no` branch.
-        #[cfg(feature = "phobos")]
         let total_size = if manager.infinite || manager.max_control == 1 || ignore_size {
             0
         } else {
             manager.controlled_total_size(|victim| world.mind_control_size_of(victim, rules))
         };
-        #[cfg(not(feature = "phobos"))]
-        let total_size = 0;
         Some(Self {
             owner: controller.owner(),
             max_control: manager.max_control,
@@ -580,7 +604,6 @@ pub(crate) fn can_capture(controller: CaptureControllerFacts, victim: CaptureVic
 /// Phobos `CanCapture`'s capacity gate: `MaxControlNodes <= 0` refuses;
 /// infinite or single-slot managers skip it; otherwise `MindControlSize=`
 /// decides when `IgnoreSize=false`, and node count otherwise.
-#[cfg(feature = "phobos")]
 fn capacity_admits(controller: CaptureControllerFacts, victim: CaptureVictimFacts) -> bool {
     if controller.max_control <= 0 {
         return false;
@@ -602,10 +625,6 @@ fn capacity_admits(controller: CaptureControllerFacts, victim: CaptureVictimFact
 
 /// Stock capacity gate: a finite manager below its limit, or one limited to a
 /// single victim, which CaptureUnit replaces.
-#[cfg(not(feature = "phobos"))]
-fn capacity_admits(controller: CaptureControllerFacts, _victim: CaptureVictimFacts) -> bool {
-    controller.infinite || controller.count < controller.max_control || controller.max_control == 1
-}
 
 /// `TechnoClass::Init_Managers @ 0x006F3F40` (`0x006F4090..0x006F40F2`): a
 /// manager for every class (buildings too) whose `GetWeapon(0)` warhead is
@@ -683,7 +702,6 @@ impl Simulation {
     }
 
     /// Phobos `GetControlledTotalSize` for one live victim.
-    #[cfg(feature = "phobos")]
     fn mind_control_size_of(&self, victim: u64, rules: &RuleSet) -> i32 {
         self.substrate
             .entities
@@ -695,7 +713,6 @@ impl Simulation {
     /// Phobos `GetControlledCount` (`0x004722D0`): node count unless the
     /// controller type's `MindControl.IgnoreSize=` is false, then the sum of
     /// the victims' `MindControlSize=`.
-    #[cfg(feature = "phobos")]
     pub fn capture_effective_count(&self, controller_id: u64, rules: &RuleSet) -> Option<i32> {
         let controller = self.substrate.entities.get(controller_id)?;
         let object = self.object_type(controller.type_ref(), rules)?;
@@ -707,18 +724,7 @@ impl Simulation {
         })
     }
 
-    /// Non-Phobos builds keep the stock node count for shared callers.
-    #[cfg(not(feature = "phobos"))]
-    pub fn capture_effective_count(&self, controller_id: u64, _rules: &RuleSet) -> Option<i32> {
-        self.substrate
-            .entities
-            .get(controller_id)?
-            .capture_manager
-            .as_deref()
-            .map(CaptureManagerState::count)
-    }
-
-    /// `IsFull`/`CannotControlAnyMore` over the effective count.
+    /// `IsFull`/`CannotControlAnyMore` over the rules-selected effective count.
     pub(crate) fn capture_manager_is_full(&self, controller_id: u64, rules: &RuleSet) -> bool {
         let Some(manager) = self
             .substrate
@@ -738,7 +744,6 @@ impl Simulation {
     /// victim farther than its controller's type's `MindControlRangeLimit=`
     /// is freed. The distance is `ObjectClass::Distance_To` (`0x005F6440`),
     /// which has no altitude term.
-    #[cfg(feature = "phobos")]
     pub(crate) fn apply_mind_control_range_limit(
         &mut self,
         id: u64,
@@ -799,6 +804,49 @@ impl Simulation {
         )
     }
 
+    /// Phobos `CanAttackMindControlled` (`Ext/Techno/Hooks.Misc.cpp:606-620`,
+    /// hooks `0x7089E8` and `0x6F88BF`): whether `retaliator` may attack the
+    /// mind-controlled `controlled` now. A fresh pawn is shielded from houses
+    /// allied with its original owner (its own included) until
+    /// `BeControlledThreatFrame` passes; a berserk retaliator, a controller
+    /// without a manager or a non-allied house ignores the shield.
+    pub(crate) fn can_attack_mind_controlled(
+        &self,
+        controlled_id: u64,
+        retaliator_id: u64,
+    ) -> bool {
+        let Some(controlled) = self.substrate.entities.get(controlled_id) else {
+            return true;
+        };
+        let Some(controller_id) = controlled.seldom.mind_control.controller else {
+            return true;
+        };
+        let Some(retaliator) = self.substrate.entities.get(retaliator_id) else {
+            return true;
+        };
+        if retaliator.berserk.is_active() {
+            return true;
+        }
+        let Some(original_owner) = self
+            .substrate
+            .entities
+            .get(controller_id)
+            .and_then(|controller| controller.capture_manager.as_ref())
+            .and_then(|manager| manager.original_owner(controlled_id))
+        else {
+            return true;
+        };
+        if !crate::sim::combat::combat_weapon::is_ally_by_object(
+            Some(&self.house_alliances),
+            &self.interner,
+            retaliator.owner(),
+            original_owner,
+        ) {
+            return true;
+        }
+        controlled.seldom.phobos_be_controlled_threat_frame <= self.session.binary_frame() as i32
+    }
+
     /// The announce=1 that CaptureUnit (`0x00471DAE`) and FreeUnit
     /// (`0x004720D5`) pass to the target's ChangeOwner (vt+0x3D4). Only
     /// `BuildingClass::ChangeOwner @ 0x00448260` reads it: radar event 10 and
@@ -839,13 +887,13 @@ impl Simulation {
         )
     }
 
-    /// Phobos `CaptureUnit`'s release-first block
-    /// (`src/Ext/CaptureManager/Body.cpp`): only a finite manager releases.
+    /// `CaptureUnit`'s release-first block. Stock replaces the sole victim of
+    /// a single-slot manager, infinite or not. Phobos
+    /// (`src/Ext/CaptureManager/Body.cpp`) releases only a finite manager.
     /// A single-slot one replaces its victim; a multi-slot one frees the
     /// oldest node only with `MultiMindControl.ReleaseVictim=`, and with
     /// `MindControl.IgnoreSize=no` keeps freeing until the target's
     /// `MindControlSize=` fits. `false` when the pair cannot be resolved.
-    #[cfg(feature = "phobos")]
     fn phobos_release_before_capture(
         &mut self,
         controller_id: u64,
@@ -854,6 +902,27 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
+        if !rules.phobos() {
+            let replace = self
+                .substrate
+                .entities
+                .get(controller_id)
+                .and_then(|controller| controller.capture_manager.as_ref())
+                .is_some_and(|manager| manager.max_control() == 1 && manager.count() == 1);
+            if replace {
+                let Some(victim) = self
+                    .substrate
+                    .entities
+                    .get(controller_id)
+                    .and_then(|controller| controller.capture_manager.as_ref())
+                    .and_then(|manager| manager.victims().next())
+                else {
+                    return false;
+                };
+                return self.free_unit(controller_id, victim, rules, registry, frame_effects);
+            }
+            return true;
+        }
         let Some(controller) = self.substrate.entities.get(controller_id) else {
             return false;
         };
@@ -925,7 +994,6 @@ impl Simulation {
         if !self.can_capture(controller_id, target_id, rules) {
             return false;
         }
-        #[cfg(feature = "phobos")]
         if !self.phobos_release_before_capture(
             controller_id,
             target_id,
@@ -937,20 +1005,6 @@ impl Simulation {
         }
         // 0x00471D8A: a single-victim manager releases its victim first,
         // infinite or not.
-        #[cfg(not(feature = "phobos"))]
-        {
-            let released: Vec<u64> = self
-                .substrate
-                .entities
-                .get(controller_id)
-                .and_then(|controller| controller.capture_manager.as_ref())
-                .filter(|manager| manager.max_control == 1)
-                .map(|manager| manager.victims().rev().collect())
-                .unwrap_or_default();
-            for victim in released {
-                self.free_unit(controller_id, victim, rules, registry, frame_effects);
-            }
-        }
         let (Some(controller_owner), Some(original_owner)) = (
             self.substrate
                 .entities
@@ -1084,6 +1138,7 @@ impl Simulation {
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: &mut FrameEffects<'_>,
+        free_silent: bool,
     ) -> bool {
         let Some(object) = self.substrate.entities.get(id) else {
             return false;
@@ -1101,7 +1156,11 @@ impl Simulation {
             return false;
         }
         if let Some(controller) = object.seldom.mind_control.controller {
-            self.free_unit(controller, id, rules, registry, frame_effects);
+            // Phobos `PermaMC_FreeUnit_SetContext` (`Misc/Hooks.Ares.cpp:120-124`)
+            // patches this FreeUnit call: the replaced victim's MindClearedSound
+            // follows the warhead's `RemoveMindControl.Silent=` (else
+            // `[AudioVisual] MindControl.Permanent.ReplaceSilent=`).
+            self.free_unit_with_sound(controller, id, rules, registry, frame_effects, !free_silent);
         }
         self.change_owner_by_mind_control(id, house, rules, registry, frame_effects);
         let ring = self.substrate.entities.get_mut(id).and_then(|object| {
@@ -1250,13 +1309,17 @@ impl Simulation {
         };
         // Phobos `BulletClass_Detonate` uses
         // `pWHExt->MindControl_Anim.Get(ControlledAnimationType)`.
-        #[cfg(feature = "phobos")]
         let ring_anim = self
             .interner
             .warhead_type(current.payload.warhead, rules)
             .and_then(|warhead| warhead.mind_control_anim.as_deref());
-        #[cfg(not(feature = "phobos"))]
-        let ring_anim: Option<&str> = None;
+        // Phobos `BulletClass_Detonate` (`0x4692BD`,
+        // `Ext/Bullet/Hooks.DetonateLogics.cpp:41-56`) passes
+        // `MindControl_ThreatDelay.Get([General] MindControl.ThreatDelay)`.
+        let threat_delay = rules
+            .warhead(self.interner.resolve(current.payload.warhead))
+            .and_then(|warhead| warhead.mind_control_threat_delay)
+            .unwrap_or(rules.phobos_globals.mind_control_threat_delay);
         if !self.capture_unit_with_ring(
             current.source_id,
             target_id,
@@ -1266,6 +1329,14 @@ impl Simulation {
             frame_effects,
         ) {
             return;
+        }
+        // `CaptureManagerExt::CaptureUnit` (`Ext/CaptureManager/Body.cpp:200-201`):
+        // a positive delay arms the shield; zero leaves the field untouched.
+        if threat_delay > 0 {
+            let frame = self.session.binary_frame() as i32 + threat_delay;
+            if let Some(target) = self.substrate.entities.get_mut(target_id) {
+                target.seldom.phobos_be_controlled_threat_frame = frame;
+            }
         }
         let Some(sound) = rules.mind_control.mind_control_sound.as_deref() else {
             return;
@@ -1354,7 +1425,7 @@ impl Simulation {
     /// `tools/spatial_oracle/capture_ring_height.py`), attached to the victim.
     /// MindControlArea builds its `PermaControlledAnimationType=` ring the
     /// same way (`0x0053B2A9..0x0053B31C`), never for a building.
-    fn attach_control_ring(&mut self, target_id: u64, anim_name: &str, rules: &RuleSet) {
+    pub(crate) fn attach_control_ring(&mut self, target_id: u64, anim_name: &str, rules: &RuleSet) {
         let Some(target) = self.substrate.entities.get(target_id) else {
             return;
         };
@@ -1374,13 +1445,28 @@ impl Simulation {
         } else {
             object.mind_control_ring_offset
         };
-        let Some(centre) = self.anim_owner_coords(target_id) else {
-            return;
-        };
-        let coord = AnimWorldCoord {
-            x: centre.x,
-            y: centre.y,
-            z: centre.z.wrapping_add(offset),
+        // Phobos `ApplyOwnerChange` anchors the anim at `pTarget->Location`
+        // (`Ext/WarheadType/Detonate.cpp:504`), so a building uses its
+        // top-left cell rather than GetCoords' foundation centre.
+        let coord = if building && rules.phobos() {
+            let location = crate::sim::movement::ground_pose::object_location(
+                target,
+                self.resolved_terrain.as_ref(),
+            );
+            AnimWorldCoord {
+                x: location.x,
+                y: location.y,
+                z: location.z.wrapping_add(offset),
+            }
+        } else {
+            let Some(centre) = self.anim_owner_coords(target_id) else {
+                return;
+            };
+            AnimWorldCoord {
+                x: centre.x,
+                y: centre.y,
+                z: centre.z.wrapping_add(offset),
+            }
         };
         let type_id = self.interner.intern(anim_name);
         let (rx, ry, sub_x, sub_y, z) = coord.to_cell_sub_z();
@@ -1448,6 +1534,30 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
+        self.free_unit_with_sound(
+            controller_id,
+            victim_id,
+            rules,
+            registry,
+            frame_effects,
+            true,
+        )
+    }
+
+    /// [`Self::free_unit`] with Phobos's `silent` argument
+    /// (`CaptureManagerExt::FreeUnit`, `Ext/CaptureManager/Body.cpp:142`):
+    /// `play_sound = false` skips the `MindClearedSound` the type or
+    /// `[AudioVisual] MindClearedSound` names, which is the only thing the
+    /// flag changes here.
+    pub(crate) fn free_unit_with_sound(
+        &mut self,
+        controller_id: u64,
+        victim_id: u64,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        frame_effects: &mut FrameEffects<'_>,
+        play_sound: bool,
+    ) -> bool {
         let Some(manager) = self
             .substrate
             .entities
@@ -1480,10 +1590,17 @@ impl Simulation {
                     .object_type(victim.type_ref(), rules)
                     .and_then(|object| object.mind_cleared_sound.as_deref())
                     .or(rules.mind_control.mind_cleared_sound.as_deref());
-                if let Some(sound) = sound {
+                if let Some(sound) = sound
+                    && play_sound
+                {
                     let event = SimSoundEvent::voc_at(rules.sound_name(sound), &victim.position);
                     self.sound_events.emit(event);
                 }
+            }
+            // `CaptureManagerExt::FreeUnit` (`Ext/CaptureManager/Body.cpp:142`)
+            // clears Phobos's threat shield before the house returns.
+            if let Some(victim) = self.substrate.entities.get_mut(victim_id) {
+                victim.seldom.phobos_be_controlled_threat_frame = 0;
             }
             // 0x004720D5..0x004720DA: ChangeOwner(original house, 1).
             self.announce_controlled_building(victim_id, original_owner, rules);
@@ -1723,6 +1840,49 @@ impl Simulation {
         frame_effects: &mut FrameEffects<'_>,
     ) {
         let table = &rules.mind_control;
+        let phobos = rules.phobos();
+        // Phobos `CaptureManagerClass_Overload_AI` (`Ext/CaptureManager/
+        // Hooks.cpp:111-219`): a `NullableVector<int>` type list replaces the
+        // Rules table when present, so a present empty list disables the
+        // checks; a registered `Overload.DeathSound=` replaces the stock
+        // voice, `Overload.ParticleSys=` replaces the spark system, and the
+        // count falls back to the `[CombatDamage]` global.
+        let (counts, frames, damages, death_sound, particle_sys, particle_count) = if phobos {
+            let settings = self
+                .substrate
+                .entities
+                .get(controller_id)
+                .and_then(|controller| self.interner.object_type(controller.type_ref(), rules))
+                .map(|object| object.phobos_overload.clone())
+                .unwrap_or_default();
+            (
+                settings
+                    .count
+                    .unwrap_or_else(|| table.overload_count.clone()),
+                settings
+                    .frames
+                    .unwrap_or_else(|| table.overload_frames.clone()),
+                settings
+                    .damage
+                    .unwrap_or_else(|| table.overload_damage.clone()),
+                settings
+                    .death_sound
+                    .or_else(|| table.overload_sound.clone()),
+                settings.particle_sys,
+                settings
+                    .particle_sys_count
+                    .unwrap_or(rules.phobos_globals.overload_particle_sys_count),
+            )
+        } else {
+            (
+                table.overload_count.clone(),
+                table.overload_frames.clone(),
+                table.overload_damage.clone(),
+                table.overload_sound.clone(),
+                None,
+                5,
+            )
+        };
         // Only an infinite manager overloads; checking it before the
         // effective-count lookup keeps finite managers off the size scan.
         let Some(infinite) = self
@@ -1754,23 +1914,53 @@ impl Simulation {
             manager.overload_countdown -= 1;
             return;
         }
-        // `0x00471A82..0x00471AB1` reads `OverloadCount[0]` unguarded; stock
-        // authors the table.
-        let Some(&first) = table.overload_count.first() else {
+        // Phobos returns before any check when the (possibly type-derived)
+        // count list is present but empty.
+        if counts.is_empty() {
             return;
-        };
+        }
         let count = effective_count.unwrap_or_else(|| manager.count());
-        let mut index = 0;
-        if count > first {
-            while index + 1 < table.overload_count.len() {
-                index += 1;
-                if count <= table.overload_count[index] {
-                    break;
+        // Original `0x00471A82..0x00471AB1`: the first row whose bound the
+        // count does not exceed, capped at the last row. Phobos rewrote the
+        // walk as the last row whose bound the count exceeds.
+        let index = if phobos {
+            let mut index = 0;
+            for slot in 0..counts.len() {
+                if count > counts[slot] {
+                    index = slot + 1;
                 }
             }
-        }
-        manager.overload_countdown = table.overload_frames.get(index).copied().unwrap_or(0);
-        let damage = table.overload_damage.get(index).copied().unwrap_or(0);
+            index
+        } else {
+            let Some(&first) = counts.first() else {
+                return;
+            };
+            let mut index = 0;
+            if count > first {
+                while index + 1 < counts.len() {
+                    index += 1;
+                    if count <= counts[index] {
+                        break;
+                    }
+                }
+            }
+            index
+        };
+        // Phobos' `FixIdx` clamps an out-of-range row to the list's last
+        // entry; the original tables read zero past their end.
+        let fix = |values: &[i32]| -> i32 {
+            if phobos {
+                if values.is_empty() {
+                    0
+                } else {
+                    values[index.min(values.len() - 1)]
+                }
+            } else {
+                values.get(index).copied().unwrap_or(0)
+            }
+        };
+        manager.overload_countdown = fix(&frames);
+        let damage = fix(&damages);
         if damage <= 0 {
             // `0x00471C83`: leaving overload re-arms the voice.
             manager.overload_sound_played = false;
@@ -1798,7 +1988,7 @@ impl Simulation {
         );
         self.commit_direct_damage_receiver(rules, overlay_registry, event, frame_effects);
         if !sound_played {
-            if let Some(sound) = rules.mind_control.overload_sound.as_deref() {
+            if let Some(sound) = death_sound.as_deref() {
                 self.sound_events
                     .emit(SimSoundEvent::voc_at(rules.sound_name(sound), &position));
             }
@@ -1813,15 +2003,24 @@ impl Simulation {
         }
         // 0x00471B48..0x00471C23: five `DefaultSparkSystem=` systems, each at
         // the controller's Location offset by (second draw, first draw, +100).
-        let spark_type = rules
-            .combat_damage
-            .default_spark_system
-            .as_deref()
-            .and_then(|name| rules.ps_type_id_by_name(name));
-        for _ in 0..5 {
-            let dy = self.scenario_rng.next_range_i32_inclusive(-200, 200);
-            let dx = self.scenario_rng.next_range_i32_inclusive(-200, 200);
-            if let Some(system_type) = spark_type {
+        if phobos {
+            let spark_type = particle_sys
+                .as_deref()
+                .and_then(|name| rules.ps_type_id_by_name(name))
+                .or_else(|| {
+                    rules
+                        .combat_damage
+                        .default_spark_system
+                        .as_deref()
+                        .and_then(|name| rules.ps_type_id_by_name(name))
+                });
+            // Phobos draws the two offsets only inside `if (pParticle)`.
+            for _ in 0..particle_count.max(0) {
+                let Some(system_type) = spark_type else {
+                    continue;
+                };
+                let dy = self.scenario_rng.next_range_i32_inclusive(-200, 200);
+                let dx = self.scenario_rng.next_range_i32_inclusive(-200, 200);
                 self.spawn_particle_system(
                     system_type,
                     glam::IVec3::new(
@@ -1835,6 +2034,32 @@ impl Simulation {
                     None,
                     rules,
                 );
+            }
+        } else {
+            let spark_type = rules
+                .combat_damage
+                .default_spark_system
+                .as_deref()
+                .and_then(|name| rules.ps_type_id_by_name(name));
+            // The original draws both offsets before the missing-type check.
+            for _ in 0..5 {
+                let dy = self.scenario_rng.next_range_i32_inclusive(-200, 200);
+                let dx = self.scenario_rng.next_range_i32_inclusive(-200, 200);
+                if let Some(system_type) = spark_type {
+                    self.spawn_particle_system(
+                        system_type,
+                        glam::IVec3::new(
+                            location.x.wrapping_add(dx),
+                            location.y.wrapping_add(dy),
+                            location.z.wrapping_add(100),
+                        ),
+                        None,
+                        None,
+                        glam::IVec3::ZERO,
+                        None,
+                        rules,
+                    );
+                }
             }
         }
         // 0x00471C29..0x00471C78: after the receiver and all five full Spark
@@ -1850,7 +2075,15 @@ impl Simulation {
             .is_some_and(|controller| controller.lifecycle.object_alive());
         if index > 0 && alive {
             let lean_left = self.scenario_rng.next_range_i32_inclusive(0, 100) < 50;
-            let magnitude = if index == 1 { 0x3c75_c28f } else { 0x3cf5_c28f };
+            // The Phobos hook inverts the stock row-1 magnitude
+            // (`Hooks.cpp:186`): its `nCurIdx != 1` plays 0.015.
+            let magnitude = if rules.phobos() {
+                if index != 1 { 0x3c75_c28f } else { 0x3cf5_c28f }
+            } else if index == 1 {
+                0x3c75_c28f
+            } else {
+                0x3cf5_c28f
+            };
             let velocity = crate::util::native_x87::NativeF32Bits::from_bits(
                 magnitude | if lean_left { 0x8000_0000 } else { 0 },
             );

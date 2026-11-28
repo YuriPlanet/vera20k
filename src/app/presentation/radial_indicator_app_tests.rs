@@ -1,5 +1,4 @@
 use super::*;
-#[cfg(feature = "phobos")]
 use crate::rules::ini_parser::IniFile;
 use crate::sim::command::Command;
 use crate::sim::world::{FrameEffects, TickLane};
@@ -65,6 +64,7 @@ fn query(sim: &Simulation, rules: &RuleSet, ids: &[u64], ms: u64) -> Vec<RadialI
         None,
         None,
         false,
+        false,
         true,
         &mut RangePulse::default(),
         &mut pulse,
@@ -109,6 +109,7 @@ fn target_query(
         armed_super_weapon,
         None,
         Some((16, 16)),
+        false,
         false,
         true,
         &mut RangePulse::default(),
@@ -525,6 +526,7 @@ fn targeting_a_missing_cell_cannot_change_the_simulation_dummy() {
             None,
             Some(cell),
             false,
+            false,
             true,
             &mut RangePulse::default(),
             &mut RangePulse::default(),
@@ -585,6 +587,7 @@ fn action_query(
         super_weapon,
         armed,
         Some(cursor),
+        false,
         false,
         unit_action_lines,
         placement,
@@ -860,7 +863,6 @@ fn ordinary_temporal_warp_suppresses_gap_query_and_release_restores_it() {
     assert_eq!(query(&sim, rules, &[gap], 0).len(), 1);
 }
 
-#[cfg(feature = "phobos")]
 fn enhancer_rules(range: &str, amount: &str, global: bool) -> RuleSet {
     RuleSet::from_ini(&IniFile::from_str(&format!(
         "[BuildingTypes]\n0=ENH\n1=GAPOWR\n2=RADAR\n\
@@ -876,7 +878,6 @@ fn enhancer_rules(range: &str, amount: &str, global: bool) -> RuleSet {
 /// Insert a finished Structure fixture with the simulation's own interned
 /// type and owner handles; unlimbo admission is not what these display tests
 /// measure.
-#[cfg(feature = "phobos")]
 fn insert_enhancer(
     sim: &mut Simulation,
     type_id: &str,
@@ -901,7 +902,6 @@ fn insert_enhancer(
     1
 }
 
-#[cfg(feature = "phobos")]
 fn placement_query(
     sim: &Simulation,
     rules: &RuleSet,
@@ -919,6 +919,7 @@ fn placement_query(
         Some(armed),
         Some(cursor),
         show,
+        false,
         true,
         &mut RangePulse::default(),
         &mut pulse,
@@ -935,7 +936,6 @@ fn placement_query(
     .draws
 }
 
-#[cfg(feature = "phobos")]
 #[test]
 fn placement_draws_an_active_enhancers_range_at_the_enhancer_cell() {
     let rules = enhancer_rules("4", "10", true);
@@ -964,7 +964,6 @@ fn placement_draws_an_active_enhancers_range_at_the_enhancer_cell() {
     assert!(placement_query(&sim, &rules, "GAPOWR", (30, 16), true).is_empty());
 }
 
-#[cfg(feature = "phobos")]
 #[test]
 fn placement_enhancer_rings_need_membership_range_and_the_current_player() {
     // A list with the default Amount/Factor is not registered as an enhancer.
@@ -995,6 +994,233 @@ fn placement_enhancer_rings_need_membership_range_and_the_current_player() {
     assert_eq!(
         placement_query(&sim, &rules, "GAPOWR", (18, 16), true).len(),
         1
+    );
+}
+
+fn designator_rules(sw_extra: &str) -> RuleSet {
+    let ini = IniFile::from_str(&format!(
+        "[General]\nAIFireSale=yes\n[Countries]\n0=Americans\n1=Russians\n\
+         [VehicleTypes]\n0=DESIG\n1=INHIB\n2=FALLBACK\n3=UNLISTED\n\
+         [DESIG]\nStrength=100\nArmor=light\nSpeed=6\nSight=3\nDesignatorRange=5\n\
+         [INHIB]\nStrength=100\nArmor=light\nSpeed=6\nSight=2\nInhibitorRange=4\n\
+         [FALLBACK]\nStrength=100\nArmor=light\nSpeed=6\nSight=6\n\
+         [UNLISTED]\nStrength=100\nArmor=light\nSpeed=6\nSight=4\n\
+         [SuperWeaponTypes]\n0=Strike\n\
+         [Strike]\nType=PsychicReveal\nRechargeTime=1\nIsPowered=no\n\
+         SW.Designators=DESIG,FALLBACK\nSW.Inhibitors=INHIB\n{sw_extra}"
+    ));
+    RuleSet::from_ini_with_fixed_art_for_test(&ini, &IniFile::empty())
+        .expect("designator rules parse")
+}
+
+fn designator_sim(rules: &RuleSet) -> Simulation {
+    let mut sim = crate::sim::arena_fixture::rival_arena(rules, 17);
+    sim.intern_rule_type_ids(rules);
+    sim.resolve_type_handles(rules);
+    let house = sim.interner().get("Americans");
+    sim.session_mut_for_test().set_current_house_for_test(house);
+    sim
+}
+
+fn designator_colors() -> HouseColorMap {
+    HouseColorMap::from([
+        (
+            "Americans".to_owned(),
+            crate::rules::house_colors::HouseColorIndex(3),
+        ),
+        (
+            "Russians".to_owned(),
+            crate::rules::house_colors::HouseColorIndex(5),
+        ),
+    ])
+}
+
+fn designator_query(
+    sim: &Simulation,
+    rules: &RuleSet,
+    armed: Option<&str>,
+    show: bool,
+    colors: &HouseColorMap,
+) -> Vec<RadialIndicatorDraw> {
+    // Unit Action Lines off isolates the designator arm: it runs before the
+    // 0x6DBE7B early-out, while the placement and superweapon rings do not.
+    let frame = crate::app::presentation::frame::PresentationFrame::of_test(sim, rules);
+    build(
+        Some(sim),
+        Some(&frame),
+        Some(rules),
+        &[],
+        armed,
+        None,
+        None,
+        false,
+        show,
+        false,
+        &mut RangePulse::default(),
+        &mut RangePulse::default(),
+        colors,
+        SurfaceLineViewport {
+            camera: [0; 2],
+            clip: [0, 0, 1024, 768],
+            z_origin_y: 0,
+            zoom: 1.0,
+        },
+        0,
+        1,
+    )
+    .draws
+}
+
+/// The three `ShowDesignatorRange` gates default no/yes/yes
+/// (`Phobos.INI.cpp:133`, `Ext/Rules/Body.cpp:176`, `Ext/SWType/Body.cpp:283`);
+/// the combined client/rules bool short-circuits the arm, no armed superweapon
+/// draws nothing, and the armed `[SuperWeaponType]` switch is checked in build.
+#[test]
+fn designator_range_gates_default_and_short_circuit() {
+    assert!(
+        !crate::app::persistence::phobos_settings::PhobosClientSettings::default()
+            .show_designator_range
+    );
+    assert!(crate::rules::phobos_globals::PhobosGlobals::default().show_designator_range);
+    let rules = designator_rules("");
+    assert!(rules.super_weapon("Strike").unwrap().show_designator_range);
+    assert!(
+        !designator_rules("[AudioVisual]\nShowDesignatorRange=no\n")
+            .phobos_globals
+            .show_designator_range
+    );
+    assert!(
+        !designator_rules("[Strike]\nShowDesignatorRange=no\n")
+            .super_weapon("Strike")
+            .unwrap()
+            .show_designator_range
+    );
+
+    let mut sim = designator_sim(&rules);
+    sim.spawn_object("DESIG", "Americans", 12, 12, 0, &rules)
+        .unwrap();
+    sim.spawn_object("INHIB", "Russians", 20, 20, 0, &rules)
+        .unwrap();
+    let colors = designator_colors();
+    assert!(
+        designator_query(&sim, &rules, Some("Strike"), false, &colors).is_empty(),
+        "client/rules off draws nothing even with the rules and SW switches on"
+    );
+    assert!(
+        !designator_query(&sim, &rules, Some("Strike"), true, &colors).is_empty(),
+        "all three gates on draws the rings"
+    );
+    assert!(
+        designator_query(&sim, &rules, None, true, &colors).is_empty(),
+        "no armed superweapon draws nothing"
+    );
+    let off = designator_rules("[Strike]\nShowDesignatorRange=no\n");
+    let mut sim_off = designator_sim(&off);
+    sim_off
+        .spawn_object("DESIG", "Americans", 12, 12, 0, &off)
+        .unwrap();
+    assert!(
+        designator_query(&sim_off, &off, Some("Strike"), true, &colors).is_empty(),
+        "the SuperWeaponType gate off draws nothing"
+    );
+}
+
+/// One own designator and one enemy inhibitor ring in their owning house's
+/// colour at `DesignatorRange`/`InhibitorRange`; a designator type without
+/// `DesignatorRange` falls back to `Sight` (`Ext/SWType/Hooks.cpp:81-88`).
+#[test]
+fn designator_and_inhibitor_rings_use_house_colour_and_range() {
+    let rules = designator_rules("");
+    let mut sim = designator_sim(&rules);
+    sim.spawn_object("DESIG", "Americans", 12, 12, 0, &rules)
+        .unwrap();
+    sim.spawn_object("INHIB", "Russians", 20, 20, 0, &rules)
+        .unwrap();
+    sim.spawn_object("FALLBACK", "Americans", 14, 12, 0, &rules)
+        .unwrap();
+    let colors = designator_colors();
+    let draws = designator_query(&sim, &rules, Some("Strike"), true, &colors);
+    assert_eq!(
+        draws.len(),
+        3,
+        "one designator, one inhibitor, one fallback"
+    );
+    let american = crate::render::palette_light::house_color_rgb(
+        &rules.house_color_ramps,
+        crate::rules::house_colors::HouseColorIndex(3),
+    );
+    let russian = crate::render::palette_light::house_color_rgb(
+        &rules.house_color_ramps,
+        crate::rules::house_colors::HouseColorIndex(5),
+    );
+    // Without Ares the nullable range keys are unread, so Sight is the source.
+    let (desig_radius, inhib_radius) = (5.0_f32, 4.0_f32);
+    let has = |radius: f32, rgb: [u8; 3]| draws.iter().any(|d| d.radius == radius && d.rgb == rgb);
+    assert!(
+        has(desig_radius, american),
+        "the own designator rings in the owner colour at its range"
+    );
+    assert!(
+        has(inhib_radius, russian),
+        "the enemy inhibitor rings in its owner colour at its range"
+    );
+    assert!(
+        has(6.0, american),
+        "a designator without DesignatorRange falls back to Sight"
+    );
+}
+
+/// The hook skips allies other than the current player, limbo and dead
+/// technos, and types absent from the lists (`Ext/SWType/Hooks.cpp:70-77`).
+#[test]
+fn designator_scan_excludes_allies_limbo_dead_and_unlisted() {
+    let rules = designator_rules("");
+    let mut sim = designator_sim(&rules);
+    let colors = designator_colors();
+    sim.spawn_object("DESIG", "Americans", 12, 12, 0, &rules)
+        .unwrap();
+    let count =
+        |sim: &Simulation| designator_query(sim, &rules, Some("Strike"), true, &colors).len();
+    assert_eq!(count(&sim), 1, "the own designator is the baseline");
+
+    sim.spawn_object("UNLISTED", "Americans", 18, 12, 0, &rules)
+        .unwrap();
+    sim.spawn_object("UNLISTED", "Russians", 22, 20, 0, &rules)
+        .unwrap();
+    assert_eq!(count(&sim), 1, "types absent from the lists are skipped");
+
+    let limbo = sim
+        .spawn_object("DESIG", "Americans", 14, 12, 0, &rules)
+        .unwrap();
+    sim.entities_mut_for_test()
+        .get_mut_for_test(limbo)
+        .unwrap()
+        .lifecycle
+        .set_in_limbo_for_test(true);
+    assert_eq!(count(&sim), 1, "a limbo techno is skipped");
+
+    let dead = sim
+        .spawn_object("DESIG", "Americans", 16, 12, 0, &rules)
+        .unwrap();
+    sim.entities_mut_for_test()
+        .get_mut_for_test(dead)
+        .unwrap()
+        .lifecycle
+        .set_object_alive_for_test(false);
+    assert_eq!(count(&sim), 1, "a dead techno is skipped");
+
+    for (house, ally) in [("AMERICANS", "RUSSIANS"), ("RUSSIANS", "AMERICANS")] {
+        sim.house_alliances_mut_for_test()
+            .entry(house.to_owned())
+            .or_default()
+            .insert(ally.to_owned());
+    }
+    sim.spawn_object("INHIB", "Russians", 20, 20, 0, &rules)
+        .unwrap();
+    assert_eq!(
+        count(&sim),
+        1,
+        "an allied techno is never a designator or inhibitor"
     );
 }
 

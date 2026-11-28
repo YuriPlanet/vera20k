@@ -828,7 +828,6 @@ fn dispatch_retail_hotkey(
             &mut audio.sfx_player,
             persistence,
         ),
-        #[cfg(feature = "phobos")]
         HotkeyCommand::FireTacticalSw(index) => {
             if crate::app::state::active_rules(frontend, match_state)
                 .is_some_and(|rules| rules.sw_sidebar.keys_enabled)
@@ -853,7 +852,6 @@ fn dispatch_retail_hotkey(
                 );
             }
         }
-        #[cfg(feature = "phobos")]
         HotkeyCommand::ToggleSwSidebar => {
             if crate::app::state::active_rules(frontend, match_state)
                 .is_some_and(|rules| rules.sw_sidebar.toggle_key_enabled)

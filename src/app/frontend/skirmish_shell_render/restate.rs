@@ -28,7 +28,42 @@ pub(crate) fn render_restate_shell(
 ) -> anyhow::Result<()> {
     crate::app::input::restate::sync(platform, renderer, frontend, match_state, persistence)
         .expect("active 0x10C geometry");
-    let frame = super::in_game_shell::paint_dialog(
+    let ui = (DIALOG.ui)(&match_state.match_presentation).expect("the open dialog's controls");
+    let at_start = match_state.match_presentation.briefing_at_start;
+    // Phobos `BriefingDialog_ShowBriefing @ 0x65F764` replaces dialog item
+    // 1059 (0x423)'s CSF key only while `BriefingTemp::ShowBriefing` is set.
+    // The F2 restate path keeps the stock `GUI:Return` caption.
+    let button_key = match_state
+        .match_presentation
+        .briefing_dialog
+        .button_label_key(at_start, crate::ui::shell::restate::RETURN_LABEL.0)
+        .to_owned();
+    let button_text =
+        process_assets.csf_label(&button_key, crate::ui::shell::restate::RETURN_LABEL.1);
+    // `GetDialogUIStatusLabels_ShowBriefing @ 0x604985` returns the authored
+    // status label for the resume button on the scenario-start path.
+    let status_text = crate::app::input::dialog_page::help(ui, None).map(|key| {
+        let key = if key
+            == crate::ui::shell::restate::RestateControl::Return
+                .help_key()
+                .unwrap_or_default()
+        {
+            match_state
+                .match_presentation
+                .briefing_dialog
+                .status_label_key(at_start, key)
+                .to_owned()
+        } else {
+            key.to_owned()
+        };
+        process_assets.csf_label(&key, (DIALOG.help_fallback)(&key))
+    });
+    let text_of = |id: i32| match u16::try_from(id).ok()? {
+        id if id == RestateControl::Return.id() => Some(button_text.clone()),
+        crate::ui::shell::in_game_shell::FOOTER => status_text.clone(),
+        _ => None,
+    };
+    let frame = super::in_game_shell::paint_dialog_with_text(
         platform,
         renderer,
         frontend,
@@ -36,6 +71,7 @@ pub(crate) fn render_restate_shell(
         process_assets,
         persistence,
         &DIALOG,
+        &text_of,
         |paint, ui| {
             let (ime, bit_font) = (&platform.ime, &renderer.bit_font);
             let content = RestateControl::Content.id();

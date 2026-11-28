@@ -157,9 +157,12 @@ fn weapon(slot: &Value, input: &Value) -> Option<WeaponFacts> {
         projectile: ProjectileFacts {
             aa: flag(&projectile["aa"]),
             ag: flag(&projectile["ag"]),
+            // The corpus is stock gamemd output: there is no `AU` field.
+            au: false,
             rot: int(&projectile["rot"]),
             aa_only: flag(&projectile["aa_only"]),
         },
+        can_target_iron_curtained: None,
     })
 }
 
@@ -244,7 +247,6 @@ fn facts(input: &Value, ares: bool) -> FireFacts {
             transporter_cloaked: false,
             emp_remaining: int(&f["emp_remaining"]),
             death_frame_counter: int(&f["death_frame_counter"]),
-            webbed: false,
             fire_particles_live: flag(&f["fire_particles_live"]),
             spark_particles_live: flag(&f["spark_particles_live"]),
             railgun_particles_live: flag(&f["railgun_particles_live"]),
@@ -266,9 +268,14 @@ fn facts(input: &Value, ares: bool) -> FireFacts {
             // (1004BC80) weapon test.
             temporal_gunner_weapon: false,
             owner_is_human: flag(&f["owner_is_human"]),
+            owner_controlled_by_human: flag(&f["owner_is_human"]),
+            // The native corpus carries no `TransactMoney` facts; zero money
+            // and a zero amount leave the `0x6FC339` money arm a no-op.
+            owner_money: f.get("owner_money").map_or(0, int),
             // Foot `0x004DE770` (SETNE); a Building's vt+0x380 is false.
             paralyzed: class.is_foot()
                 && time_left(&f["paralysis_start"], &f["paralysis_left"], frame) != 0,
+            webbed: false,
             spawns,
             primary_facing: int(&f["primary_facing"]) as u16,
             secondary_facing: int(&f["secondary_facing"]) as u16,
@@ -296,6 +303,19 @@ fn facts(input: &Value, ares: bool) -> FireFacts {
             // input separately; the production fact now carries the query result.
             building_has_turret: flag(&ft["turret"]) || flag(&f["turret_upgrade"]),
             prism_breaks_support: false,
+            // The native corpus carries no Phobos open-topped transport
+            // facts; all-false leaves the `0x6FC5C7` branch a no-op.
+            transport_deactivated: false,
+            transport_weapons_disabled: false,
+            transport_attacked_by_locomotor: false,
+            transport_is_foot: false,
+            transport_moving: false,
+            transport_allow_firing_if_deactivated: false,
+            transport_allow_firing_if_attacked_by_locomotor: false,
+            transport_check_disable_weapons: false,
+            transport_fire_while_moving: false,
+            passenger_fire_while_moving: true,
+            transport_decloak_to_fire: false,
         },
         firer_type: FirerTypeFacts {
             natural: flag(&ft["natural"]),
@@ -322,6 +342,9 @@ fn facts(input: &Value, ares: bool) -> FireFacts {
             can_occupy_fire: flag(&ft["can_occupy_fire"]),
             emp_pulse_cannon: flag(&ft["emp_pulse_cannon"]),
             turret_anim_is_voxel: flag(&ft["turret_anim_is_voxel"]),
+            // The native corpus has no `NoTurret.TrackTarget`; false keeps
+            // the `0x7410BB` hook at its stock gate.
+            no_turret_track_target: false,
         },
         target: TargetFacts {
             kind: target_kind(t["kind"].as_str().unwrap()),
@@ -357,10 +380,16 @@ fn facts(input: &Value, ares: bool) -> FireFacts {
             organic: flag(&tt["organic"]),
             is_simple_deployer: flag(&tt["is_simple_deployer"]),
             non_vehicle: flag(&tt["non_vehicle"]),
-            // The fixture's BuildingType is not a 1x1 undeployer.
-            is_1x1_with_undeploy: false,
+            // The fixture's BuildingType is not a 1x1 undeployer and authors
+            // no ConsideredVehicle.
+            is_vehicle: false,
             ..TargetTypeFacts::default()
         },
+        can_target_iron_curtained: true,
+        can_target_ai_iron_curtained: false,
+        // The native corpus predates the Phobos rules: `all` keeps the
+        // berzerk arm a no-op.
+        berzerk_targeting: crate::rules::phobos_shields::AffectedHouse::ALL,
     }
 }
 
@@ -478,6 +507,8 @@ impl FireQuery for RowQuery<'_> {
         let facts = crate::sim::power_system::OperationalFacts {
             online: flag(&f["online"]),
             tesla_chargers: int(&f["tesla_chargers"]),
+            tesla_charge_levels: int(&f["tesla_chargers"]),
+            overpower_keep_online: 2,
             charger_bypass: 2,
             emp_remaining: int(&f["emp_remaining"]),
             health: int(&f["health"]),
@@ -540,6 +571,28 @@ fn original_fire_error_rows() {
     // 0x741206) and I2 (InfantryClass_CanFire_Heal 1004E270, hook 0x51C913);
     // `ares_heal_and_temporal_fire_errors` runs those arms as an Ares game.
     for row in rows {
+        // Ares replaces U6 (UnitClass_CanFire_Heal 1004E540, hook 0x741113),
+        // U10 (UnitClass_CanFire 1004BC80, hook 0x741206) and I2
+        // (InfantryClass_CanFire_Heal 1004E270, hook 0x51C913);
+        // `ares_heal_and_temporal_fire_errors` holds their Ares rows.
+        if row["input"]["name"].as_str().is_some_and(|name| {
+            ["U6.", "U10.", "I2."]
+                .iter()
+                .any(|arm| name.starts_with(arm))
+        }) {
+            continue;
+        }
+        // Phobos removes the stock T16 block (jump `0x6FC22A` -> `0x6FC24D`)
+        // and refuses after T21 through CanTarget[AI].IronCurtained; the
+        // curtained rows therefore legitimately reach T17 first. The new
+        // gate has its own focused test.
+        if true
+            && row["input"]["name"]
+                .as_str()
+                .is_some_and(|name| name.starts_with("T16."))
+        {
+            continue;
+        }
         let input = resolve(&corpus["defaults"], &row["input"]);
         let (code, calls) = evaluate(&input, false);
         let native_calls: Vec<&str> = row["calls"]

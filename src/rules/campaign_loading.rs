@@ -134,6 +134,23 @@ impl CampaignLoadingMetadata {
         self.background_name_800.clear();
         self.background_palette_name.clear();
 
+        // Phobos `ReadScenario_MissionINI` (`Ext/Scenario/Hooks.cpp:3-34`,
+        // site `0x6870D7`, SkipGameCode `0x6873AB`) replaces the vanilla
+        // `Full_Init` reads: each loading-briefing location falls back to
+        // `MISSIONMD.INI [Defaults] DefaultLS...` (itself default 0), not to
+        // the retained scenario field, and a missing scenario section still
+        // takes that fallback.
+        {
+            let defaults = ini.section("Defaults");
+            self.brief_location_640 = [
+                defaults.map_or(0, |section| section.read_int("DefaultLS640BriefLocX", 0)),
+                defaults.map_or(0, |section| section.read_int("DefaultLS640BriefLocY", 0)),
+            ];
+            self.brief_location_800 = [
+                defaults.map_or(0, |section| section.read_int("DefaultLS800BriefLocX", 0)),
+                defaults.map_or(0, |section| section.read_int("DefaultLS800BriefLocY", 0)),
+            ];
+        }
         // Ares 1002F680 (hook 0x686D7F, after MISSIONMD is read) defaults the
         // key by the file name's first three letters, case-blind, and reads
         // it into its 0x800 buffer whether or not the section exists.
@@ -325,7 +342,9 @@ mod tests {
         fixture
     }
 
-    fn assert_fields(metadata: &CampaignLoadingMetadata, row: &Value) {
+    fn assert_fields(metadata: &CampaignLoadingMetadata, row: &Value, filename: &str) {
+        // Only the Phobos expectation arm below consults the scenario section.
+        let _ = filename;
         for (key, actual) in [
             ("LSLoadMessage", metadata.load_message_key()),
             ("LSLoadBriefing", metadata.load_briefing_key()),
@@ -343,7 +362,22 @@ mod tests {
             ("LS800BriefLocX", wide[0]),
             ("LS800BriefLocY", wide[1]),
         ] {
-            assert_eq!(actual as i64, row["coords"][key].as_i64().unwrap(), "{key}");
+            // Phobos assigns the `[Defaults] DefaultLS...` fallback (0 in this
+            // corpus, which has no Defaults section) before the scenario read,
+            // so an absent section or key answers 0 instead of the retained
+            // field.
+            let expected = if row["sections"]
+                .as_object()
+                .unwrap()
+                .get(filename)
+                .and_then(Value::as_object)
+                .is_some_and(|section| section.contains_key(key))
+            {
+                row["coords"][key].as_i64().unwrap()
+            } else {
+                0
+            };
+            assert_eq!(actual as i64, expected, "{key}");
         }
     }
 
@@ -372,8 +406,42 @@ mod tests {
                 }
             }
             metadata.apply_ini(&IniFile::from_str(&text), filename);
-            assert_fields(&metadata, row);
+            assert_fields(&metadata, row, filename);
         }
+    }
+
+    /// Phobos `Ext/Scenario/Hooks.cpp:24-27`: the four loading-briefing
+    /// locations fall back to `[Defaults] DefaultLS...` (0 when absent), not
+    /// to the retained scenario field.
+    #[test]
+    fn phobos_defaults_supply_the_loading_brief_locations() {
+        let ini = IniFile::from_str(
+            "[Defaults]\nDefaultLS640BriefLocX=11\nDefaultLS640BriefLocY=12\n\
+             DefaultLS800BriefLocX=13\nDefaultLS800BriefLocY=14\n\
+             [M01.MAP]\nLS640BriefLocX=21\n",
+        );
+        let mut metadata = CampaignLoadingMetadata::new();
+        metadata.apply_ini(&ini, "M01.MAP");
+        assert_eq!(metadata.brief_location_640(), [21, 12]);
+        assert_eq!(metadata.brief_location_800(), [13, 14]);
+
+        // A missing scenario section still takes the Defaults values.
+        let mut absent = CampaignLoadingMetadata::new();
+        absent.apply_ini(&ini, "OTHER.MAP");
+        assert_eq!(absent.brief_location_640(), [11, 12]);
+        assert_eq!(absent.brief_location_800(), [13, 14]);
+
+        // Without `[Defaults]`, an absent scenario key answers 0 rather than
+        // the retained scenario field.
+        let no_defaults = IniFile::from_str("[M01.MAP]\nLS640BriefLocX=21\n");
+        let mut retained = CampaignLoadingMetadata {
+            brief_location_640: [7, 8],
+            brief_location_800: [9, 10],
+            ..CampaignLoadingMetadata::default()
+        };
+        retained.apply_ini(&no_defaults, "M01.MAP");
+        assert_eq!(retained.brief_location_640(), [21, 0]);
+        assert_eq!(retained.brief_location_800(), [0, 0]);
     }
 
     #[test]
@@ -422,7 +490,7 @@ mod tests {
         {
             let mut metadata = CampaignLoadingMetadata::new();
             metadata.apply_ini(&mission, row["filename"].as_str().unwrap());
-            assert_fields(&metadata, row);
+            assert_fields(&metadata, row, row["filename"].as_str().unwrap());
         }
     }
 

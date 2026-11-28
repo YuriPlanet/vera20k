@@ -15,11 +15,12 @@ use serde_json::Value;
 const RULES: &str = "[InfantryTypes]\n[VehicleTypes]\n[AircraftTypes]\n\
     [BuildingTypes]\n0=NAMISL\n1=YARD\n2=BIGYARD\n\
     [SuperWeaponTypes]\n0=NukeSpecial\n1=LightningStormSpecial\n2=SpyPlaneSpecial\n\
-    3=PsychicDominatorSpecial\n\
+    3=PsychicDominatorSpecial\n4=IronCurtainSpecial\n\
     [NukeSpecial]\nType=MultiMissile\nRechargeTime=1\nAIDefendAgainst=yes\n\
     [LightningStormSpecial]\nType=LightningStorm\nRechargeTime=1\n\
     [SpyPlaneSpecial]\nType=SpyPlane\nRechargeTime=1\n\
     [PsychicDominatorSpecial]\nType=PsychicDominator\nRechargeTime=1\n\
+    [IronCurtainSpecial]\nType=IronCurtain\nRechargeTime=1\n\
     [NAMISL]\nStrength=1000\nNukeSilo=yes\nSuperWeapon=NukeSpecial\nFoundation=1x1\n\
     [YARD]\nStrength=1000\nFoundation=1x1\n\
     [BIGYARD]\nStrength=1000\nFoundation=4x4\n";
@@ -208,6 +209,48 @@ fn click_fire_matches_native() {
             "{row}"
         );
     }
+}
+
+/// Phobos `FireSuperWeaponExt`'s `sw_ext.ShotCount++`
+/// (`Ext/SWType/FireSuperWeapon.cpp:45`) runs at the shared Launch tail, so
+/// a stock-handled type counts too; Ares' 100226D0 shares the field.
+#[test]
+fn an_accepted_stock_launch_counts_one_shot() {
+    let art = IniFile::from_str(ART);
+    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
+        &crate::sim::arena_fixture::clear_ground_ini(&format!(
+            "[General]\nAIFireSale=yes\n{RULES}"
+        )),
+        &art,
+    )
+    .unwrap();
+    rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
+    let mut sim = sim(&rules, true, &[]);
+    let owner = sim.interner.intern(OWNER);
+    let name = "IronCurtainSpecial";
+    let sw_type_id = sim.interner.intern(name);
+    let sw = rules.super_weapon(name).unwrap().clone();
+    let mut instance = SuperWeaponInstance::new(sw_type_id, owner, 0);
+    instance.is_active = true;
+    instance.is_ready = true;
+    sim.super_weapons
+        .map_mut_for_test()
+        .entry(owner)
+        .or_default()
+        .insert(sw_type_id, instance);
+    assert!(click_fire(
+        &mut sim,
+        &rules,
+        owner,
+        sw_type_id,
+        &sw,
+        (10, 10),
+        None,
+        &mut crate::sim::world::FrameEffects::default(),
+        None,
+        false,
+    ));
+    assert_eq!(sim.super_weapons[&owner][&sw_type_id].ares_launch_count, 1);
 }
 
 /// The launch alert for one house, with the row's draw answer; the yard

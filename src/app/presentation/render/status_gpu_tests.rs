@@ -265,7 +265,6 @@ fn native_mobile_health_strips_preserve_color_a_and_z() {
 /// ShieldClass::DrawShieldBar_Other (0x6F683C) uses PIPBRD/E00 for the
 /// background. Compare its production replay with the existing health-border
 /// material using the same physical frame, so PIPS UV/material mixing fails.
-#[cfg(feature = "phobos")]
 #[test]
 #[ignore = "requires retail assets and GPU; shield PIPBRD texture and E00 material"]
 fn a_selected_mobile_shield_background_keeps_its_pipbrd_binding() {
@@ -2386,6 +2385,8 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                             group_text: 0..0,
                             digital_text: Vec::new(),
                             digital_shapes: Vec::new(),
+                            select_box: None,
+                            select_box_ground: None,
                             talk_bubble: None,
                             self_heal: None,
                         });

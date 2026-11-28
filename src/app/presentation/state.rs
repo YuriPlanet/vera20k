@@ -78,6 +78,21 @@ pub(crate) struct MatchPresentationState {
     /// the same tactical slot as the retail banner. `None` keeps the native
     /// art; the player's Custom End Game Banner switch is read at draw time.
     pub(crate) end_game_banner: Option<crate::app::presentation::outcome_banner::EndGameBanner>,
+    /// Phobos `[BannerTypes]` art: every banner type's PCX/SHP in one atlas,
+    /// built with the world; the draw reads the session's banners.
+    pub(crate) banner_art: Option<crate::app::presentation::banners::BannerArtSet>,
+    /// Phobos `BannerClass::Render`'s blink phase per session banner; the
+    /// banner module reconciles and ticks it per drawn frame.
+    pub(crate) banners: Vec<crate::app::presentation::banners::BannerDisplay>,
+    /// Phobos `[Phobos] ToolTipBlur=` (source default `no`,
+    /// `Phobos.INI.cpp:92`): the tooltip blur's gate; the size comes from the
+    /// side/rules `ToolTip.Background.BlurSize`.
+    pub(crate) tool_tip_blur: bool,
+    /// Phobos `ToolTipBlur`'s rects (`[x, y, w, h]`, composition pixels) and
+    /// the resolved `ToolTip.Background.BlurSize`, recomputed with the
+    /// tooltip instances each frame; empty keeps native's no-op.
+    pub(crate) tooltip_blur_rects: Vec<[f32; 4]>,
+    pub(crate) tooltip_blur_size: f32,
     pub(crate) outcome_banner_presentation:
         crate::app::presentation::outcome_banner::OutcomeBannerPresentation,
     pub(crate) software_cursor: Option<crate::app::presentation::render::SoftwareCursor>,
@@ -216,34 +231,78 @@ pub(crate) struct MatchPresentationState {
     pub(crate) selection_overlay: Option<SelectionOverlay>,
     /// Phobos `[Phobos] DigitalDisplay.Enable` from the imported client
     /// profile.
-    #[cfg(feature = "phobos")]
     pub(crate) digital_display_enabled: bool,
+    /// Phobos `[Phobos] EnableSelectBox` from the imported client profile.
+    pub(crate) enable_select_box: bool,
     /// Phobos `[Phobos] ShowPlacementPreview` (source default true).
-    #[cfg(feature = "phobos")]
     pub(crate) show_placement_preview: bool,
+    /// Phobos `[Phobos] ToolTipDescriptions=` (source default yes,
+    /// `Phobos.INI.cpp:91`): the gate of the cameo/superweapon tooltip's
+    /// `UIDescription` line (`Misc/PhobosToolTip.cpp:22-32`).
+    pub(crate) tool_tip_descriptions: bool,
     /// Phobos `[Phobos] ShowFlashOnSelecting` (source default false): gates
     /// `[AudioVisual] SelectionFlashDuration` on each local selection.
-    #[cfg(feature = "phobos")]
     pub(crate) show_flash_on_selecting: bool,
+    /// Phobos `[Phobos] HideLightFlashEffects=` (read default false,
+    /// `Phobos.INI.cpp:111`): a combat light `Impact` request makes no light
+    /// (`DoFlash @ 0x48A62E` skips at `0x48A6FA`).
+    pub(crate) hide_light_flash_effects: bool,
+    /// Phobos `[Phobos] HideShakeEffects=` (read default false,
+    /// `Phobos.INI.cpp:113`): the screen-shake writes never move the view
+    /// (`Ext/Bullet/Hooks.DetonateLogics.cpp:33`).
+    pub(crate) hide_shake_effects: bool,
     /// Phobos `uimd.ini [Sidebar] CenterPauseMenuBackground` (default no),
     /// applied to the active-game shell's background rectangle.
-    #[cfg(feature = "phobos")]
     pub(crate) center_pause_menu_background: bool,
+    /// Phobos `uimd.ini [Sidebar] PowerDelta.*` plus the `[ToolTips]` power
+    /// labels, the mod half of the sidebar indicator switches.
+    pub(crate) sidebar_indicators: crate::rules::phobos_sidebar_indicators::SidebarIndicatorsUi,
+    /// Phobos `0x4A25E0`'s indicator strings resolved for this frame. The
+    /// native hook runs in the credits tick, so this follows the same per-frame
+    /// pass as the power bar rather than the cameo-driven projection refresh.
+    pub(crate) sidebar_indicator_text: Vec<crate::ui::sidebar::SidebarIndicator>,
     /// Phobos `[Phobos] ShowPowerPlantEnhancerRange` (source default false):
     /// the client half of the placement-time enhancer ring switch.
-    #[cfg(feature = "phobos")]
     pub(crate) show_power_plant_enhancer_range: bool,
+    /// Phobos `[Phobos] ShowDesignatorRange` (source default false): the client
+    /// half of the armed superweapon's designator/inhibitor range ring switch.
+    pub(crate) show_designator_range: bool,
+    /// Phobos `[Phobos] ShowPowerDelta=` (source default `yes`): the client
+    /// half of the power-delta indicator; the `uimd.ini` switch must be on too.
+    pub(crate) show_power_delta: bool,
+    /// Phobos `[Phobos] ShowHarvesterCounter=` (source default `yes`): the
+    /// client half of the harvester counter.
+    pub(crate) show_harvester_counter: bool,
+    /// Phobos `[Phobos] ShowWeedsCounter=` (source default `yes`): the client
+    /// half of the weeds counter.
+    pub(crate) show_weeds_counter: bool,
+    /// Phobos `[Phobos] PriorityDeployFiltering=` (source default `yes`):
+    /// gates the `LowDeployPriority` filter in the selection-wide deploy walk.
+    pub(crate) priority_deploy_filtering: bool,
+    /// Phobos `[Phobos] PrioritySelectionFiltering=` (source default `yes`):
+    /// gates the `LowSelectionPriority` filter in the band walk
+    /// (`Misc/Selection.cpp:169`, `:92`).
+    pub(crate) priority_selection_filtering: bool,
+    /// Phobos `[Phobos] RealTimeTimers=` (source default `no`): the tactical
+    /// timer lines print wall-clock seconds (`PrintTimerOnTactical_Start`
+    /// at `0x006D4B50`).
+    pub(crate) real_time_timers: bool,
+    /// Phobos `[Phobos] MessageApplyHoverState=` (source default `no`): the
+    /// pointer over the message stack holds `OnOldMessages`, which stops
+    /// `MessageListClass::Manage` expiring the labels (`0x55DDA0`).
+    pub(crate) message_apply_hover_state: bool,
+    /// Phobos `[Phobos] RealTimeTimers.Adaptive=` (source default `no`): the
+    /// wall-clock divisor follows the measured frame rate instead of the
+    /// GameSpeed table.
+    pub(crate) real_time_timers_adaptive: bool,
     /// Phobos placement preview SHP cache for the current placing type. A
     /// `RefCell`: the placement-preview draw fills it over the shared match.
-    #[cfg(feature = "phobos")]
     pub(crate) placement_preview_art:
         std::cell::RefCell<super::placement_preview::PlacementPreviewArt>,
     /// Phobos left superweapon sidebar: `uimd.ini` settings, toggle state,
     /// filtered order and computed geometry.
-    #[cfg(feature = "phobos")]
     pub(crate) sw_sidebar: super::sw_sidebar::SwSidebarState,
     /// Loaded `[SIDE] SuperWeaponSidebar.*PCX` atlas for the current match.
-    #[cfg(feature = "phobos")]
     pub(crate) sw_sidebar_art: Option<crate::render::sw_sidebar_art::SwSidebarArt>,
     /// PBEACON/RDRBEACN in each beacon row's House Convert, loaded with the
     /// world (`Init_BeaconArt 0x004309D0`).
@@ -314,6 +373,9 @@ pub(crate) struct MatchPresentationState {
     /// Epoch for the tooltip/message wall-clock (`now_ms` = elapsed since
     /// app construction).
     pub(crate) tooltip_epoch: Instant,
+    /// The six section-B Phobos HUD board keys (`Phobos.INI.cpp:99-101,117`,
+    /// `Ext/Side/Body.cpp:41`); the match's copy of the client profile.
+    pub(crate) hud_boards: super::hud_boards::HudBoardsUi,
     /// In-game chat/system message surface (study §3.1) — re-anchored to the
     /// tactical viewport per frame by `input::messages`.
     pub(crate) message_list: crate::ui::messages::MessageList,
@@ -353,6 +415,15 @@ pub(crate) struct MatchPresentationState {
     pub(crate) sound_dialog: Option<crate::ui::shell::sound::SoundState>,
     /// The page 0x73 shows of VERA's paged rows.
     pub(crate) diplomacy_page: crate::ui::shell::paging::RowPage,
+    /// Phobos `uimd.ini [UISettings]` briefing-dialog labels, loaded once
+    /// from the same UIMD.INI as the sidebar settings.
+    pub(crate) briefing_dialog: crate::rules::phobos_briefing_ui::BriefingDialogUi,
+    /// `BriefingTemp::ShowBriefing` (`src/Misc/Hooks.UI.cpp:322`): true while
+    /// the 0x10C dialog was opened by the scenario-start path rather than the
+    /// F2 restate path, which selects the authored resume/status labels.
+    pub(crate) briefing_at_start: bool,
+    /// `[Phobos] ShowBriefing=` client gate (`Phobos.INI.cpp:107`).
+    pub(crate) show_briefing: bool,
     /// `[0xB04CA0]`: the briefing text 0x10C shows, resolved once at open.
     pub(crate) restate_text: String,
     pub(crate) saved_game_browser:

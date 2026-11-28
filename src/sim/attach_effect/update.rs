@@ -8,12 +8,11 @@ use crate::sim::world::Simulation;
 
 use super::{
     AttachAnimState, AttachEffectInstance, AttachEffectWeaponShot, affects_house, cpp_i32,
-    range_modifier_source, range_with_attach_effects, scale_i32,
+    scale_i32, weapon_range_with_modifiers,
 };
 
 /// The per-frame target facts `AttachEffectClass::ShouldBeDiscardedNow`
 /// reads.
-#[cfg(feature = "phobos")]
 #[derive(Debug, Clone, Copy, Default)]
 pub(crate) struct DiscardFacts {
     pub is_foot: bool,
@@ -39,7 +38,6 @@ pub(crate) struct DiscardFacts {
     pub owner_human: bool,
 }
 
-#[cfg(feature = "phobos")]
 impl AttachEffectInstance {
     /// `ShouldBeDiscardedNow`: the event flag or any continuous condition the
     /// type lists. RESIDUAL: `Drain` waits on a victim-side drain owner.
@@ -190,7 +188,6 @@ impl AttachEffectInstance {
 
 /// One attach-effect instance's reads for this frame's update, kept at the
 /// instance's own index.
-#[cfg(feature = "phobos")]
 #[derive(Clone, Copy, Default)]
 struct InstanceFrame {
     /// Initialized before this frame's `AI()` tick.
@@ -207,7 +204,6 @@ struct InstanceFrame {
 
 /// Where an effect's animation lives: attached to `owner` at its world point,
 /// drawn under `house`, and paused or running with the effect's state.
-#[cfg(feature = "phobos")]
 struct AttachEffectAnimTarget {
     owner: u64,
     house: crate::sim::intern::InternedId,
@@ -215,7 +211,6 @@ struct AttachEffectAnimTarget {
     paused: bool,
 }
 
-#[cfg(feature = "phobos")]
 impl Simulation {
     /// Phobos `TechnoExt::UpdateAttachEffects`
     /// (`src/Ext/Techno/Body.Update.cpp:895..975`, reached from the
@@ -283,6 +278,11 @@ impl Simulation {
                         );
                         [coord.x, coord.y, coord.z]
                     }
+                    crate::sim::combat::TargetKind::Bullet(id) => {
+                        // `BulletClass::GetCoords` inherits Object5F65A0.
+                        let position = self.projectiles.get(id)?.position();
+                        [position.x, position.y, position.z]
+                    }
                     crate::sim::combat::TargetKind::Cell(rx, ry) => {
                         let floor_z = self
                             .resolved_terrain
@@ -321,17 +321,12 @@ impl Simulation {
                     Some(&self.house_alliances),
                 )?;
                 let range = selected.map_or(-1, |selected| {
-                    let source = range_modifier_source(
-                        entity,
-                        Some(&self.substrate.entities),
+                    weapon_range_with_modifiers(
                         rules,
                         &self.interner,
-                    );
-                    range_with_attach_effects(
-                        source,
-                        &selected.weapon.id,
-                        selected.weapon.range_leptons,
-                        rules,
+                        Some(&self.substrate.entities),
+                        entity,
+                        &selected.weapon,
                     )
                 });
                 Some((distance, range))

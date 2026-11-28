@@ -15,6 +15,7 @@ const BASE: &str = "[InfantryTypes]\n0=E1\n1=DESO\n[VehicleTypes]\n0=MTNK\n\
 [E1]\nStrength=100\nSpeed=4\n\
 [DESO]\nStrength=100\nSpeed=4\n\
 [MTNK]\nStrength=300\nSpeed=6\n\
+[General]\nAIFireSale=no\n\
 [SuperWeaponTypes]\n0=GateSpecial\n\
 [GateSpecial]\nType=PsychicReveal\nRechargeTime=1\nIsPowered=no\n";
 const ART: &str = "[GACLAB]\nFoundation=1x1\n[NATIVEAUX]\nFoundation=1x1\n";
@@ -66,7 +67,6 @@ fn active(sim: &Simulation, owner: InternedId) -> bool {
 /// The three keys land in the projected availability with their native
 /// meaning: a minimum TechLevel, any-of `SW.AuxTechnos`, none-of
 /// `SW.NegTechnos`, and unknown techno names skipped.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_reads_the_three_superweapon_gates() {
     let rules = rules_with(
@@ -109,7 +109,6 @@ fn phobos_reads_the_three_superweapon_gates() {
 
 /// `SW.AuxTechnos` looks at every techno category, so one owned vehicle
 /// satisfies a list whose other entry is infantry.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_aux_technos_scan_every_category() {
     let rules = rules_with(
@@ -124,7 +123,6 @@ fn phobos_aux_technos_scan_every_category() {
 
 /// `SW.NegTechnos` refuses availability as soon as one listed techno exists,
 /// and `SW.TechLevel` gates before any techno test.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_neg_technos_and_tech_level_gate_availability() {
     let rules = rules_with(

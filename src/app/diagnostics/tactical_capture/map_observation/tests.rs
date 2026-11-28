@@ -852,9 +852,7 @@ fn building_placement_projection_reads_actual_issuer_and_independent_saved_targe
     assert_eq!(serde_json::to_value(observed).unwrap(), empty);
 
     assert!(input.begin_building_placement("GAPOWR", 20, issuer));
-    input.submit_building_placement(
-        &mut crate::app::sidebar_projection::SidebarModel::default(),
-    );
+    input.submit_building_placement(&mut crate::app::sidebar_projection::SidebarModel::default());
     assert!(input.begin_building_placement("GAPILL", 40, issuer));
     let observed = MapBuildingPlacementObservation::capture(&input, &interner);
     assert_eq!(observed.sample_count(), 3);
@@ -1277,7 +1275,8 @@ fn command_bar_fixture() -> (
             let rect = Rect::new(rect.x as i32, rect.y as i32, rect.w as i32, rect.h as i32);
             gui.set(*node, Prop::HitRect, Value::Rect(rect)).unwrap();
         }
-        gui.set(*node, Prop::Enabled, Value::Bool(placed.is_some())).unwrap();
+        gui.set(*node, Prop::Enabled, Value::Bool(placed.is_some()))
+            .unwrap();
     }
     (layout, slots, gui, bar)
 }
@@ -1332,7 +1331,8 @@ fn command_bar_thumb_uses_current_cap_without_inventing_a_button_list_slot() {
         let rect = layout.left_cap;
         let rect = Rect::new(rect.x as i32, rect.y as i32, rect.w as i32, rect.h as i32);
         gui.set(handle, Prop::HitRect, Value::Rect(rect)).unwrap();
-        gui.set(handle, Prop::Id, Value::Int(if open { 0xF0 } else { 0xF1 })).unwrap();
+        gui.set(handle, Prop::Id, Value::Int(if open { 0xF0 } else { 0xF1 }))
+            .unwrap();
         let (receipt, observed_handle) =
             MapCommandBarGestureReceipt::resolve("Thumb", layout, &slots, (&gui, bar), [800, 600])
                 .unwrap();

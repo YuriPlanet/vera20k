@@ -98,6 +98,11 @@ pub fn is_high_bridge_index(id: u8) -> bool {
 pub struct OverlayTypeFlags {
     /// Tiberium=yes — rendered with unit palette, gets -12px Y offset.
     pub tiberium: bool,
+    /// Projected Phobos `AllowRamps=` (`Ext/Tiberium/Body.cpp:24`) for every
+    /// overlay slot of that Tiberium type when its ramp art exists
+    /// (`Ext/Tiberium/Hooks.cpp:46-90`); the map layer's slope recalc clears
+    /// cardinal ramps unless this is set.
+    pub tiberium_allows_ramps: bool,
     /// ChainReaction=yes permits Apply_area_damage resource reduction.
     pub chain_reaction: bool,
     /// OverlayRead5FE839..5FE853 reads the current Explodes+2B0 byte;
@@ -189,6 +194,7 @@ impl Default for OverlayTypeFlags {
     fn default() -> Self {
         Self {
             tiberium: false,
+            tiberium_allows_ramps: false,
             chain_reaction: false,
             explodes: false,
             wall: false,
@@ -402,6 +408,7 @@ impl OverlayTypeRegistry {
                     .then(|| type_section.read_color_rgb("RadarColor", [0; 3], None));
                 flags.push(OverlayTypeFlags {
                     tiberium,
+                    tiberium_allows_ramps: false,
                     chain_reaction: type_section.read_bool("ChainReaction", false),
                     // The retained reader below supplies this, never flattened text.
                     explodes: false,
@@ -438,6 +445,7 @@ impl OverlayTypeRegistry {
             } else {
                 alpha_images.push(String::new());
                 flags.push(OverlayTypeFlags {
+                    tiberium_allows_ramps: false,
                     bridge_deck,
                     land_speed_costs: clear_speed_costs,
                     land_ground_blocked: clear_ground_blocked,
@@ -552,6 +560,64 @@ impl OverlayTypeRegistry {
             .iter()
             .position(|n| n == name)
             .and_then(|i| self.flags.get(i))
+    }
+
+    /// Phobos `AllowRamps` projection: every overlay slot of a Tiberium type
+    /// whose `AllowRamps=` is set and whose first ramp overlay exists and is
+    /// a Tiberium overlay (`Ext/Tiberium/Hooks.cpp:46-90`). The map layer's
+    /// slope recalc reads the flag instead of the Tiberium registry.
+    pub fn project_tiberium_ramps(
+        &mut self,
+        types: &crate::rules::tiberium_type::TiberiumTypeRegistry,
+    ) {
+        for ty in types.types() {
+            if !ty.allow_ramps || !self.has_ramp_art(ty) {
+                continue;
+            }
+            let Ok(base) = self.tiberium_image_base(ty) else {
+                continue;
+            };
+            let ramp = base.wrapping_add(ty.image().primary_count());
+            let end = ramp.wrapping_add(ty.image().slope_count());
+            for slot in base..end {
+                if let Ok(slot) = u8::try_from(slot)
+                    && let Some(flags) = self.flags.get_mut(usize::from(slot))
+                    && flags.tiberium
+                {
+                    flags.tiberium_allows_ramps = true;
+                }
+            }
+        }
+    }
+
+    /// Phobos `CanResourceGerminateOnRamp` (`Ext/Tiberium/Hooks.cpp:46`):
+    /// slope 0 always, else cardinal ramps 1..=4 only for a type with
+    /// `AllowRamps=` whose first ramp overlay is Tiberium art.
+    pub fn allows_ramp(
+        &self,
+        ty: &crate::rules::tiberium_type::TiberiumType,
+        slope_type: i32,
+    ) -> bool {
+        if slope_type == 0 {
+            return true;
+        }
+        if !(1..=4).contains(&slope_type) || !ty.allow_ramps {
+            return false;
+        }
+        self.has_ramp_art(ty)
+    }
+
+    /// `HasRampArt` (`Ext/Tiberium/Hooks.cpp:33-44`): the overlay at
+    /// `Image->ArrayIndex + NumFrames` exists and is Tiberium art.
+    pub fn has_ramp_art(&self, ty: &crate::rules::tiberium_type::TiberiumType) -> bool {
+        let Ok(base) = self.tiberium_image_base(ty) else {
+            return false;
+        };
+        let ramp = base.wrapping_add(ty.image().primary_count());
+        u8::try_from(ramp)
+            .ok()
+            .and_then(|slot| self.flags(slot))
+            .is_some_and(|flags| flags.tiberium)
     }
 
     /// VERA-only, experimental (`docs/picture-model-art.md`): the art section
@@ -782,9 +848,7 @@ fn stock_flat_riparius_variant_index(name: &str) -> Option<usize> {
 }
 
 fn parse_land_type(value: &str) -> Option<LandType> {
-    LandType::ALL
-        .into_iter()
-        .find(|land_type| value.eq_ignore_ascii_case(land_type.section_name()))
+    LandType::from_name(value)
 }
 
 /// Exact predicate for RecalcAttributes' early overlay-Land branch.
@@ -794,6 +858,11 @@ pub(crate) fn uses_early_recalc_land_branch(flags: &OverlayTypeFlags) -> bool {
 
 /// Whether RecalcAttributes removes this resource overlay object/index/data.
 pub(crate) fn clears_tiberium_on_slope(flags: &OverlayTypeFlags, slope_type: u8) -> bool {
+    // Phobos 0x47D36E (`Ext/Tiberium/Hooks.cpp:363`): the hook clears the
+    // overlay for any slope that cannot germinate, before the stock clear.
+    if flags.tiberium && slope_type != 0 && !(flags.tiberium_allows_ramps && slope_type <= 4) {
+        return true;
+    }
     flags.tiberium && slope_type != 0 && (uses_early_recalc_land_branch(flags) || slope_type >= 5)
 }
 
@@ -871,6 +940,82 @@ mod tests {
         assert_eq!(grid.cell(2, 2).overlay_id, Some(wall));
         assert_eq!(grid.cell(2, 2).overlay_data, 0x10);
         assert_eq!(rng.native_state_hex(), before);
+    }
+
+    /// Phobos `AdjacentWallDamage` (`Ext/Rules/Body.cpp:443`, default 200,
+    /// `Ext/Cell/Hooks.cpp:5-11`, hook `0x480EA8`): the penultimate hit's
+    /// cardinal chain uses the authored value. A connected 200-strength wall
+    /// survives the penultimate hit; `-1` forces the neighbour's destruction
+    /// while `0` fails the `roll >= damage` gate.
+    #[test]
+    fn adjacent_wall_damage_drives_the_cardinal_chain() {
+        let ini = IniFile::from_str(
+            "[OverlayTypes]\n0=FILL0\n1=FILL1\n2=GAWALL\n\
+             [GAWALL]\nWall=yes\nStrength=200\nDamageLevels=3\n",
+        );
+        let registry = OverlayTypeRegistry::from_ini(&ini, Some(&ini));
+        let wall = registry.id_for_name("GAWALL").unwrap();
+        assert_eq!(registry.flags(wall).unwrap().damage_levels, 3);
+        let scene = |wall| {
+            let mut sim = crate::sim::world::Simulation::new();
+            *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(8, 8));
+            *sim.resolved_terrain = Some(crate::sim::tiberium::test_support::flat_terrain(8, 8));
+            let grid = sim.overlay_grid.as_mut().unwrap();
+            grid.place_overlay(2, 2, wall, 0);
+            grid.place_overlay(3, 2, wall, 0);
+            // The connection nibble keeps the penultimate level retained
+            // (DestroyOverlay480EDD..480EEA).
+            grid.set_overlay_data(2, 2, 1);
+            grid.set_overlay_data(3, 2, 1);
+            sim
+        };
+        let hit = |sim: &mut crate::sim::world::Simulation,
+                   adjacent_damage: i32,
+                   rng: &mut crate::sim::rng::SimRng| {
+            let grid = sim.overlay_grid.as_mut().unwrap();
+            let terrain = sim.resolved_terrain.as_mut().unwrap();
+            let _ = crate::sim::overlay_grid::damage_wall_overlay_with_runtime_host(
+                grid,
+                &registry,
+                Some(terrain),
+                crate::sim::overlay_grid::WallPointerTarget::Real(2, 2),
+                200,
+                adjacent_damage,
+                rng,
+                None,
+            );
+        };
+        let cells = |sim: &crate::sim::world::Simulation| {
+            let grid = sim.overlay_grid.as_ref().unwrap();
+            (
+                grid.cell(2, 2).overlay_id,
+                grid.cell(2, 2).overlay_data >> 4,
+                grid.cell(3, 2).overlay_id,
+                grid.cell(3, 2).overlay_data,
+            )
+        };
+
+        let mut forced = scene(wall);
+        let mut rng = crate::sim::rng::SimRng::new(1);
+        for _ in 0..2 {
+            hit(&mut forced, -1, &mut rng);
+        }
+        assert_eq!(
+            cells(&forced),
+            (None, 0, None, 0),
+            "forced adjacent damage removes the linked pair"
+        );
+
+        let mut rejected = scene(wall);
+        let mut rng = crate::sim::rng::SimRng::new(1);
+        for _ in 0..2 {
+            hit(&mut rejected, 0, &mut rng);
+        }
+        assert_eq!(
+            cells(&rejected),
+            (Some(wall), 2, Some(wall), 1),
+            "adjacent damage 0 always fails the gate"
+        );
     }
 
     #[test]
@@ -1080,6 +1225,64 @@ NoUseTileLandType=no
         );
     }
 
+    /// Phobos `AllowRamps=` (`Ext/Tiberium/Body.cpp:24-26`,
+    /// `Ext/Tiberium/Hooks.cpp:46-90`): the load raises `NumSlopes` to 8 and
+    /// the rules projection marks the type's overlay slots when the first
+    /// ramp overlay is Tiberium art.
+    #[test]
+    fn allow_ramps_projects_slope_capacity_and_overlay_flags() {
+        let build = |key: &str| {
+            let mut text = format!(
+                "[Tiberiums]
+0=RIP
+[RIP]
+Image=2
+{key}[OverlayTypes]
+"
+            );
+            for slot in 0..60 {
+                text.push_str(&format!(
+                    "{slot}=O{slot}
+"
+                ));
+            }
+            text.push_str(
+                "[O39]
+Tiberium=yes
+",
+            );
+            crate::rules::ruleset::RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
+                &text,
+            ))
+            .expect("ramp rules")
+        };
+        let rules = build(
+            "AllowRamps=yes
+",
+        );
+        let ty = &rules.tiberium_types.types()[0];
+        assert!(ty.allow_ramps);
+        assert_eq!(ty.image().slope_count(), 8, "NumSlopes raised to 8");
+        let registry = rules.overlay_registry();
+        // Image=2 base 27 plus 12 primary frames: the first ramp overlay is 39.
+        assert!(registry.flags(39).unwrap().tiberium_allows_ramps);
+        assert!(registry.allows_ramp(ty, 4));
+        assert!(!registry.allows_ramp(ty, 5));
+
+        let plain = build("");
+        let ty = &plain.tiberium_types.types()[0];
+        assert!(!ty.allow_ramps);
+        assert_eq!(ty.image().slope_count(), 0, "Image=2 keeps zero slopes");
+        assert!(
+            !plain
+                .overlay_registry()
+                .flags(39)
+                .unwrap()
+                .tiberium_allows_ramps
+        );
+        assert!(!plain.overlay_registry().allows_ramp(ty, 4));
+    }
+
     #[test]
     fn gsi_04_04_overlay_land_retention_matches_recalc_attributes() {
         let mut ordinary = OverlayTypeFlags {
@@ -1109,15 +1312,20 @@ NoUseTileLandType=no
             no_use_tile_land_type: false,
             ..OverlayTypeFlags::default()
         };
-        assert_eq!(
-            retained_overlay_land(&resource, 4),
-            Some(LandType::Tiberium)
-        );
-        assert_eq!(
-            retained_overlay_land(&resource, 1),
-            Some(LandType::Tiberium)
-        );
+        // Phobos 0x47D36E clears cardinal ramps too unless the projected
+        // AllowRamps flag admits them.
+        let cardinal = if true { None } else { Some(LandType::Tiberium) };
+        assert_eq!(retained_overlay_land(&resource, 4), cardinal);
+        assert_eq!(retained_overlay_land(&resource, 1), cardinal);
         assert_eq!(retained_overlay_land(&resource, 5), None);
+        if true {
+            let allowed = OverlayTypeFlags {
+                tiberium_allows_ramps: true,
+                ..resource
+            };
+            assert_eq!(retained_overlay_land(&allowed, 4), Some(LandType::Tiberium));
+            assert_eq!(retained_overlay_land(&allowed, 5), None);
+        }
 
         let stock_default = OverlayTypeFlags {
             tiberium: true,

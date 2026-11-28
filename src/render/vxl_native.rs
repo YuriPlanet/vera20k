@@ -574,7 +574,12 @@ fn prepare_lit(
     // normal mode from limb zero, not switched for every limb.
     let normals_mode = vxl.limbs.first()?.normals_mode;
     let rotation = glam::Mat3::from_mat4(draw_matrix);
-    Some((geometry, params.lighting.pages(normals_mode, rotation)))
+    Some((
+        geometry,
+        params
+            .lighting
+            .pages(normals_mode, rotation, params.voxel_light),
+    ))
 }
 
 /// A crop inside the 256-square buffer, which [`PreparedDraw::crop_indices`]
@@ -1429,7 +1434,11 @@ mod tests {
             assert_eq!(
                 params
                     .lighting
-                    .pages(vxl.limbs[0].normals_mode, glam::Mat3::from_mat4(matrix))
+                    .pages(
+                        vxl.limbs[0].normals_mode,
+                        glam::Mat3::from_mat4(matrix),
+                        params.voxel_light
+                    )
                     .as_slice(),
                 bytes(row["body"]["normal_pages"].as_str().unwrap()),
                 "{label} diffuse"
@@ -1468,7 +1477,8 @@ mod tests {
                 assert_eq!(
                     super::super::vxl_normals::blinn_phong_pages(
                         vxl.limbs[0].normals_mode,
-                        glam::Mat3::from_mat4(matrix)
+                        glam::Mat3::from_mat4(matrix),
+                        Default::default()
                     )
                     .as_slice(),
                     bytes(case["normal_pages"].as_str().unwrap()),
@@ -1514,7 +1524,8 @@ mod tests {
             assert_eq!(
                 super::super::vxl_normals::diffuse_pages(
                     vxl.limbs[0].normals_mode,
-                    glam::Mat3::from_mat4(matrix)
+                    glam::Mat3::from_mat4(matrix),
+                    Default::default()
                 )
                 .as_slice(),
                 bytes(body["normal_pages"].as_str().unwrap()),

@@ -200,7 +200,7 @@ impl PointerTracker {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_a_c))]
 mod tests {
     use super::*;
 

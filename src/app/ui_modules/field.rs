@@ -85,8 +85,12 @@ pub(crate) fn build(ui: &UiModules, view: &FieldView<'_>, font: &BitFont) -> Fie
     let objects = status_objects(view);
     let mut values: Vec<[Option<Amount>; SLOTS]> = Vec::new();
     let mut cmds: Vec<WorldCmd> = Vec::new();
-    ui.status
-        .paint(&objects, view.sim.ext_modules().vars(), &mut values, &mut cmds);
+    ui.status.paint(
+        &objects,
+        view.sim.ext_modules().vars(),
+        &mut values,
+        &mut cmds,
+    );
     let mut at = 0;
     for cmd in &cmds {
         // The commands come in the objects' order.
@@ -192,7 +196,9 @@ fn status_objects<'f>(view: &FieldView<'f>) -> Vec<StatusObject<'f>> {
                 return None;
             }
             let (type_ref, owner) = worn.unwrap_or((entity.type_ref(), entity.owner()));
-            let drawn_type = view.rules.and_then(|rules| sim.interner().object_type(type_ref, rules));
+            let drawn_type = view
+                .rules
+                .and_then(|rules| sim.interner().object_type(type_ref, rules));
             let strength = drawn_type.map_or(0, |object| object.strength.max(0));
             let health = match worn {
                 None => (entity.health.current(), strength),
@@ -213,8 +219,10 @@ fn status_objects<'f>(view: &FieldView<'f>) -> Vec<StatusObject<'f>> {
             // Both ways, as client reads share `Allies` variables.
             let allied = !own
                 && view.player.is_some_and(|player| {
-                    let (player, owner) =
-                        (sim.interner().resolve(player), sim.interner().resolve(owner));
+                    let (player, owner) = (
+                        sim.interner().resolve(player),
+                        sim.interner().resolve(owner),
+                    );
                     let alliances = sim.house_alliances().as_map();
                     crate::map::houses::is_allied_with(alliances, player, owner)
                         && crate::map::houses::is_allied_with(alliances, owner, player)
@@ -236,7 +244,9 @@ fn status_objects<'f>(view: &FieldView<'f>) -> Vec<StatusObject<'f>> {
                 passengers: status.and_then(|status| status.passengers).filter(|_| real),
                 rank: real.then(|| i32::from(entity.veterancy.rank().min(2))),
                 vars: if real {
-                    status.and_then(|status| status.vars.as_deref()).unwrap_or_default()
+                    status
+                        .and_then(|status| status.vars.as_deref())
+                        .unwrap_or_default()
                 } else {
                     &[]
                 },
@@ -250,17 +260,10 @@ fn shield(
     entity: &crate::app::presentation::frame::ObjectRecord,
     rules: Option<&RuleSet>,
 ) -> Option<(i32, i32)> {
-    #[cfg(feature = "phobos")]
-    {
-        let shield = entity.shield().filter(|shield| shield.is_active())?;
-        let strength = rules?.shield_type(shield.type_name())?.strength();
-        Some((shield.hp(), strength))
-    }
-    #[cfg(not(feature = "phobos"))]
-    {
-        let _ = (entity, rules);
-        None
-    }
+    let shield = entity.shield().filter(|shield| shield.is_active())?;
+    let rules = rules.filter(|rules| rules.phobos())?;
+    let strength = rules.shield_type(shield.type_name())?.strength();
+    Some((shield.hp(), strength))
 }
 
 /// Zoom as the view gives it, 1.0 where it gives none.
@@ -361,7 +364,9 @@ fn attached_instances(
                     break;
                 }
                 let next = ground_point(view, cell, (0, 0));
-                line(last, next, zoom, &mut samples_left, |point| dot(out, point, 1.0 / zoom, tint));
+                line(last, next, zoom, &mut samples_left, |point| {
+                    dot(out, point, 1.0 / zoom, tint)
+                });
                 last = next;
             }
             if item.radius > 0 && samples_left != 0 {
@@ -373,7 +378,10 @@ fn attached_instances(
         if !shown(anchor) {
             continue;
         }
-        let at = [anchor.0 + item.x as f32 / zoom, anchor.1 + item.y as f32 / zoom];
+        let at = [
+            anchor.0 + item.x as f32 / zoom,
+            anchor.1 + item.y as f32 / zoom,
+        ];
         let mut text_y = at[1];
         if !item.art.is_empty()
             && let Some([up, _]) = ui.art.art().frames(&item.art)
@@ -388,7 +396,10 @@ fn attached_instances(
             ));
             text_y += up.pixel_size[1] / zoom;
         }
-        let mut text = item.number.map(|number| number.to_string()).unwrap_or_default();
+        let mut text = item
+            .number
+            .map(|number| number.to_string())
+            .unwrap_or_default();
         if !item.label.is_empty() {
             if !text.is_empty() {
                 text.push(' ');
@@ -403,7 +414,13 @@ fn attached_instances(
 }
 
 /// One point a screen pixel apart along `from..to` (world pixels).
-fn line(from: (f32, f32), to: (f32, f32), zoom: f32, samples_left: &mut usize, mut point: impl FnMut((f32, f32))) {
+fn line(
+    from: (f32, f32),
+    to: (f32, f32),
+    zoom: f32,
+    samples_left: &mut usize,
+    mut point: impl FnMut((f32, f32)),
+) {
     let (dx, dy) = (to.0 - from.0, to.1 - from.1);
     let steps = ((dx.abs().max(dy.abs()) * zoom).ceil() as usize).clamp(1, 4096);
     let count = (steps + 1).min(*samples_left);
@@ -451,7 +468,9 @@ pub(crate) fn radar_markers(
         }
         let cell = cell_of(item.anchor).or_else(|| {
             let id = u64::try_from(item.anchor).ok()?;
-            (id != 0 && id >> 46 == 0).then(|| object_cell(id)).flatten()
+            (id != 0 && id >> 46 == 0)
+                .then(|| object_cell(id))
+                .flatten()
         });
         let Some(cell) = cell else {
             continue;

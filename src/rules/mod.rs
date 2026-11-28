@@ -121,10 +121,9 @@
 
 pub mod aircraft_trailer;
 pub mod airstrike;
-pub(crate) mod threat_coefficients;
-#[cfg(feature = "phobos")]
 pub mod airstrike_targets;
 pub mod attach_effect;
+pub mod banner_type;
 pub mod building_select_bracket;
 pub mod digital_display;
 pub mod insignia_type;
@@ -132,53 +131,139 @@ pub mod kratos_crawling_flh;
 pub mod kratos_freeze;
 pub mod kratos_switch;
 pub mod npatch_switch;
-#[cfg(feature = "phobos")]
 pub mod invulnerability_rules;
+pub mod phobos_adjacent;
 pub mod phobos_parallel_ai_queues;
 pub mod phobos_switch;
-#[cfg(all(test, tests_rules_o_z, feature = "phobos"))]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "phobos_infantry_deploy_tests.rs"]
 mod phobos_infantry_deploy_tests;
-#[cfg(all(test, tests_rules_o_z, feature = "phobos"))]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "phobos_prone_speed_tests.rs"]
 mod phobos_prone_speed_tests;
-#[cfg(feature = "phobos")]
 pub mod phobos_airburst;
-#[cfg(feature = "phobos")]
-pub mod phobos_fly_wobble;
-#[cfg(feature = "phobos")]
-pub mod phobos_pause_menu;
-#[cfg(feature = "phobos")]
-pub mod phobos_placement_preview;
-#[cfg(feature = "phobos")]
+pub mod phobos_aircraft_edge;
+pub mod phobos_ammo_deploy;
+#[cfg(all(test, tests_rules_o_z))]
+#[path = "phobos_amphibious_tests.rs"]
+mod phobos_amphibious_tests;
+pub mod phobos_anim_draw_offset;
+pub mod phobos_anim_type_ext;
+pub mod phobos_attack_move;
+pub mod phobos_auto_death;
+pub mod phobos_beam_z_adjust;
+pub mod phobos_briefing_ui;
+pub mod phobos_build_limit_group;
+pub mod phobos_bullet_terrain;
+pub mod phobos_combat_alert;
+pub mod phobos_convert;
+pub mod phobos_convert_health;
+pub mod phobos_create_unit;
 pub mod phobos_crit;
-#[cfg(feature = "phobos")]
+pub mod phobos_damage_multiplier;
+pub mod phobos_damaged_image;
+pub mod phobos_deploy;
+pub mod phobos_detonate_all_map;
+pub mod phobos_drain_money_display;
+pub mod phobos_driver_killed;
+pub mod phobos_droppod;
+pub mod phobos_exit_through_roof;
+pub mod phobos_explodes;
+pub mod phobos_extended_aircraft_missions;
+pub mod phobos_extra_threat;
+pub mod phobos_extra_warheads;
+pub mod phobos_factory_plant;
+pub mod phobos_fly_wobble;
+pub mod phobos_force_weapon;
+pub mod phobos_globals;
+pub mod phobos_grinding;
+pub mod phobos_harvester_guard;
+pub mod phobos_health_bar;
+pub mod phobos_hover_drown;
+pub mod phobos_interceptor;
+pub mod phobos_jumpjet_tilt;
+pub mod phobos_keep_target;
+pub mod phobos_kill_weapon;
+pub mod phobos_land_sequences;
+pub mod phobos_laser_tracking;
+pub mod phobos_laser_trail;
+pub mod phobos_launch_sw;
+pub mod phobos_limbo;
+pub mod phobos_missile;
+pub mod phobos_multi_weapon;
+pub mod phobos_no_rearm;
+pub mod phobos_open_topped;
+pub mod phobos_open_transport;
+pub mod phobos_overload;
+pub mod phobos_parabomb;
+pub mod phobos_parasite;
+pub mod phobos_passenger_deletion;
+pub mod phobos_passengers_sync;
+pub mod phobos_pause_menu;
+pub mod phobos_penetrates_transport;
+pub mod phobos_placement_preview;
 pub mod phobos_power_plant_enhancer;
-#[cfg(feature = "phobos")]
-pub mod phobos_selection_flash;
-#[cfg(feature = "phobos")]
-pub mod phobos_sw_sidebar;
-#[cfg(feature = "phobos")]
-pub mod phobos_warhead_anim;
+pub mod phobos_promote;
 pub mod phobos_radiation;
+pub mod phobos_rate_down;
+pub mod phobos_return_warhead;
+pub mod phobos_return_weapon;
+pub mod phobos_revenge_weapon;
+pub mod phobos_roof_production_anim;
+pub mod phobos_selection_flash;
+pub mod phobos_self_heal;
+pub mod phobos_shadow;
 pub mod phobos_shields;
+pub mod phobos_sidebar_indicators;
+pub mod phobos_tooltip_background;
+pub mod phobos_tooltips_ui;
+pub mod phobos_slave;
+pub mod phobos_spawner;
+pub mod phobos_spawns_crate;
+pub mod phobos_spy_effect;
+pub mod phobos_stacking_mode;
+pub mod phobos_strafing;
+pub mod phobos_sw_chaining;
+pub mod phobos_sw_detonate;
+pub mod phobos_sw_messages;
+pub mod phobos_sw_sidebar;
+pub mod phobos_sw_tab_index;
+pub mod phobos_techno_extras;
+pub mod phobos_tiberium_eater;
+pub mod phobos_trajectory;
+pub mod phobos_transact_money;
+pub mod phobos_translucency_track;
+pub mod phobos_turret_anim;
+pub mod phobos_turret_barrel;
+pub mod phobos_units;
+pub mod phobos_warhead_anim;
+pub mod phobos_warhead_extras;
+pub mod phobos_warp_anim;
+pub mod phobos_warp_in_weapon;
+pub mod phobos_weapon_extras;
+pub(crate) mod promotable;
+pub mod select_box_type;
+pub(crate) mod threat_coefficients;
+pub mod type_convert_group;
 /// Whether this binary compiles all the supported Phobos extensions. Whether
 /// Phobos plays in a game is the per-game switch [`ruleset::RuleSet::phobos`],
-/// decided from the game's data by [`phobos_switch`], which a build with this
-/// feature turns on in every game; this gates the `cfg(feature = "phobos")`
-/// sites not yet moved to that switch, and launch and network identity.
-pub const PHOBOS_ENABLED: bool = cfg!(feature = "phobos");
+/// decided from the game's data by [`phobos_switch`]. Every build carries the
+/// code, so this only names the capability in the launch and network identity.
+pub const PHOBOS_ENABLED: bool = true;
 /// Whether this binary includes VERA20K's own extension behaviors. INIs cannot
 /// change it; builds without the feature keep every stock path.
 pub const VERAX_ENABLED: bool = cfg!(feature = "verax");
 /// Whether this binary includes the NPBUG bug-fix extension. INIs cannot
 /// change it; builds without the feature keep every native path.
 pub const NPBUG_ENABLED: bool = cfg!(feature = "npbug");
-pub mod ares_switch;
-pub(crate) mod ares_prerequisites;
-pub(crate) mod ares_armor;
-pub(crate) mod ares_emp;
+pub mod alpha_image_assets;
+pub mod animation_sequence;
 pub(crate) mod ares_abilities;
+pub(crate) mod ares_armor;
+pub mod ares_switch;
+pub(crate) mod ares_bounty;
+pub(crate) mod ares_prerequisites;
+pub(crate) mod ares_emp;
 pub(crate) mod ares_country_paradrop;
 pub(crate) mod ares_country_presentation;
 pub(crate) mod ares_side_extension;
@@ -187,20 +272,17 @@ pub mod ares_weapon;
 pub(crate) mod ares_spotlight;
 pub(crate) mod ares_driver;
 pub(crate) mod ares_crew;
-pub(crate) mod ares_bounty;
 pub(crate) mod ares_infiltration;
 pub(crate) mod ares_building_type;
 pub(crate) mod ares_bullet_type;
-pub(crate) mod ares_firestorm;
-pub(crate) mod ares_prism_forwarding;
 pub mod ares_cloak_power;
+pub(crate) mod ares_firestorm;
 pub mod ares_mouse_cursor;
-pub(crate) mod ares_veterancy;
+pub(crate) mod ares_prism_forwarding;
 pub(crate) mod ares_production;
+pub(crate) mod ares_veterancy;
 pub(crate) mod ares_techno_type;
 pub(crate) mod ares_tiberium;
-pub mod armor;
-pub mod alpha_image_assets;
 pub mod country_loading;
 #[cfg(all(test, tests_rules_a_n))]
 mod ares_manual_control_tests;
@@ -208,9 +290,11 @@ mod ares_manual_control_tests;
 mod ares_switch_tests;
 #[cfg(all(test, tests_rules_a_n))]
 mod ares_type_selection_tests;
-pub mod compatibility;
-pub mod animation_sequence;
+pub mod armor;
 pub mod art_data;
+#[cfg(all(test, tests_rules_a_n))]
+#[path = "art_data_translucency_tests.rs"]
+mod art_data_translucency_tests;
 pub mod art_problems;
 pub mod bridge_warheads;
 pub mod building_extra_power;
@@ -225,11 +309,12 @@ pub mod campaigns;
 pub mod color_add;
 pub mod color_scheme;
 pub mod combat_damage;
-pub mod crate_rules;
+pub mod compatibility;
 #[cfg(all(test, tests_rules_a_n))]
 mod country_parent_tests;
 #[cfg(all(test, tests_rules_a_n))]
 mod country_veterancy_tests;
+pub mod crate_rules;
 pub mod effect_asset_catalog;
 pub mod end_game;
 pub mod error;
@@ -245,6 +330,7 @@ pub(crate) mod weapon_offsets;
 // The readers are a child of the raw store, so only they see raw value text.
 pub use ini_parser::ini_value;
 pub mod audio_sources;
+pub mod hunter_seeker;
 pub mod jumpjet_params;
 #[cfg(all(test, tests_rules_a_n))]
 mod kratos_crawling_flh_tests;
@@ -259,8 +345,8 @@ pub mod mission_data;
 pub mod movies;
 pub mod native_ini_hash;
 pub mod native_processing;
-pub mod object_type;
 pub mod object_image;
+pub mod object_type;
 pub mod overlay_types;
 pub mod particle_system_type;
 pub mod particle_type;
@@ -274,11 +360,11 @@ pub mod radar_event_config;
 #[cfg(all(test, tests_rules_o_z))]
 mod radial_indicator_tests;
 pub mod recoil;
-pub mod secret_lab;
 pub mod retail_sources;
 pub mod rule_policy;
 pub(crate) mod rules_type_references;
 pub mod ruleset;
+pub mod secret_lab;
 pub mod shp_vehicle_sequence;
 pub mod skirmish_colors;
 pub mod smudge_type;
@@ -288,7 +374,6 @@ pub mod theme_ini;
 pub(crate) mod superweapon_influence;
 pub mod superweapon_targeting;
 pub mod superweapon_type;
-pub mod hunter_seeker;
 pub mod team_ai_ini;
 pub mod terrain_asset_catalog;
 pub mod terrain_object_type;

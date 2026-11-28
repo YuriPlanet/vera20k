@@ -76,6 +76,9 @@ impl Scene {
             target_coords: super::target_coords(target),
             target_type_ref: target.type_ref(),
             is_garrison: false,
+            at_firing_frame: true,
+            // The raw FireAt paths run no class firing update.
+            pause_handled: false,
         };
         let id = world_fire::emit_admitted_fire(
             &mut self.world,

@@ -21,6 +21,38 @@ fn alternate_voxel_style_rules() -> crate::rules::ruleset::RuleSet {
     rules
 }
 
+#[test]
+fn phobos_gun_shadow_keys_keep_the_turret_facing_and_barrel_pitch() {
+    let turret = UnitSpriteKey {
+        type_id: "TANK".into(),
+        turret_index: 0,
+        facing: 40,
+        layer: VxlLayer::Turret,
+        frame: 3,
+        slope_type: 2,
+        barrel_pitch: 0,
+    };
+    let barrel = UnitSpriteKey {
+        layer: VxlLayer::Barrel,
+        barrel_pitch: -3,
+        ..turret.clone()
+    };
+    let [
+        (turret_shadow, turret_offset),
+        (barrel_shadow, barrel_offset),
+    ] = phobos_gun_shadow_keys(&turret, &barrel, [4.0, 5.0], [6.0, 7.0]);
+    assert_eq!(turret_shadow.layer, VxlLayer::ShadowTurret);
+    assert_eq!(turret_shadow.frame, 0);
+    assert_eq!(turret_shadow.barrel_pitch, 0);
+    assert_eq!(turret_shadow.facing, 40);
+    assert_eq!(turret_offset, [4.0, 5.0]);
+    assert_eq!(barrel_shadow.layer, VxlLayer::ShadowBarrel);
+    assert_eq!(barrel_shadow.frame, 0);
+    assert_eq!(barrel_shadow.barrel_pitch, -3);
+    assert_eq!(barrel_shadow.facing, 40);
+    assert_eq!(barrel_offset, [6.0, 7.0]);
+}
+
 /// Stock73B4D8 selects UnloadingClass art, while706F02 reads the actual
 /// drawer's UseBuffer. A hit retains the first draw's style in either case.
 #[test]

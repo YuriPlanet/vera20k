@@ -50,6 +50,8 @@ const ACTION_JUMP_CAMERA: i32 = 112;
 const ACTION_SET_SUPER_CHARGE_PERCENTAGE: i32 = 129;
 const ACTION_SET_ALTERNATE_BASE: i32 = 137;
 const ACTION_CLEAR_ALTERNATE_BASE: i32 = 138;
+/// Phobos `PhobosTriggerAction::SetTeamDelay` (`Ext/TAction/Body.h:30`).
+const ACTION_SET_TEAM_DELAY: i32 = 610;
 
 const EVENT_ATTACKED: i32 = 6;
 const EVENT_ANY: i32 = 8;
@@ -157,8 +159,14 @@ pub enum TriggerEffect {
     },
     /// Something about the scenario's Wasm extension modules the players
     /// should know at the start, such as a map's ignored `Wasm.Tags` (RFC
-    /// 0001 section 2). Last, so saved effects keep their variant numbers.
+    /// 0001 section 2). Kept at upstream's variant number for saved effects.
     ExtModuleNotice {
+        text: String,
+    },
+    /// Phobos `TActionExt::PrintVariableValue` (`Ext/TAction/Body.cpp:212-223`,
+    /// action 503): the extended variable's `Value` printed `L"%d"` through
+    /// `MessageListClass::Instance.PrintMessage`.
+    VariableValuePrinted {
         text: String,
     },
 }
@@ -397,6 +405,18 @@ enum TagAttachment {
 pub struct TriggerRuntime {
     globals_set: BTreeSet<u32>,
     locals_set: BTreeSet<u32>,
+    /// Phobos `ScenarioExt::Variables[1]`'s extended `Value` ints
+    /// (`Ext/Scenario/Body.h:31`): authored in rules `[VariableNames]`
+    /// (`Ext/Scenario/Hooks.Variables.cpp:82-88`, hook `0x6876C2`), carried
+    /// across campaigns as `(index, Value)` pairs
+    /// (`Hooks.Variables.cpp:90-98`) and mutated by the 501/502/504 actions.
+    #[serde(default)]
+    globals_values: BTreeMap<u32, i32>,
+    /// Phobos `ScenarioExt::Variables[0]`: the map's `[VariableNames]`
+    /// locals, one entry per authored slot with `Value = atoi(state token)`
+    /// else 0 (`Ext/Scenario/Body.cpp:47-61`).
+    #[serde(default)]
+    locals_values: BTreeMap<u32, i32>,
     definitions: RuntimeDefinitions,
     tags: Vec<Option<LiveTag>>,
     triggers: Vec<Option<LiveTrigger>>,
@@ -490,6 +510,151 @@ impl PartialEq for TriggerRuntime {
 impl Eq for TriggerRuntime {}
 
 impl TriggerRuntime {
+    /// Phobos `ReadVariables(true, INI_Rules)`: the rules-authored global
+    /// values are read once at scenario start, as native's loaded guard does.
+    pub fn initialize_phobos_global_values(&mut self, rules: &crate::rules::ruleset::RuleSet) {
+        debug_assert!(
+            self.globals_values.is_empty(),
+            "the rules-authored globals read once, like native's loaded guard"
+        );
+        self.globals_values = rules.variable_names.clone();
+    }
+
+    /// The scenario variable's presence (`ScenarioExt::Global()->Variables`
+    /// find, `BannerClass.cpp:139-143`).
+    pub fn variable_set(&self, global: bool, index: i32) -> bool {
+        self.check_attached();
+        let set = if global {
+            &self.globals_set
+        } else {
+            &self.locals_set
+        };
+        set.contains(&(index as u32))
+    }
+
+    /// Phobos `TActionExt::EditVariable` (`Ext/TAction/Body.cpp:135-194`,
+    /// action 501): `Param3` selects the op over `Value` — 0 set, 1 `+`, 2
+    /// `-`, 3 `*`, 4 `/`, 5 `%`, 6 `<<`, 7 `>>` (counts masked to five bits,
+    /// arithmetic right), 8 `~`, 9 `^`, 10 `|`, 11 `&` — with `Param4` the
+    /// operand. The entry must exist (`variables.find`, `:165-166`); an
+    /// unknown op returns false without a notify (`:188-190`). Native's
+    /// division or modulo by zero raises IDIV; VERA leaves the value
+    /// unchanged.
+    pub fn phobos_edit_variable(
+        &mut self,
+        global: bool,
+        index: i32,
+        op: i32,
+        operand: i32,
+    ) -> bool {
+        let values = if global {
+            &mut self.globals_values
+        } else {
+            &mut self.locals_values
+        };
+        let Some(value) = values.get_mut(&(index as u32)) else {
+            return false;
+        };
+        match op {
+            0 => *value = operand,
+            1 => *value = value.wrapping_add(operand),
+            2 => *value = value.wrapping_sub(operand),
+            3 => *value = value.wrapping_mul(operand),
+            4 => {
+                if operand == 0 {
+                    return false;
+                }
+                *value = value.wrapping_div(operand);
+            }
+            5 => {
+                if operand == 0 {
+                    return false;
+                }
+                *value = value.wrapping_rem(operand);
+            }
+            6 => *value = value.wrapping_shl((operand & 31) as u32),
+            7 => *value = value.wrapping_shr((operand & 31) as u32),
+            8 => *value = !*value,
+            9 => *value ^= operand,
+            10 => *value |= operand,
+            11 => *value &= operand,
+            _ => return false,
+        }
+        true
+    }
+
+    /// Write an existing extended entry: `PhobosSetVariableValue`-shaped
+    /// gate for the 502 random roll. `false` when no slot authored the index.
+    pub fn phobos_set_variable_value(&mut self, global: bool, index: i32, value: i32) -> bool {
+        let values = if global {
+            &mut self.globals_values
+        } else {
+            &mut self.locals_values
+        };
+        values
+            .get_mut(&(index as u32))
+            .map(|slot| {
+                *slot = value;
+            })
+            .is_some()
+    }
+
+    /// Phobos `TActionExt::BinaryOperation` (`Ext/TAction/Body.cpp:225-256`,
+    /// action 504): the target entry takes the source entry's `Value` through
+    /// `Param3`'s op — 0 assignment (its case 8), 1 `+` .. 7 `>>`, 9 `^`,
+    /// 10 `|`, 11 `&`; there is no unary arm. Both entries must exist.
+    pub fn phobos_binary_operation(
+        &mut self,
+        target_global: bool,
+        target_index: i32,
+        source_global: bool,
+        source_index: i32,
+        op: i32,
+    ) -> bool {
+        let source_values = if source_global {
+            &self.globals_values
+        } else {
+            &self.locals_values
+        };
+        let source = source_values.get(&(source_index as u32)).copied();
+        let Some(operand) = source else {
+            return false;
+        };
+        let values = if target_global {
+            &mut self.globals_values
+        } else {
+            &mut self.locals_values
+        };
+        let Some(value) = values.get_mut(&(target_index as u32)) else {
+            return false;
+        };
+        match op {
+            0 | 8 => *value = operand,
+            1 => *value = value.wrapping_add(operand),
+            2 => *value = value.wrapping_sub(operand),
+            3 => *value = value.wrapping_mul(operand),
+            4 => {
+                if operand == 0 {
+                    return false;
+                }
+                *value = value.wrapping_div(operand);
+            }
+            5 => {
+                if operand == 0 {
+                    return false;
+                }
+                *value = value.wrapping_rem(operand);
+            }
+            6 => *value = value.wrapping_shl((operand & 31) as u32),
+            7 => *value = value.wrapping_shr((operand & 31) as u32),
+            9 => *value ^= operand,
+            10 => *value |= operand,
+            11 => *value &= operand,
+            _ => return false,
+        }
+        true
+    }
+
     /// The empty runtime a presentation copy of the world holds in place of
     /// the triggers (`Simulation::presentation_copy`): only gameplay reads
     /// them. Debug builds panic on a read of it, so a reader of the copy
@@ -509,7 +674,6 @@ impl TriggerRuntime {
             "read of the triggers of a presentation copy of the world: only the live world holds them"
         );
     }
-
     /// `TeamTypeClass::Array[index]` (`0x00A8ECA4`) by ID, in constructor
     /// order. None past its end, where native reads out of bounds.
     pub(crate) fn team_type_at(&self, index: usize) -> Option<&str> {
@@ -707,6 +871,23 @@ impl TriggerRuntime {
     }
     fn trigger(&self, index: usize) -> Option<&LiveTrigger> {
         self.triggers.get(index)?.as_ref()
+    }
+    /// `pTechno->AttachedTag`: the live Tag an object carries, if any.
+    pub(crate) fn object_tag(&self, object: u64) -> Option<usize> {
+        self.attachments
+            .get(&TagAttachment::Object(object))
+            .copied()
+    }
+    /// The Tag's `FirstTrigger` chain, compared by `Type->ID` the way TAction
+    /// 600 does (`_stricmp`, `Ext/TAction/Body.cpp:698-712`).
+    pub(crate) fn tag_carries_trigger_type(&self, tag: usize, type_id: &str) -> bool {
+        self.tag(tag).is_some_and(|live| {
+            live.triggers.iter().any(|&live| {
+                self.trigger(live)
+                    .and_then(|trigger| self.definitions.trigger_types.get(trigger.type_index))
+                    .is_some_and(|typ| typ.id.eq_ignore_ascii_case(type_id))
+            })
+        })
     }
     fn evaluate_event(
         &self,
@@ -1204,13 +1385,6 @@ impl TriggerRuntime {
         self.cell_tags.get(&cell).copied()
     }
 
-    /// The tag attached to an object, as its tag-storage index.
-    pub(crate) fn object_tag(&self, object: u64) -> Option<usize> {
-        self.attachments
-            .get(&TagAttachment::Object(object))
-            .copied()
-    }
-
     /// A global trigger variable's current value. Out-of-range indices read
     /// clear, never panic.
     pub fn global_variable_is_set(&self, index: u32) -> bool {
@@ -1223,6 +1397,26 @@ impl TriggerRuntime {
     pub fn local_variable_is_set(&self, index: u32) -> bool {
         self.check_attached();
         self.locals_set.contains(&index)
+    }
+
+    /// Phobos `ScenarioExt::Variables[global]`'s extended `Value`
+    /// (`BannerClass.cpp:139-146`): `None` when no map/rules slot authored
+    /// the index.
+    pub fn variable_value(&self, global: bool, index: i32) -> Option<i32> {
+        self.check_attached();
+        let values = if global {
+            &self.globals_values
+        } else {
+            &self.locals_values
+        };
+        values.get(&(index as u32)).copied()
+    }
+}
+
+impl crate::sim::world::Simulation {
+    /// [`TriggerRuntime::variable_value`] through the simulation owner.
+    pub fn variable_value(&self, global: bool, index: i32) -> Option<i32> {
+        self.trigger_runtime.variable_value(global, index)
     }
 }
 
@@ -1394,6 +1588,10 @@ mod talk_tests;
 mod cargo_tests;
 
 #[cfg(all(test, tests_sim_trigger))]
+#[path = "trigger_runtime_drop_crate_tests.rs"]
+mod drop_crate_tests;
+
+#[cfg(all(test, tests_sim_trigger))]
 #[path = "trigger_runtime_restore_tests.rs"]
 mod restore_tests;
 
@@ -1420,3 +1618,7 @@ mod building_sale_native_tests;
 #[cfg(all(test, tests_sim_trigger))]
 #[path = "trigger_runtime_skirmish_map_tests.rs"]
 mod skirmish_map_tests;
+
+#[cfg(all(test, tests_sim_trigger))]
+#[path = "trigger_runtime_banner_tests.rs"]
+mod banner_tests;

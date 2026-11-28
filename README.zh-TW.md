@@ -103,7 +103,7 @@ VERA20K 預設使用《尤里的復仇》原版規則。你可以在 **Options**
 - **高畫質美術：** [高畫質美術包](docs/hd-art.md)的安裝和選擇方式與模組相同。之後在 **Options** 中開啟 **HD art**。
 - **語言：** `vera20k.<language>.ini` 檔案可以加入語言或修改遊戲文字。參見[翻譯指南](src/i18n/README.md)。
 
-大廳設定、模組和地圖都能改變對局規則。模組和地圖可以通過 INI 檔案啟用 VERA20K 支援的 [Ares](docs/ares.md)、[Phobos](docs/phobos.md) 和 [Kratos](docs/zh-CN/kratos.md) 功能。模組也可以通過附帶 `ares.mix` 來啟用 Ares。部分 Phobos 功能仍需在編譯時加上 `--features phobos`。
+大廳設定、模組和地圖都能改變對局規則。模組和地圖可以通過 INI 檔案啟用 VERA20K 支援的 [Ares](docs/ares.md)、[Phobos](docs/phobos.md) 和 [Kratos](docs/zh-CN/kratos.md) 功能。模組也可以通過附帶 `ares.mix` 來啟用 Ares。Phobos 功能由模組或地圖的 INI 資料啟用，不需要編譯開關。
 
 想製作自己的模組，可以從[模組製作指南](docs/modding.md)開始。
 

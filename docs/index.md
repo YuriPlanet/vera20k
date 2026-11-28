@@ -91,4 +91,3 @@ simulation, session and network command owners.
 - [Tiberian Sun Ion Cannon](ts-ion-cannon.md): `Type=IonCannon`, the Tiberian Sun superweapon that fires an ion blast at a cell, which a mod or map switches on by listing it.
 - [Tiberian Sun limpets](ts-limpets.md): `LimpetFactor=`, `AV=`, `IsLimpetMine=` and `IsLimpetDrone=`, Firestorm's limpet mines that slow a vehicle and let its attacker see through it.
 - [Tiberian Sun debris sounds](ts-anim-sounds.md): the `BounceSound=` and `ExpireSound=` keys Yuri's Revenge dropped, for bouncing debris and `[VoxelAnims]`.
-- [Tiberian Sun webs](ts-webs.md): Firestorm's `Webby=` warheads, which pin infantry in place, with `IsWebImmune=` and the `Struggle` sequence.

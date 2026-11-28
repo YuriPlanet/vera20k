@@ -328,7 +328,13 @@ fn water_terrain_with_yard_exit(width: u16, height: u16) -> ResolvedTerrainGrid 
 }
 
 pub(super) fn placement_radius_rules() -> RuleSet {
-    let ini = IniFile::from_str(
+    placement_radius_rules_with("")
+}
+
+/// `gapowr_lines` adds BuildingType keys to `[GAPOWR]`, the structure the
+/// build-area tests place next to a previewed placement.
+pub(super) fn placement_radius_rules_with(gapowr_lines: &str) -> RuleSet {
+    let ini = IniFile::from_str(&format!(
         "[Countries]\n0=Americans\n1=Alliance\n2=Russians\n3=Soviet\n[InfantryTypes]\n\
              [VehicleTypes]\n\
              0=MTNK\n\
@@ -355,6 +361,7 @@ pub(super) fn placement_radius_rules() -> RuleSet {
              Owner=Americans\n\
              Foundation=2x2\n\
              Adjacent=0\n\
+             {gapowr_lines}\
              [GAGAP]\n\
              Name=Gap Generator\n\
              Cost=1000\n\
@@ -364,8 +371,8 @@ pub(super) fn placement_radius_rules() -> RuleSet {
              Owner=Americans\n\
              Foundation=2x2\n\
              BaseNormal=no\n\
-             Adjacent=0\n[Clear]\nBuildable=yes\n",
-    );
+             Adjacent=0\n[Clear]\nBuildable=yes\n"
+    ));
     RuleSet::from_ini_with_fixed_art_for_test(
         &ini,
         &IniFile::from_str(

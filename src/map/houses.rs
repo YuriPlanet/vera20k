@@ -80,6 +80,13 @@ pub struct HouseDefinition {
     pub allies: u32,
     /// Scenario-authored BasePlan in numeric node order.
     pub base_plan: ScenarioBasePlanDefinition,
+    /// Phobos `HouseExt::RepairBaseNodes[3]` (`ValueableVector<bool>` read at
+    /// `Ext/House/Body.cpp:626`, `Nullable<bool>` slots `Body.h:51,98`): the
+    /// first three entries are the campaign difficulty slots; a longer list
+    /// is ignored whole (`:631`) and unset slots follow the `[Basic]`
+    /// global.
+    #[serde(default)]
+    pub repair_base_nodes: [Option<bool>; 3],
 }
 
 /// Dynamic fields of House ReadScenarioINI500B40. Roster identity, PlayerControl,
@@ -297,6 +304,21 @@ pub fn parse_house_roster(
         let iq = fields.read_int("IQ", 0);
         let ui_name = fields.read_name("UIName", 0x20).map(str::to_string);
         let base_plan = parse_scenario_base_plan(section, rules);
+        // `HouseExt::LoadFromINIFile` (`Ext/House/Body.cpp:626-639`): the
+        // house section's `RepairBaseNodes=` list; only a list of at most
+        // three entries is copied into the difficulty slots.
+        let repair_base_nodes = fields
+            .read_list("RepairBaseNodes", 0x800)
+            .map(|tokens| {
+                let mut slots = [None; 3];
+                if tokens.len() <= 3 {
+                    for (slot, token) in slots.iter_mut().zip(tokens) {
+                        *slot = crate::rules::ini_value::read_bool_decision(token);
+                    }
+                }
+                slots
+            })
+            .unwrap_or([None; 3]);
 
         houses.push(HouseDefinition {
             name: house_name,
@@ -308,6 +330,7 @@ pub fn parse_house_roster(
             ui_name,
             allies: 0,
             base_plan,
+            repair_base_nodes,
         });
     }
 

@@ -32,7 +32,7 @@ mod wall_placement;
 pub use self::factory::{
     CancelOutcome, Factory, FactoryHolder, FactoryRegistry, FactoryView, PRODUCTION_STEPS,
     PendingObject, ProductionState, STEP_RATE_MAX, STEP_RATE_MIN, StepOutcome, TimeToBuildInputs,
-    category_for_object, time_to_build, type_base_build_time, type_build_time,
+    category_for_object, time_to_build, tooltip_build_time, type_base_build_time, type_build_time,
 };
 pub(crate) use self::factory_lifecycle::enqueue_selected;
 pub(crate) use self::factory_lifecycle::{suspend_production, validate_restored_factory_state};
@@ -64,7 +64,8 @@ pub use self::production_repair::{
     buildings_wanting_repair, can_repair_building, player_repair_type_admits,
 };
 pub(crate) use self::production_repair::{engineer_repair, update_repair_and_power};
-#[cfg(any(test, feature = "test-support"))]
+// The AutoDeath `Sell` arm (`auto_death::sell_self`, phobos-gated) and the
+// test fixtures share this owner.
 pub(crate) use self::production_sell::begin_selling;
 pub use self::production_sell::foot_can_be_sold;
 pub(crate) use self::production_sell::foot_on_sold;

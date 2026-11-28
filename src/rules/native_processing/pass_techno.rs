@@ -9,7 +9,7 @@ use crate::rules::ini_parser::is_native_none_type_name;
 use crate::rules::object_image::ObjectImageKind;
 use crate::rules::object_type::WEAPON_SLOT_COUNT;
 use crate::rules::prerequisite::parse_prerequisites;
-use crate::rules::sound_ini::SoundRegistry;
+use crate::rules::sound_ini::{EvaRegistry, SoundRegistry};
 
 impl RulesPassProcessor {
     pub(super) fn process_techno_family(
@@ -18,6 +18,7 @@ impl RulesPassProcessor {
         pass: &IniFile,
         fixed_art: &IniFile,
         fixed_sounds: &SoundRegistry,
+        fixed_eva: &EvaRegistry,
     ) {
         let ares_way = crate::rules::ares_switch::ares_way();
         let mut index = 0;
@@ -87,7 +88,6 @@ impl RulesPassProcessor {
                 // against the `[InsigniaTypes]` state this pass allocated, and
                 // its weapon loop uses this pass's native `WeaponCount` and
                 // `Gunner` values.
-                #[cfg(feature = "phobos")]
                 if self.phobos_insignia_types.is_some() {
                     let catalog = self.phobos_insignia_types.take();
                     let member = &self.families[&family][index];
@@ -142,6 +142,17 @@ impl RulesPassProcessor {
                     member.object_image.load_plain_shp();
                 }
                 let image = member.object_image.image().to_string();
+                // Installed suffix hooks716123/716132 ->10040DF0 ->1003DEC0
+                // reach Phobos' common TechnoType extension after Image and
+                // before the subclass readers. Its retained projection uses
+                // this pass's layered body and the Image's fixed ART section.
+                member.phobos_object.read_pass(
+                    &effective,
+                    fixed_art.section_or_empty(&image),
+                    family.object_category().expect("TechnoType family"),
+                    fixed_sounds,
+                    fixed_eva,
+                );
                 let references = &mut member.techno_references;
                 // ReadINI712170 reaches715852 on every admitted Rules layer,
                 // after ObjectType's Image read. Empty/missing Palette keeps
@@ -157,6 +168,58 @@ impl RulesPassProcessor {
                 member.voxel_shadow_index = fixed_art
                     .section_or_empty(&image)
                     .read_int("ShadowIndex", member.voxel_shadow_index);
+                // Phobos reads the plural key right after the singular one
+                // (`Ext/TechnoType/Body.cpp:1325`), keyed by section so a
+                // repeat collapses and later entries win.
+                // RESIDUAL (follow-up): the native map persists across INI
+                // passes (`Body.cpp:1335-1336` never clears), so an earlier
+                // layer's entries survive a later `Image=` section that omits
+                // the key; VERA replaces the list per pass. No retail layer
+                // authors a second Image with its own list.
+                {
+                    let mut indices = Vec::new();
+                    let mut frames = Vec::new();
+                    if let Some(list) = fixed_art
+                        .section_or_empty(&image)
+                        .read_int_list("ShadowIndices")
+                    {
+                        // `Ext/TechnoType/Body.cpp:1327-1337`: the frame list
+                        // is resized to the section list's length with -1 when
+                        // they differ, then zipped into the section->frame map
+                        // so a later duplicate section overwrites its frame.
+                        let mut frame_list = fixed_art
+                            .section_or_empty(&image)
+                            .read_int_list("ShadowIndices.Frame")
+                            .unwrap_or_default();
+                        if frame_list.len() != list.len() {
+                            frame_list.resize(list.len(), -1);
+                        }
+                        for (section, frame) in list.into_iter().zip(frame_list) {
+                            match indices.iter().position(|known| *known == section) {
+                                Some(position) => frames[position] = frame,
+                                None => {
+                                    indices.push(section);
+                                    frames.push(frame);
+                                }
+                            }
+                        }
+                    }
+                    member.phobos_shadow_indices = indices;
+                    member.phobos_shadow_indices_frames = frames;
+                    // `Ext/TechnoType/Body.cpp:1338`: `ShadowIndex.Frame` is
+                    // read right after the plural tags; `Valueable<int>`
+                    // keeps this member's current value as its default.
+                    member.phobos_shadow_index_frame = fixed_art
+                        .section_or_empty(&image)
+                        .read_int("ShadowIndex.Frame", member.phobos_shadow_index_frame);
+                    // `Ext/TechnoType/Body.cpp:1323`: the ART `TurretShadow=`
+                    // beside `TurretOffset=`, `Nullable<bool>` empty at
+                    // construction (`Body.h:57`/`:495`); its consumer falls
+                    // back to `[AudioVisual] DrawTurretShadow=`.
+                    member.phobos_turret_shadow = fixed_art
+                        .section_or_empty(&image)
+                        .read_phobos_nullable_bool("TurretShadow", member.phobos_turret_shadow);
+                }
                 // TechnoRead715B10..716005 reads the WeaponStruct geometry
                 // after the retained Image selects this pass's fixed ART.
                 let slots = &mut member.weapon_slots;
@@ -165,6 +228,15 @@ impl RulesPassProcessor {
                     slots.turret_count,
                     slots.weapon_count,
                 );
+                // Phobos `InfantryTypeExt::LoadFromINIFile` adds the deployed
+                // and prone firing-offset reads to an InfantryType.
+                if family == RulesTypeFamily::Infantry {
+                    slots.offsets.read_infantry_state_pass(
+                        &fixed_art.section_or_empty(&image),
+                        slots.turret_count,
+                        slots.weapon_count,
+                    );
+                }
                 // TechnoRead716090..7160A4 reaches LoadVoxel5F8110 only
                 // with the retained Voxel byte. Later Image changes cannot
                 // rename a resource whose load was skipped.
@@ -387,6 +459,23 @@ impl RulesPassProcessor {
                         .production
                         .read_pass(&raw, cloned_at, cloned_as);
                 }
+                if !ares_way {
+                    let member = &mut self.family_mut(family)[index];
+                    member.super_weapon_techno.designator_range =
+                        crate::rules::ares_switch::not_ares_read(|| {
+                            raw.read_ares_nullable_int(
+                                "DesignatorRange",
+                                member.super_weapon_techno.designator_range,
+                            )
+                        });
+                    member.super_weapon_techno.inhibitor_range =
+                        crate::rules::ares_switch::not_ares_read(|| {
+                            raw.read_ares_nullable_int(
+                                "InhibitorRange",
+                                member.super_weapon_techno.inhibitor_range,
+                            )
+                        });
+                }
                 if ares_way
                     && let Some(target) =
                         self.resolve_existing_techno_type_from(&raw, "Convert.Water")
@@ -413,14 +502,16 @@ impl RulesPassProcessor {
                 }
                 match family {
                     RulesTypeFamily::Building => {
-                        if ares_way
-                            && let Some(supers) = self.resolve_existing_list_from(
+                        // Phobos' `SuperWeapons=` detonation firer reads the
+                        // list in every game; the key still marks the switch.
+                        if let Some(supers) = crate::rules::phobos_switch::phobos_read(|| {
+                            self.resolve_existing_list_from(
                                 &raw,
                                 "SuperWeapons",
                                 RulesTypeFamily::SuperWeapon,
                                 2048,
                             )
-                        {
+                        }) {
                             // BuildingTypeExt1000E71B ->1000EC70: ordered
                             // lookup-only ID vector, missing/empty retains,
                             // unknown tokens are skipped, registered sentinel IDs
@@ -635,7 +726,6 @@ impl RulesPassProcessor {
                         read_member(&mut self.families, family, index)
                             .unit_shp
                             .read_pass(fixed_art.section_or_empty(&image), has_turret);
-                        #[cfg(feature = "phobos")]
                         {
                             let _phobos = crate::rules::ares_switch::not_ares_reads();
                             // `UnitTypeExt::LoadFromINI` reads the three
@@ -664,6 +754,21 @@ impl RulesPassProcessor {
                                 gathering.frames_per_dir = frames;
                             }
                             self.family_mut(family)[index].ore_gathering = gathering;
+                            // `UnitTypeExt::LoadFromINI` reads
+                            // `DeployingAnims=` as a `ValueableVector<AnimType*>`
+                            // just before the three `DeployingAnim.*` keys: an
+                            // absent key retains the list, a present one
+                            // replaces it and drops unknown tokens.
+                            if let Some(anims) = crate::rules::phobos_switch::phobos_read(|| {
+                                self.resolve_existing_list_from(
+                                    &raw,
+                                    "DeployingAnims",
+                                    RulesTypeFamily::Animation,
+                                    0x800,
+                                )
+                            }) {
+                                self.family_mut(family)[index].phobos_deploying_anims = anims;
+                            }
                         }
                     }
                     RulesTypeFamily::Infantry => {
@@ -924,19 +1029,37 @@ impl RulesPassProcessor {
             .read_int("WeaponCount", slots.weapon_count)
             .min(crate::rules::object_type::WEAPON_COUNT_LIMIT);
         slots.clear_all_weapons = raw.read_bool("ClearAllWeapons", slots.clear_all_weapons);
-        if slots.turret_count > 0 {
-            if ares_way {
-                self.family_mut(family)[index]
-                    .gunner_turrets
-                    .prepare_numbered_read(slots.weapon_count);
-                //10040020 resizes before reading: shrinking destroys the
-                // extra tail; regrowing supplies null WeaponStruct pointers.
-                let extra = usize::try_from(slots.weapon_count)
-                    .unwrap_or(0)
-                    .saturating_sub(WEAPON_SLOT_COUNT);
-                slots.extra_base.resize(extra, None);
-                slots.extra_elite.resize(extra, None);
+        // Phobos TechnoTypeClass_ReadINI_MultiWeapon (0x7128B2): read the
+        // `MultiWeapon.*` group before the weapon list and clear base/elite
+        // slots 0/1 whenever the `TurretCount > 0 || MultiWeapon` latch
+        // changes (`Ext/TechnoType/Hooks.MultiWeapon.cpp:13-31`). The numbered
+        // `WeaponN` read runs while that latch is on, so `MultiWeapon=yes`
+        // reaches it with `TurretCount=0`; the second read gate `0x715B10`
+        // keeps the same condition.
+        let read_numbered_weapons = {
+            let multi = slots
+                .multi_weapon
+                .read_pass(raw, slots.turret_count, slots.weapon_count);
+            if slots.multi_weapon_read != multi {
+                for array in [&mut slots.base, &mut slots.elite] {
+                    array[0] = None;
+                    array[1] = None;
+                }
+                slots.multi_weapon_read = multi;
             }
+            multi
+        };
+        if read_numbered_weapons {
+            self.family_mut(family)[index]
+                .gunner_turrets
+                .prepare_numbered_read(slots.weapon_count);
+            //10040020 resizes before reading: shrinking destroys the
+            // extra tail; regrowing supplies null WeaponStruct pointers.
+            let extra = usize::try_from(slots.weapon_count)
+                .unwrap_or(0)
+                .saturating_sub(WEAPON_SLOT_COUNT);
+            slots.extra_base.resize(extra, None);
+            slots.extra_elite.resize(extra, None);
             let capacity = if ares_way { 2048 } else { 0x80 };
             for slot in 1..=slots.weapon_count {
                 // Ares1003C6B0 ->10010570 retains Find-or-Allocate semantics

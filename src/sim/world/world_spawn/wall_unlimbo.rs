@@ -134,7 +134,17 @@ impl Simulation {
                 )
             })
             .expect("wall Overlay constructor joins its existing registries");
-        if self.terrain_objects.cell_index().contains_key(&(rx, ry))
+        // Phobos `OverlayClass_Unlimbo_SkipTerrainCheck` (`0x5FD2B6`,
+        // `Ext/TerrainType/Hooks.Passable.cpp:158-184`): a buildable Terrain
+        // no longer refuses the wall Overlay and is removed instead; any other
+        // Terrain still refuses.
+        let cell_terrain = self.terrain_objects.id_at((rx, ry));
+        let buildable_terrain = cell_terrain.filter(|&terrain_id| {
+            self.terrain_objects
+                .get(terrain_id)
+                .is_some_and(|terrain| terrain.can_be_built_on())
+        });
+        if (cell_terrain.is_some() && buildable_terrain.is_none())
             || (!self.object_placement_scope_active()
                 && !crate::sim::cell_rect::cell_is_in_playfield_height_aware(
                     (i32::from(rx), i32::from(ry)),
@@ -146,6 +156,10 @@ impl Simulation {
                 .finish_unrevealed_survivor(handle)
                 .expect("early Overlay refusal retains its constructor");
             return rejected;
+        }
+        if let Some(terrain_id) = buildable_terrain {
+            let context = UninitContext::new(rules).with_effects(effects);
+            let _ = self.retire_non_entity_object(terrain_id, context);
         }
         let dirty = self
             .load_objects

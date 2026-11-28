@@ -395,7 +395,6 @@ pub(crate) fn open(
     }
     // Phobos registers `FireTacticalSW1..10` and `ToggleSWSidebar` only when
     // their rules switches are on, so the page does not list them otherwise.
-    #[cfg(feature = "phobos")]
     let sw_sidebar_globals =
         crate::app::state::active_rules(frontend, match_state).map(|rules| rules.sw_sidebar);
     // Ares registers its commands at startup (hook 0x533058); VERA lists them
@@ -407,19 +406,11 @@ pub(crate) fn open(
         .enumerate()
         .filter(|(_, metadata)| ares || !hotkeys::catalog::is_ares_command(metadata.command))
         .filter(|(_, metadata)| {
-            #[cfg(feature = "phobos")]
-            {
-                sw_sidebar_globals.is_none_or(|globals| match metadata.command {
-                    hotkeys::HotkeyCommand::FireTacticalSw(_) => globals.keys_enabled,
-                    hotkeys::HotkeyCommand::ToggleSwSidebar => globals.toggle_key_enabled,
-                    _ => true,
-                })
-            }
-            #[cfg(not(feature = "phobos"))]
-            {
-                let _ = metadata;
-                true
-            }
+            sw_sidebar_globals.is_none_or(|globals| match metadata.command {
+                hotkeys::HotkeyCommand::FireTacticalSw(_) => globals.keys_enabled,
+                hotkeys::HotkeyCommand::ToggleSwSidebar => globals.toggle_key_enabled,
+                _ => true,
+            })
         })
         .map(|(index, metadata)| KeyboardCommandRow {
             command_index: index,

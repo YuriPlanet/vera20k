@@ -92,7 +92,10 @@ use crate::sim::components::NavTargetRef;
 use crate::sim::world::{FrameEffects, Simulation};
 
 /// A reference to `target`'s object or cell, for `other` and `cell`.
-pub(super) fn target_fields(sim: &Simulation, target: Option<TargetKind>) -> (u64, Option<(u16, u16)>) {
+pub(super) fn target_fields(
+    sim: &Simulation,
+    target: Option<TargetKind>,
+) -> (u64, Option<(u16, u16)>) {
     match target {
         None => (0, None),
         Some(TargetKind::Cell(x, y)) => (0, Some((x, y))),
@@ -101,6 +104,13 @@ pub(super) fn target_fields(sim: &Simulation, target: Option<TargetKind>) -> (u6
             sim.entities()
                 .get(id)
                 .map(|entity| (entity.position.rx(), entity.position.ry())),
+        ),
+        // A bullet is not an object reference. Project its GetCoords cell
+        // through the shared target owner instead of exposing a projectile id.
+        Some(TargetKind::Bullet(id)) => (
+            0,
+            crate::sim::combat::resolve_target_coords(&TargetKind::Bullet(id), sim)
+                .map(|(rx, ry, _, _)| (rx, ry)),
         ),
     }
 }

@@ -16,6 +16,7 @@ use crate::rules::object_type::InfantryArt;
 use crate::rules::object_type::InfantryInfiltration;
 use crate::rules::object_type::InfantryPips;
 use crate::rules::object_type::ObjectCategory;
+use crate::rules::object_type::PhobosObjectProjection;
 use crate::rules::object_type::WEAPON_SLOT_COUNT;
 use crate::rules::prerequisite::Prerequisite;
 use crate::rules::projectile_type::ProjectileArtState;
@@ -24,7 +25,6 @@ use crate::rules::superweapon_targeting::AresSuperWeaponTargetingState;
 use crate::rules::superweapon_type::AresSuperWeaponAvailability;
 use crate::rules::superweapon_type::AresSuperWeaponCharge;
 use crate::rules::superweapon_type::AresSuperWeaponPresentation;
-#[cfg(feature = "phobos")]
 use crate::rules::superweapon_type::PhobosSuperWeaponAvailability;
 use crate::rules::superweapon_type::SuperWeaponBuildingRequirements;
 use crate::rules::superweapon_type::UnitDeliveryRules;
@@ -170,8 +170,7 @@ pub(super) struct WarheadAnimReadState {
     /// `DebrisTypes=` (+18C, `0x0075DAF5`): ReadString128, then each `strtok`
     /// token's non-null VoxelAnimType replaces the list.
     pub(super) debris_types: Vec<String>,
-    /// Firestorm's web keys (`WarheadWeb::read_pass`); `None` until a pass
-    /// gives them other values than the constructor's.
+    /// Firestorm's web keys; `None` is the constructor's no-web state.
     pub(super) web: Option<crate::rules::warhead_type::WarheadWeb>,
 }
 
@@ -311,6 +310,29 @@ pub(super) struct ProcessedType {
     /// current value as default across Image changes and later Rules passes.
     #[serde(default)]
     pub(super) voxel_shadow_index: i32,
+    /// Phobos `ShadowIndices=` (`Ext/TechnoType/Body.cpp:1325`): the ART
+    /// section re-reads it on every pass, so a missing key leaves this pass's
+    /// list empty. Its frames are read beside it (`Body.cpp:1327`); the hooked
+    /// `0x7072A1` matrix build consumes the drawing section's own frame
+    /// (`Hooks.MatrixOp.cpp:1074-1104`).
+    #[serde(default)]
+    pub(super) phobos_shadow_indices: Vec<i32>,
+    /// Phobos `ShadowIndices.Frame=` (`Ext/TechnoType/Body.cpp:1327`): one
+    /// HVA frame per entry of the section list, `-1` where the native resize
+    /// filled a missing entry.
+    #[serde(default)]
+    pub(super) phobos_shadow_indices_frames: Vec<i32>,
+    /// Phobos `ShadowIndex.Frame=` (`Ext/TechnoType/Body.cpp:1338`, ART):
+    /// `Valueable<int>` constructed 0 for the single-section shadow's HVA
+    /// frame (`0x7072A1`).
+    #[serde(default)]
+    pub(super) phobos_shadow_index_frame: i32,
+    /// Phobos `TurretShadow=` (`Ext/TechnoType/Body.cpp:1323`, ART, `Nullable<bool>`):
+    /// whether a drawing unit adds the turret's own shadow stencil
+    /// (`Ext/TechnoType/Hooks.MatrixOp.cpp:803,870`); unset takes
+    /// `[AudioVisual] DrawTurretShadow=`.
+    #[serde(default)]
+    pub(super) phobos_turret_shadow: Option<bool>,
     /// TechnoType ctor711082 initializes+634 to255; ReadInt714570 uses
     /// its current value, including a prior TAction106 write, as the default.
     /// Native controls: trigger_object_tech_level.json scalar_layers/lifecycle.
@@ -422,6 +444,10 @@ pub(super) struct ProcessedType {
     pub(super) prerequisite_override: Vec<Prerequisite>,
     pub(super) weapon_slots: WeaponSlots,
     pub(super) techno_references: TechnoTypeReferences,
+    /// Phobos TechnoType/Category fields retained per admitted pass. This is
+    /// the sole parsed owner; RuleSet's ObjectType receives a read-only copy.
+    #[serde(default)]
+    pub(super) phobos_object: PhobosObjectProjection,
     pub(super) weapon: WeaponReadState,
     pub(super) warhead_anim: WarheadAnimReadState,
     /// WarheadTypeClass+0x140 `Particle=`. Constructor75CF4D starts null;
@@ -538,19 +564,38 @@ pub(super) struct ProcessedType {
     pub(super) super_weapon_launch: crate::rules::superweapon_type::AresSuperWeaponLaunch,
     /// Phobos `SW.TechLevel`/`SW.AuxTechnos`/`SW.NegTechnos`, read by the same
     /// ordered Process owner as the Ares gates and keyed the same way.
-    #[cfg(feature = "phobos")]
     #[serde(default)]
     pub(super) super_weapon_phobos_availability: PhobosSuperWeaponAvailability,
+    /// Phobos `SW.Next*`/`SW.Link*` (`Ext/SWType/Body.cpp:170-265`), read by
+    /// the same ordered Process owner as the availability gates.
+    #[serde(default)]
+    pub(super) super_weapon_phobos_chaining:
+        crate::rules::phobos_sw_chaining::PhobosSuperWeaponChaining,
+    /// Phobos `Detonate.*` (`Ext/SWType/Body.cpp:274-278`), read in the same
+    /// pass before the chaining group.
+    #[serde(default)]
+    pub(super) super_weapon_phobos_detonate:
+        crate::rules::phobos_sw_detonate::PhobosSuperWeaponDetonate,
+    /// Phobos `LimboDelivery.*`/`LimboKill.*` (`Ext/SWType/Body.cpp:159-169`).
+    #[serde(default)]
+    pub(super) super_weapon_phobos_limbo: crate::rules::phobos_limbo::PhobosSuperWeaponLimbo,
+    /// Phobos `Message.Activated.*`/`EVA.Activated.*` and the linked pair
+    /// (`Ext/SWType/Body.cpp:241-250`).
+    #[serde(default)]
+    pub(super) super_weapon_phobos_messages:
+        crate::rules::phobos_sw_messages::PhobosSuperWeaponMessages,
     pub(super) additional_super_weapons: Vec<String>,
     /// Phobos `UnitTypeExt`'s three `OreGathering.*` vectors.
-    #[cfg(feature = "phobos")]
     #[serde(default)]
     pub(super) ore_gathering: crate::rules::object_type::PhobosOreGathering,
+    /// Phobos `UnitTypeExt`'s `DeployingAnims=` resolved against the
+    /// animation registry; an absent key keeps the previous pass's list.
+    #[serde(default)]
+    pub(super) phobos_deploying_anims: Vec<String>,
     /// Phobos `TechnoTypeExt::LoadFromINIFile`'s insignia block. Its
     /// `InsigniaType=` resolution and direct keys are read per reached pass on
     /// the same live TechnoType, so this accumulates instead of projecting a
     /// final merged section.
-    #[cfg(feature = "phobos")]
     #[serde(default)]
     pub(super) phobos_insignia: crate::rules::insignia_type::PhobosInsignia,
     /// Ares `TechnoTypeExt`'s insignia keys, read on every reached pass of
@@ -582,6 +627,22 @@ pub(super) struct ProcessedType {
     /// existing pointer on empty input, else stores the Weapon factory result.
     #[serde(default)]
     pub(super) airburst_weapon: Option<String>,
+}
+
+/// The two retained TechnoType projections published through the existing
+/// `techno_reference_states().apply_to` consumer.
+pub(crate) struct TechnoTypeProjection<'a> {
+    pub(super) references: &'a TechnoTypeReferences,
+    pub(super) phobos_object: &'a PhobosObjectProjection,
+    pub(super) infantry_art: &'a InfantryArt,
+}
+
+impl TechnoTypeProjection<'_> {
+    pub(crate) fn apply_to(&self, object: &mut crate::rules::object_type::ObjectType) {
+        self.references.apply_to(object);
+        self.phobos_object.apply_to(object);
+        object.phobos_land_sequences = self.infantry_art.phobos_land_sequences();
+    }
 }
 
 /// The ObjectType `Image` and TechnoType pointer fields each reached ReadINI
@@ -914,6 +975,16 @@ pub(crate) struct WeaponSlots {
     pub(super) extra_elite: Vec<Option<String>>,
     #[serde(default)]
     pub(super) offsets: crate::rules::weapon_offsets::WeaponOffsets,
+    /// Phobos `MultiWeapon.*`, read on every reached TechnoType pass by the
+    /// same ordered reader that owns the slot arrays
+    /// (`Ext/TechnoType/Hooks.MultiWeapon.cpp:3-66`, hook `0x7128B2`).
+    #[serde(default)]
+    pub(super) multi_weapon: crate::rules::phobos_multi_weapon::PhobosMultiWeapon,
+    /// Phobos `TechnoTypeExt::ReadMultiWeapon` (constructor false,
+    /// `Body.h:812`): the latch the numbered weapon read branches on. It lives
+    /// beside the slots it clears, not in the projected type.
+    #[serde(default)]
+    pub(super) multi_weapon_read: bool,
 }
 
 impl WeaponSlots {
@@ -927,6 +998,12 @@ impl WeaponSlots {
 
     pub(crate) fn weapon_count(&self) -> i32 {
         self.weapon_count
+    }
+
+    /// Phobos `MultiWeapon.*` after every reached pass; the projected type's
+    /// `SelectMultiWeapon` reads it.
+    pub(crate) fn multi_weapon(&self) -> &crate::rules::phobos_multi_weapon::PhobosMultiWeapon {
+        &self.multi_weapon
     }
 
     pub(crate) fn base(&self) -> Vec<Option<String>> {
@@ -1082,9 +1159,14 @@ impl ProcessedType {
             overlay_explodes: false,
             overlay_cell_anim: None,
             voxel_shadow_index: 0,
+            phobos_shadow_indices: Vec::new(),
+            phobos_shadow_indices_frames: Vec::new(),
+            phobos_shadow_index_frame: 0,
+            phobos_turret_shadow: None,
             tech_level: crate::rules::object_type::DEFAULT_TECH_LEVEL,
             projectile_art: ProjectileArtState::new(),
             techno_references: TechnoTypeReferences::new(),
+            phobos_object: PhobosObjectProjection::new(ObjectCategory::Building),
             native_stored_id,
             country_color_scheme: 0,
             tiberium_color_scheme: 0,
@@ -1173,12 +1255,18 @@ impl ProcessedType {
             super_weapon_targeting: AresSuperWeaponTargetingState::default(),
             super_weapon_charge: AresSuperWeaponCharge::default(),
             super_weapon_launch: Default::default(),
-            #[cfg(feature = "phobos")]
             super_weapon_phobos_availability: PhobosSuperWeaponAvailability::default(),
+            super_weapon_phobos_chaining:
+                crate::rules::phobos_sw_chaining::PhobosSuperWeaponChaining::default(),
+            super_weapon_phobos_detonate:
+                crate::rules::phobos_sw_detonate::PhobosSuperWeaponDetonate::default(),
+            super_weapon_phobos_limbo: crate::rules::phobos_limbo::PhobosSuperWeaponLimbo::default(
+            ),
+            super_weapon_phobos_messages:
+                crate::rules::phobos_sw_messages::PhobosSuperWeaponMessages::default(),
             additional_super_weapons: Vec::new(),
-            #[cfg(feature = "phobos")]
             ore_gathering: crate::rules::object_type::PhobosOreGathering::default(),
-            #[cfg(feature = "phobos")]
+            phobos_deploying_anims: Vec::new(),
             phobos_insignia: Default::default(),
             ares_insignia: Default::default(),
             generic_super_weapon_warhead: None,
@@ -1270,6 +1358,8 @@ pub(super) fn find_or_construct_type(
         members[index].ares_warhead = Some(Default::default());
     }
     if family.object_category().is_some() {
+        members[index].phobos_object =
+            PhobosObjectProjection::new(family.object_category().expect("TechnoType family"));
         if ares_way {
             members[index].emp_type = Some(Default::default());
             members[index].promotion_abilities = Some(Default::default());

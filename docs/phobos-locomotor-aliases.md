@@ -1,6 +1,6 @@
 # Optional Phobos semantic locomotor aliases
 
-Build with `--features phobos` to let `Locomotor=` name a movement class in
+Phobos is in every build; turn it on from a game's data to let `Locomotor=` name a movement class in
 words instead of a braced CLSID.
 
 ```ini
@@ -28,6 +28,21 @@ read uses (Phobos `Utilities/TemplateDef.h`, `read<CLSID>`):
 Braced CLSIDs keep working unchanged, and a braced value is never treated as
 an alias. DropPod has no VERA movement kind, so its alias and CLSID both resolve to nothing. `Chrono` is not an
 alias; it keeps the Teleport constructor seed.
+
+## Native anchors
+
+The `Locomotor=` value itself is retail: gamemd resolves it as a CLSID, and the alias spellings
+exist only in Phobos' `Utilities/TemplateDef.h` `read<CLSID>`. There is no gamemd instruction that
+reads an alias, so none is cited.
+
+The dormant classes are anchored where their absence comes from: `DropPod`'s only installer
+(`0x004DB8A0`) has no references, which is why its alias resolves to nothing rather than to a
+movement kind. Movement variant order follows the enum table at `0x81DA58`.
+
+## Residuals
+
+The dormant Tiberian Sun classes (`Tunnel`, `Mech`, `DropPod`) deliberately resolve to no movement
+kind, matching their unreferenced installer (`0x004DB8A0`) instead of inventing one.
 
 ## Where VERA20K owns it
 

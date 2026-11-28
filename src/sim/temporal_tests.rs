@@ -1610,6 +1610,49 @@ fn a_chrono_legionnaire_erases_a_tank() {
     );
 }
 
+/// Phobos `WarpAway=` replaces the stock single anim with
+/// `CreateRandomAnim(list, location, nullptr, pTarget->Owner)`
+/// (`Ext/Techno/Hooks.cpp:1476-1490`); the erase anim therefore carries the
+/// target's house, which the stock `AnimClass(WarpAway, ...)` construction
+/// does not.
+#[test]
+fn a_phobos_warp_away_anim_is_owned_by_the_target_house() {
+    use crate::sim::command::{Command, CommandEnvelope};
+    let rules = rules_from(
+        &RULES
+            .replace("[General]\n", "[General]\nAIFireSale=yes\n")
+            .replace("[HTNK]\n", "[HTNK]\nWarpAway=WARPAWAY\n"),
+        ART,
+    );
+    let (mut sim, grid) = arena(13, &rules);
+    let tank = spawn(&mut sim, &rules, "HTNK", "Americans", 13, 10);
+    let cleg = spawn(&mut sim, &rules, "CLEG", "Russians", 10, 10);
+    let owner = sim.interner.intern("Americans");
+    sim.queue_command(CommandEnvelope::new(
+        owner,
+        sim.session.tick() + 1,
+        Command::Attack {
+            attacker_id: cleg,
+            target_id: tank,
+        },
+    ));
+    for _ in 0..700 {
+        let commands = sim.take_due_commands();
+        sim.advance_tick(&commands, Some(&rules), Some(&grid), None, 33);
+        if erased(&sim, tank) {
+            break;
+        }
+    }
+    assert!(erased(&sim, tank), "the tank is erased");
+    let anim = sim
+        .substrate
+        .anims
+        .iter()
+        .find(|(_, anim)| sim.interner.resolve(anim.type_id()) == "WARPAWAY")
+        .map(|(_, anim)| anim)
+        .expect("the override anim plays");
+    assert_eq!(anim.owner_house(), Some(owner));
+}
 /// Retail rules and real orders: a Chrono Legionnaire warps the Americans'
 /// only War Factory while it builds a Grizzly, then walks off and lets it
 /// go. In stock the warp and release make no queue callback and the tank
@@ -2384,14 +2427,17 @@ fn stop_retains_the_legionnaires_victim_until_attack_dispatch() {
     let pending = dispatch
         .remaining_if_pending(sim.session.binary_frame())
         .expect("the first shot precedes the next Attack dispatch");
-    assert!((sim.apply_command_with_overlays(
-        crate::sim::command::CommandSender::Player(None),
-        "Russians",
-        &Command::Stop { entity_id: cleg },
-        &rules,
-        None,
-        &mut crate::sim::world::FrameEffects::default(),
-    )).is_ok());
+    assert!(
+        (sim.apply_command_with_overlays(
+            crate::sim::command::CommandSender::Player(None),
+            "Russians",
+            &Command::Stop { entity_id: cleg },
+            &rules,
+            None,
+            &mut crate::sim::world::FrameEffects::default(),
+        ))
+        .is_ok()
+    );
     assert!(entity(&sim, cleg).attack_target.target().is_none());
     assert_eq!(
         entity(&sim, cleg).mission.current().known(),
@@ -3509,4 +3555,214 @@ fn an_untouched_tank_costs_the_prologue_one_lookup() {
         &mut false,
     ));
     assert_eq!(sim.substrate.entities.lookups().0 - before, 1);
+}
+
+/// Phobos `TechnoExt::UpdateRearmInTemporal` (`Ext/Techno/Body.Update.cpp:
+/// 882-895`) from the `TemporalClass_AI @ 0x71A88D` hook: a held target with
+/// `NoRearm.Temporal=yes` / `NoReload.Temporal=yes` keeps its running rearm
+/// and Techno Reload timers still across updates (`StartTime++` per visit),
+/// while a target without the keys counts down as the frames pass.
+#[test]
+fn no_rearm_temporal_holds_the_held_target_timers() {
+    let held_rules = rules_from(
+        &RULES.replace(
+            "[HTNK]\n",
+            "[HTNK]\nNoRearm.Temporal=yes\nNoReload.Temporal=yes\n",
+        ),
+        ART,
+    );
+    {
+        let mut sim = sim(9);
+        let tank = spawn(&mut sim, &held_rules, "HTNK", "Americans", 12, 10);
+        let cleg = spawn(&mut sim, &held_rules, "CLEG", "Russians", 10, 10);
+        chain(&mut sim, &held_rules, tank, &[cleg], 4000);
+        let held = sim.substrate.entities.get_mut(tank).unwrap();
+        held.seldom
+            .rearm_timer
+            .set_for_test(crate::sim::timer::CdTimer::started(40, 100));
+        held.set_ammo_reload_timer_for_test(crate::sim::timer::CdTimer::started(40, 80));
+        sim.session.set_binary_frame_for_test(50);
+        sim.temporal_update_head(
+            cleg,
+            &held_rules,
+            None,
+            &mut crate::sim::world::FrameEffects::default(),
+        );
+        assert_eq!(
+            link(&sim, cleg).warp_remaining,
+            3992,
+            "the warp keeps running"
+        );
+        let rearm_after_first = {
+            let after_first = sim.substrate.entities.get(tank).unwrap();
+            (
+                after_first.seldom.rearm_timer.remaining(50),
+                after_first.ammo_reload_timer().remaining(50),
+            )
+        };
+        assert_eq!(
+            rearm_after_first.0, 91,
+            "the visit's StartTime++ holds the rearm"
+        );
+        assert_eq!(rearm_after_first.1, 71);
+        sim.session.set_binary_frame_for_test(51);
+        sim.temporal_update_head(
+            cleg,
+            &held_rules,
+            None,
+            &mut crate::sim::world::FrameEffects::default(),
+        );
+        let after_second = {
+            let entity = sim.substrate.entities.get(tank).unwrap();
+            (
+                entity.seldom.rearm_timer.remaining(51),
+                entity.ammo_reload_timer().remaining(51),
+            )
+        };
+        assert_eq!(
+            after_second.0, rearm_after_first.0,
+            "the rearm stays held across updates"
+        );
+        assert_eq!(
+            after_second.1, rearm_after_first.1,
+            "the ammo reload stays held across updates"
+        );
+    }
+    // Without the keys the same updates let both timers count.
+    let mut sim = sim(9);
+    let rules = rules();
+    let tank = spawn(&mut sim, &rules, "HTNK", "Americans", 12, 10);
+    let cleg = spawn(&mut sim, &rules, "CLEG", "Russians", 10, 10);
+    chain(&mut sim, &rules, tank, &[cleg], 4000);
+    let held = sim.substrate.entities.get_mut(tank).unwrap();
+    held.seldom
+        .rearm_timer
+        .set_for_test(crate::sim::timer::CdTimer::started(40, 100));
+    held.set_ammo_reload_timer_for_test(crate::sim::timer::CdTimer::started(40, 80));
+    sim.session.set_binary_frame_for_test(50);
+    sim.temporal_update_head(
+        cleg,
+        &rules,
+        None,
+        &mut crate::sim::world::FrameEffects::default(),
+    );
+    sim.session.set_binary_frame_for_test(51);
+    sim.temporal_update_head(
+        cleg,
+        &rules,
+        None,
+        &mut crate::sim::world::FrameEffects::default(),
+    );
+    let counted = sim.substrate.entities.get(tank).unwrap();
+    assert_eq!(counted.seldom.rearm_timer.remaining(51), 89);
+    assert_eq!(counted.ammo_reload_timer().remaining(51), 69);
+}
+
+/// Phobos `WarpPerStep::TemporalClassFake::_GetWarpPerStep`
+/// (`Ext/Techno/Hooks.cpp:2346-2388`): every extension sits inside
+/// `if (const auto pWarhead = pWeapon->Warhead)`, so a weapon that resolves
+/// no warhead keeps its raw `Damage=` even when the globals read yes; a
+/// warhead with `Temporal.ApplyMultiplier=yes` scales it by the attacker's
+/// firepower before the target-dependent factors.
+#[test]
+fn warp_per_step_needs_a_resolved_warhead_for_the_extension() {
+    use crate::util::native_x87::NativeF64Bits;
+    let armed = rules_from(
+        &RULES
+            .replace(
+                "OpenToppedWarpDistance=7\n",
+                "OpenToppedWarpDistance=7\nTemporal.ApplyMultiplier=yes\n",
+            )
+            .replace(
+                "[ChronoBeam]\nTemporal=yes\n",
+                "[ChronoBeam]\nTemporal=yes\nTemporal.ApplyMultiplier=yes\n",
+            ),
+        ART,
+    );
+    // The same rules with weapon 0's `Warhead=` removed: no warhead pointer.
+    let unarmed = rules_from(
+        &RULES
+            .replace(
+                "OpenToppedWarpDistance=7\n",
+                "OpenToppedWarpDistance=7\nTemporal.ApplyMultiplier=yes\n",
+            )
+            .replace(
+                "[NeutronRifle]\nDamage=8\nROF=120\nRange=5\nProjectile=InvisibleMedium\nWarhead=ChronoBeam\n",
+                "[NeutronRifle]\nDamage=8\nROF=120\nRange=5\nProjectile=InvisibleMedium\n",
+            ),
+        ART,
+    );
+    let run = |rules: &RuleSet| {
+        let mut sim = sim(11);
+        let tank = spawn(&mut sim, rules, "HTNK", "Americans", 12, 10);
+        let cleg = spawn(&mut sim, rules, "CLEG", "Russians", 10, 10);
+        chain(&mut sim, &rules, tank, &[cleg], 4000);
+        sim.substrate
+            .entities
+            .get_mut(cleg)
+            .unwrap()
+            .seldom
+            .crate_multipliers
+            .set_firepower_multiplier_for_test(NativeF64Bits::from_bits(1.5f64.to_bits()));
+        sim.temporal_warp_per_step(cleg, rules)
+    };
+    assert_eq!(run(&armed), 12, "8 x 1.5 through the warhead's key");
+    assert_eq!(
+        run(&unarmed),
+        8,
+        "a weapon with no warhead keeps its raw Damage"
+    );
+}
+
+/// Phobos `ChronoSparkleDisplayDelay` and
+/// `ChronoSparkleBuildingDisplayPositions` (`Ext/Building/Hooks.cpp:39-83`):
+/// `Building` makes the structure itself sparkle on the configured period,
+/// even when it has occupant ports.
+#[test]
+fn chrono_sparkle_delay_and_building_position_globals_drive_the_building_sparkle() {
+    let text = RULES.replace(
+        "[General]\n",
+        "[General]\nChronoSparkleDisplayDelay=8\n\
+         ChronoSparkleBuildingDisplayPositions=Building\n",
+    );
+    let rules = rules_from(&text, ART);
+    let mut sim = sim(7);
+    let plant = spawn(&mut sim, &rules, "GAPOWR", "Americans", 16, 16);
+    let sparkles = |sim: &Simulation| {
+        sim.substrate
+            .anims
+            .iter()
+            .filter(|(_, anim)| {
+                sim.interner.resolve(anim.type_id()) == rules.general.chrono_sparkle1.name
+            })
+            .count()
+    };
+    sim.session.set_binary_frame_for_test(8);
+    sim.temporal_building_sparkle(plant, &rules);
+    assert_eq!(sparkles(&sim), 1, "frame 8 is on the configured period");
+    let center = crate::sim::movement::ground_pose::object_get_coords(
+        entity(&sim, plant),
+        sim.resolved_terrain.as_ref(),
+    );
+    let coord = sim
+        .substrate
+        .anims
+        .iter()
+        .filter(|(_, anim)| {
+            sim.interner.resolve(anim.type_id()) == rules.general.chrono_sparkle1.name
+        })
+        .find_map(|(&id, _)| sim.anim_absolute_coord(id))
+        .unwrap();
+    assert_eq!(
+        coord,
+        AnimWorldCoord {
+            x: center.x,
+            y: center.y,
+            z: center.z,
+        },
+        "the building sparkle sits at GetCenterCoords"
+    );
+    sim.session.set_binary_frame_for_test(9);
+    sim.temporal_building_sparkle(plant, &rules);
+    assert_eq!(sparkles(&sim), 1, "frame 9 is between periods");
 }

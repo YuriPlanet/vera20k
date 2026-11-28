@@ -121,9 +121,9 @@ pub(crate) use action::attack_action;
 use action::attack_action_with;
 pub(super) use action::ctrl_forces_attack_rung;
 pub(super) use action::healer_guards_itself;
-pub(super) use action::healer_supports_over_terrain;
 pub(super) use action::healer_object_action;
 use action::healer_object_action_with;
+pub(super) use action::healer_supports_over_terrain;
 pub(super) use action::infantry_arm_attacks;
 use action::infantry_arm_attacks_with;
 pub(super) use action::object_action_answers_friendly;
@@ -143,12 +143,12 @@ use building::building_selection_click;
 use building::selected_rally_producer_ids;
 pub(super) use click_command::ObjectKeyAction;
 use click_command::attack_support_command;
-use click_command::healer_terrain_key_order;
 pub(super) use click_command::cell_guard_area_action;
 use click_command::cell_guard_area_action_with;
 use click_command::cell_harvest_order;
 use click_command::entity_can_attack_move;
 use click_command::guard_area_admitted;
+use click_command::healer_terrain_key_order;
 use click_command::move_click_command;
 #[cfg(test)]
 use click_command::object_attack_click_command;
@@ -206,10 +206,10 @@ use queue::LeftRelease;
 use queue::ReleaseAction;
 #[cfg(test)]
 use queue::berserk_selection_click;
-#[cfg(test)]
-use queue::{HeadRelease, head_release};
 use queue::left_release;
 pub(crate) use queue::{ContextClick, try_queue_context_order};
+#[cfg(test)]
+use queue::{HeadRelease, head_release};
 pub(super) use self_click::AresDeactivatedAction;
 pub(super) use self_click::ares_deactivated_action;
 pub(super) use self_click::ares_emp_deployer_refuses_itself;
@@ -430,6 +430,11 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
 #[path = "allied_object_action_tests.rs"]
 mod allied_object_action_tests;
 
+#[cfg(all(test, tests_app_input_a_c))]
+#[path = "phobos_attack_underground_tests.rs"]
+mod phobos_attack_underground_tests;
+
+#[cfg(all(test, tests_app_input_a_c))]
 #[cfg(all(test, tests_app_input_a_c))]
 #[path = "context_order_cursor_contract_tests.rs"]
 mod cursor_contract_tests;

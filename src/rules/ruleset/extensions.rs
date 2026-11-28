@@ -213,32 +213,27 @@ impl RuleSet {
 
 impl RuleSet {
     /// Phobos `[InsigniaTypes]` catalog.
-    #[cfg(feature = "phobos")]
     pub fn insignia_types(&self) -> &crate::rules::insignia_type::InsigniaTypeCatalog {
         &self.insignia_types
     }
 
     /// Phobos `[General]`/`[AudioVisual]` insignia settings.
-    #[cfg(feature = "phobos")]
     pub fn phobos_draw_globals(&self) -> &crate::rules::insignia_type::PhobosDrawGlobals {
         &self.phobos_draw_globals
     }
 
     /// Phobos `[ShieldTypes]` entry by name (case-insensitive, first spelling
     /// retained). No entry in a build without the capability.
-    #[cfg(feature = "phobos")]
     pub fn shield_type(&self, name: &str) -> Option<&crate::rules::phobos_shields::ShieldType> {
         self.shield_types.entry(name)
     }
 
     /// Phobos shield globals (`[CombatDamage]`/`[AudioVisual]`).
-    #[cfg(feature = "phobos")]
     pub fn shield_globals(&self) -> &crate::rules::phobos_shields::ShieldGlobals {
         &self.shield_globals
     }
 
     /// Phobos Iron Curtain / Force Shield organics, tint and deploy settings.
-    #[cfg(feature = "phobos")]
     pub fn invulnerability_globals(
         &self,
     ) -> &crate::rules::invulnerability_rules::InvulnerabilityGlobals {
@@ -246,13 +241,11 @@ impl RuleSet {
     }
 
     /// Phobos crit defaults (`[CombatDamage]`/`[General]`).
-    #[cfg(feature = "phobos")]
     pub fn crit_globals(&self) -> &crate::rules::phobos_crit::CritGlobals {
         &self.crit_globals
     }
 
     /// Phobos `[DigitalDisplayTypes]` catalog.
-    #[cfg(feature = "phobos")]
     pub fn digital_display_types(
         &self,
     ) -> &crate::rules::digital_display::DigitalDisplayTypeCatalog {
@@ -260,26 +253,22 @@ impl RuleSet {
     }
 
     /// Phobos `[AttachEffectTypes]` catalog.
-    #[cfg(feature = "phobos")]
     pub fn attach_effect_types(&self) -> &crate::rules::attach_effect::AttachEffectTypeCatalog {
         &self.attach_effect_types
     }
 
     /// Phobos AttachEffect `[General]` switches.
-    #[cfg(feature = "phobos")]
     pub fn attach_effect_globals(&self) -> &crate::rules::attach_effect::AttachEffectGlobals {
         &self.attach_effect_globals
     }
 
     /// Phobos `AttachEffect.AttachTypes` authored on a country/house type.
-    #[cfg(feature = "phobos")]
     pub fn country_attach_effect_types(&self, id: &str) -> &[String] {
         self.country_rules(id)
             .map_or(&[], |country| country.attach_effect_attach_types.as_slice())
     }
 
     /// Phobos DigitalDisplay globals (`[AudioVisual]`).
-    #[cfg(feature = "phobos")]
     pub fn digital_display_globals(&self) -> &crate::rules::digital_display::DigitalDisplayGlobals {
         &self.digital_display_globals
     }
@@ -288,7 +277,6 @@ impl RuleSet {
     /// `DigitalDisplayTypes=` wins; unknown names are skipped; otherwise the
     /// category's `[AudioVisual]` default list applies. Yields catalog
     /// indices in list order without allocating.
-    #[cfg(feature = "phobos")]
     pub fn digital_display_indices<'a>(
         &'a self,
         object: &'a crate::rules::object_type::ObjectType,
@@ -318,7 +306,6 @@ impl RuleSet {
     }
 
     /// Phobos placement preview globals (`[AudioVisual]`).
-    #[cfg(feature = "phobos")]
     pub fn placement_preview_globals(
         &self,
     ) -> &crate::rules::phobos_placement_preview::PlacementPreviewGlobals {

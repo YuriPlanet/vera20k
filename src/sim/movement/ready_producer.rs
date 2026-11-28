@@ -99,6 +99,20 @@ pub(crate) fn ready_state_for(
         // aircraft readiness decides from its mission plus two flags. Their
         // `Is_Moving_Now` bodies answer through `motion_query::is_moving_now`.
         LocomotorKind::Fly | LocomotorKind::Rocket => None,
+        LocomotorKind::Tunnel => Some(tunnel(locomotor)),
+    }
+}
+
+/// Tunnel's readiness input is its class state (`+0x18`): `Is_Moving_Now
+/// 0x728A60` answers `State == 1` only, which is `PreDigIn`. That is the frame
+/// window where the hull turns toward the destination before the dig timer
+/// arms; once digging starts the class answers false, so a tunnel never defers
+/// a queued mission for being "in motion" underground.
+fn tunnel(locomotor: &LocomotorState) -> LocomotorReadyState {
+    LocomotorReadyState::Tunnel {
+        state: locomotor
+            .tunnel_runtime()
+            .map_or(0, |runtime| runtime.state() as u8),
     }
 }
 

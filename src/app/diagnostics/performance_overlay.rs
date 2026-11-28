@@ -436,7 +436,9 @@ impl PerformanceOverlay {
         };
         gpu.queue
             .write_buffer(&self.camera_buffer, 0, bytemuck::bytes_of(&camera));
-        frame.pool.upload(gpu, POOL_KEY, frame.view.painted().instances());
+        frame
+            .pool
+            .upload(gpu, POOL_KEY, frame.view.painted().instances());
         let view = destination.create_view(&wgpu::TextureViewDescriptor::default());
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Window FPS"),

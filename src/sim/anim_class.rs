@@ -36,7 +36,6 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::rules::overlay_types::TiberiumImageError;
-#[cfg(test)]
 use crate::rules::ruleset::RuleSet;
 #[cfg(test)]
 use crate::sim::bounce::BounceState;
@@ -49,7 +48,6 @@ use crate::sim::occupancy::{RawCellKey, RawCellOccupationGrid};
 use crate::sim::touch_log::Touched;
 #[cfg(test)]
 use crate::sim::world::SimSoundEvent;
-#[cfg(test)]
 use crate::sim::world::Simulation;
 #[cfg(test)]
 use crate::util::fixed_math::SimFixed;
@@ -83,6 +81,13 @@ pub(crate) use store::{AnimTouchReader, EffectAnims, is_local_anim_id};
 #[cfg(all(test, tests_sim_a_b))]
 #[path = "anim_animated_tiberium_tests.rs"]
 mod animated_tiberium_tests;
+#[cfg(all(test, tests_sim_a_b))]
+#[path = "anim_vein_attack_tests.rs"]
+mod vein_attack_tests;
+
+#[cfg(all(test, tests_sim_a_b))]
+#[path = "anim_firing_update_tests.rs"]
+mod anim_firing_update_tests;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct AnimWorldCoord {
@@ -155,6 +160,26 @@ impl AnimWorldCoord {
     }
 }
 
+/// `Phobos AnimExt::FiringAnim_*` (`Ext/Anim/Body.h`): the muzzle anim a
+/// `[WeaponType] Anim=` list produced keeps following its firer, and every
+/// firing direction re-picks its own type (`Ext/Anim/Body.cpp:72-101`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct FiringAnimState {
+    /// `FiringAnim_Weapon`: the weapon whose `Anim=` list supplied the type.
+    pub weapon: InternedId,
+    /// `FiringAnim_WeaponIndex`: which barrel of the firer fired it.
+    pub weapon_index: u8,
+    /// `FiringAnim_BurstIndex`: the burst frame the muzzle came from; the
+    /// anchor restores it only while it asks `GetFLH`.
+    pub burst_index: u8,
+    /// `FiringAnim_LastFacing`: the owner facing the current type was picked
+    /// for; an unchanged facing does not re-pick.
+    pub last_facing: u16,
+    /// `FiringAnim_LastCoords`: the owner render coord the muzzle was last
+    /// anchored to; an unchanged coord and facing does not re-anchor.
+    pub last_coords: AnimWorldCoord,
+}
+
 /// `AnimClass` constructor `drawFlags` for a combat explosion.
 ///
 /// gamemd-derived: `BulletClass::DetonateAtCoord` pushes the literal `0x2600`
@@ -190,6 +215,12 @@ const LEPTONS_PER_CELL: i32 = crate::util::lepton::LEPTONS_PER_CELL_I32;
 const LEVEL_HEIGHT_LEPTONS: i32 = crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS;
 const TRAILER_DRAW_FLAGS: u32 = 0x600;
 const DAMAGE_FIRE_SLOT_COUNT: usize = 8;
+
+/// `static_cast<int>(cells * Unsorted::LeptonsPerCell)`, the fire-spawn
+/// distance conversion (`Ext/Anim/Body.cpp:369,371`): truncation toward zero.
+fn leptons_of_cells(cells: f64) -> i32 {
+    (cells * f64::from(crate::util::lepton::LEPTONS_PER_CELL_I32)) as i32
+}
 
 /// `AnimClass_Update` @ 0x00423f37: landing consumes two inclusive rolls.
 pub(crate) fn bounce_spawn_count(
@@ -241,7 +272,20 @@ pub struct AnimTranslucencyInput {
     /// AnimType `End` (`+0x2C0`), which the `Translucent=` ladder divides
     /// (`0x004230AC`); see `AnimTypeRuntimeConfig::loaded_end`.
     pub end_frame: i32,
+    /// Stock `Translucency=` integer level. A build without Phobos has no
+    /// `Animatable`, so the key stays the plain value the draw arm maps.
     pub explicit_translucency: i32,
+    /// Phobos `Translucency.Get(currentFrame / End)` for this frame
+    /// (`Ext/Anim/Hooks.cpp:601-605`, hook `0x423183`). `None` is native
+    /// `BlitterFlags::None`, which keeps the stock ladder.
+    pub translucency_level: Option<u8>,
+    /// Phobos `Translucency.Cloaked.Get(...)` for this frame (`:588-599`),
+    /// consulted only while [`Self::cloaked_translucency_answers`].
+    pub translucency_cloaked_level: Option<u8>,
+    /// The cloaked track has values and the owner is Cloaking or Cloaked, so
+    /// the plain track is not consulted even when the cloaked answer is
+    /// `None` — native's `hasValue` (`:588-605`).
+    pub cloaked_translucency_answers: bool,
     pub instance_ramp: i32,
 }
 
@@ -249,6 +293,49 @@ pub struct AnimTranslucencyInput {
 pub struct AnimTranslucencyResult {
     pub draw: bool,
     pub flags: u32,
+}
+
+impl AnimTranslucencyInput {
+    /// The draw's translucency input for one frame, from the resolved anim-type
+    /// config the draw already holds.
+    ///
+    /// `AnimClass_DrawIt_Translucency` (`0x423183`, `Ext/Anim/Hooks.cpp:583-605`)
+    /// queries each track at `currentFrame / End`, `End` being the animation
+    /// type's frame count
+    /// ([`AnimTypeRuntimeConfig::loaded_end`](crate::rules::art_data::AnimTypeRuntimeConfig::loaded_end)).
+    /// `End == 0` divides by zero exactly as native does: frame 0 yields
+    /// `0/0` (`NaN`, which matches no keyframe, so the stock ladder runs) and
+    /// any later frame yields infinity, which reads the last keyframe.
+    pub fn new(
+        config: Option<&crate::rules::art_data::AnimTypeRuntimeConfig>,
+        base_flags: u32,
+        current_frame: i32,
+        shp_frame_count: i32,
+        game_detail_level: i32,
+        draw_runtime: AnimDrawRuntime,
+        owner_cloaked: bool,
+    ) -> Self {
+        let end_frame = config.map_or(shp_frame_count, |value| value.loaded_end(shp_frame_count));
+        let percentage = f64::from(current_frame) / f64::from(end_frame);
+        // Without Phobos there is no cloaked track to gate.
+        Self {
+            base_flags,
+            forced_translucent: draw_runtime.forced_translucent,
+            double_thick: config.is_some_and(|value| value.double_thick),
+            translucency_detail_level: config.map_or(0, |value| value.translucency_detail_level),
+            game_detail_level,
+            translucent_ramp: config.is_some_and(|value| value.translucent),
+            current_frame,
+            end_frame,
+            explicit_translucency: config.map_or(0, |value| value.translucency),
+            translucency_level: config.and_then(|value| value.phobos_translucency.get(percentage)),
+            translucency_cloaked_level: config
+                .and_then(|value| value.phobos_translucency_cloaked.get(percentage)),
+            cloaked_translucency_answers: owner_cloaked
+                && config.is_some_and(|value| value.phobos_translucency_cloaked.has_values()),
+            instance_ramp: i32::from(draw_runtime.translucency_ramp),
+        }
+    }
 }
 
 fn translucency_flag(level: i32) -> u32 {
@@ -297,6 +384,25 @@ pub fn anim_translucency_selection(input: AnimTranslucencyInput) -> AnimTransluc
         };
         return AnimTranslucencyResult { draw: true, flags };
     }
+    // Phobos `0x423183`: the airborne `Translucency` track replaces the stock
+    // level. A cloaked Techno owner answers from `Translucency.Cloaked` and
+    // never consults the plain track, even when that answer is `None`
+    // (`hasValue`, `:588-605`). A `None` answer keeps the stock ladder below.
+    {
+        let level = if input.cloaked_translucency_answers {
+            input.translucency_cloaked_level
+        } else {
+            input.translucency_level
+        };
+        if let Some(level) = level {
+            return AnimTranslucencyResult {
+                draw: input.instance_ramp < 15,
+                flags: flags | translucency_flag(i32::from(level)),
+            };
+        }
+    }
+    // A build without Phobos has no `Animatable`: the authored integer is the
+    // level, and any other value keeps the stock ladder.
     if input.explicit_translucency > 0 {
         return AnimTranslucencyResult {
             draw: input.instance_ramp < 15,
@@ -329,7 +435,7 @@ pub enum AnimSpawnError {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum AnimOccupationOperation {
+pub(crate) enum AnimOccupationOperation {
     Mark,
     Clear,
 }
@@ -340,7 +446,7 @@ enum AnimOccupationOperation {
 /// index, -1 (vtable `+0x38` = `0x00410490`, stored at `0x004262D0` /
 /// `0x004262F5`); Clear resets it once `0x1C` is clear (`0x0042634F` /
 /// `0x00426378`).
-fn apply_anim_raw_occupation(
+pub(crate) fn apply_anim_raw_occupation(
     grid: &mut RawCellOccupationGrid,
     key: RawCellKey,
     mask: u8,
@@ -364,6 +470,37 @@ fn apply_anim_raw_occupation(
     };
     let put = operation == AnimOccupationOperation::Mark;
     grid.write_occupant(key, layer, mask, None, put);
+}
+
+/// `AnimClass::MarkAllOccupationBits` / `UnmarkAllOccupationBits` with the
+/// constructor's and actual-effects' `GetCell()->GetCoordsWithBridge()`
+/// argument (`Ext/Anim/Hooks.AnimCreateUnit.cpp:36-80`): the coordinate's
+/// plane follows the cell's live structural bridge flag alone; the anim's
+/// height does not select a layer.
+pub(crate) fn apply_anim_coords_occupation(
+    grid: &mut RawCellOccupationGrid,
+    key: RawCellKey,
+    mask: u8,
+    live_structural_bridge: bool,
+    operation: AnimOccupationOperation,
+) {
+    let layer = if live_structural_bridge {
+        MovementLayer::Bridge
+    } else {
+        MovementLayer::Ground
+    };
+    let put = operation == AnimOccupationOperation::Mark;
+    grid.write_occupant(key, layer, mask, None, put);
+}
+
+/// Phobos `AnimTypeExt::DetachOnCloak` (`Ext/AnimType/Body.cpp:112`,
+/// `Valueable<bool>` constructor `true`): one query for every consumer. A type
+/// with no art entry keeps the constructor default.
+pub(crate) fn anim_type_detach_on_cloak(rules: &RuleSet, type_name: &str) -> bool {
+    rules
+        .art()
+        .anim_runtime_config(type_name)
+        .is_none_or(|config| config.phobos_detach_on_cloak)
 }
 
 #[cfg(all(test, tests_sim_a_b))]
@@ -399,3 +536,95 @@ pub(in crate::sim) mod meteor_tests;
 #[cfg(all(test, tests_sim_a_b))]
 #[path = "anim_damage_tests.rs"]
 mod damage_tests;
+
+impl Simulation {
+    /// Phobos `AnimExt::UpdateAsFiringAnim`
+    /// (`Ext/Anim/Body.cpp:72..105`), called per anim by the early-AI hook
+    /// `0x423B95` while `FiringAnimUpdateCount > 0`: a changed real facing
+    /// re-picks the type from the weapon's `Anim=` list, and a changed facing
+    /// or owner render coordinate re-anchors the anim at
+    /// `GetFLH(weaponIndex) - GetRenderCoords`.
+    ///
+    /// `TechnoClass::GetRealFacing` (`0x708D70`) forwards to the turret-facing
+    /// virtual (`vt+0x2A8`). The pass uses `fire_coordinate`'s aim facing as
+    /// that value: the barrel facing when the object has one (and for
+    /// aircraft), the body heading otherwise; `Fire_At` picks the muzzle type
+    /// from the same facing.
+    fn update_as_firing_anim(&mut self, id: AnimId, rules: &RuleSet) {
+        let Some(anim) = self.substrate.anims.get(id) else {
+            return;
+        };
+        let Some(mut state) = anim.firing_anim() else {
+            return;
+        };
+        let Some(owner_id) = anim.owner_entity() else {
+            return;
+        };
+        let current_type = anim.type_id();
+        let Some(owner) = self.substrate.entities.get(owner_id) else {
+            return;
+        };
+        if !matches!(
+            owner.category(),
+            crate::map::entities::EntityCategory::Infantry
+                | crate::map::entities::EntityCategory::Unit
+                | crate::map::entities::EntityCategory::Aircraft
+                | crate::map::entities::EntityCategory::Structure
+        ) {
+            return;
+        }
+        let Some(obj) = self.interner.object_type(owner.type_ref(), rules) else {
+            return;
+        };
+        let Some(weapon) = rules.weapon(self.interner.resolve(state.weapon)) else {
+            return;
+        };
+        let source = crate::sim::combat::fire_coord::FireSource::of_entity(owner);
+        let owner_coords = object::anim_owner_world_coords(owner, self.resolved_terrain.as_ref());
+        let fire = crate::sim::combat::fire_coord::fire_coordinate(
+            self,
+            rules,
+            &source,
+            obj,
+            i32::from(state.weapon_index),
+            state.burst_index,
+            crate::rules::flh::Flh::default(),
+        );
+
+        let facing_changed = fire.aim_facing16 != state.last_facing;
+        if facing_changed {
+            state.last_facing = fire.aim_facing16;
+            let index = crate::sim::unit_simple_deploy::item_for_direction(
+                weapon.anim.len(),
+                fire.aim_facing16,
+            );
+            if let Some(name) = weapon.anim.get(index) {
+                let type_id = self.interner.intern(name);
+                let retyped = type_id != current_type
+                    && rules.art().anim_runtime_config(name).is_some_and(|config| {
+                        self.substrate.anims.get_mut(id).is_some_and(|anim| {
+                            // A refused retype (unbound art) keeps the current type.
+                            anim.retype_for_firing_anim(type_id, name, config).is_ok()
+                        })
+                    });
+                if retyped {
+                    self.substrate.anims.note_look(id);
+                }
+            }
+        }
+
+        if facing_changed || owner_coords != state.last_coords {
+            state.last_coords = owner_coords;
+            if let Some(anim) = self.substrate.anims.get_mut(id) {
+                anim.set_stored_location(AnimWorldCoord {
+                    x: fire.coord.x.wrapping_sub(owner_coords.x),
+                    y: fire.coord.y.wrapping_sub(owner_coords.y),
+                    z: fire.coord.z.wrapping_sub(owner_coords.z),
+                });
+            }
+        }
+        if let Some(anim) = self.substrate.anims.get_mut(id) {
+            anim.set_firing_anim(state);
+        }
+    }
+}

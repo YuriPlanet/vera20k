@@ -475,7 +475,7 @@ fn isqrt(n: u64) -> u64 {
 }
 
 /// Push arithmetic the movement tests (`ext_modules_movement_tests`) check.
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 pub(crate) mod tests_support {
     use super::*;
 

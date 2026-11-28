@@ -299,6 +299,16 @@ fn status_instances<'a>(
     run: &ObjectExtrasRun,
     instances: &'a [SpriteInstance],
 ) -> &'a [SpriteInstance] {
+    let select_box = match run {
+        ObjectExtrasRun::Status { select_box, .. } => *select_box,
+        _ => None,
+    };
+    let select_box_ground = match run {
+        ObjectExtrasRun::Status {
+            select_box_ground, ..
+        } => *select_box_ground,
+        _ => None,
+    };
     let ObjectExtrasRun::Status {
         bomb_clock,
         wrench,
@@ -341,6 +351,14 @@ fn status_instances<'a>(
         first = first.min(*index);
         last = last.max(*index + 1);
     }
+    if let Some((_, index)) = select_box {
+        first = first.min(index);
+        last = last.max(index + 1);
+    }
+    if let Some((_, index)) = select_box_ground {
+        first = first.min(index);
+        last = last.max(index + 1);
+    }
     for (rectangles, text) in digital_text {
         first = first.min(rectangles.start);
         last = last.max(text.end);
@@ -378,6 +396,28 @@ fn draw_status_prefix<'a>(
     else {
         unreachable!("line parents fence status attachment passes");
     };
+    // Phobos `TechnoExt::DrawSelectBox` after-body box: the DrawHealthBar hook
+    // runs before the health bar itself (`Ext/Techno/Hooks.Pips.cpp:82-87,110-115`).
+    let select_box = match run {
+        ObjectExtrasRun::Status { select_box, .. } => *select_box,
+        _ => None,
+    };
+    let select_box_ground = match run {
+        ObjectExtrasRun::Status {
+            select_box_ground, ..
+        } => *select_box_ground,
+        _ => None,
+    };
+    if let Some((catalog, index)) = select_box
+        && let Some(shape) = overlay.select_box_shape(catalog as usize)
+    {
+        batch.draw_with_buffer_passthrough_range(pass, shape.texture(), buffer, index, 1);
+    }
+    if let Some((catalog, index)) = select_box_ground
+        && let Some(shape) = overlay.select_box_ground_shape(catalog as usize)
+    {
+        batch.draw_with_buffer_passthrough_range(pass, shape.texture(), buffer, index, 1);
+    }
     // The instance was cut from the carrier's `IvanBomb.Image` when one
     // loaded, else BOMBCURS.SHP; its strip's texture is the one to bind.
     if let (Some(index), Some(shape)) = (bomb_clock, overlay.bomb_strip(*bomb_image)) {
@@ -512,7 +552,6 @@ fn draw_status_group<'a>(
             batch.surface_camera_bind_group(),
         );
     }
-    #[cfg(feature = "phobos")]
     for (catalog, index) in digital_shapes {
         if let Some(shape) = overlay.digital_shape(*catalog as usize) {
             batch.draw_with_buffer_passthrough_range(pass, shape.texture(), buffer, *index, 1);

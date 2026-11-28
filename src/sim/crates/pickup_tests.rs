@@ -1529,6 +1529,88 @@ fn random_unit_crate_still_allows_a_human_mcv_with_bases() {
     );
 }
 
+/// Phobos `CrateGoodie.RerollChance` (`0x4821BD`,
+/// `Misc/Hooks.Crates.cpp:80-92`): the value is the probability that a drawn
+/// `CrateGoodie=` type rerolls. The type passes only when
+/// `chance < RandomDouble()`; the rejected draw is spent and the pick retries.
+#[test]
+fn phobos_crate_goodie_reroll_chance_rejects_a_drawn_goodie() {
+    let (mut sim, _, _, owner, _) = arena();
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[General]\n[VehicleTypes]\n0=AMCV\n1=TNK\n\
+         [AMCV]\nStrength=1000\nCrateGoodie=yes\nCrateGoodie.RerollChance=0.25\n\
+         [TNK]\nStrength=300\nCrateGoodie=yes\n",
+    ))
+    .unwrap();
+    let expected = (0..500)
+        .find_map(|_| {
+            let mut probe = sim.scenario_rng.clone();
+            if probe.next_range_i32_inclusive(0, 1) == 0
+                && probe.random_double() <= 0.25
+                && probe.next_range_i32_inclusive(0, 1) == 1
+            {
+                Some(probe)
+            } else {
+                sim.scenario_rng.next_range_i32_inclusive(0, 1);
+                None
+            }
+        })
+        .expect("a deterministic rerolled-goodie then accepted-tank draw triple");
+    assert_eq!(
+        effects::choose_unit_crate_type(
+            &sim.interner,
+            &sim.session,
+            &mut sim.scenario_rng,
+            &sim.houses,
+            &rules,
+            owner,
+            false
+        )
+        .map(|object| object.id.as_str()),
+        Some("TNK")
+    );
+    assert_eq!(
+        sim.scenario_rng.native_state_hex(),
+        expected.native_state_hex()
+    );
+
+    // A reroll chance of 1.0 rejects the type on every draw.
+    let always = RuleSet::from_ini(&IniFile::from_str(
+        "[General]\n[VehicleTypes]\n0=AMCV\n1=TNK\n\
+         [AMCV]\nStrength=1000\nCrateGoodie=yes\nCrateGoodie.RerollChance=1.0\n\
+         [TNK]\nStrength=300\nCrateGoodie=yes\n",
+    ))
+    .unwrap();
+    let (mut sim, _, _, owner, _) = arena();
+    let first_is_amcv = (0..500).any(|_| {
+        let mut probe = sim.scenario_rng.clone();
+        if probe.next_range_i32_inclusive(0, 1) == 0 {
+            true
+        } else {
+            sim.scenario_rng.next_range_i32_inclusive(0, 1);
+            false
+        }
+    });
+    assert!(
+        first_is_amcv,
+        "a state drawing the always-rerolled type first"
+    );
+    assert_eq!(
+        effects::choose_unit_crate_type(
+            &sim.interner,
+            &sim.session,
+            &mut sim.scenario_rng,
+            &sim.houses,
+            &always,
+            owner,
+            false
+        )
+        .map(|object| object.id.as_str()),
+        Some("TNK"),
+        "chance 1.0 always rerolls the goodie"
+    );
+}
+
 /// A rejected MCV draw must still be spent when another type is eligible.
 /// Filtering the draw pool would change both the result and the RNG stream.
 #[test]
@@ -2588,4 +2670,98 @@ fn ares_random_crate_money_bounds_the_top_up() {
     let base = NativeF64Bits::from_bits(2000.0_f64.to_bits());
     assert_eq!(effects::money_crate_amount(&mut rng, &rules, 0, base), 2000);
     assert_eq!(rng.next_u32(), before.clone().next_u32(), "no draw");
+}
+
+/// Phobos `UnitCrateVehicleCap` (`Ext/Rules/Body.cpp:282`, hook
+/// `0x481C27`, `Misc/Hooks.Crates.cpp:63-73`): the Unit slot's
+/// tracked-vehicle ceiling; a negative value never caps, and the Squad slot
+/// keeps its own constant.
+#[test]
+fn the_unit_crate_vehicle_cap_global_gates_the_unit_slot() {
+    let scene = |cap_line: &str| {
+        let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
+            "[InfantryTypes]\n[AircraftTypes]\n[BuildingTypes]\n\
+             [VehicleTypes]\n0=TNK\n[TNK]\nStrength=100\n\
+             [CrateRules]\nCrateImg=SILVER\nWoodCrateImg=WOOD\nWaterCrateImg=WATER\n{cap_line}"
+        )))
+        .expect("crate rules");
+        let mut sim = sim_with_grid(1);
+        let _owner = house(&mut sim, "Americans", false);
+        let actor = sim
+            .spawn_object("TNK", "Americans", 20, 22, 0, &rules)
+            .expect("tracked tank");
+        (sim, rules, actor)
+    };
+    let land = crate::rules::terrain_rules::LandType::Clear.as_index();
+    let slot = |sim: &Simulation, rules: &RuleSet, actor: u64| {
+        super::multiplayer_eligible_slot(sim, rules, actor, land, POWERUP_UNIT)
+    };
+
+    let (sim, rules, actor) = scene("UnitCrateVehicleCap=0\n");
+    assert_ne!(
+        slot(&sim, &rules, actor),
+        POWERUP_UNIT,
+        "cap 0 rejects the tracked tank"
+    );
+    let (sim, rules, actor) = scene("UnitCrateVehicleCap=-1\n");
+    assert_eq!(
+        slot(&sim, &rules, actor),
+        POWERUP_UNIT,
+        "a negative cap never caps"
+    );
+    let (sim, rules, actor) = scene("");
+    assert_eq!(
+        slot(&sim, &rules, actor),
+        POWERUP_UNIT,
+        "the constructor cap of 50 admits one vehicle"
+    );
+}
+
+/// Phobos `[CrateRules] FreeMCV.CreditsThreshold` (`Ext/Rules/Body.cpp:283`,
+/// default 1500 `Body.h:735`, hook `0x481BB8`): the MCV pre-empt's credit
+/// floor.
+#[test]
+fn the_free_mcv_credit_threshold_gates_the_preempt() {
+    let (mut sim, mut rules, registry, _owner, actor) = arena();
+    sim.session.game_options_mut_for_test().bases = true;
+    rules.phobos_globals.free_mcv_credits_threshold = 6000;
+    place_registered_crate(&mut sim, &registry, (21, 22), POWERUP_MONEY as u8);
+    assert!(
+        pickup_crate(
+            &mut sim,
+            &rules,
+            &registry,
+            (21, 22),
+            actor,
+            &mut crate::sim::world::FrameEffects::default()
+        ),
+        "5000 credits do not exceed a 6000 floor, so the money crate pays"
+    );
+    assert!(
+        !sim.substrate
+            .entities
+            .values()
+            .any(|entity| sim.interner.resolve(entity.type_ref()) == "AMCV"),
+        "no pre-empted MCV"
+    );
+
+    let (mut sim, mut rules, registry, _owner, actor) = arena();
+    sim.session.game_options_mut_for_test().bases = true;
+    rules.phobos_globals.free_mcv_credits_threshold = 0;
+    place_registered_crate(&mut sim, &registry, (21, 22), POWERUP_MONEY as u8);
+    assert!(!pickup_crate(
+        &mut sim,
+        &rules,
+        &registry,
+        (21, 22),
+        actor,
+        &mut crate::sim::world::FrameEffects::default()
+    ));
+    assert!(
+        sim.substrate
+            .entities
+            .values()
+            .any(|entity| sim.interner.resolve(entity.type_ref()) == "AMCV"),
+        "a 0 floor pre-empts onto the base unit"
+    );
 }

@@ -28,5 +28,5 @@
     "to_matrix": "0x00646980"
   },
   "replay_command": "python -m tools.voxel_oracle.lighting",
-  "payload_sha256": "0b408730dfd483265613b7c1bdf040617b8391ddbd7a4f4b92342792e8f208be"
+  "payload_sha256": "98232f36608557ae6af7f5149a4c4dad2a029cfed557c6f5d4dfb00f733ca61b"
 }

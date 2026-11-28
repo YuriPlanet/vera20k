@@ -23,7 +23,7 @@ use crate::sim::{movement::locomotor::MovementLayer, occupancy::CellObjectMember
 #[path = "entry_facts.rs"]
 mod entry_facts;
 pub(crate) use entry_facts::EntryFacts;
-use entry_facts::{Blocker, BlockerFacts, CellFacts, PlainCell};
+use entry_facts::{BlockerFacts, CellFacts, PlainCell};
 
 #[cfg(all(test, tests_sim_world_c_o))]
 #[path = "unit_entry_tests.rs"]
@@ -38,8 +38,17 @@ mod infantry_entry_priority_tests;
 mod wall_entry_tests;
 
 #[cfg(all(test, tests_sim_world_c_o))]
+#[path = "phobos_wall_weapon_tests.rs"]
+mod phobos_wall_weapon_tests;
+
+#[cfg(all(test, tests_sim_world_c_o))]
+#[cfg(all(test, tests_sim_world_c_o))]
 #[path = "plain_entry_tests.rs"]
 mod plain_entry_tests;
+
+#[cfg(all(test, tests_sim_world_c_o))]
+#[path = "phobos_balloon_pathing_tests.rs"]
+mod phobos_balloon_pathing_tests;
 
 /// The +1AC decision reads live simulation state without borrowing the bridge
 /// publisher. Native Map lookups still stamp the canonical shared Dummy through
@@ -97,16 +106,16 @@ impl<'a> EntryReadContext<'a> {
         }
     }
 
-    /// Blocker `id`'s facts, kept by a search or read where they are asked
-    /// ([`Blocker`]), with its entity for the rare reads they leave out.
-    fn blocker(&self, id: u64) -> Option<(Blocker<'a>, &'a GameEntity)> {
+    /// Blocker `id`'s facts, with its entity for the rare reads they leave
+    /// out.
+    fn blocker(&self, id: u64) -> Option<(BlockerFacts, &'a GameEntity)> {
         let (slot, entity) = self.sim.substrate.entities.get_in_slot(id)?;
-        let frame = self.sim.session.binary_frame();
-        let blocker = match self.facts {
-            Some(facts) => Blocker::Kept(facts.blocker(slot, || BlockerFacts::of(entity, frame))),
-            None => Blocker::Live(entity, frame),
+        let read = || BlockerFacts::of(entity, self.sim.session.binary_frame());
+        let facts = match self.facts {
+            Some(facts) => facts.blocker(slot, read),
+            None => read(),
         };
-        Some((blocker, entity))
+        Some((facts, entity))
     }
 
     fn coord(&self, cell: Cell) -> (i16, i16) {
@@ -378,11 +387,11 @@ fn infantry_target_admission(
     mover: &GameEntity,
     obj: &ObjectType,
     blocker_id: u64,
-    blocker: &Blocker<'_>,
+    blocker: &BlockerFacts,
     selected_cell: Cell,
 ) -> Result<InfantryTargetAdmission, String> {
     //51C2D3: +1D4 is the warp latch.
-    if blocker.warped_out() {
+    if blocker.warped_out {
         return Ok(InfantryTargetAdmission::Ordinary);
     }
     if !infantry_mission_tests_targets(mover, obj, live.rules.ares()) {
@@ -391,7 +400,7 @@ fn infantry_target_admission(
     if object_target_is(mover, blocker_id) {
         return Ok(InfantryTargetAdmission::DirectTarget);
     }
-    let current = blocker.position();
+    let current = blocker.position;
     let blocker_cell = live
         .terrain()
         .native_cell_identity(((current.x / 256) as i16, (current.y / 256) as i16));
@@ -443,14 +452,14 @@ fn infantry_target_admission(
     Ok(InfantryTargetAdmission::Ordinary)
 }
 
-fn head_on(mover: &GameEntity, blocker: &Blocker<'_>, frame: u32) -> bool {
+fn head_on(mover: &GameEntity, blocker: &BlockerFacts, frame: u32) -> bool {
     use crate::util::direction_tables::{dir_from_facing16, facing16_from_delta};
     let direction = dir_from_facing16(mover.body_facing_current(frame));
-    if direction != dir_from_facing16(blocker.facing().wrapping_add(0x7fff)) {
+    if direction != dir_from_facing16(blocker.facing.wrapping_add(0x7fff)) {
         return false;
     }
     let a = crate::sim::movement::ground_pose::position_world_coord(&mover.position);
-    let b = blocker.position();
+    let b = blocker.position;
     //73F976 uses the same native atan polynomial/constants as FacingFromDelta.
     direction
         == dir_from_facing16(facing16_from_delta(
@@ -482,6 +491,25 @@ impl Simulation {
             .map(crate::sim::movement::infantry_entry::InfantryEntryClass::from_raw)
     }
 
+    /// `BalloonHoverPathingFix` (`Misc/Hooks.BugFixes.cpp:3522-3534`) in both
+    /// `IsCellOccupied` entry points (`0x51BFA2`, `0x73F0A7`) and the
+    /// `FootClass::ApproachTarget_CheckArcCell` hook (`0x4D62C0`): an airborne
+    /// `BalloonHover=` Foot skips the cell walk and answers move-OK. VERA has
+    /// no separate `IsInAir`; its AircraftTracker membership is the airborne
+    /// state, so the bucket is Some exactly while the Foot is tracked in the air.
+    pub(crate) fn phobos_balloon_hover_ignores_cell_entry(&self, id: u64, rules: &RuleSet) -> bool {
+        if !rules.phobos_globals.balloon_hover_pathing_fix {
+            return false;
+        }
+        let Some(e) = self.substrate.entities.get(id) else {
+            return false;
+        };
+        e.air_spatial_bucket().is_some()
+            && self
+                .object_type(e.type_ref(), rules)
+                .is_some_and(|object| object.balloon_hover)
+    }
+
     /// The class's own `Can_Enter_Cell` (+0x1AC) for a live Foot receiver:
     /// Infantry 0x0051BF90 or Unit 0x0073F0A0, as the raw native code 0..7.
     /// Foot4D3920's target query and the Drive/Ship Process continuations
@@ -503,6 +531,9 @@ impl Simulation {
             )
         }) {
             return Err("Foot entry requires a live Infantry or Unit receiver".into());
+        }
+        if self.phobos_balloon_hover_ignores_cell_entry(id, rules) {
+            return Ok(0);
         }
         // An installed oracle seam answers before the receiver's type is
         // resolved, as it did before the search shared this receiver.
@@ -828,6 +859,13 @@ impl FootEntryReceiver<'_> {
         ) {
             return Ok(code);
         }
+        if self
+            .live
+            .sim
+            .phobos_balloon_hover_ignores_cell_entry(self.mover.id, self.live.rules)
+        {
+            return Ok(0);
+        }
         classify_foot_entry(&self.live, &self.mover, cell, args)
     }
 }
@@ -1133,7 +1171,19 @@ fn full_foot_entry<'a>(
             let allied = live_overlay
                 .wall_owner
                 .is_some_and(|o| mover.allied_with(live, o));
-            let warhead = weapon0.and_then(|w| live.rules.weapon_warhead(w));
+            // Phobos hooks `0x51C1F1`/`0x73F495` replace the native's
+            // `GetWeapon(0)` with `GetWeapon(GetWeaponIndexAgainstWall(..))`
+            // (`Ext/Techno/WeaponHelpers.cpp:196-228`), so the secondary may
+            // answer the wall test.
+            let wall_weapon = combat_weapon::get_weapon(
+                e,
+                obj,
+                combat_weapon::weapon_index_against_wall(live.sim, e, obj, live.rules, flags),
+                &live.sim.substrate.entities,
+                live.rules,
+                &live.sim.interner,
+            );
+            let warhead = wall_weapon.and_then(|w| live.rules.weapon_warhead(w));
             if infantry {
                 //51C1BB..51C223: a wall at damage stage DamageLevels (+0x2A0)
                 //is no wall to Infantry. Otherwise the primary warhead needs
@@ -1260,7 +1310,7 @@ fn full_foot_entry<'a>(
         let (b, blocker) = live
             .blocker(blocker_id)
             .ok_or_else(|| format!("repair list has retired blocker {blocker_id} at cell {p:?}"))?;
-        if victim_cell.is_some_and(|cell| cell == crate::sim::movement::coord_cell(b.position())) {
+        if victim_cell.is_some_and(|cell| cell == crate::sim::movement::coord_cell(b.position)) {
             return Ok(0);
         }
         // Native blocker GetTechnoType: its concrete class's type.
@@ -1283,7 +1333,7 @@ fn full_foot_entry<'a>(
                 continue;
             }
         }
-        let allied = mover.allied_with(live, b.owner());
+        let allied = mover.allied_with(live, b.owner);
         // Both classes ask Get_Mission (vt+0x184, 0x005B3040): current, else
         // the queued mission.
         let mission = e.mission.effective().known();
@@ -1338,11 +1388,11 @@ fn full_foot_entry<'a>(
                     checked_building_id: blocker_id,
                     candidate_building_id: first_building(),
                     candidate_x: p.0 as u16,
-                    building_origin_x: b.rx(),
+                    building_origin_x: b.rx,
                     number_impassable_rows: bt.number_impassable_rows,
                     is_unit_repair: bt.unit_repair,
                     is_bunker: bt.bunker,
-                    bunker_occupied: b.bunker_occupied(),
+                    bunker_occupied: b.bunker_occupied,
                 }) == BuildingOccupantEntryDecision::SkipBlocker
                 {
                     continue;
@@ -1363,7 +1413,7 @@ fn full_foot_entry<'a>(
                 if object_target_is(e, blocker_id)
                     && ((mission == Some(MissionType::Enter) && absorber)
                         || (mission == Some(MissionType::Eaten) && refund_eater))
-                    && !b.warped_out()
+                    && !b.warped_out
                 {
                     return Ok(0);
                 }
@@ -1404,16 +1454,16 @@ fn full_foot_entry<'a>(
                 continue;
             }
             if live.rules.ares() && infantry && bt.building_type_ext().firestorm_wall {
-                if live.sim.ares_firestorm.is_active(b.owner()) {
+                if live.sim.ares_firestorm.is_active(b.owner) {
                     return Ok(7);
                 }
                 continue;
             }
             if bt.gate {
-                if b.open_gate() {
+                if b.open_gate {
                     continue;
                 }
-                let allied = mover.is_ally_of(live, b.owner());
+                let allied = mover.is_ally_of(live, b.owner);
                 if !allied
                     && !combat_weapon::is_armed(
                         e,
@@ -1436,11 +1486,11 @@ fn full_foot_entry<'a>(
                         checked_building_id: blocker_id,
                         candidate_building_id: first_building(),
                         candidate_x: p.0 as u16,
-                        building_origin_x: b.rx(),
+                        building_origin_x: b.rx,
                         number_impassable_rows: bt.number_impassable_rows,
                         is_unit_repair: bt.unit_repair,
                         is_bunker: bt.bunker,
-                        bunker_occupied: b.bunker_occupied(),
+                        bunker_occupied: b.bunker_occupied,
                     }) == BuildingOccupantEntryDecision::SkipBlocker
                 {
                     continue;
@@ -1462,7 +1512,7 @@ fn full_foot_entry<'a>(
                     continue;
                 }
                 if live.rules.ares() && bt.building_type_ext().firestorm_wall {
-                    if live.sim.ares_firestorm.is_active(b.owner()) {
+                    if live.sim.ares_firestorm.is_active(b.owner) {
                         return Ok(7);
                     }
                     continue;
@@ -1471,7 +1521,7 @@ fn full_foot_entry<'a>(
                 // 0x73F7DD): only a building whose owner is allied with the
                 // unit's house has its bib passed over.
                 if bt.bib
-                    && (!live.rules.ares() || mover.is_ally_of(live, b.owner()))
+                    && (!live.rules.ares() || mover.is_ally_of(live, b.owner))
                     && live.sim.substrate.occupancy.first_building_on_layer(
                         (p.0 as u16).wrapping_add(1),
                         p.1 as u16,
@@ -1518,13 +1568,13 @@ fn full_foot_entry<'a>(
         //query use actual House alliances, including during crew escape.
         let allied = allied || (infantry && live.sim.object_placement_scope_active());
         if !allied {
-            if b.fully_cloaked() {
+            if b.fully_cloaked {
                 entry_result = entry_result.max(1);
                 continue;
             }
             if !infantry
                 && crusher
-                && bump_crush::can_crush(capability, b.crush(), |owner| {
+                && bump_crush::can_crush(capability, b.crush, |owner| {
                     mover.allied_with(live, owner)
                 })
             {
@@ -1545,7 +1595,7 @@ fn full_foot_entry<'a>(
             }
             if infantry {
                 if b.category() == EntityCategory::Infantry {
-                    if b.disguised() && infantry_disguised_to(live, blocker, e.owner())? {
+                    if b.disguised && infantry_disguised_to(live, blocker, e.owner())? {
                         //51C61F is an assignment, not a boolean soft latch.
                         entry_result = 6;
                     }
@@ -1557,12 +1607,12 @@ fn full_foot_entry<'a>(
             }
         } else if !infantry {
             //73F865..8C0: Foot NavCom, body turn, then active IsMoving.
-            if b.nav_com() || b.rotating() || b.moving() == Some(true) {
+            if b.nav_com || b.rotating || b.moving == Some(true) {
                 if head_on(e, &b, live.sim.session.binary_frame()) {
                     return Ok(7);
                 }
-                if (b.foot_occupation() && b.category() != EntityCategory::Infantry)
-                    || b.occupant_slot_a4()
+                if (b.foot_occupation && b.category() != EntityCategory::Infantry)
+                    || b.occupant_slot_a4
                 {
                     entry_result = entry_result.max(2);
                 }
@@ -1573,14 +1623,14 @@ fn full_foot_entry<'a>(
             match b.category() {
                 EntityCategory::Aircraft | EntityCategory::Structure => return Ok(7),
                 EntityCategory::Unit => {
-                    if b.moving() != Some(true) && !b.nav_com() {
+                    if b.moving != Some(true) && !b.nav_com {
                         entry_result = entry_result.max(6);
-                    } else if b.foot_occupation() || b.occupant_slot_a4() {
+                    } else if b.foot_occupation || b.occupant_slot_a4 {
                         entry_result = entry_result.max(2);
                     }
                 }
                 EntityCategory::Infantry => {
-                    if b.moving() != Some(true) {
+                    if b.moving != Some(true) {
                         stationary_infantry = stationary_infantry.wrapping_add(1);
                     }
                 }
@@ -1773,7 +1823,7 @@ fn unit_post_walk_tail(
                     // The caller's latch stands for the Crusher test.
                     bump_crush::object_is_crushable_by(
                         mover.obj.omni_crusher,
-                        unit.crush(),
+                        unit.crush,
                         |owner| mover.allied_with(live, owner),
                     )
                 })

@@ -384,8 +384,9 @@ impl Simulation {
         // PostMapInit68691C clears that context for starting-unit callbacks,
         // which use the separate runtime spawn path. This projection retains
         // the same admission context through all constructor/Unlimbo callbacks.
-        #[cfg(feature = "phobos")]
-        self.begin_phobos_map_objects();
+        if rules.phobos() {
+            self.begin_phobos_map_objects();
+        }
         let result = self.with_object_placement_scope(|sim| {
             let mut count: u32 = 0;
             let mut follows = Vec::new();
@@ -625,6 +626,15 @@ impl Simulation {
                         Err(cause) => log::warn!("authored Infantry HIGH height: {cause}"),
                     }
                 }
+                // TechnoClass::Init (hook 0x6F42F7) runs before the map
+                // readers below (`BuildingClass::ReadFromINI 0x0044FB5B`).
+                if rules.phobos() {
+                    sim.phobos_initialize_state(
+                        &mut ge,
+                        authored_health::map_object_type(map_ent.category, &map_ent.type_id, rules),
+                        rules,
+                    );
+                }
                 // The line's AI Sellable and AI Repairable, written after the
                 // constructor and before the Unlimbo (`BuildingClass::ReadFromINI`
                 // `0x0044FB5B`, `0x0044FB70`).
@@ -633,6 +643,11 @@ impl Simulation {
                         map_ent.structure_ai_sellable,
                         map_ent.structure_ai_repairable,
                     );
+                    // Phobos `BuildingExt::IsCreatedFromMapFile` marks the
+                    // `CreateBuildingFromINIFile` origin; Unlimbo's
+                    // AI-repairable grant skips these preplaced structures
+                    // (`Ext/Building/Hooks.cpp:321-323`).
+                    ge.set_created_from_map_file(true);
                 }
                 // The map readers apply optional signed percentages after the
                 // class constructor (including Init_Managers) and before Unlimbo:
@@ -727,8 +742,9 @@ impl Simulation {
             log::info!("Spawned {} entities", count);
             Ok(count)
         });
-        #[cfg(feature = "phobos")]
-        self.finish_phobos_map_objects();
+        if rules.phobos() {
+            self.finish_phobos_map_objects();
+        }
         result
     }
 
@@ -1325,7 +1341,12 @@ impl Simulation {
             return Ok(None);
         };
 
-        let stable_id = Self::create_limbo(&mut self.substrate, &mut self.houses, ge);
+        let stable_id = Self::create_limbo_with_phobos(
+            &mut self.substrate,
+            &mut self.houses,
+            ge,
+            rules.phobos(),
+        );
         self.commit_constructor_owned_techno_children(stable_id, rules, frame_effects);
         Self::register_house_base_building(
             &self.interner,
@@ -1821,31 +1842,44 @@ impl Simulation {
         };
         let at = terrain.native_cell_coord(cell);
         loop {
-            let member = match cell {
-                NativeCellIdentity::Real(_) => self
-                    .cell_objects((at.0 as u16, at.1 as u16), MovementLayer::Ground)
-                    .next(),
-                NativeCellIdentity::Dummy => None,
-            };
-            let Some(member) = member else {
+            let mut next_entity = None;
+            if let NativeCellIdentity::Real(_) = cell {
+                for member in self.cell_objects((at.0 as u16, at.1 as u16), MovementLayer::Ground) {
+                    match member {
+                        CellObjectMember::Entity(id) => {
+                            next_entity = Some(id);
+                            break;
+                        }
+                        // Phobos `CanBeBuiltOn`: a buildable Terrain does not
+                        // block the foundation clear — PlaceDown removes it
+                        // once the placement succeeds. Any other Terrain still
+                        // refuses the cell.
+                        CellObjectMember::Terrain(id) => {
+                            if !self
+                                .terrain_objects
+                                .get(id)
+                                .is_some_and(|terrain| terrain.can_be_built_on())
+                            {
+                                return false;
+                            }
+                        }
+                    }
+                }
+            }
+            let Some(id) = next_entity else {
                 return true;
             };
-            let movable = match member {
-                CellObjectMember::Entity(id) => self
-                    .substrate
-                    .entities
-                    .get(id)
-                    .is_some_and(|entity| {
-                        matches!(
-                            entity.category(),
-                            EntityCategory::Unit
-                                | EntityCategory::Infantry
-                                | EntityCategory::Aircraft
-                        )
-                    })
-                    .then_some(id),
-                CellObjectMember::Terrain(_) => None,
-            };
+            let movable = self
+                .substrate
+                .entities
+                .get(id)
+                .is_some_and(|entity| {
+                    matches!(
+                        entity.category(),
+                        EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
+                    )
+                })
+                .then_some(id);
             let Some(id) = movable else {
                 return false;
             };
@@ -2017,6 +2051,7 @@ impl Simulation {
         substrate: &mut ObjectSubstrate,
         houses: &mut Houses,
         mut ge: GameEntity,
+        phobos: bool,
     ) -> u64 {
         let stable_id = ge.stable_id();
 
@@ -2038,8 +2073,8 @@ impl Simulation {
         substrate.entities.insert(ge);
         // Phobos TechnoExt::InitializeState, hook 0x006F42F7: every Foot
         // requests the owner's existing tech-tree tail for Aux/NegTechnos.
-        #[cfg(feature = "phobos")]
-        if let Some(entity) = substrate.entities.get(stable_id)
+        if phobos
+            && let Some(entity) = substrate.entities.get(stable_id)
             && entity.category().is_foot()
         {
             houses.request_house_tech_tree_recheck(entity.owner());
@@ -2112,7 +2147,18 @@ impl Simulation {
         houses: &mut Houses,
         ge: GameEntity,
     ) -> u64 {
-        Self::store_spawned_limbo(substrate, houses, ge)
+        Self::store_spawned_limbo(substrate, houses, ge, false)
+    }
+
+    /// The Phobos-aware constructor boundary; retail callers keep
+    /// [`Self::create_limbo`] and its historical hash/RNG stream.
+    fn create_limbo_with_phobos(
+        substrate: &mut ObjectSubstrate,
+        houses: &mut Houses,
+        ge: GameEntity,
+        phobos: bool,
+    ) -> u64 {
+        Self::store_spawned_limbo(substrate, houses, ge, phobos)
     }
 
     /// Store a new object, then place it through active
@@ -2123,7 +2169,7 @@ impl Simulation {
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn unlimbo(&mut self, ge: GameEntity) -> (u64, RevealOutcome) {
         let position = ge.position;
-        let stable_id = Self::store_spawned_limbo(&mut self.substrate, &mut self.houses, ge);
+        let stable_id = Self::store_spawned_limbo(&mut self.substrate, &mut self.houses, ge, false);
         let outcome = self.try_reveal_entity(
             stable_id,
             RevealRequest {
@@ -2164,7 +2210,8 @@ impl Simulation {
         frame_effects: &mut FrameEffects<'_>,
     ) -> (u64, RevealPosition) {
         let position = ge.position;
-        let stable_id = Self::store_spawned_limbo(&mut self.substrate, &mut self.houses, ge);
+        let stable_id =
+            Self::store_spawned_limbo(&mut self.substrate, &mut self.houses, ge, rules.phobos());
         self.commit_constructor_owned_techno_children(stable_id, rules, frame_effects);
         Self::register_house_base_building(
             &self.interner,
@@ -2228,6 +2275,25 @@ impl Simulation {
                 RevealOutcome::Failed(super::lifecycle::RevealFailure::RejectedEarly),
             );
         };
+        // Phobos `TechnoClass_Unlimbo_BuildingStartFacing` (`0x6F6D9E`,
+        // `Ext/Building/Hooks.cpp:1530-1543`): a runtime-created building that
+        // is not a LaserFence takes the configured start facing instead of
+        // the constructor's byte, ahead of the Unlimbo facing application.
+        if rules.phobos()
+            && !scenario_initialization
+            && self
+                .substrate
+                .entities
+                .get(stable_id)
+                .is_some_and(|entity| {
+                    entity.category() == EntityCategory::Structure
+                        && self
+                            .object_type(entity.type_ref(), rules)
+                            .is_some_and(|object| !object.laser_fence)
+                })
+        {
+            self.apply_phobos_building_start_facing(stable_id, rules);
+        }
         let facing = self
             .substrate
             .entities
@@ -2483,7 +2549,6 @@ impl Simulation {
     /// object when the source type's `KeptOnDeploy` (else its global) allows
     /// it. The copied state keeps the timer, kind and tint stage;
     /// `IronTintTimer` restarts, as Phobos copies only those fields.
-    #[cfg(feature = "phobos")]
     fn curtain_to_carry(
         &self,
         from: u64,
@@ -2678,6 +2743,13 @@ impl Simulation {
         else {
             return false;
         };
+        // `Ext/BuildingType/Hooks.Placing.cpp:15-23`, hook `0x00739889` reads
+        // `NumConYards` before the new yard joins it; the live BuildConst
+        // vector is that count, so sample it before the spawn below.
+        let prior_conyards = self
+            .houses
+            .get(&owner_id)
+            .map_or(0, |house| house.build_const_order().len());
 
         // `0x00739422..0x007394D8`: the unit leaves its cell (Mark(UP),
         // vt+0x124(0); the Drive locomotor's Mark_All_Occupation_Bits(0)
@@ -2873,8 +2945,7 @@ impl Simulation {
         if let Some(source) = self.substrate.entities.get(stable_id) {
             crate::sim::limpet::carry(source, &mut destination);
         }
-        #[cfg(feature = "phobos")]
-        {
+        if rules.phobos() {
             destination.invulnerability = self.curtain_to_carry(stable_id, rules);
         }
         // RESIDUAL: native Selects the placed building (vt+0x14C,
@@ -2990,7 +3061,11 @@ impl Simulation {
             rules,
         );
         *self.mission_spawned_entities = true;
-        if recalc_context.is_some() {
+        // `!AISetBaseCenter && NumConYards > 1` skips the whole
+        // `0x00739889..0x0073992B` block, including the gather call at
+        // `0x00739926`; key on (constructed default) always runs it.
+        let base_center_block = rules.phobos_globals.ai_set_base_center || prior_conyards <= 1;
+        if recalc_context.is_some() && base_center_block {
             // The new Building's committed north-west anchor is the native
             // `+0x9C/+0xA0` source. This bounded write order is load-bearing:
             // primary center, then the shared AI half (Computer_Paranoid,
@@ -3015,6 +3090,10 @@ impl Simulation {
         // 0x00739956: a Slave Miner's manager moves to its refinery (the
         // hand-off 0x006B0D10, then SetOwner 0x006AF580) before the unit
         // leaves; the refinery's own fresh slaves are freed.
+        // Phobos `UnitClass_Deploy_Transfer @ 0x739956`: the unit's
+        // AttachEffects move to the building before the slave hand-off and
+        // the unit's UnInit.
+        self.transfer_phobos_attach_effects(stable_id, new_sid, rules);
         // Ares UnitClass_Deploy_Transfer (10048E90 -> 10045A80): the bomb,
         // then the original owner.
         if rules.ares() {
@@ -3168,7 +3247,6 @@ impl Simulation {
             );
             return;
         };
-        #[cfg(feature = "phobos")]
         let unit = {
             let mut unit = unit;
             unit.invulnerability = self.curtain_to_carry(sid, rules);
@@ -3263,6 +3341,10 @@ impl Simulation {
             // the unit's own.
             unit.veterancy.inherit(&veterancy);
         }
+        // Phobos `BuildingClass_Mi_Selling_Transfer @ 0x44A03C`: after the
+        // building's health/state hand-off and before the slave move and the
+        // building's UnInit, its AttachEffects move to the new unit.
+        self.transfer_phobos_attach_effects(sid, new_sid, rules);
         // Ares BuildingClass_Mi_Selling_Transfer (10048E90 -> 10045A80).
         if rules.ares() {
             self.transfer_ivan_bomb(sid, new_sid);
@@ -3345,6 +3427,7 @@ impl Simulation {
                 .allows_construction_yard_redeploy())
             && self.construction_yard_redeploy_core_gate(
                 entity,
+                rules,
                 delegated
                     || self
                         .houses
@@ -3356,6 +3439,7 @@ impl Simulation {
     pub(crate) fn construction_yard_redeploy_core_gate(
         &self,
         entity: &GameEntity,
+        rules: &RuleSet,
         authorized: bool,
     ) -> bool {
         // Building44374F..443778 /44F5F3..44F61C admit existing radio
@@ -3365,8 +3449,10 @@ impl Simulation {
         }
         // `BuildingClass::CanUndeployMCV @ 0x00449C15` and
         // `ShouldShowDeployButton @ 0x0044F614`: a mind-controlled yard (+0x2C0)
-        // cannot repack.
-        if entity.seldom.mind_control.controller().is_some() {
+        // cannot repack. Phobos `AllowDeployControlledMCV`
+        // (`Ext/TAction/Body.cpp:234-242`) lifts that same refusal.
+        let allow_controlled = rules.phobos() && rules.phobos_globals.allow_deploy_controlled_mcv;
+        if entity.seldom.mind_control.controller().is_some() && !allow_controlled {
             return false;
         }
         authorized

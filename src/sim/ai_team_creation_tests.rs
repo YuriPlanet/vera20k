@@ -437,6 +437,33 @@ fn ares_trigger_side_tokens_admit_any_registered_side() {
     assert!(super::side_admits(3, 2, true));
 }
 
+#[test]
+fn a_human_controlled_house_stands_down_from_team_creation() {
+    let rules = RuleSet::from_ini(&IniFile::from_str("")).unwrap();
+    let mut sim = Simulation::new();
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
+    sim.session.set_binary_frame_for_test(100);
+    let owner = sim.interner.intern("H0");
+    let mut house = HouseState::new(owner, 0, None, true, 0, 10);
+    // Expired timer, a human-controlled house: without the stand-down the
+    // selector's first act is its `RandomRanged(1, 100)` roll.
+    house.team_creation_mut().timer = CdTimer::from_raw(0, 1);
+    sim.houses.register(house);
+    let before = rng_digest(&sim.scenario_rng);
+    update_team_creation(
+        &mut sim,
+        &rules,
+        owner,
+        &mut crate::sim::world::FrameEffects::default(),
+    );
+    assert_eq!(
+        rng_digest(&sim.scenario_rng),
+        before,
+        "the selector never draws for a command-driven house"
+    );
+}
+
 /// A non-finite running weight, which only a damaged save can hold, counts
 /// as weight 0 (FISTP's indefinite low dword) instead of stopping the draw.
 #[test]
@@ -469,4 +496,226 @@ fn a_non_finite_saved_weight_draws_as_zero() {
         },
     );
     assert_eq!((asked, picked), (vec![(1, 3)], vec![kept_team]));
+}
+
+fn dynamic_delay_world(
+    extra_ini: &str,
+    starts: &[(u16, u16)],
+    difficulty: HouseDifficulty,
+    extra_houses: usize,
+) -> (Simulation, RuleSet, InternedId) {
+    let ini = format!("[General]\nTeamDelays=300,600,900\n{extra_ini}");
+    let rules = RuleSet::from_ini(&IniFile::from_str(&ini)).unwrap();
+    let mut sim = Simulation::new();
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Lan);
+    sim.session.set_binary_frame_for_test(10);
+    let waypoints = starts
+        .iter()
+        .enumerate()
+        .map(|(index, &(rx, ry))| {
+            (
+                index as u32,
+                crate::map::waypoints::Waypoint {
+                    index: index as u32,
+                    rx,
+                    ry,
+                },
+            )
+        })
+        .collect();
+    sim.session.install_waypoints(&waypoints);
+
+    let owner = sim.interner.intern("H0");
+    let mut house = HouseState::new(owner, 0, None, false, 0, 10);
+    house.set_difficulty_for_test(difficulty);
+    house.team_creation_mut().timer = CdTimer::from_raw(9, 0);
+    sim.houses.register(house);
+    for index in 0..extra_houses {
+        let id = sim.interner.intern(&format!("H{}", index + 1));
+        let mut other = HouseState::new(id, index as i32 + 1, None, false, 0, 10);
+        other.team_creation_mut().timer = CdTimer::from_raw(9, 0);
+        sim.houses.register(other);
+    }
+    (sim, rules, owner)
+}
+
+fn restarted_team_delay(sim: &Simulation, owner: InternedId) -> i32 {
+    sim.houses[&owner].team_creation().timer.duration()
+}
+
+#[test]
+fn team_delays_count_rows_select_the_ai_difficulty_column() {
+    let (mut sim, rules, owner) = dynamic_delay_world(
+        "TeamDelays.DynamicType=StartingPoint\nTeamDelays.Count2=10,20,30\n",
+        &[(10, 10), (20, 20)],
+        HouseDifficulty::Easy,
+        0,
+    );
+    update_team_creation(
+        &mut sim,
+        &rules,
+        owner,
+        &mut crate::sim::world::FrameEffects::default(),
+    );
+    assert_eq!(
+        restarted_team_delay(&sim, owner),
+        30,
+        "StartingPoint counts two start waypoints and reads Count2 Z for Easy"
+    );
+}
+
+#[test]
+fn fixed_team_delay_overrides_the_dynamic_count_row() {
+    let (mut sim, rules, owner) = dynamic_delay_world(
+        "TeamDelays.DynamicType=StartingPoint\nTeamDelays.Count2=10,20,30\n",
+        &[(10, 10), (20, 20)],
+        HouseDifficulty::Hard,
+        0,
+    );
+    let stock = sim.houses[&owner].difficulty_value(&rules.general.team_delays);
+    sim.houses
+        .get_mut(&owner)
+        .unwrap()
+        .team_creation_mut()
+        .set_team_delay_action(10, 40, stock);
+    update_team_creation(
+        &mut sim,
+        &rules,
+        owner,
+        &mut crate::sim::world::FrameEffects::default(),
+    );
+    assert_eq!(
+        restarted_team_delay(&sim, owner),
+        40,
+        "Ext/House/Hooks.cpp:606-613 answers the fixed TeamDelay before Count2"
+    );
+}
+
+#[test]
+fn player_count_reads_the_count_row_for_the_houses_difficulty() {
+    let (mut sim, rules, owner) = dynamic_delay_world(
+        "TeamDelays.DynamicType=PlayerCount\nTeamDelays.Count3=40,50,60\n",
+        &[(10, 10), (20, 20)],
+        HouseDifficulty::Hard,
+        2,
+    );
+    update_team_creation(
+        &mut sim,
+        &rules,
+        owner,
+        &mut crate::sim::world::FrameEffects::default(),
+    );
+    assert_eq!(
+        restarted_team_delay(&sim, owner),
+        40,
+        "PlayerCount counts all three houses and reads Count3 X for Hard"
+    );
+}
+
+#[test]
+fn an_absent_count_row_leaves_the_stock_team_delay() {
+    let (mut sim, rules, owner) = dynamic_delay_world(
+        "TeamDelays.DynamicType=StartingPoint\n",
+        &[(10, 10), (20, 20)],
+        HouseDifficulty::Hard,
+        0,
+    );
+    update_team_creation(
+        &mut sim,
+        &rules,
+        owner,
+        &mut crate::sim::world::FrameEffects::default(),
+    );
+    assert_eq!(
+        restarted_team_delay(&sim, owner),
+        300,
+        "zero Count2 falls back to [General] TeamDelays= for hard"
+    );
+}
+
+#[test]
+fn one_start_waypoint_leaves_the_stock_team_delay() {
+    let (mut sim, rules, owner) = dynamic_delay_world(
+        "TeamDelays.DynamicType=StartingPoint\nTeamDelays.Count1=10,20,30\n",
+        &[(10, 10)],
+        HouseDifficulty::Easy,
+        0,
+    );
+    update_team_creation(
+        &mut sim,
+        &rules,
+        owner,
+        &mut crate::sim::world::FrameEffects::default(),
+    );
+    assert_eq!(
+        restarted_team_delay(&sim, owner),
+        900,
+        "the dynamic path requires at least two starting points"
+    );
+}
+
+#[test]
+fn alive_enemies_counts_only_living_non_allied_houses() {
+    let (mut sim, rules, owner) = dynamic_delay_world(
+        "TeamDelays.DynamicType=AliveEnemies\nTeamDelays.Count1=70,80,90\n",
+        &[(10, 10), (20, 20)],
+        HouseDifficulty::Hard,
+        3,
+    );
+    let h1 = sim.interner.intern("H1");
+    let h3 = sim.interner.intern("H3");
+    sim.house_alliances
+        .as_map_mut_for_test()
+        .entry("H0".to_owned())
+        .or_default()
+        .insert("H1".to_owned());
+    sim.houses
+        .get_mut(&h1)
+        .unwrap()
+        .set_is_defeated_for_test(false);
+    sim.houses
+        .get_mut(&h3)
+        .unwrap()
+        .set_is_defeated_for_test(true);
+    update_team_creation(
+        &mut sim,
+        &rules,
+        owner,
+        &mut crate::sim::world::FrameEffects::default(),
+    );
+    assert_eq!(
+        restarted_team_delay(&sim, owner),
+        70,
+        "H1 is allied, H3 is defeated, so only H2 counts and reads Count1 X"
+    );
+}
+
+#[test]
+fn none_and_campaign_keep_the_stock_team_delay() {
+    for (mode, ini) in [
+        (
+            crate::sim::scenario_session::ScenarioGameMode::Lan,
+            "TeamDelays.DynamicType=None\nTeamDelays.Count2=10,20,30\n",
+        ),
+        (
+            crate::sim::scenario_session::ScenarioGameMode::Campaign,
+            "TeamDelays.DynamicType=StartingPoint\nTeamDelays.Count2=10,20,30\n",
+        ),
+    ] {
+        let (mut sim, rules, owner) =
+            dynamic_delay_world(ini, &[(10, 10), (20, 20)], HouseDifficulty::Hard, 0);
+        sim.session.set_game_mode(mode);
+        update_team_creation(
+            &mut sim,
+            &rules,
+            owner,
+            &mut crate::sim::world::FrameEffects::default(),
+        );
+        assert_eq!(
+            restarted_team_delay(&sim, owner),
+            300,
+            "{mode:?} leaves the stock hard TeamDelays= in place"
+        );
+    }
 }

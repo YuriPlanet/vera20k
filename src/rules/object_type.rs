@@ -37,9 +37,6 @@ use crate::rules::terrain_rules::LandType;
 use crate::util::fixed_math::SimFixed;
 use crate::util::native_x87::NativeF64Bits;
 
-mod queries;
-mod reader;
-
 use crate::rules::threat_coefficients;
 
 /// ObjectTypeClass::ReadINI5F95DC..5F9616 reads fixed ART under its retained
@@ -226,11 +223,16 @@ impl InfantryPips {
 /// Every reached ReadINI pass reads all five from the ART section its Image
 /// names, each with its current value as the default
 /// (`InfantryTypeClass::ReadINI`, `0x005246A1..0x0052472D`), so a pass whose
-/// section lacks a key keeps the value an earlier pass read.
+/// section lacks a key keeps the value an earlier pass read. The Phobos
+/// `LoadFromINI` hook (`0x52473F`) then reads `OnlyUseLandSequences=` from
+/// that same ART section (`Ext/InfantryType/Body.cpp:32`), also with its
+/// current nullable value as the default.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct InfantryArt {
     crawls: bool,
     discharge_frames: [i32; 4],
+    #[serde(default)]
+    phobos_land_sequences: crate::rules::phobos_land_sequences::PhobosLandSequences,
 }
 
 impl Default for InfantryArt {
@@ -238,15 +240,25 @@ impl Default for InfantryArt {
         Self {
             crawls: true,
             discharge_frames: [0; 4],
+            phobos_land_sequences: Default::default(),
         }
     }
 }
 
 impl InfantryArt {
+    pub(crate) const fn phobos_land_sequences(
+        &self,
+    ) -> crate::rules::phobos_land_sequences::PhobosLandSequences {
+        self.phobos_land_sequences
+    }
+
     /// One pass's reads from its Image's ART section.
     pub(crate) fn read_pass(&mut self, section: &IniSection) {
         self.crawls = section.read_bool("Crawls", self.crawls);
         crate::rules::art_data::read_infantry_discharge_frames(section, &mut self.discharge_frames);
+        // Phobos `InfantryTypeExt::LoadFromINIFile` (`Ext/InfantryType/Body.cpp:32`):
+        // `OnlyUseLandSequences.Read(exArtINI, pArtSection, ...)`, `Nullable`.
+        self.phobos_land_sequences.read_pass(section);
     }
 }
 
@@ -446,7 +458,6 @@ impl Default for BuildingHiddenOccupancyProfile {
 /// animation and its frame count. `Anims=` drops a token the `AnimType` array
 /// does not hold, so a longer `Tiberiums=` list shifts onto the wrong entry —
 /// Phobos' own alignment, preserved here.
-#[cfg(feature = "phobos")]
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct PhobosOreGathering {
     /// `OreGathering.Anims=`: the resolved `AnimType` section names.
@@ -510,6 +521,1029 @@ pub struct BarrelVoxelOffsets {
     /// `VoxelBarrelOffsetToBuildingPivotPoint=` (`+0x1748/4C/50`), the first
     /// translation off the identity.
     pub building_pivot: [i32; 3],
+}
+
+/// Fixed-catalog bindings retained beside the parsed Phobos type projection.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+struct PhobosResolvedReferences {
+    eva_sold: Option<Option<String>>,
+    voice_pickup: Option<String>,
+    voice_enter_grinder: Option<String>,
+    overload_death_sound: Option<String>,
+    grinding_sound: Option<String>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct PhobosObjectSnapshot {
+    category: ObjectCategory,
+    source_body: IniSection,
+    art_body: IniSection,
+    resolved: PhobosResolvedReferences,
+}
+
+/// The retained Phobos projection and its copy into the ObjectType facade.
+/// Fields already owned by WeaponSlots, InfantryArt and the shadow reader stay
+/// outside this list.
+macro_rules! phobos_object_projection_fields {
+    ($mode:ident($($arguments:tt)*)) => {
+        phobos_object_projection_fields!(
+            @ $mode($($arguments)*);
+            ui_description, Option<String>,
+            phobos_destroy_anim_random, Option<bool>,
+            phobos_auto_target_own_position, bool,
+            phobos_auto_target_own_position_self, bool,
+            phobos_distribute_targeting_frame, Option<bool>,
+            phobos_open_topped, crate::rules::phobos_open_topped::PhobosOpenTopped,
+            phobos_open_transport, crate::rules::phobos_open_transport::PhobosOpenTransport,
+            phobos_eva_sold, Option<Option<String>>,
+            phobos_extended_aircraft_missions, crate::rules::phobos_extended_aircraft_missions::PhobosExtendedAircraftMissions,
+            phobos_no_manual_move, bool,
+            phobos_ignore_for_base_center, bool,
+            phobos_sinkable, Option<bool>,
+            phobos_sink_speed, Option<i32>,
+            phobos_damaged_speed, Option<crate::util::native_x87::NativeF64Bits>,
+            phobos_self_heal_gain_type, Option<crate::rules::phobos_self_heal::SelfHealGainType>,
+            phobos_radar_invisible_to_house, Option<crate::rules::phobos_shields::AffectedHouse>,
+            phobos_engineer_repair_amount, i32,
+            phobos_landing_dir, Option<i32>,
+            phobos_aircraft_docking_dir_default_to_pose_dir, Option<bool>,
+            phobos_paradrop_mission, Option<crate::rules::mission_data::MissionType>,
+            phobos_ai_paradrop_mission, Option<crate::rules::mission_data::MissionType>,
+            phobos_is_aloaner, Option<bool>,
+            phobos_bunker_rof_multiplier, Option<f32>,
+            phobos_ai_guard_area_targeting_delay, Option<i32>,
+            phobos_ai_normal_targeting_delay, Option<i32>,
+            phobos_player_normal_targeting_delay, Option<i32>,
+            phobos_player_guard_area_targeting_delay, Option<i32>,
+            phobos_ai_attack_move_targeting_delay, Option<i32>,
+            phobos_player_attack_move_targeting_delay, Option<i32>,
+            phobos_crush_slowdown_multiplier, Option<crate::util::native_x87::NativeF64Bits>,
+            phobos_chrono_sphere_pre_delay, Option<i32>,
+            phobos_chrono_sphere_delay, Option<i32>,
+            phobos_jumpjet_rotate_on_crash, Option<bool>,
+            phobos_jumpjet_climb_ignore_building, Option<bool>,
+            phobos_factory_plant, crate::rules::phobos_factory_plant::FactoryPlantRestrictions,
+            phobos_passenger_deletion, Option<crate::rules::phobos_passenger_deletion::PassengerDeletionSettings>,
+            phobos_passengers_sync, crate::rules::phobos_passengers_sync::PhobosPassengersSync,
+            phobos_overload, crate::rules::phobos_overload::PhobosOverloadSettings,
+            phobos_grinding, crate::rules::phobos_grinding::PhobosGrindingSettings,
+            phobos_voice_enter_grinder, Option<String>,
+            phobos_build_limit_group, crate::rules::phobos_build_limit_group::BuildLimitGroupSettings,
+            phobos_spawner, crate::rules::phobos_spawner::PhobosSpawner,
+            phobos_keep_target, crate::rules::phobos_keep_target::PhobosKeepTargetOnMove,
+            phobos_techno_extras, crate::rules::phobos_techno_extras::PhobosTechnoExtras,
+            phobos_damaged_image, crate::rules::phobos_damaged_image::PhobosDamagedImage,
+            phobos_hover_drown, crate::rules::phobos_hover_drown::PhobosHoverDrown,
+            phobos_turret_barrel, crate::rules::phobos_turret_barrel::PhobosTurretBarrel,
+            phobos_fire_up, i32,
+            phobos_kill_weapon_suppress, crate::rules::phobos_kill_weapon::PhobosKillWeaponSuppress,
+            phobos_rate_down, crate::rules::phobos_rate_down::PhobosRateDown,
+            phobos_attack_move, crate::rules::phobos_attack_move::PhobosAttackMove,
+            phobos_no_rearm, crate::rules::phobos_no_rearm::PhobosNoRearm,
+            phobos_harvester_guard, crate::rules::phobos_harvester_guard::PhobosHarvesterGuard,
+            phobos_harvester_dump_amount, Option<f32>,
+            phobos_harvester_scan_after_unload, Option<bool>,
+            phobos_convert_health, crate::rules::phobos_convert_health::PhobosConvertHealth,
+            phobos_convert, crate::rules::phobos_convert::PhobosConvert,
+            phobos_turret_anim, crate::rules::phobos_turret_anim::PhobosTurretAnim,
+            phobos_units_repair, crate::rules::phobos_units::PhobosUnitsRepair,
+            phobos_powered_kill_spawns, bool,
+            phobos_start_facing, Option<i32>,
+            phobos_start_facing_random, Option<bool>,
+            phobos_deploy_fire_delay, Option<i32>,
+            phobos_shadow_size_characteristic_height, Option<i32>,
+            phobos_no_alpha_image_on_buildup, Option<bool>,
+            phobos_no_build_area_on_buildup, bool,
+            phobos_set_tab_by_selecting, i32,
+            phobos_tilts_when_crushes_vehicles, Option<bool>,
+            phobos_tilts_when_crushes_overlays, Option<bool>,
+            phobos_crush_overlay_extra_forward_tilt, f64,
+            phobos_crush_forward_tilt_per_frame, Option<f64>,
+            phobos_landing_anim, Option<String>,
+            phobos_paradrop_delay, Option<i32>,
+            phobos_paradrop_end_delay, Option<i32>,
+            phobos_spawn_height, Option<i32>,
+            phobos_spawn_from_edge, Option<crate::rules::phobos_aircraft_edge::PhobosEdgeType>,
+            phobos_retreat_to_edge, Option<crate::rules::phobos_aircraft_edge::PhobosEdgeType>,
+            phobos_firing_force_scatter, Option<bool>,
+            phobos_explodes, crate::rules::phobos_explodes::PhobosExplodesSettings,
+            phobos_extra_threat, crate::rules::phobos_extra_threat::PhobosExtraThreat,
+            phobos_tiberium_eater, Option<crate::rules::phobos_tiberium_eater::PhobosTiberiumEater>,
+            phobos_not_human_random_death_sequence, Option<bool>,
+            phobos_parasite_allow_water_exit, Option<bool>,
+            phobos_cloak_kick_out_parasite, Option<bool>,
+            phobos_cloak_anims, Vec<String>,
+            phobos_decloak_anims, Vec<String>,
+            phobos_sinkable_squid_grab, Option<bool>,
+            phobos_no_turret_track_target, Option<bool>,
+            phobos_team_member_considered_as, Vec<String>,
+            phobos_turret_response, Option<bool>,
+            phobos_makes_wake, Option<bool>,
+            phobos_skip_crush_slowdown, Option<bool>,
+            phobos_recount_burst, Option<bool>,
+            phobos_reveal_houses, Option<crate::rules::phobos_shields::AffectedHouse>,
+            phobos_low_deploy_priority, bool,
+            phobos_destroyable_obstacle, bool,
+            phobos_allow_weapon_select_against_walls, Option<bool>,
+            phobos_amphibious_enter, Option<bool>,
+            phobos_amphibious_unload, Option<bool>,
+            phobos_crash_spin_multiplier, f32,
+            phobos_initial_cloning, crate::rules::ini_value::PartialDoublePair,
+            phobos_cloning_powered, bool,
+            phobos_building_radio_link_sync_owner, Option<bool>,
+            phobos_falling_down_damage, Option<f64>,
+            phobos_falling_down_damage_water, Option<f64>,
+            phobos_falling_down_damage_allow_emp, Option<bool>,
+            wake, Option<String>,
+            phobos_wake_grapple, Option<String>,
+            phobos_wake_sinking, Option<String>,
+            phobos_warp_away, Vec<String>,
+            phobos_drain_money_display, crate::rules::phobos_drain_money_display::DrainMoneyDisplaySettings,
+            phobos_display_income, crate::rules::phobos_drain_money_display::DisplayIncomeSettings,
+            phobos_jumpjet_tilt, crate::rules::phobos_jumpjet_tilt::PhobosJumpjetTiltType,
+            phobos_force_weapon, crate::rules::phobos_force_weapon::PhobosForceWeapon,
+            phobos_interceptor, Option<crate::rules::phobos_interceptor::InterceptorSettings>,
+            phobos_warp_in_weapon, crate::rules::phobos_warp_in_weapon::WarpInWeaponRules,
+            phobos_warp_anim, crate::rules::phobos_warp_anim::WarpAnimRules,
+            phobos_slaved, crate::rules::phobos_slave::PhobosSlaved,
+            phobos_ammo_deploy, crate::rules::phobos_ammo_deploy::PhobosAmmoDeploy,
+            phobos_deploy, crate::rules::phobos_deploy::PhobosDeploy,
+            phobos_penetrates_transport, crate::rules::phobos_penetrates_transport::PenetratesTransportTechnoRules,
+            phobos_missile, crate::rules::phobos_missile::PhobosMissileRules,
+            phobos_droppod, Option<crate::rules::phobos_droppod::PhobosDropPodRules>,
+            phobos_promote, crate::rules::phobos_promote::PhobosPromote,
+            phobos_spy_effect, crate::rules::phobos_spy_effect::PhobosSpyEffect,
+            phobos_driver_killed, crate::rules::phobos_driver_killed::PhobosDriverKilled,
+            phobos_combat_alert, crate::rules::phobos_combat_alert::PhobosCombatAlert,
+            phobos_exit_through_roof, crate::rules::phobos_exit_through_roof::PhobosExitThroughRoof,
+            phobos_voice_pickup, Option<String>,
+            phobos_spawn_distance_from_target, Option<i32>,
+            disable_damage_sound, bool,
+            considered_vehicle, Option<bool>,
+            exclude_from_multiple_factory_bonus, bool,
+            guard_retry_delay, Option<crate::rules::ini_value::PartialIntPair>,
+            phobos_area_guard_range, Option<SimFixed>,
+            phobos_max_guard_range, Option<SimFixed>,
+            harvester_counted, Option<bool>,
+            phobos_crate_goodie_reroll_chance, f64,
+            initial_spawns_number, Option<i32>,
+            no_spawn_alt, bool,
+            phobos_undeploys_into_sellable, bool,
+            immune_to_veins, bool,
+            barracks_exit_cell, Option<(i32, i32)>,
+            sell_buildup_length, i32,
+            ammo_shared, bool,
+            ammo_shared_group, i32,
+            empty_ammo_pip_frame, i32,
+            ammo_pip_frame, i32,
+            ammo_pip_wrap_start_frame, i32,
+            ammo_pip_size, Option<[i32; 2]>,
+            ammo_pip_offset, [i32; 2],
+            phobos_show_spawns_pips, bool,
+            phobos_spawns_pip_frame, i32,
+            phobos_empty_spawns_pip_frame, i32,
+            phobos_spawns_pip_size, Option<[i32; 2]>,
+            phobos_spawns_pip_offset, [i32; 2],
+            phobos_bunkerable_anyway, bool,
+            phobos_bunker_state_update_delay, Option<i32>,
+            overpower_keep_online, i32,
+            overpower_charge_weapon, i32,
+            phobos_can_c4_allow_zero_damage, bool,
+            aircraft_docking_dirs, Vec<Option<u8>>,
+            reveal_to_all_radius, Option<i32>,
+            debris_minimums, Vec<i32>,
+            phobos_debris_types_limit, Option<bool>,
+            phobos_psychic_detectable, bool,
+            phobos_auto_death, crate::rules::phobos_auto_death::AutoDeathTypeSettings,
+            phobos_health_bar, crate::rules::phobos_health_bar::HealthBarSettings,
+        );
+    };
+    (@struct(); $($field:ident, $ty:ty),* $(,)?) => {
+        #[derive(Debug, Clone)]
+        pub(crate) struct PhobosObjectProjection {
+            pub(crate) category: ObjectCategory,
+            pub(crate) source_body: IniSection,
+            pub(crate) art_body: IniSection,
+            resolved: PhobosResolvedReferences,
+            $($field: $ty,)*
+        }
+    };
+    (@copy($object:ident, $source:tt); $($field:ident, $ty:ty),* $(,)?) => {
+        impl PhobosObjectProjection {
+            pub(crate) fn apply_to(&$source, $object: &mut ObjectType) {
+                $($object.$field.clone_from(&$source.$field);)*
+            }
+        }
+    };
+    (@object($projection:ident) [$($fields:tt)*]; $($field:ident, $ty:ty),* $(,)?) => {
+        Self {
+            $($fields)*
+            $($field: $projection.$field.clone(),)*
+        }
+    };
+    (@initialize($projection:ident); $($field:ident, $ty:ty),* $(,)?) => {
+        $($field: $projection.$field.clone(),)*
+    };
+}
+
+macro_rules! phobos_object_projection_initializers {
+    ($projection:ident, $($fields:tt)*) => {
+        Self {
+            $($fields)*
+            ui_description: $projection.ui_description.clone(),
+            phobos_destroy_anim_random: $projection.phobos_destroy_anim_random.clone(),
+            phobos_auto_target_own_position: $projection.phobos_auto_target_own_position.clone(),
+            phobos_auto_target_own_position_self: $projection.phobos_auto_target_own_position_self.clone(),
+            phobos_distribute_targeting_frame: $projection.phobos_distribute_targeting_frame.clone(),
+            phobos_open_topped: $projection.phobos_open_topped.clone(),
+            phobos_open_transport: $projection.phobos_open_transport.clone(),
+            phobos_eva_sold: $projection.phobos_eva_sold.clone(),
+            phobos_extended_aircraft_missions: $projection.phobos_extended_aircraft_missions.clone(),
+            phobos_no_manual_move: $projection.phobos_no_manual_move.clone(),
+            phobos_ignore_for_base_center: $projection.phobos_ignore_for_base_center.clone(),
+            phobos_sinkable: $projection.phobos_sinkable.clone(),
+            phobos_sink_speed: $projection.phobos_sink_speed.clone(),
+            phobos_damaged_speed: $projection.phobos_damaged_speed.clone(),
+            phobos_self_heal_gain_type: $projection.phobos_self_heal_gain_type.clone(),
+            phobos_radar_invisible_to_house: $projection.phobos_radar_invisible_to_house.clone(),
+            phobos_engineer_repair_amount: $projection.phobos_engineer_repair_amount.clone(),
+            phobos_landing_dir: $projection.phobos_landing_dir.clone(),
+            phobos_aircraft_docking_dir_default_to_pose_dir: $projection.phobos_aircraft_docking_dir_default_to_pose_dir.clone(),
+            phobos_paradrop_mission: $projection.phobos_paradrop_mission.clone(),
+            phobos_ai_paradrop_mission: $projection.phobos_ai_paradrop_mission.clone(),
+            phobos_is_aloaner: $projection.phobos_is_aloaner.clone(),
+            phobos_bunker_rof_multiplier: $projection.phobos_bunker_rof_multiplier.clone(),
+            phobos_ai_guard_area_targeting_delay: $projection.phobos_ai_guard_area_targeting_delay.clone(),
+            phobos_ai_normal_targeting_delay: $projection.phobos_ai_normal_targeting_delay.clone(),
+            phobos_player_normal_targeting_delay: $projection.phobos_player_normal_targeting_delay.clone(),
+            phobos_player_guard_area_targeting_delay: $projection.phobos_player_guard_area_targeting_delay.clone(),
+            phobos_ai_attack_move_targeting_delay: $projection.phobos_ai_attack_move_targeting_delay.clone(),
+            phobos_player_attack_move_targeting_delay: $projection.phobos_player_attack_move_targeting_delay.clone(),
+            phobos_crush_slowdown_multiplier: $projection.phobos_crush_slowdown_multiplier.clone(),
+            phobos_chrono_sphere_pre_delay: $projection.phobos_chrono_sphere_pre_delay.clone(),
+            phobos_chrono_sphere_delay: $projection.phobos_chrono_sphere_delay.clone(),
+            phobos_jumpjet_rotate_on_crash: $projection.phobos_jumpjet_rotate_on_crash.clone(),
+            phobos_jumpjet_climb_ignore_building: $projection.phobos_jumpjet_climb_ignore_building.clone(),
+            phobos_factory_plant: $projection.phobos_factory_plant.clone(),
+            phobos_passenger_deletion: $projection.phobos_passenger_deletion.clone(),
+            phobos_passengers_sync: $projection.phobos_passengers_sync.clone(),
+            phobos_overload: $projection.phobos_overload.clone(),
+            phobos_grinding: $projection.phobos_grinding.clone(),
+            phobos_voice_enter_grinder: $projection.phobos_voice_enter_grinder.clone(),
+            phobos_build_limit_group: $projection.phobos_build_limit_group.clone(),
+            phobos_spawner: $projection.phobos_spawner.clone(),
+            phobos_keep_target: $projection.phobos_keep_target.clone(),
+            phobos_techno_extras: $projection.phobos_techno_extras.clone(),
+            phobos_damaged_image: $projection.phobos_damaged_image.clone(),
+            phobos_hover_drown: $projection.phobos_hover_drown.clone(),
+            phobos_turret_barrel: $projection.phobos_turret_barrel.clone(),
+            phobos_fire_up: $projection.phobos_fire_up.clone(),
+            phobos_kill_weapon_suppress: $projection.phobos_kill_weapon_suppress.clone(),
+            phobos_rate_down: $projection.phobos_rate_down.clone(),
+            phobos_attack_move: $projection.phobos_attack_move.clone(),
+            phobos_no_rearm: $projection.phobos_no_rearm.clone(),
+            phobos_harvester_guard: $projection.phobos_harvester_guard.clone(),
+            phobos_harvester_dump_amount: $projection.phobos_harvester_dump_amount.clone(),
+            phobos_harvester_scan_after_unload: $projection.phobos_harvester_scan_after_unload.clone(),
+            phobos_convert_health: $projection.phobos_convert_health.clone(),
+            phobos_convert: $projection.phobos_convert.clone(),
+            phobos_turret_anim: $projection.phobos_turret_anim.clone(),
+            phobos_units_repair: $projection.phobos_units_repair.clone(),
+            phobos_powered_kill_spawns: $projection.phobos_powered_kill_spawns.clone(),
+            phobos_start_facing: $projection.phobos_start_facing.clone(),
+            phobos_start_facing_random: $projection.phobos_start_facing_random.clone(),
+            phobos_deploy_fire_delay: $projection.phobos_deploy_fire_delay.clone(),
+            phobos_shadow_size_characteristic_height: $projection.phobos_shadow_size_characteristic_height.clone(),
+            phobos_no_alpha_image_on_buildup: $projection.phobos_no_alpha_image_on_buildup.clone(),
+            phobos_no_build_area_on_buildup: $projection.phobos_no_build_area_on_buildup.clone(),
+            phobos_set_tab_by_selecting: $projection.phobos_set_tab_by_selecting.clone(),
+            phobos_tilts_when_crushes_vehicles: $projection.phobos_tilts_when_crushes_vehicles.clone(),
+            phobos_tilts_when_crushes_overlays: $projection.phobos_tilts_when_crushes_overlays.clone(),
+            phobos_crush_overlay_extra_forward_tilt: $projection.phobos_crush_overlay_extra_forward_tilt.clone(),
+            phobos_crush_forward_tilt_per_frame: $projection.phobos_crush_forward_tilt_per_frame.clone(),
+            phobos_landing_anim: $projection.phobos_landing_anim.clone(),
+            phobos_paradrop_delay: $projection.phobos_paradrop_delay.clone(),
+            phobos_paradrop_end_delay: $projection.phobos_paradrop_end_delay.clone(),
+            phobos_spawn_height: $projection.phobos_spawn_height.clone(),
+            phobos_spawn_from_edge: $projection.phobos_spawn_from_edge.clone(),
+            phobos_retreat_to_edge: $projection.phobos_retreat_to_edge.clone(),
+            phobos_firing_force_scatter: $projection.phobos_firing_force_scatter.clone(),
+            phobos_explodes: $projection.phobos_explodes.clone(),
+            phobos_extra_threat: $projection.phobos_extra_threat.clone(),
+            phobos_tiberium_eater: $projection.phobos_tiberium_eater.clone(),
+            phobos_not_human_random_death_sequence: $projection.phobos_not_human_random_death_sequence.clone(),
+            phobos_parasite_allow_water_exit: $projection.phobos_parasite_allow_water_exit.clone(),
+            phobos_cloak_kick_out_parasite: $projection.phobos_cloak_kick_out_parasite.clone(),
+            phobos_cloak_anims: $projection.phobos_cloak_anims.clone(),
+            phobos_decloak_anims: $projection.phobos_decloak_anims.clone(),
+            phobos_sinkable_squid_grab: $projection.phobos_sinkable_squid_grab.clone(),
+            phobos_no_turret_track_target: $projection.phobos_no_turret_track_target.clone(),
+            phobos_team_member_considered_as: $projection.phobos_team_member_considered_as.clone(),
+            phobos_turret_response: $projection.phobos_turret_response.clone(),
+            phobos_makes_wake: $projection.phobos_makes_wake.clone(),
+            phobos_skip_crush_slowdown: $projection.phobos_skip_crush_slowdown.clone(),
+            phobos_recount_burst: $projection.phobos_recount_burst.clone(),
+            phobos_reveal_houses: $projection.phobos_reveal_houses.clone(),
+            phobos_low_deploy_priority: $projection.phobos_low_deploy_priority.clone(),
+            phobos_destroyable_obstacle: $projection.phobos_destroyable_obstacle.clone(),
+            phobos_allow_weapon_select_against_walls: $projection.phobos_allow_weapon_select_against_walls.clone(),
+            phobos_amphibious_enter: $projection.phobos_amphibious_enter.clone(),
+            phobos_amphibious_unload: $projection.phobos_amphibious_unload.clone(),
+            phobos_crash_spin_multiplier: $projection.phobos_crash_spin_multiplier.clone(),
+            phobos_initial_cloning: $projection.phobos_initial_cloning.clone(),
+            phobos_cloning_powered: $projection.phobos_cloning_powered.clone(),
+            phobos_building_radio_link_sync_owner: $projection.phobos_building_radio_link_sync_owner.clone(),
+            phobos_falling_down_damage: $projection.phobos_falling_down_damage.clone(),
+            phobos_falling_down_damage_water: $projection.phobos_falling_down_damage_water.clone(),
+            phobos_falling_down_damage_allow_emp: $projection.phobos_falling_down_damage_allow_emp.clone(),
+            wake: $projection.wake.clone(),
+            phobos_wake_grapple: $projection.phobos_wake_grapple.clone(),
+            phobos_wake_sinking: $projection.phobos_wake_sinking.clone(),
+            phobos_warp_away: $projection.phobos_warp_away.clone(),
+            phobos_drain_money_display: $projection.phobos_drain_money_display.clone(),
+            phobos_display_income: $projection.phobos_display_income.clone(),
+            phobos_jumpjet_tilt: $projection.phobos_jumpjet_tilt.clone(),
+            phobos_force_weapon: $projection.phobos_force_weapon.clone(),
+            phobos_interceptor: $projection.phobos_interceptor.clone(),
+            phobos_warp_in_weapon: $projection.phobos_warp_in_weapon.clone(),
+            phobos_warp_anim: $projection.phobos_warp_anim.clone(),
+            phobos_slaved: $projection.phobos_slaved.clone(),
+            phobos_ammo_deploy: $projection.phobos_ammo_deploy.clone(),
+            phobos_deploy: $projection.phobos_deploy.clone(),
+            phobos_penetrates_transport: $projection.phobos_penetrates_transport.clone(),
+            phobos_missile: $projection.phobos_missile.clone(),
+            phobos_droppod: $projection.phobos_droppod.clone(),
+            phobos_promote: $projection.phobos_promote.clone(),
+            phobos_spy_effect: $projection.phobos_spy_effect.clone(),
+            phobos_driver_killed: $projection.phobos_driver_killed.clone(),
+            phobos_combat_alert: $projection.phobos_combat_alert.clone(),
+            phobos_exit_through_roof: $projection.phobos_exit_through_roof.clone(),
+            phobos_voice_pickup: $projection.phobos_voice_pickup.clone(),
+            phobos_spawn_distance_from_target: $projection.phobos_spawn_distance_from_target.clone(),
+            disable_damage_sound: $projection.disable_damage_sound.clone(),
+            considered_vehicle: $projection.considered_vehicle.clone(),
+            exclude_from_multiple_factory_bonus: $projection.exclude_from_multiple_factory_bonus.clone(),
+            guard_retry_delay: $projection.guard_retry_delay.clone(),
+            phobos_area_guard_range: $projection.phobos_area_guard_range.clone(),
+            phobos_max_guard_range: $projection.phobos_max_guard_range.clone(),
+            harvester_counted: $projection.harvester_counted.clone(),
+            phobos_crate_goodie_reroll_chance: $projection.phobos_crate_goodie_reroll_chance.clone(),
+            initial_spawns_number: $projection.initial_spawns_number.clone(),
+            no_spawn_alt: $projection.no_spawn_alt.clone(),
+            phobos_undeploys_into_sellable: $projection.phobos_undeploys_into_sellable.clone(),
+            immune_to_veins: $projection.immune_to_veins.clone(),
+            barracks_exit_cell: $projection.barracks_exit_cell.clone(),
+            sell_buildup_length: $projection.sell_buildup_length.clone(),
+            ammo_shared: $projection.ammo_shared.clone(),
+            ammo_shared_group: $projection.ammo_shared_group.clone(),
+            empty_ammo_pip_frame: $projection.empty_ammo_pip_frame.clone(),
+            ammo_pip_frame: $projection.ammo_pip_frame.clone(),
+            ammo_pip_wrap_start_frame: $projection.ammo_pip_wrap_start_frame.clone(),
+            ammo_pip_size: $projection.ammo_pip_size.clone(),
+            ammo_pip_offset: $projection.ammo_pip_offset.clone(),
+            phobos_show_spawns_pips: $projection.phobos_show_spawns_pips.clone(),
+            phobos_spawns_pip_frame: $projection.phobos_spawns_pip_frame.clone(),
+            phobos_empty_spawns_pip_frame: $projection.phobos_empty_spawns_pip_frame.clone(),
+            phobos_spawns_pip_size: $projection.phobos_spawns_pip_size.clone(),
+            phobos_spawns_pip_offset: $projection.phobos_spawns_pip_offset.clone(),
+            phobos_bunkerable_anyway: $projection.phobos_bunkerable_anyway.clone(),
+            phobos_bunker_state_update_delay: $projection.phobos_bunker_state_update_delay.clone(),
+            overpower_keep_online: $projection.overpower_keep_online.clone(),
+            overpower_charge_weapon: $projection.overpower_charge_weapon.clone(),
+            phobos_can_c4_allow_zero_damage: $projection.phobos_can_c4_allow_zero_damage.clone(),
+            aircraft_docking_dirs: $projection.aircraft_docking_dirs.clone(),
+            reveal_to_all_radius: $projection.reveal_to_all_radius.clone(),
+            debris_minimums: $projection.debris_minimums.clone(),
+            phobos_debris_types_limit: $projection.phobos_debris_types_limit.clone(),
+            phobos_psychic_detectable: $projection.phobos_psychic_detectable.clone(),
+            phobos_auto_death: $projection.phobos_auto_death.clone(),
+            phobos_health_bar: $projection.phobos_health_bar.clone(),
+        }
+    };
+}
+
+phobos_object_projection_fields!(struct());
+phobos_object_projection_fields!(copy(object, self));
+
+mod queries;
+mod reader;
+
+impl Default for PhobosObjectProjection {
+    fn default() -> Self {
+        Self::new(ObjectCategory::Building)
+    }
+}
+
+impl PhobosObjectProjection {
+    pub(crate) fn new(category: ObjectCategory) -> Self {
+        Self::from_section(&IniSection::new(String::new()), category)
+    }
+
+    /// The PR-head TechnoType/Category reader expression list, evaluated over
+    /// the retained layered body. `ProcessedType` owns this result; ObjectType
+    /// receives only the final projection.
+    pub(crate) fn from_section(section: &IniSection, category: ObjectCategory) -> Self {
+        let number_of_docks = section.read_int("NumberOfDocks", 1);
+        let present_range = |key: &str| {
+            section
+                .is_present(key)
+                .then(|| SimFixed::from_bits(section.read_range(key, 0) << 8))
+        };
+        Self {
+            category,
+            source_body: section.clone(),
+            art_body: IniSection::new(String::new()),
+            resolved: PhobosResolvedReferences::default(),
+            ui_description: section.read_name("UIDescription", 0x20).map(str::to_owned),
+            phobos_destroy_anim_random: section
+                .read_phobos_nullable_bool("DestroyAnim.Random", None),
+            phobos_auto_target_own_position: {
+                let value = section.read_bool("AutoFire", false);
+                section.read_bool("AutoTargetOwnPosition", value)
+            },
+            phobos_auto_target_own_position_self: {
+                let value = section.read_bool("AutoFire.TargetSelf", false);
+                section.read_bool("AutoTargetOwnPosition.Self", value)
+            },
+            phobos_distribute_targeting_frame: section
+                .read_phobos_nullable_bool("DistributeTargetingFrame", None),
+            phobos_auto_death: crate::rules::phobos_auto_death::AutoDeathTypeSettings::from_section(
+                section,
+            ),
+            phobos_health_bar: crate::rules::phobos_health_bar::HealthBarSettings::from_section(
+                section,
+            ),
+            phobos_passenger_deletion:
+                crate::rules::phobos_passenger_deletion::PassengerDeletionSettings::from_section(
+                    section,
+                ),
+            phobos_passengers_sync:
+                crate::rules::phobos_passengers_sync::PhobosPassengersSync::from_section(section),
+            phobos_overload: crate::rules::phobos_overload::PhobosOverloadSettings::from_section(
+                section,
+            ),
+            phobos_grinding: crate::rules::phobos_grinding::PhobosGrindingSettings::from_section(
+                section,
+            ),
+            phobos_voice_enter_grinder: None,
+            phobos_build_limit_group:
+                crate::rules::phobos_build_limit_group::BuildLimitGroupSettings::from_section(
+                    section,
+                ),
+            phobos_spawner: crate::rules::phobos_spawner::PhobosSpawner::from_section(section),
+            phobos_keep_target:
+                crate::rules::phobos_keep_target::PhobosKeepTargetOnMove::from_section(section),
+            phobos_techno_extras:
+                crate::rules::phobos_techno_extras::PhobosTechnoExtras::from_section(section),
+            phobos_damaged_image:
+                crate::rules::phobos_damaged_image::PhobosDamagedImage::from_section(section),
+            phobos_hover_drown:
+                crate::rules::phobos_hover_drown::PhobosHoverDrown::from_section(section),
+            phobos_turret_barrel: Default::default(),
+            phobos_fire_up: -1,
+            phobos_kill_weapon_suppress:
+                crate::rules::phobos_kill_weapon::PhobosKillWeaponSuppress::from_section(section),
+            phobos_rate_down: crate::rules::phobos_rate_down::PhobosRateDown::from_section(section),
+            phobos_attack_move:
+                crate::rules::phobos_attack_move::PhobosAttackMove::from_section(section),
+            phobos_no_rearm: crate::rules::phobos_no_rearm::PhobosNoRearm::from_section(section),
+            phobos_harvester_guard:
+                crate::rules::phobos_harvester_guard::PhobosHarvesterGuard::from_section(section),
+            phobos_harvester_dump_amount: (category == ObjectCategory::Vehicle)
+                .then(|| {
+                    section
+                        .read_phobos_nullable_double("HarvesterDumpAmount", None)
+                        .map(|value| value as f32)
+                })
+                .flatten(),
+            phobos_harvester_scan_after_unload: (category == ObjectCategory::Vehicle)
+                .then(|| section.read_phobos_nullable_bool("HarvesterScanAfterUnload", None))
+                .flatten(),
+            phobos_convert_health:
+                crate::rules::phobos_convert_health::PhobosConvertHealth::from_section(section),
+            phobos_convert: crate::rules::phobos_convert::PhobosConvert::from_section(section),
+            phobos_turret_anim: crate::rules::phobos_turret_anim::PhobosTurretAnim::from_section(
+                section,
+            ),
+            phobos_units_repair: crate::rules::phobos_units::PhobosUnitsRepair::from_section(
+                section,
+            ),
+            phobos_powered_kill_spawns: category == ObjectCategory::Building
+                && section.read_bool("Powered.KillSpawns", false),
+            phobos_start_facing: (category == ObjectCategory::Building)
+                .then(|| section.read_phobos_nullable_int("StartFacing", None))
+                .flatten(),
+            phobos_start_facing_random: (category == ObjectCategory::Building)
+                .then(|| section.read_phobos_nullable_bool("StartFacing.Random", None))
+                .flatten(),
+            phobos_deploy_fire_delay: (category == ObjectCategory::Building)
+                .then(|| section.read_phobos_nullable_int("DeployFireDelay", None))
+                .flatten(),
+            phobos_no_alpha_image_on_buildup: (category == ObjectCategory::Building)
+                .then(|| section.read_phobos_nullable_bool("NoAlphaImageOnBuildup", None))
+                .flatten(),
+            phobos_no_build_area_on_buildup: category == ObjectCategory::Building
+                && section.read_bool("NoBuildAreaOnBuildup", false),
+            phobos_set_tab_by_selecting: if category == ObjectCategory::Building {
+                section.read_ares_int("SetTabBySelecting", -1)
+            } else {
+                -1
+            },
+            phobos_tilts_when_crushes_vehicles: (category == ObjectCategory::Vehicle)
+                .then(|| section.read_phobos_nullable_bool("TiltsWhenCrushes.Vehicles", None))
+                .flatten(),
+            phobos_tilts_when_crushes_overlays: (category == ObjectCategory::Vehicle)
+                .then(|| section.read_phobos_nullable_bool("TiltsWhenCrushes.Overlays", None))
+                .flatten(),
+            phobos_crush_overlay_extra_forward_tilt: if category == ObjectCategory::Vehicle {
+                section.read_phobos_double("CrushOverlayExtraForwardTilt", 0.02)
+            } else {
+                0.0
+            },
+            phobos_crush_forward_tilt_per_frame: (category == ObjectCategory::Vehicle)
+                .then(|| section.read_phobos_nullable_double("CrushForwardTiltPerFrame", None))
+                .flatten(),
+            phobos_landing_anim: (category == ObjectCategory::Aircraft)
+                .then(|| {
+                    section.read_phobos_nullable_with("LandingAnim", None, |raw| {
+                        Some(raw.to_owned())
+                    })
+                })
+                .flatten(),
+            phobos_paradrop_delay: (category == ObjectCategory::Aircraft)
+                .then(|| section.read_phobos_nullable_int("ParadropDelay", None))
+                .flatten(),
+            phobos_paradrop_end_delay: (category == ObjectCategory::Aircraft)
+                .then(|| section.read_phobos_nullable_int("ParadropEndDelay", None))
+                .flatten(),
+            phobos_shadow_size_characteristic_height: section
+                .read_phobos_nullable_int("ShadowSizeCharacteristicHeight", None),
+            phobos_spawn_height: (category == ObjectCategory::Aircraft)
+                .then(|| section.read_phobos_nullable_int("SpawnHeight", None))
+                .flatten(),
+            phobos_spawn_from_edge: (category == ObjectCategory::Aircraft)
+                .then(|| {
+                    crate::rules::phobos_aircraft_edge::read_spawn_from_edge(section)
+                })
+                .flatten(),
+            phobos_retreat_to_edge: (category == ObjectCategory::Aircraft)
+                .then(|| {
+                    crate::rules::phobos_aircraft_edge::read_retreat_to_edge(section)
+                })
+                .flatten(),
+            phobos_firing_force_scatter: (category == ObjectCategory::Aircraft)
+                .then(|| section.read_phobos_nullable_bool("FiringForceScatter", None))
+                .flatten(),
+            phobos_explodes: crate::rules::phobos_explodes::PhobosExplodesSettings::from_section(
+                section,
+                category == ObjectCategory::Building,
+            ),
+            phobos_extra_threat:
+                crate::rules::phobos_extra_threat::PhobosExtraThreat::from_section(section),
+            phobos_bunker_state_update_delay: (category == ObjectCategory::Building)
+                .then(|| section.read_phobos_nullable_int("BunkerStateUpdateDelay", None))
+                .flatten(),
+            phobos_tiberium_eater: crate::rules::phobos_tiberium_eater::parse(section),
+            phobos_not_human_random_death_sequence: (category == ObjectCategory::Infantry)
+                .then(|| section.read_phobos_nullable_bool("NotHuman.RandomDeathSequence", None))
+                .flatten(),
+            phobos_parasite_allow_water_exit: (category == ObjectCategory::Vehicle)
+                .then(|| section.read_phobos_nullable_bool("Parasite.AllowWaterExit", None))
+                .flatten(),
+            phobos_cloak_kick_out_parasite: crate::rules::phobos_switch::phobos_read(|| {
+                section.read_phobos_nullable_bool("Cloak.KickOutParasite", None)
+            }),
+            phobos_cloak_anims: section
+                .read_list("CloakAnims", 0x800)
+                .map(|tokens| tokens.into_iter().map(str::to_owned).collect())
+                .unwrap_or_default(),
+            phobos_decloak_anims: section
+                .read_list("DecloakAnims", 0x800)
+                .map(|tokens| tokens.into_iter().map(str::to_owned).collect())
+                .unwrap_or_default(),
+            phobos_sinkable_squid_grab: (category == ObjectCategory::Vehicle)
+                .then(|| section.read_phobos_nullable_bool("Sinkable.SquidGrab", None))
+                .flatten(),
+            phobos_no_turret_track_target: (category == ObjectCategory::Vehicle)
+                .then(|| section.read_phobos_nullable_bool("NoTurret.TrackTarget", None))
+                .flatten(),
+            phobos_team_member_considered_as: {
+                let _ares = crate::rules::ares_switch::ares_reads();
+                section
+                    .read_list("TeamMember.ConsideredAs", 0x800)
+                    .map(|tokens| tokens.into_iter().map(str::to_owned).collect())
+                    .unwrap_or_default()
+            },
+            phobos_turret_response: (category == ObjectCategory::Vehicle)
+                .then(|| section.read_phobos_nullable_bool("TurretResponse", None))
+                .flatten(),
+            phobos_skip_crush_slowdown: (category == ObjectCategory::Vehicle)
+                .then(|| section.read_phobos_nullable_bool("SkipCrushSlowdown", None))
+                .flatten(),
+            phobos_recount_burst: section.read_phobos_nullable_bool("RecountBurst", None),
+            phobos_reveal_houses: section.read_phobos_nullable_with(
+                "RevealHouses",
+                None,
+                crate::rules::phobos_shields::AffectedHouse::parse,
+            ),
+            phobos_low_deploy_priority: section.read_bool("LowDeployPriority", false),
+            phobos_destroyable_obstacle: category == ObjectCategory::Building
+                && section.read_bool("IsDestroyableObstacle", false),
+            phobos_allow_weapon_select_against_walls: section
+                .read_phobos_nullable_bool("AllowWeaponSelectAgainstWalls", None),
+            phobos_makes_wake: section.read_phobos_nullable_bool("MakesWake", None),
+            phobos_amphibious_enter: section.read_phobos_nullable_bool("AmphibiousEnter", None),
+            phobos_amphibious_unload: section.read_phobos_nullable_bool("AmphibiousUnload", None),
+            phobos_crash_spin_multiplier: if category == ObjectCategory::Building {
+                1.0
+            } else {
+                section.read_float("CrashSpin.Multiplier", 1.0)
+            },
+            phobos_initial_cloning: section.read_ares_partial_double_pair(
+                "InitialStrength.Cloning",
+                crate::rules::ini_value::PartialDoublePair::single(1.0),
+            ),
+            phobos_cloning_powered: if category == ObjectCategory::Building {
+                section.read_bool("Cloning.Powered", true)
+            } else {
+                true
+            },
+            phobos_building_radio_link_sync_owner: (category == ObjectCategory::Building)
+                .then(|| {
+                    section.read_phobos_nullable_bool("BuildingRadioLink.SyncOwner", None)
+                })
+                .flatten(),
+            phobos_falling_down_damage: (category != ObjectCategory::Building)
+                .then(|| section.read_phobos_nullable_double("FallingDownDamage", None))
+                .flatten(),
+            phobos_falling_down_damage_water: (category != ObjectCategory::Building)
+                .then(|| section.read_phobos_nullable_double("FallingDownDamage.Water", None))
+                .flatten(),
+            phobos_falling_down_damage_allow_emp: (category != ObjectCategory::Building)
+                .then(|| {
+                    section.read_phobos_nullable_bool("FallingDownDamage.AllowEMP", None)
+                })
+                .flatten(),
+            wake: (category != ObjectCategory::Building)
+                .then(|| section.read_name("Wake", 0x31).map(str::to_owned))
+                .flatten(),
+            phobos_wake_grapple: (category != ObjectCategory::Building)
+                .then(|| section.read_name("Wake.Grapple", 0x31).map(str::to_owned))
+                .flatten(),
+            phobos_wake_sinking: (category != ObjectCategory::Building)
+                .then(|| section.read_name("Wake.Sinking", 0x31).map(str::to_owned))
+                .flatten(),
+            phobos_warp_away: crate::rules::phobos_switch::phobos_read(|| {
+                section
+                    .read_list("WarpAway", 0x800)
+                    .map(|tokens| tokens.into_iter().map(str::to_owned).collect())
+                    .unwrap_or_default()
+            }),
+            phobos_drain_money_display:
+                crate::rules::phobos_drain_money_display::DrainMoneyDisplaySettings::from_section(
+                    section,
+                ),
+            phobos_display_income:
+                crate::rules::phobos_drain_money_display::DisplayIncomeSettings::from_section(section),
+            phobos_jumpjet_tilt:
+                crate::rules::phobos_jumpjet_tilt::PhobosJumpjetTiltType::from_section(section),
+            phobos_force_weapon: crate::rules::phobos_force_weapon::PhobosForceWeapon::from_section(
+                section,
+            ),
+            phobos_interceptor: section
+                .read_phobos_nullable_bool("Interceptor", None)
+                .filter(|enabled| *enabled)
+                .map(|_| {
+                    crate::rules::phobos_interceptor::InterceptorSettings::from_section(section)
+                }),
+            phobos_warp_in_weapon:
+                crate::rules::phobos_warp_in_weapon::WarpInWeaponRules::from_section(section),
+            phobos_warp_anim: crate::rules::phobos_warp_anim::WarpAnimRules::from_section(section),
+            phobos_slaved: crate::rules::phobos_slave::PhobosSlaved::from_section(section),
+            phobos_ammo_deploy: crate::rules::phobos_ammo_deploy::PhobosAmmoDeploy::from_section(
+                section,
+            ),
+            phobos_deploy: if category == ObjectCategory::Vehicle {
+                crate::rules::phobos_deploy::PhobosDeploy::from_section(section)
+            } else {
+                crate::rules::phobos_deploy::PhobosDeploy::default()
+            },
+            phobos_penetrates_transport:
+                crate::rules::phobos_penetrates_transport::PenetratesTransportTechnoRules::from_section(
+                    section,
+                ),
+            phobos_missile: crate::rules::phobos_missile::PhobosMissileRules::from_section(section),
+            phobos_droppod: (category != ObjectCategory::Building).then(|| {
+                crate::rules::phobos_droppod::PhobosDropPodRules::from_section(section)
+            }),
+            phobos_promote: crate::rules::phobos_promote::PhobosPromote::from_section(section),
+            phobos_spy_effect: crate::rules::phobos_spy_effect::PhobosSpyEffect::from_section(
+                section,
+            ),
+            phobos_driver_killed:
+                crate::rules::phobos_driver_killed::PhobosDriverKilled::from_section(section),
+            phobos_combat_alert:
+                crate::rules::phobos_combat_alert::PhobosCombatAlert::from_section(section),
+            phobos_exit_through_roof:
+                crate::rules::phobos_exit_through_roof::PhobosExitThroughRoof::from_section(section),
+            ammo_shared: section.read_bool("Ammo.Shared", false),
+            ammo_shared_group: section.read_int("Ammo.Shared.Group", -1),
+            phobos_open_topped:
+                crate::rules::phobos_open_topped::PhobosOpenTopped::from_section(section),
+            phobos_open_transport:
+                crate::rules::phobos_open_transport::PhobosOpenTransport::from_section(section),
+            phobos_eva_sold: section.read_string_presence("EVA.Sold", 2048).map(|name| {
+                if name.is_empty() {
+                    None
+                } else {
+                    Some(name)
+                }
+            }),
+            phobos_extended_aircraft_missions: if category == ObjectCategory::Aircraft {
+                crate::rules::phobos_extended_aircraft_missions::PhobosExtendedAircraftMissions::from_section(
+                    section,
+                )
+            } else {
+                Default::default()
+            },
+            phobos_voice_pickup: None,
+            phobos_spawn_distance_from_target: (category == ObjectCategory::Aircraft)
+                .then(|| section.read_phobos_nullable_leptons("SpawnDistanceFromTarget", None))
+                .flatten(),
+            disable_damage_sound: category == ObjectCategory::Building
+                && section.read_bool("DisableDamageSound", false),
+            considered_vehicle: if category == ObjectCategory::Building {
+                section.read_phobos_nullable_bool("ConsideredVehicle", None)
+            } else {
+                None
+            },
+            exclude_from_multiple_factory_bonus: category == ObjectCategory::Building
+                && section.read_bool("ExcludeFromMultipleFactoryBonus", false),
+            guard_retry_delay: if category == ObjectCategory::Building {
+                section.read_phobos_nullable_partial_int_pair("GuardRetryDelay", None)
+            } else {
+                None
+            },
+            phobos_area_guard_range: present_range("AreaGuardRange"),
+            phobos_max_guard_range: present_range("MaxGuardRange"),
+            harvester_counted: section.read_phobos_nullable_bool("Harvester.Counted", None),
+            phobos_crate_goodie_reroll_chance: if category == ObjectCategory::Vehicle {
+                section.read_phobos_double("CrateGoodie.RerollChance", 0.0)
+            } else {
+                0.0
+            },
+            no_spawn_alt: section.read_bool("NoSpawnAlt", false),
+            phobos_landing_dir: section.read_phobos_nullable_int("LandingDir", None),
+            immune_to_veins: section.read_bool("ImmuneToVeins", false),
+            phobos_undeploys_into_sellable: category == ObjectCategory::Building
+                && section.read_bool("UndeploysInto.Sellable", false),
+            barracks_exit_cell: if category == ObjectCategory::Building {
+                section
+                    .read_phobos_nullable_int_pair("BarracksExitCell", None)
+                    .map(|[x, y]| (x, y))
+            } else {
+                None
+            },
+            sell_buildup_length: if category == ObjectCategory::Building {
+                section.read_int("SellBuildupLength", 23)
+            } else {
+                23
+            },
+            empty_ammo_pip_frame: section.read_int("EmptyAmmoPipFrame", -1),
+            ammo_pip_frame: section.read_int("AmmoPipFrame", 13),
+            ammo_pip_wrap_start_frame: section.read_int("AmmoPipWrapStartFrame", 14),
+            ammo_pip_size: section.read_phobos_nullable_int_pair("AmmoPipSize", None),
+            ammo_pip_offset: section.read_phobos_int_pair("AmmoPipOffset", [0, 0]),
+            phobos_show_spawns_pips: section.read_bool("ShowSpawnsPips", true),
+            phobos_spawns_pip_frame: section.read_int("SpawnsPipFrame", 1),
+            phobos_empty_spawns_pip_frame: section.read_int("EmptySpawnsPipFrame", 0),
+            phobos_spawns_pip_size: section
+                .read_phobos_nullable_int_pair("SpawnsPipSize", None),
+            phobos_spawns_pip_offset: section.read_phobos_int_pair("SpawnsPipOffset", [0, 0]),
+            phobos_bunkerable_anyway: section.read_bool("BunkerableAnyway", false),
+            overpower_keep_online: crate::rules::phobos_switch::phobos_read(|| {
+                section.read_int("Overpower.KeepOnline", 2)
+            }),
+            overpower_charge_weapon: crate::rules::phobos_switch::phobos_read(|| {
+                section.read_int("Overpower.ChargeWeapon", 1)
+            }),
+            phobos_can_c4_allow_zero_damage: category == ObjectCategory::Building
+                && crate::rules::phobos_switch::phobos_read(|| {
+                    section.read_bool("CanC4.AllowZeroDamage", false)
+                }),
+            phobos_aircraft_docking_dir_default_to_pose_dir: None,
+            reveal_to_all_radius: crate::rules::phobos_switch::phobos_read(|| {
+                section.read_phobos_nullable_int("RevealToAll.Radius", None)
+            }),
+            phobos_psychic_detectable: section.read_bool("PsychicDetectable", true),
+            phobos_no_manual_move: section.read_bool("NoManualMove", false),
+            phobos_ignore_for_base_center: section.read_bool("IgnoreForBaseCenter", false),
+            phobos_sinkable: section.read_phobos_nullable_bool("Sinkable", None),
+            phobos_sink_speed: section.read_phobos_nullable_int("SinkSpeed", None),
+            phobos_damaged_speed: section
+                .read_phobos_nullable_double("DamagedSpeed", None)
+                .map(|value| crate::util::native_x87::NativeF64Bits::from_bits(value.to_bits())),
+            phobos_self_heal_gain_type: section
+                .read_string_with("SelfHealGainType", 2048, None, |current, value| {
+                    crate::rules::phobos_self_heal::SelfHealGainType::parse(value).or(current)
+                }),
+            phobos_radar_invisible_to_house: section
+                .read_string_with("RadarInvisibleToHouse", 2048, None, |current, value| {
+                    crate::rules::phobos_shields::AffectedHouse::parse(value).or(current)
+                }),
+            phobos_engineer_repair_amount: section.read_int("EngineerRepairAmount", 0),
+            phobos_paradrop_mission: crate::rules::phobos_switch::phobos_read(|| {
+                section.read_string_with("ParadropMission", 2048, None, |current, value| {
+                    crate::rules::mission_data::MissionType::from_map_name(value).or(current)
+                })
+            }),
+            phobos_ai_paradrop_mission: crate::rules::phobos_switch::phobos_read(|| {
+                section.read_string_with("AIParadropMission", 2048, None, |current, value| {
+                    crate::rules::mission_data::MissionType::from_map_name(value).or(current)
+                })
+            }),
+            phobos_is_aloaner: section.read_phobos_nullable_bool("IsALoaner", None),
+            phobos_bunker_rof_multiplier: section
+                .read_phobos_nullable_double("BunkerROFMultMultiplier", None)
+                .map(|value| value as f32),
+            phobos_ai_guard_area_targeting_delay: section
+                .read_phobos_nullable_int("AIGuardAreaTargetingDelay", None),
+            phobos_ai_normal_targeting_delay: section
+                .read_phobos_nullable_int("AINormalTargetingDelay", None),
+            phobos_player_normal_targeting_delay: section
+                .read_phobos_nullable_int("PlayerNormalTargetingDelay", None),
+            phobos_player_guard_area_targeting_delay: section
+                .read_phobos_nullable_int("PlayerGuardAreaTargetingDelay", None),
+            phobos_ai_attack_move_targeting_delay: section
+                .read_phobos_nullable_int("AIAttackMoveTargetingDelay", None),
+            phobos_player_attack_move_targeting_delay: section
+                .read_phobos_nullable_int("PlayerAttackMoveTargetingDelay", None),
+            phobos_crush_slowdown_multiplier: section
+                .read_phobos_nullable_double("CrushSlowdownMultiplier", None)
+                .map(|value| crate::util::native_x87::NativeF64Bits::from_bits(value.to_bits())),
+            phobos_chrono_sphere_pre_delay: section
+                .read_phobos_nullable_int("ChronoSpherePreDelay", None),
+            phobos_chrono_sphere_delay: section
+                .read_phobos_nullable_int("ChronoSphereDelay", None),
+            phobos_jumpjet_rotate_on_crash: section
+                .read_phobos_nullable_bool("JumpjetRotateOnCrash", None),
+            phobos_jumpjet_climb_ignore_building: section
+                .read_phobos_nullable_bool("JumpjetClimbIgnoreBuilding", None),
+            phobos_factory_plant: if category == ObjectCategory::Building {
+                crate::rules::phobos_factory_plant::FactoryPlantRestrictions::from_section(section)
+            } else {
+                Default::default()
+            },
+            initial_spawns_number: section.read_phobos_nullable_int("InitialSpawnsNumber", None),
+            phobos_debris_types_limit: section
+                .read_phobos_nullable_bool("DebrisTypes.Limit", None),
+            debris_minimums: section.read_int_list("DebrisMinimums").unwrap_or_default(),
+            aircraft_docking_dirs: {
+                const MAX_AIRCRAFT_DOCKING_DIRS: i32 = 64;
+                if category == ObjectCategory::Building && number_of_docks > 0 {
+                    let count = number_of_docks.min(MAX_AIRCRAFT_DOCKING_DIRS) as usize;
+                    let mut dirs = vec![None; count];
+                    let mut landing_dir =
+                        section.read_phobos_nullable_dir("AircraftDockingDir", None);
+                    if landing_dir.is_some() {
+                        dirs[0] = landing_dir;
+                    }
+                    for index in 0..dirs.len() {
+                        landing_dir = section.read_phobos_nullable_dir(
+                            &format!("AircraftDockingDir{index}"),
+                            landing_dir,
+                        );
+                        if landing_dir.is_some() {
+                            dirs[index] = landing_dir;
+                        }
+                    }
+                    dirs
+                } else {
+                    Vec::new()
+                }
+            },
+        }
+    }
+
+    /// One admitted TechnoType pass. `begin_rules_member_read` has already
+    /// overlaid this layer onto `ProcessedType.body`; Phobos'
+    /// `TechnoTypeExt::LoadFromINIFile` (`Ext/TechnoType/Body.cpp`) reads that
+    /// retained body, while fixed ART/SOUNDMD/EVA bindings stay with Process.
+    pub(crate) fn read_pass(
+        &mut self,
+        effective: &IniSection,
+        art: &IniSection,
+        category: ObjectCategory,
+        sounds: &crate::rules::sound_ini::SoundRegistry,
+        eva: &crate::rules::sound_ini::EvaRegistry,
+    ) {
+        let voice_pickup = self.phobos_voice_pickup.clone();
+        let voice_enter_grinder = self.phobos_voice_enter_grinder.clone();
+        let overload_death_sound = self.phobos_overload.death_sound.clone();
+        let grinding_sound = self.phobos_grinding.sound.clone();
+        let eva_sold = self.phobos_eva_sold.clone();
+        crate::rules::phobos_switch::phobos_read(|| {
+            *self = Self::from_section(effective, category);
+            self.art_body = art.clone();
+            self.resolved = PhobosResolvedReferences {
+                eva_sold: crate::rules::phobos_sw_messages::read_eva_index(
+                    effective, "EVA.Sold", eva,
+                )
+                .or_else(|| {
+                    effective
+                        .is_present("EVA.Sold")
+                        .then_some(eva_sold)
+                        .flatten()
+                }),
+                voice_pickup: if category == ObjectCategory::Aircraft {
+                    sounds.read_rules_reference(effective, "VoicePickup", voice_pickup)
+                } else {
+                    None
+                },
+                voice_enter_grinder: sounds.read_rules_reference(
+                    effective,
+                    "VoiceEnterGrinder",
+                    voice_enter_grinder,
+                ),
+                overload_death_sound: sounds.read_rules_reference(
+                    effective,
+                    "Overload.DeathSound",
+                    overload_death_sound,
+                ),
+                grinding_sound: sounds.read_rules_reference(
+                    effective,
+                    "Grinding.Sound",
+                    grinding_sound,
+                ),
+            };
+            self.apply_resolved();
+            self.apply_art();
+        });
+    }
+
+    fn apply_resolved(&mut self) {
+        self.phobos_eva_sold.clone_from(&self.resolved.eva_sold);
+        self.phobos_voice_pickup
+            .clone_from(&self.resolved.voice_pickup);
+        self.phobos_voice_enter_grinder
+            .clone_from(&self.resolved.voice_enter_grinder);
+        self.phobos_overload
+            .death_sound
+            .clone_from(&self.resolved.overload_death_sound);
+        self.phobos_grinding
+            .sound
+            .clone_from(&self.resolved.grinding_sound);
+    }
+
+    fn apply_art(&mut self) {
+        match self.category {
+            ObjectCategory::Vehicle => {
+                // UnitTypeExt::LoadFromINI (`Ext/UnitType/Body.cpp:93,100-134`).
+                self.phobos_turret_barrel =
+                    crate::rules::phobos_turret_barrel::PhobosTurretBarrel::from_section(
+                        &self.art_body,
+                    );
+                self.phobos_fire_up = self.art_body.read_int("FireUp", -1);
+            }
+            ObjectCategory::Building => {
+                self.phobos_aircraft_docking_dir_default_to_pose_dir = self
+                    .art_body
+                    .read_phobos_nullable_bool("AircraftDockingDir.DefaultToPoseDir", None);
+            }
+            // Only UnitTypeExt and BuildingTypeExt read these ART keys.
+            _ => {}
+        }
+    }
+}
+
+impl serde::Serialize for PhobosObjectProjection {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        PhobosObjectSnapshot {
+            category: self.category,
+            source_body: self.source_body.clone(),
+            art_body: self.art_body.clone(),
+            resolved: self.resolved.clone(),
+        }
+        .serialize(serializer)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for PhobosObjectProjection {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let snapshot = PhobosObjectSnapshot::deserialize(deserializer)?;
+        let mut value = Self::from_section(&snapshot.source_body, snapshot.category);
+        value.art_body = snapshot.art_body.clone();
+        value.resolved = snapshot.resolved;
+        value.apply_resolved();
+        value.apply_art();
+        Ok(value)
+    }
 }
 
 /// A game object definition parsed from a rules.ini section.
@@ -656,67 +1690,50 @@ pub struct ObjectType {
     /// Phobos `TechnoTypeExt::ShieldType` (`ShieldType=`): the bound
     /// `[ShieldTypes]` entry, or `None` for an absent/`none` key. Retained as
     /// the authored name; the Rules catalog resolves it at use.
-    #[cfg(feature = "phobos")]
     shield_type: Option<String>,
     /// Phobos `TechnoTypeExt::DigitalDisplayTypes` (`DigitalDisplayTypes=`):
     /// authored `[DigitalDisplayTypes]` names in list order. Empty means the
     /// techno uses its category's `[AudioVisual]` default list.
-    #[cfg(feature = "phobos")]
     digital_display_types: Vec<String>,
     /// Phobos `AttachEffect.AttachTypes`: authored `[AttachEffectTypes]`
     /// names, in list order.
-    #[cfg(feature = "phobos")]
     attach_effect_attach_types: Vec<String>,
     /// `AttachEffect.DurationOverrides`, paired with `attach_types` by index.
-    #[cfg(feature = "phobos")]
     attach_effect_duration_overrides: Vec<i32>,
     /// `AttachEffect.Delays`: re-creation delay after a natural end.
-    #[cfg(feature = "phobos")]
     attach_effect_delays: Vec<i32>,
     /// `AttachEffect.InitialDelays`: first attachment delay.
-    #[cfg(feature = "phobos")]
     attach_effect_initial_delays: Vec<i32>,
     /// `AttachEffect.RecreationDelays`: delay after a full removal; negative
     /// forbids re-creation.
-    #[cfg(feature = "phobos")]
     attach_effect_recreation_delays: Vec<i32>,
     /// Phobos `TechnoTypeExt::DigitalDisplay_Disable`.
-    #[cfg(feature = "phobos")]
     digital_display_disable: bool,
     /// Phobos `TechnoTypeExt::DigitalDisplay_Health_FakeAtDisguise`; `None`
     /// inherits `[AudioVisual] DigitalDisplay.Health.FakeAtDisguise`.
-    #[cfg(feature = "phobos")]
     digital_display_health_fake_at_disguise: Option<bool>,
     /// Phobos `TechnoTypeExt::OpenTopped_UseTransportRangeModifiers`
     /// (`OpenTopped.UseTransportRangeModifiers=`); `None` inherits
     /// `[General]`. A passenger inside an `OpenTopped` transport with this
     /// set folds the transport's range modifiers instead of its own.
-    #[cfg(feature = "phobos")]
     open_topped_use_transport_range_modifiers: Option<bool>,
     /// Phobos `BuildingTypeExt::PlacementPreview` (`PlacementPreview=`),
     /// default true. The preview also needs the rules global and the client
     /// switch.
-    #[cfg(feature = "phobos")]
     placement_preview: bool,
     /// `PlacementPreview.Shape=` (a `TheaterSpecificSHP` name). `None` uses
     /// the buildup's last frame or the body's first frame.
-    #[cfg(feature = "phobos")]
     placement_preview_shape: Option<String>,
     /// `PlacementPreview.ShapeFrame=`, `None` keeps the image's default frame.
-    #[cfg(feature = "phobos")]
     placement_preview_shape_frame: Option<i32>,
     /// `PlacementPreview.Offset=` in leptons, default `0,-15,1`.
-    #[cfg(feature = "phobos")]
     placement_preview_offset: [i32; 3],
     /// `PlacementPreview.Remap=`, default true.
-    #[cfg(feature = "phobos")]
     placement_preview_remap: bool,
     /// `PlacementPreview.Palette=`, used when `Remap=no`; unset uses the
     /// theater unit palette.
-    #[cfg(feature = "phobos")]
     placement_preview_palette: Option<String>,
     /// `PlacementPreview.Translucency=`, unset inherits the rules global.
-    #[cfg(feature = "phobos")]
     placement_preview_translucency: Option<crate::rules::phobos_placement_preview::Translucency>,
     /// Canonical Speed percent,0..100 (0 is immobile). TechnoType
     /// ReadINI71464A retains the prior value for -1 across rules passes.
@@ -776,18 +1793,15 @@ pub struct ObjectType {
     /// `Draw_Point` wobble runs, which retail gates on `IsDropship` alone at
     /// `0x4CF8B1`. Unset defers to `[AudioVisual] FlyNoWobbles`, then to that
     /// retail rule; `rules::phobos_fly_wobble` owns the resolution.
-    #[cfg(feature = "phobos")]
     pub(crate) fly_no_wobbles: Option<bool>,
     /// Phobos `TechnoTypeExt::LaserTargetColor` (`Nullable<int>`): the
     /// `[ColorAdd]` index whose word tints a building this type's airstrike
     /// targets. Unset takes `[AudioVisual] LaserTargetColor`
     /// (`Simulation::airstrike_laser_target_color`).
-    #[cfg(feature = "phobos")]
     pub(crate) laser_target_color: Option<i32>,
     /// Phobos `TechnoTypeExt::AirstrikeLineColor` (`Nullable<ColorStruct>`):
     /// the RGB this type's airstrike beam and target dot use. Unset takes
     /// `[AudioVisual] AirstrikeLineColor` (`Simulation::airstrike_line_color`).
-    #[cfg(feature = "phobos")]
     pub(crate) airstrike_line_color: Option<[u8; 3]>,
     /// TechnoType+7FC, read from the current Image section of fixed ARTMD.
     /// The ordered processor owns its retained default (constructor0).
@@ -926,7 +1940,6 @@ pub struct ObjectType {
     /// Phobos `TechnoTypeExt` insignia block (`Insignia*`, `InsigniaType*`,
     /// `Insignia.ShowEnemy`), accumulated over every reached Rules pass by
     /// the ordered TechnoType reader.
-    #[cfg(feature = "phobos")]
     pub phobos_insignia: crate::rules::insignia_type::PhobosInsignia,
     /// Ares `TechnoTypeExt` insignia keys (`Insignia*`, `InsigniaFrame*`,
     /// `Insignia.ShowEnemy`), accumulated like the Phobos block above.
@@ -935,11 +1948,9 @@ pub struct ObjectType {
     /// passenger-count key `DrawInsignia` indexes `Insignia.PassengersN`
     /// with. Its other consumer, the NoQueueUpToEnter admission rewrite, is
     /// not ported.
-    #[cfg(feature = "phobos")]
     pub phobos_passengers_by_size: bool,
     /// Phobos `TechnoTypeExt` Iron Curtain / Force Shield overrides
     /// (`IronCurtain.*`, `ForceShield.*`).
-    #[cfg(feature = "phobos")]
     pub phobos_invulnerability: crate::rules::invulnerability_rules::PhobosInvulnerability,
     /// Rules LeptonMindControlOffset: Type+3DC ctor710D28=70, read714145.
     pub lepton_mind_control_offset: i32,
@@ -947,6 +1958,8 @@ pub struct ObjectType {
     pub build_cat: Option<BuildCategory>,
     /// Human placement radius away from existing base-normal structures.
     pub adjacent: i32,
+    /// Phobos `Adjacent.*` build-area provider filters.
+    pub phobos_adjacent: crate::rules::phobos_adjacent::PhobosAdjacent,
     /// `ProtectWithWall=` (`BuildingTypeClass+0x1765`, ReadINI
     /// `0x0046026B..0x0046027F`) adds one cell to the active AI site's
     /// first-phase CheckOccupancy border, and marks a building the computer
@@ -1375,16 +2388,13 @@ pub struct ObjectType {
     /// The full native `EliteAbilities=` byte array (`TechnoTypeClass+0x2AE`).
     pub elite_abilities: AbilityFlags,
     /// Phobos `TechnoTypeExt::ImmuneToCrit` (`ImmuneToCrit=`), default false.
-    #[cfg(feature = "phobos")]
     pub(crate) immune_to_crit: bool,
     /// Phobos `TechnoTypeExt::VeteranCritChance`; `None` inherits
     /// `[General] VeteranCritChance`. Read only when the firer's
     /// `CRITCHANCE` rank ability holds.
-    #[cfg(feature = "phobos")]
     pub(crate) veteran_crit_chance: Option<f64>,
     /// The five Phobos rank abilities read from the same
     /// `VeteranAbilities=`/`EliteAbilities=` lists as the stock array.
-    #[cfg(feature = "phobos")]
     pub(crate) phobos_abilities: crate::rules::phobos_crit::PhobosAbilityFlags,
     /// `SelfHealing=` (`TechnoTypeClass+0xD14`, `ReadBool` at `0x00714AE8`).
     /// A type with this set heals at every rank; otherwise the `SELF_HEAL`
@@ -1410,7 +2420,6 @@ pub struct ObjectType {
     additional_super_weapons: Vec<String>,
     /// Phobos `UnitTypeExt`'s three `OreGathering.*` lists, retained per
     /// VehicleType and read by the harvester's gather overlay.
-    #[cfg(feature = "phobos")]
     ore_gathering: PhobosOreGathering,
     /// `NukeSilo=` (BuildingType `+0x16BA`, ReadBool at `0x00460A45`,
     /// constructor clear at `0x0045E127`): `SuperClass::Launch @ 0x006CC390`
@@ -1540,6 +2549,11 @@ pub struct ObjectType {
     /// UnloadingClass. Empty/missing retains the prior pointer. AnimType
     /// FindOrAllocate428B80 owns registration, before the InitialAmmo read.
     pub deploying_anim: Option<String>,
+    /// Phobos `DeployingAnims=` directional list and its three behavior keys.
+    pub phobos_deploying_anims: Vec<String>,
+    pub phobos_deploying_anim_keep_unit_visible: bool,
+    pub phobos_deploying_anim_reverse_for_undeploy: bool,
+    pub phobos_deploying_anim_use_unit_drawer: bool,
     /// Shared TechnoType+684 count limit; -1 is unlimited. Aircraft use
     /// their release/dock owners; Unit Reload and Building refill read it live.
     pub ammo: i32,
@@ -1617,7 +2631,6 @@ pub struct ObjectType {
     pub crawls: bool,
     /// Phobos `InfantryTypeExt::ProneSpeed`: the prone movement multiplier for
     /// this type. Unset defers to the `[General]` value `Crawls=` selects.
-    #[cfg(feature = "phobos")]
     pub(crate) prone_speed: Option<f64>,
     /// InfantryType+E40 signed primary standing frame, art.ini `FireUp=`.
     /// ART ReadInt5246D6 retains this field independently; constructor0.
@@ -1884,23 +2897,18 @@ pub struct ObjectType {
     /// Phobos `MindControlRangeLimit=` (`Valueable<Leptons>`): a controlled
     /// unit farther than this planar distance from its controller is freed.
     /// The constructor's `Leptons` value is 0, which disables the check.
-    #[cfg(feature = "phobos")]
     pub mind_control_range_limit: i32,
     /// Phobos `MindControl.IgnoreSize=` (`Nullable<bool>`); `None` inherits
     /// `[General] MindControl.IgnoreSize` (constructor true).
-    #[cfg(feature = "phobos")]
     pub mind_control_ignore_size: Option<bool>,
     /// Phobos `MindControlSize=` (`Valueable<int>`, constructor 1): the
     /// control slots this type consumes while controlled.
-    #[cfg(feature = "phobos")]
     pub mind_control_size: i32,
     /// Phobos `MindControlLink.VisibleToHouse=` (`Nullable<AffectedHouse>`);
     /// `None` inherits `[General] MindControlLink.VisibleToHouse` (All).
-    #[cfg(feature = "phobos")]
     pub mind_control_link_visible_to_house: Option<crate::rules::phobos_shields::AffectedHouse>,
     /// Phobos `MultiMindControl.ReleaseVictim=` (`Nullable<bool>`); `None`
     /// inherits `[General] MultiMindControl.ReleaseVictim` (constructor false).
-    #[cfg(feature = "phobos")]
     pub multi_mind_control_release_victim: Option<bool>,
     /// PsychicDamage immunity. Buildings default true natively.
     pub immune_to_psionic_weapons: bool,
@@ -2144,7 +3152,6 @@ pub struct ObjectType {
     /// Phobos `InfantryTypeExt::InfantryAutoDeploy`: re-enables the undeployed
     /// `Approach_Target` arm at `0x00522434` for this type. Unset defers to
     /// `[General] InfantryAutoDeploy`.
-    #[cfg(feature = "phobos")]
     pub(crate) infantry_auto_deploy: Option<bool>,
 
     /// Maximum number of garrison occupants for CanBeOccupied buildings.
@@ -2418,7 +3425,6 @@ pub struct ObjectType {
     /// Phobos `AllowAirstrike=`: whether an `Airstrike=` warhead may designate
     /// this type. Unset keeps the vanilla rule at each call site — buildings
     /// follow `CanC4`, every other kind is targetable.
-    #[cfg(feature = "phobos")]
     pub allow_airstrike: Option<bool>,
 
     /// BuildingTypeClass `EligibleForDelayKill` (`+0x1551`). Native default
@@ -2759,28 +3765,208 @@ pub struct ObjectType {
     /// value replaces the list, split on `,` without trimming). VERA keeps the
     /// tokens and matches them case-insensitively, as `BuildingTypeClass::Find`
     /// does; an unknown name matches nothing.
-    #[cfg(feature = "phobos")]
     power_plant_enhancer_power_plants: Vec<String>,
     /// Phobos `PowerPlantEnhancer.Range=` (`Valueable<Leptons>`): cells read
     /// by `INI_EX::ReadDouble`, then `F2I(cells * 256)`; default 0.
-    #[cfg(feature = "phobos")]
     power_plant_enhancer_range: i32,
     /// Phobos `PowerPlantEnhancer.Amount=` (`Valueable<int>`): default 0.
-    #[cfg(feature = "phobos")]
     power_plant_enhancer_amount: i32,
     /// Phobos `PowerPlantEnhancer.Factor=` (`Nullable<float>`, constructed
     /// 1.0): `<default>`, `none` and `<none>` reset it to 0.
-    #[cfg(feature = "phobos")]
     power_plant_enhancer_factor: f32,
     /// Phobos `PowerPlantEnhancer.MaxCount=` (`Valueable<int>`): default -1
     /// (no limit).
-    #[cfg(feature = "phobos")]
     power_plant_enhancer_max_count: i32,
     /// Phobos `PowerPlant.DamageFactor=` (`Valueable<double>`): the
     /// health-scaling factor for a power plant's output, default 1.0 (the
     /// stock curve).
-    #[cfg(feature = "phobos")]
     power_plant_damage_factor: f64,
+
+    /// Phobos and shared-ammo fields published by the ProcessedType projection.
+    pub ui_description: Option<String>,
+    pub phobos_destroy_anim_random: Option<bool>,
+    pub phobos_auto_target_own_position: bool,
+    pub phobos_auto_target_own_position_self: bool,
+    pub phobos_distribute_targeting_frame: Option<bool>,
+    pub phobos_open_topped: crate::rules::phobos_open_topped::PhobosOpenTopped,
+    pub phobos_open_transport: crate::rules::phobos_open_transport::PhobosOpenTransport,
+    pub phobos_eva_sold: Option<Option<String>>,
+    pub phobos_extended_aircraft_missions:
+        crate::rules::phobos_extended_aircraft_missions::PhobosExtendedAircraftMissions,
+    pub phobos_no_manual_move: bool,
+    pub phobos_ignore_for_base_center: bool,
+    pub phobos_sinkable: Option<bool>,
+    pub phobos_sink_speed: Option<i32>,
+    pub phobos_damaged_speed: Option<crate::util::native_x87::NativeF64Bits>,
+    pub phobos_self_heal_gain_type: Option<crate::rules::phobos_self_heal::SelfHealGainType>,
+    pub phobos_radar_invisible_to_house: Option<crate::rules::phobos_shields::AffectedHouse>,
+    pub phobos_engineer_repair_amount: i32,
+    pub phobos_landing_dir: Option<i32>,
+    pub phobos_aircraft_docking_dir_default_to_pose_dir: Option<bool>,
+    pub phobos_paradrop_mission: Option<crate::rules::mission_data::MissionType>,
+    pub phobos_ai_paradrop_mission: Option<crate::rules::mission_data::MissionType>,
+    pub phobos_is_aloaner: Option<bool>,
+    pub phobos_bunker_rof_multiplier: Option<f32>,
+    pub phobos_ai_guard_area_targeting_delay: Option<i32>,
+    pub phobos_ai_normal_targeting_delay: Option<i32>,
+    pub phobos_player_normal_targeting_delay: Option<i32>,
+    pub phobos_player_guard_area_targeting_delay: Option<i32>,
+    pub phobos_ai_attack_move_targeting_delay: Option<i32>,
+    pub phobos_player_attack_move_targeting_delay: Option<i32>,
+    pub phobos_crush_slowdown_multiplier: Option<crate::util::native_x87::NativeF64Bits>,
+    pub phobos_chrono_sphere_pre_delay: Option<i32>,
+    pub phobos_chrono_sphere_delay: Option<i32>,
+    pub phobos_jumpjet_rotate_on_crash: Option<bool>,
+    pub phobos_jumpjet_climb_ignore_building: Option<bool>,
+    pub phobos_factory_plant: crate::rules::phobos_factory_plant::FactoryPlantRestrictions,
+    pub phobos_passenger_deletion:
+        Option<crate::rules::phobos_passenger_deletion::PassengerDeletionSettings>,
+    pub phobos_passengers_sync: crate::rules::phobos_passengers_sync::PhobosPassengersSync,
+    pub phobos_overload: crate::rules::phobos_overload::PhobosOverloadSettings,
+    pub phobos_grinding: crate::rules::phobos_grinding::PhobosGrindingSettings,
+    pub phobos_voice_enter_grinder: Option<String>,
+    pub phobos_build_limit_group: crate::rules::phobos_build_limit_group::BuildLimitGroupSettings,
+    pub phobos_spawner: crate::rules::phobos_spawner::PhobosSpawner,
+    pub phobos_keep_target: crate::rules::phobos_keep_target::PhobosKeepTargetOnMove,
+    pub phobos_techno_extras: crate::rules::phobos_techno_extras::PhobosTechnoExtras,
+    pub phobos_damaged_image: crate::rules::phobos_damaged_image::PhobosDamagedImage,
+    pub phobos_hover_drown: crate::rules::phobos_hover_drown::PhobosHoverDrown,
+    pub phobos_turret_barrel: crate::rules::phobos_turret_barrel::PhobosTurretBarrel,
+    pub phobos_fire_up: i32,
+    pub phobos_kill_weapon_suppress: crate::rules::phobos_kill_weapon::PhobosKillWeaponSuppress,
+    pub phobos_rate_down: crate::rules::phobos_rate_down::PhobosRateDown,
+    pub phobos_attack_move: crate::rules::phobos_attack_move::PhobosAttackMove,
+    pub phobos_no_rearm: crate::rules::phobos_no_rearm::PhobosNoRearm,
+    pub phobos_harvester_guard: crate::rules::phobos_harvester_guard::PhobosHarvesterGuard,
+    pub phobos_harvester_dump_amount: Option<f32>,
+    pub phobos_harvester_scan_after_unload: Option<bool>,
+    pub phobos_convert_health: crate::rules::phobos_convert_health::PhobosConvertHealth,
+    pub phobos_convert: crate::rules::phobos_convert::PhobosConvert,
+    pub phobos_turret_anim: crate::rules::phobos_turret_anim::PhobosTurretAnim,
+    pub phobos_units_repair: crate::rules::phobos_units::PhobosUnitsRepair,
+    pub phobos_powered_kill_spawns: bool,
+    pub phobos_start_facing: Option<i32>,
+    pub phobos_start_facing_random: Option<bool>,
+    pub phobos_deploy_fire_delay: Option<i32>,
+    pub phobos_shadow_size_characteristic_height: Option<i32>,
+    pub phobos_no_alpha_image_on_buildup: Option<bool>,
+    pub phobos_no_build_area_on_buildup: bool,
+    pub phobos_set_tab_by_selecting: i32,
+    pub phobos_tilts_when_crushes_vehicles: Option<bool>,
+    pub phobos_tilts_when_crushes_overlays: Option<bool>,
+    pub phobos_crush_overlay_extra_forward_tilt: f64,
+    pub phobos_crush_forward_tilt_per_frame: Option<f64>,
+    pub phobos_landing_anim: Option<String>,
+    pub phobos_paradrop_delay: Option<i32>,
+    pub phobos_paradrop_end_delay: Option<i32>,
+    pub phobos_spawn_height: Option<i32>,
+    pub phobos_spawn_from_edge: Option<crate::rules::phobos_aircraft_edge::PhobosEdgeType>,
+    pub phobos_retreat_to_edge: Option<crate::rules::phobos_aircraft_edge::PhobosEdgeType>,
+    pub phobos_firing_force_scatter: Option<bool>,
+    pub phobos_explodes: crate::rules::phobos_explodes::PhobosExplodesSettings,
+    pub phobos_extra_threat: crate::rules::phobos_extra_threat::PhobosExtraThreat,
+    pub phobos_tiberium_eater: Option<crate::rules::phobos_tiberium_eater::PhobosTiberiumEater>,
+    pub phobos_not_human_random_death_sequence: Option<bool>,
+    pub phobos_parasite_allow_water_exit: Option<bool>,
+    pub phobos_cloak_kick_out_parasite: Option<bool>,
+    pub phobos_cloak_anims: Vec<String>,
+    pub phobos_decloak_anims: Vec<String>,
+    pub phobos_sinkable_squid_grab: Option<bool>,
+    pub phobos_no_turret_track_target: Option<bool>,
+    pub phobos_team_member_considered_as: Vec<String>,
+    pub phobos_turret_response: Option<bool>,
+    pub phobos_makes_wake: Option<bool>,
+    pub phobos_skip_crush_slowdown: Option<bool>,
+    pub phobos_recount_burst: Option<bool>,
+    pub phobos_reveal_houses: Option<crate::rules::phobos_shields::AffectedHouse>,
+    pub phobos_low_deploy_priority: bool,
+    pub phobos_destroyable_obstacle: bool,
+    pub phobos_allow_weapon_select_against_walls: Option<bool>,
+    pub phobos_amphibious_enter: Option<bool>,
+    pub phobos_amphibious_unload: Option<bool>,
+    pub phobos_crash_spin_multiplier: f32,
+    pub phobos_initial_cloning: crate::rules::ini_value::PartialDoublePair,
+    pub phobos_cloning_powered: bool,
+    pub phobos_building_radio_link_sync_owner: Option<bool>,
+    pub phobos_falling_down_damage: Option<f64>,
+    pub phobos_falling_down_damage_water: Option<f64>,
+    pub phobos_falling_down_damage_allow_emp: Option<bool>,
+    pub wake: Option<String>,
+    pub phobos_wake_grapple: Option<String>,
+    pub phobos_wake_sinking: Option<String>,
+    pub phobos_warp_away: Vec<String>,
+    pub phobos_drain_money_display:
+        crate::rules::phobos_drain_money_display::DrainMoneyDisplaySettings,
+    pub phobos_display_income: crate::rules::phobos_drain_money_display::DisplayIncomeSettings,
+    pub phobos_jumpjet_tilt: crate::rules::phobos_jumpjet_tilt::PhobosJumpjetTiltType,
+    pub phobos_force_weapon: crate::rules::phobos_force_weapon::PhobosForceWeapon,
+    pub phobos_interceptor: Option<crate::rules::phobos_interceptor::InterceptorSettings>,
+    pub phobos_warp_in_weapon: crate::rules::phobos_warp_in_weapon::WarpInWeaponRules,
+    pub phobos_warp_anim: crate::rules::phobos_warp_anim::WarpAnimRules,
+    pub phobos_slaved: crate::rules::phobos_slave::PhobosSlaved,
+    pub phobos_ammo_deploy: crate::rules::phobos_ammo_deploy::PhobosAmmoDeploy,
+    pub phobos_deploy: crate::rules::phobos_deploy::PhobosDeploy,
+    pub phobos_penetrates_transport:
+        crate::rules::phobos_penetrates_transport::PenetratesTransportTechnoRules,
+    pub phobos_missile: crate::rules::phobos_missile::PhobosMissileRules,
+    pub phobos_droppod: Option<crate::rules::phobos_droppod::PhobosDropPodRules>,
+    pub phobos_promote: crate::rules::phobos_promote::PhobosPromote,
+    pub phobos_spy_effect: crate::rules::phobos_spy_effect::PhobosSpyEffect,
+    pub phobos_driver_killed: crate::rules::phobos_driver_killed::PhobosDriverKilled,
+    pub phobos_combat_alert: crate::rules::phobos_combat_alert::PhobosCombatAlert,
+    pub phobos_exit_through_roof: crate::rules::phobos_exit_through_roof::PhobosExitThroughRoof,
+    pub phobos_voice_pickup: Option<String>,
+    pub phobos_spawn_distance_from_target: Option<i32>,
+    pub disable_damage_sound: bool,
+    pub considered_vehicle: Option<bool>,
+    pub exclude_from_multiple_factory_bonus: bool,
+    pub guard_retry_delay: Option<crate::rules::ini_value::PartialIntPair>,
+    pub phobos_area_guard_range: Option<SimFixed>,
+    pub phobos_max_guard_range: Option<SimFixed>,
+    pub harvester_counted: Option<bool>,
+    pub phobos_crate_goodie_reroll_chance: f64,
+    pub initial_spawns_number: Option<i32>,
+    pub no_spawn_alt: bool,
+    pub phobos_undeploys_into_sellable: bool,
+    pub immune_to_veins: bool,
+    pub barracks_exit_cell: Option<(i32, i32)>,
+    pub sell_buildup_length: i32,
+    pub ammo_shared: bool,
+    pub ammo_shared_group: i32,
+    pub empty_ammo_pip_frame: i32,
+    pub ammo_pip_frame: i32,
+    pub ammo_pip_wrap_start_frame: i32,
+    pub ammo_pip_size: Option<[i32; 2]>,
+    pub ammo_pip_offset: [i32; 2],
+    pub phobos_show_spawns_pips: bool,
+    pub phobos_spawns_pip_frame: i32,
+    pub phobos_empty_spawns_pip_frame: i32,
+    pub phobos_spawns_pip_size: Option<[i32; 2]>,
+    pub phobos_spawns_pip_offset: [i32; 2],
+    pub phobos_bunkerable_anyway: bool,
+    pub phobos_bunker_state_update_delay: Option<i32>,
+    pub overpower_keep_online: i32,
+    pub overpower_charge_weapon: i32,
+    pub phobos_can_c4_allow_zero_damage: bool,
+    pub aircraft_docking_dirs: Vec<Option<u8>>,
+    pub reveal_to_all_radius: Option<i32>,
+    pub debris_minimums: Vec<i32>,
+    pub phobos_debris_types_limit: Option<bool>,
+    pub phobos_psychic_detectable: bool,
+    pub phobos_auto_death: crate::rules::phobos_auto_death::AutoDeathTypeSettings,
+    pub phobos_health_bar: crate::rules::phobos_health_bar::HealthBarSettings,
+    /// Phobos `OnlyUseLandSequences` ART state, retained by `InfantryArt`.
+    pub phobos_land_sequences: crate::rules::phobos_land_sequences::PhobosLandSequences,
+    /// Phobos `ShadowIndices=` ART list, retained by the shadow reader.
+    phobos_shadow_indices: Vec<i32>,
+    /// Phobos `ShadowIndices.Frame=` ART list, retained by the shadow reader.
+    phobos_shadow_indices_frames: Vec<i32>,
+    /// Phobos `ShadowIndex.Frame=` ART scalar, retained by the shadow reader.
+    phobos_shadow_index_frame: i32,
+    /// Phobos `TurretShadow=` ART nullable, retained by the shadow reader.
+    pub phobos_turret_shadow: Option<bool>,
+    /// Phobos `MultiWeapon.*`, retained by the WeaponSlots reader at `0x7128B2`.
+    pub phobos_multi_weapon: crate::rules::phobos_multi_weapon::PhobosMultiWeapon,
 }
 
 /// One entry of the native ability table.
@@ -3002,5 +4188,52 @@ mod simple_deploy_reader_tests {
             );
             assert!(object.is_simple_deployer && object.deploy_to_land);
         }
+    }
+}
+
+#[cfg(all(test, tests_rules_o_z))]
+mod phobos_infantry_art_tests {
+    use super::InfantryArt;
+    use crate::rules::ini_parser::IniFile;
+
+    #[test]
+    fn land_sequence_overrides_retain_and_reset_per_art_pass() {
+        let mut art = InfantryArt::default();
+        art.read_pass(
+            &IniFile::from_str(
+                "[ART]\nOnlyUseLandSequences=yes\nSecondaryFireSequenceLandOnly=no\n",
+            )
+            .section("ART")
+            .unwrap(),
+        );
+        assert_eq!(
+            art.phobos_land_sequences.only_use_land_sequences,
+            Some(true)
+        );
+        assert_eq!(
+            art.phobos_land_sequences.secondary_fire_sequence_land_only,
+            Some(false)
+        );
+
+        art.read_pass(&IniFile::from_str("[ART]\n").section("ART").unwrap());
+        assert_eq!(
+            art.phobos_land_sequences.only_use_land_sequences,
+            Some(true)
+        );
+        assert_eq!(
+            art.phobos_land_sequences.secondary_fire_sequence_land_only,
+            Some(false)
+        );
+
+        art.read_pass(
+            &IniFile::from_str("[ART]\nOnlyUseLandSequences=<default>\n")
+                .section("ART")
+                .unwrap(),
+        );
+        assert_eq!(art.phobos_land_sequences.only_use_land_sequences, None);
+        assert_eq!(
+            art.phobos_land_sequences.secondary_fire_sequence_land_only,
+            Some(false)
+        );
     }
 }

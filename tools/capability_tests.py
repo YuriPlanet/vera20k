@@ -75,13 +75,13 @@ class Capability:
 
 # The single stated home of the capability list (see the module docstring).
 # `test=False` means no capability-specific suite exists yet: the capability is
-# compile-covered only. Ares and NPatch are not capabilities: every build holds
-# them and a game's data switches them on (`rules::ares_switch`,
-# `rules::npatch_switch`).
+# compile-covered only. Ares, Phobos and NPatch need no build feature: every
+# build holds them and a game's data switches them on (`rules::ares_switch`,
+# `rules::phobos_switch`, `rules::npatch_switch`).
 CAPABILITIES: tuple[Capability, ...] = (
     Capability(
         "phobos",
-        ("phobos",),
+        (),
         "Phobos extension behaviour: custom radiation types, superweapon "
         "techno gates and the build description.",
         focus=(
@@ -156,14 +156,11 @@ CAPABILITIES: tuple[Capability, ...] = (
 )
 
 # The capability mixes #2797 declares meaningful: the extension flags are
-# orthogonal, so every pair of them is compiled, then all of them together, and
-# the diagnostic build over all of them. Ares and NPatch need no flag: both are
-# in every build and switch on from a game's data. Combinations are
-# compile-covered; each capability is tested on its own so the matrix stays
-# bounded.
+# orthogonal, so the remaining meaningful mixes are compile-covered. Ares,
+# Phobos and NPatch need no flag: they are in every build and switch on from a
+# game's data. Each capability is tested on its own so the matrix stays bounded.
 COMBINATIONS: tuple[tuple[str, ...], ...] = (
-    ("phobos", "npbug"),
-    ("debug-tools", "phobos", "npbug"),
+    ("debug-tools", "npbug"),
 )
 
 BY_NAME = {capability.name: capability for capability in CAPABILITIES}
@@ -191,9 +188,14 @@ def run_cargo(args: Sequence[str]) -> int:
     return invoke(list(args), cwd=ROOT, isolated_ci=os.environ.get("GITHUB_ACTIONS") == "true")
 
 
+def feature_args(features: Sequence[str]) -> list[str]:
+    """`--features` pair for a flag-carrying capability; empty when none applies."""
+    return ["--features", ",".join(features)] if features else []
+
+
 def command_build(names: Sequence[str]) -> int:
     features = features_of(names)
-    status = run_cargo(["check", "--workspace", "--lib", "--features", ",".join(features)])
+    status = run_cargo(["check", "--workspace", "--lib", *feature_args(features)])
     if status == 0:
         print(f"built {'+'.join(names)}")
     return status
@@ -210,8 +212,7 @@ def command_test(capability_name: str, extra: Sequence[str]) -> int:
             "--workspace",
             "--lib",
             "--no-fail-fast",
-            "--features",
-            spec.flag,
+            *feature_args(spec.features),
             "--",
             *extra,
         ]
@@ -229,7 +230,7 @@ def command_focus(capability_name: str, extra: Sequence[str]) -> int:
     # One run over both crates: a selector may name tests in only one of them,
     # and tools/cargo_run.py fails a run in which no test matched at all.
     status = run_cargo(
-        ["test", "--workspace", "--lib", "--features", spec.flag, "--", *spec.focus, *extra]
+        ["test", "--workspace", "--lib", *feature_args(spec.features), "--", *spec.focus, *extra]
     )
     if status == 0:
         print(f"focused {capability_name} on {', '.join(spec.focus)}")
@@ -245,7 +246,7 @@ def command_check(extra: Sequence[str], soft_tests: bool = False) -> int:
             # cargo check --lib does not compile cfg(test) code or link the
             # test binaries. These failures must block even with soft suites.
             current = run_cargo(
-                ["test", "--no-run", "--workspace", "--lib", "--features", spec.flag]
+                ["test", "--no-run", "--workspace", "--lib", *feature_args(spec.features)]
             )
             status = status or current
             if current != 0:
@@ -276,7 +277,8 @@ def command_check(extra: Sequence[str], soft_tests: bool = False) -> int:
 def command_list() -> int:
     for spec in CAPABILITIES:
         suite = "tested" if spec.test else "compile-only"
-        print(f"{spec.name:22} --features {spec.flag:24} {suite}")
+        flag = f"--features {spec.flag}" if spec.flag else "(no feature)"
+        print(f"{spec.name:22} {flag:24} {suite}")
         print(f"  {spec.summary}")
     print("combinations (compile-covered):")
     for combination in COMBINATIONS:

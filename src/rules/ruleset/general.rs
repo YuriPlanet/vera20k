@@ -89,11 +89,9 @@ pub struct GeneralRules {
     /// Phobos `[General] ProneSpeed.Crawls=` (default 0.67): the multiplier
     /// `InfantryClass::GetMovementSpeed @ 0x00521D80` applies to a prone
     /// infantryman whose type has `Crawls=`.
-    #[cfg(feature = "phobos")]
     pub prone_speed_crawls: f64,
     /// Phobos `[General] ProneSpeed.NoCrawls=` (default 1.5): the same
     /// multiplier for a prone type with `Crawls=no`.
-    #[cfg(feature = "phobos")]
     pub prone_speed_no_crawls: f64,
     /// `[General] VeteranROF=` — `RulesClass+0x690`, read at `0x0066EF61`.
     /// `TechnoClass::GetROF @ 0x006FCFA0` multiplies the jittered reload by it
@@ -404,6 +402,11 @@ pub struct GeneralRules {
     /// "PARACH"), `None` if unset or empty: the canopy the simulation attaches
     /// to a dropped object. Its timing is the AnimType's own art.
     pub parachute_shp: Option<String>,
+    /// Parsed `[General] BombParachute=` value (uppercased AnimType name),
+    /// `None` if unset or empty: the canopy a `Parachuted=` bullet is born
+    /// under (`Ext/Bullet/Hooks.cpp:594` reads `RulesClass+0xBB8`). Bound by
+    /// the ordered Rules type-reference owner like `Parachute=`.
+    pub bomb_parachute: Option<String>,
     /// Parsed `[General] VehicleParachute=` value (uppercased AnimType name),
     /// read only with the explicit NPatch capability.
     /// `None` if unset or empty: the NPSE canopy an airdropped non-infantry
@@ -628,13 +631,11 @@ pub struct GeneralRules {
     /// `Valueable<ColorStruct>` (constructor `255,0,0`, `src/Ext/Rules/Body.h`):
     /// the RGB an airstrike beam and its target dot draw. A TechnoType's own
     /// `AirstrikeLineColor` overrides it (`Simulation::airstrike_line_color`).
-    #[cfg(feature = "phobos")]
     pub airstrike_line_color: [u8; 3],
     /// Phobos `[AudioVisual] AirstrikeLineZAdjust=`, `RulesExt`'s
     /// `Valueable<int>` (constructor 0): added to the smaller of the beam's two
     /// end depths, which `TechnoClass_DrawAirstrikeFlare_LineColor`
     /// (`0x007058F6`) then gives the whole beam.
-    #[cfg(feature = "phobos")]
     pub airstrike_line_z_adjust: i32,
     /// AudioVisual66B832..66B857, Rules+18A8; constructor6678B0=0.
     pub iron_curtain_color: i32,
@@ -1300,7 +1301,6 @@ pub struct GeneralRules {
     /// admits every building, not only the `UndeploysInto=` ones the retail ID
     /// match admits (`0x00732C61..0x00732C83`). Phobos disables the switch
     /// without Ares (`BuildingClass_Is1x1AndUndeployable_BuildingMassSelectable`).
-    #[cfg(feature = "phobos")]
     pub building_type_selectable: bool,
     /// Phobos `[General] AIFireSale=` (default true): whether a computer
     /// house on its last legs (`0x004FD879..0x004FD904`, no live
@@ -1324,7 +1324,6 @@ pub struct GeneralRules {
     /// Phobos `[AudioVisual] TimerBlinkColorScheme=`: the runtime ColorScheme
     /// a finished superweapon timer blinks in, `[Colors]` entry `R / 2`, or -1
     /// for `none`. Constructor 5, the third `[Colors]` entry the game uses.
-    #[cfg(feature = "phobos")]
     pub timer_blink_color_scheme: i32,
     /// `Rules+0xD78`, `[General] HarvesterTooFarDistance=` in cells: a
     /// refinery farther than this is approached before the dock is reserved.
@@ -1431,6 +1430,10 @@ pub struct GeneralRules {
     /// share `TechnoTypeClass::GetRefund @ 0x00711F60` applies. Constructor
     /// default 0.5 (`0x006675CE..0x006675D4`, ECX set at `0x00667190`).
     pub refund_percent: crate::util::native_x87::NativeF64Bits,
+    /// `VeinDamage=` (Rules `+0x1450`, `ReadInt` at `0x0067434D` against the
+    /// `[General]` section; constructor seed 0). The veinhole anim attack's
+    /// damage per hit (`Ext/Anim/Body.cpp:183`).
+    pub vein_damage: i32,
     /// `ShipSinkingWeight=` (Rules `+0x630`, `ReadDouble` at `0x0066F174`;
     /// constructor default 3.0 at `0x00665EE8`). A surface naval unit at
     /// least this `Weight=` sinks on water instead of exploding
@@ -1568,22 +1571,18 @@ pub struct GeneralRules {
     /// Phobos `[General] InfantryAutoDeploy` (`RulesExt`, default false): the
     /// default for the TechnoType key that re-enables the undeployed
     /// `Approach_Target` arm at `0x00522434`.
-    #[cfg(feature = "phobos")]
     pub infantry_auto_deploy: bool,
     /// Phobos `[General] AllowDamageOnSelf` (`RulesExt`, default false): the
     /// fallback for a warhead's `Nullable<bool>` when the warhead section
     /// leaves it unset.
-    #[cfg(feature = "phobos")]
     pub allow_damage_on_self: bool,
     /// Phobos `[General] DecloakDamagedTargets` (`RulesExt`, default true):
     /// the fallback for a warhead's `Nullable<bool>` when the warhead section
     /// leaves it unset.
-    #[cfg(feature = "phobos")]
     pub decloak_damaged_targets: bool,
     /// Phobos `[CombatDamage] ROF.RandomDelay` (`RulesExt`,
     /// `PartialVector2D<int>`, default `{0, 2}`): the full rearm's jitter
     /// range for a weapon that leaves its own key unset.
-    #[cfg(feature = "phobos")]
     pub rof_random_delay: crate::rules::ini_value::PartialIntPair,
     /// `[AI] AIForcePredictionFudge=`, the signed DynamicVector at `Rules+0x9A8`
     /// (items `+0x9AC`) indexed Hard/Normal/Easy by the House difficulty:
@@ -1690,7 +1689,6 @@ pub struct GeneralRules {
     /// a cameo with no art falls back to. The extension selects the loader —
     /// Phobos replaces the type's loaded `XXICON.SHP` handle when the name is
     /// a `.shp`, and blits a `.pcx` at draw time.
-    #[cfg(feature = "phobos")]
     pub missing_cameo: String,
     /// Whether `[AudioVisual] AmbientChangeRate=` passes the native ordered,
     /// nonzero gate before conversion. A nonzero mod value can chop to a
@@ -1826,7 +1824,6 @@ pub(crate) const DEFAULT_SURVIVOR_DIVISORS: [i32; 3] = [200, 100, 300];
 pub(crate) const DEFAULT_MAXIMUM_CHEER_RATE: i32 = 1;
 /// Phobos `RulesExt`'s `MissingCameo` constructor value: the stock
 /// `XXICON.SHP` a type with no cameo art falls back to.
-#[cfg(feature = "phobos")]
 pub(crate) const DEFAULT_MISSING_CAMEO: &str = "XXICON.SHP";
 /// RulesClass665650's literal AmbientChangeRate (0.2) and AmbientChangeStep
 /// (0.1) doubles, before the AudioVisual authored reads.
@@ -1847,7 +1844,6 @@ pub(crate) const fn default_shroud_rate() -> NativeF64Bits {
 
 /// Serde-only placeholder for the Phobos `MissingCameo` retained string: a
 /// saved state written without the key reads back as the constructor value.
-#[cfg(feature = "phobos")]
 pub(crate) fn default_missing_cameo() -> String {
     DEFAULT_MISSING_CAMEO.to_owned()
 }
@@ -1952,6 +1948,9 @@ impl Default for GeneralRules {
             no_parachute_max_fall_rate: -100,
             paradrop_radius: 1024,
             parachute_shp: None,
+            // RulesClass +0xBB8 starts null; the ordered type-reference
+            // reader publishes `[General] BombParachute=`.
+            bomb_parachute: None,
             vehicle_parachute: None,
             amer_paradrop: ParadropList::default(),
             ally_paradrop: ParadropList::default(),
@@ -2037,9 +2036,7 @@ impl Default for GeneralRules {
             idle_action_frequency: f64::from_bits(0x3fb5_3f7c_ed91_6873),
             force_shield_color: 0,
             laser_target_color: 0,
-            #[cfg(feature = "phobos")]
             airstrike_line_color: [255, 0, 0],
-            #[cfg(feature = "phobos")]
             airstrike_line_z_adjust: 0,
             iron_curtain_color: 0,
             berserk_color: 0,
@@ -2176,14 +2173,12 @@ impl Default for GeneralRules {
             slave_miner_kick_frame_delay: 0x7FFF_FFFF,
             maximum_queued_objects: 5,
             building_production_queue: false,
-            #[cfg(feature = "phobos")]
             building_type_selectable: false,
             ai_fire_sale: true,
             ai_fire_sale_delay: 0,
             ai_all_to_hunt: true,
             gather_when_mcv_deploy: true,
             art_image_swap: false,
-            #[cfg(feature = "phobos")]
             timer_blink_color_scheme: 5,
             harvester_too_far_distance: 5,
             approach_target_reset_multiplier: 1,
@@ -2212,6 +2207,7 @@ impl Default for GeneralRules {
             refund_percent: crate::util::native_x87::NativeF64Bits::from_bits(
                 0x3fe0_0000_0000_0000,
             ),
+            vein_damage: 0,
             ship_sinking_weight: SimFixed::lit("3.0"),
             // RulesClass constructor 0x6660BE..0x6660ED.
             tracked_uphill: NativeF64Bits::ONE,
@@ -2234,9 +2230,7 @@ impl Default for GeneralRules {
             infantry_repair_rate: 0.016,
             repair_step: 5,
             repair_percent: 0.25,
-            #[cfg(feature = "phobos")]
             prone_speed_crawls: 0.67,
-            #[cfg(feature = "phobos")]
             prone_speed_no_crawls: 1.5,
             // RulesClass constructor 0x0066738F.
             reload_rate: 0.05,
@@ -2252,13 +2246,9 @@ impl Default for GeneralRules {
             enable_power_surplus: false,
             power_surplus_scale_to_drain_amount: 0,
             ai_auto_deploy_frame_delay: Vec::new(),
-            #[cfg(feature = "phobos")]
             infantry_auto_deploy: false,
-            #[cfg(feature = "phobos")]
             allow_damage_on_self: false,
-            #[cfg(feature = "phobos")]
             decloak_damaged_targets: true,
-            #[cfg(feature = "phobos")]
             rof_random_delay: crate::rules::ini_value::PartialIntPair {
                 low: 0,
                 high: 2,
@@ -2291,7 +2281,6 @@ impl Default for GeneralRules {
             lightning_warhead: String::new(),
             weather_con_bolt_explosion: String::new(),
             weapon_nullify_anim: String::new(),
-            #[cfg(feature = "phobos")]
             missing_cameo: DEFAULT_MISSING_CAMEO.to_owned(),
             ambient_change_rate_nonzero,
             ambient_change_interval_frames,
@@ -2632,10 +2621,8 @@ impl GeneralRules {
         let extra_aircraft_light = defaults.extra_aircraft_light;
         // Phobos `RulesExt` reads these `[AudioVisual]` keys independently of
         // RulesClass's `[General]` gate.
-        #[cfg(feature = "phobos")]
         let airstrike_line_color =
             audio_visual.read_phobos_color("AirstrikeLineColor", defaults.airstrike_line_color);
-        #[cfg(feature = "phobos")]
         let airstrike_line_z_adjust = crate::rules::ares_switch::not_ares_read(|| {
             audio_visual.read_ares_int("AirstrikeLineZAdjust", defaults.airstrike_line_z_adjust)
         });
@@ -2674,9 +2661,7 @@ impl GeneralRules {
                 extra_unit_light,
                 extra_infantry_light,
                 extra_aircraft_light,
-                #[cfg(feature = "phobos")]
                 airstrike_line_color,
-                #[cfg(feature = "phobos")]
                 airstrike_line_z_adjust,
                 ..defaults
             };
@@ -2710,6 +2695,7 @@ impl GeneralRules {
                 .read_int("MaxWaypointPathLength", defaults.max_waypoint_path_length),
             flash_frame_time: general.read_int("FlashFrameTime", defaults.flash_frame_time),
             weed_capacity: general.read_int("WeedCapacity", defaults.weed_capacity),
+            vein_damage: general.read_int("VeinDamage", defaults.vein_damage),
             radar_combat_flash_time: general
                 .read_int("RadarCombatFlashTime", defaults.radar_combat_flash_time),
             crater_level: general.read_int("CraterLevel", defaults.crater_level),
@@ -2896,6 +2882,7 @@ impl GeneralRules {
             hover_dampen: general.read_double_bits("HoverDampen", defaults.hover_dampen),
             paradrop_radius: general.read_int("ParadropRadius", 1024),
             parachute_shp: defaults.parachute_shp.clone(),
+            bomb_parachute: defaults.bomb_parachute.clone(),
             // The ordered RulesTypeReferences owner publishes the retained
             // NPSE ReadGeneral pointer (C31005..C31017), like Parachute.
             vehicle_parachute: defaults.vehicle_parachute.clone(),
@@ -3025,6 +3012,7 @@ impl GeneralRules {
             // Published by the Rules processor's `Dig` pointer
             // (`rules_type_references`).
             dig_anim: None,
+            // Published by the Rules processor's `WebbedInfantry` pointer.
             webbed_infantry: None,
             nuke_take_off: defaults.nuke_take_off.clone(),
             ai_super_defense_probability: general
@@ -3188,7 +3176,6 @@ impl GeneralRules {
             slave_miner_kick_frame_delay: general.read_int("SlaveMinerKickFrameDelay", 0x7FFF_FFFF),
             maximum_queued_objects: general.read_int("MaximumQueuedObjects", 5),
             building_production_queue: general.read_bool("BuildingProductionQueue", false),
-            #[cfg(feature = "phobos")]
             building_type_selectable: crate::rules::ares_switch::ares_way()
                 && general.read_bool("BuildingTypeSelectable", false),
             ai_fire_sale: phobos_read(|| general.read_bool("AIFireSale", true)),
@@ -3265,10 +3252,8 @@ impl GeneralRules {
             // Repair service scalars below are projected from the ordered
             // native reader; do not reread them from this flattened INI.
             repair_percent: general.read_double("RepairPercent", defaults.repair_percent),
-            #[cfg(feature = "phobos")]
             prone_speed_crawls: general
                 .read_phobos_double("ProneSpeed.Crawls", defaults.prone_speed_crawls),
-            #[cfg(feature = "phobos")]
             prone_speed_no_crawls: general
                 .read_phobos_double("ProneSpeed.NoCrawls", defaults.prone_speed_no_crawls),
             repair_step: general.read_int("RepairStep", defaults.repair_step),
@@ -3302,13 +3287,9 @@ impl GeneralRules {
             ai_auto_deploy_frame_delay: general
                 .read_int_list("AIAutoDeployFrameDelay")
                 .unwrap_or_default(),
-            #[cfg(feature = "phobos")]
             infantry_auto_deploy: general.read_bool("InfantryAutoDeploy", false),
-            #[cfg(feature = "phobos")]
             allow_damage_on_self: general.read_bool("AllowDamageOnSelf", false),
-            #[cfg(feature = "phobos")]
             decloak_damaged_targets: general.read_bool("DecloakDamagedTargets", true),
-            #[cfg(feature = "phobos")]
             rof_random_delay: crate::rules::ares_switch::not_ares_read(|| {
                 combat_damage.read_ares_partial_int_pair(
                     "ROF.RandomDelay",
@@ -3362,7 +3343,6 @@ impl GeneralRules {
             lightning_separation: general
                 .read_int("LightningSeparation", defaults.lightning_separation),
             // The sole ordered AV reader supplies these after projection.
-            #[cfg(feature = "phobos")]
             timer_blink_color_scheme: defaults.timer_blink_color_scheme,
             ambient_change_rate_nonzero: defaults.ambient_change_rate_nonzero,
             ambient_change_interval_frames: defaults.ambient_change_interval_frames,
@@ -3414,9 +3394,7 @@ impl GeneralRules {
             chrono_beam_color: defaults.chrono_beam_color,
             force_shield_color: defaults.force_shield_color,
             laser_target_color: defaults.laser_target_color,
-            #[cfg(feature = "phobos")]
             airstrike_line_color,
-            #[cfg(feature = "phobos")]
             airstrike_line_z_adjust,
             iron_curtain_color: defaults.iron_curtain_color,
             berserk_color: defaults.berserk_color,
@@ -3436,7 +3414,6 @@ impl GeneralRules {
             // The compatibility projection drops keys no native reader takes,
             // so the Phobos read reaches `GeneralRules` through the retained
             // Rules scalar instead (`from_processed_rules`).
-            #[cfg(feature = "phobos")]
             missing_cameo: defaults.missing_cameo.clone(),
         }
     }

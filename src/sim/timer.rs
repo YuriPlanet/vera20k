@@ -84,6 +84,25 @@ impl CdTimer {
         self.remaining(current_frame) == 0
     }
 
+    /// `CDTimerClass::InProgress`: the countdown is running (`StartTime !=
+    /// -1`); a paused timer reads false.
+    #[inline]
+    pub const fn in_progress(self) -> bool {
+        self.start_frame != PAUSED_START_FRAME
+    }
+
+    /// Phobos `TechnoExt::UpdateRearmInEMPState` (`Ext/Techno/Body.Update.cpp:
+    /// 876,879`) and `UpdateRearmInTemporal` (`:888,891`) hold a running
+    /// countdown with `StartTime++`: the caller has tested
+    /// [`Self::in_progress`], and the one-frame-later anchor leaves the
+    /// remaining time where it was.
+    #[inline]
+    pub fn delay_one_frame(&mut self) {
+        if self.start_frame != PAUSED_START_FRAME {
+            self.start_frame = self.start_frame.wrapping_add(1);
+        }
+    }
+
     /// Freeze the current remainder in `duration`.
     #[inline]
     pub fn pause(&mut self, current_frame: i32) {

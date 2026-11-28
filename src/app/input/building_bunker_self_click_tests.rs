@@ -469,6 +469,7 @@ fn stock_installed_tank_bunker_self_click_is_inert_but_its_tank_can_deploy() {
                 (31, 85),
                 OrderModifier::Normal,
                 false,
+                false,
             ),
         )
     };

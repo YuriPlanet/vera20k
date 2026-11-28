@@ -296,14 +296,13 @@ impl Simulation {
         // Phobos `InfantryAutoDeploy`: the hook at `0x00522373`
         // (`InfantryClass_ApproachTarget_InfantryAutoDeploy`) turns the Foot
         // body's return into a jump to the deploy arm at `0x00522378`.
-        #[cfg(feature = "phobos")]
         if self
             .substrate
             .entities
             .get(id)
             .filter(|actor| actor.category() == EntityCategory::Infantry)
             .and_then(|actor| self.object_type(actor.type_ref(), rules))
-            .is_some_and(|object| rules.infantry_auto_deploy_for(object))
+            .is_some_and(|object| rules.phobos() && rules.infantry_auto_deploy_for(object))
         {
             self.approach_infantry_deploy_arm(id, rules, registry, frame_effects);
         }
@@ -441,6 +440,7 @@ impl Simulation {
                     self.substrate.entities.contains(target)
                         || self.terrain_objects.objects().contains_key(&target)
                 }
+                TargetKind::Bullet(id) => self.projectiles.get(id).is_some(),
             }
             && self.resolved_terrain.is_some()
             && self.zone_grid.is_some()
@@ -483,6 +483,26 @@ impl Simulation {
         };
         let Some(target) = actor.attack_target.target() else {
             return Ok(None);
+        };
+        // A Bullet target is approached at its current cell: native
+        // Approach_Target reads the target object's GetCoords, and a
+        // BulletClass answers its Location. The conversion runs every visit,
+        // so the destination follows the projectile.
+        let target = match target {
+            TargetKind::Bullet(bullet) => {
+                let point = self.projectiles.get(bullet).map(|bullet| bullet.position());
+                let Some(point) = point else {
+                    return Ok(None);
+                };
+                let (Ok(rx), Ok(ry)) = (
+                    u16::try_from(point.x.div_euclid(256)),
+                    u16::try_from(point.y.div_euclid(256)),
+                ) else {
+                    return Ok(None);
+                };
+                TargetKind::Cell(rx, ry)
+            }
+            other => other,
         };
         // 4D56A1..56B1: a Magnetron holding its target (+2AC == TarCom)
         // does not approach it.
@@ -536,6 +556,7 @@ impl Simulation {
                 terrain,
                 &los,
                 Some(&self.substrate.entities),
+                Some(self),
             )
             .ok_or("Approach CanFireAt coordinate failed")?,
             (Some(_), None) => combat::can_fire_at_target_in_query(
@@ -579,6 +600,28 @@ impl Simulation {
             return Ok(None);
         }
 
+        // Phobos `FootClass_ApproachTarget_PursuitTarget` (`0x4D57EA`,
+        // `Ext/Techno/Hooks.Firing.cpp:1343-1362`): a pursue type sets its
+        // Target as the destination with vt+0x480's mode 1, clears EDI and
+        // stack[-0x130], and jumps to `0x4D5A34`. The zeroed pointer there
+        // takes the original `cmp eax, edi / je` return, so native runs no
+        // nav recalc, queued-destination arm or search. InLimbo keeps the
+        // original body; a close-enough foot that StopWhenInRange will stop
+        // also keeps it (hook B returns 0).
+        let phobos_stop_when_in_range = rules.phobos()
+            && object
+                .phobos_attack_move
+                .stop_when_in_range(&rules.phobos_globals);
+        if !actor.in_limbo()
+            && !(can_fire && phobos_stop_when_in_range)
+            && rules.phobos()
+            && object.phobos_attack_move.approach_target_pursuit_target
+        {
+            self.assign_destination_represented(id, Some(target_reference), rules, frame_effects)
+                .map_err(|e| format!("Approach pursuit destination: {e}"))?;
+            return Ok(None);
+        }
+
         // Read target+48 before NavCom+48. Neither retained Cell receiver is a
         // fresh coord-to-Cell query: a Dummy may already have been restamped.
         let cells = NativeCellQuery::canonical(terrain);
@@ -605,16 +648,46 @@ impl Simulation {
         let actor = self.substrate.entities.get(id).unwrap();
         let terrain = self.resolved_terrain.as_ref().unwrap();
         let cells = NativeCellQuery::canonical(terrain);
+        // 4D5A1A runs before the existing-path arm: a close-enough foot takes
+        // the 4D5A34 tail even while it still holds a destination, so the
+        // Phobos stop hook below must sit ahead of the NavCom return.
+        if can_fire && actor.in_playfield() {
+            // Phobos `FootClass_ApproachTarget_StopWhenInRange` (`0x4D5A34`,
+            // `Ext/Techno/Hooks.Firing.cpp:1303-1340`): this in-range return
+            // runs the hook. A close-enough foot that is not in limbo and is
+            // really moving stops both its locomotor and its motion.
+            if phobos_stop_when_in_range {
+                let really_moving = !actor.in_limbo()
+                    && crate::sim::movement::motion_query::is_really_moving_now(
+                        actor,
+                        crate::sim::movement::SpeedRules::new(rules, &self.interner, &self.houses),
+                        self.session.binary_frame(),
+                    );
+                if really_moving {
+                    if let Err(cause) =
+                        self.locomotor_stop_moving(id, rules, registry, frame_effects)
+                    {
+                        log::debug!("Approach StopWhenInRange stop: {cause}");
+                    }
+                    if let Some(actor) = self.substrate.entities.get_mut(id) {
+                        actor.navigation.stop_moving();
+                    }
+                }
+            }
+            return Ok(None);
+        }
         if actor.navigation.nav_com().is_some()
             && !super::air_movement::is_high_flying_in_query(
                 actor,
                 &cells,
                 Some((rules, &self.interner)),
             )
-            || can_fire && actor.in_playfield()
         {
             return Ok(None);
         }
+        let actor = self.substrate.entities.get(id).unwrap();
+        let terrain = self.resolved_terrain.as_ref().unwrap();
+        let cells = NativeCellQuery::canonical(terrain);
         //4D5A4D..5ABB: the first queued destination (+0x58C, a Cell or an
         // object) is taken (vt+0x480 with 0), leaves the queue and is the
         // answer.
@@ -673,6 +746,7 @@ impl Simulation {
                     (i32::from(width), i32::from(height))
                 }),
             TargetKind::Cell(..) => None,
+            TargetKind::Bullet(..) => None,
         };
         let mut radius = approach_search_radius(range, actor.category(), foundation);
         let own = self.approach_nav_center(target_reference, &cells)?;
@@ -687,6 +761,7 @@ impl Simulation {
             TargetKind::Entity(id) => self.substrate.entities.get(id).is_some_and(|target| {
                 target.category() != EntityCategory::Structure && target.on_bridge()
             }),
+            TargetKind::Bullet(..) => false,
         };
         let category = actor.category();
         //4D5909..590D: a mover whose locomotor is Jumpjet flies there, so
@@ -1056,6 +1131,24 @@ impl Simulation {
                     .ok_or("Approach Cell Target")?,
                 &cells,
             ),
+            TargetKind::Bullet(id) => {
+                let point = self
+                    .projectiles
+                    .get(id)
+                    .ok_or("Approach Bullet Target")?
+                    .position();
+                native_cell_own_xy(
+                    query_object_cell(
+                        &cells,
+                        crate::sim::components::DriveCoord {
+                            x: point.x,
+                            y: point.y,
+                            z: point.z,
+                        },
+                    ),
+                    &cells,
+                )
+            }
         };
         //4D5DF2..5E80: each centre's Cell again (Map 565730), then the XY
         // distance between their centres through Sqrt_Approx and ftol.
@@ -1149,6 +1242,23 @@ impl Simulation {
     /// CloseRange= mover is picked up around it: Mark(UP) and Mark(DOWN)
     /// (vt+0x124(0) and vt+0x124(1), `0x004D62C0..0x004D637D` and
     /// `0x004D6586..0x004D664D`).
+    #[cfg(test)]
+    pub(crate) fn phobos_balloon_approach_admits_for_test(
+        &mut self,
+        id: u64,
+        candidate: (i16, i16),
+        rules: &RuleSet,
+    ) -> Result<bool, String> {
+        self.approach_admits(
+            id,
+            candidate,
+            false,
+            rules,
+            None,
+            &mut FrameEffects::default(),
+        )
+    }
+
     fn approach_admits(
         &mut self,
         id: u64,
@@ -1158,6 +1268,9 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: &mut FrameEffects<'_>,
     ) -> Result<bool, String> {
+        if self.phobos_balloon_hover_ignores_cell_entry(id, rules) {
+            return Ok(true);
+        }
         if close_range {
             self.foot_mark_remove(id, rules, registry, frame_effects);
         }

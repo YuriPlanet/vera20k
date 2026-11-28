@@ -425,7 +425,7 @@ pub(crate) fn action_line_endpoints(
             kind: SelectedLineKind::Attack,
             target: match target {
                 TargetKind::Entity(id) => Some(id),
-                TargetKind::Cell(..) => None,
+                TargetKind::Cell(..) | TargetKind::Bullet(_) => None,
             },
         });
     }
@@ -459,7 +459,7 @@ pub(crate) fn action_line_endpoints(
         kind: SelectedLineKind::Move,
         target: match TargetKind::from(nav_target) {
             TargetKind::Entity(id) => Some(id),
-            TargetKind::Cell(..) => None,
+            TargetKind::Cell(..) | TargetKind::Bullet(_) => None,
         },
     })
 }

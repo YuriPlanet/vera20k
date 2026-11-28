@@ -132,6 +132,20 @@ impl Simulation {
         let foundation = entity.seldom.type_facts.foundation().to_owned();
         let hidden_profile = entity.seldom.type_facts.building_hidden_occupancy();
         let current_cell = (entity.position.rx(), entity.position.ry());
+        // Phobos `MapClass_PlaceDown_BuildableTerrain` (`0x5684B1`,
+        // `Ext/TerrainType/Hooks.Passable.cpp:145-170`): a successful
+        // PlaceDown removes a buildable Terrain in the origin cell. This is
+        // the PlaceDown owner, so ordinary production reveal and the
+        // foundation-clearing trigger path both take it exactly once.
+        if context.rules.phobos()
+            && let Some(terrain_id) = self.terrain_objects.id_at(current_cell)
+            && self
+                .terrain_objects
+                .get(terrain_id)
+                .is_some_and(|terrain| terrain.can_be_built_on())
+        {
+            let _ = self.retire_non_entity_object(terrain_id, context.reborrow());
+        }
         let (width, height) = foundation.dimensions();
         if let Some(layer) = layer {
             for &(rx, ry) in &cells {
@@ -214,10 +228,15 @@ impl Simulation {
                 }
             }
         }
-        self.substrate
+        let marked = self
+            .substrate
             .entities
             .get(stable_id)
-            .is_some_and(|entity| entity.lifecycle.cell_marked)
+            .is_some_and(|entity| entity.lifecycle.cell_marked);
+        if marked {
+            self.republish_destroyable_obstacle_navigation(stable_id, context.rules());
+        }
+        marked
     }
 
     /// IsCellInPlayfield (`0x00578460`, mode 1) of the Reveal position's
@@ -565,6 +584,7 @@ impl Simulation {
         // This projects current marked owners, retaining overlapping or
         // still-marked dying structures; it adds no RNG/timer/detach work.
         self.publish_recalculated_cells(context.rules(), &cells);
+        self.republish_destroyable_obstacle_navigation(stable_id, context.rules());
         true
     }
 
@@ -593,6 +613,24 @@ impl Simulation {
             .get_mut(stable_id)
             .unwrap()
             .begin_bomb_fall();
+        // Phobos `ObjectClass_DropAsBomb_Track` (`0x5F4160`,
+        // `Ext/Techno/Hooks.cpp:1656-1670`): track the Techno that starts the
+        // fall so the AA auto-target scan can still see it.
+        if rules.phobos()
+            && rules.phobos_globals.falling_down_targeting_fix
+            && self
+                .substrate
+                .entities
+                .get(stable_id)
+                .is_some_and(|entity| {
+                    matches!(
+                        entity.category(),
+                        EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
+                    )
+                })
+        {
+            self.phobos_track_falling_down(stable_id);
+        }
         let foot = self
             .substrate
             .entities

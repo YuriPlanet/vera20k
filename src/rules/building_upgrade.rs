@@ -62,9 +62,24 @@ pub struct BuildingUpgradeRules {
     host: String,
     level: i32,
     slots: i32,
+    /// Phobos `PowersUp.Owner=` (`Ext/BuildingType/Body.cpp:185`,
+    /// `Valueable<AffectedHouse>`, default `Owner`): the House relation
+    /// between the installing owner and the host's owner.
+    #[serde(default = "default_powers_up_owner")]
+    powers_up_owner: crate::rules::phobos_shields::AffectedHouse,
+    /// Phobos `PowersUp.Buildings=` (`:186`,
+    /// `ValueableVector<BuildingTypeClass*>`): the host types this upgrade
+    /// fits. `Body.cpp:270-277` keeps it in sync with the native
+    /// `PowersUpBuilding` string.
+    #[serde(default)]
+    powers_up_buildings: Vec<String>,
     /// One authority for both fixed-ART reads and installation's name writes.
     #[serde(default)]
     power_up_art: [BuildingPowerUpArt; 3],
+}
+
+fn default_powers_up_owner() -> crate::rules::phobos_shields::AffectedHouse {
+    crate::rules::phobos_shields::AffectedHouse::OWNER
 }
 
 impl Default for BuildingUpgradeRules {
@@ -73,6 +88,8 @@ impl Default for BuildingUpgradeRules {
             host: String::new(),
             level: -1,
             slots: 0,
+            powers_up_owner: crate::rules::phobos_shields::AffectedHouse::OWNER,
+            powers_up_buildings: Vec::new(),
             power_up_art: Default::default(),
         }
     }
@@ -81,6 +98,37 @@ impl Default for BuildingUpgradeRules {
 impl BuildingUpgradeRules {
     pub fn host(&self) -> Option<&str> {
         (!self.host.is_empty()).then_some(self.host.as_str())
+    }
+
+    /// Phobos `BuildingTypeExt::CanUpgrade`
+    /// (`Ext/BuildingType/Hooks.Upgrade.cpp:21-25`) and
+    /// `BuildingTypeExt::GetUpgradesAmount` (`Ext/BuildingType/Body.cpp:
+    /// 160-161`) walk **every** `PowersUp.Buildings` entry, not only the
+    /// legacy `PowersUpBuilding` name; the reader keeps that legacy string
+    /// inside the list (`Body.cpp:270-277`), so this returns the native host
+    /// set with the legacy field first. A list name that repeats the legacy
+    /// host case-insensitively is not returned twice.
+    pub fn hosts(&self) -> Vec<&str> {
+        let legacy = self.host();
+        {
+            let mut hosts: Vec<&str> = legacy.into_iter().collect();
+            for name in &self.powers_up_buildings {
+                if !name.is_empty() && !hosts.iter().any(|host| host.eq_ignore_ascii_case(name)) {
+                    hosts.push(name);
+                }
+            }
+            hosts
+        }
+    }
+
+    /// Phobos `PowersUp.Owner=`, the installing owner's relation to the host.
+    pub fn powers_up_owner(&self) -> crate::rules::phobos_shields::AffectedHouse {
+        self.powers_up_owner
+    }
+
+    /// Phobos `PowersUp.Buildings=`, after the native-string sync.
+    pub fn powers_up_buildings(&self) -> &[String] {
+        &self.powers_up_buildings
     }
 
     /// Signed PowersUpToLevel, without a reader-side clamp.
@@ -118,6 +166,35 @@ impl BuildingUpgradeRules {
         }
         self.level = section.read_int("PowersUpToLevel", self.level);
         self.slots = section.read_int("Upgrades", self.slots);
+        {
+            // `Ext/BuildingType/Body.cpp:185-186`, then the legacy-string
+            // sync at `:270-277`: an empty native host takes the first list
+            // entry, and a set native host joins the list.
+            self.powers_up_owner = crate::rules::phobos_shields::read_affected_house(
+                section,
+                "PowersUp.Owner",
+                self.powers_up_owner,
+            );
+            if let Some(tokens) = section.read_list("PowersUp.Buildings", 0x80) {
+                self.powers_up_buildings = tokens
+                    .into_iter()
+                    .map(str::trim)
+                    .filter(|token| !token.is_empty())
+                    .map(str::to_owned)
+                    .collect();
+            }
+            if self.host.is_empty() {
+                if let Some(first) = self.powers_up_buildings.first() {
+                    self.host = first.clone();
+                }
+            } else if !self
+                .powers_up_buildings
+                .iter()
+                .any(|name| name.eq_ignore_ascii_case(&self.host))
+            {
+                self.powers_up_buildings.push(self.host.clone());
+            }
+        }
         //46473D..4647F4: only positive Upgrades reaches PowerUp1..N;
         // ReadString16 returns zero for absent/empty text and skips the copy.
         // Read only the three ordinary slots represented by this mechanism;
@@ -421,6 +498,61 @@ mod tests {
             rules
                 .all_objects()
                 .all(|object| object.building_upgrade().host().is_none())
+        );
+    }
+}
+
+#[cfg(all(test, tests_rules_a_n))]
+mod phobos_powers_up_tests {
+    use crate::rules::ini_parser::IniFile;
+    use crate::rules::phobos_shields::AffectedHouse;
+    use crate::rules::ruleset::RuleSet;
+
+    fn upgrade(text: &str) -> crate::rules::building_upgrade::BuildingUpgradeRules {
+        let rules = RuleSet::from_ini_with_fixed_art_for_test(
+            &IniFile::from_str(&format!(
+                "[BuildingTypes]\n0=HOST\n1=UPGRADE\n\
+                 [HOST]\nStrength=100\n\
+                 [UPGRADE]\nStrength=100\n{text}"
+            )),
+            &IniFile::empty(),
+        )
+        .unwrap();
+        rules.object("UPGRADE").unwrap().building_upgrade().clone()
+    }
+
+    /// Phobos `PowersUp.Buildings`/`PowersUp.Owner` and the legacy
+    /// `PowersUpBuilding` sync (`Ext/BuildingType/Body.cpp:185-186,
+    /// 270-277`).
+    #[test]
+    fn powers_up_list_and_owner_round_trip_with_the_legacy_host_name() {
+        let list_only = upgrade("PowersUp.Buildings=HOST,OTHER\n");
+        assert_eq!(
+            list_only.host(),
+            Some("HOST"),
+            "an empty legacy host takes the first list entry"
+        );
+        assert_eq!(list_only.powers_up_buildings(), ["HOST", "OTHER"]);
+
+        let legacy_only = upgrade("PowersUpBuilding=HOST\n");
+        assert_eq!(legacy_only.powers_up_buildings(), ["HOST"]);
+
+        let both = upgrade("PowersUpBuilding=HOST\nPowersUp.Buildings=OTHER\n");
+        assert_eq!(
+            both.powers_up_buildings(),
+            ["OTHER", "HOST"],
+            "a set legacy host joins the list when missing"
+        );
+
+        assert_eq!(
+            list_only.powers_up_owner(),
+            AffectedHouse::OWNER,
+            "the Valueable filter constructs Owner"
+        );
+        assert!(
+            upgrade("PowersUp.Owner=enemies\n")
+                .powers_up_owner()
+                .contains(AffectedHouse::ENEMIES)
         );
     }
 }

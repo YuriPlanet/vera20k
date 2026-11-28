@@ -440,6 +440,48 @@ fn one_object_world(
     (store, crate::sim::intern::test_interner())
 }
 
+/// A non-voxel turreted Unit without `<image>TUR.SHP` draws the body's
+/// `WalkFrames * Facings` turret block (`0x73C7AC`/`0x73CCF4`). The block is
+/// not a Stand/Walk sequence when `StandingFrames=0`, so the atlas must request
+/// it explicitly; otherwise the draw's `atlas.get` finds no key.
+#[test]
+fn vehicle_turret_body_frames_are_requested_even_without_a_stand_block() {
+    use crate::rules::art_data::ArtRegistry;
+    use crate::rules::ini_parser::IniFile;
+
+    let art = IniFile::from_str(
+        "[TANK]\nImage=TANK\nWalkFrames=4\nFacings=8\nStandingFrames=0\nFiringFrames=0\n",
+    );
+    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
+        &IniFile::from_str("[VehicleTypes]\n0=TANK\n[TANK]\nStrength=100\nTurret=yes\n"),
+        &art,
+    )
+    .expect("turret atlas rules");
+    rules.install_art_data(ArtRegistry::from_ini(&art));
+
+    let color = HouseColorIndex(2);
+    let mut needed = HashSet::new();
+    insert_object_keys(
+        &mut needed,
+        "TANK",
+        EntityCategory::Unit,
+        color,
+        Some(&rules),
+        None,
+    );
+    let frames: HashSet<u16> = needed
+        .iter()
+        .filter(|key| key.type_id == "TANK" && key.house_color == color)
+        .map(|key| key.frame)
+        .collect();
+    // Walk 0..3 with StandingFrames=0 leaves the turret block at
+    // 4 * 8 .. 4 * 8 + 7 unrequested by Stand/Walk alone.
+    assert!(
+        (32..40).all(|frame| frames.contains(&frame)),
+        "turret body block 32..39 missing from {frames:?}"
+    );
+}
+
 #[test]
 fn retail_shp_vehicle_keys_include_the_native_embedded_shadow_half() {
     let Some(battle) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("C3Y03MD.MAP")
@@ -1931,18 +1973,15 @@ fn gsi_13_08_warpout_keeps_all_frames_and_drives_the_progressive_alpha_ladder() 
         (20, 0.25),
     ] {
         let selection = crate::sim::anim_class::anim_translucency_selection(
-            crate::sim::anim_class::AnimTranslucencyInput {
-                base_flags: 0,
-                forced_translucent: false,
-                double_thick: false,
-                translucency_detail_level: warpout.translucency_detail_level,
-                game_detail_level: 2,
-                translucent_ramp: warpout.translucent,
-                current_frame: frame,
-                end_frame: warpout.loaded_end(i32::from(frame_count)),
-                explicit_translucency: warpout.translucency,
-                instance_ramp: 0,
-            },
+            crate::sim::anim_class::AnimTranslucencyInput::new(
+                Some(warpout),
+                0,
+                frame,
+                i32::from(frame_count),
+                2,
+                crate::sim::anim_class::AnimDrawRuntime::default(),
+                false,
+            ),
         );
         assert!(selection.draw);
         assert_eq!(
@@ -3535,7 +3574,6 @@ fn physical_frames_reuse_initial_and_growth_rectangles_but_not_different_sources
 /// This exercises production rules, image binding, residency and CPU rendering;
 /// it is not a GPU/native visual-parity claim.
 #[test]
-#[cfg(feature = "phobos")]
 fn custom_harvest_uses_bound_theater_shape_all_frames_and_own_placement() {
     use crate::rules::ini_parser::IniFile;
     let directory = StoredFrameTestDirectory::new();

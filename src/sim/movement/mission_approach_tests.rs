@@ -827,7 +827,6 @@ fn a_computers_deployed_gi_undeploys_to_approach_a_target_out_of_reach() {
 /// enters the deploy arm, where a computer's still GI with the tank in his
 /// deploy weapon's reach deploys (Do_Action(0x1B), `0x00522472`). Without
 /// the key he takes only the Foot body.
-#[cfg(feature = "phobos")]
 #[test]
 fn a_computers_gi_auto_deploys_with_a_target_in_reach() {
     let Some(mut rules) = retail_rules() else {
@@ -840,7 +839,12 @@ fn a_computers_gi_auto_deploys_with_a_target_in_reach() {
         let tank = spawn(&mut sim, &rules, "MTNK", "Americans", (13, 10));
         target(&mut sim, gi, tank);
         start_mission(&mut sim, gi, MissionType::Attack);
-        sim.approach_target(gi, &rules, None, &mut crate::sim::world::FrameEffects::default());
+        sim.approach_target(
+            gi,
+            &rules,
+            None,
+            &mut crate::sim::world::FrameEffects::default(),
+        );
         let entity = sim.substrate.entities.get(gi).unwrap();
         let doing = entity.mission_leaf.as_infantry().unwrap().doing();
         assert_eq!(

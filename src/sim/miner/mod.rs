@@ -302,7 +302,9 @@ impl Miner {
         let miner = slot
             .as_mut()
             .expect("existing or newly represented storage");
-        miner.kind = kind.unwrap_or(MinerKind::Inactive);
+        {
+            miner.kind = kind.unwrap_or(MinerKind::Inactive);
+        }
         // The constructor's compatibility default is not a current-Type read:
         // a conversion to Storage=0 retains zero rather than a chassis default.
         miner.capacity_bales = object.storage.max(0) as u16;
@@ -362,7 +364,6 @@ impl Miner {
     }
 
     /// Total credit value of all bales currently in the hold.
-    #[cfg(any(test, feature = "test-support"))]
     pub fn cargo_value(&self) -> u32 {
         self.cargo.iter().map(|b| b.value as u32).sum()
     }

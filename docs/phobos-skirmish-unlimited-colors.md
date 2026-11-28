@@ -1,6 +1,6 @@
 # Optional Phobos unlimited skirmish colours
 
-Build with `--features phobos` and set `[General] SkirmishUnlimitedColors=yes`
+Phobos is in every build; turn it on from a game's data and set `[General] SkirmishUnlimitedColors=yes`
 to let a spawner address any `[Colors]` entry as a player colour. The feature is
 Phobos `Phobos.INI.cpp`, hook `InitRules_ThingsThatShouldntBeSerailized` at
 `0x0052D21F` (6 bytes), which reads the key with `CCINIClass::ReadBool` and then

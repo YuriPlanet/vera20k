@@ -87,11 +87,27 @@ pub(super) fn prepare(
     if !data.needs_designator && !influence.any_inhibitor && influence.inhibitors.is_empty() {
         return data;
     }
-    // Predicates1006D880/1006D900: exact owner for designation, hostile
-    // owner for inhibition, alive/nonzero HP/nonlimbo/not deactivated for
-    // both, plus Building IsPowerOnline4555D0 for inhibitors only.
-    // Query XY is pure; coalescing the two scans draws no RNG and writes no
-    // timer, detach, fog or cell state.
+    let (designators, inhibitors) = scan_influences(sim, rules, owner, influence);
+    data.designators = designators;
+    data.inhibitors = inhibitors;
+    data
+}
+
+/// The designator/inhibitor sites of `owner` against `influence`'s lists:
+/// the scan Ares' `TargetingData` and Phobos' `SW.Next` gates share.
+///
+/// Predicates1006D880/1006D900: exact owner for designation, hostile owner
+/// for inhibition, alive/nonzero HP/nonlimbo/not deactivated for both, plus
+/// Building IsPowerOnline4555D0 for inhibitors only. Query XY is pure; the
+/// scan draws no RNG and writes no timer, detach, fog or cell state.
+pub(super) fn scan_influences(
+    sim: &Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    influence: &crate::rules::superweapon_influence::SuperWeaponInfluence,
+) -> (Vec<RangedSite>, Vec<RangedSite>) {
+    let mut designators = Vec::new();
+    let mut inhibitors = Vec::new();
     for entity in sim.substrate.entities.values() {
         if !entity.is_object_alive()
             || entity.health.current() == 0
@@ -125,7 +141,7 @@ pub(super) fn prepare(
         if designator {
             let range = ty.designator_range().unwrap_or(ty.sight);
             if range > 0 {
-                data.designators.push(RangedSite {
+                designators.push(RangedSite {
                     center,
                     range_squared: range.wrapping_mul(range),
                 });
@@ -134,14 +150,52 @@ pub(super) fn prepare(
         if inhibitor {
             let range = ty.inhibitor_range().unwrap_or(ty.sight);
             if range > 0 {
-                data.inhibitors.push(RangedSite {
+                inhibitors.push(RangedSite {
                     center,
                     range_squared: range.wrapping_mul(range),
                 });
             }
         }
     }
-    data
+    (designators, inhibitors)
+}
+
+/// Phobos `SWTypeExt::HasDesignator` (`Ext/SWType/SWHelpers.cpp:122-131`): an
+/// empty list and no `SW.AnyDesignator` require none; otherwise a single
+/// owning designator in range answers true.
+pub(super) fn has_designator(
+    sim: &Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    influence: &crate::rules::superweapon_influence::SuperWeaponInfluence,
+    cell: (u16, u16),
+) -> bool {
+    if influence.designators.is_empty() && !influence.any_designator {
+        return true;
+    }
+    scan_influences(sim, rules, owner, influence)
+        .0
+        .iter()
+        .any(|site| site.contains(cell))
+}
+
+/// Phobos `SWTypeExt::HasInhibitor` (`Ext/SWType/SWHelpers.cpp:83-93`): an
+/// empty list and no `SW.AnyInhibitor` refuse nothing; otherwise a single
+/// hostile inhibitor in range blocks.
+pub(super) fn has_inhibitor(
+    sim: &Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    influence: &crate::rules::superweapon_influence::SuperWeaponInfluence,
+    cell: (u16, u16),
+) -> bool {
+    if influence.inhibitors.is_empty() && !influence.any_inhibitor {
+        return false;
+    }
+    scan_influences(sim, rules, owner, influence)
+        .1
+        .iter()
+        .any(|site| site.contains(cell))
 }
 
 /// Shared optional-SW target/placement bound, using the terrain owner.

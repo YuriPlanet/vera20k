@@ -73,9 +73,9 @@ related presentation work came from:
 commands under `#[cfg(feature = "verax")]`. AutoLoad's distribution and range are VeraX input
 policy; its ordinary Enter orders and boarding admission reuse the native-derived engine owners
 (`FootClass::ClickedAction` at `0x004D74E0`, `UnitClass::Receive_Radio` at `0x00737430`).
-VeraX is orthogonal to the other extensions: it combines with Ares and NPatch, which every build
-holds and whose game data switches them on ([Ares](ares.md), [NPatch](npatch.md)), and with the
-`phobos` build feature (`--features phobos,verax`). The compatibility rule and the pattern for two
+VeraX is orthogonal to the other extensions: it combines with Ares, Phobos and NPatch, which
+every build holds and whose game data switches them on ([Ares](ares.md),
+[Phobos](phobos.md), [NPatch](npatch.md)). The compatibility rule and the pattern for two
 extensions touching one native site are in
 [NPatch compatibility](npatch.md#cross-extension-compatibility).
 

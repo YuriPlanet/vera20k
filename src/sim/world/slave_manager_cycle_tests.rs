@@ -972,3 +972,268 @@ fn area_guard_starts_an_idle_slave_miners_hunt_at_once() {
         assert!(miner.navigation.nav_com().is_some(), "human {human}");
     }
 }
+
+/// A two-slave scene whose `[SLAV]` section carries the Phobos slave keys.
+fn freed_scene(slave_keys: &str) -> SlaveScene {
+    use crate::sim::world::slave_manager_oracle_tests::row_scene_edited;
+    row_scene_edited(
+        &serde_json::json!({
+            "name": "phobos-free",
+            "nodes": [
+                {"state": 3, "cell": [17, 12], "mission": "harvest"},
+                {"state": 1, "cell": [16, 14]},
+            ],
+            "ore": [],
+        }),
+        |text, _art| {
+            *text = text.replacen(
+                "[SLAV]\nStrength=125",
+                &format!("[SLAV]\n{slave_keys}Strength=125"),
+                1,
+            );
+            // The suicide arm damages with `C4Warhead=`.
+            text.push_str("[CombatDamage]\nC4Warhead=KILLWH\n");
+        },
+    )
+}
+
+fn phobos_kill(s: &mut SlaveScene) -> u64 {
+    let russians = s.scene.sim.interner.intern("Russians");
+    s.scene
+        .sim
+        .houses
+        .register(crate::sim::house_state::HouseState::new(
+            russians, 1, None, true, 0, 10,
+        ));
+    let killer = s
+        .scene
+        .sim
+        .spawn_object("MTNK", "Russians", 10, 20, 0, &s.scene.rules)
+        .expect("killer");
+    s.scene.sim.sound_events.clear_for_test();
+    let master = s.master;
+    kill(s, master, Some(killer));
+    killer
+}
+
+/// Phobos `Slaved.OwnerWhenMasterKilled=suicide`
+/// (`Ext/Techno/Hooks.Misc.cpp:31-48`): the freed slave is damaged to death
+/// with `C4Warhead` instead of changing owner.
+#[test]
+fn a_suicide_slave_dies_when_its_master_is_killed() {
+    let mut s = freed_scene("Slaved.OwnerWhenMasterKilled=suicide\n");
+    phobos_kill(&mut s);
+    for index in [0, 1] {
+        let slave = s
+            .scene
+            .sim
+            .substrate
+            .entities
+            .get(s.slaves[&index])
+            .unwrap();
+        assert!(
+            !slave.lifecycle.object_alive(),
+            "slave {index} dies instead of changing owner"
+        );
+        assert_eq!(slave.seldom.slave.owner(), None);
+    }
+}
+
+/// `Master` keeps the slave's current owner even when a killer exists.
+#[test]
+fn a_master_slave_keeps_its_house() {
+    let mut s = freed_scene("Slaved.OwnerWhenMasterKilled=master\n");
+    phobos_kill(&mut s);
+    let americans = s.scene.sim.interner.get("Americans").unwrap();
+    for index in [0, 1] {
+        let slave = s
+            .scene
+            .sim
+            .substrate
+            .entities
+            .get(s.slaves[&index])
+            .unwrap();
+        assert_eq!(slave.owner(), americans, "slave {index} keeps its house");
+        assert_eq!(slave.seldom.slave.owner(), None);
+    }
+}
+
+/// `FreeSlaves`' sound hook reads the first freed slave's type
+/// `SlavesFreeSound=` over `[AudioVisual] SlavesFreeSound=`.
+#[test]
+fn the_first_freed_slaves_type_sound_wins_over_the_global() {
+    let mut s = freed_scene("Slaved.OwnerWhenMasterKilled=master\nSlavesFreeSound=SLAVSHOUT\n");
+    s.scene.rules.general.slaves_free_sound = Some("GLOBALTONE".to_string());
+    phobos_kill(&mut s);
+    let sounds: Vec<&str> = s
+        .scene
+        .sim
+        .sound_events
+        .iter()
+        .filter_map(|event| match event {
+            SimSoundEvent::VocAt { sound_id, .. } => Some(sound_id.name_in(&s.scene.rules)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(sounds, ["SLAVSHOUT"], "the type sound replaces the global");
+}
+
+/// `SlavesFreeSound=none` is `NullableIdx`' explicit silence: the global
+/// sound must not play.
+#[test]
+fn an_explicit_none_slave_sound_stays_silent() {
+    let mut s = freed_scene("Slaved.OwnerWhenMasterKilled=master\nSlavesFreeSound=none\n");
+    s.scene.rules.general.slaves_free_sound = Some("GLOBALTONE".to_string());
+    phobos_kill(&mut s);
+    assert!(
+        !s.scene
+            .sim
+            .sound_events
+            .iter()
+            .any(|event| matches!(event, SimSoundEvent::VocAt { .. }))
+    );
+}
+
+/// An unset type key falls back to `[AudioVisual] SlavesFreeSound=`.
+#[test]
+fn an_unset_slave_sound_plays_the_global() {
+    let mut s = freed_scene("Slaved.OwnerWhenMasterKilled=master\n");
+    s.scene.rules.general.slaves_free_sound = Some("GLOBALTONE".to_string());
+    phobos_kill(&mut s);
+    let sounds: Vec<&str> = s
+        .scene
+        .sim
+        .sound_events
+        .iter()
+        .filter_map(|event| match event {
+            SimSoundEvent::VocAt { sound_id, .. } => Some(sound_id.name_in(&s.scene.rules)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(sounds, ["GLOBALTONE"]);
+}
+
+/// The hook's `0x6B0BA4` origin (no killer) ignores an explicit House
+/// argument: without a Neutral House the slaves die.
+#[test]
+fn a_killerless_release_ignores_an_explicit_house() {
+    let mut s = freed_scene("");
+    let americans = s.scene.sim.interner.get("Americans").unwrap();
+    let master = s.master;
+    s.scene.sim.sound_events.clear_for_test();
+    s.scene.sim.free_slaves(
+        master,
+        None,
+        Some(americans),
+        &s.scene.rules,
+        Some(registry()),
+        &mut crate::sim::world::FrameEffects::default(),
+    );
+    for index in [0, 1] {
+        let slave = s
+            .scene
+            .sim
+            .substrate
+            .entities
+            .get(s.slaves[&index])
+            .unwrap();
+        assert!(
+            !slave.lifecycle.object_alive(),
+            "slave {index} dies when no Neutral House exists"
+        );
+    }
+}
+
+/// `Neutral` hands the slave to the `Neutral` country's House.
+#[test]
+fn a_neutral_slave_joins_the_neutral_country_house() {
+    let mut s = freed_scene("Slaved.OwnerWhenMasterKilled=neutral\n");
+    let neutral = s.scene.sim.interner.intern("Neutral");
+    let neutral_house = s.scene.sim.interner.intern("Neutrals");
+    s.scene
+        .sim
+        .houses
+        .register(crate::sim::house_state::HouseState::new(
+            neutral_house,
+            2,
+            Some(neutral),
+            false,
+            0,
+            10,
+        ));
+    phobos_kill(&mut s);
+    for index in [0, 1] {
+        let slave = s
+            .scene
+            .sim
+            .substrate
+            .entities
+            .get(s.slaves[&index])
+            .unwrap();
+        assert_eq!(
+            slave.owner(),
+            neutral_house,
+            "slave {index} joins the Neutral country house"
+        );
+    }
+}
+
+/// Phobos `InfantryClass_SlaveGiveMoney_CheckBalanceAfter`
+/// (`Ext/Building/Hooks.Refinery.cpp:40-61`): a non-Building Slave Miner unit
+/// whose `DeploysInto=` building has `DisplayIncome=yes` prints the deposit's
+/// balance delta immediately at its `Location`.
+#[test]
+fn a_unit_slave_miner_prints_the_deposit_delta() {
+    use super::slave_manager_oracle_tests::row_scene_edited;
+    use crate::rules::tiberium_type::TiberiumTypeId;
+    use crate::sim::flying_text::BountyText;
+    use crate::sim::miner::{CargoBale, ResourceType};
+    use crate::sim::world::FrameEffects;
+
+    let input = serde_json::json!({
+        "name": "ts_deposit",
+        "owner": "unit",
+        "manager_state": 0,
+        "nodes": [{"state": 0, "cell": [15, 15], "limbo": true}],
+        "ore": [],
+    });
+    let mut s = row_scene_edited(&input, |text, _| {
+        *text = text.replace(
+            "[YAREFN]\nStrength=2000",
+            "[YAREFN]\nDisplayIncome=yes\nStrength=2000",
+        );
+    });
+    let slave = *s.slaves.values().next().expect("a slave");
+    s.scene
+        .sim
+        .substrate
+        .entities
+        .get_mut(slave)
+        .unwrap()
+        .seldom
+        .slave
+        .add_bales(
+            CargoBale {
+                tiberium_type: TiberiumTypeId(0),
+                resource_type: ResourceType::Ore,
+                value: 25,
+            },
+            2,
+        );
+    let texts = std::cell::RefCell::new(Vec::new());
+    let mut observe = |_: &crate::sim::world::Simulation,
+                       _: &crate::rules::ruleset::RuleSet,
+                       text: BountyText| {
+        texts.borrow_mut().push(text);
+    };
+    s.scene.sim.slave_deposit(
+        slave,
+        s.master,
+        &s.scene.rules,
+        &mut FrameEffects::empty().with_bounty_text(&mut observe),
+    );
+    let texts = texts.into_inner();
+    assert_eq!(texts.len(), 1, "the immediate label");
+    assert_eq!(texts[0].entity_id, Some(s.master));
+    assert!(texts[0].amount > 0, "the deposit credited the owner");
+}

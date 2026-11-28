@@ -903,13 +903,11 @@ fn gsi_04_07_damage_air_source_admission_follows_damage_self() {
     }
 
     // Retail admits the airborne source unconditionally.
-    #[cfg(not(feature = "phobos"))]
     {
         assert_eq!(run(false, "BlastWH"), vec![1]);
         assert_eq!(run(true, "BlastWH"), vec![1]);
     }
 
-    #[cfg(feature = "phobos")]
     {
         assert!(
             run(false, "BlastWH").is_empty(),
@@ -2297,7 +2295,6 @@ fn gsi_04_07_damage_receiver_pipeline_source_admission_and_house_snapshot() {
 
     // Phobos `Explosion_Damage_DamageSelf @ 0x004896EC` skips the source
     // exclusion, so a DamageSelf=no source still collects its own hit.
-    #[cfg(feature = "phobos")]
     {
         let (allow_ids, _, allow_hp) = run(false, "SelfWH");
         assert_eq!(allow_ids, vec![1, 2, 3]);
@@ -3668,6 +3665,7 @@ fn gsi_04_10_wood_splash_collects_terrain_in_native_receiver_order() {
             adjacent.distance_leptons,
             false,
             rules.combat_damage.max_damage,
+            false,
         ),
         75,
         "the captured per-object distance produces the exact shared-kernel falloff at commit"

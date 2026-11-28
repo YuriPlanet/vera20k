@@ -309,8 +309,9 @@ impl IniSection {
     }
 
     /// The raw stored text of an exact-case key, private to the store and its
-    /// readers.
-    fn get(&self, key: &str) -> Option<&str> {
+    /// readers. Rules-side folds such as the `ValueableIdx` per-pass replay also
+    /// read the selected text directly.
+    pub(crate) fn get(&self, key: &str) -> Option<&str> {
         if let Some(index) = &self.fresh_index {
             // FindINIEntryIndexPair52B6D0 returns the first equal midpoint it
             // visits. Fresh loads have no intervening mutable cache history.
@@ -351,7 +352,7 @@ impl IniSection {
 
     /// The values successive Rules passes gave `key`, for a reader (noted as
     /// [`Self::value`] notes them).
-    fn projected_values(&self, key: &str) -> Option<&[String]> {
+    pub(crate) fn projected_values(&self, key: &str) -> Option<&[String]> {
         let values = self.projected_values.get(key).map(Vec::as_slice);
         if values.is_some() {
             crate::rules::ares_switch::note_found(&self.name, key);

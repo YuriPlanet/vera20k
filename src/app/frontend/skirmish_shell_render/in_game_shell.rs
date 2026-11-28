@@ -171,12 +171,9 @@ pub(crate) fn current_in_game_shell_layout(
         &match_state.match_presentation,
         persistence,
     );
-    // The Phobos switch is absent from builds without the capability, so those
-    // keep the native top-left placement.
-    #[cfg(feature = "phobos")]
+    // The loaded UIMD switch defaults false, keeping the native top-left
+    // placement until a mod turns it on.
     let center_background = match_state.match_presentation.center_pause_menu_background;
-    #[cfg(not(feature = "phobos"))]
-    let center_background = false;
     Some(InGameShellGeometry {
         width,
         height,
@@ -358,6 +355,32 @@ pub(super) fn paint_dialog(
     dialog: &InGameDialog,
     extras: impl FnOnce(&mut InGamePaint<'_>, &DialogController),
 ) -> InGameShellFrame {
+    paint_dialog_with_text(
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        process_assets,
+        persistence,
+        dialog,
+        &|_| None,
+        extras,
+    )
+}
+
+/// [`paint_dialog`] with a dialog-specific caption/status override. The shared
+/// owner still paints the lower button, title and footer in native order.
+pub(super) fn paint_dialog_with_text(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    persistence: &PersistenceState,
+    dialog: &InGameDialog,
+    text_override: &dyn Fn(i32) -> Option<String>,
+    extras: impl FnOnce(&mut InGamePaint<'_>, &DialogController),
+) -> InGameShellFrame {
     use crate::ui::shell::in_game_shell::{FOOTER, TITLE};
     let ui = (dialog.ui)(&match_state.match_presentation).expect("the open dialog's controls");
     let mut paint = InGamePaint::new(platform, renderer, frontend, match_state, persistence);
@@ -372,14 +395,14 @@ pub(super) fn paint_dialog(
         )
     });
     let text_of = |id: i32| -> Option<String> {
-        match u16::try_from(id).ok()? {
+        text_override(id).or_else(|| match u16::try_from(id).ok()? {
             TITLE => dialog
                 .title
                 .map(|(key, fallback)| process_assets.csf_label(key, fallback)),
             FOOTER => crate::app::input::dialog_page::help(ui, under)
                 .map(|key| process_assets.csf_label(key, (dialog.help_fallback)(key))),
             _ => Some(process_assets.csf_label(key, fallback)),
-        }
+        })
     };
     let style = super::gui_paint::GuiStyle {
         buttons: super::gui_paint::ButtonArt::Side,

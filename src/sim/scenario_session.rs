@@ -1005,6 +1005,11 @@ pub struct ScenarioSession {
     /// Scenario+11E8 countdown and authored+11F4/+11F8 caption. Mutations
     /// belong to the countdown owner; UI consumes only its retained view.
     scenario_countdown: countdown::ScenarioCountdown,
+    /// Phobos `BannerClass::Array` (`New/Entity/BannerClass.h:11`): the
+    /// trigger actions 800-802 create these; mutations belong to
+    /// [`crate::sim::banner`], the draw reads them.
+    #[serde(default)]
+    banners: crate::sim::banner::BannerList,
     /// Destination Scenario+1C78/+1C80; immutable after its Basic read.
     carry_over_money: Option<crate::util::native_x87::NativeF64Bits>,
     carry_over_cap: i32,
@@ -1959,6 +1964,21 @@ impl ScenarioSession {
             })
     }
 
+    /// The count `ScenarioClass::NumberStartingPoints` holds after
+    /// `Gather_Start_Positions`: the valid multiplayer start waypoints
+    /// (`0..=7`) VERA retained from the map. A VERA local scene has none,
+    /// which leaves the team-delay dynamic path dormant exactly as a one-player
+    /// start does in native.
+    pub fn multiplayer_start_count(&self) -> i32 {
+        i32::try_from(
+            self.waypoints
+                .range(crate::map::waypoints::MULTIPLAYER_START_WAYPOINTS)
+                .filter(|&(_, &(rx, ry))| (rx, ry) != (0, 0))
+                .count(),
+        )
+        .unwrap_or(i32::MAX)
+    }
+
     pub(crate) const fn computer_slot_has_team(&self) -> bool {
         self.computer_slot_has_team
     }
@@ -2497,6 +2517,7 @@ impl ScenarioSession {
             chrono_screen: crate::sim::superweapon::chrono_screen::ChronoScreenState::default(),
             scenario_pause: pause::ScenarioPause::default(),
             scenario_countdown: countdown::ScenarioCountdown::new(desc.timer_inherit),
+            banners: crate::sim::banner::BannerList::default(),
             carry_over_money: desc.carry_over_money,
             carry_over_cap: desc.carry_over_cap.unwrap_or(0),
             started: false,
@@ -3284,6 +3305,20 @@ mod tests {
         sim.session.set_map_width_for_test(513);
         sim.session.set_map_height_for_test(513);
         assert!(sim.session.map_exceeds_original_size());
+    }
+}
+
+impl ScenarioSession {
+    pub fn banner_create_or_replace(&mut self, banner: crate::sim::banner::RuntimeBanner) {
+        self.banners.create_or_replace(banner);
+    }
+
+    pub fn banner_delete(&mut self, id: i32) -> bool {
+        self.banners.delete(id)
+    }
+
+    pub fn banners(&self) -> &[crate::sim::banner::RuntimeBanner] {
+        self.banners.entries()
     }
 }
 

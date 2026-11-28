@@ -22,28 +22,61 @@ pub(crate) fn mission_eaten(
     id: u64,
     effects: &mut FrameEffects<'_>,
 ) -> i32 {
-    let Some(entity) = sim.substrate.entities.get(id) else {
-        return 1;
+    let (building_target, nav_com, category, type_ref, rank) = {
+        let Some(entity) = sim.substrate.entities.get(id) else {
+            return 1;
+        };
+        let building_target = match entity.attack_target.target() {
+            Some(TargetKind::Entity(target)) => sim
+                .substrate
+                .entities
+                .get(target)
+                .filter(|object| object.category() == EntityCategory::Structure)
+                .map(|_| target),
+            _ => None,
+        };
+        (
+            building_target,
+            entity.navigation.nav_com(),
+            entity.category(),
+            entity.type_ref(),
+            entity.veterancy.rank_kind(),
+        )
     };
-    let building_target = match entity.attack_target.target() {
-        Some(TargetKind::Entity(target)) => sim
-            .substrate
-            .entities
-            .get(target)
-            .filter(|object| object.category() == EntityCategory::Structure)
-            .map(|_| target),
-        _ => None,
-    };
+    // Phobos `FootClass_Mission_Eaten_Grinding` (`0x4D4CD3`,
+    // `Hooks.Grinding.cpp:52-66`): when the destination is a `Grinding=`
+    // building whose type refuses this foot, clear it and take the
+    // missing-destination arm (LoseDestination `0x4D4D43`) without the
+    // TarCom restore below.
+    let refused_destination = rules.phobos()
+        && matches!(
+            nav_com,
+            Some(NavTargetRef::Object { id: building })
+                if sim.substrate.entities.get(building).is_some_and(|target| {
+                    target.category() == EntityCategory::Structure
+                        && sim
+                            .object_type(target.type_ref(), rules)
+                            .is_some_and(|object| object.grinding)
+                        && !sim.can_grind_techno(building, id, rules)
+                })
+        );
+    if refused_destination {
+        sim.assign_null_destination(id, rules, registry, effects);
+    }
+    let restore_destination = !refused_destination;
     //4D4CE7..4D4D33: only C4-capable or Engineer Infantry restore a
     //missing destination from TarCom. Ordinary civilians keep their NavCom.
-    if let Some(building) = building_target
-        && entity.navigation.nav_com().is_none()
-        && entity.category() == EntityCategory::Infantry
+    if restore_destination
+        && let Some(building) = building_target
         && sim
-            .object_type(entity.type_ref(), rules)
-            .is_some_and(|object| {
-                veterancy::holds_c4(entity.veterancy.rank_kind(), object) || object.engineer
-            })
+            .substrate
+            .entities
+            .get(id)
+            .is_some_and(|entity| entity.navigation.nav_com().is_none())
+        && category == EntityCategory::Infantry
+        && sim
+            .object_type(type_ref, rules)
+            .is_some_and(|object| veterancy::holds_c4(rank, object) || object.engineer)
     {
         let _ = sim.assign_destination_represented(
             id,

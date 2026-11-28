@@ -652,10 +652,14 @@ pub(super) fn command_request(
             id,
         })
     };
-    // A MegaMission token: an object goes to `other`, a cell to `cell`.
+    // A MegaMission token: an object goes to `other`, a cell (including a
+    // bullet target's projected GetCoords cell) to `cell`.
     let token = |kind: &Option<TargetKind>| match *kind {
         Some(TargetKind::Entity(id)) => (id, None),
         Some(TargetKind::Cell(x, y)) => (0, Some((x, y))),
+        Some(TargetKind::Bullet(id)) => {
+            super::control::target_fields(sim, Some(TargetKind::Bullet(id)))
+        }
         None => (0, None),
     };
     let techno = |type_id: InternedId| {

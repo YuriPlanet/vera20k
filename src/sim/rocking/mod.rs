@@ -131,25 +131,39 @@ impl RockingState {
     }
 
     /// Unit73B05B..73B06E, after Cell480CB0(-1) regardless of its return:
-    /// FADD binary32 constant7F4E38 (+0.02), then FSTP Techno+334.
+    /// FADD the overlay-crush tilt, then FSTP Techno+334. Stock adds binary32
+    /// 0.02 (`0x3CA3D70A`); Phobos `CrushOverlayExtraForwardTilt`
+    /// (`Ext/Unit/Hooks.Crushing.cpp:18`) replaces that constant.
     /// Original numeric controls: unit_per_cell_overlay.json.
-    pub(crate) fn recoil_after_overlay_crush(&mut self) {
+    pub(crate) fn recoil_after_overlay_crush(&mut self, extra: f32) {
         self.vel_forwards = store(X::add(
             load(self.vel_forwards),
-            load(NativeF32Bits::from_bits(0x3ca3_d70a)),
+            load(NativeF32Bits::from_bits(extra.to_bits())),
         ));
     }
 
-    /// Crush_Or_Prescatter_Cell's tail after crushing a Unit
-    /// (`0x00741939..0x00741954`): FCOMP of Techno+334 with binary32 0.0
-    /// (`0x007E1748`); on C3 (equal, either zero, or unordered) the store of
-    /// binary32 -0.05 (`0xBD4CCCCD`).
-    pub(crate) fn tilt_after_unit_crush(&mut self) {
+    /// Phobos `UnitClass_OverrunSquare_TiltWhenCrushes`
+    /// (`Ext/Unit/Hooks.Crushing.cpp:27-38`, hook `0x741941`) replaces the
+    /// stock FCOMP block and stores its `CrushForwardTiltPerFrame` rate
+    /// (default stock binary32 -0.05, `0xBD4CCCCD`) unconditionally. The
+    /// caller applies the `TiltsWhenCrushes.Vehicles` gate first. Without
+    /// Phobos the stock FCOMP tail stores only on C3: an equal, either zero
+    /// or unordered forward rate.
+    pub(crate) fn tilt_after_unit_crush(&mut self, tilt: NativeF32Bits, phobos: bool) {
+        if phobos {
+            self.vel_forwards = tilt;
+            return;
+        }
         let forwards = f32::from_bits(self.vel_forwards.bits());
         if forwards == 0.0 || forwards.is_nan() {
-            self.vel_forwards = NativeF32Bits::from_bits(0xbd4c_cccd);
+            self.vel_forwards = tilt;
         }
     }
+
+    /// Crush_Or_Prescatter_Cell's stock tail (`0x00741939..0x00741954`):
+    /// FCOMP of Techno+334 with binary32 0.0 (`0x007E1748`); on C3 (equal,
+    /// either zero, or unordered) it stores the crusher's rate. The Phobos
+    /// hook is not compiled in.
 
     #[cfg(any(test, feature = "test-support"))]
     pub fn set_angle_forwards_for_test(&mut self, angle: SimFixed) {

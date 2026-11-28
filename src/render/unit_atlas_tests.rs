@@ -769,6 +769,141 @@ fn indexed_turret_names_and_draw_admission_match_native_controls() {
     }
 }
 
+/// Phobos `TurretShadow=` (`Ext/TechnoType/Body.cpp:1323`): the gate falls back
+/// to `[AudioVisual] DrawTurretShadow=` (`Ext/Rules/Body.cpp:173`, default no),
+/// and when the gate is on the seeded demand carries a turret stencil under the
+/// turret's own facing steps (`Ext/TechnoType/Hooks.MatrixOp.cpp:803,870`).
+#[test]
+fn turret_shadow_gate_follows_the_art_key_and_seeds_turret_stencils() {
+    use crate::map::source::test_support::TestDirectory;
+    use crate::rules::ini_parser::IniFile;
+    use crate::rules::ruleset::RuleSet;
+    let fixture: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/voxel_oracle/shadow_fixtures.json",
+    ))
+    .unwrap();
+    let bytes = |hex: &str| -> Vec<u8> {
+        hex.as_bytes()
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap())
+            .collect()
+    };
+    let dir = TestDirectory::new("turret-shadow-demand");
+    dir.write(
+        "TANK.VXL",
+        bytes(fixture["vxl"].as_str().unwrap()).as_slice(),
+    );
+    dir.write(
+        "TANKTUR.VXL",
+        bytes(fixture["vxl"].as_str().unwrap()).as_slice(),
+    );
+    dir.write(
+        "TANKBARL.VXL",
+        bytes(fixture["vxl"].as_str().unwrap()).as_slice(),
+    );
+    for name in ["TANK.HVA", "TANKTUR.HVA", "TANKBARL.HVA"] {
+        dir.write(name, bytes(fixture["hva"].as_str().unwrap()).as_slice());
+    }
+    let assets = AssetManager::from_loose_root_for_test(dir.path());
+
+    let rules_text = |draw: &str| {
+        IniFile::from_str(&format!(
+            "[AudioVisual]\n{draw}[VehicleTypes]\n0=TANK\n[TANK]\nTurret=yes\nImage=TANK\nFireAngle=64\n"
+        ))
+    };
+    let shadow_keys = |draw: &str, art: &IniFile| {
+        let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&rules_text(draw), art).unwrap();
+        rules.bind_effect_assets(&assets, "TEM", "TEMPERATE");
+        let keys = needed_unit_keys(
+            &UnitAtlasDemand {
+                ground: BTreeSet::from(["TANK".to_string()]),
+                ..Default::default()
+            },
+            &assets,
+            Some(&rules),
+        )
+        .0;
+        let turret = keys
+            .iter()
+            .filter(|key| key.layer == VxlLayer::ShadowTurret)
+            .cloned()
+            .collect::<Vec<_>>();
+        let barrel = keys
+            .iter()
+            .filter(|key| key.layer == VxlLayer::ShadowBarrel)
+            .cloned()
+            .collect::<Vec<_>>();
+        (rules, turret, barrel)
+    };
+
+    // `DrawTurretShadow=` alone opens the gate; the seeded keys sit on the
+    // turret facing step, which is finer than the body's.
+    let (rules, turret, barrel) = shadow_keys(
+        "DrawTurretShadow=yes\n",
+        &IniFile::from_str("[TANK]\nVoxel=yes\n"),
+    );
+    assert!(turret_shadow_enabled(
+        Some(&rules),
+        rules.object("TANK").unwrap()
+    ));
+    assert!(
+        turret
+            .iter()
+            .any(|key| key.facing % TURRET_FACING_STEP == 0 && key.facing != 0),
+        "the turret stencil covers the turret's facing buckets"
+    );
+    assert_eq!(turret[0].turret_index, 0);
+    assert!(
+        barrel
+            .iter()
+            .any(|key| key.facing % TURRET_FACING_STEP == 0 && key.barrel_pitch != 0),
+        "the barrel stencil follows the turret facing and barrel pitch"
+    );
+    let model = UnitModel::load(&assets, "TANK", Some(&rules)).unwrap();
+    for key in [&turret[0], &barrel[0]] {
+        assert!(
+            model.render(key, None, None, &mut None).is_some(),
+            "the production atlas renders {key:?}"
+        );
+    }
+    let pitched = barrel
+        .iter()
+        .find(|key| key.barrel_pitch != 0)
+        .expect("a pitched barrel shadow");
+    let mut level = pitched.clone();
+    level.barrel_pitch = 0;
+    let pitched_sprite = model.render(pitched, None, None, &mut None).unwrap().0;
+    let level_sprite = model.render(&level, None, None, &mut None).unwrap().0;
+    assert_ne!(
+        pitched_sprite.palette_indices, level_sprite.palette_indices,
+        "barrel pitch changes the shadow geometry"
+    );
+
+    // An ART `TurretShadow=no` overrides the global yes.
+    let (rules, art_off_turret, art_off_barrel) = shadow_keys(
+        "DrawTurretShadow=yes\n",
+        &IniFile::from_str("[TANK]\nVoxel=yes\nTurretShadow=no\n"),
+    );
+    assert!(!turret_shadow_enabled(
+        Some(&rules),
+        rules.object("TANK").unwrap()
+    ));
+    assert!(art_off_turret.is_empty());
+    assert!(art_off_barrel.is_empty());
+
+    // Default `DrawTurretShadow=no` (`Ext/Rules/Body.h:737`): no stencil.
+    let (rules, default_off_turret, default_off_barrel) =
+        shadow_keys("", &IniFile::from_str("[TANK]\nVoxel=yes\n"));
+    assert!(!turret_shadow_enabled(
+        Some(&rules),
+        rules.object("TANK").unwrap()
+    ));
+    assert!(default_off_turret.is_empty());
+    assert!(default_off_barrel.is_empty());
+}
+
 /// Byte identity is retail evidence; distinct raster outputs and unchanged
 /// hull/shadow pixels are Rust regression checks, not native raster parity.
 #[test]
@@ -1073,7 +1208,11 @@ fn tumble_selects_one_physical_section_for_body_and_shadow() {
     );
     assert_eq!(
         paint_raster.pages,
-        crate::render::vxl_normals::diffuse_pages(4, glam::Mat3::from_mat4(matrix))
+        crate::render::vxl_normals::diffuse_pages(
+            4,
+            glam::Mat3::from_mat4(matrix),
+            crate::render::vxl_normals::VoxelLight::default(),
+        )
     );
     let Some(vxl_raster::VoxelImage::Stencil {
         raster: shadow_raster,
@@ -1208,6 +1347,20 @@ fn a_world_of_declared_models_makes_the_atlas() {
         rules,
         Some(&interner)
     ));
+
+    let mut image_atlas = None;
+    admit_world_and_image_models(
+        &mut image_atlas,
+        &crate::sim::entity_store::EntityStore::new(),
+        ["TEST"].into_iter(),
+        &assets,
+        rules,
+        Some(&interner),
+        8192,
+    );
+    let image_atlas = image_atlas.expect("an image override makes the atlas");
+    assert!(image_atlas.models.is_empty(), "no VXL is read");
+    assert!(image_atlas.covered.is_empty(), "no VXL demand is covered");
 }
 
 /// A placed sprite waits for its upload as the resident cache's pixels

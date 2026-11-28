@@ -6,10 +6,8 @@
 //! and never reaches into another module's private fields. It only reads;
 //! it never advances timers, draws RNG or writes state.
 //!
-//! Two native info types have no owner in VERA and therefore return `None`:
-//! `PassengerKill` (Phobos passenger deletion) and `AutoDeath` (Phobos
-//! auto-death). A display whose value is absent draws nothing, matching
-//! Phobos's `value <= -1 || maxValue <= 0` skip.
+//! A display whose value is absent draws nothing, matching Phobos's
+//! `value <= -1 || maxValue <= 0` skip.
 
 use crate::rules::digital_display::DigitalInfoType;
 use crate::rules::ruleset::RuleSet;
@@ -63,7 +61,7 @@ pub fn values_for_display(
         DigitalInfoType::Shield => {
             let shield = entity.shield()?;
             let ty = rules.shield_type(shield.type_name())?;
-            if shield.broken_non_respawning(ty) {
+            if shield.broken_non_respawning(ty, sim.session.binary_frame() as i32) {
                 return None;
             }
             (shield.hp(), ty.strength())
@@ -225,8 +223,30 @@ pub fn values_for_display(
             let timer = entity.produce_cash.timer();
             (timer.remaining(frame), timer.duration())
         }
-        // No Phobos PassengerDeletion or AutoDeath owner exists in VERA.
-        DigitalInfoType::PassengerKill | DigitalInfoType::AutoDeath => return None,
+        // Phobos `Body.Visuals.cpp:696-717`: an unset `AutoDeath.Behavior=`
+        // draws nothing; the timed arm reports the clock's remaining and full
+        // duration, the ammo arm (unported) the Ammo. An unstarted clock has
+        // `remaining == duration == 0`, which the renderer's `maximum <= 0`
+        // skip drops, as native's `TimeLeft` does.
+        DigitalInfoType::AutoDeath => {
+            if object.phobos_auto_death.behavior.is_none()
+                || object.phobos_auto_death.after_delay <= 0
+            {
+                return None;
+            }
+            let timer = entity.auto_death_timer();
+            (timer.remaining(frame), timer.duration())
+        }
+        // Phobos `Body.Visuals.cpp:687-698`: a type without a
+        // PassengerDeletion config draws nothing; otherwise the deletion
+        // clock's remaining and full duration.
+        DigitalInfoType::PassengerKill => {
+            if object.phobos_passenger_deletion.is_none() {
+                return None;
+            }
+            let timer = entity.passenger_deletion_timer();
+            (timer.remaining(frame), timer.duration())
+        }
         DigitalInfoType::SuperWeapon => {
             if entity.category() != crate::map::entities::EntityCategory::Structure {
                 return None;
@@ -390,7 +410,6 @@ mod tests {
             DigitalInfoType::Occupants,
             DigitalInfoType::ProduceCash,
             DigitalInfoType::PassengerKill,
-            DigitalInfoType::AutoDeath,
             DigitalInfoType::SuperWeapon,
             DigitalInfoType::IronCurtain,
             DigitalInfoType::TemporalLife,
@@ -402,6 +421,46 @@ mod tests {
                 "{info_type:?}"
             );
         }
+    }
+
+    /// Phobos `Body.Visuals.cpp:687-698`: `PassengerKill` shows the deletion
+    /// clock when the type configures one, and nothing otherwise.
+    #[test]
+    fn passenger_kill_reports_the_deletion_clock() {
+        let (mut sim, rules) = fixture(
+            "[VehicleTypes]
+0=TEST
+[TEST]
+Strength=200
+PassengerDeletion.Rate=5
+",
+        );
+        sim.session_mut_for_test().set_binary_frame_for_test(12);
+        sim.substrate
+            .entities
+            .get_mut(1)
+            .unwrap()
+            .passenger_deletion_timer_mut()
+            .start(10, 5);
+        let type_ref = sim.entities().get(1).unwrap().type_ref();
+        let object = sim
+            .interner()
+            .object_type(type_ref, &rules)
+            .unwrap()
+            .clone();
+        let entity = sim.entities().get(1).unwrap();
+        assert_eq!(
+            values_for_display(
+                &sim,
+                entity,
+                &object,
+                &rules,
+                DigitalInfoType::PassengerKill,
+                0,
+                None
+            ),
+            Some((3, 5))
+        );
     }
 
     #[test]

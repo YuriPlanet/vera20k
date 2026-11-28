@@ -2282,17 +2282,20 @@ fn mind_control_attack_order_fires_attacked_tags_without_hp_damage() {
     // Every House here is a computer, whose events the DoList never runs
     // (0x0064C4FB..0x0064C50D). Order the Yuri through the class receiver, as
     // the computer's own AI does.
-    assert!((sim.apply_command_with_overlays(
-        crate::sim::command::CommandSender::Player(None),
-        "House0",
-        &Command::Attack {
-            attacker_id: source,
-            target_id: victim,
-        },
-        &rules,
-        Some(&overlay),
-        &mut FrameEffects::default(),
-    )).is_ok());
+    assert!(
+        (sim.apply_command_with_overlays(
+            crate::sim::command::CommandSender::Player(None),
+            "House0",
+            &Command::Attack {
+                attacker_id: source,
+                target_id: victim,
+            },
+            &rules,
+            Some(&overlay),
+            &mut FrameEffects::default(),
+        ))
+        .is_ok()
+    );
     for _ in 0..90 {
         let commands = sim.take_due_commands();
         sim.advance_tick(&commands, Some(&rules), None, Some(&overlay), 33);

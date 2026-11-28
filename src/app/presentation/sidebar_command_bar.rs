@@ -152,7 +152,12 @@ pub(crate) fn paint_order(
     let mut order = [nodes.bar_parts[0]; 13];
     let mut drawn = 1;
     // `read_button_list` keeps one slot per command.
-    for command in slots.iter().flatten().copied().filter(|&command| command < 11) {
+    for command in slots
+        .iter()
+        .flatten()
+        .copied()
+        .filter(|&command| command < 11)
+    {
         if drawn < 12 {
             order[drawn] = nodes.bar_buttons[command];
             drawn += 1;
@@ -351,7 +356,10 @@ mod tests {
         };
         let mut gadgets = SidebarGadgetState::default();
         let open = frame(&mut gui, &art, true, &gadgets);
-        assert!(open > slots.len(), "the rail, the tiles, six buttons and the thumb");
+        assert!(
+            open > slots.len(),
+            "the rail, the tiles, six buttons and the thumb"
+        );
         assert_eq!(frame(&mut gui, &art, true, &gadgets), open);
         gadgets.command_pressed[3] = true;
         gadgets.command_thumb_pressed = true;

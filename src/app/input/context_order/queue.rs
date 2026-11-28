@@ -1021,6 +1021,7 @@ fn queue_context_order(
                 (target_rx, target_ry),
                 modifier,
                 force_move_key,
+                planning,
             );
             queued.extend(
                 orders
@@ -1043,6 +1044,7 @@ fn queue_context_order(
                 (target_rx, target_ry),
                 modifier,
                 force_move_key,
+                planning,
             ) {
                 BuildingClick::Select => {
                     *selects = true;

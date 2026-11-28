@@ -114,11 +114,15 @@ impl Simulation {
             return (queue, delay);
         };
         let (target, destination) = (entity.attack_target.target(), entity.navigation.nav_com());
+        let (other, cell) = target_fields(self, target);
         let native = MissionStepResult {
             target: match target {
                 None => 0,
                 Some(TargetKind::Entity(object)) => object as i64,
                 Some(TargetKind::Cell(x, y)) => cell_ref(x, y),
+                // The result layout has object and cell references, but no
+                // projectile reference: retain a bullet target as its cell.
+                Some(TargetKind::Bullet(_)) => cell.map_or(0, |(x, y)| cell_ref(x, y)),
             },
             destination: destination.map_or(0, destination_ref),
             mission: queue.map_or(MissionStepResult::NO_MISSION, |queued| {
@@ -126,7 +130,6 @@ impl Simulation {
             }),
             delay,
         };
-        let (other, cell) = target_fields(self, target);
         let event = ModuleEvent {
             other,
             cell,

@@ -85,8 +85,43 @@ use crate::sim::movement::teleport_movement::{ChronoWarp, WarpSound};
 use crate::sim::occupancy::CellObjectMember;
 use crate::sim::world::{FrameAdvanceError, FrameEffects, ObjectAiCtx, Simulation};
 
-/// State 0's timer (`0x007197DF`, `MOV ECX,0x3C`).
+/// State 0's timer (`0x007197DF`, `MOV ECX,0x3C`), which Phobos replaces with
+/// the type's `ChronoSpherePreDelay=` else `[General] ChronoSpherePreDelay=`
+/// (`0x7197E4`, `Ext/TechnoType/Hooks.Teleport.cpp:154-163`).
 const CHRONO_WARP_OUT_FRAMES: i32 = 0x3C;
+
+/// The frames state 0 starts its timer with.
+fn chrono_warp_out_frames(
+    object: Option<&crate::rules::object_type::ObjectType>,
+    rules: &RuleSet,
+) -> i32 {
+    if !rules.phobos() {
+        return CHRONO_WARP_OUT_FRAMES;
+    }
+    {
+        object
+            .and_then(|object| object.phobos_chrono_sphere_pre_delay)
+            .unwrap_or(rules.phobos_globals.chrono_sphere_pre_delay)
+    }
+}
+
+/// The extra warp-in delay a chrono-sphered object keeps: the type's
+/// `ChronoSphereDelay=` else `[General] ChronoSphereDelay=` (default 0;
+/// `Ext/TechnoType/Body.cpp:868`, `Ext/Rules/Body.cpp:121`,
+/// `Ext/TechnoType/Hooks.Teleport.cpp:165-188`).
+fn chrono_sphere_in_delay(
+    object: Option<&crate::rules::object_type::ObjectType>,
+    rules: &RuleSet,
+) -> i32 {
+    if !rules.phobos() {
+        return 0;
+    }
+    {
+        object
+            .and_then(|object| object.phobos_chrono_sphere_delay)
+            .unwrap_or(rules.phobos_globals.chrono_sphere_delay)
+    }
+}
 /// CellClass `+0x140`: a bridge over the cell, and the bit Update_Position
 /// requires with it (`0x00718452..0x0071846E`).
 const CELL_FLAG_BRIDGE: u32 = 0x100;
@@ -290,11 +325,19 @@ impl Simulation {
         }
         match warp.state() {
             0 => {
+                let warp_out_frames = {
+                    let object = self
+                        .substrate
+                        .entities
+                        .get(id)
+                        .and_then(|entity| self.interner.object_type(entity.type_ref(), rules));
+                    chrono_warp_out_frames(object, rules)
+                };
                 if let Some(entity) = self.substrate.entities.get_mut(id) {
                     entity.set_warped_out(true); // 7197D0
                     if let Some(warp) = entity.chrono_warp_mut() {
                         warp.set_bytes(true, false);
-                        warp.start_timer(frame, CHRONO_WARP_OUT_FRAMES);
+                        warp.start_timer(frame, warp_out_frames);
                         warp.set_state(1);
                     }
                 }
@@ -303,7 +346,11 @@ impl Simulation {
                 self.teleport_timer_check(id, rules, ctx);
             }
             2 => {
-                self.teleport_warp_out(id, rules);
+                self.teleport_warp_anim(
+                    id,
+                    rules,
+                    super::teleport_movement::WarpAnimKind::ChronoOut,
+                );
                 self.foot_mark_remove(id, rules, registry, &mut ctx.effects);
                 Self::teleport_warp_sound(
                     &mut self.interner,
@@ -412,19 +459,62 @@ impl Simulation {
                 if let Some(warp) = self.substrate.chrono_warp_mut(id) {
                     warp.start_timer(frame, delay);
                 }
-                self.teleport_warp_out(id, rules);
+                self.teleport_warp_anim(
+                    id,
+                    rules,
+                    super::teleport_movement::WarpAnimKind::ChronoIn,
+                );
+                // Phobos `0x719BD9` (`Ext/TechnoType/Hooks.Teleport.cpp:165-188`):
+                // a chrono-sphered arrival with a positive `ChronoSphereDelay`
+                // stays warped out for `max(delay, LastWarpInDelay)` more ticks.
+                if warp.chrono_sphered() {
+                    let object = self
+                        .substrate
+                        .entities
+                        .get(id)
+                        .and_then(|entity| self.interner.object_type(entity.type_ref(), rules));
+                    let delay = chrono_sphere_in_delay(object, rules);
+                    if let Some(warp) = self.substrate.chrono_warp_mut(id) {
+                        warp.extend_warp_in_delay(delay);
+                    }
+                    if delay > 0
+                        && let Some(entity) = self.substrate.entities.get_mut(id)
+                    {
+                        // Phobos keeps the shared +270 byte set for this delay.
+                        entity.set_warped_out(true);
+                    }
+                }
                 if let Some(warp) = self.substrate.chrono_warp_mut(id) {
                     warp.set_state(6);
                 }
             }
             7 => {
-                if let Some(warp) = self.substrate.chrono_warp_mut(id) {
-                    warp.set_warping_in(false);
+                // State 7's own body runs once, when `WarpingIn` is still set;
+                // later visits only count the Phobos delay down.
+                if warp.warping_in() {
+                    if let Some(warp) = self.substrate.chrono_warp_mut(id) {
+                        warp.set_warping_in(false);
+                    }
+                    if let Some(entity) = self.substrate.entities.get_mut(id) {
+                        entity.set_archive_target(None);
+                    }
+                    self.assign_null_destination(id, rules, registry, &mut ctx.effects);
                 }
-                if let Some(entity) = self.substrate.entities.get_mut(id) {
-                    entity.set_archive_target(None);
+                // Phobos `FootExt::UpdateWarpInDelay`
+                // (`Ext/Foot/Body.cpp:149-164`): End_Piggyback's wait
+                // (`0x00719F30`) lasts until the remaining delay is zero.
+                let chrono_sphered = warp.chrono_sphered();
+                let still_warped_in = self
+                    .substrate
+                    .chrono_warp_mut(id)
+                    .is_some_and(|warp| warp.tick_warp_in_delay());
+                if still_warped_in {
+                    return Ok(bridge_state_changed);
                 }
-                self.assign_null_destination(id, rules, registry, &mut ctx.effects);
+                if chrono_sphered && let Some(entity) = self.substrate.entities.get_mut(id) {
+                    // `UpdateWarpInDelay` clears the shared +270 byte on expiry.
+                    entity.set_warped_out(false);
+                }
                 if let Some(runtime) = self
                     .substrate
                     .entities
@@ -544,18 +634,14 @@ impl Simulation {
                 false,
                 rules.ares_form(),
             );
-            let (ground, deck) = self
-                .resolved_terrain
-                .as_ref()
-                .map_or((0, None), |terrain| {
-                    let cells = NativeCellQuery::canonical(terrain);
-                    let ground =
-                        super::ground_pose::query_ground_height(&cells, coord).unwrap_or(0);
-                    let cell = cells.lookup_world(coord.x, coord.y);
-                    let deck = (cells.flags(cell) & CELL_FLAG_BRIDGE != 0)
-                        .then(|| super::ground_pose::deck_surface_z(&cells, cell, ground));
-                    (ground, deck)
-                });
+            let (ground, deck) = self.resolved_terrain.as_ref().map_or((0, None), |terrain| {
+                let cells = NativeCellQuery::canonical(terrain);
+                let ground = super::ground_pose::query_ground_height(&cells, coord).unwrap_or(0);
+                let cell = cells.lookup_world(coord.x, coord.y);
+                let deck = (cells.flags(cell) & CELL_FLAG_BRIDGE != 0)
+                    .then(|| super::ground_pose::deck_surface_z(&cells, cell, ground));
+                (ground, deck)
+            });
             let Some(entity) = self.substrate.entities.get_mut(id) else {
                 return false;
             };
@@ -1042,5 +1128,58 @@ impl crate::sim::world::ObjectSubstrate {
     /// The warp on the active Teleport or one suspended by the Unit setter.
     fn chrono_warp_mut(&mut self, id: u64) -> Option<&mut ChronoWarp> {
         self.entities.get_mut(id)?.chrono_warp_mut()
+    }
+}
+
+#[cfg(all(test, tests_sim_movement))]
+mod chrono_pre_delay_tests {
+    use super::*;
+    use crate::rules::ini_parser::IniFile;
+
+    fn rules(extra: &str) -> RuleSet {
+        RuleSet::from_ini(&IniFile::from_str(&format!(
+            "[VehicleTypes]\n0=MTNK\n[AI]\nEnablePowerSurplus=yes\n{extra}"
+        )))
+        .unwrap()
+    }
+
+    /// Phobos `ChronoSpherePreDelay=` (`Ext/TechnoType/Body.h:131`,
+    /// `Ext/Rules/Body.h:39,579`; hook `0x7197E4`,
+    /// `Ext/TechnoType/Hooks.Teleport.cpp:154-163`): the type's nullable wins,
+    /// then `[General]`, else the native `MOV ECX,0x3C`.
+    #[test]
+    fn chrono_sphere_pre_delay_reads_the_type_then_the_general() {
+        let general = rules("[General]\nChronoSpherePreDelay=45\n");
+        let typed_rules = rules("[MTNK]\nStrength=300\nChronoSpherePreDelay=30\n");
+        let typed = typed_rules.object("MTNK").unwrap();
+        assert_eq!(typed.phobos_chrono_sphere_pre_delay, Some(30));
+        assert_eq!(chrono_warp_out_frames(Some(typed), &general), 30);
+        let bare_rules = rules("[MTNK]\nStrength=300\n");
+        let bare = bare_rules.object("MTNK").unwrap();
+        assert_eq!(bare.phobos_chrono_sphere_pre_delay, None);
+        assert_eq!(chrono_warp_out_frames(Some(bare), &general), 45);
+        assert_eq!(
+            chrono_warp_out_frames(Some(bare), &rules("")),
+            CHRONO_WARP_OUT_FRAMES
+        );
+        assert_eq!(chrono_warp_out_frames(None, &rules("")), 0x3C);
+    }
+
+    /// Phobos `ChronoSphereDelay=` (`Ext/TechnoType/Body.h:132`,
+    /// `Ext/Rules/Body.h:40,580`; read `Ext/TechnoType/Body.cpp:868`,
+    /// `Ext/Rules/Body.cpp:121`): the type's nullable wins, then the general
+    /// key, which constructs as **0** so the stock warp is unchanged.
+    #[test]
+    fn chrono_sphere_delay_reads_the_type_then_the_general() {
+        let general = rules("[General]\nChronoSphereDelay=45\n");
+        let typed_rules = rules("[MTNK]\nStrength=300\nChronoSphereDelay=30\n");
+        let typed = typed_rules.object("MTNK").unwrap();
+        assert_eq!(typed.phobos_chrono_sphere_delay, Some(30));
+        assert_eq!(chrono_sphere_in_delay(Some(typed), &general), 30);
+        let bare_rules = rules("[MTNK]\nStrength=300\n");
+        let bare = bare_rules.object("MTNK").unwrap();
+        assert_eq!(bare.phobos_chrono_sphere_delay, None);
+        assert_eq!(chrono_sphere_in_delay(Some(bare), &general), 45);
+        assert_eq!(chrono_sphere_in_delay(Some(bare), &rules("")), 0);
     }
 }

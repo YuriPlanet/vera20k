@@ -3,6 +3,68 @@
 use super::*;
 use crate::rules::ini_parser::IniFile;
 
+/// `EnumFunctions::CanTargetHouse` (`EnumFunctions.cpp:5..16`): the shared
+/// ladder's owner/neutral/alliance buckets, with the neutral test on the
+/// target house. Both the sim combat owner and the radar's
+/// `RadarInvisibleToHouse` test delegate here.
+#[test]
+fn can_target_house_ladder_buckets() {
+    assert!(can_target_house_ladder(
+        AffectedHouse::ALL,
+        false,
+        false,
+        false
+    ));
+    assert!(can_target_house_ladder(
+        AffectedHouse::OWNER,
+        true,
+        false,
+        false
+    ));
+    assert!(!can_target_house_ladder(
+        AffectedHouse::OWNER,
+        false,
+        false,
+        false
+    ));
+    assert!(can_target_house_ladder(
+        AffectedHouse::NEUTRAL,
+        false,
+        true,
+        false
+    ));
+    assert!(!can_target_house_ladder(
+        AffectedHouse::NEUTRAL,
+        false,
+        false,
+        false
+    ));
+    assert!(can_target_house_ladder(
+        AffectedHouse::ALLIES,
+        false,
+        false,
+        true
+    ));
+    assert!(!can_target_house_ladder(
+        AffectedHouse::ALLIES,
+        false,
+        false,
+        false
+    ));
+    assert!(can_target_house_ladder(
+        AffectedHouse::ENEMIES,
+        false,
+        false,
+        false
+    ));
+    assert!(!can_target_house_ladder(
+        AffectedHouse::ENEMIES,
+        false,
+        false,
+        true
+    ));
+}
+
 #[test]
 fn registry_walk_reads_duplicate_keys_through_name_reader() {
     let stored = "B".repeat(31);
@@ -125,6 +187,45 @@ fn shield_tint_visible_to_houses_reads_affected_house_flags() {
     assert_eq!(entry("Bad").bits(), 0xF);
 }
 
+/// `AllowTransfer` / `AllowTransfer.Convert` (`ShieldTypeClass.h:53-54`, read
+/// at `ShieldTypeClass.cpp:75-76`): nullable, retained across failed reads,
+/// with the conversion fallback chain native applies
+/// (`ShieldClass.cpp:612-613`).
+#[test]
+fn shield_transfer_keys_read_nullable_and_fall_back_to_attached() {
+    let mut catalog = ShieldTypeCatalog::default();
+    catalog.apply_pass(&IniFile::from_str(
+        "[ShieldTypes]\n0=Plain\n1=Kept\n[Plain]\nStrength=100\n\
+         [Kept]\nStrength=100\nAllowTransfer=no\nAllowTransfer.Convert=yes\n",
+    ));
+    let plain = catalog.entry("Plain").unwrap();
+    assert_eq!(plain.allow_transfer(), None);
+    assert_eq!(plain.allow_transfer_convert(), None);
+    assert!(
+        !plain.conversion_transfer(false),
+        "unset keys follow Attached"
+    );
+    assert!(plain.conversion_transfer(true));
+    let kept = catalog.entry("Kept").unwrap();
+    assert_eq!(kept.allow_transfer(), Some(false));
+    assert_eq!(kept.allow_transfer_convert(), Some(true));
+    assert!(
+        kept.conversion_transfer(false),
+        "the conversion override wins"
+    );
+
+    catalog.apply_pass(&IniFile::from_str(
+        "[Kept]\nAllowTransfer=bad\nAllowTransfer.Convert=bad\n",
+    ));
+    let kept = catalog.entry("Kept").unwrap();
+    assert_eq!(
+        kept.allow_transfer(),
+        Some(false),
+        "a failed read is retained"
+    );
+    assert_eq!(kept.allow_transfer_convert(), Some(true));
+}
+
 #[test]
 fn shield_nullable_fields_retain_failed_reads_and_reset_to_type_defaults() {
     let mut catalog = ShieldTypeCatalog::default();
@@ -231,4 +332,63 @@ fn invalid_shield_nullable_values_preserve_unset_defaults() {
     let warhead = ShieldWarheadRules::from_section(ini.section("WH").unwrap());
     assert_eq!((warhead.absorb_percent, warhead.pass_percent), (None, None));
     assert_eq!(warhead.received_minimum, None);
+}
+
+/// `IdleAnim`/`IdleAnimDamaged` read as `Damageable<AnimTypeClass*>`
+/// (`ShieldTypeClass.cpp:94..97`, `Utilities/Template.h:409..474`,
+/// `TemplateDef.h:2227..2245`) and the action keys as
+/// `Valueable<AttachedAnimFlag>` under the constructor `Hides`
+/// (`ShieldTypeClass.cpp:56..57,92..93`).
+#[test]
+fn shield_idle_anim_keys_read_damageable_and_actions() {
+    let mut catalog = ShieldTypeCatalog::default();
+    catalog.apply_pass(&IniFile::from_str(
+        "[ShieldTypes]\n0=ROOT\n\
+         [ROOT]\nIdleAnim=IDLE\nIdleAnim.ConditionYellow=YELLOW\nIdleAnim.ConditionRed=<none>\n\
+         IdleAnimDamaged=DAMAGED\nIdleAnim.OfflineAction=Paused\n\
+         IdleAnim.TemporalAction=PausedTemporal\n",
+    ));
+    let ty = catalog.entry("ROOT").expect("entry");
+    assert!(ty.idle_anim().is_damaged_value_set());
+    assert!(ty.idle_anim_damaged().isset());
+    assert_eq!(ty.idle_anim().get(0.9, 0.5, 0.25), Some("IDLE"));
+    assert_eq!(ty.idle_anim().get(0.4, 0.5, 0.25), Some("YELLOW"));
+    assert_eq!(
+        ty.idle_anim().get(0.2, 0.5, 0.25),
+        Some("YELLOW"),
+        "allowNone=false makes <none> a reset, not a present null band"
+    );
+    assert_eq!(ty.idle_anim_offline_action(), AttachedAnimFlag::Paused);
+    assert_eq!(
+        ty.idle_anim_temporal_action(),
+        AttachedAnimFlag::PausedTemporal
+    );
+
+    // `<default>` clears the nullable; an unknown action keeps the current one.
+    catalog.apply_pass(&IniFile::from_str(
+        "[ROOT]\nIdleAnim.ConditionYellow=<default>\nIdleAnim.OfflineAction=Bogus\n",
+    ));
+    let ty = catalog.entry("ROOT").expect("entry");
+    assert_eq!(ty.idle_anim().get(0.4, 0.5, 0.25), Some("IDLE"));
+    assert_eq!(ty.idle_anim_offline_action(), AttachedAnimFlag::Paused);
+
+    // A `none` base resolves to null; `<default>` retains the earlier read.
+    catalog.apply_pass(&IniFile::from_str("[ROOT]\nIdleAnim=none\n"));
+    let ty = catalog.entry("ROOT").expect("entry");
+    assert_eq!(ty.idle_anim().base(), None);
+    catalog.apply_pass(&IniFile::from_str("[ROOT]\nIdleAnim=IDLE\n"));
+    catalog.apply_pass(&IniFile::from_str("[ROOT]\nIdleAnim=<default>\n"));
+    let ty = catalog.entry("ROOT").expect("entry");
+    assert_eq!(ty.idle_anim().base(), Some("IDLE"));
+
+    // Absent keys keep the constructor values.
+    let mut defaults = ShieldTypeCatalog::default();
+    defaults.apply_pass(&IniFile::from_str(
+        "[ShieldTypes]\n0=PLAIN\n[PLAIN]\nStrength=1\n",
+    ));
+    let plain = defaults.entry("PLAIN").expect("entry");
+    assert!(!plain.idle_anim().isset());
+    assert!(!plain.idle_anim_damaged().isset());
+    assert_eq!(plain.idle_anim_offline_action(), AttachedAnimFlag::Hides);
+    assert_eq!(plain.idle_anim_temporal_action(), AttachedAnimFlag::Hides);
 }

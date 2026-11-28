@@ -73,6 +73,54 @@ pub(super) fn bullet_type<'r>(
         .unwrap_or_else(|| missing_projectile_fallback())
 }
 
+/// Phobos `VerticalInitialFacing.Get(Voxel || Vertical)`
+/// (`Misc/Hooks.BugFixes.cpp:2435`, hook `0x6FED2F`
+/// `TechnoClass_FireAt_VerticalInitialFacing`): whether the shot takes
+/// FireAt's target-Z initial pitch arm (0x4000/0x8000) instead of the
+/// distance branch. The vanilla gate was `ObjectType+0x236` (Voxel) alone;
+/// the resolved flag replaces it, so a `Vertical=` shot gains the arm.
+pub(crate) fn vertical_initial_facing(
+    projectile: Option<&crate::rules::projectile_type::ProjectileType>,
+) -> bool {
+    projectile
+        .and_then(|kind| kind.phobos_vertical_initial_facing)
+        .unwrap_or_else(|| projectile.is_some_and(|kind| kind.voxel || kind.vertical))
+}
+
+#[cfg(all(test, tests_sim_combat_d_z))]
+mod vertical_initial_facing_tests {
+    use super::vertical_initial_facing;
+    use crate::rules::ini_parser::IniFile;
+    use crate::rules::projectile_type::ProjectileType;
+
+    fn projectile(ini: &str) -> ProjectileType {
+        let ini = IniFile::from_str(ini);
+        ProjectileType::from_ini_section("T", ini.section("T").expect("section"), None)
+    }
+
+    /// The absent key falls back to `Voxel || Vertical`; an explicit value
+    /// wins over both (`Ext/BulletType/Body.cpp:37`, constructor empty).
+    #[test]
+    fn vertical_initial_facing_resolves_the_fallback_and_override() {
+        assert!(!vertical_initial_facing(None));
+        assert!(!vertical_initial_facing(Some(&projectile(
+            "[T]\nStrength=100\n"
+        ))));
+        let mut voxel = projectile("[T]\nStrength=100\n");
+        voxel.voxel = true;
+        assert!(vertical_initial_facing(Some(&voxel)));
+        assert!(vertical_initial_facing(Some(&projectile(
+            "[T]\nStrength=100\nVertical=yes\n"
+        ))));
+        let mut overridden = projectile("[T]\nStrength=100\nVerticalInitialFacing=no\n");
+        overridden.voxel = true;
+        assert!(!vertical_initial_facing(Some(&overridden)));
+        assert!(vertical_initial_facing(Some(&projectile(
+            "[T]\nStrength=100\nVerticalInitialFacing=yes\n"
+        ))));
+    }
+}
+
 /// The BulletType facts a weapon's shot is fired with, and its flight arm.
 ///
 /// gamemd-derived: `BulletClass::AI @ 0x004666E0` has exactly two branches,
@@ -149,7 +197,6 @@ pub(super) fn classify_projectile_type(
             explodes_airburst: Some(projectile.airburst_arm()),
             inaccurate: projectile.inaccurate,
             floater: projectile.floater,
-            #[cfg(feature = "phobos")]
             gravity: projectile.gravity(),
             elasticity_bits: projectile.elasticity.to_bits(),
             arcing: projectile.arcing,
@@ -410,6 +457,15 @@ fn admit_bullet(
     let spawn = delivery.spawn(&world.substrate.entities, rules, projectile_type, bullet);
     world.admit_projectile(bullet_id, spawn);
     world.unlimbo_alpha_shape(bullet_id, crate::sim::world::ObjectKind::Projectile, rules);
+    if rules.phobos() {
+        // Phobos `ObjectClass_Unlimbo_Parachuted_Wrapper` (`Ext/Bullet/Hooks.cpp:
+        // 573-583`): the Unlimbo replacement and its canopy run inside Fire's
+        // placement, before `BulletClass_Unlimbo_Trajectories @ 0x468B72`.
+        world.init_parabomb(bullet_id, rules);
+        // Phobos `BulletClass_Unlimbo_Trajectories @ 0x468B72`: a trajectory
+        // instance is created and `OnUnlimbo` runs during Fire's placement.
+        world.init_phobos_trajectory(bullet_id, rules, weapon);
+    }
     Simulation::construct_bullet_scheme(
         &world.interner,
         &world.substrate,
@@ -553,6 +609,10 @@ impl Simulation {
                 alliances: Some(&self.house_alliances),
                 buildings: Some(CellBuildings::of(self)),
             },
+            // The FLH-predicted source belongs to `InRange`'s targeting scan
+            // (`Ext/Bullet/Hooks.Obstacles.cpp:89-125`, `:226`); a bullet already
+            // in flight walks from its own position.
+            None,
         )
         .map_or(placement, |cell| {
             let coord = cell.get_coords();

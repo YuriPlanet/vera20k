@@ -336,6 +336,24 @@ impl UnitFiringCounter {
         self.value = self.value.wrapping_sub(1).max(-1);
     }
 
+    /// `CurrentFiringFrame = -1`: the non-firing body branch, written by
+    /// `TechnoClass_SetTarget_After`'s Phobos hook (`0x6FCF3E`).
+    pub(crate) fn reset(&mut self) {
+        self.value = -1;
+    }
+
+    /// Phobos `UnitClass_UpdateFiring_FireUp @ 0x736F61`
+    /// (`src/Ext/Unit/Hooks.Firing.cpp:38`): a `CurrentFiringFrame` of -1
+    /// restarts the sequence at frame 0 by taking the caller's
+    /// `2 * FiringFrames - 1`, and the caller only reaches this arm when that
+    /// value is `>= 0` — a record without `FiringFrames=` leaves `frames` at
+    /// -1, so the counter stays -1 and every update decodes sequence frame 0.
+    /// The same native arm's `fireUp < 0` synchronised alternative stays with
+    /// the unrepresented `FiringSyncFrame` reader
+    /// ([`commit_unit_firing_counter`]).
+    pub(crate) fn seed_sequence_frame(&mut self, frames: i32) {
+        self.value = frames;
+    }
     /// Whether the countdown moves: every value but the resting -1, which
     /// [`tick_unit_firing_counter`] leaves as it is.
     pub(crate) const fn counting(self) -> bool {
@@ -403,7 +421,15 @@ impl UnitDeathCounter {
 
 /// Admitted Unit7363C9..7363DE, before Hunt/Ready/Foot AI. Entry lifecycle,
 /// Tube and Temporal gates belong to the existing Unit AI caller.
+///
+/// Phobos `UnitClass_AI @ 0x736480`
+/// (`src/Ext/Techno/Hooks.cpp:60-82`) freezes the firing-sequence frame while
+/// `TechnoExt::DelayedFireSequencePaused` is set, so the counter is not
+/// decremented for the duration of a `DelayedFire.PauseFiringSequence` delay.
 pub(crate) fn tick_unit_firing_counter(entity: &mut crate::sim::game_entity::GameEntity) {
+    if entity.phobos_delayed_fire_sequence_paused() {
+        return;
+    }
     entity.unit_firing_counter.advance();
 }
 
@@ -583,6 +609,45 @@ pub fn resolve_shp_vehicle_body_frame(
         0
     };
     u16::try_from(vehicle_block_frame(def, slot, i32::from(frame_index))).ok()
+}
+
+/// Phobos `UnitClass_DrawAsSHP_DrawTurret` (`Ext/Unit/Hooks.DrawIt.cpp:29-41`,
+/// `0x73C7AC`) and `UnitClass_DrawSHP_FacingsB_TurretShape` (`0x73CCF4`): the
+/// turret image index. With a bound `<image>TUR.SHP` (`turret_shape`) the
+/// sequence starts at frame 0; otherwise the body SHP's
+/// `WalkFrames * Facings` block supplies it. The facing byte follows the
+/// body's eight-octant vehicle table, one turret image per body facing.
+pub fn resolve_shp_vehicle_turret_frame(
+    set: &SequenceSet,
+    turret_facing: u8,
+    turret_shape: bool,
+) -> Option<u16> {
+    let def = set.shp_vehicle_turret()?;
+    if def.facings == 0 || def.frame_count == 0 {
+        return None;
+    }
+    let start_frame = if turret_shape {
+        0
+    } else {
+        i32::from(def.start_frame)
+    };
+    let slot = if def.facings == u16::from(VEHICLE_FACING_SLOTS) {
+        vehicle_facing_slot(turret_facing)
+    } else {
+        0
+    };
+    // One image per facing: the block holds `frame_count / facings` frames
+    // for each heading (the stock 32-frame rotation and Phobos' per-body
+    // facing block both divide to 1).
+    let stride = i32::from(def.frame_count.max(1) / def.facings.max(1));
+    u16::try_from(resolve_shp_frame_parts(
+        start_frame,
+        i32::from(def.facings),
+        stride,
+        i32::from(slot),
+        0,
+    ))
+    .ok()
 }
 
 /// Advance a single animation by one reached native gameplay frame.

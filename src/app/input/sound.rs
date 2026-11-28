@@ -42,7 +42,9 @@ pub(crate) const DIALOG: InGameDialog = InGameDialog {
     help_under_held: true,
     help_fallback: |key| {
         let mut helps = SoundControl::ALL.into_iter().map(SoundControl::help);
-        helps.find(|(of, _)| *of == key).map_or("", |(_, fallback)| fallback)
+        helps
+            .find(|(of, _)| *of == key)
+            .map_or("", |(_, fallback)| fallback)
     },
 };
 pub(crate) fn open(

@@ -146,9 +146,10 @@ use crate::sim::intern::InternedId;
 use crate::sim::world::ObjectSubstrate;
 use crate::sim::world::Simulation;
 
-#[cfg(feature = "phobos")]
 mod phobos;
-#[cfg(feature = "phobos")]
+#[cfg(all(test, tests_sim_h_o))]
+#[path = "house_tracking/phobos_harvester_tests.rs"]
+mod phobos_harvester_tests;
 pub(crate) use phobos::{PhobosLimboControl, PhobosPlacement};
 
 /// House counts and the infantry latches that gate them are written together.
@@ -188,6 +189,13 @@ pub struct TrackingFacts {
     /// `Naval=`.
     #[serde(default)]
     factory: Option<FactorySlot>,
+    /// Phobos `BuildingTypeExt::ExcludeFromMultipleFactoryBonus`: this
+    /// building joins its house factory counter but not the
+    /// `0x00500910` count production speed reads. Retained with the other
+    /// constructor-bound type facts so a removal subtracts what the addition
+    /// added.
+    #[serde(default)]
+    exclude_from_multiple_factory_bonus: bool,
     /// Live BuildingType+800 (`Storage=`); other classes' cargo capacity
     /// does not join House+310. Production types are immutable for this object;
     /// deploy/undeploy constructs a replacement with its own type facts.
@@ -233,7 +241,7 @@ impl TrackingFacts {
         };
         let ares = rules.ares_form();
         let unit_like_building = category == EntityCategory::Structure
-            && (ty.is_1x1_with_undeploy()
+            && (ty.is_vehicle()
                 || ty
                     .undeploys_into
                     .as_deref()
@@ -260,15 +268,41 @@ impl TrackingFacts {
                         .map(|factory| FactorySlot::of(factory, ty.naval))
                 })
                 .flatten(),
+            // Phobos `BuildingTypeExt::ExcludeFromMultipleFactoryBonus`
+            // (`Ext/BuildingType/Body.cpp:198`); a UnitType never carries it.
+            exclude_from_multiple_factory_bonus: category == EntityCategory::Structure
+                && ty.exclude_from_multiple_factory_bonus(),
             storage_capacity: if category == EntityCategory::Structure {
                 ty.storage
             } else {
                 0
             },
-            keep_alive: ares
-                && ty.keep_alive().unwrap_or(
-                    category == EntityCategory::Structure && !ty.insignificant && !ty.dont_score,
-                ),
+            keep_alive: {
+                // Phobos `AresHouseExt_UpdateKeepAlive`
+                // (`Misc/Hooks.Ares.cpp:190-243`, `Ext/Rules/Body.cpp:652-656`):
+                // the category globals supply the default, with Combat
+                // buildings taking `KeepAlive.Defenses`; a type's own
+                // `KeepAlive=` still wins.
+                let default = {
+                    let globals = &rules.phobos_globals;
+                    let category_default = match category {
+                        EntityCategory::Infantry => globals.keep_alive_infantry,
+                        EntityCategory::Unit => globals.keep_alive_units,
+                        EntityCategory::Aircraft => globals.keep_alive_aircraft,
+                        EntityCategory::Structure => {
+                            if ty.build_cat
+                                == Some(crate::rules::object_type::BuildCategory::Combat)
+                            {
+                                globals.keep_alive_defenses
+                            } else {
+                                globals.keep_alive_buildings
+                            }
+                        }
+                    };
+                    category_default && !ty.insignificant && !ty.dont_score
+                };
+                ty.keep_alive().unwrap_or(default)
+            },
         }
     }
 
@@ -287,6 +321,13 @@ impl TrackingFacts {
     /// `DontScore=`.
     pub(crate) const fn dont_score(self) -> bool {
         self.dont_score
+    }
+
+    /// The `!Insignificant && !DontScore` gate Phobos' limbo tracking shares
+    /// with the native tracking writers (`AddToLimboTracking` /
+    /// `RemoveFromLimboTracking`, `Ext/House/Body.cpp`).
+    pub(crate) const fn counts_toward_limbo_tracking(self) -> bool {
+        !self.insignificant && !self.dont_score
     }
 
     /// The retained type admission used by both tracking writers and hashing.
@@ -362,7 +403,9 @@ impl InfantryTrackingLatches {
         self.counted_infantry_total
     }
 
-    #[cfg(any(test, feature = "test-support"))]
+    /// Techno `+0x439`, the native `Absorbed` byte: `Add_Tracking` skips its
+    /// total arm while it is set, and `InfantryAbsorb` entry/exit sets and
+    /// clears it.
     pub(crate) fn is_absorbed(&self) -> bool {
         self.skip_infantry_total_on_add
     }
@@ -516,9 +559,13 @@ impl ForceValues {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HouseTracking {
     /// Phobos HouseExt's separate limbo counters, in Unit/Infantry/Building/Aircraft order.
-    #[cfg(feature = "phobos")]
     #[serde(default)]
     phobos_limbo_counts: [BTreeMap<InternedId, i32>; 4],
+    /// Phobos `HouseExt::OwnedLimboDeliveredBuildings`: the buildings
+    /// LimboDelivery created (alive and on the map, not in limbo) with their
+    /// `BuildingExt::LimboID`, in delivery order.
+    #[serde(default)]
+    limbo_delivered: Vec<(u64, i32)>,
     /// `HouseClass+0x2F0`.
     buildings: i32,
     /// `HouseClass+0x2E8`: the tracked vehicles and the buildings tracked
@@ -574,6 +621,13 @@ pub struct HouseTracking {
     /// `HouseClass+0x5378..+0x5388`, in [`FactorySlot`] order.
     #[serde(default)]
     factories: [i32; 5],
+    /// Phobos `HouseExt::Num*_NonMFB` (`Ext/House/Body.h`, updated by
+    /// `UpdateNonMFBFactoryCounts`, `Ext/House/Body.cpp:475-503`): the part of
+    /// [`Self::factories`] that authored `ExcludeFromMultipleFactoryBonus` and
+    /// that `HouseClass::GetFactoryCount @ 0x00500910` subtracts
+    /// (`GetFactoryCountWithoutNonMFB`, `:505-536`).
+    #[serde(default)]
+    non_mfb_factories: [i32; 5],
     /// House+310, zeroed by4F58DE. Retained event total, independent of
     /// filtered active-building counts and the separate raw amount stores.
     #[serde(default)]
@@ -603,6 +657,16 @@ impl HouseState {
         self.tracking_mut(WRITE).added_to_game(entity, &factors);
     }
 
+    /// The same priced registration with callers that fold their own
+    /// factors (Phobos' restricted factory-plant multiplier) into `factors`.
+    pub(super) fn add_to_game_tracking_with(
+        &mut self,
+        entity: &GameEntity,
+        factors: &HouseCostFactors,
+    ) {
+        self.tracking_mut(WRITE).added_to_game(entity, factors);
+    }
+
     pub(super) fn remove_from_game_tracking_prefix(&mut self, entity: &GameEntity) {
         self.tracking_mut(WRITE).removed_from_game_prefix(entity);
     }
@@ -610,6 +674,45 @@ impl HouseState {
     pub(super) fn remove_from_game_tracking(&mut self, entity: &GameEntity) {
         let factors = self.cost_factors();
         self.tracking_mut(WRITE).removed_from_game(entity, &factors);
+    }
+
+    /// [`Self::remove_from_game_tracking`] with caller-supplied factors.
+    pub(super) fn remove_from_game_tracking_with(
+        &mut self,
+        entity: &GameEntity,
+        factors: &HouseCostFactors,
+    ) {
+        self.tracking_mut(WRITE).removed_from_game(entity, factors);
+    }
+
+    pub(super) fn add_limbo_delivered(
+        &mut self,
+        building: u64,
+        limbo_id: i32,
+        category: EntityCategory,
+        type_id: InternedId,
+        counts_toward_limbo: bool,
+    ) {
+        self.tracking_mut(WRITE).add_limbo_delivered(
+            building,
+            limbo_id,
+            category,
+            type_id,
+            counts_toward_limbo,
+        );
+    }
+
+    pub(super) fn remove_limbo_delivered_tracking(
+        &mut self,
+        category: EntityCategory,
+        type_id: InternedId,
+    ) {
+        self.tracking_mut(WRITE)
+            .remove_limbo_delivered_tracking(category, type_id);
+    }
+
+    pub(super) fn take_limbo_delivered(&mut self, limbo_id: i32, max: i32) -> Vec<u64> {
+        self.tracking_mut(WRITE).take_limbo_delivered(limbo_id, max)
     }
 }
 
@@ -827,16 +930,38 @@ impl HouseTracking {
         if let Some(slot) = entity.tracking_facts().factory {
             let count = &mut self.factories[slot as usize];
             *count = count.wrapping_add(delta);
+            // Phobos hooks `0x4FF9C9`/`0x4FFA99` beside the increment and the
+            // recount (`Ext/House/Hooks.cpp:543-557`): the same building also
+            // moves the exclusion count, so
+            // `GetFactoryCountWithoutNonMFB` drops it from the speed count.
+            if entity.tracking_facts().exclude_from_multiple_factory_bonus {
+                let excluded = &mut self.non_mfb_factories[slot as usize];
+                *excluded = excluded.wrapping_add(delta);
+            }
         }
     }
 
-    /// `HouseClass::GetFactoryCount @ 0x00500910`: one factory counter.
+    /// `HouseClass::GetFactoryCount @ 0x00500910`: one factory counter. Phobos
+    /// replaces the body (`Ext/House/Hooks.cpp:565-575`) with
+    /// `GetFactoryCountWithoutNonMFB` (`Ext/House/Body.cpp:505-536`): the raw
+    /// counter minus its excluded part, raised to zero.
     pub(crate) const fn factory_count(&self, slot: FactorySlot) -> i32 {
-        self.factories[slot as usize]
+        {
+            let index = slot as usize;
+            let count = self.factories[index].wrapping_sub(self.non_mfb_factories[index]);
+            if count < 0 { 0 } else { count }
+        }
+    }
+
+    /// The excluded part of the factory counters, for the world hash.
+    pub(crate) const fn non_mfb_factories(&self) -> [i32; 5] {
+        self.non_mfb_factories
     }
 
     /// The EVA funds nag's factory sum (`0x004F8B74..0x004F8B92`): infantry,
-    /// vehicle, building and naval, without aircraft.
+    /// vehicle, building and naval, without aircraft. The nag reads the
+    /// House counters themselves, so Phobos' `0x00500910` replacement body
+    /// does not apply here.
     pub(crate) const fn funds_nag_factories(&self) -> i32 {
         let [_, infantry, vehicle, building, naval] = self.factories;
         naval
@@ -891,10 +1016,11 @@ impl HouseTracking {
     /// the gatherer count joined it (schema `HouseDefeatTracking`).
     pub(crate) fn hash_defeat_counters(&self, hasher: &mut impl std::hash::Hasher) {
         use std::hash::Hash;
-        #[cfg(feature = "phobos")]
         {
             b"phobos-house-limbo-v1".hash(hasher);
             self.phobos_limbo_counts.hash(hasher);
+            b"phobos-house-limbo-delivered-v1".hash(hasher);
+            self.limbo_delivered.hash(hasher);
         }
         self.buildings.hash(hasher);
         self.unit_types.hash(hasher);
@@ -978,6 +1104,57 @@ impl HouseTracking {
             EntityCategory::Structure => &self.active_building_types,
         };
         counts.get(&type_id).copied().unwrap_or(0)
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_active_count_for_test(
+        &mut self,
+        category: EntityCategory,
+        type_id: InternedId,
+        count: i32,
+    ) {
+        let counts = match category {
+            EntityCategory::Unit => &mut self.active_unit_types,
+            EntityCategory::Infantry => &mut self.active_infantry_types,
+            EntityCategory::Aircraft => &mut self.active_aircraft_types,
+            EntityCategory::Structure => &mut self.active_building_types,
+        };
+        if count == 0 {
+            counts.remove(&type_id);
+        } else {
+            counts.insert(type_id, count);
+        }
+    }
+
+    /// Phobos `HouseClass_UpdatePower_AfterBuildings` (`0x508D8D`,
+    /// `Ext/House/Hooks.cpp:34-58`): each owned and present Infantry, Unit
+    /// and Aircraft type adds `Power * count` to output when positive, else
+    /// to drain.
+    pub(crate) fn add_unit_power_types(
+        &self,
+        produced: &mut i32,
+        drained: &mut i32,
+        mut power_of: impl FnMut(InternedId) -> Option<i32>,
+    ) {
+        for counts in [
+            &self.active_infantry_types,
+            &self.active_unit_types,
+            &self.active_aircraft_types,
+        ] {
+            for (&type_id, &count) in counts {
+                if count == 0 {
+                    continue;
+                }
+                let Some(power) = power_of(type_id) else {
+                    continue;
+                };
+                if power > 0 {
+                    *produced = produced.wrapping_add(power.wrapping_mul(count));
+                } else {
+                    *drained = drained.wrapping_sub(power.wrapping_mul(count));
+                }
+            }
+        }
     }
 
     /// The sum of the four on-map counters' totals (`CounterClass+0x10` of

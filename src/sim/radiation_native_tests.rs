@@ -33,7 +33,6 @@ fn light_lifecycle_matches_original_site_and_cell_boundaries() {
 /// the corpus's per-frame tints cannot hold there. The capability's own tests
 /// cover the type-colored field instead. Ares skips the substitution too
 /// (`0x65B5FB`), so the corpus does not hold in an Ares game either.
-#[cfg(not(feature = "phobos"))]
 #[test]
 fn snow_light_lifecycle_matches_original_site_and_cell_boundaries() {
     assert_light_lifecycle(
@@ -299,7 +298,6 @@ fn light_parameters_match_original_integer_and_update_controls() {
 }
 
 #[test]
-#[cfg(not(feature = "phobos"))]
 fn field_operations_match_native_overlap_controls() {
     let Some(fixture) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
         return;

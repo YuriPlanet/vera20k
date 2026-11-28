@@ -8,10 +8,11 @@
 //! admission already bounds this feature: hovered or selected. The values
 //! themselves come from `sim::digital_display`, which owns every state read.
 //!
-//! Residual: `HealthBar.Permanent=` is not ported (its `0x6F5E37` hook keeps
-//! the disguise checks, adds a shroud test and `HealthBar.Permanent.PipScale`),
-//! so an idle techno never reaches the health-bar call and `ShowType=idle`
-//! never draws.
+//! `HealthBar.Permanent=` (`0x6F5E37`) is ported in that admission
+//! (`ui_overlays::health_strip_visibility`), so an idle techno of a
+//! `Permanent=yes` type does reach the call and `ShowType=idle` draws. Residual:
+//! native's permanent arm also adds a shroud test VERA's admission omits; the
+//! shroud plane still blacks the body out.
 //!
 //! The native text path is `DSurface::DrawTextA` with
 //! `Align | FullShadow | Background?`; VERA emits the same text through its
@@ -89,8 +90,9 @@ pub(crate) fn digital_display_instances(
         return out;
     }
     // `TechnoExt::ProcessDigitalDisplays` is called from DrawHealthBar, so the
-    // stock health-bar admission is the only lifecycle gate here.
-    if !health_bar_drawable(sim, entity, hovered_id, local_owner, rules.ares()) {
+    // shared health-bar admission (including the Phobos type switches) is the
+    // only lifecycle gate here.
+    if !health_bar_drawable(sim, entity, hovered_id, local_owner, Some(rules)) {
         return out;
     }
     let is_building = entity.category() == EntityCategory::Structure;
@@ -168,7 +170,9 @@ pub(crate) fn digital_display_instances(
                     .shield()
                     .and_then(|s| rules.shield_type(s.type_name())),
             )
-            .is_some_and(|(shield, ty)| !shield.broken_non_respawning(ty));
+            .is_some_and(|(shield, ty)| {
+                !shield.broken_non_respawning(ty, sim.session().binary_frame() as i32)
+            });
         let mut position = if is_building {
             building_bracket(entity, object, rules, display.anchor_building)
         } else {
@@ -243,7 +247,7 @@ pub(crate) fn digital_display_instances(
     out
 }
 
-fn screen_point(entity: &ObjectRecord) -> (f32, f32) {
+pub(crate) fn screen_point(entity: &ObjectRecord) -> (f32, f32) {
     let coord = entity.hud.get_coords;
     crate::util::lepton::absolute_leptons_to_screen(coord.x, coord.y, coord.z)
 }

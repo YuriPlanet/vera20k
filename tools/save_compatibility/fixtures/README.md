@@ -35,7 +35,9 @@ and executes the saved command before it accepts the fixture.
 | `main-b268ba798.sav` | `b268ba798` (Wasm module control points, ArtImageSwap and NPatch) | `skirmish` |
 | `main-0b918d053.sav` | `0b918d053` (Wasm client modules on the control points) | `skirmish` |
 | `main-c3609b58a.sav` | `c3609b58a` (per-house driver policy, PR #4576) | `skirmish` |
+| `main-2ccbb749.sav` | `2ccbb749a6` (Phobos merge resolution) | `skirmish` |
 | `main-a17a144ca.sav` | `a17a144ca` (shared Chronosphere and Temporal warp-out flag) | `temporal` |
+| `main-8cb10d8608.sav` | `8cb10d8608` (latest upstream and Phobos merge) | `skirmish` |
 
 The Kratos writer revision is in PR #5080. In a fresh clone, fetch it with
 `git fetch origin pull/5080/head` before checking out `bc55c35e7`. The Wasm

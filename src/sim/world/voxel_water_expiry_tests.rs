@@ -144,6 +144,7 @@ fn retail_tsunami_harv_tire_water_expiry_constructs_wake_then_first_splash() {
         rules,
         Some(resources.rules.overlay_registry()),
         &mut FrameEffects::default(),
+        true,
     );
     let pieces = sim.voxel_anims().ids();
     assert_eq!(

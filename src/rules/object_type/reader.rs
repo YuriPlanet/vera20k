@@ -13,11 +13,10 @@ use crate::rules::terrain_rules::LandType;
 use crate::util::fixed_math::SimFixed;
 use crate::util::native_x87::NativeF64Bits;
 
-#[cfg(feature = "phobos")]
 use super::PhobosOreGathering;
 use super::{AbilityFlags, BarrelVoxelOffsets, BuildCategory, BuildingHiddenOccupancyProfile};
 use super::{DEBRIS_LIMIT, DEFAULT_LEPTON_MIND_CONTROL_OFFSET, DEFAULT_TECH_LEVEL, HouseMasks};
-use super::{InfantryPips, ObjectCategory, ObjectType};
+use super::{InfantryPips, ObjectCategory, ObjectType, PhobosObjectProjection};
 use super::{
     PipScale, SLAVES_NUMBER_LIMIT, SPAWNS_NUMBER_LIMIT, TargetZoneScanType, VhpScan,
     WEAPON_SLOT_COUNT,
@@ -108,9 +107,7 @@ impl ObjectType {
         );
         // Phobos `ReadAdditionalAbilities` parses the same two keys for its
         // five extension tokens, independently of the stock array above.
-        #[cfg(feature = "phobos")]
         let mut phobos_abilities = crate::rules::phobos_crit::PhobosAbilityFlags::default();
-        #[cfg(feature = "phobos")]
         phobos_abilities.read_pass(section);
 
         // `TechnoTypeClass::ReadINI @ 0x00712587..0x007125DF` reads the debris
@@ -136,8 +133,11 @@ impl ObjectType {
         let max_debris = section.read_int("MaxDebris", 0).min(DEBRIS_LIMIT);
         let min_debris = section.read_int("MinDebris", 0).clamp(0, DEBRIS_LIMIT);
         let max_debris = max_debris.max(min_debris);
+        // Constructor defaults only. The ordered Process owner reads and
+        // retains every Phobos projection field across admitted Rules passes.
+        let phobos_object = PhobosObjectProjection::new(category);
 
-        Self {
+        let object = phobos_object_projection_initializers!(phobos_object,
             id: id.to_string(),
             alpha_image: section.read_object_alpha_image(""),
             category,
@@ -191,7 +191,6 @@ impl ObjectType {
             ),
             armor_id: crate::rules::armor::armor_index(&armor),
             armor,
-            #[cfg(feature = "phobos")]
             shield_type: section
                 .read_name("ShieldType", 0x80)
                 .filter(|name| {
@@ -200,7 +199,6 @@ impl ObjectType {
                         && !name.eq_ignore_ascii_case("<none>")
                 })
                 .map(str::to_owned),
-            #[cfg(feature = "phobos")]
             digital_display_types: section
                 .read_list("DigitalDisplayTypes", 0x100)
                 .map(|tokens| {
@@ -210,7 +208,6 @@ impl ObjectType {
                         .collect()
                 })
                 .unwrap_or_default(),
-            #[cfg(feature = "phobos")]
             attach_effect_attach_types: section
                 .read_list("AttachEffect.AttachTypes", 0x800)
                 .map(|tokens| {
@@ -220,34 +217,25 @@ impl ObjectType {
                         .collect()
                 })
                 .unwrap_or_default(),
-            #[cfg(feature = "phobos")]
             attach_effect_duration_overrides: section
                 .read_int_list("AttachEffect.DurationOverrides")
                 .unwrap_or_default(),
-            #[cfg(feature = "phobos")]
             attach_effect_delays: section
                 .read_int_list("AttachEffect.Delays")
                 .unwrap_or_default(),
-            #[cfg(feature = "phobos")]
             attach_effect_initial_delays: section
                 .read_int_list("AttachEffect.InitialDelays")
                 .unwrap_or_default(),
-            #[cfg(feature = "phobos")]
             attach_effect_recreation_delays: section
                 .read_int_list("AttachEffect.RecreationDelays")
                 .unwrap_or_default(),
-            #[cfg(feature = "phobos")]
             digital_display_disable: section.read_bool("DigitalDisplay.Disable", false),
-            #[cfg(feature = "phobos")]
             digital_display_health_fake_at_disguise: section
                 .read_phobos_nullable_bool("DigitalDisplay.Health.FakeAtDisguise", None),
-            #[cfg(feature = "phobos")]
             open_topped_use_transport_range_modifiers: section
                 .read_phobos_nullable_bool("OpenTopped.UseTransportRangeModifiers", None),
-            #[cfg(feature = "phobos")]
             placement_preview: category == ObjectCategory::Building
                 && section.read_bool("PlacementPreview", true),
-            #[cfg(feature = "phobos")]
             placement_preview_shape: if category == ObjectCategory::Building {
                 section
                     .read_name("PlacementPreview.Shape", 0x100)
@@ -255,22 +243,18 @@ impl ObjectType {
             } else {
                 None
             },
-            #[cfg(feature = "phobos")]
             placement_preview_shape_frame: if category == ObjectCategory::Building {
                 section.read_phobos_nullable_int("PlacementPreview.ShapeFrame", None)
             } else {
                 None
             },
-            #[cfg(feature = "phobos")]
             placement_preview_offset: if category == ObjectCategory::Building {
                 section.read_coord3("PlacementPreview.Offset", [0, -15, 1])
             } else {
                 [0, -15, 1]
             },
-            #[cfg(feature = "phobos")]
             placement_preview_remap: category != ObjectCategory::Building
                 || section.read_bool("PlacementPreview.Remap", true),
-            #[cfg(feature = "phobos")]
             placement_preview_palette: if category == ObjectCategory::Building {
                 section
                     .read_name("PlacementPreview.Palette", 0x100)
@@ -278,7 +262,6 @@ impl ObjectType {
             } else {
                 None
             },
-            #[cfg(feature = "phobos")]
             placement_preview_translucency: if category == ObjectCategory::Building {
                 section
                     .read_phobos_nullable_int("PlacementPreview.Translucency", None)
@@ -311,7 +294,6 @@ impl ObjectType {
             is_dropship: section.read_bool("IsDropship", false),
             // Phobos holds this in InfantryTypeExt, so only an
             // `[InfantryTypes]` section carries it.
-            #[cfg(feature = "phobos")]
             prone_speed: if category == ObjectCategory::Infantry {
                 section.read_phobos_nullable_double("ProneSpeed", None)
             } else {
@@ -319,17 +301,20 @@ impl ObjectType {
             },
             // Phobos keeps this in AircraftTypeExt, so a non-aircraft section
             // carries no value even when it repeats the key.
-            #[cfg(feature = "phobos")]
             fly_no_wobbles: if category == ObjectCategory::Aircraft {
                 section.read_phobos_nullable_bool("FlyNoWobbles", None)
             } else {
                 None
             },
-            #[cfg(feature = "phobos")]
             laser_target_color: section.read_phobos_nullable_int("LaserTargetColor", None),
-            #[cfg(feature = "phobos")]
             airstrike_line_color: section.read_phobos_nullable_color("AirstrikeLineColor", None),
             voxel_shadow_index: 0,
+            // The ART layer owns these four fields; native_processing publishes
+            // its retained shadow reader after each fixed-ART pass.
+            phobos_turret_shadow: None,
+            phobos_shadow_indices: Vec::new(),
+            phobos_shadow_indices_frames: Vec::new(),
+            phobos_shadow_index_frame: 0,
             pitch_speed: section.read_double_bits(
                 "PitchSpeed",
                 NativeF64Bits::from_bits(0x3fd0_0000_0000_0000),
@@ -436,14 +421,11 @@ impl ObjectType {
             pixel_selection_bracket_delta: section.read_int("PixelSelectionBracketDelta", 0),
             // Constructor default; the ordered retained TechnoType reader
             // accumulates these keys over every reached pass.
-            #[cfg(feature = "phobos")]
             phobos_insignia: crate::rules::insignia_type::PhobosInsignia::default(),
             ares_insignia: crate::rules::insignia_type::AresInsignia::default(),
-            #[cfg(feature = "phobos")]
             phobos_passengers_by_size: crate::rules::ares_switch::not_ares_read(|| {
                 section.read_ares_bool("Passengers.BySize", true)
             }),
-            #[cfg(feature = "phobos")]
             phobos_invulnerability:
                 crate::rules::invulnerability_rules::PhobosInvulnerability::parse(section),
             // Replaced by the ordered retained Type reader in RuleSet.
@@ -452,6 +434,9 @@ impl ObjectType {
                 .read_name("BuildCat", 0x20)
                 .and_then(BuildCategory::from_ini),
             adjacent: section.read_int("Adjacent", 3),
+            phobos_adjacent: crate::rules::phobos_switch::phobos_read(|| {
+                crate::rules::phobos_adjacent::PhobosAdjacent::from_section(section)
+            }),
             protect_with_wall: section.read_bool("ProtectWithWall", false),
             wants_extra_space: section.read_bool("WantsExtraSpace", false),
             base_normal: section.read_bool("BaseNormal", true),
@@ -637,11 +622,8 @@ impl ObjectType {
             explodes: section.read_bool("Explodes", false),
             veteran_abilities,
             elite_abilities,
-            #[cfg(feature = "phobos")]
             immune_to_crit: section.read_bool("ImmuneToCrit", false),
-            #[cfg(feature = "phobos")]
             veteran_crit_chance: section.read_phobos_nullable_double("VeteranCritChance", None),
-            #[cfg(feature = "phobos")]
             phobos_abilities,
             self_healing: section.read_bool("SelfHealing", false),
             // Constructor null; only the ordered Process owner reads it.
@@ -652,7 +634,6 @@ impl ObjectType {
             super_weapon2: section.read_name("SuperWeapon2", 0x20).map(str::to_owned),
             super_weapon_per_building: section.read_bool("SuperWeaponPerBuilding", false),
             additional_super_weapons: Vec::new(),
-            #[cfg(feature = "phobos")]
             ore_gathering: PhobosOreGathering::default(),
             nuke_silo: section.read_bool("NukeSilo", false),
             charged_anim_time: section.read_float("ChargedAnimTime", 999.0),
@@ -690,6 +671,28 @@ impl ObjectType {
             // Constructor nulls; only the ordered Process owner reads them.
             unloading_class: None,
             deploying_anim: None,
+            phobos_deploying_anims: if category == ObjectCategory::Vehicle {
+                crate::rules::phobos_switch::phobos_read(|| {
+                    section
+                        .read_list("DeployingAnims", 0x800)
+                        .map(|tokens| tokens.into_iter().map(str::to_owned).collect())
+                        .unwrap_or_default()
+                })
+            } else {
+                Vec::new()
+            },
+            phobos_deploying_anim_keep_unit_visible: category == ObjectCategory::Vehicle
+                && crate::rules::phobos_switch::phobos_read(|| {
+                    section.read_bool("DeployingAnim.KeepUnitVisible", false)
+                }),
+            phobos_deploying_anim_reverse_for_undeploy: category != ObjectCategory::Vehicle
+                || crate::rules::phobos_switch::phobos_read(|| {
+                    section.read_bool("DeployingAnim.ReverseForUndeploy", true)
+                }),
+            phobos_deploying_anim_use_unit_drawer: category != ObjectCategory::Vehicle
+                || crate::rules::phobos_switch::phobos_read(|| {
+                    section.read_bool("DeployingAnim.UseUnitDrawer", true)
+                }),
             ammo: section.read_int("Ammo", -1),
             initial_ammo: section.read_int("InitialAmmo", -1),
             // TechnoTypeClass::ReadINI71486A..7148B2, raw signed frames.
@@ -869,22 +872,17 @@ impl ObjectType {
             // Ctor710FA5=-1; bind_scalar_sound_references owns the fixed
             // Voc lookup, including registered none spellings.
             mind_cleared_sound: None,
-            #[cfg(feature = "phobos")]
             mind_control_range_limit: section.read_phobos_leptons("MindControlRangeLimit", 0),
-            #[cfg(feature = "phobos")]
             mind_control_ignore_size: section
                 .read_phobos_nullable_bool("MindControl.IgnoreSize", None),
-            #[cfg(feature = "phobos")]
             mind_control_size: crate::rules::ares_switch::not_ares_read(|| {
                 section.read_ares_int("MindControlSize", 1)
             }),
-            #[cfg(feature = "phobos")]
             mind_control_link_visible_to_house: section.read_phobos_nullable_with(
                 "MindControlLink.VisibleToHouse",
                 None,
                 crate::rules::phobos_shields::AffectedHouse::parse,
             ),
-            #[cfg(feature = "phobos")]
             multi_mind_control_release_victim: section
                 .read_phobos_nullable_bool("MultiMindControl.ReleaseVictim", None),
             immune_to_psionic_weapons: section.read_bool(
@@ -982,7 +980,6 @@ impl ObjectType {
             deploy_fire_weapon: section.read_int("DeployFireWeapon", 1),
             // Phobos holds this in InfantryTypeExt, so only an
             // `[InfantryTypes]` section carries it.
-            #[cfg(feature = "phobos")]
             infantry_auto_deploy: if category == ObjectCategory::Infantry {
                 section.read_phobos_nullable_bool("InfantryAutoDeploy", None)
             } else {
@@ -1021,6 +1018,9 @@ impl ObjectType {
             weapon_offsets: Default::default(),
             kratos_freeze: crate::rules::kratos_freeze::FreezeRules::read(section),
             weapon_count: 0,
+            // Constructor values; the ordered per-pass TechnoType reader owns
+            // every read (`0x7128B2`).
+            phobos_multi_weapon: crate::rules::phobos_multi_weapon::PhobosMultiWeapon::default(),
             naval_targeting: section.read_int("NavalTargeting", 0),
             land_targeting: section.read_int("LandTargeting", 0),
             underwater: section.read_bool("Underwater", false),
@@ -1074,7 +1074,6 @@ impl ObjectType {
             sabotage_cursor: section.read_bool("SabotageCursor", false),
             c4: category != ObjectCategory::Infantry && section.read_bool("C4", false),
             can_c4: section.read_bool("CanC4", category == ObjectCategory::Building),
-            #[cfg(feature = "phobos")]
             allow_airstrike: section.read_bool_value("AllowAirstrike"),
             eligible_for_delay_kill: section.read_bool("EligibleForDelayKill", false),
             invisible: section.read_bool("Invisible", false),
@@ -1162,10 +1161,6 @@ impl ObjectType {
             stupid_hunt: section.read_bool("StupidHunt", false),
             default_to_guard_area: section.read_bool("DefaultToGuardArea", false),
             cyborg: section.read_bool("Cyborg", false),
-            // Firestorm 2.0 InfantryTypeClass::Read_INI 0x004DAB31..0x004DAB45
-            // reads it with the current value as its default, from the
-            // constructor's false (0x004DA229); the layered read keeps the
-            // current value across rules passes the same way.
             is_web_immune: category == ObjectCategory::Infantry
                 && section.read_bool("IsWebImmune", false),
             damage_sparks: false,
@@ -1223,31 +1218,27 @@ impl ObjectType {
             cloak_generator: section.read_bool("CloakGenerator", false),
             // Phobos `BuildingTypeExt::ExtData::LoadFromINIFile` reads these
             // through INI_EX and its 2048-byte buffer.
-            #[cfg(feature = "phobos")]
             power_plant_enhancer_power_plants: section
                 .read_list("PowerPlantEnhancer.PowerPlants", 0x800)
                 .map(|tokens| tokens.into_iter().map(str::to_owned).collect())
                 .unwrap_or_default(),
-            #[cfg(feature = "phobos")]
             power_plant_enhancer_range: (section
                 .read_phobos_double("PowerPlantEnhancer.Range", 0.0)
                 * crate::util::lepton::LEPTONS_PER_CELL_I32 as f64)
                 as i32,
-            #[cfg(feature = "phobos")]
             power_plant_enhancer_amount: crate::rules::ares_switch::not_ares_read(|| {
                 section.read_ares_int("PowerPlantEnhancer.Amount", 0)
             }),
-            #[cfg(feature = "phobos")]
             power_plant_enhancer_factor: section
                 .read_phobos_nullable_double("PowerPlantEnhancer.Factor", Some(1.0))
                 .map_or(0.0, |factor| factor as f32),
-            #[cfg(feature = "phobos")]
             power_plant_enhancer_max_count: crate::rules::ares_switch::not_ares_read(|| {
                 section.read_ares_int("PowerPlantEnhancer.MaxCount", -1)
             }),
-            #[cfg(feature = "phobos")]
             power_plant_damage_factor: section.read_phobos_double("PowerPlant.DamageFactor", 1.0),
-        }
+            phobos_land_sequences: Default::default(),
+        );
+        object
     }
 }
 

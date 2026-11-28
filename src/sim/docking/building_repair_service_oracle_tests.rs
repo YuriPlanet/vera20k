@@ -331,7 +331,8 @@ fn scene(golden: &Value, row: &Value) -> Scene {
             &[],
             Some((16, 16)),
             Some(bounds),
-        ).into(),
+        )
+        .into(),
     );
     *sim.path_grid = Some(Arc::new(path));
     *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
@@ -440,7 +441,8 @@ fn scene(golden: &Value, row: &Value) -> Scene {
         let entity = sim.substrate.entities.get_mut(id).unwrap();
         entity.seldom.radio_contacts.clear_all();
         entity
-            .seldom.radio_contacts
+            .seldom
+            .radio_contacts
             .set_capacity(before[contacts].as_array().unwrap().len());
         for value in before[contacts].as_array().unwrap() {
             let target = match value.as_str() {
@@ -455,7 +457,8 @@ fn scene(golden: &Value, row: &Value) -> Scene {
             }
         }
         entity
-            .seldom.tether
+            .seldom
+            .tether
             .set_for_test((int(&before[tether]) != 0).then_some(peer));
     }
     {
@@ -608,7 +611,8 @@ fn native_pending_entry_and_radio_lifecycle_use_shared_command_owners() {
         let mut scene = scene(&golden, row);
         {
             let unit = scene.sim.substrate.entities.get_mut(scene.tank).unwrap();
-            unit.seldom.setter_force_reassign
+            unit.seldom
+                .setter_force_reassign
                 .set_for_test(case["force"] == true);
         }
         {
@@ -944,7 +948,8 @@ fn native_unit_destination_power_tail_uses_raw_cell_and_shared_setters() {
         let flags = &row["setter_flags_before"];
         {
             let unit = scene.sim.substrate.entities.get_mut(scene.tank).unwrap();
-            unit.seldom.setter_force_reassign
+            unit.seldom
+                .setter_force_reassign
                 .set_for_test(int(&flags["force_reassign"]) != 0);
             unit.mission_leaf
                 .set_unit_deployed(int(&flags["deployed"]) as u8);

@@ -80,6 +80,22 @@ pub enum TriggerSoundTarget {
     },
 }
 
+/// The one global line a Phobos combat alert chooses
+/// (`Ext/Techno/Hooks.ReceiveDamage.cpp:123-135`). The client resolves each
+/// name against the process audio catalogs; simulation never loads them.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CombatAlertVoice {
+    /// `VocClass::PlayGlobal(VoiceFeedback[0], 0x2000, 1.0f)` (`:128`).
+    Feedback { sound_id: String },
+    /// `VocClass::PlayGlobal(VoiceAttack[0], 0x2000, 1.0f)` (`:130`).
+    Attack { sound_id: String },
+    /// `VoxClass::PlayIndex(CombatAlert.EVA ...)` (`:132-135`): the
+    /// `evamd.ini` event name, `EVA_UnitsInCombat` when the type key is unset.
+    Eva { event: String },
+    /// `MakeAVoice=no`, or the chosen list/index resolved to no line.
+    None,
+}
+
 /// A sound event produced during simulation (combat, death, production).
 /// Pure data — no audio library dependency. Drained by the app layer each frame.
 ///
@@ -177,6 +193,11 @@ pub enum SimSoundEvent {
         /// (`0x007418AA..0x007418DC`, `[EDI+0x9C..0xA4]`) and
         /// `JumpjetLocomotionClass::State5_Crash @ 0x0054CA90`
         /// (`0x0054CCDE..0x0054CD14`).
+        world: crate::sim::anim_class::AnimWorldCoord,
+    },
+    /// A passenger left a transport and played its `LeaveTransportSound=`.
+    LeaveTransport {
+        sound_id: InternedId,
         world: crate::sim::anim_class::AnimWorldCoord,
     },
     /// DeploySound on infantry stance entry, successful unit-to-building
@@ -355,6 +376,20 @@ pub enum SimSoundEvent {
         owner: InternedId,
         radar: RadarEventRequest,
     },
+    /// Phobos `CombatAlert` raised inside `TechnoClass_ReceiveDamage_Shield @
+    /// 0x701900` (`Ext/Techno/Hooks.ReceiveDamage.cpp:86-140`): the victim
+    /// House's alert timer started, `RadarEventType::Combat` at the object's
+    /// `Coord2Cell(GetCoords())`, and at most one global voice line.
+    ///
+    /// The sim approximates `pTargetHouse->IsControlledByCurrentPlayer()`
+    /// with "a human controls the House"; this event carries the owner so the
+    /// client keeps only its own player's ping and line (a native peer runs
+    /// the block only for its own House). Only the Phobos hook emits it.
+    CombatAlert {
+        owner: InternedId,
+        radar: RadarEventRequest,
+        voice: CombatAlertVoice,
+    },
     /// `TechnoClass::Death_Announcement @ 0x004D98C0` fired for a unit of
     /// `owner` (a human house) that is not `Spawned=`. The app plays
     /// `EVA_UnitLost` for the local owner once its client admits `radar`
@@ -377,6 +412,11 @@ pub enum SimSoundEvent {
         owner: InternedId,
         event: &'static str,
     },
+    /// The same `PlayEVA` sites with a cue the *type* authored (`EVA.Sold=`,
+    /// Phobos `Ext/Building/Hooks.Selling.cpp:18,73`): the name is a
+    /// `[DialogList]` identity resolved at rules-read time, so it cannot be a
+    /// `&'static str`. The app applies the same local-owner test.
+    HouseEvaNamed { owner: InternedId, event: String },
     /// `BuildingClass::Mission_Selling @ 0x00449C30`'s completing stage-2 visit
     /// (`0x00449CC1..0x00449CE5`, once the pack-up animation has set
     /// `+0x6DD`): `TechnoClass+0x41A` (owner is the local player) and no
@@ -537,6 +577,27 @@ pub enum SimSoundEvent {
         /// launch case names its own coordinate. Cases with no positional
         /// cue carry the target cell's centre at Z 0, which nothing reads.
         world: crate::sim::anim_class::AnimWorldCoord,
+    },
+    /// Phobos `SWTypeExt::ApplyActivatedMessage`/`ApplyActivatedEva`
+    /// (`Ext/SWType/FireSuperWeapon.cpp:491-526`), the last step of
+    /// `FireSuperWeaponExt` (`:40-42`): the launching House's relation to the
+    /// listening client picks the `Message.Activated.*` / `EVA.Activated.*`
+    /// column. Which House a client owns is client-local, so the simulation
+    /// emits only the launcher and the launched type; the app resolves
+    /// Owner/Allies/Enemies and prints with the *launching* House's colour
+    /// (`:507`). A blank label or native `-1` says nothing on that channel.
+    SuperWeaponActivatedMessage {
+        owner: InternedId,
+        sw_type: InternedId,
+    },
+    /// Phobos `SWTypeExt::ApplyLinkedSW`'s tail (`:482-488`): the launch
+    /// granted, readied or reset at least one `SW.Link` type. Native speaks
+    /// `EVA.LinkedSWAcquired` and prints `Message.LinkedSWAcquired` only on
+    /// the granting House's own client (`pHouse->IsCurrentPlayer()`), in the
+    /// current player's colour (`:487`); the app applies that local test.
+    SuperWeaponLinkedAcquired {
+        owner: InternedId,
+        sw_type: InternedId,
     },
     /// Stock nuclear Launch reached the PlayerPtr tail (6CDCB3 / 6CDE06).
     /// Its local targeting and Ready cleanup also runs when no silo was found.
@@ -820,6 +881,10 @@ pub struct SimFireEvent {
     /// `fire_coord.y` minus the firer coordinate's Y; a building's muzzle
     /// animation derives its `ZAdjust` from it.
     pub fire_offset_y: i32,
+    /// `0x6FF42B`: the state a `[WeaponType] Anim=` muzzle anim carries when
+    /// `Anim.Update` keeps it following the firer. `None` for every other
+    /// flash, including `OccupantAnim=`.
+    pub firing_anim: Option<crate::sim::anim_class::FiringAnimState>,
     /// The muzzle `AnimClass` type this shot constructs, if any: the weapon's
     /// `Anim=` by aim facing, or `OccupantAnim=` for an occupied building.
     pub muzzle_anim: Option<InternedId>,
@@ -836,6 +901,7 @@ impl SimFireEvent {
     /// report, no muzzle animation and a zero fire coordinate.
     pub fn for_test(attacker_id: u64) -> Self {
         Self {
+            firing_anim: None,
             attacker_id,
             weapon_slot: crate::sim::combat::combat_weapon::WeaponSlot::Primary,
             weapon_id: crate::sim::intern::test_intern("TESTWEAPON"),

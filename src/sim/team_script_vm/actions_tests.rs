@@ -233,14 +233,17 @@ fn wall_sale_detach_clears_only_matching_team_target_fields() {
         state.zone = sold;
         teams.push((team, expected_target, expected_focus, id));
     }
-    assert!((sim.apply_command_with_overlays(
-        crate::sim::command::CommandSender::Player(None),
-        "Receiver",
-        &Command::SellWallAtCell { x: 4, y: 4 },
-        &rules,
-        Some(&overlays),
-        &mut FrameEffects::default(),
-    )).is_ok());
+    assert!(
+        (sim.apply_command_with_overlays(
+            crate::sim::command::CommandSender::Player(None),
+            "Receiver",
+            &Command::SellWallAtCell { x: 4, y: 4 },
+            &rules,
+            Some(&overlays),
+            &mut FrameEffects::default(),
+        ))
+        .is_ok()
+    );
     for (team, expected_target, expected_focus, id) in teams {
         let state = sim.team_script_vm.team(team).unwrap();
         assert_eq!(state.mission_target, expected_target);

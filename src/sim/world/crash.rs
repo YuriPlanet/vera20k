@@ -38,7 +38,7 @@ use crate::sim::rocking::RockingState;
 use crate::sim::world::FrameEffects;
 use crate::util::fixed_math::SimFixed;
 use crate::util::forked::Forked;
-use crate::util::native_x87::{NativeF64Bits, X87Chop53};
+use crate::util::native_x87::{NativeF32Bits, NativeF64Bits, X87Chop53};
 
 use super::{Simulation, UninitContext};
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
@@ -55,8 +55,29 @@ const SIDEWAYS_SPREAD: NativeF64Bits = NativeF64Bits::from_bits(0x3fc3_3333_3333
 const SPIN_TENTH: NativeF64Bits = NativeF64Bits::from_bits(0x3fb9_9999_9999_999a);
 
 /// The spin rates Crash stores as f32 (`fstp dword`, chop): `r / 0x7FFFFFFE`
-/// (`0x007E3570`) times the spread, plus the floor.
-fn spin_rate(draw: i32, spread: NativeF64Bits, floor: Option<NativeF64Bits>) -> SimFixed {
+/// (`0x007E3570`) times the spread, plus the floor. Under `phobos` the whole
+/// double product is scaled by the type's `CrashSpin.Multiplier` before the
+/// store chop (`Ext/Techno/Hooks.Misc.cpp:980-997`).
+fn spin_rate(
+    draw: i32,
+    spread: NativeF64Bits,
+    floor: Option<NativeF64Bits>,
+    multiplier: Option<NativeF64Bits>,
+) -> SimFixed {
+    SimFixed::from_num(f32::from_bits(
+        spin_rate_bits(draw, spread, floor, multiplier).bits(),
+    ))
+}
+
+/// [`Self::spin_rate`]'s f32 store value, exposed for the fold test: the
+/// fixed-point [`SimFixed`] conversion quantizes, which a doubled value does
+/// not survive linearly.
+fn spin_rate_bits(
+    draw: i32,
+    spread: NativeF64Bits,
+    floor: Option<NativeF64Bits>,
+    multiplier: Option<NativeF64Bits>,
+) -> NativeF32Bits {
     let unit = X87Chop53::mul(
         X87Chop53::load_i32(draw),
         X87Chop53::load_f64(crate::util::native_random::RANDOM_RANGED_UNIT_SCALE)
@@ -72,8 +93,13 @@ fn spin_rate(draw: i32, spread: NativeF64Bits, floor: Option<NativeF64Bits>) -> 
             X87Chop53::load_f64(floor).expect("the spin floor is a finite constant"),
         );
     }
-    let stored = X87Chop53::store_f32(value).expect("a spin rate is a finite f32");
-    SimFixed::from_num(f32::from_bits(stored.bits()))
+    if let Some(multiplier) = multiplier {
+        value = X87Chop53::mul(
+            value,
+            X87Chop53::load_f64(multiplier).expect("a spin multiplier is a finite constant"),
+        );
+    }
+    X87Chop53::store_f32(value).expect("a spin rate is a finite f32")
 }
 
 /// `FootClass+0x425`, the crash latch, and `+0x426`, the latch as the
@@ -223,6 +249,26 @@ impl Simulation {
         // RTTI is read after the synchronous tail calls at 0x004DECA2.
         // Ares FootClass_Crash_Spin (Ares.dll 10049050, hook 0x4DECAE):
         // `CrashSpin=no` skips the spin and its draws.
+        let crash_spin = self
+            .substrate
+            .entities
+            .get(id)
+            .and_then(|entity| self.object_type(entity.type_ref(), rules))
+            .is_none_or(|object| object.techno_combat().movement().crash_spin());
+        // Phobos `CrashSpin.Multiplier` (hook 0x4DECBB,
+        // `Ext/Techno/Hooks.Misc.cpp:978-999`): both rates scale by the
+        // multiplier and `<= 0` replaces the whole block with SkipGameCode,
+        // so the three draws do not happen either.
+        let crash_spin_multiplier = self
+            .substrate
+            .entities
+            .get(id)
+            .and_then(|entity| self.object_type(entity.type_ref(), rules))
+            .map(|object| object.phobos_crash_spin_multiplier)
+            .unwrap_or(1.0);
+        let spin_multiplier = Some(NativeF64Bits::from_bits(
+            f64::from(crash_spin_multiplier).to_bits(),
+        ));
         let crash_spin = if rules.ares() {
             self.substrate
                 .entities
@@ -238,16 +284,18 @@ impl Simulation {
             .get(id)
             .is_some_and(|entity| entity.category() != EntityCategory::Infantry)
             && crash_spin
+            && crash_spin_multiplier > 0.0
             && !self.object_placement_scope_active()
         {
             let sideways = self.scenario_rng.next_range_i32_inclusive(0, 0x7FFF_FFFE);
             let sign = self.scenario_rng.next_range_i32_inclusive(0, 1);
             let forwards = self.scenario_rng.next_range_i32_inclusive(0, 0x7FFF_FFFE);
-            let mut vel_sideways = spin_rate(sideways, SIDEWAYS_SPREAD, Some(SPIN_TENTH));
+            let mut vel_sideways =
+                spin_rate(sideways, SIDEWAYS_SPREAD, Some(SPIN_TENTH), spin_multiplier);
             if sign == 0 {
                 vel_sideways = -vel_sideways;
             }
-            let vel_forwards = spin_rate(forwards, SPIN_TENTH, None);
+            let vel_forwards = spin_rate(forwards, SPIN_TENTH, None, spin_multiplier);
             if let Some(entity) = self.substrate.entities.get_mut(id) {
                 RockingState::spin_for_crash(&mut entity.rocking, vel_sideways, vel_forwards);
             }
@@ -897,5 +945,28 @@ impl Simulation {
             context.reborrow(),
         );
         self.uninit_with_context(victim, context);
+    }
+}
+
+#[cfg(all(test, tests_sim_world_c_o))]
+mod phobos_spin_multiplier_tests {
+    use super::*;
+
+    /// The multiplier folds into the whole double product before the store
+    /// chop (`Ext/Techno/Hooks.Misc.cpp:982-997`), so a factor of two is
+    /// exact in both rates, floor included.
+    #[test]
+    fn the_multiplier_scales_the_whole_double_product() {
+        let two = NativeF64Bits::from_bits(f64::from(2.0_f32).to_bits());
+        let one = NativeF64Bits::from_bits(f64::from(1.0_f32).to_bits());
+        for draw in [1, 0x1234_5678, 0x7FFF_FFFE] {
+            for (spread, floor) in [(SIDEWAYS_SPREAD, Some(SPIN_TENTH)), (SPIN_TENTH, None)] {
+                let scaled = f32::from_bits(spin_rate_bits(draw, spread, floor, Some(two)).bits());
+                let stock = f32::from_bits(spin_rate_bits(draw, spread, floor, Some(one)).bits());
+                // The whole double product scales before the store chop, so
+                // the f32 store value doubles exactly.
+                assert_eq!(scaled, 2.0 * stock, "draw {draw:#x}");
+            }
+        }
     }
 }

@@ -1646,7 +1646,6 @@ fn lift_links_and_drop_credit_are_saved_and_hashed() {
 
 /// Phobos warhead `Jumpjet*` overrides apply while the Magnetron's new
 /// Jumpjet locomotor links; absent keys inherit the target type's block.
-#[cfg(feature = "phobos")]
 #[test]
 fn warhead_jumpjet_overrides_apply_to_the_installed_locomotor() {
     let rules = RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
@@ -1712,7 +1711,6 @@ fn warhead_jumpjet_overrides_apply_to_the_installed_locomotor() {
 
 /// The production attack path hands the fired warhead's Phobos `Jumpjet*`
 /// block to the lift (`run_special_detonation_arm` into Imbue `0x00710000`).
-#[cfg(feature = "phobos")]
 #[test]
 fn retail_magnetron_beam_carries_its_warhead_jumpjet_override() {
     let Some(rules) = crate::rules::retail_ini_fixture::retail_battle_rules_with_map_patch(

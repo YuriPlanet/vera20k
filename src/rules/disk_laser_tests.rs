@@ -60,9 +60,31 @@ fn stock_disc_reads_battle_map_weapon_art_and_charge_reference() {
     assert_eq!(weapon.laser_outer_spread, [0, 0, 0]);
     let art = rules.art().get("DISK").expect("fixed retail DISK art");
     assert_eq!(disc.weapon_flh(0, false), [0, 0, 75].into());
-    assert_eq!(art.turret_offset, 0);
+    assert_eq!(art.turret_offset, [0, 0, 0]);
     assert_eq!(
         rules.general.disk_laser_charge_up(),
         Some("FloatingDiscChargeUp")
+    );
+}
+
+/// Phobos `DiskLaser.Radius=` (`Ext/WeaponType/Body.cpp:86`) is a
+/// `Valueable<double>` whose constructor value is `DiskLaserClass::Radius`
+/// (240); an unset key keeps it and a reached key replaces it.
+#[test]
+fn disk_laser_radius_reads_the_weapon_key_over_the_constructor_240() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[VehicleTypes]\n0=CARRIER\n\
+         [CARRIER]\nStrength=100\nArmor=heavy\nPrimary=DiskLaser\nSecondary=WideDisk\n\
+         [DiskLaser]\nDiskLaser=yes\n\
+         [WideDisk]\nDiskLaser=yes\nDiskLaser.Radius=120\n",
+    ))
+    .expect("disk radius fixture");
+    assert_eq!(
+        rules.weapon("DiskLaser").unwrap().phobos_disk_laser_radius,
+        240.0
+    );
+    assert_eq!(
+        rules.weapon("WideDisk").unwrap().phobos_disk_laser_radius,
+        120.0
     );
 }

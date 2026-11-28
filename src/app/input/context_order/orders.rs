@@ -297,6 +297,8 @@ pub(super) fn attack_branch_orders(
                         target_rx,
                         target_ry,
                     },
+                    // A projectile is not an object order target.
+                    TargetKind::Bullet(_) => continue,
                     TargetKind::Entity(target_id) => {
                         match infantry_attack_action_with(sim, &control, rules, id, target_id) {
                             Some(InfantryAttackAction::NoMove) => {
@@ -558,6 +560,7 @@ fn emit_entity_order_voice(
                     &mut runtime.simulation,
                     &runtime.resources.rules,
                     speaker_id,
+                    target,
                     match_state.input.selection_voice_enabled,
                 )
         {

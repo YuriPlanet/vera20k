@@ -22,13 +22,13 @@
 //! This module owns catalog reads and the effective-value projection. The
 //! retained `NativeRulesRegistryState` owns the catalog's lifetime and the
 //! reached passes; `sim::radiation` owns site and damage consumption. The
-//! per-type `RadSiteWarhead.Detonate(.Full)`, `RadHasOwner` and `RadHasInvoker`
-//! keys are read and retained here but not consumed: warhead detonation from
-//! a radiation site and radiation damage attribution are separate chains.
+//! per-type `RadSiteWarhead.Detonate(.Full)` keys are consumed by the foot
+//! damage path and `RadHasOwner`/`RadHasInvoker` by the site copy
+//! (`sim/radiation.rs`); `RadBuildingDamageMaxCount` is read and projected but
+//! enforced by nobody, matching native: `Ext/RadSite/Hooks.cpp:124` declares
+//! the per-site counter the hook gates on at `:147`, and no code increments it.
 
-#[cfg(feature = "phobos")]
 use crate::rules::ini_parser::IniFile;
-#[cfg(feature = "phobos")]
 use crate::rules::ini_value::truncate_native_bytes;
 use crate::rules::ruleset::RadiationRules;
 use crate::util::fixed_math::SimFixed;
@@ -39,7 +39,6 @@ pub(crate) const DEFAULT_RADIATION_TYPE: &str = "Radiation";
 
 /// `Enumerable` stores `Name[32]` with `_TRUNCATE`, so the payload is 31
 /// bytes (`RadTypeClass` shares `Utilities/TemplateDef.h`'s readers).
-#[cfg(feature = "phobos")]
 const NAME_PAYLOAD_BYTES: usize = 0x1F;
 
 /// One `[RadiationTypes]` entry. Every field is `Nullable` in native terms:
@@ -74,7 +73,6 @@ impl RadiationType {
         }
     }
 
-    #[cfg(feature = "phobos")]
     pub(crate) fn name(&self) -> &str {
         &self.name
     }
@@ -139,14 +137,8 @@ impl EffectiveRadiation<'_> {
         EffectiveRadiation {
             duration_multiple: rules.duration_multiple,
             application_delay: rules.application_delay,
-            #[cfg(feature = "phobos")]
             application_delay_building: rules.application_delay_building,
-            #[cfg(not(feature = "phobos"))]
-            application_delay_building: 0,
-            #[cfg(feature = "phobos")]
             building_damage_max_count: rules.building_damage_max_count,
-            #[cfg(not(feature = "phobos"))]
-            building_damage_max_count: -1,
             level_max: rules.level_max,
             level_delay: rules.level_delay,
             light_delay: rules.light_delay,
@@ -155,22 +147,10 @@ impl EffectiveRadiation<'_> {
             tint_factor: rules.tint_factor,
             color: rules.color,
             site_warhead: &rules.site_warhead,
-            #[cfg(feature = "phobos")]
             site_warhead_detonate: rules.site_warhead_detonate,
-            #[cfg(not(feature = "phobos"))]
-            site_warhead_detonate: false,
-            #[cfg(feature = "phobos")]
             site_warhead_detonate_full: rules.site_warhead_detonate_full,
-            #[cfg(not(feature = "phobos"))]
-            site_warhead_detonate_full: true,
-            #[cfg(feature = "phobos")]
             has_owner: rules.has_owner,
-            #[cfg(not(feature = "phobos"))]
-            has_owner: false,
-            #[cfg(feature = "phobos")]
             has_invoker: rules.has_invoker,
-            #[cfg(not(feature = "phobos"))]
-            has_invoker: false,
         }
     }
 }
@@ -191,7 +171,7 @@ impl RadiationTypeCatalog {
         }
     }
 
-    #[cfg(all(test, feature = "phobos"))]
+    #[cfg(all(test))]
     pub(crate) fn entries(&self) -> &[RadiationType] {
         &self.types
     }
@@ -200,13 +180,11 @@ impl RadiationTypeCatalog {
     /// default `Radiation` entry first, then each pass's `[RadiationTypes]`
     /// append. The load-time report names them so a mod's catalog can be
     /// traced without deploying anything.
-    #[cfg(feature = "phobos")]
     pub(crate) fn names(&self) -> impl Iterator<Item = &str> {
         self.types.iter().map(|entry| entry.name.as_str())
     }
 
     /// Native case-insensitive lookup retaining the first spelling.
-    #[cfg(feature = "phobos")]
     pub(crate) fn entry(&self, name: &str) -> Option<&RadiationType> {
         self.types
             .iter()
@@ -217,7 +195,6 @@ impl RadiationTypeCatalog {
     /// `Radiation` entry when the name is absent or unknown
     /// (`Valueable<RadTypeClass*>::Read<true>` keeps the constructor's
     /// `FindOrAllocate(GameStrings::Radiation)`).
-    #[cfg(feature = "phobos")]
     pub(crate) fn bound_entry(&self, name: Option<&str>) -> Option<&RadiationType> {
         match name {
             Some(name) => self
@@ -229,7 +206,6 @@ impl RadiationTypeCatalog {
 
     /// Effective values for a bound type name. An empty catalog, or a bound
     /// name the catalog does not hold, resolves entirely from the globals.
-    #[cfg(feature = "phobos")]
     pub(crate) fn effective<'a>(
         &'a self,
         rules: &'a RadiationRules,
@@ -241,18 +217,12 @@ impl RadiationTypeCatalog {
         EffectiveRadiation {
             duration_multiple: entry.duration_multiple.unwrap_or(rules.duration_multiple),
             application_delay: entry.application_delay.unwrap_or(rules.application_delay),
-            #[cfg(feature = "phobos")]
             application_delay_building: entry
                 .application_delay_building
                 .unwrap_or(rules.application_delay_building),
-            #[cfg(not(feature = "phobos"))]
-            application_delay_building: entry.application_delay_building.unwrap_or(0),
-            #[cfg(feature = "phobos")]
             building_damage_max_count: entry
                 .building_damage_max_count
                 .unwrap_or(rules.building_damage_max_count),
-            #[cfg(not(feature = "phobos"))]
-            building_damage_max_count: entry.building_damage_max_count.unwrap_or(-1),
             level_max: entry.level_max.unwrap_or(rules.level_max),
             level_delay: entry.level_delay.unwrap_or(rules.level_delay),
             light_delay: entry.light_delay.unwrap_or(rules.light_delay),
@@ -271,26 +241,14 @@ impl RadiationTypeCatalog {
             ),
             color: entry.color.unwrap_or(rules.color),
             site_warhead: entry.site_warhead.as_deref().unwrap_or(&rules.site_warhead),
-            #[cfg(feature = "phobos")]
             site_warhead_detonate: entry
                 .site_warhead_detonate
                 .unwrap_or(rules.site_warhead_detonate),
-            #[cfg(not(feature = "phobos"))]
-            site_warhead_detonate: entry.site_warhead_detonate.unwrap_or(false),
-            #[cfg(feature = "phobos")]
             site_warhead_detonate_full: entry
                 .site_warhead_detonate_full
                 .unwrap_or(rules.site_warhead_detonate_full),
-            #[cfg(not(feature = "phobos"))]
-            site_warhead_detonate_full: entry.site_warhead_detonate_full.unwrap_or(true),
-            #[cfg(feature = "phobos")]
             has_owner: entry.has_owner.unwrap_or(rules.has_owner),
-            #[cfg(not(feature = "phobos"))]
-            has_owner: entry.has_owner.unwrap_or(false),
-            #[cfg(feature = "phobos")]
             has_invoker: entry.has_invoker.unwrap_or(rules.has_invoker),
-            #[cfg(not(feature = "phobos"))]
-            has_invoker: entry.has_invoker.unwrap_or(false),
         }
     }
 
@@ -300,7 +258,6 @@ impl RadiationTypeCatalog {
     /// whether or not this pass carries the list. `Nullable` reads keep
     /// prior values when the key is absent, so a nonempty read replaces and
     /// an omitted one retains.
-    #[cfg(feature = "phobos")]
     pub(crate) fn apply_pass(&mut self, pass: &IniFile) {
         if let Some(list) = pass.section("RadiationTypes") {
             // Phobos Enumerable::LoadFromINIList reads each physical key
@@ -409,20 +366,14 @@ pub(crate) fn effective_radiation<'a>(
     rules: &'a crate::rules::ruleset::RuleSet,
     rad_type: Option<&str>,
 ) -> EffectiveRadiation<'a> {
-    #[cfg(feature = "phobos")]
     {
         rules
             .radiation
             .radiation_types
             .effective(&rules.radiation, rad_type)
     }
-    #[cfg(not(feature = "phobos"))]
-    {
-        let _ = rad_type;
-        EffectiveRadiation::from_globals(&rules.radiation)
-    }
 }
 
-#[cfg(all(test, tests_rules_o_z, feature = "phobos"))]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "phobos_radiation_tests.rs"]
 mod tests;

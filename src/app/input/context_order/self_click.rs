@@ -27,11 +27,14 @@ pub(in crate::app::input) fn is_simple_deploy_unit(
 /// Infantry51EC14..51EC9F blocks Doing27..31 only when Type+6C4
 /// (UndeployDelay) > -1; Type+6A8 (DeployFireWeapon) is unrelated.
 /// Unit740015..74003F blocks an empty mobile transport outside a tank bunker
-/// (`+0x2E4`, `0x00740023`). Both answer NoDeploy30 rather than a self
+/// (`+0x2E4`, `0x00740023`); Phobos hook `0x740015`
+/// (`Ext/Unit/Hooks.Unload.cpp:86-88`) skips that block for a transport whose
+/// `Deploy.*` passenger gate admits it. Both answer NoDeploy30 rather than a self
 /// action. The D-key's receiver is separate.
 fn self_deploy_is_blocked(
     entity: &crate::sim::game_entity::GameEntity,
     object: &crate::rules::object_type::ObjectType,
+    rules: &crate::rules::ruleset::RuleSet,
 ) -> bool {
     (entity.category() == EntityCategory::Infantry
         && object.deployer
@@ -44,6 +47,13 @@ fn self_deploy_is_blocked(
             && !object.is_simple_deployer
             && entity.bunker.link().installed_in().is_none()
             && !object.no_manual_unload()
+            && !(rules.phobos()
+                && object.phobos_deploy.cursor_skips_passengers(
+                    entity
+                        .passenger_role()
+                        .cargo()
+                        .map_or(0, |cargo| cargo.passengers().len()),
+                ))
             && entity
                 .passenger_role()
                 .cargo()
@@ -307,7 +317,7 @@ pub(in crate::app::input) fn self_answers_no_deploy(
                         .interner()
                         .object_type(entity.type_ref(), rules)
                         .is_some_and(|object| {
-                            self_deploy_is_blocked(entity, object)
+                            self_deploy_is_blocked(entity, object, rules)
                                 || is_simple_deploy_unit(entity, object)
                         })
             })))
@@ -465,7 +475,7 @@ fn self_action(
         .get(target.stable_id)
         .filter(|entity| context_owns_actor(sim, entity, local_owner))?;
     let obj = sim.interner().object_type(entity.type_ref(), rules);
-    if obj.is_some_and(|object| self_deploy_is_blocked(entity, object)) {
+    if obj.is_some_and(|object| self_deploy_is_blocked(entity, object, rules)) {
         return None;
     }
     // Unit740023/740107: a unit in a tank bunker skips the transport arm

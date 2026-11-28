@@ -69,7 +69,6 @@ impl GameEntity {
     /// Phobos `TechnoExt::IsActive` (`src/Ext/Techno/Body.cpp`) plus the power
     /// plant enhancer loops' `HasPower` (Building+660) gate. Phobos tests
     /// TemporalTargetingMe and IsBeingWarpedOut independently.
-    #[cfg(feature = "phobos")]
     pub fn is_power_plant_enhancer_active(&self) -> bool {
         self.is_active()
             && self.health.current() > 0

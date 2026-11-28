@@ -152,7 +152,6 @@ fn empty_fv_two_shot_fireat_matches_native_muzzles_ids_rearm_and_rng() {
                 target_cell[0].as_u64().unwrap() as u16,
                 target_cell[1].as_u64().unwrap() as u16,
                 world.resolved_terrain.as_ref(),
-                None,
             )),
             &world.substrate.entities,
             &world.interner,
@@ -170,6 +169,9 @@ fn empty_fv_two_shot_fireat_matches_native_muzzles_ids_rearm_and_rng() {
                 SimFixed::from_num(128),
             ),
             is_garrison: false,
+            at_firing_frame: true,
+            // The raw FireAt paths run no class firing update.
+            pause_handled: false,
         };
         world_fire::emit_admitted_fire(
             &mut world,

@@ -411,7 +411,9 @@ impl Simulation {
         let first_opening = !entity.building_art.actually_placed;
         let owner = entity.owner();
         let cell = (entity.position.rx(), entity.position.ry());
-        let refinery = object.refinery;
+        // 0x00445FE4: a `Refinery.UseNormalActiveAnim` refinery takes the
+        // normal opening path, not the storage-fill arm.
+        let refinery = object.refinery && !self.refinery_uses_normal_active_anim(id, rules);
         let powered = Self::anim_power_policy(object, entity, rules);
         let damaged = requested_damage_state(
             entity.health,
@@ -669,6 +671,72 @@ impl Simulation {
             let garrisoned = !entity.passenger_role().occupants().is_empty();
             self.set_building_anim_slot(id, slot as u8, damaged, garrisoned, 0, rules);
         }
+    }
+
+    /// Phobos `PlayRoofProductionAnim` (`Ext/Building/Hooks.cpp:1091-1165`):
+    /// play slot 8 with the roof-exit ART overrides. The native temporary
+    /// mutation of the type record becomes a per-call config override; the
+    /// slot's persistent power flags stay stock. Returns whether the roof path
+    /// handled the play (the caller then skips the stock ProductionAnim).
+    pub(crate) fn play_roof_production_anim(
+        &mut self,
+        id: u64,
+        damaged: bool,
+        garrisoned: bool,
+        rules: &RuleSet,
+    ) -> bool {
+        use crate::rules::art_data::BuildingAnimPowerFlags;
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return false;
+        };
+        let type_name = self.interner.resolve(entity.type_ref());
+        let Some(entry) = self
+            .interner
+            .object_type(entity.type_ref(), rules)
+            .and_then(|object| rules.art().resolve_metadata_entry(type_name, &object.image))
+        else {
+            return false;
+        };
+        let roof = entry.roof_production_anim.clone();
+        if roof.is_empty() {
+            return false;
+        }
+        let Some(stock) = entry
+            .building_anims
+            .iter()
+            .find(|config| config.native_slot == 8)
+            .cloned()
+        else {
+            return false;
+        };
+        // A picked name that the AnimType registry did not resolve is null in
+        // the native vector, so Pick falls back to the plain ProductionAnim.
+        let name = roof
+            .pick(damaged, garrisoned)
+            .filter(|name| rules.has_anim_type(name))
+            .map(str::to_owned)
+            .unwrap_or_else(|| stock.anim_type.clone());
+        if name.is_empty() {
+            return false;
+        }
+        let stock_flags = self.building_anim_power_flags(id, 8, rules);
+        let flags = BuildingAnimPowerFlags {
+            powered: roof.powered.unwrap_or(stock_flags.powered),
+            powered_light: roof.powered_light.unwrap_or(stock_flags.powered_light),
+            powered_effect: roof.powered_effect.unwrap_or(stock_flags.powered_effect),
+            powered_special: roof.powered_special.unwrap_or(stock_flags.powered_special),
+        };
+        if self.powered_anim_blocked(id, flags, rules) {
+            return true;
+        }
+        let mut config = stock;
+        config.anim_type = name.clone();
+        config.x = roof.x.unwrap_or(config.x);
+        config.y = roof.y.unwrap_or(config.y);
+        config.z_adjust = roof.z_adjust.unwrap_or(config.z_adjust);
+        config.y_sort = roof.y_sort.unwrap_or(config.y_sort);
+        self.allocate_building_anim_slot(id, 8, &name, damaged, 0, Some(&config), rules);
+        true
     }
 
     /// Original451750. Empty selected names leave before451890 and therefore
@@ -966,15 +1034,30 @@ impl Simulation {
         }
     }
 
-    fn building_anim_delayed_fire(&self, id: u64, rules: &RuleSet) -> bool {
-        let Some(entity) = self.substrate.entities.get(id) else {
-            return false;
-        };
+    /// The type's ART entry under its ImageFile section, the section Phobos's
+    /// BuildingTypeExt reads.
+    fn building_art_entry<'a>(
+        &self,
+        id: u64,
+        rules: &'a RuleSet,
+    ) -> Option<&'a crate::rules::art_data::ArtEntry> {
+        let entity = self.substrate.entities.get(id)?;
         let name = self.interner.resolve(entity.type_ref());
-        rules
-            .object(name)
-            .and_then(|object| rules.art().resolve_metadata_entry(name, &object.image))
+        let object = rules.object(name)?;
+        rules.art().resolve_metadata_entry(name, &object.image)
+    }
+
+    fn building_anim_delayed_fire(&self, id: u64, rules: &RuleSet) -> bool {
+        self.building_art_entry(id, rules)
             .is_some_and(|entry| entry.is_anim_delayed_fire)
+    }
+
+    /// Phobos `Refinery.UseNormalActiveAnim=` (`Ext/Building/Hooks.Refinery.cpp:63,70`):
+    /// a set key sends the refinery past the storage-tier arms at `0x00445FE4`
+    /// and `0x00450DAA`.
+    fn refinery_uses_normal_active_anim(&self, id: u64, rules: &RuleSet) -> bool {
+        self.building_art_entry(id, rules)
+            .is_some_and(|entry| entry.refinery_use_normal_active_anim)
     }
 
     /// Anim arm of Building PointerExpired44E8F0. Production8 restores Idle18;
@@ -1619,6 +1702,78 @@ mod slot_tests {
         assert_eq!(sim.interner.resolve(sim.anim(new3).unwrap().type_id()), "N");
         assert!(sim.anim(old9).is_none());
         assert!(sim.anim(old3).is_none());
+    }
+
+    /// `0x00446662..0x0044667B` (`Grand_Opening`, after the wall-tower
+    /// variant arm and before the light block): a `HasTurret` building without
+    /// `TurretAnimIsVoxel` seeds slot 9 from the rules `TurretAnim=` name; a
+    /// voxel turret or a `Turret=no` type keeps the slot empty.
+    #[test]
+    fn rules_turret_anim_seeds_slot_nine_only_for_an_shp_turret() {
+        use crate::rules::{art_data::ArtRegistry, ini_parser::IniFile};
+
+        let ini = "[BuildingTypes]
+0=T
+1=V
+2=N
+                   [T]
+Strength=100
+Turret=yes
+TurretAnim=S
+TurretAnimX=3
+TurretAnimY=-2
+TurretAnimZAdjust=-40
+                   [V]
+Strength=100
+Turret=yes
+TurretAnim=S
+TurretAnimIsVoxel=yes
+                   [N]
+Strength=100
+Turret=no
+TurretAnim=S
+                   [Animations]
+0=S
+";
+        let run = |type_id: &str| {
+            let art_ini = IniFile::from_str(
+                "[T]
+[V]
+[N]
+[S]
+",
+            );
+            let mut rules =
+                RuleSet::from_ini_with_fixed_art_for_test(&IniFile::from_str(ini), &art_ini)
+                    .unwrap();
+            let art = ArtRegistry::from_ini(&art_ini);
+            rules.install_art_data(art);
+            let mut sim = Simulation::new();
+            let id = sim.substrate.allocate_stable_id();
+            let mut entity = GameEntity::test_default_of_category(
+                id,
+                type_id,
+                "A",
+                2,
+                2,
+                crate::map::entities::EntityCategory::Structure,
+            );
+            entity.set_type_ref_for_test(sim.interner.intern(type_id));
+            entity.set_owner_for_test(sim.interner.intern("A"));
+            entity.health.set_for_test(100);
+            sim.substrate.entities.insert(entity);
+            *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+            sim.grand_opening(id, false, false, &rules, None, &mut FrameEffects::default());
+            let slot = sim.entities().get(id).unwrap().building_art.anim_slots()[9];
+            slot.map(|anim| {
+                sim.interner
+                    .resolve(sim.anim(anim).unwrap().type_id())
+                    .to_string()
+            })
+        };
+        assert_eq!(run("T").as_deref(), Some("S"));
+        assert_eq!(run("V"), None, "a voxel turret keeps slot 9 empty");
+        assert_eq!(run("N"), None, "a Turret=no host never seeds slot 9");
     }
 
     #[test]
@@ -2407,5 +2562,76 @@ mod native_slot_tests {
             checked += 1;
         }
         assert_eq!(checked, 36);
+    }
+}
+
+#[cfg(all(test, tests_sim_a_b))]
+mod roof_production_anim_tests {
+    use super::*;
+
+    fn scene(roof_name: &str) -> (Simulation, RuleSet, u64) {
+        use crate::rules::{art_data::ArtRegistry, ini_parser::IniFile};
+        let art_ini = IniFile::from_str(&format!(
+            "[B]\nProductionAnim=PROD\nProductionAnimX=2\nProductionAnimY=3\n\
+             RoofProductionAnim={roof_name}\nRoofProductionAnimX=7\nRoofProductionAnimY=9\n\
+             RoofProductionAnimZAdjust=4\nRoofProductionAnimYSort=5\n\
+             [PROD]\nLoopCount=-1\nRate=300\n[ROOF]\nLoopCount=-1\nRate=300\n"
+        ));
+        let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
+            &IniFile::from_str(
+                "[BuildingTypes]\n0=B\n[B]\nStrength=100\n\
+                 [Animations]\n0=PROD\n1=ROOF\n",
+            ),
+            &art_ini,
+        )
+        .unwrap();
+        let mut art = ArtRegistry::from_ini(&art_ini);
+        for name in ["PROD", "ROOF"] {
+            art.bind_anim_frame_count_for_test(name, 10);
+        }
+        rules.install_art_data(art);
+        let mut sim = Simulation::new();
+        let id = sim.substrate.allocate_stable_id();
+        let mut entity = GameEntity::test_default_of_category(
+            id,
+            "B",
+            "A",
+            2,
+            2,
+            crate::map::entities::EntityCategory::Structure,
+        );
+        entity.set_type_ref_for_test(sim.interner.intern("B"));
+        entity.set_owner_for_test(sim.interner.intern("A"));
+        entity.health.set_for_test(100);
+        sim.substrate.entities.insert(entity);
+        *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+        (sim, rules, id)
+    }
+
+    fn slot_name(sim: &Simulation, id: u64) -> &str {
+        let slot =
+            sim.entities().get(id).unwrap().building_art.anim_slots()[8].expect("production slot");
+        sim.resolve(sim.anim(slot).unwrap().type_id())
+    }
+
+    /// Phobos `PlayRoofProductionAnim` (`Ext/Building/Hooks.cpp:1091-1165`):
+    /// the roof pick replaces slot 8, an unknown AnimType falls back to the
+    /// plain ProductionAnim, and the stock key remains the control.
+    #[test]
+    fn roof_production_anim_plays_the_override_and_falls_back() {
+        let (mut sim, rules, id) = scene("ROOF");
+        assert!(sim.play_roof_production_anim(id, false, false, &rules));
+        assert_eq!(slot_name(&sim, id), "ROOF");
+        sim.clear_building_anim_slot(id, 8);
+        sim.set_building_anim_slot(id, 8, false, false, 0, &rules);
+        assert_eq!(slot_name(&sim, id), "PROD", "stock control");
+
+        let (mut sim, rules, id) = scene("UNKNOWN");
+        assert!(sim.play_roof_production_anim(id, false, false, &rules));
+        assert_eq!(
+            slot_name(&sim, id),
+            "PROD",
+            "an unresolved roof AnimType falls back to the plain ProductionAnim"
+        );
     }
 }

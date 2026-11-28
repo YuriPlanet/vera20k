@@ -381,7 +381,7 @@ fn threat_range(sim: &Simulation, id: u64, rules: &RuleSet) -> i32 {
     } else {
         [0, 0]
     };
-    crate::sim::combat::threat_range::threat_range_leptons(object, 2, ranges)
+    crate::sim::combat::threat_range::threat_range_leptons(object, 2, ranges, false)
 }
 
 /// Virtual+BC with null requester: a tube Foot returns before either ground

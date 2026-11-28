@@ -1330,7 +1330,8 @@ fn retail_authored_first_ore_frame_publishes_cells_and_retires_transient_overlay
                     scene.sim().overlay_grid.as_ref().unwrap(),
                     &occupied,
                     admission,
-                    (rx, ry)
+                    (rx, ry),
+                    false
                 )
                 .is_some()
             ),

@@ -267,6 +267,32 @@ pub(in crate::sim) fn exit_produced_object(
     else {
         return BuildingExit::Failed;
     };
+    // Phobos `BuildingClass_ExitObject_InitialClonedHealth` @ 0x443C81
+    // (`Ext/Building/Hooks.cpp:91-106`), reached on every ExitObject call
+    // before RTTI, admission or Unlimbo: an exiting InfantryClass from a
+    // `Cloning=` producer writes both Health and EstimatedHealth from the
+    // clone infantry type's Strength, scaled by the producer type's
+    // `InitialStrength.Cloning`.
+    if product_category == EntityCategory::Infantry && producer_type.cloning {
+        let percentage =
+            initial_cloning_percentage(producer_type.phobos_initial_cloning, &mut sim.scenario_rng);
+        let health = product_type.strength;
+        // `Math::clamp((int)(health * percentage), 1, health)`: the native
+        // clamp evaluates the lo side first, so the order here matches it
+        // even for a type whose Strength is below one.
+        let scaled = (health as f64 * percentage) as i32;
+        let strength = if scaled < 1 {
+            1
+        } else if scaled > health {
+            health
+        } else {
+            scaled
+        };
+        if let Some(entity) = sim.substrate.entities.get_mut(stable_id) {
+            entity.health.set(strength);
+            entity.estimated_health.reset(strength);
+        }
+    }
     // NPSE 2.0 Exit_Object C33940..C33998 reads the producer's Naval,
     // unlike capped starts and abandonment, which read the product's type.
     let Some(kind) = UnitChoiceKind::of(product_type.category, producer_type.naval, rules.npatch())
@@ -402,6 +428,24 @@ pub(in crate::sim) fn exit_produced_object(
             effects,
         ),
     }
+}
+
+/// Phobos `GeneralUtils::GetRangedRandomOrSingleValue(PartialVector2D<double>)`
+/// (`src/Utilities/GeneralUtils.cpp:66-72`): `min = (int)(X * 100)`,
+/// `max = (int)(Y * 100)`; return `X` when `X >= Y || ValueCount < 2`, else
+/// the inclusive integer percentage draw divided by 100. One Scenario RNG
+/// draw per call when a real range is authored, none otherwise.
+fn initial_cloning_percentage(
+    settings: crate::rules::ini_value::PartialDoublePair,
+    scenario_rng: &mut crate::sim::rng::SimRng,
+) -> f64 {
+    if settings.is_single() {
+        return settings.low;
+    }
+    let min = (settings.low * 100.0) as i32;
+    let max = (settings.high * 100.0) as i32;
+    let drawn = scenario_rng.next_range_i32_inclusive(min, max);
+    f64::from(drawn) / 100.0
 }
 
 /// ExitObject's naval arm (`0x00444175..0x00444492`): an uncontacted yard
@@ -937,6 +981,25 @@ fn exit_cloning_vat_copies(
         if !is_cloning_vat {
             continue;
         }
+        // Phobos `BuildingExt::KickOutClone` (`Ext/Building/Body.cpp:476-486`,
+        // reached from the replaced clone loop hook 0x4449FB): a dead,
+        // limboed or warping-out vat exits nothing, and with
+        // `Cloning.Powered=` (constructor `true`) neither does a
+        // powered-down one. The vanilla loop this call stands in for has no
+        // checks; the Ares clone path gates its sources through
+        // `building_operational_state`, which already folds the power latch.
+        if let Some(vat) = sim.substrate.entities.get(vat_id) {
+            let powered = sim
+                .entity_object_type(vat, rules)
+                .is_some_and(|object| object.phobos_cloning_powered);
+            if !vat.lifecycle.object_alive()
+                || vat.lifecycle.in_limbo()
+                || vat.is_warped_out()
+                || (powered && !vat.building_online())
+            {
+                continue;
+            }
+        }
         // Create_Object takes only the vat's House (`0x00444A24..0x00444A2B`);
         // the new object waits in limbo for the vat's exit to place it.
         let Some(clone_id) = sim.construct_resolved_object_limbo_at_height(
@@ -1010,6 +1073,39 @@ fn infantry_exit_tail(
             effects,
         ) {
             log::debug!("{spawned} factory exit destination: {cause}");
+        }
+    }
+    // Phobos `BuildingClass_ExitObject_ProductionAnimForInfantryFactory`
+    // (`0x444D11`, `Ext/Building/Hooks.cpp:1210-1240`): an InfantryType factory
+    // destroys Idle and plays the roof or stock Production anim. A roof-exit
+    // unit always takes the roof helper, which also owns the powered gate and
+    // the plain ProductionAnim fallback; every other unit keeps the stock play.
+    let producer_anim = {
+        let producer = sim.substrate.entities.get(producer_id);
+        producer
+            .and_then(|producer| sim.entity_object_type(producer, rules))
+            .filter(|object| {
+                object.factory_type() == Some(crate::rules::object_type::FactoryType::InfantryType)
+            })
+            .map(|object| object.strength)
+            .and_then(|strength| {
+                let producer = producer?;
+                Some((
+                    crate::sim::building_art::requested_damage_state(
+                        producer.health,
+                        strength,
+                        rules.general.condition_yellow,
+                    ),
+                    !producer.passenger_role.occupants().is_empty(),
+                ))
+            })
+    };
+    if let Some((damaged, garrisoned)) = producer_anim {
+        sim.clear_building_anim_slot(producer_id, 18);
+        if product_type.exits_through_roof() {
+            sim.play_roof_production_anim(producer_id, damaged, garrisoned, rules);
+        } else {
+            sim.set_building_anim_slot(producer_id, 8, damaged, false, 0, rules);
         }
     }
     infantry_exit_post(sim, rules, producer_id, spawned, overlay_registry, effects);

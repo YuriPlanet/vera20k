@@ -325,6 +325,27 @@ impl RulesPassProcessor {
             .push(i32::try_from(country_index).expect("native Country index exceeds i32"));
     }
 
+    /// `SuperWeaponTypeClass::FindIndex` over the registered
+    /// `[SuperWeaponTypes]` entries: the canonical section name for a
+    /// case-insensitive token, or `None` for an unknown one.
+    /// `BuildingTypeClass::Find` over the registered `[BuildingTypes]` for
+    /// the limbo-delivery type list.
+    fn find_existing_building_name(&self, token: &str) -> Option<String> {
+        self.families
+            .get(&RulesTypeFamily::Building)?
+            .iter()
+            .find(|member| member.native_stored_id.eq_ignore_ascii_case(token))
+            .map(|member| member.native_stored_id.clone())
+    }
+
+    fn find_existing_super_weapon_name(&self, token: &str) -> Option<String> {
+        self.families
+            .get(&RulesTypeFamily::SuperWeapon)?
+            .iter()
+            .find(|member| member.native_stored_id.eq_ignore_ascii_case(token))
+            .map(|member| member.native_stored_id.clone())
+    }
+
     pub(super) fn process_super_weapon_family(
         &mut self,
         pass: &IniFile,
@@ -363,7 +384,6 @@ impl RulesPassProcessor {
                     self.family_mut(RulesTypeFamily::SuperWeapon)[index]
                         .super_weapon_aux_building = building;
                 }
-                #[cfg(feature = "phobos")]
                 {
                     // Phobos SWTypeExt reads its three gates in the same
                     // ordered body as the Ares keys: level first, then the two
@@ -384,8 +404,61 @@ impl RulesPassProcessor {
                     {
                         availability.set_neg_technos(neg);
                     }
+                    availability.set_shots(raw.read_ares_int("SW.Shots", availability.shots()));
+                    let (range_minimum, range_maximum) = availability.range_bits();
+                    availability.set_range(
+                        raw.read_ares_double_bits("SW.RangeMinimum", range_minimum),
+                        raw.read_ares_double_bits("SW.RangeMaximum", range_maximum),
+                    );
                     self.family_mut(RulesTypeFamily::SuperWeapon)[index]
                         .super_weapon_phobos_availability = availability;
+                    // Phobos `SWTypeExt::LoadFromINIFile` then reads
+                    // `SW.Next`, its flags/rolls/weights, and the `SW.Link`
+                    // group (`Ext/SWType/Body.cpp:170-243`) into the retained
+                    // extension, so keys this pass omits keep the earlier
+                    // pass's values (and the weight vectors keep their native
+                    // replace/append growth).
+                    let chaining =
+                        crate::rules::phobos_sw_chaining::PhobosSuperWeaponChaining::from_section(
+                            self.family_mut(RulesTypeFamily::SuperWeapon)[index]
+                                .super_weapon_phobos_chaining
+                                .clone(),
+                            &raw,
+                            |token| self.find_existing_super_weapon_name(token),
+                        );
+                    self.family_mut(RulesTypeFamily::SuperWeapon)[index]
+                        .super_weapon_phobos_chaining = chaining;
+                    // Phobos `SWTypeExt::LoadFromINIFile`'s LimboDelivery and
+                    // LimboKill block (`Ext/SWType/Body.cpp:159-169`), then
+                    // the `Detonate.*` group (`:274-278`); absent Detonate
+                    // keys keep the earlier pass's values.
+                    let limbo = crate::rules::phobos_limbo::PhobosSuperWeaponLimbo::from_section(
+                        self.family_mut(RulesTypeFamily::SuperWeapon)[index]
+                            .super_weapon_phobos_limbo
+                            .clone(),
+                        &raw,
+                        |token| self.find_existing_building_name(token),
+                    );
+                    self.family_mut(RulesTypeFamily::SuperWeapon)[index]
+                        .super_weapon_phobos_limbo = limbo;
+                    // Phobos `SWTypeExt::LoadFromINIFile`'s
+                    // `Message.LinkedSWAcquired`/`EVA.LinkedSWAcquired` pair
+                    // then the six `Message.Activated.*`/`EVA.Activated.*`
+                    // keys (`Ext/SWType/Body.cpp:241-250`), read after the
+                    // `SW.Link` group and before `Detonate.*`. Absent keys
+                    // keep the earlier pass's values.
+                    let mut messages = self.family_mut(RulesTypeFamily::SuperWeapon)[index]
+                        .super_weapon_phobos_messages
+                        .clone();
+                    messages.read_pass(&raw, _fixed_eva);
+                    self.family_mut(RulesTypeFamily::SuperWeapon)[index]
+                        .super_weapon_phobos_messages = messages;
+                    let mut detonate = self.family_mut(RulesTypeFamily::SuperWeapon)[index]
+                        .super_weapon_phobos_detonate
+                        .clone();
+                    detonate.read_pass(&raw);
+                    self.family_mut(RulesTypeFamily::SuperWeapon)[index]
+                        .super_weapon_phobos_detonate = detonate;
                 }
                 if ares_way {
                     let _ares = crate::rules::ares_switch::ares_reads();
@@ -820,6 +893,24 @@ impl RulesPassProcessor {
                         // Activation sound resolves against the fixed SOUNDMD catalog
                         // in RuleSet::bind_type_sound_references, using this type's
                         // retained INI read history rather than an unresolved name.
+                    }
+                }
+                if !ares_way {
+                    let designators = crate::rules::ares_switch::not_ares_read(|| {
+                        self.resolve_existing_techno_type_list_from(&raw, "SW.Designators")
+                    });
+                    if let Some(designators) = designators {
+                        self.family_mut(RulesTypeFamily::SuperWeapon)[index]
+                            .super_weapon_influence
+                            .designators = designators;
+                    }
+                    let inhibitors = crate::rules::ares_switch::not_ares_read(|| {
+                        self.resolve_existing_techno_type_list_from(&raw, "SW.Inhibitors")
+                    });
+                    if let Some(inhibitors) = inhibitors {
+                        self.family_mut(RulesTypeFamily::SuperWeapon)[index]
+                            .super_weapon_influence
+                            .inhibitors = inhibitors;
                     }
                 }
             } else if ares_way {

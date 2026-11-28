@@ -65,6 +65,9 @@ pub(crate) fn open(
     let key = crate::rules::campaign_loading::restate_briefing_key(&selected.ini, &file_name);
     let text = process_assets.csf_text(&key);
     match_state.match_presentation.restate_text = text;
+    // The F2 / sidebar-gadget path is the stock restate dialog, not the
+    // scenario-start one; the scenario-start caller re-arms the flag below.
+    match_state.match_presentation.briefing_at_start = false;
     App::enter_in_game_menu_state(
         platform,
         renderer,

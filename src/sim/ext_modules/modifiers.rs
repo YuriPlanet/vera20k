@@ -40,12 +40,11 @@
 //!   asks: the multiplier after the effects' multipliers, the extra beside
 //!   their summed extra range, then the floor at 0. The `-512` always-in-range
 //!   sentinel is left alone.
-//! - `CritMultiplier` and `CritExtraChance` (Phobos builds only, where crits
-//!   exist): `WarheadTypeExt::GetCritChance`'s AttachEffect fold
-//!   (`combat::crit`), the multiplier with the effects' multipliers and the
-//!   extra chance beside theirs.
-//! - `Unkillable` (Phobos builds only): the Phobos ReceiveDamage wrapper's
-//!   Unkillable arm (`attach_effect::combat::apply_unkillable_clamp`).
+//! - `CritMultiplier` and `CritExtraChance`: `WarheadTypeExt::GetCritChance`'s
+//!   AttachEffect fold (`combat::crit`), the multiplier with the effects'
+//!   multipliers and the extra chance beside theirs.
+//! - `Unkillable`: the Phobos ReceiveDamage wrapper's Unkillable arm
+//!   (`attach_effect::combat::apply_unkillable_clamp`).
 //! - `Cloakable` and `ForceDecloak`: Phobos' `IsReadyToCloak_Wrapper` and
 //!   `ShouldNotBeCloaked_Wrapper` terms (`world::techno_ai_cloak`). The base
 //!   value is the Phobos effects' flag, so an `Override` of 0 does not take
@@ -120,9 +119,9 @@
 //! same-group replacement. A removed object's modifiers go without events.
 //!
 //! Residuals: houses take no modifiers (`PowerOutage` would have to compose
-//! with the power owner's blackout timer, which several owners read);
-//! `CritMultiplier`, `CritExtraChance` and `Unkillable` answer `Unsupported`
-//! in a build without Phobos, whose owners are not compiled there.
+//! with the power owner's blackout timer, which several owners read).
+//! Phobos-derived stages keep their identity or false defaults when no
+//! Phobos effect is active.
 
 use std::collections::BTreeMap;
 
@@ -245,9 +244,9 @@ impl Stat {
         })
     }
 
-    /// A property this build's owners read ([`Self::from_property`] filtered).
+    /// A property with an engine owner ([`Self::from_property`]).
     pub(super) fn wired_property(name: &str) -> Option<Self> {
-        Self::from_property(name).filter(|stat| stat.wired())
+        Self::from_property(name)
     }
 
     pub(super) const fn property(self) -> &'static str {
@@ -269,21 +268,6 @@ impl Stat {
             Self::TintColor => "TintColor",
             Self::TintIntensity => "TintIntensity",
         }
-    }
-
-    /// Whether an owner reads this property in this build: crits and
-    /// Phobos' Unkillable arm exist only where Phobos is compiled.
-    #[cfg(feature = "phobos")]
-    const fn wired(self) -> bool {
-        true
-    }
-
-    #[cfg(not(feature = "phobos"))]
-    const fn wired(self) -> bool {
-        !matches!(
-            self,
-            Self::CritMultiplier | Self::CritExtraChance | Self::Unkillable
-        )
     }
 
     const fn unit(self) -> Unit {
@@ -345,10 +329,7 @@ impl Stat {
     fn phobos(self, entity: &GameEntity) -> f64 {
         let flag = |on: bool| if on { 1.0 } else { 0.0 };
         match self {
-            #[cfg(feature = "phobos")]
             Self::Firepower => entity.phobos_stat_multipliers().firepower,
-            #[cfg(not(feature = "phobos"))]
-            Self::Firepower => 1.0,
             Self::Armor => entity.phobos_armor_multiplier(),
             Self::Speed => entity.phobos_speed_multiplier(),
             Self::Rof => entity.phobos_rof_multiplier(),
@@ -556,7 +537,6 @@ impl GameEntity {
     }
 
     /// `Unkillable` from the active AttachEffects and the module modifiers.
-    #[cfg(feature = "phobos")]
     pub(crate) fn effect_unkillable(&self) -> bool {
         self.with_module_flag(Stat::Unkillable, self.phobos_unkillable())
     }
@@ -595,11 +575,13 @@ impl GameEntity {
             (Immunity::MindControl, mind_control),
             (
                 Immunity::Radiation,
-                object.immune_to_radiation || rank.is_some_and(|abilities| abilities.rad_immune(xp)),
+                object.immune_to_radiation
+                    || rank.is_some_and(|abilities| abilities.rad_immune(xp)),
             ),
             (
                 Immunity::Poison,
-                object.immune_to_poison || rank.is_some_and(|abilities| abilities.poison_immune(xp)),
+                object.immune_to_poison
+                    || rank.is_some_and(|abilities| abilities.poison_immune(xp)),
             ),
             (
                 Immunity::Psychic,
@@ -618,7 +600,10 @@ impl GameEntity {
             (
                 Immunity::Berserk,
                 if ares {
-                    object.techno_combat().combat().immune_to_berserk(mind_control)
+                    object
+                        .techno_combat()
+                        .combat()
+                        .immune_to_berserk(mind_control)
                 } else {
                     mind_control
                 },
@@ -647,7 +632,6 @@ impl GameEntity {
 
     /// The module crit terms: the chance multiplier and the extra chance,
     /// or `None` when no modifier touches either.
-    #[cfg(feature = "phobos")]
     pub(crate) fn module_crit_terms(&self) -> Option<(f64, f64)> {
         let terms = self.module_terms()?;
         let multiplier = terms.applied(Stat::CritMultiplier, 1.0);

@@ -573,15 +573,17 @@ pub(super) fn apply_explosion_crate(
         ) {
             crate::sim::world::damage_consequences::admit_explosion_effect(sim, rules, effect);
         }
-        sim.combat_light_requests
-            .emit(crate::sim::combat::CombatLightRequest::Impact {
-                target_id: None,
-                damage: amount,
-                warhead_ref,
-                coord: scattered,
-                force_create: false,
-                flags: 0,
-            });
+        if crate::sim::combat::combat_light_chance_admits(sim, rules, warhead_ref) {
+            sim.combat_light_requests
+                .emit(crate::sim::combat::CombatLightRequest::Impact {
+                    target_id: None,
+                    damage: amount,
+                    warhead_ref,
+                    coord: scattered,
+                    force_create: false,
+                    flags: 0,
+                });
+        }
     }
 }
 
@@ -798,13 +800,15 @@ pub(super) fn choose_unit_crate_type<'r>(
     let human = house.is_controlled_by_human(session.rule_policy());
     let bases = session.game_options().bases;
     let ids = rules.type_array_ids(ObjectCategory::Vehicle);
-    let eligible = |candidate: &crate::rules::object_type::ObjectType| {
-        let is_base_unit = rules
+    let is_base_unit = |candidate: &crate::rules::object_type::ObjectType| {
+        rules
             .general
             .base_unit_types
             .iter()
-            .any(|base| base.eq_ignore_ascii_case(&candidate.id));
-        candidate.crate_goodie && (!is_base_unit || (bases && (human || preempted)))
+            .any(|base| base.eq_ignore_ascii_case(&candidate.id))
+    };
+    let eligible = |candidate: &crate::rules::object_type::ObjectType| {
+        candidate.crate_goodie && (!is_base_unit(candidate) || (bases && (human || preempted)))
     };
     let any_eligible = ids.iter().any(|id| {
         rules
@@ -824,7 +828,16 @@ pub(super) fn choose_unit_crate_type<'r>(
         else {
             continue;
         };
-        if eligible(candidate) {
+        // Phobos `CellClass_GoodieCheck_CrateGoodie` (`0x4821BD`,
+        // `Misc/Hooks.Crates.cpp:80-92`): after the type's `CrateGoodie=`
+        // passes, a positive reroll chance rejects it while the draw is at or
+        // below the chance (accept only when `chance < RandomDouble()`),
+        // before the base-unit gates read the same boolean.
+        let goodie = candidate.crate_goodie && {
+            let chance = candidate.phobos_crate_goodie_reroll_chance;
+            chance <= 0.0 || chance < scenario_rng.random_double()
+        };
+        if goodie && (!is_base_unit(candidate) || (bases && (human || preempted))) {
             return Some(candidate);
         }
     }

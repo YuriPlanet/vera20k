@@ -225,10 +225,56 @@ impl<'a> NewTiberiumAdmission<'a> {
     }
 }
 
-pub(crate) fn resolved_cell_accepts_tiberium(cell: &ResolvedTerrainCell) -> bool {
+/// Phobos `CanResourceGerminateOnRamp` (`Ext/Tiberium/Hooks.cpp:46`): stock
+/// keeps slope 0 only; with the Phobos feature a type's `AllowRamps=` plus
+/// its ramp art admits cardinal ramps 1..=4.
+pub(crate) fn tiberium_slope_admits(
+    registry: &OverlayTypeRegistry,
+    ty: &crate::rules::tiberium_type::TiberiumType,
+    slope_type: i32,
+) -> bool {
+    {
+        registry.allows_ramp(ty, slope_type)
+    }
+}
+
+/// Phobos `AllowRamps` for one requested tiberium type (`0x48399C`): the
+/// germinating type must have the key and ramp art (`CanResourceGerminateOnRamp`).
+pub(crate) fn tiberium_type_allows_ramps(
+    rules: &crate::rules::ruleset::RuleSet,
+    type_id: TiberiumTypeId,
+) -> bool {
+    {
+        rules
+            .tiberium_types
+            .get(type_id)
+            .is_some_and(|ty| ty.allow_ramps && rules.overlay_registry().has_ramp_art(ty))
+    }
+}
+
+/// [`tiberium_type_allows_ramps`] for the type that owns `overlay_id`.
+pub(crate) fn overlay_tiberium_allows_ramps(
+    rules: &crate::rules::ruleset::RuleSet,
+    registry: &OverlayTypeRegistry,
+    overlay_id: u8,
+) -> bool {
+    {
+        registry
+            .tiberium_type_for_overlay(&rules.tiberium_types, overlay_id)
+            .ok()
+            .flatten()
+            .and_then(|id| rules.tiberium_types.get(id))
+            .is_some_and(|ty| ty.allow_ramps && registry.has_ramp_art(ty))
+    }
+}
+
+pub(crate) fn resolved_cell_accepts_tiberium(
+    cell: &ResolvedTerrainCell,
+    ramp_type_allows: bool,
+) -> bool {
     !cell.outside_playfield
         && cell.allows_tiberium
-        && cell.slope_type == 0
+        && (cell.slope_type == 0 || (ramp_type_allows && cell.slope_type <= 4))
         && !cell.base_build_blocked
         && cell.bridge_flags() & (BRIDGE_FLAG_STRUCTURAL | BRIDGE_FLAG_DESTROYED_OR_RAMP) == 0
 }
@@ -282,6 +328,7 @@ pub(crate) fn admit_new_tiberium_target(
     source_object_cells: &std::collections::BTreeSet<(u16, u16)>,
     admission: NewTiberiumAdmission<'_>,
     cell: (u16, u16),
+    ramp_type_allows: bool,
 ) -> Option<(u16, u16)> {
     let identity = admission
         .resolved_terrain
@@ -299,7 +346,7 @@ pub(crate) fn admit_new_tiberium_target(
         return None;
     }
     let terrain_cell = admission.resolved_terrain.cell(cell.0, cell.1)?;
-    (resolved_cell_accepts_tiberium(terrain_cell)
+    (resolved_cell_accepts_tiberium(terrain_cell, ramp_type_allows)
         && !live_cell_rejects_tiberium(cell, admission.live_objects))
     .then_some(cell)
 }
@@ -327,15 +374,16 @@ pub(crate) fn can_spread_tiberium(
     if view.overlay_data <= own_type.0 / 2 {
         return Ok(None);
     }
-    if resolved_terrain
-        .and_then(|terrain| terrain.cell(rx, ry))
-        .is_some_and(|cell| cell.slope_type != 0)
-    {
-        return Ok(None);
-    }
     let ty = tiberium_types
         .get(own_type)
         .ok_or(TiberiumImageError::MissingType(own_type))?;
+    if let Some(slope) = resolved_terrain
+        .and_then(|terrain| terrain.cell(rx, ry))
+        .map(|cell| i32::from(cell.slope_type))
+        && !tiberium_slope_admits(overlay_registry, ty, slope)
+    {
+        return Ok(None);
+    }
     Ok(
         crate::sim::ore_growth::native_percentage_admits(ty.spread_percentage_bits)
             .then_some(own_type),
@@ -404,16 +452,16 @@ pub(crate) fn place_tiberium(
     if !sim.ore_growth_config.grows() {
         return Ok(None);
     }
-    let flat = sim.resolved_terrain.as_ref().is_none_or(|terrain| {
-        terrain
-            .cell(cell.0, cell.1)
-            .is_some_and(|cell| cell.slope_type == 0)
-    });
+    let slope_ok = sim
+        .resolved_terrain
+        .as_ref()
+        .and_then(|terrain| terrain.cell(cell.0, cell.1))
+        .is_none_or(|cell| tiberium_slope_admits(registry, ty, i32::from(cell.slope_type)));
     let Some(view) = tiberium_cell_view(grid, registry, &rules.tiberium_types, cell)? else {
         return Ok(None);
     };
     let limit = ty.image().density_levels().wrapping_sub(1);
-    if !flat
+    if !slope_ok
         || view.tiberium_type != type_id
         || i32::from(view.overlay_data) >= limit
         || !crate::sim::ore_growth::native_percentage_admits(ty.growth_percentage_bits)
@@ -444,7 +492,8 @@ pub(crate) fn place_tiberium(
 }
 
 /// The new-cell arm of PlaceTiberium487190, also inlined by VoxelAnim74A385/74A5F0.
-/// CanPlaceTiberium4839B6 rejects slopes before this arm; keep that admission.
+/// Phobos 0x48399C (`Ext/Tiberium/Hooks.cpp:312`) admits an empty cardinal
+/// ramp for a germinating type with `AllowRamps=` and ramp art.
 pub(crate) fn place_new_tiberium(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -454,6 +503,11 @@ pub(crate) fn place_new_tiberium(
     amount: u8,
     effects: &mut FrameEffects<'_>,
 ) -> Result<Option<TiberiumPlacement>, RuntimeOverlayError> {
+    let ty = rules
+        .tiberium_types
+        .get(type_id)
+        .ok_or(TiberiumImageError::MissingType(type_id))?;
+    let ramp_type_allows = tiberium_type_allows_ramps(rules, type_id);
     let Some(ty) = rules.tiberium_types.live(type_id) else {
         return Ok(None);
     };
@@ -463,6 +517,7 @@ pub(crate) fn place_new_tiberium(
             sim.terrain_objects.spawning_cells(),
             admission,
             requested,
+            ramp_type_allows,
         )
     });
     let Some(cell) = admitted else {
@@ -594,12 +649,14 @@ pub(crate) fn spread_tiberium(
             (source.0 as i16).wrapping_add(dx as i16) as u16,
             (source.1 as i16).wrapping_add(dy as i16) as u16,
         );
+        let ramp_type_allows = tiberium_type_allows_ramps(rules, source_type);
         let target = placement_admission(sim, rules).and_then(|admission| {
             admit_new_tiberium_target(
                 sim.overlay_grid.as_ref()?,
                 sim.terrain_objects.spawning_cells(),
                 admission,
                 requested,
+                ramp_type_allows,
             )
         });
         let Some(target) = target else {
@@ -668,12 +725,14 @@ fn spawner_cell_spread(
             (source.0 as i16).wrapping_add(dx) as u16,
             (source.1 as i16).wrapping_add(dy) as u16,
         );
+        let ramp_type_allows = tiberium_type_allows_ramps(rules, type_id);
         let target = placement_admission(sim, rules).and_then(|admission| {
             admit_new_tiberium_target(
                 sim.overlay_grid.as_ref()?,
                 sim.terrain_objects.spawning_cells(),
                 admission,
                 requested,
+                ramp_type_allows,
             )
         });
         let Some(target) = target else {
@@ -2284,5 +2343,84 @@ SpreadPercentage=.06
             expected_rng.logical_state(),
             "reseed consumes exactly one raw draw per accepted neighbor"
         );
+    }
+
+    /// Phobos `AllowRamps=` (`Ext/Tiberium/Hooks.cpp:46-90`): the spread
+    /// admission refuses a cardinal ramp unless the type has the key and its
+    /// first ramp overlay is Tiberium art.
+    #[test]
+    fn allow_ramps_admits_spread_onto_a_cardinal_ramp() {
+        let build = |key: &str| {
+            let mut text = format!(
+                "[Tiberiums]
+0=RIP
+[RIP]
+Image=2
+SpreadPercentage=1.0
+{key}[OverlayTypes]
+"
+            );
+            for slot in 0..60 {
+                text.push_str(&format!(
+                    "{slot}=O{slot}
+"
+                ));
+            }
+            text.push_str(
+                "[O39]
+Tiberium=yes
+",
+            );
+            RuleSet::from_ini(&IniFile::from_str(&text)).expect("ramp rules")
+        };
+        let spread = |rules: &RuleSet| {
+            let terrain = crate::map::resolved_terrain::test_grid(1, 1, |x, y| {
+                let mut cell = crate::map::resolved_terrain::test_flat_cell(x, y);
+                cell.slope_type = 4;
+                cell
+            });
+            let mut grid = crate::sim::overlay_grid::OverlayGrid::new(1, 1);
+            grid.place_overlay(0, 0, 39, 5);
+            can_spread_tiberium(
+                &grid,
+                rules.overlay_registry(),
+                &rules.tiberium_types,
+                Some(&terrain),
+                false,
+                0,
+                0,
+                true,
+            )
+            .unwrap()
+        };
+        assert_eq!(
+            spread(&build(
+                "AllowRamps=yes
+"
+            )),
+            Some(TiberiumTypeId(0))
+        );
+        assert_eq!(spread(&build("")), None);
+
+        // The empty-cell target admission (Phobos 0x48399C) also admits the
+        // cardinal ramp only when the germinating type has ramp art.
+        let admit = |allow: bool| {
+            let terrain = crate::map::resolved_terrain::test_grid(1, 1, |x, y| {
+                let mut cell = crate::map::resolved_terrain::test_flat_cell(x, y);
+                cell.slope_type = 4;
+                cell.allows_tiberium = true;
+                cell
+            });
+            let grid = OverlayGrid::new(1, 1);
+            let no_objects = test_support::NoLiveObjects::new();
+            let admission = NewTiberiumAdmission::runtime(&terrain, no_objects.context());
+            admit_new_tiberium_target(&grid, &BTreeSet::new(), admission, (0, 0), allow)
+        };
+        assert_eq!(
+            admit(true),
+            Some((0, 0)),
+            "empty ramp admitted with the key"
+        );
+        assert_eq!(admit(false), None, "stock refuses the empty ramp");
     }
 }

@@ -105,12 +105,12 @@ source for the `0xC3xxxx` addresses cited above.
 
 ## Cross-extension compatibility
 
-Ares, Phobos and NPatch are orthogonal and mixable. Ares and NPatch are in every build and a
-game's data switches them on ([Ares](ares.md), `rules::npatch_switch`); Phobos is still a build
-feature:
+Ares, Phobos and NPatch are orthogonal and mixable. All three are in every build and a
+game's data switches each on ([Ares](ares.md), [Phobos](phobos.md),
+`rules::npatch_switch`):
 
 ```sh
-cargo run --release --bin vera20k --features phobos
+cargo run --release --bin vera20k
 ```
 
 Every implemented feature must keep working when Ares plays or the other capabilities are
@@ -119,12 +119,12 @@ may depend on another **capability's own** state (for example a Phobos key that 
 reads), but it must not assume the other features are absent, and it must not re-own state another
 capability already owns. When two extensions touch the same native site, one of them wins by native
 precedence and the other keeps its own owner — the Phobos radiation activation replacing the retail
-one, with the retail substitution kept for builds that lack the capability, is the pattern to
-follow.
+one, with the retail substitution kept for games whose data leaves the extension off, is the
+pattern to follow.
 
-The build capability is recorded per combination: a save from one combination cannot load in
-another, so a mixed build never reads a save written by a single-extension build. NPatch left
-that matrix when it became a per-game switch: every build carries it, and a game with NPatch
+The remaining build capabilities are recorded per combination: a save from one combination cannot
+load in another, so a mixed build never reads a save written by a single-extension build. NPatch
+left that matrix when it became a per-game switch: every build carries it, and a game with NPatch
 keys differs from a stock game through its rules digest, not through the build stamp. A save
-written by a build that still had the `npatch` feature names that capability and is refused by
-the current build, which names the mismatch.
+written by a build that still had the `npatch` feature names that capability and is refused by the
+current build, which names the mismatch.
