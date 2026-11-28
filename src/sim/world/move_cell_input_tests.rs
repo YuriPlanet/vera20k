@@ -52,7 +52,6 @@ fn ordinary_foot_input_matches_native_admission_rows() {
                 on_bridge: input["on_bridge"].as_bool().unwrap_or(false),
                 in_tube: false,
                 special_type: false,
-                aircraft: false,
                 movement_zone: match input["movement_zone"].as_u64().unwrap_or(4) {
                     0 => MovementZone::Normal,
                     1 => MovementZone::Crusher,
@@ -300,32 +299,25 @@ fn an_aircraft_click_keeps_a_river_cell() {
     assert_eq!(graph.nodes[0].members, vec![gi, harrier]);
 }
 
-/// A `MoveToShroud` aircraft keeps a shrouded Cell even when the Fly row's
-/// zones no longer agree. The ClickedAction shroud rung answers Move, and the
-/// Fly locomotor does not need the destination's ground zone; before this
-/// guard the source-zone FNPC path below rejected or snapped the click.
+/// On shrouded water the Black Eagle still asks Find_Nearby_Passable_Cell
+/// (0x004DE528). Its Winged speed admits the cell before the zone comparison
+/// (CellClass::CheckCellPassability, 0x004834A7).
 #[test]
 fn a_shrouded_aircraft_click_keeps_the_cell_when_its_fly_zone_is_split() {
-    let Some(rules) =
-        crate::rules::retail_ini_fixture::retail_battle_rules_for_map("amazon.mmx")
+    let Some(battle) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("amazon.mmx")
     else {
         return;
     };
-    let rules = rules.rules;
-    let (mut sim, rules, _gi) = Simulation::walk_cell_input_test_scene_with(rules, false);
+    let (mut sim, rules, _) = Simulation::walk_cell_input_test_scene_with(battle.rules, false);
     let owner = sim.interner.get("Local").unwrap();
-    let harrier = sim.spawn_object("BEAG", "Local", 6, 4, 0, &rules).unwrap();
+    let eagle = sim.spawn_object("BEAG", "Local", 6, 4, 0, &rules).unwrap();
     sim.resolve_type_handles(&rules);
-    assert!(rules.object("BEAG").unwrap().move_to_shroud);
+    let eagle_type = rules.object("BEAG").unwrap();
+    assert!(eagle_type.move_to_shroud);
 
-    let shrouded = (12, 5);
+    let shrouded = (9, 5);
     *sim.fog = crate::sim::vision::FogState::new(16, 16);
-    sim.fog.reveal_cells_for_owner(
-        owner,
-        (0..16)
-            .flat_map(|y| (0..16).map(move |x| (x, y)))
-            .filter(|&cell| cell != shrouded),
-    );
+    sim.fog.reveal_cells_for_owner(owner, [(6, 4)]);
     assert!(!sim.fog.is_cell_revealed(owner, shrouded.0, shrouded.1));
 
     let zones = sim.zone_grid.as_mut().unwrap();
@@ -334,10 +326,20 @@ fn a_shrouded_aircraft_click_keeps_the_cell_when_its_fly_zone_is_split() {
     let cluster = base.zone_ids_mut_for_test()[index];
     let row = MovementZone::Fly.matrix_row().unwrap();
     base.raw_zone_ids_by_row_mut_for_test()[row][cluster as usize] = 999;
+    let terrain = sim.resolved_terrain.as_ref().unwrap();
+    let fly_zone = |cell| {
+        zones
+            .get_zone_id_native(terrain, cell, MovementZone::Fly, false)
+            .unwrap()
+    };
+    assert_ne!(fly_zone((6, 4)), fly_zone(shrouded));
 
+    let goal = sim
+        .cell_click_destination(owner, eagle, shrouded, false, &rules)
+        .unwrap();
     assert_eq!(
-        sim.cell_click_destination(owner, harrier, shrouded, false, &rules),
-        Ok(Some(shrouded))
+        (goal, eagle_type.speed_type),
+        (Some(shrouded), SpeedType::Winged)
     );
 }
 

@@ -343,7 +343,7 @@ impl Simulation {
             self.trace_lifecycle_for_test(LifecycleTestEvent::RawOccupationCleared);
         }
         if recalc {
-            self.recalculate_track_cell(cell, rules, registry);
+            self.recalculate_track_cell(cell, registry);
         }
     }
 
@@ -444,7 +444,7 @@ impl Simulation {
             self.trace_lifecycle_for_test(LifecycleTestEvent::RawOccupationMarked);
         }
         if recalc {
-            self.recalculate_track_cell(cell, rules, registry);
+            self.recalculate_track_cell(cell, registry);
         }
     }
 

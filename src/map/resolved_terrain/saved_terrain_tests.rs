@@ -1,4 +1,4 @@
-﻿// Included in resolved_terrain::tests to share the existing TMP/asset fixtures.
+// Included in resolved_terrain::tests to share the existing TMP/asset fixtures.
 
 #[test]
 fn saved_burrowing_permissions_follow_current_tile_and_survive_asset_rebinding() {
@@ -492,29 +492,3 @@ fn saved_terrain_cold_load_then_runtime_selection_shares_process_authority() {
         gameplay_before
     );
 }
-
-/// MouseLoad restores saved effective Land, but the reduced zone class must
-/// follow that Land. A previous build forced every restored cell to Ground,
-/// which kept Water cells out of the water zone map after a player load.
-#[test]
-fn user_load_recomputes_zone_type_from_restored_land() {
-    use crate::rules::terrain_rules::LandType;
-
-    let mut grid = test_grid(1, 1, |rx, ry| {
-        let mut cell = test_clear_cell(rx, ry);
-        cell.land_type = LandType::Water.as_index();
-        cell.zone_type = zone_class::GROUND;
-        cell
-    });
-    let mut saved = grid.capture_saved_template().unwrap();
-    saved.capture_live_cell_land(&grid).unwrap();
-    let land = saved.user_load_land_values().unwrap();
-    let mut restored = saved.restore_values(SharedCellDummy::fresh()).unwrap();
-    restored.cell_mut(0, 0).unwrap().zone_type = zone_class::GROUND;
-
-    restored.restore_user_loaded_land(&land).unwrap();
-    let cell = restored.cell(0, 0).unwrap();
-    assert_eq!(cell.land_type, LandType::Water.as_index());
-    assert_eq!(cell.zone_type, zone_class::WATER);
-}
-

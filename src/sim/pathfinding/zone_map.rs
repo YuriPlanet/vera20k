@@ -205,10 +205,6 @@ pub struct ZoneGrid {
     /// the bridge records and the fixed sizes, so a rebuild with the same
     /// flag and records would produce them again and is skipped. Not saved.
     rebuilt_unchanged: Option<bool>,
-    /// A retained class or level byte changed without the base cluster plane
-    /// being rebuilt. Matching attribute bytes alone must not let `rebuild_zones`
-    /// reuse a stale topology.
-    topology_dirty: bool,
     width: u16,
     height: u16,
 }
@@ -295,7 +291,6 @@ impl<'de> serde::Deserialize<'de> for ZoneGrid {
             bridge_records: Vec::new(),
             native_bridge_source_size,
             rebuilt_unchanged: None,
-            topology_dirty: false,
             width: retained.width,
             height: retained.height,
         })
@@ -346,26 +341,8 @@ impl ZoneGrid {
         if terrain.width() != self.width || terrain.height() != self.height {
             return Err("saved navigation dimensions differ from the bound map".into());
         }
-        // A save can retain base clusters that no longer match its class/level
-        // plane: an older Recalc changed the bytes without rebuilding the
-        // topology, or a load inherited a split left by a pre-repair build.
-        // Rebuilding is only observable when the partitions differ; matching
-        // partitions keep the saved cluster numbering and history.
-        let rebuilt = zone_build::rebuild_base_zone_topology(
-            self.base_topology.movement_classes.clone(),
-            self.base_topology.levels.clone(),
-            terrain.terrain_deformation(),
-            records,
-            self.width,
-            self.height,
-            self.base_topology.native_bridge_source_size,
-        );
-        if !same_partition(&self.base_topology.zone_ids, &rebuilt.zone_ids) {
-            self.base_topology = rebuilt;
-        }
         self.invalidate_navigation_history();
         self.rebuilt_unchanged = None;
-        self.topology_dirty = false;
         self.maps = Self::project_movement_rows(
             &self.base_topology,
             path,
@@ -391,46 +368,6 @@ impl ZoneGrid {
         self.bridge_records = records.to_vec();
         self.pending_native_load = false;
         Ok(())
-    }
-
-    /// Repair a player-file class plane that disagrees with the final bound
-    /// terrain. A user save can retain ground-class bytes where the restored
-    /// map and overlays say water; the saved partition then still describes
-    /// the old barrier. Rebuild the base from terrain classes when they
-    /// differ, then reproject maps and hierarchy. Internal snapshot
-    /// continuations keep their saved bytes and skip this call.
-    pub(crate) fn repair_player_load_zone_classes(
-        &mut self,
-        path: &PathGrid,
-        terrain: &ResolvedTerrainGrid,
-        records: &[crate::sim::bridge_state::BridgeEndpointRecord],
-        bounds: Option<crate::map::playfield::PlayfieldBounds>,
-    ) -> Result<(), String> {
-        let terrain_classes: Vec<u8> = (0..self.height)
-            .flat_map(|y| {
-                (0..self.width).map(move |x| zone_build::movement_class_for_cell(terrain, x, y))
-            })
-            .collect();
-        let terrain_levels: Vec<u8> = (0..self.height)
-            .flat_map(|y| {
-                (0..self.width).map(move |x| terrain.cell(x, y).map_or(0, |cell| cell.level))
-            })
-            .collect();
-        if self.base_topology.movement_classes == terrain_classes
-            && self.base_topology.levels == terrain_levels
-        {
-            return Ok(());
-        }
-        self.base_topology = zone_build::rebuild_base_zone_topology(
-            terrain_classes,
-            terrain_levels,
-            terrain.terrain_deformation(),
-            records,
-            self.width,
-            self.height,
-            self.base_topology.native_bridge_source_size,
-        );
-        self.finish_native_load(path, terrain, records, bounds)
     }
 
     /// Read-only contribution of the retained native navigation state.
@@ -627,7 +564,6 @@ impl ZoneGrid {
             bridge_records: bridge_records.to_vec(),
             native_bridge_source_size,
             rebuilt_unchanged: None,
-            topology_dirty: false,
             width,
             height,
         }
@@ -1092,7 +1028,6 @@ impl ZoneGrid {
         let level = terrain.cell(x, y).map_or(0, |cell| cell.level);
         self.invalidate_navigation_history();
         self.rebuilt_unchanged = None;
-        self.topology_dirty = true;
         let base = &mut self.base_topology;
         let Some(slot) = base.movement_classes.get_mut(index) else {
             return false;
@@ -1102,10 +1037,7 @@ impl ZoneGrid {
         true
     }
 
-    pub(crate) fn topology_dirty(&self) -> bool {
-        self.topology_dirty
-    }
-
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn base_movement_class_at(&self, x: u16, y: u16) -> Option<u8> {
         if x >= self.width || y >= self.height {
             return None;
@@ -1200,8 +1132,7 @@ impl ZoneGrid {
     ) {
         self.invalidate_navigation_history();
         let signed_levels = resolved_terrain.terrain_deformation();
-        if !self.topology_dirty
-            && self.rebuilt_unchanged == Some(signed_levels)
+        if self.rebuilt_unchanged == Some(signed_levels)
             && self.bridge_records.as_slice() == bridge_records
         {
             // Nothing the base pass reads has changed since it last ran, and
@@ -1243,7 +1174,6 @@ impl ZoneGrid {
         self.base_topology = base_topology;
         self.bridge_records = bridge_records.to_vec();
         self.rebuilt_unchanged = Some(signed_levels);
-        self.topology_dirty = false;
     }
 
     /// Replace the one shared route-selection hierarchy (test fixtures only).
@@ -1291,35 +1221,6 @@ impl ZoneGrid {
         let za = zone_map.zone_at(from.0, from.1, from_layer);
         za != ZONE_INVALID && za == zone_map.zone_at(to.0, to.1, to_layer)
     }
-}
-
-/// Whether two cell-to-cluster planes describe the same partition, ignoring
-/// cluster numbering. A zero on either side is the invalid/outside slot and
-/// must agree exactly.
-fn same_partition(saved: &[ZoneId], rebuilt: &[ZoneId]) -> bool {
-    if saved.len() != rebuilt.len() {
-        return false;
-    }
-    let mut saved_to_rebuilt = BTreeMap::<ZoneId, ZoneId>::new();
-    let mut rebuilt_to_saved = BTreeMap::<ZoneId, ZoneId>::new();
-    for (&saved, &rebuilt) in saved.iter().zip(rebuilt) {
-        if saved == ZONE_INVALID || rebuilt == ZONE_INVALID {
-            if saved != rebuilt {
-                return false;
-            }
-            continue;
-        }
-        if saved_to_rebuilt.insert(saved, rebuilt).is_some_and(|old| old != rebuilt) {
-            return false;
-        }
-        if rebuilt_to_saved
-            .insert(rebuilt, saved)
-            .is_some_and(|old| old != saved)
-        {
-            return false;
-        }
-    }
-    true
 }
 
 pub(crate) fn cell_is_in_native_map_diamond(

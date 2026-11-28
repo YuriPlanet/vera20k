@@ -952,6 +952,13 @@ impl ResolvedTerrainGrid {
         )
     }
 
+    /// The real receiver's coordinate for a packed Map lookup, without stamping the Dummy.
+    pub(crate) fn allocated_cell_coord(&self, (x, y): (u16, u16)) -> Option<(u16, u16)> {
+        let index = self.native_fixed_cell_index(x as i16, y as i16)?;
+        let (x, y) = self.native_cell_coord(NativeCellIdentity::Real(index));
+        Some((x as u16, y as u16))
+    }
+
     /// Native5657A0 lookup; retain the returned identity across callbacks.
     pub fn native_cell_identity(&self, coord: (i16, i16)) -> NativeCellIdentity {
         self.native_fixed_cell_index(coord.0, coord.1).map_or_else(
