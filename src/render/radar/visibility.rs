@@ -1233,7 +1233,7 @@ pub(crate) struct RadarFacts {
     /// A radar click's cell words for it (`0x006567EF..0x00656828`):
     /// `Simulation::navigation_target_coordinate` with no requester,
     /// truncated and packed.
-    pub(super) click_cell: Option<(i16, i16)>,
+    pub(crate) navigation_cell_words: Option<(i16, i16)>,
 }
 
 impl RadarFacts {
@@ -1268,7 +1268,7 @@ impl RadarFacts {
                 .remaining(binary_frame as i32),
             disguise_house: [false, true]
                 .map(|allied| entity.disguise_house(false, observer, allied)),
-            click_cell: sim
+            navigation_cell_words: sim
                 .navigation_target_coordinate(
                     crate::sim::components::NavTargetRef::object(entity.stable_id()),
                     None,

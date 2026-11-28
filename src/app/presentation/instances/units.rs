@@ -691,16 +691,9 @@ pub(crate) fn unit_visitor<'a>(
         Option<&mut super::shp::ShpVisit<'_>>,
     ) + 'a,
 > {
-    let (sim, atlas) = match (
-        match_state
-            .sim_runtime
-            .presentation()
-            .map(|rt| &rt.simulation),
-        &match_state.match_presentation.unit_atlas,
-    ) {
-        (Some(s), Some(a)) => (s, a),
-        _ => return None,
-    };
+    let runtime = match_state.sim_runtime.presentation()?;
+    let sim = &runtime.simulation;
+    let atlas = match_state.match_presentation.unit_atlas.as_ref()?;
     let frame = match_state.sim_runtime.frame()?;
     let z = match_state.input.zoom_level;
     // Presentation runs after the just-completed simulation frame; snapshot
@@ -729,10 +722,7 @@ pub(crate) fn unit_visitor<'a>(
     // type declares a model, else None and no draw looks for one.
     let model_art = crate::app::state::active_rules(frontend, match_state)
         .filter(|rules| rules.declares_models());
-    let terrain = match_state
-        .sim_runtime
-        .presentation()
-        .and_then(|rt| rt.view().resolved_terrain());
+    let terrain = sim.resolved_terrain();
     // The draw's own query of the live map: lighting and Hover's Is_Powered
     // height read through it, and a miss stamps its dummy, not the simulation's.
     let cells = terrain.map(crate::map::resolved_terrain::NativeCellQuery::isolated);
@@ -958,7 +948,12 @@ pub(crate) fn unit_visitor<'a>(
                     unit_shadow_slope(cells.as_ref(), entity.on_bridge(), geometry.xyz);
                 let interp_z = pos.z();
                 let draw_state = draw_decision.state;
-                let extra_light = entity.place.extra_light;
+                let extra_light = crate::app::presentation::lighting::body_extra_light(
+                    entity,
+                    &runtime.resources.rules,
+                    sim,
+                    cells.as_ref(),
+                );
                 let tint = vxl_body_tint(
                     match_state.match_presentation.lighting.grid(),
                     (pos.rx(), pos.ry()),
@@ -1434,7 +1429,6 @@ pub(crate) fn unit_visitor<'a>(
                         crate::app::state::active_rules(frontend, match_state),
                         sim,
                         entity,
-                        display_binary_frame,
                     )
                     && let Some((page, instance)) = emit_harvest_overlay(
                         match_state,
@@ -3512,24 +3506,15 @@ fn harvest_overlay<'a>(
     rules: Option<&'a crate::rules::ruleset::RuleSet>,
     sim: &crate::sim::world::Simulation,
     entity: &crate::app::presentation::frame::ObjectRecord,
-    display_binary_frame: u32,
 ) -> Option<HarvestOverlay<'a>> {
     let rules = rules?;
     let object = sim.interner().object_type(entity.type_ref(), rules)?;
     if !object.harvester
-        || !entity
-            .miner
-            .as_ref()
-            .is_some_and(|miner| miner.harvesting())
+        || !entity.miner.is_some_and(|miner| miner.harvesting_at_rest)
         || entity.temporal.is_warped()
         || entity.is_warped_out()
         || entity.is_warping_in()
         || (rules.ares() && entity.is_under_emp())
-        || {
-            // Captured at the frame before the committed one.
-            let _ = display_binary_frame;
-            entity.place.moving_now
-        }
     {
         return None;
     }

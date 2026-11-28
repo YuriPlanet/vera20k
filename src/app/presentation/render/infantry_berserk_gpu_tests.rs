@@ -528,7 +528,7 @@ fn render_original_body_pixels(
                 .expect("actual sequence frame in production atlas");
             let parent = order.object_draw(1, SpriteEncoding::Plain).unwrap();
             assert_eq!(parent.policy.render_z, RenderZPolicy::ReadOnly);
-            let extra = body_extra_light(gi, &rules, &sim, None);
+            let extra = body_extra_light(gi_record, &rules, sim, None);
             let light = body_palette_light(&light_grid, (10, 20), extra);
             let (tint, light) = techno_effect_light(
                 gi_record,

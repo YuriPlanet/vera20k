@@ -527,16 +527,17 @@ pub(crate) fn bar(
 /// templates lay it out: each pip's frame and point to `out`, in order.
 pub(crate) fn scale_pips(
     class: HealthClass,
-    pips: &[ScalePipDraw],
+    pips: impl IntoIterator<Item = ScalePipDraw>,
     anchor: (f32, f32),
     mut out: impl FnMut(usize, (f32, f32)),
 ) {
-    if pips.is_empty() {
+    let mut pips = pips.into_iter();
+    let Some(first) = pips.next() else {
         return;
-    }
+    };
     SLOTS.with_borrow_mut(|slots| {
         slots.clear();
-        slots.extend(pips.iter().map(|pip| Slot {
+        slots.extend(std::iter::once(first).chain(pips).map(|pip| Slot {
             index: u16::try_from(pip.slot).unwrap_or(u16::MAX),
             code: u16::try_from(pip.frame).unwrap_or(u16::MAX),
             lift: pip.lift,
@@ -697,8 +698,14 @@ mod tests {
             ScalePipDraw { slot: 2, frame: 13, lift: -3 },
         ];
         let mut out = Vec::new();
-        for class in [HealthClass::Vehicle, HealthClass::Infantry, HealthClass::Building] {
-            scale_pips(class, &row, (0.0, 0.0), |frame, point| out.push((frame, point)));
+        for class in [
+            HealthClass::Vehicle,
+            HealthClass::Infantry,
+            HealthClass::Building,
+        ] {
+            scale_pips(class, row, (0.0, 0.0), |frame, point| {
+                out.push((frame, point))
+            });
         }
         assert_eq!(
             out,
