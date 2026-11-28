@@ -230,8 +230,8 @@ impl Gsi1306Speed {
         }
         Self {
             rules: RuleSet::from_ini(&IniFile::from_str(
-                "[VehicleTypes]\n0=DLPH\n1=SQD\n2=DRON\n\
-                 [DLPH]\nSpeed=8\n[SQD]\nSpeed=8\n[DRON]\nSpeed=10\n",
+                "[VehicleTypes]\n0=DLPH\n1=SQD\n2=DRON\n3=MIXED\n\
+                 [DLPH]\nSpeed=8\n[SQD]\nSpeed=8\n[DRON]\nSpeed=10\n[MIXED]\nSpeed=10\n",
             ))
             .expect("SHP fixture rules"),
             interner: crate::sim::intern::test_interner(),
@@ -242,6 +242,43 @@ impl Gsi1306Speed {
     fn rules(&self) -> SpeedRules<'_> {
         SpeedRules::new(&self.rules, &self.interner, &self.houses)
     }
+}
+
+#[test]
+fn body_cadence_skips_the_speed_lookup_between_ticks() {
+    let mut speed = Gsi1306Speed::new();
+    crate::sim::intern::test_intern("mixed");
+    speed.interner = crate::sim::intern::test_interner();
+    let mut entity = gsi_13_06_active_shp_unit("mixed", LocomotorKind::Drive);
+    entity.body_facing = FacingClass::new(0, 0);
+    let cadence = FootBodyCadence {
+        walk_rate: 3,
+        idle_rate: 4,
+    };
+    let before = RuleSet::name_key_copies();
+    assert!(!foot_body_frame_due(
+        &entity,
+        speed.rules(),
+        cadence,
+        false,
+        false,
+        0,
+        None,
+        1,
+    ));
+    assert_eq!(RuleSet::name_key_copies(), before);
+
+    assert!(foot_body_frame_due(
+        &entity,
+        speed.rules(),
+        cadence,
+        false,
+        false,
+        0,
+        None,
+        3,
+    ));
+    assert_eq!(RuleSet::name_key_copies(), before + 1);
 }
 
 #[test]
