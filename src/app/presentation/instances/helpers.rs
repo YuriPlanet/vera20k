@@ -628,6 +628,7 @@ pub(crate) fn object_shown_to_local_owner(
     pos: &Position,
     owner: &str,
     current_sight_only: bool,
+    terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
 ) -> bool {
     let Some(local_owner) = local_owner else {
         return true;
@@ -638,6 +639,7 @@ pub(crate) fn object_shown_to_local_owner(
             pos.rx(),
             pos.ry(),
             current_sight_only,
+            terrain,
         )
 }
 
@@ -651,11 +653,12 @@ pub(crate) fn translucent_fog_conceals_cell(
     rx: u16,
     ry: u16,
     fog_of_war: bool,
+    terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
 ) -> bool {
     let (Some(viewer), Some(fog)) = (viewer, fog) else {
         return false;
     };
-    !fog.shows_objects_to(viewer, rx, ry, fog_of_war)
+    !fog.shows_objects_to(viewer, rx, ry, fog_of_war, terrain)
 }
 
 /// The local house VERA's translucent fog conceals other houses' unseen
@@ -700,6 +703,7 @@ pub(crate) fn translucent_fog_conceals(
         position,
         interner.resolve(owner),
         sim.session().game_options().fog_of_war,
+        sim.resolved_terrain(),
     )
 }
 
@@ -727,7 +731,14 @@ pub(crate) fn translucent_fog_conceals_bullet(
         return false;
     }
     let cell = lepton_cell(coord[0], coord[1]);
-    translucent_fog_conceals_cell(viewer, Some(sim.fog()), cell.0, cell.1, fog_of_war)
+    translucent_fog_conceals_cell(
+        viewer,
+        Some(sim.fog()),
+        cell.0,
+        cell.1,
+        fog_of_war,
+        sim.resolved_terrain(),
+    )
 }
 
 /// World-lepton coordinates to their map cell, clamped to the addressable
@@ -1809,6 +1820,7 @@ mod tests {
                 &entity.position,
                 owner,
                 fog_of_war,
+                None,
             )
         };
 
@@ -1822,7 +1834,8 @@ mod tests {
             Some(&fog),
             3,
             3,
-            false
+            false,
+            None
         ));
 
         // Explored in standard YR: enemies stay visible even without current
@@ -1838,20 +1851,64 @@ mod tests {
             Some(&explored),
             3,
             3,
-            false
+            false,
+            None
         ));
         assert!(translucent_fog_conceals_cell(
             Some(viewer),
             Some(&explored),
             3,
             3,
-            true
+            true,
+            None
         ));
 
         // Current sight keeps the enemy object in both modes.
         explored.mark_visible_for_owner(viewer, 3, 3);
         assert!(!conceal(&explored, &enemy_entity, "Soviet", false));
         assert!(!conceal(&explored, &enemy_entity, "Soviet", true));
+    }
+
+    #[test]
+    fn a_scout_sees_only_the_defender_in_sight_on_a_raised_gap_field() {
+        use crate::map::resolved_terrain::{ResolvedTerrainCell, ResolvedTerrainGrid};
+
+        let mut sim = crate::sim::world::Simulation::new();
+        let viewer = sim.intern("Russians");
+        let enemy = sim.intern("Americans");
+        sim.session_mut_for_test()
+            .game_options_mut_for_test()
+            .fog_of_war = true;
+        let terrain = (0..16).flat_map(|y| {
+            (0..16).map(move |x| {
+                let mut cell = ResolvedTerrainCell::clear_for_test(x, y);
+                cell.level = if (x, y) == (10, 10) { 9 } else { 10 };
+                cell
+            })
+        });
+        *sim.resolved_terrain_mut_for_test() =
+            Some(ResolvedTerrainGrid::from_cells(16, 16, terrain.collect()));
+        let mut fog = FogState::new(16, 16);
+        fog.mark_visible_for_owner(viewer, 6, 6);
+        crate::sim::vision::apply_gap_generators(
+            &mut fog,
+            sim.house_alliances(),
+            &[(enemy, 6, 6, 10)],
+            sim.interner(),
+        );
+        fog.mark_visible_for_owner(viewer, 6, 6);
+        *sim.fog_mut_for_test() = fog;
+
+        // The far unit's raw cell is lit. The unit on level 9 sits between
+        // two shroud cells, only the second of which is lit.
+        let hidden = |x, y, level| {
+            let position = Position::new(x, y, level, None, Default::default(), Default::default());
+            translucent_fog_conceals(&sim, viewer, &position, enemy)
+        };
+        assert_eq!(
+            [hidden(11, 11, 10), hidden(6, 6, 10), hidden(10, 10, 9)],
+            [false, true, false]
+        );
     }
 
     /// The pass-by window is the union of the views widened by its margin:

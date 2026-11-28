@@ -1416,6 +1416,7 @@ impl Simulation {
                 entity.position.rx(),
                 entity.position.ry(),
                 self.session.game_options().fog_of_war,
+                self.resolved_terrain(),
             );
         shown && screen_visual_character_for(self, entity, rules, Some(viewer), own) != 5
     }

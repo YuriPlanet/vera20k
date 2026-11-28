@@ -899,6 +899,7 @@ pub(crate) fn render_game(
                     rx,
                     ry,
                     sim.session().game_options().fog_of_war,
+                    sim.resolved_terrain(),
                 )
             })
     };

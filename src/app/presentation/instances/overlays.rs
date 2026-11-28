@@ -1023,6 +1023,7 @@ fn build_cell_overlay_bodies(input: &CellOverlayInputs<'_>, bodies: &mut Vec<sup
                 entry.rx,
                 entry.ry,
                 input.fog_of_war,
+                input.terrain,
             )
         {
             continue;
