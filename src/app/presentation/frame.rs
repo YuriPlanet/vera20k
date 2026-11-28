@@ -42,6 +42,12 @@ pub(crate) struct Capture<'a> {
     /// Whether VERA's Convenience Help is on, so the observer's and its
     /// allies' objects capture their status rows (`HudFacts::capture`).
     pub(crate) status_rows: bool,
+    /// The client modules' local looks of objects (`Decoration` `Tint`,
+    /// `HideAnchor`), by object.
+    pub(crate) local_looks: &'a LocalLooks,
+    /// Whether the match has status templates, which read the amounts
+    /// ([`StatusFacts`]).
+    pub(crate) status_amounts: bool,
     /// The capture's isolated query of the live map: a miss stamps its own
     /// dummy, not the simulation's.
     pub(crate) cells: Option<crate::map::resolved_terrain::NativeCellQuery<'a>>,
@@ -64,6 +70,19 @@ impl Capture<'_> {
             .object_type(entity.type_ref(), self.rules())
     }
 }
+
+/// How a client module's `Decoration` changes an object's look on this
+/// screen alone (appendix 7.10 `Tint`, `TintIntensity`, `HideAnchor`).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(crate) struct LocalLook {
+    /// `[R, G, B]` and the intensity (1.0 full) folded into the custom tint.
+    pub(crate) tint: Option<([u8; 3], f64)>,
+    /// The body is not drawn; the object is still selected and clicked.
+    pub(crate) hidden: bool,
+}
+
+/// Every object's [`LocalLook`], by stable id.
+pub(crate) type LocalLooks = std::collections::BTreeMap<u64, LocalLook>;
 
 /// One object's draw record: its state under [`GameEntity`]'s names.
 #[derive(Clone, Debug)]
@@ -89,6 +108,7 @@ pub(crate) struct ObjectRecord {
     /// body lower, and its SHP shadows higher, by
     /// [`crate::app::presentation::instances::CARRIED_DROP_PIXELS`].
     pub(crate) on_carryall: bool,
+    pub(crate) parasite_infested: bool,
     pub(crate) turret_anim_frame: crate::sim::combat::gattling::TurretAnimCounter,
     pub(crate) health: crate::sim::combat::Health,
     pub(crate) veterancy: crate::sim::combat::veterancy::Veterancy,
@@ -148,8 +168,87 @@ pub(crate) struct ObjectRecord {
     pub(crate) seen: Seen,
     /// What its status strip reads (`ui_overlays`).
     pub(crate) hud: crate::app::presentation::ui_overlays::HudFacts,
+    /// What modules change of its look and what their status
+    /// templates read of it; `None` for most objects ([`ModuleFacts`]).
+    module: Option<Box<ModuleFacts>>,
     /// What the scene's other drawers read of it (`frame_scene`).
     pub(crate) scene: crate::app::presentation::frame_scene::SceneFacts,
+}
+
+/// What modules change of an object's look and what their status
+/// templates read of it, kept out of the record of an object they leave
+/// alone: the record is copied for every object each lent tick.
+#[derive(Clone, Debug, Default)]
+struct ModuleFacts {
+    tint: Option<([u8; 3], f64)>,
+    image: Option<InternedId>,
+    local_look: LocalLook,
+    /// Captured only while the match has status templates.
+    status: Option<StatusFacts>,
+}
+
+impl ModuleFacts {
+    fn capture(entity: &GameEntity, at: &Capture<'_>, seen: Seen) -> Option<Box<Self>> {
+        let facts = Self {
+            tint: entity.module_tint(),
+            image: at.sim.ext_module_image(entity.stable_id()).and_then(|name| at.sim.interner().get(name)),
+            local_look: at
+                .local_looks
+                .get(&entity.stable_id())
+                .filter(|_| {
+                    // A tracked object disguised as terrain offers no decoration anchor.
+                    !seen.disguise_hides_house && (!seen.disguised_to_observer
+                        || at.sim.forced_disguise_type(entity.stable_id(), at.rules())
+                            .and_then(|kind| at.sim.interner().object_type(kind, at.rules())).is_some())
+                })
+                .copied()
+                .unwrap_or_default(),
+            status: at.status_amounts.then(|| StatusFacts::capture(entity, at)),
+        };
+        let plain = facts.tint.is_none() && facts.image.is_none()
+            && facts.local_look == LocalLook::default() && facts.status.is_none();
+        (!plain).then(|| Box::new(facts))
+    }
+}
+
+/// The amounts a module status template reads of an object
+/// (`ui_modules::status`): read with the frame, so the templates never read
+/// the live world. Visibility is the templates' to apply when they draw.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct StatusFacts {
+    /// Ammo and `Ammo=`.
+    pub(crate) ammo: Option<(i32, i32)>,
+    /// Passengers (and garrison occupants) and the type's `Passengers=`.
+    pub(crate) passengers: Option<(i32, i32)>,
+    /// The object-scope module variables it holds apart from their
+    /// defaults (`VarStore::object_values`), by variable ID.
+    pub(crate) vars: Option<Box<[(i32, i64)]>>,
+}
+
+impl StatusFacts {
+    fn capture(entity: &GameEntity, at: &Capture<'_>) -> Self {
+        let ammo = entity
+            .ammo()
+            .filter(|ammo| ammo.max() > 0)
+            .map(|ammo| (ammo.current(), ammo.max()));
+        let room = at.object_type(entity).map_or(0, |object| object.passengers);
+        let role = entity.passenger_role();
+        let riders = i32::try_from(role.passenger_count())
+            .unwrap_or(i32::MAX)
+            .saturating_add(role.occupants().count().max(0));
+        let passengers = (room > 0).then_some((riders, room));
+        let vars: Box<[(i32, i64)]> = at
+            .sim
+            .ext_modules()
+            .vars()
+            .object_values(entity.stable_id())
+            .collect();
+        Self {
+            ammo,
+            passengers,
+            vars: (!vars.is_empty()).then_some(vars),
+        }
+    }
 }
 
 /// `GameEntity`'s answers to the queries drawing asks it.
@@ -316,30 +415,20 @@ pub(crate) struct Place {
     pub(crate) landing_base: i32,
     /// `sim::movement::hover::hover_draw_slope` with the pose's rocking angles.
     pub(crate) hover_draw_slope: u8,
-    /// `sim::movement::motion_query::is_moving_now` at that frame.
-    pub(crate) moving_now: bool,
     /// `sim::movement::motion_query::is_moving`.
     pub(crate) moving: Option<bool>,
-    /// `sim::movement::ground_pose::object_center_xy`.
-    pub(crate) center_xy: [i32; 2],
     /// `object_world_z_leptons` without the map: its exact Z, else its
     /// stored level's.
     pub(crate) world_z_leptons_off_map: i32,
-    /// `sim::movement::turret::facing_toward_target` of its attack target.
-    pub(crate) facing_toward_target: Option<u16>,
+    /// The attack-target facing used by the jumpjet infantry SHP draw.
+    pub(crate) jumpjet_target_facing: Option<u16>,
     /// A Structure's art (`sim::building_art`), for its own type.
     pub(crate) structure: Option<StructureArt>,
     /// Its radio contact 0, the object it talks to.
     pub(crate) contact0: Option<Contact>,
-    /// `presentation::lighting::body_extra_light`.
-    pub(crate) extra_light: i32,
-    /// Infantry5192C9 reads the navigation cell for top lighting.
-    pub(crate) infantry_light_cell: Option<(u16, u16)>,
     /// Its action line's world endpoints
     /// (`target_lines::action_line_endpoints`).
     pub(crate) action_line: Option<crate::app::presentation::target_lines::SelectedActionLine>,
-    /// A Structure's rally line (`target_lines::rally_line_coords`).
-    pub(crate) rally_line: Option<[crate::sim::components::DriveCoord; 2]>,
     /// `Simulation::techno_intent_psychically_detected` by the current
     /// house's detectors.
     pub(crate) psychically_detected: bool,
@@ -397,6 +486,9 @@ pub(crate) struct StructureArt {
     pub(crate) current_body_frame: i32,
     /// `gate_open_body_frame` with its art's GateStages, for a gate.
     pub(crate) gate_open_body_frame: Option<i32>,
+    /// How a Wasm module's `DoorOpen` write holds its door drawn
+    /// (`Simulation::ext_module_door`).
+    pub(crate) module_door: Option<bool>,
 }
 
 impl StructureArt {
@@ -426,14 +518,24 @@ impl StructureArt {
                 at.sim.object_tech_level(object),
             ),
             gate_open_body_frame: gate_stages.and_then(|gate_stages| {
-                building_art::gate_open_body_frame(
-                    entity,
-                    gate_stages,
-                    object.strength,
-                    rules.general.condition_yellow,
-                    at.binary_frame,
-                )
+                match at.sim.ext_module_door(entity.stable_id()) {
+                    Some(open) => building_art::gate_held_body_frame(
+                        entity,
+                        gate_stages,
+                        object.strength,
+                        rules.general.condition_yellow,
+                        open,
+                    ),
+                    None => building_art::gate_open_body_frame(
+                        entity,
+                        gate_stages,
+                        object.strength,
+                        rules.general.condition_yellow,
+                        at.binary_frame,
+                    ),
+                }
             }),
+            module_door: at.sim.ext_module_door(entity.stable_id()),
         })
     }
 }
@@ -441,8 +543,9 @@ impl StructureArt {
 impl Place {
     /// `world_z_leptons` is `object_world_z_leptons` on the live map.
     fn of(entity: &GameEntity, pose: &RenderPose, world_z_leptons: i32, at: &Capture<'_>) -> Self {
+        use crate::rules::locomotor_type::LocomotorKind;
         let sim = at.sim;
-        let display_frame = at.binary_frame.wrapping_sub(1);
+        let locomotor = entity.locomotor.as_ref().map(|loco| loco.active_kind());
         let psychically_detected = at.psychic.as_ref().is_some_and(|(viewer, sites)| {
             sim.techno_intent_psychically_detected(
                 entity.stable_id(),
@@ -474,40 +577,30 @@ impl Place {
                 sim.entities(),
                 Some((at.rules(), sim.interner())),
             ),
-            hover_draw_slope: crate::sim::movement::hover::hover_draw_slope(
-                entity,
-                at.cells.as_ref(),
-                pose.angles,
-            ),
-            moving_now: crate::sim::movement::motion_query::is_moving_now(
-                entity,
-                crate::sim::movement::SpeedRules::new(at.rules(), sim.interner(), sim.houses()),
-                display_frame,
-            ),
+            hover_draw_slope: if locomotor == Some(LocomotorKind::Hover) {
+                crate::sim::movement::hover::hover_draw_slope(
+                    entity,
+                    at.cells.as_ref(),
+                    pose.angles,
+                )
+            } else {
+                0
+            },
             moving: crate::sim::movement::motion_query::is_moving(entity),
-            center_xy: crate::sim::movement::ground_pose::object_center_xy(entity),
-            infantry_light_cell: (entity.category() == EntityCategory::Infantry)
-                .then(|| sim.foot_navigation_coordinate(entity.stable_id()).ok())
-                .flatten()
-                .map(|coord| {
-                    (
-                        crate::util::lepton::lepton_to_cell_packed(coord.x) as u16,
-                        crate::util::lepton::lepton_to_cell_packed(coord.y) as u16,
-                    )
-                }),
             world_z_leptons_off_map: crate::sim::movement::ground_pose::object_world_z_leptons(
                 entity, None,
             ),
-            facing_toward_target: entity.attack_target.target().and_then(|target| {
-                crate::sim::movement::turret::facing_toward_target(entity, &target, sim)
-            }),
+            jumpjet_target_facing: entity
+                .attack_target
+                .target()
+                .filter(|_| {
+                    entity.category() == EntityCategory::Infantry
+                        && locomotor == Some(LocomotorKind::Jumpjet)
+                })
+                .and_then(|target| {
+                    crate::sim::movement::turret::facing_toward_target(entity, &target, sim)
+                }),
             structure: StructureArt::of(entity, at),
-            extra_light: crate::app::presentation::lighting::body_extra_light(
-                entity,
-                at.rules(),
-                sim,
-                at.cells.as_ref(),
-            ),
             airstrike_designation: AirstrikeDesignation::of(entity, at),
             action_line: draws_action_line
                 .then(|| {
@@ -519,9 +612,6 @@ impl Place {
                     )
                 })
                 .flatten(),
-            rally_line: at.cells.as_ref().and_then(|cells| {
-                crate::app::presentation::target_lines::rally_line_coords(entity, sim, cells)
-            }),
             psychically_detected,
             // Only a Structure's is ever active.
             airstrike_tint_active: entity.category() == EntityCategory::Structure
@@ -619,6 +709,7 @@ impl ObjectRecord {
         let place = Place::of(entity, &pose, location.z, at);
         let seen = Seen::of(entity, at);
         let hud = crate::app::presentation::ui_overlays::HudFacts::capture(entity, at, location);
+
         let scene =
             crate::app::presentation::frame_scene::SceneFacts::capture(entity, at, location);
         let tether_draw =
@@ -638,6 +729,7 @@ impl ObjectRecord {
             unit_death_counter: entity.unit_death_counter,
             foot_occupation_enabled: entity.foot_occupation_enabled(),
             on_carryall: entity.is_on_carryall(),
+            parasite_infested: entity.parasite.is_infested(),
             turret_anim_frame: entity.turret_anim_frame,
             health: entity.health,
             veterancy: entity.veterancy,
@@ -667,7 +759,16 @@ impl ObjectRecord {
             building_art: entity.building_art.clone(),
             animation: entity.animation,
             miner: entity.miner.as_deref().map(|miner| Miner {
-                harvesting: miner.harvesting(),
+                harvesting_at_rest: miner.harvesting()
+                    && !crate::sim::movement::motion_query::is_moving_now(
+                        entity,
+                        crate::sim::movement::SpeedRules::new(
+                            at.rules(),
+                            at.sim.interner(),
+                            at.sim.houses(),
+                        ),
+                        at.binary_frame.wrapping_sub(1),
+                    ),
             }),
             cloak: entity.cloak.as_deref().map(|cloak| Cloak {
                 state: cloak.state(),
@@ -711,6 +812,7 @@ impl ObjectRecord {
             place,
             seen,
             hud,
+            module: ModuleFacts::capture(entity, at, seen),
             scene,
             pose,
             shp_body_facing: if at.rules().ares() {
@@ -858,6 +960,27 @@ impl ObjectRecord {
         self.answers.shield.as_ref()
     }
 
+    /// The simulation module's tint and intensity.
+    pub(crate) fn module_tint(&self) -> Option<([u8; 3], f64)> {
+        self.module.as_ref().and_then(|module| module.tint)
+    }
+
+    /// The type a simulation module draws in place of this object's own.
+    pub(crate) fn module_image(&self) -> Option<InternedId> {
+        self.module.as_ref().and_then(|module| module.image)
+    }
+
+    /// A client module's local look of it.
+    pub(crate) fn local_look(&self) -> LocalLook {
+        self.module.as_ref().map_or_else(LocalLook::default, |module| module.local_look)
+    }
+
+    /// What status templates read of it; `None` in a match without
+    /// templates.
+    pub(crate) fn status(&self) -> Option<&StatusFacts> {
+        self.module.as_ref().and_then(|module| module.status.as_ref())
+    }
+
     #[cfg(feature = "phobos")]
     pub(crate) fn phobos_attach_effects(&self) -> &crate::sim::attach_effect::AttachEffectList {
         &self.answers.phobos_attach_effects
@@ -927,7 +1050,7 @@ impl crate::render::snapshot::SnapshotObject for ObjectRecord {
         self.seen.visual_character
     }
     fn center_xy(&self) -> [i32; 2] {
-        self.place.center_xy
+        [self.hud.get_coords.x, self.hud.get_coords.y]
     }
     fn screen_position(&self) -> (f32, f32) {
         let [x, y] = self.pose.screen;
@@ -996,13 +1119,8 @@ impl Mission {
 /// `GameEntity::miner` as drawing reads it.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Miner {
-    harvesting: bool,
-}
-
-impl Miner {
-    pub(crate) fn harvesting(&self) -> bool {
-        self.harvesting
-    }
+    /// The ore-gathering overlay reads Is_Moving_Now at the display frame (0x0073D114).
+    pub(crate) harvesting_at_rest: bool,
 }
 
 /// `GameEntity::cloak` as drawing reads it.
@@ -1348,6 +1466,17 @@ impl PresentationFrame {
         sidebar_types: &crate::app::sidebar_projection::SidebarTypes,
         status_rows: bool,
     ) -> Self {
+        Self::capture_with_looks(runtime, sidebar_types, status_rows, &LocalLooks::new(), false)
+    }
+
+    /// [`Self::capture`] with the client modules' local looks of objects.
+    pub(crate) fn capture_with_looks(
+        runtime: &SimRuntime,
+        sidebar_types: &crate::app::sidebar_projection::SidebarTypes,
+        status_rows: bool,
+        local_looks: &LocalLooks,
+        status_amounts: bool,
+    ) -> Self {
         let sim = &runtime.simulation;
         let observer_id = sim.session().current_house();
         let observer = observer_id.map(|id| sim.interner().resolve(id));
@@ -1359,6 +1488,8 @@ impl PresentationFrame {
             observer_id,
             sidebar_types,
             status_rows,
+            local_looks,
+            status_amounts,
             cells: sim
                 .resolved_terrain()
                 .map(crate::map::resolved_terrain::NativeCellQuery::isolated),

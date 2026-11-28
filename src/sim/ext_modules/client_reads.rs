@@ -13,7 +13,7 @@
 //! | Own house | every `all` and `own` property | — |
 //! | Other house (allies too) | — | `Name`, `Country`, `Side`, `Index`, `IsDefeated`, `IsHuman`, `IsCivilian`, `Relation`; the rest `Refused` |
 //! | Own object, own superweapon | every `all`, `own`, `seen` property | — |
-//! | Other object seen now | — | `Type`, `Owner`, `Category`, `Health`, `Strength`, `HealthPercent`, `X`, `Y`, `Z`, `Cell`, `UnderConstruction`, `DoorOpen`, `Animating`, tint and laser trail; the rest `Refused` |
+//! | Other object seen now | — | `Type`, `Owner`, `Category`, `Health`, `Strength`, `HealthPercent`, `X`, `Y`, `Z`, `Cell`, `UnderConstruction`, `DoorOpen`, `Animating`, tint, laser trail and `ImageOverride`; the rest `Refused` |
 //! | Other object not seen now | — | `Gone` (and `find` skips it) |
 //! | Other house's superweapon | — | `Refused` |
 //! | Cell | `LandType`, `Height`, `Waypoint`, `Zone.*` always; `Overlay`, `Ore`, `Obstructed`, `Passable.*` in current sight; `Revealed`, `Placeable` for the own house | as for this player |
@@ -117,6 +117,7 @@ const SEEN_OBJECT: &[&str] = &[
     "TintColor",
     "TintIntensity",
     "LaserTrailType",
+    "ImageOverride",
 ];
 const SIM_OBJECT: &[&str] = &["Team", "Tag"];
 /// Projectile properties (appendix 7.4): `seen` and `sim`; the rest `own`.
@@ -251,10 +252,13 @@ impl ClientView<'_> {
     fn cell_in_sight(&self, x: u16, y: u16) -> bool {
         let sim = self.sim();
         match self.me().id {
-            Some(viewer) => {
-                sim.fog
-                    .shows_objects_to(viewer, x, y, sim.session.game_options().fog_of_war)
-            }
+            Some(viewer) => sim.fog.shows_objects_to(
+                viewer,
+                x,
+                y,
+                sim.session.game_options().fog_of_war,
+                sim.resolved_terrain(),
+            ),
             None => self.viewer.spectator && self.viewer.sees_whole_map,
         }
     }
@@ -263,7 +267,11 @@ impl ClientView<'_> {
     /// draws, explored and not under a hostile gap.
     fn cell_listed(&self, x: u16, y: u16) -> bool {
         match self.me().id {
-            Some(viewer) => self.sim().fog.shows_objects_to(viewer, x, y, false),
+            Some(viewer) => {
+                self.sim()
+                    .fog
+                    .shows_objects_to(viewer, x, y, false, self.sim().resolved_terrain())
+            }
             None => self.viewer.spectator && self.viewer.sees_whole_map,
         }
     }
@@ -513,6 +521,8 @@ fn object_read(
     // fraction stays the real one.
     let worn = worn.map(|id| type_ref(NAME_TECHNO_TYPE, id));
     Ok(match (name, worn) {
+        // The disguise supplies the image this viewer sees.
+        ("ImageOverride", _) => (0, Status::Ok),
         ("Owner", _) => (house_ref(house), Status::Ok),
         ("Type", Some(worn)) => (worn, Status::Ok),
         ("Category" | "Strength", Some(worn)) => reader.read_in(worn, prop, at)?,

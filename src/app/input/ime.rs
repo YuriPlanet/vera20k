@@ -374,8 +374,6 @@ enum GuiScreen {
     /// widget trees (`SavedSeedBrowserState::ime_ui`).
     Setups,
     ChooseMap,
-    /// The in-game `0xCF` page.
-    InGamePage,
     /// The main menu's saved-game browser, while a conversion asks for a name.
     LoadSavedGame,
     /// The in-game saved-game browser, likewise.
@@ -400,7 +398,6 @@ impl GuiScreen {
                 | Self::WolLobby
                 | Self::Skirmish
                 | Self::ChooseMap
-                | Self::InGamePage
         )
     }
 }
@@ -464,9 +461,6 @@ fn gui_screen(state: &AppState) -> Option<(GuiScreen, &vera20k_gui::Gui)> {
         InputLayer::Screen(ScreenPage::Wol) => Some((GuiScreen::WolPages, shell.gui())),
         InputLayer::Screen(ScreenPage::Mods) if state.frontend.mods.name_dialog.is_some() => {
             Some((GuiScreen::ModName, shell.gui()))
-        }
-        InputLayer::Screen(ScreenPage::InGameShell(InGameMenuState::Page)) => {
-            Some((GuiScreen::InGamePage, shell.gui()))
         }
         InputLayer::Screen(ScreenPage::LoadSavedGame) => Some((
             GuiScreen::LoadSavedGame,
@@ -641,17 +635,6 @@ fn gui_key(state: &mut AppState, code: Option<winit::keyboard::KeyCode>, text: O
                 }
             }
         },
-        GuiScreen::InGamePage => crate::app::shell_wol::page::key_press(
-            &mut state.frontend,
-            &mut state.platform,
-            &mut state.match_state,
-            &state.process_assets,
-            &state.renderer,
-            &mut state.audio,
-            &mut state.persistence,
-            code,
-            text,
-        ),
         GuiScreen::LoadSavedGame => crate::app::App::handle_load_saved_game_key(state, code, text),
         GuiScreen::InGameSavedGame => crate::app::App::saved_game_key(state, code, text),
         GuiScreen::ModName => crate::app::App::name_dialog_input(state, code, text),
@@ -758,17 +741,43 @@ mod android {
             .map(|(text, _)| text.clone())
             .unwrap_or_default();
         state.platform.ime.cursor = preedit.as_ref().map_or(0, |(_, caret)| *caret);
-        if committed == state.platform.ime.android_text {
+        if committed == state.platform.ime.android_text && (preedit.is_some() || committed == text)
+        {
             return;
         }
-        let (removed, inserted) =
-            crate::util::android_ime::edit_of(&state.platform.ime.android_text, &committed);
-        state.platform.ime.android_text = committed;
-        for _ in 0..removed {
-            backspace(state, focused);
+        if committed != state.platform.ime.android_text {
+            let (removed, inserted) =
+                crate::util::android_ime::edit_of(&state.platform.ime.android_text, &committed);
+            state.platform.ime.android_text = committed;
+            // The shell edit deletes whole characters. In-game chat pops one
+            // UTF-16 unit at a time and its caret is always at the end.
+            let backspaces = match focused {
+                ImeTarget::Gui => removed,
+                ImeTarget::InGameChat => {
+                    text.chars().rev().take(removed).map(char::len_utf16).sum()
+                }
+            };
+            for _ in 0..backspaces {
+                backspace(state, focused);
+            }
+            if !inserted.is_empty() {
+                commit(state, &inserted);
+            }
         }
-        if !inserted.is_empty() {
-            commit(state, &inserted);
+        // The edit is the authority on what it holds. When it refused a
+        // character the platform sent (the LAN name box's byte-only filter, a
+        // length cap), the baseline advances but the edit does not, and the
+        // next Backspace would remove the character before the one the player
+        // meant. Re-seed the platform from the edit instead. Skip while a
+        // composition is open: re-seeding would fight the input method's own
+        // buffer.
+        if preedit.is_none()
+            && let Some((text, cursor, _)) = seed(state, focused)
+            && let Some(resync) =
+                crate::util::android_ime::resync_to(&text, &state.platform.ime.android_text)
+        {
+            crate::util::android_ime::set_state(&text, cursor);
+            state.platform.ime.android_text = resync;
         }
     }
 

@@ -406,6 +406,9 @@ pub(crate) enum ObjectExtrasRun {
         #[cfg(test)]
         parent: DrawId,
         bomb_clock: Option<u32>,
+        /// The Ares `IvanBomb.Image` strip `bomb_clock` was cut from; `None`
+        /// binds BOMBCURS.SHP (`SelectionOverlay::bomb_strip`).
+        bomb_image: Option<usize>,
         wrench: Option<u32>,
         /// Ares POWEROFF marker (10049FE0), after the wrench; `None` unless
         /// the Rules were read the Ares way (`techno_extras_for_parent`).
@@ -477,8 +480,17 @@ pub(crate) struct ObjectLayerPass {
 /// lookup hasher, sized up front.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct NativeDisplayOrder {
-    positions: LookupMap<DrawId, (TacticalLayer, u64)>,
+    positions: LookupMap<DrawId, DisplayPosition>,
     ordered: Vec<(crate::sim::world::display_layers::DisplayLayer, u64)>,
+}
+
+/// In the existing layer/rank entry's alignment padding on 64-bit targets,
+/// keep Ground's sort key so an intermediate picture needs no second table.
+#[derive(Clone, Copy, Debug)]
+struct DisplayPosition {
+    rank: u64,
+    ground_key: i32,
+    layer: TacticalLayer,
 }
 
 impl NativeDisplayOrder {
@@ -490,35 +502,86 @@ impl NativeDisplayOrder {
         sim: &crate::sim::world::Simulation,
         rules: Option<&crate::rules::ruleset::RuleSet>,
     ) -> Self {
-        let mut order = Self::ranked(sim.picture_draw_order(rules)).0;
+        use crate::sim::world::display_layers::DisplayLayer;
         let display = sim.display_layers();
-        order
-            .ordered
-            .retain(|&(_, id)| display.layer_of(id).is_some());
+        let capacity = (0..5)
+            .filter_map(DisplayLayer::from_index)
+            .map(|layer| display.members(layer).len())
+            .sum::<usize>()
+            + display.local_ground().len();
+        let mut order = Self {
+            positions: LookupMap::with_capacity_and_hasher(capacity, Default::default()),
+            ordered: Vec::with_capacity(capacity),
+        };
+        let mut next = [0_u64; 5];
+        sim.visit_picture_draw_order(rules, |layer, id, ground_key| {
+            let rank = &mut next[usize::from(layer.index())];
+            order.positions.insert(
+                id,
+                DisplayPosition {
+                    layer: TacticalLayer(layer.index()),
+                    rank: *rank,
+                    ground_key,
+                },
+            );
+            *rank += 1;
+            if display.layer_of(id).is_some() {
+                order.ordered.push((layer, id));
+            }
+        });
         order
     }
 
-    /// The order of `ordered`, every Display member with its layer in draw
-    /// order.
     #[cfg(test)]
     pub(crate) fn from_ordered(
         ordered: Vec<(crate::sim::world::display_layers::DisplayLayer, u64)>,
     ) -> Self {
-        Self::ranked(ordered).0
-    }
-
-    /// [`Self::from_ordered`] and each layer's member count.
-    fn ranked(
-        ordered: Vec<(crate::sim::world::display_layers::DisplayLayer, u64)>,
-    ) -> (Self, [u64; 5]) {
-        let mut positions = LookupMap::with_capacity_and_hasher(ordered.len(), Default::default());
+        let mut positions = LookupMap::default();
         let mut rank = [0u64; 5];
         for &(layer, id) in &ordered {
             let next = &mut rank[usize::from(layer.index())];
-            positions.insert(id, (TacticalLayer(layer.index()), *next));
+            positions.insert(
+                id,
+                DisplayPosition {
+                    layer: TacticalLayer(layer.index()),
+                    rank: *next,
+                    ground_key: 0,
+                },
+            );
             *next += 1;
         }
-        (Self { positions, ordered }, rank)
+        Self { positions, ordered }
+    }
+
+    /// Use the regular visible-parent sort for the interpolated geometry.
+    /// Its first word is the sampled signed Ground key in ascending order.
+    /// Exact ties preserve the committed order. On a committed picture every
+    /// sort and lookup below is skipped.
+    pub(super) fn apply_unit_motion(
+        &self,
+        plan: &mut PlannedObjects,
+        motion: &crate::app::presentation::unit_motion::UnitMotion,
+        sim: &crate::sim::world::Simulation,
+    ) {
+        if !motion.ground_order_changed() || self.positions.len() > u32::MAX as usize {
+            return;
+        }
+        for entry in plan.iter_mut() {
+            let parent = &mut entry.parent;
+            if parent.layer.0 != crate::sim::world::display_layers::DisplayLayer::GROUND.index() {
+                continue;
+            }
+            let Some(position) = self.positions.get(&parent.id) else {
+                continue;
+            };
+            let id = sim
+                .anim(parent.id)
+                .and_then(|a| a.owner_entity())
+                .unwrap_or(parent.id);
+            let sampled = position.ground_key.wrapping_add(motion.sort_delta(id));
+            let biased = (sampled as u32) ^ (1 << 31);
+            parent.display_order |= u64::from(biased) << 32;
+        }
     }
 
     /// Every Display member with its layer, in draw order.
@@ -534,24 +597,18 @@ impl NativeDisplayOrder {
 
     #[cfg(test)]
     pub(crate) fn new(ids: &[DrawId]) -> Self {
-        Self {
-            positions: ids
-                .iter()
-                .enumerate()
-                .map(|(rank, &id)| (id, (TacticalLayer(2), rank as u64)))
-                .collect(),
-            ordered: ids
-                .iter()
+        Self::from_ordered(
+            ids.iter()
                 .map(|&id| (crate::sim::world::display_layers::DisplayLayer::GROUND, id))
                 .collect(),
-        }
+        )
     }
 
     /// `id`'s place in the Display walk, `None` for an id no layer holds:
     /// ordering by it is the order of [`Self::ordered`], with each
     /// presentation anim in its place (`Simulation::picture_draw_order`).
     pub(crate) fn position(&self, id: DrawId) -> Option<(TacticalLayer, u64)> {
-        self.positions.get(&id).copied()
+        self.positions.get(&id).map(|p| (p.layer, p.rank))
     }
 
     pub(crate) fn object_draw(&self, id: DrawId, encoding: SpriteEncoding) -> Option<ObjectDraw> {
@@ -559,7 +616,7 @@ impl NativeDisplayOrder {
             SpriteEncoding::Terrain => BlitPolicy::z_none(encoding),
             _ => BlitPolicy::z_read(encoding),
         };
-        let &(layer, display_order) = self.positions.get(&id)?;
+        let (layer, display_order) = self.position(id)?;
         Some(ObjectDraw {
             id,
             layer,
@@ -741,6 +798,7 @@ pub(crate) fn lower_object_instances(plan: PlannedObjects) -> [ObjectLayerPass; 
                     #[cfg(test)]
                     parent: owner,
                     bomb_clock,
+                    bomb_image: strip.bomb_image,
                     wrench,
                     power_off,
                     rank,
@@ -764,6 +822,7 @@ pub(crate) fn lower_object_instances(plan: PlannedObjects) -> [ObjectLayerPass; 
             if lines.as_ref().is_some_and(|lines| !lines.extras.is_empty()) {
                 if let Some(ObjectExtrasRun::Status {
                     bomb_clock,
+                    bomb_image,
                     wrench,
                     power_off,
                     rank,
@@ -781,6 +840,7 @@ pub(crate) fn lower_object_instances(plan: PlannedObjects) -> [ObjectLayerPass; 
                         #[cfg(test)]
                         parent: owner,
                         bomb_clock: *bomb_clock,
+                        bomb_image: *bomb_image,
                         wrench: *wrench,
                         power_off: *power_off,
                         rank: *rank,
@@ -840,6 +900,7 @@ pub(crate) fn lower_object_instances(plan: PlannedObjects) -> [ObjectLayerPass; 
             }
             if let Some(ObjectExtrasRun::Status {
                 bomb_clock,
+                bomb_image,
                 wrench,
                 power_off,
                 rank,
@@ -887,6 +948,7 @@ pub(crate) fn lower_object_instances(plan: PlannedObjects) -> [ObjectLayerPass; 
                         #[cfg(test)]
                         parent: owner,
                         bomb_clock,
+                        bomb_image,
                         wrench,
                         power_off,
                         rank,

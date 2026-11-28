@@ -241,7 +241,9 @@ impl RetainedHud {
         let entry = &mut self.runs[self.run].entries[at];
         if entry.text != text {
             text.clone_into(&mut entry.text);
-            let _ = self.hud.set(entry.node, Prop::Text, Value::Text(text.to_owned()));
+            let _ = self
+                .hud
+                .set(entry.node, Prop::Text, Value::Text(text.to_owned()));
         }
     }
 
@@ -285,9 +287,10 @@ impl RetainedHud {
         self.settle();
         let runs = &self.runs;
         let mut at = 0;
-        self.paint.build_from(&self.hud, Some(from), space, font, |node| {
-            seek(runs, &mut at, node)
-        });
+        self.paint
+            .build_from(&self.hud, Some(from), space, font, |node| {
+                seek(runs, &mut at, node)
+            });
         std::mem::swap(&mut self.hud, gui);
         &self.paint
     }

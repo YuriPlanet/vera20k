@@ -2039,26 +2039,44 @@ impl FogState {
             .is_some_and(|s| s.is_gap_covered(rx, ry))
     }
 
-    /// Does `viewer` see another house's objects on this cell? Explored (with
-    /// `current_sight_only`, currently seen) and not covered by a hostile gap.
-    /// With `current_sight_only == false` this is the A plane's own admission
-    /// (`render::shroud_buffer::cell_fill`), so overlays whose material reads
-    /// no A can ask it instead of inventing a second fog interpretation. The
-    /// draw plan, the pickers and the extension modules' `Visible` read it.
+    /// Whether the viewer sees objects at this map cell. Sight and hostile
+    /// gaps are written to the flat shroud lattice. Look up the cell at its
+    /// floor height, as MapClass::IsShrouded (0x00586360) does. Under fog of
+    /// war the translucent draw and its consumers also require current sight.
     pub fn shows_objects_to(
         &self,
         viewer: InternedId,
         rx: u16,
         ry: u16,
         current_sight_only: bool,
+        terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
     ) -> bool {
-        let lit = if current_sight_only {
-            self.is_cell_visible(viewer, rx, ry)
-        } else {
-            // Standard YR has no fog-of-war layer: explored ground stays visible.
-            self.is_cell_revealed(viewer, rx, ry)
+        let Some(view) = self.by_owner.get(&viewer) else {
+            return false;
         };
-        lit && !self.is_cell_gap_covered(viewer, rx, ry)
+        let required = if current_sight_only {
+            FLAG_VISIBLE
+        } else {
+            FLAG_REVEALED
+        };
+        let shown = |x, y| {
+            view.index(x, y)
+                .is_some_and(|i| view.cells[i] & (required | FLAG_GAP_COVERED) == required)
+        };
+        let Some(terrain) = terrain else {
+            return shown(rx, ry);
+        };
+        let (first, next) = cell_shroud_lattice(terrain, (rx, ry));
+        let sees = |cell| match cell {
+            crate::map::cell_index::NativeCellIdentity::Real(index) => {
+                let cell = &terrain.cells()[index];
+                shown(cell.rx, cell.ry)
+            }
+            crate::map::cell_index::NativeCellIdentity::Dummy => {
+                !current_sight_only && self.is_dummy_ground_unshrouded(viewer)
+            }
+        };
+        sees(first) || next.is_some_and(sees)
     }
 
     /// Returns true if the cell is covered by a friendly gap generator for this owner.
@@ -3101,6 +3119,17 @@ const REVEAL_MIRROR: [(i8, i8); 309] = [
     (0, -1), (0, -1), (0, -1), (0, -1), (0, -1), (0, -1), (0, -1),
 ];
 
+/// First flat shroud cell beneath a world point and whether its height lies
+/// between two cells (MapClass::IsShrouded, 0x00586368..0x00586441).
+fn shroud_lattice_origin(point: crate::sim::components::DriveCoord) -> ((i16, i16), bool) {
+    let level = point.z / crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS;
+    let odd_level = level & 1 != 0;
+    let shift = (level / 2 + i32::from(odd_level)) as i16;
+    let x = ((point.x / 256) as i16).wrapping_sub(shift);
+    let y = ((point.y / 256) as i16).wrapping_sub(shift);
+    ((x, y), odd_level)
+}
+
 /// The lattice `MapClass::IsShrouded @ 0x00586360` and `IsFogged @
 /// 0x005864A0` share: `test` holds for the Cell under `point` projected up
 /// by half its height level and, for an odd level, also for the next Cell
@@ -3110,16 +3139,12 @@ fn raised_cells_all(
     point: crate::sim::components::DriveCoord,
     mut test: impl FnMut(crate::map::cell_index::NativeCellIdentity) -> Result<bool, String>,
 ) -> Result<bool, String> {
-    let level = point.z / crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS;
-    let shift = level / 2 + i32::from(level & 1 != 0);
-    let first = cells.lookup((
-        ((point.x / 256) as i16).wrapping_sub(shift as i16),
-        ((point.y / 256) as i16).wrapping_sub(shift as i16),
-    ));
+    let (origin, odd_level) = shroud_lattice_origin(point);
+    let first = cells.lookup(origin);
     if !test(first)? {
         return Ok(false);
     }
-    if level & 1 != 0 {
+    if odd_level {
         let (x, y) = cells.coord(first);
         return test(cells.lookup((x.wrapping_add(1), y.wrapping_add(1))));
     }
@@ -3137,29 +3162,36 @@ pub(crate) fn coordinate_is_shrouded(
     raised_cells_all(cells, point, |cell| open(cell).map(|open| !open))
 }
 
-/// The Cells `IsShrouded` and `IsFogged` test for the centre of the Cell at
-/// `cell` raised to its floor, as [`cell_is_shrouded`] asks them: the raised
-/// Cell, and for an odd level the next one too. `cells` should be an
-/// isolated query: a miss stamps its fallback Cell.
+/// The native cells for a read-only view of a map cell's ground centre. At
+/// an odd height IsShrouded (0x00586360) also asks the first cell's diagonal
+/// neighbour. A missing projected slot uses the fallback cell's knowledge.
+/// This lookup leaves the simulation's shared fallback cell untouched.
 pub fn cell_shroud_lattice(
-    cells: &crate::map::resolved_terrain::NativeCellQuery<'_>,
+    terrain: &crate::map::resolved_terrain::ResolvedTerrainGrid,
     cell: (u16, u16),
 ) -> (
     crate::map::cell_index::NativeCellIdentity,
     Option<crate::map::cell_index::NativeCellIdentity>,
 ) {
-    use crate::map::cell_index::NativeCellIdentity;
-    let point = crate::sim::movement::target_cell_coord(cell.0, cell.1, Some(cells));
-    let (mut first, mut next) = (None, None);
-    let _ = raised_cells_all(cells, point, |cell| {
-        *if first.is_none() {
-            &mut first
-        } else {
-            &mut next
-        } = Some(cell);
-        Ok(true)
+    use crate::map::cell_index::NativeCellIdentity::{Dummy, Real};
+    let lookup = |(x, y)| terrain.native_fixed_cell_index(x, y).map_or(Dummy, Real);
+    let point = match lookup((cell.0 as i16, cell.1 as i16)) {
+        Real(index) => crate::sim::cell_rect::CellRef::Real(&terrain.cells()[index]).get_coords(),
+        Dummy => {
+            let cells = crate::map::resolved_terrain::NativeCellQuery::isolated(terrain);
+            crate::sim::movement::target_cell_coord(cell.0, cell.1, Some(&cells))
+        }
+    };
+    let (origin, odd_level) = shroud_lattice_origin(point);
+    let first = lookup(origin);
+    let next = odd_level.then(|| {
+        let (x, y) = match first {
+            Real(_) => terrain.native_cell_coord(first),
+            Dummy => origin,
+        };
+        lookup((x.wrapping_add(1), y.wrapping_add(1)))
     });
-    (first.unwrap_or(NativeCellIdentity::Dummy), next)
+    (first, next)
 }
 
 /// `0x00487950`: `viewer`'s map shrouds the centre of the Cell at `cell`,

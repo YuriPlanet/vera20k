@@ -38,7 +38,10 @@ fn with_activity<R>(f: impl FnOnce(&mut jni::JNIEnv, &JObject) -> R) -> Option<R
     let mut env = vm.attach_current_thread().ok()?;
     // SAFETY: the activity handle is the loader's JNI global reference above.
     let activity = unsafe { JObject::from_raw(context.context().cast()) };
-    Some(f(&mut env, &activity))
+    // android_main stays attached to the VM for the whole event loop. In
+    // particular, each Mod picker poll returns a local String, even when empty.
+    env.with_local_frame(16, |env| Ok::<_, jni::errors::Error>(f(env, &activity)))
+        .ok()
 }
 
 /// Display-inset hook for `vera20k::util::display_insets`.
@@ -84,6 +87,11 @@ fn activity_flag(method: &str, args: &[&str]) -> bool {
 /// say `done` or `failed`.
 fn mod_export(folder: &str, done: &str, failed: &str) -> bool {
     activity_flag("exportMod", &[folder, done, failed])
+}
+
+/// Mods page: pack `folder` into a ZIP through the system picker.
+fn mod_export_zip(folder: &str, done: &str, failed: &str, progress: &str) -> bool {
+    activity_flag("exportModZip", &[folder, done, failed, progress])
 }
 
 /// Mods page: pick a mod ZIP in the system file manager; the toast says
@@ -292,14 +300,19 @@ fn ime_state() -> vera20k::util::android_ime::TextState {
 }
 
 /// Replace the input method's buffer, with the caret at `cursor` characters.
+///
+/// The platform counts selection offsets in UTF-16 units while the game counts
+/// characters, so a caret after an emoji must be converted before it reaches
+/// the platform: `abc👿` is 4 characters but 5 units.
 fn ime_set_state(text: &str, cursor: usize) {
     use android_activity::input::{TextInputState, TextSpan};
     if let Some(app) = ACTIVITY.get() {
+        let state = vera20k::util::android_ime::TextState::from_edit(text, cursor);
         app.set_text_input_state(TextInputState {
-            text: text.to_owned(),
+            text: state.text,
             selection: TextSpan {
-                start: cursor,
-                end: cursor,
+                start: state.cursor,
+                end: state.cursor,
             },
             compose_region: None,
         });
@@ -319,6 +332,43 @@ fn ime_set_secret(secret: bool) {
         )
         .map(|_| ())
     });
+}
+
+static POINTER_WAKE: std::sync::OnceLock<winit::event_loop::EventLoopProxy<()>> = std::sync::OnceLock::new();
+
+/// One hardware mouse or touchpad event the activity consumed.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_org_vera20k_VeraActivity_nativeMouseEvent(
+    _env: jni::JNIEnv,
+    _activity: JObject,
+    device_id: jni::sys::jint,
+    action: jni::sys::jint,
+    action_button: jni::sys::jint,
+    buttons: jni::sys::jint,
+    x: jni::sys::jfloat,
+    y: jni::sys::jfloat,
+    vscroll: jni::sys::jfloat,
+    hscroll: jni::sys::jfloat,
+    scroll: jni::sys::jfloat,
+    event_time: jni::sys::jlong,
+    tool: jni::sys::jint,
+) {
+    let wake = vera20k::app::android_mouse::push(vera20k::app::android_mouse::PointerEvent {
+        device_id,
+        action,
+        action_button,
+        buttons,
+        x,
+        y,
+        vscroll,
+        hscroll,
+        scroll,
+        event_time,
+        tool,
+    });
+    if wake && let Some(proxy) = POINTER_WAKE.get() {
+        let _ = proxy.send_event(());
+    }
 }
 
 /// The activity's folder-picker answer: the chosen tree as a `content://` URI,
@@ -550,6 +600,7 @@ fn android_main(app: AndroidApp) {
     // Add Mod's pickers and the shortcut pin run in the activity.
     vera20k::util::mod_actions::install(vera20k::util::mod_actions::Hooks {
         export: mod_export,
+        export_zip: mod_export_zip,
         pin: mod_pin,
         forget: mod_forget,
         pick_zip: mod_pick_zip,
@@ -624,8 +675,7 @@ fn android_main(app: AndroidApp) {
     // for ever. End the process instead, so that tap is a cold start.
     if !claim_event_loop() {
         log::error!("android_main called again; ending this process for a cold relaunch");
-        log::logger().flush();
-        std::process::exit(0);
+        exit_android_process();
     }
 
     let event_loop: winit::event_loop::EventLoop<()> = match winit::event_loop::EventLoop::builder()
@@ -638,6 +688,8 @@ fn android_main(app: AndroidApp) {
             return;
         }
     };
+
+    let _ = POINTER_WAKE.set(event_loop.create_proxy());
 
     // Android has no retail command line: the launcher starts an ordinary
     // interactive game. `-SPAWN`, replay and capture launches are desktop
@@ -669,13 +721,20 @@ fn android_main(app: AndroidApp) {
         Ok(status) => log::warn!("VERA20k exited with status {status}"),
         Err(error) => log::error!("VERA20k stopped: {error:#}"),
     }
-    log::logger().flush();
-
     // One process runs one game. Exiting here (rather than returning and letting
     // Android cache the process) is what makes the launcher's next tap start
     // from a clean slate: the event loop above cannot be rebuilt, so a cached
     // process would serve the new activity nothing but its splash.
-    std::process::exit(0);
+    exit_android_process();
+}
+
+fn exit_android_process() -> ! {
+    log::logger().flush();
+    // GameTextInput's process-wide destructor uses the activity thread's
+    // JNIEnv. Running it via exit(3) on android_main aborts in CheckJNI.
+    // SAFETY: the engine has finished or declined a second event loop. End
+    // this process directly so the next launch still gets a fresh loop.
+    unsafe { libc::_exit(0) }
 }
 
 /// Claims this process's single event loop.
@@ -724,7 +783,24 @@ pub unsafe extern "C" fn __wrap_pthread_create(
             libc::pthread_attr_init(attr_copy.as_mut_ptr());
         }
         attr_ptr = attr_copy.as_ptr() as *const c_void;
-        libc::pthread_attr_setstacksize(attr_copy.as_mut_ptr(), 8 * 1024 * 1024);
+        // Keep larger requests and leave caller-provided stacks alone.
+        // Bionic can change the recorded size of a caller's stack even
+        // though the caller's allocation stays the same size.
+        let mut caller_stack: *mut c_void = std::ptr::null_mut();
+        let mut caller_len: usize = 0;
+        let caller_owns = libc::pthread_attr_getstack(
+            attr_copy.as_ptr(),
+            &mut caller_stack,
+            &mut caller_len,
+        ) == 0
+            && !caller_stack.is_null();
+        let mut size: usize = 0;
+        let read = libc::pthread_attr_getstacksize(attr_copy.as_ptr(), &mut size) == 0;
+        let requested = if read { size } else { 0 };
+        if let Some(wanted) = vera20k::util::thread_stack::android_stack(requested, caller_owns) {
+            libc::pthread_attr_setstacksize(attr_copy.as_mut_ptr(), wanted);
+            log::info!("android: thread stack {requested} -> {wanted} bytes");
+        }
         __real_pthread_create(thread, attr_ptr, start_routine, arg)
     }
 }

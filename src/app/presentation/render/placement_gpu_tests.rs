@@ -212,6 +212,7 @@ fn retail_placement_matches_original_cell_and_foundation_raster() {
             &gpu.queue,
             &batch,
             &assets,
+            crate::render::interface_picture::PictureSizes::None,
             "place.shp",
             "palette.pal",
         )

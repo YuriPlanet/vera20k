@@ -240,6 +240,7 @@ fn overlay_display_identity(
 /// Borrowed inputs to the one retained dynamic-effect traversal. App startup,
 /// platform windows and unrelated presentation resources are not draw inputs.
 pub(crate) struct DisplayEffectInputs<'a> {
+    pub unit_motion: Option<&'a crate::app::presentation::unit_motion::UnitMotion>,
     pub sim: &'a crate::sim::world::Simulation,
     /// The objects drawing reads (`presentation::frame`).
     pub frame: &'a crate::app::presentation::frame::PresentationFrame,
@@ -277,6 +278,8 @@ impl DisplayEffectInputs<'_> {
 /// coordinate. The point is in world screen pixels, before the camera.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct AnimDrawPoint {
+    /// SetOwnerObject's relative coordinates follow its visible vehicle.
+    owner: Option<u64>,
     pub(crate) center: [f32; 2],
     cell: (u16, u16),
     lift_px: i32,
@@ -309,11 +312,26 @@ pub(crate) fn anim_screen_point(
         lift_px += correction;
     }
     Some(AnimDrawPoint {
+        owner: anim.owner_entity(),
         center: [center_x, center_y],
         cell: (rx, ry),
         lift_px,
         drawn_coord: [anim_coord.x, anim_coord.y, anim_coord.z],
     })
+}
+
+impl AnimDrawPoint {
+    fn for_draw(
+        mut self,
+        motion: Option<&crate::app::presentation::unit_motion::UnitMotion>,
+    ) -> Self {
+        if let (Some(owner), Some(motion)) = (self.owner, motion) {
+            let [dx, dy] = motion.offset(owner);
+            self.center[0] += dx;
+            self.center[1] += dy;
+        }
+        self
+    }
 }
 
 /// The point Anim `id`'s Display encounter admits and draws it at, or `None`
@@ -401,7 +419,12 @@ fn passed_by_effect_plans_nothing(
     let id = member.id;
     if let EffectKind::Anim(_) = member.kind {
         return input.sim.anim(id).is_none_or(|anim| {
-            anim_draw_point(input.frame, anim, id, input.tactical_admission()).is_none()
+            anim_screen_point(input.frame, anim, id).is_none_or(|point| {
+                !projection_admitted(
+                    point.for_draw(input.unit_motion).center,
+                    input.tactical_admission(),
+                )
+            })
         });
     }
     let mut scratch =
@@ -460,6 +483,11 @@ pub(crate) fn build_display_effect_instances(
         // the particle builders test their point first too. So a member off
         // the view is passed by on the point its frame keeps, before any
         // store is asked.
+        let mut member = *member;
+        if let EffectKind::Anim(Some(point)) = &mut member.kind {
+            *point = point.for_draw(input.unit_motion);
+        }
+        let member = &member;
         let admitted = member
             .point()
             .is_some_and(|point| projection_admitted(point, admission));
@@ -475,6 +503,7 @@ pub(crate) fn build_display_effect_instances(
             cell: (rx, ry),
             lift_px,
             drawn_coord,
+            ..
         })) = member.kind
         else {
             plan_effect_body(
@@ -603,7 +632,9 @@ pub(crate) fn build_display_effect_instances(
         // it is not a reason to choose the compatibility material.
         let instance_scheme = remap_color.is_some()
             && !anim.use_cell_drawer()
-            && entry.is_some_and(|entry| entry.source_palette != 0);
+            && entry.is_some_and(|entry| {
+                crate::render::sprite_atlas::source_palette_indexed(entry.source_palette)
+            });
         let tint = if is_parachute || instance_scheme {
             [1.0; 3]
         } else {
@@ -992,6 +1023,7 @@ fn build_cell_overlay_bodies(input: &CellOverlayInputs<'_>, bodies: &mut Vec<sup
                 entry.rx,
                 entry.ry,
                 input.fog_of_war,
+                input.terrain,
             )
         {
             continue;
@@ -1951,6 +1983,7 @@ mod tests {
                 shp: "ruin.shp".into(),
                 body_frame: 3,
                 shadow_frame: 7,
+                picture: None,
             },
         );
         let mut interner = crate::sim::intern::StringInterner::new();

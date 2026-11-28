@@ -248,8 +248,11 @@ fn present(
     }
     let runtime = &scene.runtime;
     let view = runtime.view();
-    let frame =
-        crate::app::presentation::frame::PresentationFrame::capture(runtime, &Default::default(), false);
+    let frame = crate::app::presentation::frame::PresentationFrame::capture(
+        runtime,
+        &Default::default(),
+        false,
+    );
     let colors = HouseColorMap::new();
     let overlay_colors = HashMap::new();
     let mut first = None;

@@ -208,6 +208,12 @@ pub struct SlaveManager {
 }
 
 impl SlaveManager {
+    /// SlaveManagerClass::Load 0x6B11AC..0x6B11C0 restarts the manager's
+    /// AI timer before reading the saved slave records and their timers.
+    pub(crate) fn restart_timer_after_load(&mut self, frame: i32) {
+        self.ai_timer.start(frame, 0);
+    }
+
     /// The constructor (`0x006AF1A0`) at `now`: a node per slave it tried to
     /// create, in state 0 with its timer at `now` for 0, and the AI timer at
     /// `now` for 10. A refused CreateObject still appends its node
@@ -505,12 +511,20 @@ impl Simulation {
         frame_effects: &mut FrameEffects<'_>,
     ) -> Result<(), TiberiumImageError> {
         let now = Self::now_frame(&self.session);
-        let Some(manager) = self.substrate.slave_manager_mut(master) else {
+        // 0x006AF5FD..0x006AF625: the timer's first write is its restart.
+        let Some(manager) = self
+            .substrate
+            .entities
+            .get_mut_if(master, |entity| {
+                entity
+                    .slave_manager
+                    .as_ref()
+                    .is_some_and(|manager| manager.ai_timer.expired(now))
+            })
+            .and_then(|entity| entity.slave_manager.as_mut())
+        else {
             return Ok(());
         };
-        if !manager.ai_timer.expired(now) {
-            return Ok(());
-        }
         manager.ai_timer.start(now, 10);
         self.slave_ai_update(master, rules, registry, frame_effects)?;
         self.slave_manager_step(master, rules, registry, frame_effects)?;

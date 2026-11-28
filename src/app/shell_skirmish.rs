@@ -760,6 +760,7 @@ impl App {
             modal.add_favorites_row(favorites);
             if online {
                 modal.add_online_maps_row();
+                modal.set_online_categories(frontend.map_library.folders());
             }
         }
         Self::list_cooperative_campaigns(

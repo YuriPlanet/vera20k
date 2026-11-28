@@ -1,7 +1,7 @@
 //! Infantry DrawIt518F90 light boundaries and production SHP forwarding.
 
 use super::*;
-use crate::app::presentation::frame::PresentationFrame;
+use crate::app::presentation::frame::{ObjectRecord, PresentationFrame};
 use crate::map::entities::EntityCategory;
 use crate::map::resolved_terrain::{test_grid, test_smudge_cell};
 use crate::rules::ini_parser::IniFile;
@@ -92,7 +92,8 @@ fn infantry_body_light_respects_side_threshold_signed_height_and_weather() {
             height,
             "z={z}, OnBridge={on_bridge}: deck-relative height",
         );
-        let extra = body_extra_light(&infantry, &rules, &sim, Some(&cells));
+        let record = ObjectRecord::of_test_in(&infantry, Some(&terrain), &rules);
+        let extra = body_extra_light(&record, &rules, &sim, Some(&cells));
         // An empty light grid explicitly supplies the native top1000 prior.
         assert_eq!(
             body_palette_light(&CellLightGrid::new(), (10, 20), extra).brightness(),
@@ -100,7 +101,7 @@ fn infantry_body_light_respects_side_threshold_signed_height_and_weather() {
             "flags={flags:x}, z={z}, OnBridge={on_bridge}",
         );
         if let Some(before) = before {
-            assert_eq!(body_extra_light(&infantry, &rules, &sim, None), 200);
+            assert_eq!(body_extra_light(&record, &rules, &sim, None), 200);
             assert_eq!(
                 (
                     sim.state_hash(),
@@ -141,8 +142,6 @@ fn assert_shp_light(runtime: &mut SimRuntime, id: u64, light: &CellLightGrid, ex
     );
 }
 
-/// Keep real Display admission and SHP emission. The minimal atlas covers the
-/// authored six-frame Ready/Walk and retail GI's eight-facing Ready block.
 fn assert_shp_light_on_frame(
     runtime: &SimRuntime,
     frame: &PresentationFrame,
@@ -150,6 +149,25 @@ fn assert_shp_light_on_frame(
     light: &CellLightGrid,
     expected: i32,
 ) {
+    let [x, y] = frame.object(id).unwrap().pose.screen;
+    let body = shp_body_in_view(runtime, frame, id, light, [x - 400., y - 300.], 1.0)
+        .expect("ordinary Display emits the GI body");
+    assert_eq!(body.palette_light.brightness(), expected);
+    for channel in body.tint {
+        assert!((channel - expected as f32 / 1000.0).abs() < 0.000_001);
+    }
+}
+
+/// Keep real Display admission and SHP emission. The minimal atlas covers the
+/// authored six-frame Ready/Walk and retail GI's eight-facing Ready block.
+fn shp_body_in_view(
+    runtime: &SimRuntime,
+    frame: &PresentationFrame,
+    id: u64,
+    light: &CellLightGrid,
+    camera: [f32; 2],
+    zoom: f32,
+) -> Option<crate::render::batch::SpriteInstance> {
     use crate::app::presentation::instances::{ShpInputs, build_shp_instances_from_inputs};
     use crate::app::presentation::render::draw_plan_lowering::{ObjectTexture, PlannedObjects};
     use crate::render::sprite_atlas::{
@@ -159,8 +177,6 @@ fn assert_shp_light_on_frame(
 
     let actor = frame.object(id).unwrap();
     let owner_name = runtime.simulation.resolve(actor.owner());
-    let [x, y] = actor.pose.screen;
-    let camera = [x - 400.0, y - 300.0];
     let entry = ShpSpriteEntry {
         uv_origin: [0.0; 2],
         uv_size: [1.0; 2],
@@ -195,6 +211,8 @@ fn assert_shp_light_on_frame(
     let mut draws = PlannedObjects::default();
     build_shp_instances_from_inputs(
         &ShpInputs {
+            motion: None,
+            diagnostics: None,
             runtime,
             frame,
             atlas: Some(&atlas),
@@ -205,11 +223,15 @@ fn assert_shp_light_on_frame(
             depth_tested_images: None,
             camera,
             render_size: [800, 600],
-            zoom: 1.0,
+            zoom,
             building_viewport: crate::app::presentation::render::tactical_world_viewport(
                 camera,
-                [0, 0, 800, 600],
-                None,
+                [
+                    0,
+                    0,
+                    (800.0 / zoom).ceil() as u32,
+                    (600.0 / zoom).ceil() as u32,
+                ],
             ),
             axis: crate::render::batch::DepthAxis {
                 origin_y: 0.0,
@@ -220,6 +242,7 @@ fn assert_shp_light_on_frame(
             lighting: light,
             house_colors: &colors,
             building_zshape: None,
+            model_frame: None,
         },
         &mut draws,
         frame.display_order(),
@@ -230,12 +253,12 @@ fn assert_shp_light_on_frame(
         .filter(|draw| draw.parent.id == id)
         .flat_map(|draw| &draw.pieces)
         .filter(|piece| piece.target == ObjectTexture::ShpPage(7));
-    let body = bodies.next().expect("ordinary Display emits the GI body");
-    assert!(bodies.next().is_none(), "one GI body per display entry");
-    assert_eq!(body.instance.palette_light.brightness(), expected);
-    for channel in body.instance.tint {
-        assert!((channel - expected as f32 / 1000.0).abs() < 0.000_001);
-    }
+    let body = bodies.next().map(|piece| piece.instance);
+    assert!(
+        bodies.next().is_none(),
+        "at most one GI body per display entry"
+    );
+    body
 }
 
 fn gi_render_fixture() -> (SimRuntime, u64) {
@@ -287,6 +310,28 @@ fn debug_first_frame_draws_infantry_from_the_published_snapshot() {
     // The first draw asks for Display order and emits the GI from the
     // host's snapshot, whose world has no live entity store.
     assert_shp_light_on_frame(presentation, host.frame().unwrap(), id, &light, 700);
+}
+
+#[test]
+fn a_camera_jump_draws_the_newly_visible_gi_on_the_same_lent_frame() {
+    use crate::app::match_runtime::sim_host::SimHost;
+
+    let (runtime, id) = gi_render_fixture();
+    let mut host = SimHost::default();
+    host.install(Some(runtime));
+    assert!(host.lend(Box::new(|_| Box::new(()))));
+    let runtime = host.presentation().unwrap();
+    let frame = host.frame().unwrap();
+    let [x, y] = frame.object(id).unwrap().pose.screen;
+    let light = CellLightGrid::new();
+    let distant = [x - 1450., y - 300.];
+    assert!(shp_body_in_view(runtime, frame, id, &light, distant, 1.0).is_none());
+    for (camera, zoom) in [([x - 400., y - 300.], 1.0), (distant, 0.5)] {
+        let body = shp_body_in_view(runtime, frame, id, &light, camera, zoom)
+            .expect("a pan or a wider view reveals the GI on the same simulation frame");
+        assert_eq!(body.palette_light.brightness(), 1200);
+    }
+    assert!(host.take_job_result().is_some());
 }
 
 #[test]
@@ -395,8 +440,14 @@ fn retail_gi_body_light_on_the_physical_hills_bridge_side() {
     // Original GI draw projected these physical flags/level into sparse
     // cells: top1000 + extra(-300) = observed700. This is not a claim about
     // native Hills traversal or the physical map's lighting scalar.
+    let frame = PresentationFrame::capture(&scene.runtime, &Default::default(), false);
     assert_eq!(
-        body_extra_light(actor, &scene.runtime.resources.rules, sim, Some(&cells)),
+        body_extra_light(
+            frame.object(id).unwrap(),
+            &scene.runtime.resources.rules,
+            sim,
+            Some(&cells),
+        ),
         -300
     );
     assert_shp_light(&mut scene.runtime, id, &CellLightGrid::new(), 700);

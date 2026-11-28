@@ -3006,19 +3006,8 @@ impl Simulation {
             // Phobos `[General] GatherWhenMCVDeploy=` skips the native
             // regroup (hook at `0x739920`) while keeping every earlier write.
             let gather = !rules.phobos() || rules.general.gather_when_mcv_deploy;
-            // A command-layer-driven house manages its own forces: the
-            // regroup overwrites every own ground unit's NavCom, which the
-            // external controller only observes a tick later. Every write
-            // above this gate stays.
-            // VERA: so does a house whose `Forces` a Wasm module claimed
-            // (RFC 0001 6i, `sim::ext_modules::claims`).
-            if gather
-                && !self
-                    .houses
-                    .get(&owner_id)
-                    .is_some_and(|house| house.command_driven())
-                && !self.module_claims(owner_id, vera20k_wasm_ext::DOMAIN_FORCES)
-            {
+            // A Wasm module that claims Forces owns this house's unit orders.
+            if gather && !self.module_claims(owner_id, vera20k_wasm_ext::DOMAIN_FORCES) {
                 self.move_ground_forces_to_base(owner_id, rules, frame_effects);
             }
         }

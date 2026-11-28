@@ -146,8 +146,6 @@ pub(crate) struct WolLobbyGlobals {
     pub(crate) limit_resolution: bool,
     /// `[0xB77E8C]`: the `0xCF` control that last notified, never reset.
     pub(crate) page_last_control: u16,
-    /// `[0xB76478..0xB76480]`: the in-match page's reply prefill window.
-    pub(crate) page_reply_window: crate::ui::wol_page::PageReplyWindow,
     /// The ladder table `0xB77D80` (`[0xB77E0C]` outside mode 3; `0x00780110`
     /// clears only the clan and mode-3 tables) and the high-score table
     /// `0xB76640`, keyed by the ASCII-lowered name the lookups use
@@ -3061,8 +3059,7 @@ fn dispatch(state: &mut AppState, action: WolLobbyAction) -> Option<ClientStep> 
             &mut state.match_state,
             &state.process_assets,
             &state.renderer,
-            &mut state.audio,
-            &mut state.persistence,
+            None,
         ),
         // 0x0078BF7D: mode 5 with return mode 4; event 6 then ends the
         // runner as Back does, and WOL_Main runs the Buddy List runner.

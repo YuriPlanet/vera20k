@@ -273,7 +273,7 @@ for house in &page[..count] {
 | `fire_weapon(shooter, slot)`、`fire_weapon_at(shooter, slot, at)`、`fire_weapon_at_cell(shooter, slot, at)` | 让 0 号或 1 号武器立刻开火；不能开火时（装填中、超出射程）为 `Refused` | v1 |
 | `launch_super_weapon(house, kind, at)` | 发射该所属方的超级武器 | v1 |
 | `spawn_anim(at, anim)` | 播放一个动画（`anim_id`） | v1 |
-| `attach_anim(target, anim)` | 在对象身上播放一次动画 | RFC 里是 later；这里已实现 |
+| `attach_anim(target, anim)`、`attach_anim_for(target, anim, frames)`、`detach_anim(target, anim)` | 在对象身上播放一次动画，或让它循环 `frames` 帧（负数：直到 `detach_anim`）；`detach_anim` 传 -1 移除本模块在它身上保持的全部动画 | preview |
 | `end_for(house, Outcome::Win \| Outcome::Lose)` | 让某个所属方结束对局 | v1 |
 | `set_score(house, n)`、`add_score(house, n)` | 分数 | v1 |
 | `log(line)` | `log` 的动作形式 | v1 |

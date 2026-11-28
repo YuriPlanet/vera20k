@@ -38,13 +38,21 @@ pub struct ListState {
     /// The pointer as the list last saw it: the arrow repeat steps the arrow
     /// under it (`0x0061D215..0x0061D2C8`).
     pointer: (i32, i32),
+    /// Android touch drag over the rows: the press position and the top it
+    /// began at. A finger drags the rows under it, as a modern touch list does.
+    touch_drag: Option<(i32, usize)>,
+    /// Android: the row a press landed on, selected on release only when the
+    /// press did not turn into a scroll.
+    pending_row: Option<usize>,
 }
 
 impl ListState {
     /// List and scrollbar geometry on the paint surface `list`.
     fn geometry(&self, list: Rect, metrics: ListMetrics) -> ShellListGeometry {
         match self.visible_rows {
-            Some(rows) => ShellListGeometry::with_visible_rows(list, self.rows, rows, self.top, metrics),
+            Some(rows) => {
+                ShellListGeometry::with_visible_rows(list, self.rows, rows, self.top, metrics)
+            }
             None => ShellListGeometry::new(list, self.rows, self.top, metrics),
         }
     }
@@ -150,8 +158,16 @@ pub(crate) fn geometry(tree: &Tree, node: NodeId, scale: ShellScale) -> Option<S
 /// follows to the new last row; any other keeps its rows in place, its top
 /// up by `dropped`. The top stays within the scroll range; no event (the
 /// host moved it, not the user).
-pub(crate) fn log_rows(tree: &mut Tree, node: NodeId, scale: ShellScale, rows: usize, dropped: usize) {
-    let Ok(rect) = tree.screen_rect(node) else { return };
+pub(crate) fn log_rows(
+    tree: &mut Tree,
+    node: NodeId,
+    scale: ShellScale,
+    rows: usize,
+    dropped: usize,
+) {
+    let Ok(rect) = tree.screen_rect(node) else {
+        return;
+    };
     let Ok(n) = tree.node_mut(node) else { return };
     let visible = match n.props.get(&Prop::VisibleRows) {
         Some(Value::Int(v)) => usize::try_from(*v).unwrap_or(0),
@@ -162,7 +178,10 @@ pub(crate) fn log_rows(tree: &mut Tree, node: NodeId, scale: ShellScale, rows: u
         _ => None,
     };
     let top = log_top(n.row_count(), top, visible, rows, dropped);
-    n.props.insert(Prop::RowCount, Value::Int(i32::try_from(rows).unwrap_or(i32::MAX)));
+    n.props.insert(
+        Prop::RowCount,
+        Value::Int(i32::try_from(rows).unwrap_or(i32::MAX)),
+    );
     n.props.insert(Prop::Top, Value::Int(top as i32));
 }
 
@@ -171,7 +190,9 @@ pub(crate) fn log_rows(tree: &mut Tree, node: NodeId, scale: ShellScale, rows: u
 /// last shown row the last; the top stays within the scroll range. No event
 /// (the host moved it).
 pub(crate) fn ensure_row_visible(tree: &mut Tree, node: NodeId, scale: ShellScale, row: usize) {
-    let Some(g) = geometry(tree, node, scale) else { return };
+    let Some(g) = geometry(tree, node, scale) else {
+        return;
+    };
     let Ok(n) = tree.node_mut(node) else { return };
     let top = n.int_prop(Prop::Top, 0).max(0) as usize;
     let visible = g.visible_rows.max(1);
@@ -183,7 +204,10 @@ pub(crate) fn ensure_row_visible(tree: &mut Tree, node: NodeId, scale: ShellScal
         top
     };
     let top = top.min(g.max_top);
-    n.props.insert(Prop::Top, Value::Int(i32::try_from(top).unwrap_or(i32::MAX)));
+    n.props.insert(
+        Prop::Top,
+        Value::Int(i32::try_from(top).unwrap_or(i32::MAX)),
+    );
 }
 
 /// Drops the list's scrollbar hold.
@@ -192,6 +216,8 @@ pub(crate) fn cancel_scroll(tree: &mut Tree, node: NodeId) {
         && let WidgetState::List(state) = &mut n.state
     {
         state.scroll.cancel();
+        state.touch_drag = None;
+        state.pending_row = None;
     }
 }
 
@@ -206,7 +232,10 @@ pub(crate) fn forget_press(tree: &mut Tree, node: NodeId) {
 
 pub(crate) fn press(ctx: &mut Ctx<'_>, node: NodeId, x: i32, y: i32) -> Capture {
     let (now, limits) = (ctx.now, ctx.double_click);
-    let multi = ctx.tree.node(node).is_ok_and(|n| n.bool_prop(Prop::MultiSelect, false));
+    let multi = ctx
+        .tree
+        .node(node)
+        .is_ok_and(|n| n.bool_prop(Prop::MultiSelect, false));
     let mut toggled = None;
     let capture = with_list(ctx, node, |s, rect, metrics, events| {
         s.pointer = (x, y);
@@ -222,26 +251,48 @@ pub(crate) fn press(ctx: &mut Ctx<'_>, node: NodeId, x: i32, y: i32) -> Capture 
         // current selection.
         if is_double_click(&mut s.last_press, now, x, y, limits) {
             if let Some(row) = s.selected {
-                events.push(UiEvent::ListDoubleClicked { node, row: row as u32 });
+                events.push(UiEvent::ListDoubleClicked {
+                    node,
+                    row: row as u32,
+                });
             }
             return Capture::No;
         }
         // 0x0061A948: a press selects the row under it (the host plays
         // GenericClick); presses below the last row are ignored.
         if let Some(row) = geometry.row_at(s.rows, s.top, x, y) {
-            match multi {
-                true => toggled = Some(row),
-                false => s.selected = Some(row),
+            if cfg!(target_os = "android") {
+                // A drag must not select the row it started on; the release
+                // decides, once the press has stayed put.
+                s.pending_row = Some(row);
+            } else {
+                match multi {
+                    true => toggled = Some(row),
+                    false => s.selected = Some(row),
+                }
+                events.push(UiEvent::ListSelected {
+                    node,
+                    row: row as u32,
+                });
             }
-            events.push(UiEvent::ListSelected { node, row: row as u32 });
+        }
+        // Let a drag over the rows scroll the list on Android.
+        if cfg!(target_os = "android") {
+            s.touch_drag = Some((y, s.top));
+            return Capture::Yes;
         }
         Capture::No
     })
     .unwrap_or(Capture::No);
     // LBS_MULTIPLESEL: the press toggles its row's selection.
-    if let Some(row) = toggled
-        && let Ok(n) = ctx.tree.node_mut(node)
-    {
+    if let Some(row) = toggled {
+        toggle_row(ctx.tree, node, row);
+    }
+    capture
+}
+
+fn toggle_row(tree: &mut Tree, node: NodeId, row: usize) {
+    if let Ok(n) = tree.node_mut(node) {
         let mut rows = selected_rows(n);
         match rows.iter().position(|known| *known == row) {
             Some(at) => {
@@ -252,7 +303,6 @@ pub(crate) fn press(ctx: &mut Ctx<'_>, node: NodeId, x: i32, y: i32) -> Capture 
         let rows = rows.iter().map(usize::to_string).collect();
         n.props.insert(Prop::SelectedRows, Value::Items(rows));
     }
-    capture
 }
 
 /// A `MultiSelect` list's selected rows, in the order they were selected.
@@ -268,19 +318,54 @@ pub(crate) fn drag(ctx: &mut Ctx<'_>, node: NodeId, x: i32, y: i32) {
     with_list(ctx, node, |s, rect, metrics, _| {
         s.pointer = (x, y);
         let geometry = s.geometry(rect, metrics);
+        if let Some((start_y, start_top)) = s.touch_drag {
+            let distance = i64::from(start_y) - i64::from(y);
+            if distance.abs() > 3 {
+                s.pending_row = None;
+                s.last_press = None;
+            }
+            let row_h = i64::from(metrics.row_h.max(1));
+            let rows = (distance + distance.signum() * (row_h / 2)) / row_h;
+            let top = (start_top as i64 + rows).clamp(0, geometry.max_top as i64) as usize;
+            s.top = top;
+            return;
+        }
         s.scroll.pointer_moved(geometry, &mut s.top, x, y);
     });
 }
 
 /// The release ends the scrollbar's capture and its repeat (0x0061D2D3).
 pub(crate) fn release(ctx: &mut Ctx<'_>, node: NodeId, _x: i32, _y: i32) {
-    with_list(ctx, node, |s, _, _, _| s.scroll.cancel());
+    let multi = ctx
+        .tree
+        .node(node)
+        .is_ok_and(|n| n.bool_prop(Prop::MultiSelect, false));
+    let pending = with_list(ctx, node, |s, _, _, events| {
+        s.touch_drag = None;
+        s.scroll.cancel();
+        let row = s.pending_row.take().filter(|row| *row < s.rows)?;
+        if !multi {
+            s.selected = Some(row);
+        }
+        events.push(UiEvent::ListSelected {
+            node,
+            row: row as u32,
+        });
+        Some(row)
+    })
+    .flatten();
+    if let Some(row) = pending.filter(|_| multi) {
+        toggle_row(ctx.tree, node, row);
+    }
 }
 
 /// The wheel over the list; true when it scrolled. Three rows a notch, as
 /// the Mods and Keyboard pages scroll, or the node's `WheelStep`.
 pub(crate) fn wheel(ctx: &mut Ctx<'_>, node: NodeId, lines: i32) -> bool {
-    let step = ctx.tree.node(node).map_or(3, |n| n.int_prop(Prop::WheelStep, 3));
+    let step = ctx
+        .tree
+        .node(node)
+        .map_or(3, |n| n.int_prop(Prop::WheelStep, 3));
     with_list(ctx, node, |s, rect, metrics, _| {
         let max_top = s.geometry(rect, metrics).max_top as i64;
         let top = (s.top as i64 - i64::from(lines) * i64::from(step)).clamp(0, max_top) as usize;
@@ -415,9 +500,19 @@ mod tests {
         assert_eq!(g.poll(600), None);
         assert_eq!(g.get(list, Prop::Top).unwrap(), Some(&Value::Int(2)));
         // Losing the pointer lets go of a hold as the release does.
-        g.input(InputEvent::PointerDown { x, y, button: MouseButton::Left }, 700);
+        g.input(
+            InputEvent::PointerDown {
+                x,
+                y,
+                button: MouseButton::Left,
+            },
+            700,
+        );
         g.cancel_pointer();
-        assert_eq!((g.poll(1300), g.list_view(list).unwrap().pressed), (None, None));
+        assert_eq!(
+            (g.poll(1300), g.list_view(list).unwrap().pressed),
+            (None, None)
+        );
     }
 
     /// A transcript never scrolled shows its end and follows new rows; one
@@ -460,7 +555,10 @@ mod tests {
         g.input(InputEvent::PointerMove { x: 900, y: 900 }, 0);
         g.drain_events();
         assert!(g.wheel_list(list, -2, 0));
-        assert_eq!(g.drain_events(), vec![UiEvent::Scrolled { node: list, top: 2 }]);
+        assert_eq!(
+            g.drain_events(),
+            vec![UiEvent::Scrolled { node: list, top: 2 }]
+        );
         assert!(g.wheel_list(list, 5, 0));
         assert!(!g.wheel_list(list, 1, 0), "already at the top");
         g.set(list, Prop::Visible, Value::Bool(false)).unwrap();
@@ -474,7 +572,10 @@ mod tests {
         let (mut g, list) = list_page(Value::Int(3));
         g.set(list, Prop::MultiSelect, Value::Bool(true)).unwrap();
         let (row0, row1) = (20 + 5, 20 + 19 + 5);
-        assert_eq!(click(&mut g, 50, row1, 0), vec![UiEvent::ListSelected { node: list, row: 1 }]);
+        assert_eq!(
+            click(&mut g, 50, row1, 0),
+            vec![UiEvent::ListSelected { node: list, row: 1 }]
+        );
         click(&mut g, 50, row0, 1000);
         assert_eq!(g.selected_rows(list), [1, 0]);
         click(&mut g, 50, row1, 2000);
@@ -488,15 +589,40 @@ mod tests {
         g.input(InputEvent::PointerMove { x: 50, y: 50 }, 0);
         g.drain_events();
         assert!(
-            !g.input(InputEvent::Wheel { lines: 1, x: 0, y: 0 }, 0).consumed,
+            !g.input(
+                InputEvent::Wheel {
+                    lines: 1,
+                    x: 0,
+                    y: 0
+                },
+                0
+            )
+            .consumed,
             "already at the top"
         );
-        assert!(g.input(InputEvent::Wheel { lines: -1, x: 0, y: 0 }, 0).consumed);
+        assert!(
+            g.input(
+                InputEvent::Wheel {
+                    lines: -1,
+                    x: 0,
+                    y: 0
+                },
+                0
+            )
+            .consumed
+        );
         assert_eq!(
             g.drain_events(),
             vec![UiEvent::Scrolled { node: list, top: 3 }]
         );
-        g.input(InputEvent::Wheel { lines: -100, x: 0, y: 0 }, 0);
+        g.input(
+            InputEvent::Wheel {
+                lines: -100,
+                x: 0,
+                y: 0,
+            },
+            0,
+        );
         assert_eq!(g.get(list, Prop::Top).unwrap(), Some(&Value::Int(47)));
     }
 }

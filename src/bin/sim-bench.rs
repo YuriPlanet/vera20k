@@ -98,7 +98,9 @@
 //!
 //! `--presentation-frame` brings the copy of the world without its objects
 //! up to date after every frame, as the client's simulation host does for
-//! drawing (docs/sim-thread.md), and counts it in the frame's time.
+//! drawing (docs/sim-thread.md), and counts it in the frame's time. The
+//! `presentation_copy_mean_ms` line reports the copy's own mean over the
+//! measured window, so two builds' copies compare in one run.
 //!
 //! Idle objects sleep as in a real match (`sim::world::idle_sleep`), and
 //! steady objects' AI visits are counted (`sim::world::steady_ai`):
@@ -761,6 +763,8 @@ struct Bench<'a> {
     /// `--presentation-frame`: whether each frame keeps a copy of the world.
     keep_frame: bool,
     frame: Option<SimRuntime>,
+    /// Time spent inside `--presentation-frame`'s copy, one per frame.
+    copy_times: Vec<Duration>,
     paths: PathTotals,
     /// `--watchers`: the match's defeats and decision, reported as they happen.
     watch: Option<Watch>,
@@ -897,9 +901,11 @@ impl Frames for Bench<'_> {
             // world without its objects, with the local player's fog, replaces
             // the previous tick's copy, inside the frame's time. The objects'
             // draw records are the client's and are not counted here.
+            let started = Instant::now();
             let viewer = self.runtime.simulation.session().current_house();
             let reuse = self.frame.take().map(|frame| frame.simulation);
             self.frame = Some(self.runtime.presentation_copy(viewer, reuse));
+            self.copy_times.push(started.elapsed());
         }
         Ok(checksum)
     }
@@ -1287,13 +1293,14 @@ fn main() -> Result<(), String> {
     #[cfg(feature = "telemetry")]
     runtime.simulation.set_frame_profiling(args.frame_profile);
     // A failed frame still reports the frames before it, then fails the run.
-    let (measured, frames, paths) = {
+    let (measured, frames, paths, copy) = {
         let mut bench = Bench {
             runtime: &mut *runtime,
             plan: &mut plan,
             tick_ms,
             keep_frame: args.presentation_frame,
             frame: None,
+            copy_times: Vec::new(),
             paths: PathTotals::default(),
             watch: (args.watchers > 0).then(Watch::default),
         };
@@ -1304,7 +1311,7 @@ fn main() -> Result<(), String> {
             args.hash_every,
             args.frame_hashes.is_some(),
         );
-        (measured, frames, bench.paths)
+        (measured, frames, bench.paths, bench.copy_times)
     };
     let live_at_end = runtime.simulation.entities().len();
     let csv_written = args.csv.as_ref().map_or(Ok(()), |path| {
@@ -1315,6 +1322,15 @@ fn main() -> Result<(), String> {
             .map_err(|error| format!("{}: {error}", path.display()))
     });
     report(&mut std::io::stdout().lock(), &measured, warmup).map_err(|error| error.to_string())?;
+    let steady_copy: Vec<Duration> = copy.iter().skip(warmup as usize).copied().collect();
+    if !steady_copy.is_empty() {
+        let total: Duration = steady_copy.iter().sum();
+        println!(
+            "presentation_copy_mean_ms={:.3} frames={}",
+            total.as_secs_f64() * 1000.0 / steady_copy.len() as f64,
+            steady_copy.len()
+        );
+    }
     if paths.passes > 0 {
         println!(
             "path_batch passes={} waiting={} answered={} left_out={} left_out_passes={} \
@@ -1350,7 +1366,10 @@ fn main() -> Result<(), String> {
     println!("final_hash={final_hash:016x}");
     let (asleep, counted) = runtime.simulation.idle_sleep_counts();
     let steady = runtime.simulation.steady_ai_visits();
-    println!("idle_sleep asleep_now={asleep} visits_counted={counted} steady_ai_visits={steady}");
+    let locomotor_rests = runtime.simulation.locomotor_rest_visits();
+    println!(
+        "idle_sleep asleep_now={asleep} visits_counted={counted} steady_ai_visits={steady} locomotor_rests={locomotor_rests}"
+    );
     if let Plan::Battle(battle) = &plan {
         println!(
             "battle fewest_mobile={} lost={} objects_made={}",

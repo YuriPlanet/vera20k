@@ -533,6 +533,7 @@ pub(crate) fn build_bridge_shadow_instances(
                 entry.rx,
                 entry.ry,
                 fog_of_war,
+                Some(terrain),
             ))
     };
     let overlays = &match_state.match_presentation.overlays;
@@ -617,6 +618,7 @@ mod tests {
                 shp: "CTHSE05.SHP".into(),
                 body_frame: 3,
                 shadow_frame: 7,
+                picture: None,
             },
         );
         let mut grid = crate::sim::overlay_grid::OverlayGrid::new(8, 8);

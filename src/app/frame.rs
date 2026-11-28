@@ -7,7 +7,7 @@ use super::diagnostics::state::DiagnosticsState;
 use super::frontend::state::FrontendState;
 use super::input::precedence::{ModalPage, ScreenPage};
 use super::loading::transitions;
-use super::match_runtime::frame_pacer::LocalFramePacer;
+use super::match_runtime::frame_pacer::{LocalFramePacer, MotionInterval};
 use super::match_runtime::redraw_gate::ProbeVerdict;
 use super::match_runtime::state::MatchState;
 use super::persistence::PersistenceState;
@@ -56,6 +56,43 @@ pub(super) enum FramePass {
     /// Service the match, then draw only if the presented picture no longer
     /// stands (`match_runtime::redraw_gate`).
     Probe,
+}
+
+/// The picture still visible while a worker owns the next tick uses its own
+/// committed interval. Exact captures and frozen or partial worlds draw the
+/// captured pose straight away.
+fn unit_draw_clock(
+    platform: &PlatformState,
+    match_state: &MatchState,
+    enabled: bool,
+    exact: bool,
+) -> (u32, Option<MotionInterval>) {
+    let Some(runtime) = match_state.sim_runtime.runtime() else {
+        return (0, None);
+    };
+    let sim = &runtime.simulation;
+    let frame = sim.session().binary_frame();
+    let interval = if enabled
+        && !exact
+        && !match_state.paused()
+        && !sim.session().scenario_paused()
+        && !match_state.frame_stopped
+        && !sim.pending_network_wait()
+        && sim.pending_network_failure().is_none()
+        && match_state.scenario_exit.is_none()
+        && match_state.scenario_outcome.is_none()
+        && !match_state
+            .live_network
+            .as_ref()
+            .is_some_and(|live| live.restoring_match())
+        && (!match_state.match_diagnostics.is_replay_playback()
+            || match_state.match_diagnostics.playback_can_advance())
+    {
+        platform.frame_pacer.motion_interval(frame)
+    } else {
+        None
+    };
+    (frame, interval)
 }
 
 /// The composition's full-height battlefield/command-bar region. Native
@@ -1359,7 +1396,20 @@ impl App {
         // still follows exactly one match service. The picture is judged by
         // the clock before the draw (`redraw_gate::PictureClock`).
         let picture_clock = crate::app::match_runtime::redraw_gate::PictureClock::now();
+        let (motion_frame, motion_clock) = unit_draw_clock(
+            &state.platform,
+            &state.match_state,
+            state.persistence.options_profile.render_interpolation,
+            focus_frozen || shell_capture.is_some() || hidden_run.is_some(),
+        );
         let verdict = (pass == FramePass::Probe).then(|| {
+            let phase = motion_clock.map(|span| span.fraction(picture_clock.at));
+            let repeat_fits = motion_clock.is_some_and(|span| {
+                span.repeat_fits(
+                    state.platform.redraw_gate.picture_interval(),
+                    state.platform.frame_pacer.draw_work(),
+                )
+            });
             state.platform.redraw_gate.probe_verdict(
                 crate::app::match_runtime::redraw_gate::still_frame(
                     &state.platform,
@@ -1373,6 +1423,14 @@ impl App {
                     picture_clock,
                 ),
                 picture_clock.at,
+                // If a tick stalls, land on its confirmed endpoint even
+                // when intervening redraws exceeded the work budget.
+                (repeat_fits || phase.unwrap_or(1.) == 1.)
+                    && state
+                        .match_state
+                        .match_presentation
+                        .unit_motion
+                        .needs_redraw(motion_frame, phase),
             )
         });
         let unchanged = verdict == Some(ProbeVerdict::Stands);
@@ -1384,7 +1442,7 @@ impl App {
                 return Ok(FrameRenderOutcome::Unchanged);
             }
             Some(ProbeVerdict::DrawWaits) => return Ok(FrameRenderOutcome::Unchanged),
-            Some(ProbeVerdict::Draw) | None => {}
+            Some(ProbeVerdict::Draw | ProbeVerdict::DrawMotion) | None => {}
         }
         // Judged after the service: a frame that arrived or came due while
         // it ran may still go before this draw.
@@ -1921,14 +1979,26 @@ impl App {
                 );
             }
             GameScreen::InGame => {
+                // Sample after acquiring the surface: VSync may have waited
+                // nearly a refresh since the probe judged the picture.
+                state.match_state.match_presentation.unit_motion.begin_draw(
+                    motion_frame,
+                    motion_clock.map(|span| span.fraction(Instant::now())),
+                    state.match_state.input.zoom_level,
+                );
                 //53B460 copies the already-composed surface, before this
                 //frame's world replaces it. The effect owns the retained copy.
-                let chrono_tactical = crate::app::input::camera::tactical_viewport_px(
-                    &state.platform,
-                    &state.renderer,
+                //The composition is at the window's pixels
+                //(`docs/zoom-one-pass.md`), and so is the battlefield's rect.
+                let chrono_tactical = state.renderer.frame_to_composition(
                     &state.frontend.screen,
-                    &state.match_state.match_presentation,
-                    &state.persistence,
+                    crate::app::input::camera::tactical_viewport_px(
+                        &state.platform,
+                        &state.renderer,
+                        &state.frontend.screen,
+                        &state.match_state.match_presentation,
+                        &state.persistence,
+                    ),
                 );
                 state
                     .match_state
@@ -1938,12 +2008,7 @@ impl App {
                         &state.renderer.gpu,
                         &mut encoder,
                         state.renderer.game_frame_texture(),
-                        [
-                            chrono_tactical.0,
-                            chrono_tactical.1,
-                            chrono_tactical.2,
-                            chrono_tactical.3,
-                        ],
+                        chrono_tactical,
                     );
                 let times = render::GameRenderTimes {
                     radar_ms: crate::app::diagnostics::state::radar_presentation_ms(
@@ -1957,7 +2022,9 @@ impl App {
                 // online, ThrottleFrame also draws while it waits
                 // (`tactical_composite`). Captures and the actor observer
                 // record every draw's composite.
-                let cadence = if shell_capture.is_some()
+                let cadence = if verdict == Some(ProbeVerdict::DrawMotion) {
+                    crate::app::presentation::tactical_composite::CompositeCadence::PerMainTick
+                } else if shell_capture.is_some()
                     || hidden_run.is_some()
                     || state.match_state.live_network.is_some()
                     || state
@@ -1973,44 +2040,21 @@ impl App {
                 // minimap keeps its own radar-terrain backlog, so the frame
                 // moves the simulation's newly marked cells there first.
                 Self::drain_radar_terrain_marks(&mut state.match_state);
-                let game_output = if state.renderer.upscale_pass.is_some() {
-                    // Render game to intermediate texture, then upscale to swapchain.
-                    let up = state.renderer.upscale_pass.as_ref().unwrap();
+                let game_output = if let Some(up) = state.renderer.upscale_pass.as_ref() {
+                    // The frame's rect in the window: the game draws its
+                    // composition at the window's pixels with that rect's
+                    // depth (`docs/zoom-one-pass.md`), which the zoom pass
+                    // then puts between the bars.
                     let game_depth = up.depth_view().clone();
                     let saved_depth = std::mem::replace(&mut state.renderer.depth_view, game_depth);
                     let result = render::render_game(state, &mut encoder, times, cadence);
                     state.renderer.depth_view = saved_depth;
                     let render_output = result?;
-                    state.renderer.copy_game_frame_to(
+                    let renderer = &state.renderer;
+                    renderer.upscale_pass.as_ref().unwrap().present(
                         &mut encoder,
-                        state
-                            .renderer
-                            .upscale_pass
-                            .as_ref()
-                            .unwrap()
-                            .color_texture(),
-                    );
-                    state
-                        .renderer
-                        .upscale_pass
-                        .as_ref()
-                        .unwrap()
-                        .draw(&mut encoder, &view);
-                    render::draw_world_window_copy(
-                        &state.platform,
-                        &state.renderer,
-                        &state.frontend.screen,
-                        &state.match_state.match_presentation,
-                        &state.persistence,
-                        &mut encoder,
-                        &view,
-                    );
-                    crate::app::presentation::sidebar_surface::draw_window_copy(
-                        &state.renderer,
-                        &state.frontend.screen,
-                        &state.match_state.match_presentation,
-                        &mut encoder,
-                        &view,
+                        renderer.game_frame_texture(),
+                        &output.texture,
                     );
                     crate::app::presentation::window_ui::draw_battlefield(
                         &state.platform,
@@ -2241,10 +2285,8 @@ impl App {
             &output.texture,
         );
         // Text drawn in the window (`window_ui`) is not in the frame the
-        // screenshot retains, and neither is the wheel-zoomed battlefield's
-        // window copy: this frame's go over its copy, the battlefield only
-        // when this frame drew it (not under an in-game menu). A zoomed frame
-        // is always copied, being smaller than the window.
+        // screenshot retains: this frame's goes over its copy. A zoomed frame
+        // is always copied, being the frame's rect of the window.
         let window_text = state.renderer.window_ui.drew_text();
         let previous_composition = state
             .renderer
@@ -2263,17 +2305,6 @@ impl App {
             .as_ref()
             .and_then(|previous| previous.copy())
         {
-            if game_render_output.is_some() {
-                render::draw_world_window_copy(
-                    &state.platform,
-                    &state.renderer,
-                    &state.frontend.screen,
-                    &state.match_state.match_presentation,
-                    &state.persistence,
-                    &mut encoder,
-                    &copy.create_view(&Default::default()),
-                );
-            }
             if window_text {
                 state
                     .renderer
@@ -2338,6 +2369,32 @@ impl App {
         if let Some(render_output) = &game_render_output
             && screen_page == ScreenPage::Battlefield
         {
+            state
+                .match_state
+                .match_presentation
+                .unit_motion
+                .commit_presented();
+            if let Some(cost) = &mut state.frontend.external_progress.frame_cost {
+                cost.battlefield_presented(
+                    presented_at,
+                    &state.match_state.match_presentation.unit_motion,
+                    state.renderer.vxl_pose_frame_cache.borrow().buffered_draws,
+                    || {
+                        let frame = state.match_state.sim_runtime.frame()?;
+                        Some(
+                            frame
+                                .objects()
+                                .filter(|object| {
+                                    object.category()
+                                        != crate::map::entities::EntityCategory::Structure
+                                        && object.is_object_alive()
+                                        && !object.in_limbo()
+                                })
+                                .count(),
+                        )
+                    },
+                );
+            }
             state
                 .match_state
                 .match_presentation

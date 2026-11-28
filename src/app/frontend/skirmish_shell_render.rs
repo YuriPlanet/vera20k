@@ -2031,9 +2031,8 @@ mod wol_lobby;
 mod wol_login;
 mod wol_page;
 mod wol_quick_match;
-/// Android: VERA's send key in `rect`, drawn with the online room's emote
-/// button art (`0x3ED`'s released image, as `Picture::Emote` draws it).
-#[cfg(target_os = "android")]
+/// VERA's send key in `rect`, drawn with the online room's emote button art
+/// (`0x3ED`'s released image, as `Picture::Emote` draws it).
 fn push_chat_send_key(
     controls: &mut Vec<crate::render::batch::SpriteInstance>,
     atlas: &crate::render::skirmish_shell_chrome::SkirmishShellChromeAtlas,
@@ -2068,8 +2067,8 @@ pub(crate) use wol_lobby::{
 };
 pub(crate) use wol_login::{paint_wol_account_form, paint_wol_login_children};
 pub(crate) use wol_page::{
-    in_match_page_draw, paint_wol_add_buddy, paint_wol_page_dialog, paint_wol_page_received,
-    paint_wol_verify,
+    paint_wol_add_buddy, paint_wol_page_dialog, paint_wol_page_received, paint_wol_verify,
+    surrender_draw,
 };
 pub(crate) use wol_quick_match::paint_wol_quick_match_children;
 mod coop_score;

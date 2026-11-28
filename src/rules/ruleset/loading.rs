@@ -1589,6 +1589,16 @@ impl RuleSet {
             crate::rules::skirmish_colors::SkirmishColorMode::from_ini(ini, &mut color_schemes);
         let house_color_ramps =
             crate::rules::house_colors::HouseColorRamps::from_schemes(&color_schemes);
+        // VERA's team-colour view (Alt+T) draws enemies by team; the palette
+        // comes from the same lobby colours, so a mod's [Colors] decides it.
+        let enemy_team_palette = crate::rules::team_colors::EnemyTeamPalette::from_rules(
+            skirmish_color_mode,
+            &color_schemes,
+        );
+        log::info!(
+            "VERA team colours: {} warm colour(s) for enemy teams",
+            enemy_team_palette.entries().len()
+        );
         let color_add = processed.color_add_state().0.clone();
 
         // Step 1: Parse each type registry and load object sections.
@@ -1943,6 +1953,7 @@ impl RuleSet {
             side_indices: country_side_registry.side_indices,
             country_sides: country_side_registry.country_sides,
             color_schemes,
+            enemy_team_palette,
             house_color_ramps,
             color_add,
             production,

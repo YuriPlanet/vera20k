@@ -57,8 +57,64 @@ pub struct VxlPoseFrameCache {
     image_models: BTreeMap<String, ImageModel>,
     /// Stable images in an explicit raster style, with their pool bytes.
     stable_styles: HashMap<(UnitSpriteKey, bool), Option<(UnitSpriteEntry, u32)>>,
+    /// Stable native depth programs use the same immutable models and VPL
+    /// as the pose pages. The loader resets them together on asset changes.
+    buffered_bodies: BufferedBodies,
+    /// This picture's use of the buffered draw path, for the spawn benchmark.
+    pub(crate) buffered_draws: BufferedDraws,
     /// The GPU raster that draws the images it admits.
     gpu: VoxelGpu,
+}
+
+/// The native byte depth stays available for the next object's draw. With
+/// a clean crop the existing atlas supplies the colour. A stale crop needs
+/// a new GPU image made from the stores this depth map actually accepted.
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, serde::Serialize)]
+pub(crate) struct BufferedDraws {
+    pub(crate) atlas: usize,
+    pub(crate) gpu: usize,
+    pub(crate) cpu: usize,
+}
+
+type BufferedBody = (
+    crate::render::vxl_raster::BufferedVoxelRaster,
+    Option<[i32; 4]>,
+);
+
+#[derive(Default)]
+struct BufferedBodies {
+    entries: crate::util::lookup_hash::LookupMap<UnitSpriteKey, Option<BufferedBody>>,
+    bytes: usize,
+}
+
+impl BufferedBodies {
+    /// Bound both geometry and negative lookups on maps with many mod units
+    /// or HVA frames. The data can be rebuilt from the model at any time.
+    const MAX_BYTES: usize = crate::render::vxl_raster::BufferedVoxelRaster::MAX_BYTES;
+    const MAX_KEYS: usize = 256;
+
+    fn get(
+        &mut self,
+        key: &UnitSpriteKey,
+        prepare: impl FnOnce() -> Option<BufferedBody>,
+    ) -> Option<&BufferedBody> {
+        if !self.entries.contains_key(key) {
+            let result = prepare().filter(|(raster, _)| {
+                let [_, _, x, y, w, h] = raster.rect();
+                // Every accepted store comes from at least one four-byte instruction.
+                raster.bytes() <= Self::MAX_BYTES
+                    && GpuImage::can_buffer([x, y, w, h], raster.bytes() / size_of::<u32>())
+            });
+            let bytes = result.as_ref().map_or(0, |(raster, _)| raster.bytes());
+            if self.entries.len() >= Self::MAX_KEYS || self.bytes + bytes > Self::MAX_BYTES {
+                self.entries.clear();
+                self.bytes = 0;
+            }
+            self.bytes += bytes;
+            self.entries.insert(key.clone(), result);
+        }
+        self.entries.get(key)?.as_ref()
+    }
 }
 
 struct PosePage {
@@ -68,9 +124,10 @@ struct PosePage {
     /// Holds stable raster-style variants for the whole match.
     retained: bool,
     texture: Option<BatchTexture>,
-    /// VERA's HD art page: the images' [`crate::render::vxl_raster::VxlHd`]
-    /// pictures at twice the resolution, 0 where an image has none. Made with
-    /// the first HD picture placed on the page.
+    /// VERA-only, experimental (`docs/zoom-one-pass.md`): the images'
+    /// [`crate::render::vxl_raster::VxlHd`] pictures at twice the resolution,
+    /// 0 where an image has none. Made with the first HD picture placed on
+    /// the page and bound beside it (`BatchRenderer::bind_unit_atlas_hd`).
     hd_texture: Option<wgpu::TextureView>,
     /// The images on the page: this frame's, or a retained page's.
     images: Vec<PageImage>,
@@ -243,6 +300,13 @@ impl VxlPoseFrameCache {
             let rendered;
             let source = match &image.pixels {
                 PagePixels::Cpu { indices, .. } => indices,
+                PagePixels::Gpu {
+                    image: gpu @ GpuImage::Buffered { .. },
+                    ..
+                } => {
+                    rendered = gpu.buffered_indices()?;
+                    &rendered
+                }
                 PagePixels::Gpu { pose, .. } => {
                     let (key, tilt) = pose.as_ref()?;
                     let vpl = self.vpl.as_ref().and_then(Option::as_ref);
@@ -321,6 +385,7 @@ impl VxlPoseFrameCache {
     /// raster-style variants and page allocations. No live instance survives
     /// this presentation boundary.
     pub fn begin_frame(&mut self) {
+        self.buffered_draws = BufferedDraws::default();
         self.unit_poses.clear();
         for image in self.image_models.values_mut() {
             image.poses.clear();
@@ -399,6 +464,61 @@ impl VxlPoseFrameCache {
             });
         self.stable_styles.insert(style_key, image);
         image
+    }
+
+    /// An unkeyed UseBuffer draw has no native image-pool byte count. Keep
+    /// the serial depth update (0x00757980 / 0x00757BF0) and let the GPU
+    /// supply the colour for stable single-part bodies. Other model layouts
+    /// and the separate HD picture keep the existing live raster.
+    pub(crate) fn uncached_body(
+        &mut self,
+        assets: &AssetManager,
+        rules: Option<&RuleSet>,
+        key: &UnitSpriteKey,
+        depth: &mut crate::render::vxl_raster::DepthMap,
+        stale: bool,
+    ) -> Option<UnitSpriteEntry> {
+        if !crate::render::vxl_raster::hd_poses() && !crate::render::vxl_raster::hd_voxels() {
+            let prepared = self.buffered_bodies.get(key, || {
+                let vpl = load_vpl(&mut self.vpl, assets);
+                let model = self
+                    .models
+                    .entry(key.type_id.clone())
+                    .or_insert_with(|| UnitModel::load(assets, &key.type_id, rules))
+                    .as_ref()?;
+                model.buffered_body(key, vpl)
+            });
+            if let Some((raster, bounds)) = prepared {
+                if !stale {
+                    raster.apply(depth, None);
+                    self.buffered_draws.atlas += 1;
+                    return None;
+                }
+                let [ox, oy, x, y, w, h] = raster.rect();
+                let mut stores = Vec::new();
+                raster.apply(depth, Some(&mut stores));
+                let image = GpuImage::buffered([x, y, w, h], stores);
+                let entry = place_on(
+                    &mut self.pages,
+                    PagePixels::Gpu { image, pose: None },
+                    [w as u32, h as u32],
+                    [ox as f32, oy as f32],
+                    *bounds,
+                    false,
+                    None,
+                )?;
+                self.buffered_draws.gpu += 1;
+                return Some(entry);
+            }
+        }
+        self.buffered_draws.cpu += 1;
+        let page = if stale {
+            LivePage::Frame
+        } else {
+            LivePage::None
+        };
+        self.render_live(assets, rules, key, None, depth, page)
+            .map(|(entry, _)| entry)
     }
 
     /// A depth-tested render of a stable key (`tilt` None) or a posed body
@@ -569,7 +689,11 @@ impl VxlPoseFrameCache {
                     PagePixels::Gpu { .. } => true,
                 };
                 if fresh {
+                    let had_hd = page.hd_texture.is_some();
                     write_hd(device, queue, &mut page.hd_texture, image);
+                    if !had_hd && let Some(hd) = &page.hd_texture {
+                        batch.bind_unit_atlas_hd(device, texture, hd);
+                    }
                 }
             }
         }
@@ -601,11 +725,6 @@ impl VxlPoseFrameCache {
 
     pub fn page_texture(&self, page: usize) -> Option<&BatchTexture> {
         self.pages.get(page)?.texture.as_ref()
-    }
-
-    /// VERA's HD art page of `page` ([`PosePage::hd_texture`]).
-    pub(crate) fn hd_page(&self, page: usize) -> Option<&wgpu::TextureView> {
-        self.pages.get(page)?.hd_texture.as_ref()
     }
 
     /// [`Self::encode`] alone in a submission, for a test that reads the
@@ -684,7 +803,7 @@ fn write_padded(
     crate::render::atlas_growth::write_texels(queue, texture, [x, y], padded, 1, &texels);
 }
 
-/// VERA's HD art page for `image`: its HD picture, or zeros over its
+/// The HD page for `image`: its HD picture, or zeros over its
 /// rectangle where it has none, so an earlier image's picture never shows.
 /// Nothing until a page holds an HD picture.
 fn write_hd(
@@ -876,6 +995,65 @@ mod tests {
             slope_type: 0,
             barrel_pitch: 0,
         }
+    }
+
+    #[test]
+    fn black_hawk_uses_atlas_colour_then_paints_a_turn_against_the_live_depth() {
+        let Some(battle) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+            return;
+        };
+        let Some((_, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        let mut key = ground_key(crate::rules::voxel_frame_catalog::VxlLayer::Composite);
+        key.type_id = "SHAD".into();
+        let rules = Some(&battle.rules);
+        let mut cached = VxlPoseFrameCache::default();
+        let mut original = VxlPoseFrameCache::default();
+        let mut depth = Box::new([0; 65536]);
+        let mut expected_depth = depth.clone();
+
+        assert!(
+            cached
+                .uncached_body(&assets, rules, &key, &mut depth, false)
+                .is_none()
+        );
+        original.render_live(
+            &assets,
+            rules,
+            &key,
+            None,
+            &mut expected_depth,
+            LivePage::None,
+        );
+        assert!(depth.iter().any(|&z| z != 0));
+        assert!(depth == expected_depth);
+        assert_eq!(cached.buffered_draws.atlas, 1);
+
+        key.facing = key.facing.wrapping_add(8);
+        let clipped = cached
+            .uncached_body(&assets, rules, &key, &mut depth, true)
+            .unwrap();
+        let (reference, _) = original
+            .render_live(
+                &assets,
+                rules,
+                &key,
+                None,
+                &mut expected_depth,
+                LivePage::Frame,
+            )
+            .unwrap();
+        assert!(depth == expected_depth);
+        assert_eq!(clipped.pixel_size, reference.pixel_size);
+        assert_eq!(
+            (clipped.offset_x, clipped.offset_y),
+            (reference.offset_x, reference.offset_y)
+        );
+        let pixels = cached.texels(clipped);
+        assert!(pixels.iter().any(|&c| c != 0));
+        assert_eq!(pixels, original.texels(reference));
+        assert_eq!(cached.buffered_draws.gpu, 1);
     }
 
     fn ground_pose(roll: f32) -> PoseTilt {

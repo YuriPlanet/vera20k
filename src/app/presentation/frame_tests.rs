@@ -20,7 +20,9 @@ fn the_draw_record_stays_under_its_ceiling() {
 // 824 since an SHP Unit's draw reads three more of its fields: the body's
 // current facing (`shp_body_facing`), the Foot occupation enable and
 // IsOnCarryall. Four bytes of state, one alignment step of the record.
-const CEILING: usize = 824;
+// 832 since the modules' looks and status amounts (`ModuleFacts`):
+// one pointer, the facts themselves boxed for the few objects that have any.
+const CEILING: usize = 832;
 
 /// A record is found by its stable id and a missing id is not.
 #[test]

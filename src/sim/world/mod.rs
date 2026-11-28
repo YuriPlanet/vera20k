@@ -101,6 +101,7 @@ mod alpha_shape;
 mod ion_blast;
 mod spotlight;
 pub(crate) use house_base::HouseBaseState;
+pub use ion_blast::RetainedDominatorRipples;
 pub use spotlight::BuildingSpotlight;
 mod infantry_death;
 mod jumpjet_cruise;

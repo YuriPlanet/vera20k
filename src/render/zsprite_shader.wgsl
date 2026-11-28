@@ -81,10 +81,11 @@ fn shp_vertex(idx: u32, instance: Instance) -> VertexOutput {
     );
 
     let local: vec2f = quad_pos[idx];
-    let is_zoomed: bool = abs(camera.zoom - 1.0) >= 0.001;
-    // Match the exact source scale used by the other tactical blitters.
-    let raw_pos: vec2f = (instance.position + local * instance.size - camera.camera_pos) * camera.zoom;
-    let pixel_pos: vec2f = select(raw_pos, floor(raw_pos + vec2f(0.5, 0.5)), !is_zoomed);
+    // Snap the corners to whole world pixels, then scale by the zoom: each
+    // world pixel is one zoom-sized block (docs/zoom-one-pass.md), the same
+    // rounding as the other tactical blitters; at zoom 1 the plain rounding.
+    let pixel_pos: vec2f = world_block_corner(instance.position + local * instance.size
+        - camera.camera_pos);
 
     let clip_x: f32 = (pixel_pos.x / camera.screen_size.x) * 2.0 - 1.0;
     let clip_y: f32 = 1.0 - (pixel_pos.y / camera.screen_size.y) * 2.0;

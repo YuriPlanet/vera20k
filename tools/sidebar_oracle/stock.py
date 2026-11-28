@@ -19,8 +19,14 @@ def mix(data):
         # Only encrypted indexes need cryptography; importing this module does not.
         from cryptography.hazmat.primitives.ciphers import Cipher,modes
         from cryptography.hazmat.decrepit.ciphers.algorithms import Blowfish
-        b=data[4:84][::-1];n=int('51bcda086d39fce4565160d651713fa2e8aa54fa6682b04aabdd0e6af8b0c1e6d1fb4f3daa437f15',16)
-        key=((pow(int.from_bytes(b[:40],'big'),65537,n)<<312)+pow(int.from_bytes(b[40:],'big'),65537,n)).to_bytes(80,'big')[-56:][::-1]
+        modulus = int('51bcda086d39fce4565160d651713fa2e8aa54fa6682b04aabdd0e6af8b0c1e6d1fb4f3daa437f15', 16)
+        # PKey::Decrypt @ 0x632870 copies 39 little-endian output bytes per block.
+        plain = bytearray()
+        for offset in (4, 44):
+            block = int.from_bytes(data[offset:offset + 40], 'little')
+            value = pow(block, 65537, modulus) if block < modulus else 1
+            plain.extend(value.to_bytes(40, 'little')[:39])
+        key = bytes(plain[:56])
         def dec(b):return Cipher(Blowfish(key),modes.ECB()).decryptor().update(b)
         count=struct.unpack_from('<H',dec(data[84:92]))[0];size=(6+count*12+7)&~7
         idx=dec(data[84:84+size]);body=84+size

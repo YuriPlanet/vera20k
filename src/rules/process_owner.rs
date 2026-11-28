@@ -834,7 +834,10 @@ impl NativeRulesProcessOwner {
                 .langrule
                 .as_ref()
                 .and_then(|source| source.source_ini().map(IniFile::multiplayer_digest)),
-            Some(self.sources.fixed_art.multiplayer_digest()),
+            // VERA's drawing keys do not count (`art_data::VERA_ART_KEYS`).
+            Some(crate::rules::art_data::art_multiplayer_digest(
+                &self.sources.fixed_art,
+            )),
         ]
     }
 

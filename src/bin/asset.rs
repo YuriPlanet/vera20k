@@ -225,6 +225,20 @@ fn run(cli: Cli) -> Result<(), RunError> {
             println!("{}", to_json(&report));
         }
 
+        Verb::ExportPicture { name } => {
+            mount_theater(&mut manager, cli.theater.as_deref())?;
+            let report =
+                vera20k::asset_tools::verb_export_picture::run(&manager, &name, &cli.render)?;
+            println!("{}", to_json(&report));
+        }
+
+        Verb::ExportModel { name } => {
+            mount_theater(&mut manager, cli.theater.as_deref())?;
+            let report =
+                vera20k::asset_tools::verb_export_model::run(&manager, &name, &cli.render)?;
+            println!("{}", to_json(&report));
+        }
+
         Verb::CsfGet { key } => {
             let report = verb_csf::get(&manager, &key, &cli.csf)?;
             println!("{}", to_json(&report));
@@ -285,6 +299,23 @@ fn run(cli: Cli) -> Result<(), RunError> {
         }
     }
 
+    Ok(())
+}
+
+/// `--theater`: mount the theater's archives before the export looks up its
+/// files.
+fn mount_theater(
+    manager: &mut vera20k::assets::asset_manager::AssetManager,
+    theater: Option<&str>,
+) -> Result<(), ErrorReport> {
+    if let Some(theater) = theater
+        && vera20k::map::theater::load_theater(manager, theater).is_none()
+    {
+        return Err(ErrorReport {
+            error: format!("unknown theater {theater}"),
+            hint: Some("TEMPERATE, SNOW, URBAN, DESERT, NEWURBAN or LUNAR".into()),
+        });
+    }
     Ok(())
 }
 

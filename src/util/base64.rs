@@ -1,7 +1,7 @@
 //! Base64 decoder for IsoMapPack5 and other binary sections in RA2 .map files.
 //!
-//! Standard alphabet (A-Za-z0-9+/), `=` padding. Whitespace and newlines are
-//! skipped since map files split base64 data across numbered INI keys.
+//! The ordinary decoder validates padding length and skips ASCII whitespace.
+//! Packed terrain and overlays use the game's four-character decoding pipe.
 //!
 //! ## Dependency rules
 //! - Part of util/ — no dependencies on game modules.
@@ -37,7 +37,7 @@ pub fn base64_decode(input: &str) -> Result<Vec<u8>, String> {
         if padding > 0 {
             return Err("Invalid base64: data after padding".into());
         }
-        let val: u8 = decode_char(ch)?;
+        let val = sextet(ch).ok_or_else(|| format!("Invalid base64 character: {ch:?}"))?;
         sextet_buf.push(val);
     }
 
@@ -85,16 +85,48 @@ pub fn base64_decode(input: &str) -> Result<Vec<u8>, String> {
     Ok(output)
 }
 
-/// Decode a single base64 character to its 6-bit value.
-fn decode_char(ch: char) -> Result<u8, String> {
+fn sextet(ch: char) -> Option<u8> {
     match ch {
-        'A'..='Z' => Ok(ch as u8 - b'A'),
-        'a'..='z' => Ok(ch as u8 - b'a' + 26),
-        '0'..='9' => Ok(ch as u8 - b'0' + 52),
-        '+' => Ok(62),
-        '/' => Ok(63),
-        _ => Err(format!("Invalid base64 character: {:?}", ch)),
+        'A'..='Z' => Some(ch as u8 - b'A'),
+        'a'..='z' => Some(ch as u8 - b'a' + 26),
+        '0'..='9' => Some(ch as u8 - b'0' + 52),
+        '+' => Some(62),
+        '/' => Some(63),
+        _ => None,
     }
+}
+
+/// Base64Pipe::Put/Flush (0x42DDB0, 0x42DF40) pass four physical input
+/// characters at a time to the decoder (0x42FE50), including a final short
+/// group. An INI character represents one widened game byte. Within each
+/// group '=' ends input and the lookup table skips non-alphabet characters.
+pub(crate) fn packed_section_bytes(input: &str) -> impl Iterator<Item = u8> + '_ {
+    let mut chars = input.chars();
+    std::iter::from_fn(move || {
+        let group = [
+            Some(chars.next()?),
+            chars.next(),
+            chars.next(),
+            chars.next(),
+        ];
+        let mut bits = 0u32;
+        let mut count = 0;
+        for ch in group.into_iter().flatten().take_while(|&ch| ch != '=') {
+            if let Some(value) = sextet(ch) {
+                bits |= u32::from(value) << (18 - 6 * count);
+                count += 1;
+            }
+        }
+        // At 0x42FF14 the first byte is unconditional, then another for
+        // three source sextets and another for four.
+        let bytes = [(bits >> 16) as u8, (bits >> 8) as u8, bits as u8];
+        Some(
+            bytes
+                .into_iter()
+                .take(1 + usize::from(count >= 3) + usize::from(count == 4)),
+        )
+    })
+    .flatten()
 }
 
 /// Encode bytes as base64 with the standard alphabet and `=` padding, the

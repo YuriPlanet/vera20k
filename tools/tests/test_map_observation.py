@@ -310,9 +310,16 @@ class MapObservationTests(unittest.TestCase):
         for bad in ({'zoom': 125, 'sidebar': 100}, {'zoom': 50, 'sidebar': 100},
                     {'zoom': 100, 'sidebar': 120}, {'zoom': 100},
                     {'zoom': 100, 'sidebar': 100, 'hd_radar': 1},
-                    {'zoom': 100, 'sidebar': 100, 'smooth_sidebar': 'yes'}):
+                    {'zoom': 100, 'sidebar': 100, 'smooth_sidebar': 'yes'},
+                    {'zoom': 100, 'sidebar': 100, 'wheel_zoom': 3},
+                    {'zoom': 100, 'sidebar': 100, 'wheel_zoom': 0.2},
+                    {'zoom': 100, 'sidebar': 100, 'wheel_zoom': True},
+                    {'zoom': 100, 'sidebar': 100, 'wheel_zoom': '1.5'}):
             with self.subTest(bad=bad), self.assertRaises(ValidationError):
                 observation._profile_extensions(dict(self.profile, presentation=bad))
+        for wheel_zoom in (0.25, 0.8, 1, 1.1, 1.5, 2):
+            observation._profile_extensions(dict(self.profile, presentation={
+                'zoom': 100, 'sidebar': 100, 'wheel_zoom': wheel_zoom}))
         with self.assertRaises(ValidationError):
             observation._profile_extensions(dict(self.profile, cursor_position=[1, 1]))
         del self.profile['presentation']

@@ -73,10 +73,23 @@ Each converts with its missing parts empty: no projectile path, push or
 immunity modifier, no swapped image, and without the reads the switch stays
 off, as those matches played. No frozen save holds `0x8C73B1B3`. The
 `b268ba798` writer's layout `0xC66CE753` holds everything but the client
-modules' state of the current layout `0x9909B4E7` (RFC 0001 section 10: the
+modules' state of layout `0x9909B4E7` (RFC 0001 section 10: the
 messages waiting for `on_message` and the room's `AutomationAllowed`); its
 saves convert with no message waiting and automation not allowed. The
-`0b918d053` writer covers direct loading of the current layout.
+`0b918d053` writer predates the module visuals. Later writers retained module
+animations (`0xED16B100`), doors (`0x9593BB1E`) and image overrides
+(`0xAA201352`). Conversion keeps each saved collection and starts the
+missing ones empty. The `c3609b58a` writer covers layout `0xD5A96CCA`,
+which holds the former external AI controller flag and economy settings.
+On load, those computer houses resume ordinary AI with their saved money,
+units and production queues. Any saved Wasm control claims still apply.
+The next save clears the retired settings.
+
+Layout `0xC0BB86C8` saves each object's warp-out flag. A Chronosphere can clear
+it while a Chrono Legionnaire is still erasing the object. Earlier layouts,
+including `0xD5A96CCA`, recover the state those games used from the stored erase
+head, Teleport departure flag and Ares building chronoshift flag. A current save
+preserves which effect last wrote the flag.
 
 Run the menu and compatibility tests with this command.
 

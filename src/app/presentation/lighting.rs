@@ -35,9 +35,10 @@ pub(crate) fn body_palette_light(
 ///
 /// The caller supplies its frame's isolated query; drawing never stamps the
 /// simulation's shared fallback Cell. Native controls: tools/unit_light.json.
-/// Captured into each object's presentation record (`presentation::frame`).
+/// Both the object and the map are from the frame being drawn. A distant
+/// object can enter the view on this same frame when the camera jumps.
 pub(crate) fn body_extra_light(
-    entity: &crate::sim::game_entity::GameEntity,
+    entity: &crate::app::presentation::frame::ObjectRecord,
     rules: &RuleSet,
     sim: &Simulation,
     cells: Option<&NativeCellQuery<'_>>,
@@ -57,7 +58,8 @@ pub(crate) fn body_extra_light(
             // Unit73CF1D retains Object41BEA0's packed cell before the
             // GetHeight73CF74 and world-coordinate lookup73CFA0. Keep the
             // two query forms distinct, including their signed narrowing.
-            let [x, y] = ground_pose::position_world_xy(&entity.position);
+            let location = entity.hud.location;
+            let (x, y) = (location.x, location.y);
             let packed = (
                 crate::util::lepton::lepton_to_cell_packed(x),
                 crate::util::lepton::lepton_to_cell_packed(y),
@@ -66,11 +68,11 @@ pub(crate) fn body_extra_light(
             let flags = cells.flags(current);
             // Only a structural bridge cell reads the height.
             let above_deck = || {
-                let height = air_movement::queried_flight_height(entity, Some(cells));
+                let height = entity.place.flight_height;
                 if entity.on_bridge() {
                     height >= 0
                 } else if let Some(deck) = ground_pose::corrected_deck_z(cells.terrain(), current) {
-                    ground_pose::object_world_z_leptons(entity, Some(cells.terrain())) >= deck
+                    location.z >= deck
                 } else {
                     height >= crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS
                 }
@@ -103,7 +105,11 @@ pub(crate) fn body_extra_light(
             //Unit's actual vt54/4DE620 forwards to the common Object owner.
             let draw_cell = cells.lookup(packed);
             if cells.flags(draw_cell) & BRIDGE_FLAG_EXTRA_SIDE != 0
-                && !air_movement::is_high_flying_in_query(entity, cells, None)
+                && !air_movement::object_flight_predicate(
+                    entity.lifecycle.cell_marked(),
+                    || entity.place.flight_height,
+                    true,
+                )
             {
                 extra.wrapping_sub(500)
             } else {
@@ -112,7 +118,7 @@ pub(crate) fn body_extra_light(
         }
         EntityCategory::Infantry => {
             use crate::map::bridge_facts::BRIDGE_FLAG_EXTRA_SIDE;
-            use crate::sim::movement::{air_movement, ground_pose};
+            use crate::sim::movement::ground_pose;
 
             let extra = rules.general.extra_infantry_light;
             let Some(cells) = cells else {
@@ -121,7 +127,7 @@ pub(crate) fn body_extra_light(
             // Infantry DrawIt51933B..5193C5: OnBridge bypasses the side
             // test. Map565730 reads the physical world-coordinate Cell,
             // independently of the navigation Cell's top intensity.
-            let location = ground_pose::object_location(entity, Some(cells.terrain()));
+            let location = entity.hud.location;
             let side = !entity.on_bridge()
                 && cells.flags(cells.lookup_world(location.x, location.y)) & BRIDGE_FLAG_EXTRA_SIDE
                     != 0;
@@ -136,7 +142,7 @@ pub(crate) fn body_extra_light(
                 //OnBridge deck. Signed height/208 truncates toward zero;
                 //an ordinary deck height0 adds no Level. The shared weather
                 //owner selects Ion, Dominator, Nuke fade-in, then Normal.
-                let height = air_movement::queried_flight_height(entity, Some(cells));
+                let height = entity.place.flight_height;
                 let level = sim
                     .session()
                     .lighting()
@@ -154,7 +160,7 @@ pub(crate) fn body_extra_light(
         }
         EntityCategory::Aircraft => aircraft_extra_light(
             rules.general.extra_aircraft_light,
-            crate::sim::movement::air_movement::queried_flight_height(entity, cells),
+            entity.place.flight_height,
             crate::sim::superweapon::lightning_storm::raging(sim),
             &sim.session().lighting(),
         ),
@@ -270,7 +276,6 @@ pub(crate) fn anim_palette_light(
 
 /// `Drawing::RGB_To_Int` (YRpp `Drawing::Color16bit`): the 16-bit RGB565 word
 /// `(B >> 3) | ((G >> 2) << 5) | ((R >> 3) << 11)`.
-#[cfg(feature = "phobos")]
 fn rgb565_word([red, green, blue]: [u8; 3]) -> u16 {
     (u16::from(blue) >> 3) | ((u16::from(green) >> 2) << 5) | ((u16::from(red) >> 3) << 11)
 }
@@ -438,7 +443,9 @@ pub(crate) fn attach_effect_tint(
 }
 
 /// The custom tint `TechnoExt::UpdateTintValues` aggregates from every owner:
-/// Phobos shields and AttachEffects today.
+/// Phobos shields and AttachEffects, the simulation module's tint for every
+/// viewer, then client decorations on this screen (appendices 7.2 and 7.10). Each owner ORs in its RGB565
+/// word and adds its intensity, as one more AttachEffect would.
 pub(crate) fn custom_tint(
     entity: &crate::app::presentation::frame::ObjectRecord,
     simulation: &Simulation,
@@ -446,13 +453,21 @@ pub(crate) fn custom_tint(
 ) -> (u16, i32) {
     let base = shield_tint(entity, simulation, rules);
     #[cfg(feature = "phobos")]
-    {
+    let base = {
         let (effect_word, effect_intensity) = attach_effect_tint(entity, simulation, rules);
         (base.0 | effect_word, base.1 + effect_intensity)
-    }
-    #[cfg(not(feature = "phobos"))]
-    {
-        base
+    };
+    let base = with_module_tint(base, entity.module_tint());
+    with_module_tint(base, entity.local_look().tint)
+}
+
+/// `tint` with a module's tint folded in: its colour's word ORed (black
+/// adds nothing) and its intensity added in thousandths, as Phobos scales
+/// `Tint.Intensity`.
+fn with_module_tint((word, intensity): (u16, i32), module: Option<([u8; 3], f64)>) -> (u16, i32) {
+    match module {
+        None => (word, intensity),
+        Some((color, extra)) => (word | rgb565_word(color), intensity + (extra * 1000.0) as i32),
     }
 }
 

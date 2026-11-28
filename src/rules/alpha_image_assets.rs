@@ -109,6 +109,75 @@ impl AlphaImage {
         })
     }
 
+    /// VERA-only, experimental (`docs/picture-model-art.md`): frame 0 of a
+    /// declared picture as an AlphaImage. Each game pixel (`PictureSize=`,
+    /// else the picture's own size; the picture a whole multiple of it) is
+    /// the mean grey level of its picture pixels at least half covered, used
+    /// as the SHP byte is: 127 leaves light as it is, 255 doubles it, 0 is
+    /// black. A game pixel less than half covered is 127. The frame is
+    /// cropped to its drawn pixels as a stored SHP frame is; a picture with
+    /// none draws nothing. None when it does not fit its canvas.
+    fn from_picture(
+        picture: &crate::assets::picture_file::PictureFrames,
+        size: Option<[i32; 2]>,
+    ) -> Option<Self> {
+        const NEUTRAL: u8 = 127;
+        let canvas = size.map_or([picture.width, picture.height], |size| {
+            size.map(|side| side.unsigned_abs())
+        });
+        let scale = picture.width / canvas[0].max(1);
+        if [canvas[0] * scale, canvas[1] * scale] != [picture.width, picture.height] {
+            return None;
+        }
+        let rgba = picture.shrunk_region(0, scale, canvas)?;
+        let word = |value: u32| i32::try_from(value).unwrap_or(i32::MAX);
+        let drawn = |x: u32, y: u32| rgba[((y * canvas[0] + x) * 4 + 3) as usize] != 0;
+        let (mut left, mut top, mut right, mut bottom) = (u32::MAX, u32::MAX, 0, 0);
+        for y in 0..canvas[1] {
+            for x in 0..canvas[0] {
+                if drawn(x, y) {
+                    (left, top) = (left.min(x), top.min(y));
+                    (right, bottom) = (right.max(x + 1), bottom.max(y + 1));
+                }
+            }
+        }
+        if left >= right {
+            return Some(Self {
+                canvas: canvas.map(word),
+                facing_bits: 0,
+                frames: vec![AlphaFrame {
+                    bounds: [0; 4],
+                    pixels: Vec::new(),
+                }],
+            });
+        }
+        let mut pixels = Vec::with_capacity(((right - left) * (bottom - top)) as usize);
+        for y in top..bottom {
+            for x in left..right {
+                let at = ((y * canvas[0] + x) * 4) as usize;
+                pixels.push(if drawn(x, y) {
+                    ((u32::from(rgba[at]) + u32::from(rgba[at + 1]) + u32::from(rgba[at + 2]) + 1)
+                        / 3) as u8
+                } else {
+                    NEUTRAL
+                });
+            }
+        }
+        Some(Self {
+            canvas: canvas.map(word),
+            facing_bits: 0,
+            frames: vec![AlphaFrame {
+                bounds: [
+                    word(left),
+                    word(top),
+                    word(right - left),
+                    word(bottom - top),
+                ],
+                pixels,
+            }],
+        })
+    }
+
     /// A one-frame image.
     #[cfg(any(test, feature = "test-support"))]
     pub fn for_test(canvas: [i32; 2], frame_bounds: [i32; 4], pixels: Vec<u8>) -> Self {
@@ -145,8 +214,13 @@ impl AlphaImage {
 #[derive(Debug, Clone, Default)]
 pub struct AlphaImageCatalog {
     images: BTreeMap<String, Arc<AlphaImage>>,
+    /// VERA-only, experimental: the names whose art declares `Picture=`,
+    /// and whether that picture loaded.
+    pictures: BTreeMap<String, bool>,
     /// VERA: by image name, the game-folder file that supplied a loaded SHP
-    /// where a retail install loads none (`retail_sources::FolderFiles`).
+    /// where a retail install loads none, or a declared picture that loads
+    /// where the retail SHP does not or the reverse
+    /// (`retail_sources::FolderFiles`).
     folder_files: BTreeMap<String, String>,
 }
 
@@ -158,11 +232,50 @@ impl AlphaImageCatalog {
                 names.insert(name.to_string());
             }
         });
+        let mut pictures = BTreeMap::new();
         let mut folder_files = BTreeMap::new();
         let folder = crate::rules::retail_sources::FolderFiles::new(assets);
         let images = names
             .into_iter()
             .filter_map(|name| {
+                // VERA-only (docs/picture-model-art.md): an AlphaImage whose
+                // art section declares `Picture=` is read from the picture;
+                // its SHP is never opened.
+                if let Some((section, decl)) = rules.art().resolve_declared_picture(&name, "") {
+                    let found = rules
+                        .art()
+                        .find_picture(section, decl, "", |file| assets.get_ref(file));
+                    let image = found
+                        .as_ref()
+                        .and_then(|(_, bytes)| {
+                            crate::assets::picture_file::PictureFrames::decode(bytes).ok()
+                        })
+                        .and_then(|picture| AlphaImage::from_picture(&picture, decl.size));
+                    // Named when it loads where the retail SHP does not, or
+                    // the reverse.
+                    let mut file = BTreeSet::new();
+                    folder.note_stand_in(
+                        found.as_ref().map_or(&decl.file, |(found, _)| found),
+                        image.is_some().then_some(()),
+                        [format!("{name}.SHP")],
+                        |bytes| AlphaImage::from_shp(bytes).map(drop),
+                        &mut file,
+                    );
+                    if let Some(file) = file.pop_first() {
+                        folder_files.insert(name.clone(), file);
+                    }
+                    if image.is_none() {
+                        log::warn!("[{section}] AlphaImage picture {} cannot be drawn", decl.file);
+                        crate::rules::art_problems::report(
+                            section,
+                            &format!("Picture={}", decl.file),
+                            "the picture is missing, unreadable or not a whole multiple of PictureSize=",
+                            "the AlphaImage is not loaded",
+                        );
+                    }
+                    pictures.insert(name.clone(), image.is_some());
+                    return Some((name, Arc::new(image?)));
+                }
                 let file = format!("{name}.SHP");
                 let load = assets.load_file_from_mix(&file)?;
                 let image = Arc::new(AlphaImage::from_shp(&load.bytes)?);
@@ -184,6 +297,7 @@ impl AlphaImageCatalog {
             .collect();
         Self {
             images,
+            pictures,
             folder_files,
         }
     }
@@ -191,6 +305,27 @@ impl AlphaImageCatalog {
     /// VERA: the game-folder file that makes the SHP of `name` load.
     pub(crate) fn folder_file(&self, name: &str) -> Option<&str> {
         self.folder_files.get(name).map(String::as_str)
+    }
+
+    /// VERA-only, experimental (`docs/picture-model-art.md`): what the
+    /// simulation takes from declared AlphaImage pictures, for the config
+    /// hash: whether each loaded (Ares particle systems read it,
+    /// `AresParticleSystemExt::for_system`) and its canvas (the glow's
+    /// centre). Nothing is hashed when no AlphaImage declares a picture, so
+    /// the hash of rules without one is unchanged.
+    pub(crate) fn hash_declared_pictures<H: std::hash::Hasher>(&self, state: &mut H) {
+        use std::hash::Hash;
+        if self.pictures.is_empty() {
+            return;
+        }
+        b"alpha-image-pictures-v1".hash(state);
+        for (name, &loaded) in &self.pictures {
+            name.hash(state);
+            loaded.hash(state);
+            if let Some(image) = self.images.get(name) {
+                image.canvas.hash(state);
+            }
+        }
     }
 
     pub(crate) fn get(&self, name: &str) -> Option<&Arc<AlphaImage>> {
@@ -253,5 +388,49 @@ mod tests {
             ))
         );
         assert!(catalog.get("NONE").is_none());
+    }
+
+    /// VERA-only (docs/picture-model-art.md): an AlphaImage whose art
+    /// declares `Picture=` is read from the picture, shrunk from 2x: grey
+    /// levels as SHP bytes, cropped to the drawn pixels, a hole inside the
+    /// crop neutral (127); its SHP is never opened. The config hash takes it.
+    #[test]
+    fn a_declared_alpha_picture_binds_grey_levels_and_enters_the_hash() {
+        let root = TestDirectory::new("object-alpha-image-picture");
+        std::fs::write(root.path().join("PANEL.SHP"), shp(3, &[4, 0, 0, 2, 4, 0]))
+            .expect("write AlphaImage SHP");
+        // 8x4 at 2x: game pixels (1,0) grey 200 and (3,1) grey 60, the rest
+        // transparent.
+        let mut rgba = vec![0u8; 8 * 4 * 4];
+        for (x, y, grey) in [(2, 0, 200u8), (3, 0, 200), (2, 1, 200), (3, 1, 200)]
+            .into_iter()
+            .chain([(6, 2, 60u8), (7, 2, 60), (6, 3, 60), (7, 3, 60)])
+        {
+            let at = (y * 8 + x) * 4;
+            rgba[at..at + 4].copy_from_slice(&[grey, grey, grey, 255]);
+        }
+        std::fs::write(
+            root.path().join("panel.png"),
+            crate::assets::picture_file::encode_frames(8, 4, &[rgba]).unwrap(),
+        )
+        .expect("write AlphaImage picture");
+        let assets = AssetManager::from_loose_root_for_test(root.path());
+        let ini = IniFile::from_str("[BuildingTypes]\n0=LIGHT\n[LIGHT]\nAlphaImage=PANEL\n");
+        let mut rules = RuleSet::from_ini(&ini).expect("minimal AlphaImage rules");
+        rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(
+            &IniFile::from_str("[PANEL]\nPicture=panel.png\nPictureSize=4,2\n"),
+        ));
+        let unbound_hash = rules.simulation_config_hash();
+        rules.bind_alpha_images(&assets);
+
+        assert_eq!(
+            rules.alpha_image("PANEL").map(|image| &**image),
+            Some(&AlphaImage::for_test(
+                [4, 2],
+                [1, 0, 3, 2],
+                vec![200, 127, 127, 127, 127, 60]
+            ))
+        );
+        assert_ne!(rules.simulation_config_hash(), unbound_hash);
     }
 }

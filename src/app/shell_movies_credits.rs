@@ -22,8 +22,8 @@ use crate::app::shell_route::ShellRoute;
 use crate::audio::sfx::SfxPlayer;
 use crate::render::gpu::GpuContext;
 use crate::ui::movies_credits_shell::{
-    MOVIE_LIST_DIALOG, MOVIES_CREDITS_PAGE, MoviesCreditsAction, active_movie_entries,
-    family_list_node, family_list_selected, retained_movie_row,
+    MOVIE_LIST_DIALOG, MOVIES_CREDITS_PAGE, MovieCatalog, MoviesCreditsAction, family_list_node,
+    family_list_selected, retained_movie_row,
 };
 use crate::ui::shell::controller::DialogController;
 use winit::keyboard::ModifiersState;
@@ -106,7 +106,7 @@ impl App {
         options_profile: &RetailOptionsProfile,
     ) {
         Self::destroy_current_shell_dialog(frontend);
-        let rows = active_movie_entries(options_profile.movie_progress);
+        let rows = options_profile.unlocked_movies(MovieCatalog::for_launch());
         frontend.movie_list = Some(rows);
         Self::show_shell_page(frontend, ShellRoute::MovieList, MOVIE_LIST_DIALOG);
         Self::movie_list_sync(gpu, frontend);
@@ -230,12 +230,12 @@ impl App {
         Self::destroy_current_shell_dialog(&mut state.frontend);
         state.frontend.movie_list = None;
         let stem = movie_stem(name);
-        // 0x005C0640 raises campaign movie progress before the existence check.
+        // MovieFile__ResolveExtension (gamemd 0x005C0640, RA2 0x005A1BB0)
+        // raises campaign movie progress before the existence check.
         state
             .persistence
             .options_profile
-            .movie_progress
-            .note_played(stem);
+            .note_movie_played(MovieCatalog::for_launch(), stem);
         // 0x005BED61..0x005BED6A: outside a campaign world Play_Movie
         // returns right after that note, with no video, audio hold or suspend,
         // so a skirmish or multiplayer map's movie action only moves on.
@@ -299,6 +299,7 @@ impl App {
                         header.fps_den,
                     )
                 });
+        let activity = return_to.activity(&state.platform, state.match_state.session_mode());
         let movie = FullscreenMovie::new(
             surface,
             // BinkMovie_Open 0x0043279F selects the shared sound device.
@@ -306,7 +307,7 @@ impl App {
             voice_volume,
             subtitles,
             return_to,
-            crate::app::frontend::fullscreen_movie::playback_active(&state.platform),
+            activity,
         );
         state.frontend.fullscreen_movie = Some(movie);
         if running_scenario {

@@ -157,6 +157,7 @@ impl Probe {
                     theater.extension,
                     &scene.map.header.theater,
                     registry,
+                    &crate::rules::art_data::ArtRegistry::empty(),
                     &[],
                 )
                 .expect("production Cell shadow atlas");

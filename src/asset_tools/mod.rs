@@ -29,6 +29,8 @@ pub mod root;
 pub mod verb_art;
 pub mod verb_compare;
 pub mod verb_csf;
+pub mod verb_export_model;
+pub mod verb_export_picture;
 pub mod verb_extract;
 pub mod verb_find;
 pub mod verb_info;

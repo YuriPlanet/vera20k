@@ -22,12 +22,14 @@
 //! User-requested YR parity exception: preserve this expanded gameplay playlist
 //! during future parity work unless the user explicitly asks to change it.
 
+use std::collections::BTreeSet;
 use std::ops::Range;
 use std::sync::Arc;
 
 use crate::assets::asset_manager::AssetManager;
 use crate::assets::aud_file;
 use crate::assets::mix_archive::SharedBytes;
+use crate::assets::opus_file::{self, OpusStream};
 use crate::assets::wav_file::{WavFile, WavPcmCursor};
 use crate::audio::custom_music::CustomMusicLibrary;
 use crate::audio::sfx::upmix_i16_to_f32_stereo;
@@ -138,16 +140,27 @@ pub(crate) struct ThemeGates {
 /// block decoder `IMA_ADPCM__DecodeBlock @ 0x0040AA70` rather than decoding it
 /// whole. Preparation reads the WAV header and decodes the first piece, whose
 /// failure is the whole decode's empty result; the rest decodes as the output
-/// pulls, on the device thread. The VERA-only AUD fallback arrives whole.
+/// pulls, on the device thread. The VERA-only AUD fallback arrives whole; a
+/// VERA `.opus` override streams one packet at a time like a WAV.
 pub(crate) struct PreparedTrack {
     pub(crate) stem: String,
     pub(crate) sample_rate: u32,
     /// Decoded samples; those from `pulled` on are still to play.
     pcm: Vec<f32>,
     pulled: usize,
-    /// The WAV payload left to decode; `None` once decoded through, or for
-    /// a track decoded whole.
-    stream: Option<WavStream>,
+    /// The payload left to decode; `None` once decoded through, or for a
+    /// track decoded whole.
+    stream: Option<TrackStream>,
+}
+
+/// What a streamed song decodes from.
+enum TrackStream {
+    Wav(WavStream),
+    /// VERA: an Ogg Opus file (`assets::opus_file`) with its decoded piece.
+    Opus {
+        stream: Box<OpusStream<SharedBytes>>,
+        piece: Vec<i16>,
+    },
 }
 
 /// A WAV song's payload, read from a share of its archive storage so neither
@@ -185,11 +198,33 @@ impl PreparedTrack {
             sample_rate: wav.sample_rate,
             pcm: Vec::new(),
             pulled: 0,
-            stream: Some(WavStream {
+            stream: Some(TrackStream::Wav(WavStream {
                 payload: wav.data_range(),
                 channels: wav.channels,
                 file: file.clone(),
                 cursor,
+                piece: Vec::new(),
+            })),
+        };
+        track.decode_next();
+        if track.exhausted() {
+            return None;
+        }
+        file.read_ahead();
+        Some(track)
+    }
+
+    /// VERA: an Ogg Opus song at 48 kHz decoding as it is pulled; `None`
+    /// when the file is not mono or stereo Ogg Opus or holds no audio.
+    pub(super) fn opus(stem: &str, file: &SharedBytes) -> Option<Self> {
+        let stream = OpusStream::open(file.clone())?;
+        let mut track = Self {
+            stem: stem.to_string(),
+            sample_rate: opus_file::OPUS_SAMPLE_RATE,
+            pcm: Vec::new(),
+            pulled: 0,
+            stream: Some(TrackStream::Opus {
+                stream: Box::new(stream),
                 piece: Vec::new(),
             }),
         };
@@ -214,13 +249,24 @@ impl PreparedTrack {
         };
         self.pcm.clear();
         self.pulled = 0;
-        stream.piece.clear();
-        let payload = &stream.file[stream.payload.clone()];
-        if stream.cursor.decode_next(payload, &mut stream.piece) {
-            upmix_i16_to_f32_stereo(&mut self.pcm, &stream.piece, stream.channels);
-        } else {
-            self.stream = None;
+        match stream {
+            TrackStream::Wav(stream) => {
+                stream.piece.clear();
+                let payload = &stream.file[stream.payload.clone()];
+                if stream.cursor.decode_next(payload, &mut stream.piece) {
+                    upmix_i16_to_f32_stereo(&mut self.pcm, &stream.piece, stream.channels);
+                    return;
+                }
+            }
+            TrackStream::Opus { stream, piece } => {
+                piece.clear();
+                if stream.decode_next(piece) {
+                    upmix_i16_to_f32_stereo(&mut self.pcm, &piece[..], stream.channels());
+                    return;
+                }
+            }
         }
+        self.stream = None;
     }
 }
 
@@ -373,6 +419,15 @@ impl ThemeRuntime {
         self.catalog.as_ref()
     }
 
+    /// The catalog's `.opus` song stems ([`ThemeCatalog::opus_sounds`]), held
+    /// apart from `self` by the song preparers.
+    fn opus_sounds(&self) -> Arc<BTreeSet<String>> {
+        self.catalog
+            .as_ref()
+            .map(|catalog| Arc::clone(catalog.opus_sounds()))
+            .unwrap_or_default()
+    }
+
     #[cfg(test)]
     fn with_entries(entries: Vec<ThemeEntry>) -> Self {
         Self {
@@ -413,7 +468,8 @@ impl ThemeRuntime {
         if !in_game_music {
             return;
         }
-        let mut prepare = |stem: &str| prepare_track(stem, assets);
+        let opus = self.opus_sounds();
+        let mut prepare = |stem: &str| prepare_track(stem, assets, &opus);
         let played = self.play_song(saved[0], gates, physical, &mut prepare);
         let physical = apply_output(played);
         let queued = self.queue_song(saved[1], gates, physical);
@@ -476,7 +532,10 @@ impl ThemeRuntime {
     /// the retail catalog. Retail indices are unchanged; a virtual index maps
     /// to `custom_music[index - catalog_len]`.
     fn entry(&self, index: i32) -> Option<&ThemeEntry> {
-        let retail_len = self.catalog.as_ref().map_or(0, |catalog| catalog.entries().len()) as i32;
+        let retail_len = self
+            .catalog
+            .as_ref()
+            .map_or(0, |catalog| catalog.entries().len()) as i32;
         if index < retail_len {
             return self.catalog.as_ref()?.entry(index);
         }
@@ -489,7 +548,10 @@ impl ThemeRuntime {
     /// Resolved side for an admitted index. Custom tracks have no `Side=`, so
     /// they match every side just like a retail entry with `Side=-1`.
     fn resolved_side(&self, index: i32) -> i32 {
-        self.resolved_sides.get(index as usize).copied().unwrap_or(-1)
+        self.resolved_sides
+            .get(index as usize)
+            .copied()
+            .unwrap_or(-1)
     }
 
     fn entry_repeats(&self, index: i32) -> bool {
@@ -534,7 +596,13 @@ impl ThemeRuntime {
     /// keeps `lo=0`, exclusive raises `lo` to the first virtual index. Custom
     /// entries carry the same allowed/available/repeat flags as retail ones,
     /// so the selection rule, rejection budget and shared RNG are reused.
-    fn next_song_in(&self, prev: i32, lo: i32, hi: i32, draw_main: &mut impl FnMut(i32, i32) -> i32) -> i32 {
+    fn next_song_in(
+        &self,
+        prev: i32,
+        lo: i32,
+        hi: i32,
+        draw_main: &mut impl FnMut(i32, i32) -> i32,
+    ) -> i32 {
         let count = hi - lo;
         if prev >= lo && (self.entry_repeats(prev) || self.global_repeat) {
             return prev;
@@ -577,8 +645,15 @@ impl ThemeRuntime {
     /// switch removes the retail half. A missing/empty library is the exact
     /// native range, so all other scenes and stock play are untouched.
     fn in_match_playlist(&self) -> (i32, i32) {
-        let retail_len = self.catalog.as_ref().map_or(0, |catalog| catalog.entries().len()) as i32;
-        let Some(custom) = self.custom_music.as_ref().filter(|_| self.custom_music_in_match) else {
+        let retail_len = self
+            .catalog
+            .as_ref()
+            .map_or(0, |catalog| catalog.entries().len()) as i32;
+        let Some(custom) = self
+            .custom_music
+            .as_ref()
+            .filter(|_| self.custom_music_in_match)
+        else {
             return (0, retail_len);
         };
         if custom.exclusive() {
@@ -602,7 +677,8 @@ impl ThemeRuntime {
     ) -> ThemeAction {
         self.initialize_catalog(assets, gates);
         let index = self.from_name(track_name);
-        let mut prepare = |stem: &str| prepare_track(stem, assets);
+        let opus = self.opus_sounds();
+        let mut prepare = |stem: &str| prepare_track(stem, assets, &opus);
         self.play_song(index, gates, physical, &mut prepare)
     }
 
@@ -632,7 +708,8 @@ impl ThemeRuntime {
         } else {
             selected
         };
-        let mut prepare = |stem: &str| prepare_track(stem, assets);
+        let opus = self.opus_sounds();
+        let mut prepare = |stem: &str| prepare_track(stem, assets, &opus);
         self.play_song(selected, gates, physical, &mut prepare)
     }
 
@@ -915,14 +992,16 @@ impl ThemeRuntime {
     ) -> ThemeAction {
         self.initialize_catalog(assets, gates);
         let custom = self.custom_music.clone();
+        let opus = self.opus_sounds();
         let mut prepare = |stem: &str| {
             if let Some(rest) = stem.strip_prefix(crate::audio::custom_music::CUSTOM_STEM_PREFIX)
                 && let Ok(index) = rest.parse::<usize>()
-                && let Some(bytes) = custom.as_ref().and_then(|library| library.bytes_at(index))
+                && let Some((bytes, is_opus)) =
+                    custom.as_ref().and_then(|library| library.file_at(index))
             {
-                return prepare_bytes(stem, bytes);
+                return prepare_file(stem, bytes, is_opus);
             }
-            prepare_track(stem, assets)
+            prepare_track(stem, assets, &opus)
         };
         self.ai(gates, physical, &mut prepare, draw_main)
     }
@@ -1038,7 +1117,22 @@ impl ThemeRuntime {
 
 /// Resolve a track for optional physical submission; a WAV song decodes only
 /// its first piece here (see [`PreparedTrack`]).
-fn prepare_track(track_name: &str, assets: &AssetManager) -> Option<PreparedTrack> {
+///
+/// VERA: a stem the catalog scan found a `<stem>.opus` for (`opus`, see
+/// [`ThemeCatalog::opus_sounds`]) plays that file. Retail catalogs find none,
+/// so the set is empty and the WAV/AUD lookups below run as they always did.
+fn prepare_track(
+    track_name: &str,
+    assets: &AssetManager,
+    opus: &BTreeSet<String>,
+) -> Option<PreparedTrack> {
+    if !opus.is_empty()
+        && opus.contains(&track_name.to_ascii_lowercase())
+        && let Some(file) = assets.get_shared(&opus_file::override_name(track_name))
+        && let Some(track) = PreparedTrack::opus(track_name, &file)
+    {
+        return Some(track);
+    }
     for filename in [format!("{track_name}.wav"), format!("{track_name}.aud")] {
         let Some(file) = assets.get_shared(&filename) else {
             continue;
@@ -1053,11 +1147,22 @@ fn prepare_track(track_name: &str, assets: &AssetManager) -> Option<PreparedTrac
     None
 }
 
-/// Whether a file's bytes decode through the same WAV/AUD path the engine
-/// uses. `custom_music::load` calls this so only indexed, playable files enter
-/// the custom playlist; a non-audio file in `musics/` is silently skipped.
-pub(crate) fn track_bytes_loadable(bytes: &SharedBytes) -> bool {
-    prepare_bytes("", bytes).is_some()
+/// Whether a file's bytes decode through the same path the engine plays
+/// them with ([`prepare_file`]). `custom_music::load` calls this so only
+/// indexed, playable files enter the custom playlist; a non-audio file in
+/// `musics/` is silently skipped.
+pub(crate) fn track_bytes_loadable(bytes: &SharedBytes, opus: bool) -> bool {
+    prepare_file("", bytes, opus).is_some()
+}
+
+/// The first piece of a player's music file: Ogg Opus for a `.opus` file
+/// (VERA), else WAV or AUD as [`prepare_bytes`] reads them.
+fn prepare_file(track_name: &str, file: &SharedBytes, opus: bool) -> Option<PreparedTrack> {
+    if opus {
+        PreparedTrack::opus(track_name, file)
+    } else {
+        prepare_bytes(track_name, file)
+    }
 }
 
 /// Decode the first piece of a WAV or AUD payload. Shared by archive-backed
@@ -1357,6 +1462,40 @@ mod tests {
         std::fs::remove_dir_all(dir).expect("remove theme test assets");
     }
 
+    /// VERA: with no THEME.MIX, a theme's `<Sound>.opus` makes the entry
+    /// available (and present to the install check) and streams at 48 kHz; a
+    /// theme with neither file stays unavailable as before.
+    #[test]
+    fn an_opus_song_stands_in_for_its_missing_wav() {
+        let dir = crate::assets::asset_manager::test_support::TestDirectory::new("theme-opus");
+        std::fs::write(
+            dir.path().join("thememd.ini"),
+            "[Themes]\n1=Drok\n2=Bully\n[Drok]\nSound=Drok\n[Bully]\nSound=Bully\n",
+        )
+        .expect("write thememd.ini");
+        let opus = crate::test_fixture::bytes("tests/fixtures/audio/sine440.opus");
+        std::fs::write(dir.path().join("drok.opus"), opus).expect("write opus");
+        let assets = AssetManager::from_loose_root_for_test(dir.path());
+        let mut theme = ThemeRuntime::default();
+        theme.initialize_catalog(&assets, gates(true));
+        let available: Vec<bool> = theme.entries().iter().map(|e| e.available).collect();
+        assert_eq!(available, [true, false]);
+        assert_eq!(
+            missing_install_music(&assets),
+            ["Bully.wav: music track unavailable"]
+        );
+
+        let opus = theme.opus_sounds();
+        let mut track = prepare_track("Drok", &assets, &opus).expect("opus song prepares");
+        assert_eq!(track.sample_rate, 48_000);
+        assert_eq!(
+            track.by_ref().count(),
+            9_600 * 2,
+            "mono upmixed, streamed through"
+        );
+        assert!(prepare_track("Bully", &assets, &opus).is_none());
+    }
+
     /// `StreamPlayer__PlayFile @ 0x00407B60` streams: preparing a song decodes
     /// only its first piece, and pulling it yields exactly the whole-file
     /// decode across block boundaries, the flushed short tail, the stereo
@@ -1394,7 +1533,7 @@ mod tests {
         ] {
             std::fs::write(dir.join(format!("{name}.wav")), &file).expect("write wav");
             let assets = AssetManager::from_loose_root_for_test(&dir);
-            let mut track = prepare_track(name, &assets).expect("song prepares");
+            let mut track = prepare_track(name, &assets, &BTreeSet::new()).expect("song prepares");
             assert_eq!(track.pcm.len(), first_piece, "{name} decodes one piece");
             let whole = crate::audio::sfx::decode_wav(&file, name).unwrap().samples;
             assert_eq!(whole.len(), total);
@@ -1492,7 +1631,8 @@ mod tests {
                 "theme.mix",
                 "{key} resolves from original RA2 music",
             );
-            let prepared = prepare_track(&entry.sound, &assets).expect("RA2 music decodes");
+            let prepared =
+                prepare_track(&entry.sound, &assets, &BTreeSet::new()).expect("RA2 music decodes");
             assert_eq!(prepared.sample_rate, 22_050);
             let file = assets.get_ref(&format!("{}.wav", entry.sound)).unwrap();
             let whole = crate::audio::sfx::decode_wav(file, key).unwrap().samples;
@@ -2229,9 +2369,9 @@ mod tests {
 
     fn custom_runtime(exclusive: bool) -> ThemeRuntime {
         let mut theme = stock_runtime();
-        theme.set_custom_music(Some(crate::audio::custom_music::CustomMusicLibrary::for_test(
-            exclusive, 2,
-        )));
+        theme.set_custom_music(Some(
+            crate::audio::custom_music::CustomMusicLibrary::for_test(exclusive, 2),
+        ));
         theme.custom_music_in_match = true;
         theme
     }
@@ -2265,7 +2405,10 @@ mod tests {
         let retail_len = theme.entries().len() as i32;
         assert_eq!(theme.in_match_playlist(), (retail_len, retail_len + 2));
         // A sequential draw stays inside the custom range.
-        let index = theme.next_song_in(retail_len, retail_len, retail_len + 2, &mut |_low, high| high);
+        let index =
+            theme.next_song_in(retail_len, retail_len, retail_len + 2, &mut |_low, high| {
+                high
+            });
         assert!(index >= retail_len && index < retail_len + 2);
     }
 }

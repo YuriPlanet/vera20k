@@ -21,7 +21,7 @@ pub(crate) mod buddies;
 pub(crate) mod buddy;
 pub(crate) mod leaf;
 mod live_service;
-pub(crate) use live_service::lobby_get;
+pub(crate) use live_service::{gallery_categories_get, lobby_get};
 pub(crate) mod lobby;
 mod lobby_phrases;
 mod login;
@@ -925,7 +925,6 @@ impl App {
                         &state.process_assets,
                         &state.renderer,
                         &mut state.audio,
-                        &mut state.persistence,
                         pressed,
                     )
                 },
@@ -1083,8 +1082,6 @@ impl App {
                     &mut state.match_state,
                     &state.process_assets,
                     &state.renderer,
-                    &mut state.audio,
-                    &mut state.persistence,
                     code,
                     text,
                 )

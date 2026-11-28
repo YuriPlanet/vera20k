@@ -562,11 +562,16 @@ mod tests {
 
     fn make_art_entry(walk: Option<u16>, firing: Option<u16>) -> ArtEntry {
         ArtEntry {
+            picture: None,
+            picture_size: None,
+            model: None,
             image: None,
             cameo: None,
             alt_cameo: None,
             cameo_pcx: None,
             alt_cameo_pcx: None,
+            cameo_picture: None,
+            alt_cameo_picture: None,
             cameo_palette: None,
             new_theater: false,
             theater: false,

@@ -1118,6 +1118,32 @@ pub(in crate::sim::world) fn allied_target_drops(
     !(engineer || overpowers || occupiable || entity.berserk.is_active())
 }
 
+/// The attached manager calls in `TechnoClass::AI_Update` (0x006FA6F5..0x006FA735).
+/// Each owner reads its slot after the previous callback. Return the current
+/// receiver for IsAlive and healing, since any callback can remove it.
+#[cold]
+fn update_attached_managers<'sim>(
+    sim: &'sim mut Simulation,
+    id: u64,
+    rules: &RuleSet,
+    ctx: &mut ObjectAiCtx<'_>,
+    outcome: &mut ObjectAiOutcome,
+) -> Option<&'sim GameEntity> {
+    outcome.bridge_state_changed |=
+        sim.bomb_fuse_step(id, rules, ctx.overlay_registry, &mut ctx.effects);
+    if let Err(error) = sim.slave_manager_ai(id, rules, ctx.overlay_registry, &mut ctx.effects) {
+        outcome.frame_error = Some(super::FrameAdvanceError::new(
+            sim.session.tick(),
+            sim.session.binary_frame(),
+            id,
+            error.to_string(),
+        ));
+        return None;
+    }
+    sim.capture_manager_update(id, rules, ctx.overlay_registry, &mut ctx.effects);
+    sim.substrate.entities.get(id)
+}
+
 /// The shared post-acquisition sequence of `TechnoClass::AI_Update`:
 /// Bomb6FA6F5, Slave6FA717, Capture6FA726, IsAlive6FA735, self-heal6FA743,
 /// House healing6FA79A, Cloak6FA941, Spawn6FA94C, the cloak-field arms
@@ -1141,32 +1167,27 @@ pub(super) fn techno_after_acquisition(
     // A quiet unit carries no bomb and no manager, is at full strength and
     // cannot cloak (`world::quiet_units`); each step below would find so.
     // The mission and scan before may have written it: asked here.
-    let quiet = sim.quiet(id);
+    let Some((mut entity, quiet)) = sim.substrate.entities.get_and_quiet(id) else {
+        return false;
+    };
     if !quiet {
-        outcome.bridge_state_changed |=
-            sim.bomb_fuse_step(id, rules, ctx.overlay_registry, &mut ctx.effects);
-        if let Err(error) = sim.slave_manager_ai(id, rules, ctx.overlay_registry, &mut ctx.effects)
+        if entity.bomb.is_some()
+            || entity.slave_manager.is_some()
+            || entity.capture_manager.is_some()
         {
-            outcome.frame_error = Some(super::FrameAdvanceError::new(
-                sim.session.tick(),
-                sim.session.binary_frame(),
-                id,
-                error.to_string(),
-            ));
-            return false;
+            let Some(updated) = update_attached_managers(sim, id, rules, ctx, outcome) else {
+                return false;
+            };
+            entity = updated;
         }
-        sim.capture_manager_update(id, rules, ctx.overlay_registry, &mut ctx.effects);
-        if !ai_alive(&sim.substrate, id) {
+        if !entity.is_object_alive() {
             return false;
         }
     }
     // Ares 3.0 1004B820 (hook 0x6FA743): a crashing or sinking techno skips
     // both pulses, resuming at the cloak tick (0x6FA941).
     let heals = if rules.ares() {
-        sim.substrate
-            .entities
-            .get(id)
-            .is_some_and(|entity| !entity.crash.is_crashing() && !entity.sinking.is_active())
+        !entity.crash.is_crashing() && !entity.sinking.is_active()
     } else {
         !quiet
     };
@@ -1395,6 +1416,7 @@ impl Simulation {
                 entity.position.rx(),
                 entity.position.ry(),
                 self.session.game_options().fog_of_war,
+                self.resolved_terrain(),
             );
         shown && screen_visual_character_for(self, entity, rules, Some(viewer), own) != 5
     }

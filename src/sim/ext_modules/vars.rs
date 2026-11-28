@@ -152,6 +152,36 @@ impl VarStore {
         }
     }
 
+    /// The declarations without a value.
+    pub(super) fn declarations_only(&self) -> Self {
+        Self {
+            decls: self.decls.clone(),
+            values: VarValues::default(),
+        }
+    }
+
+    /// `lookup` for the client side: a declared variable's ID by name for a
+    /// reader of origin `own` (the `mod.` and `map.` prefixes address that
+    /// origin's).
+    pub fn find(&self, own: ModuleSource, name: &str) -> Option<i32> {
+        self.lookup(own, name)
+    }
+
+    /// A declared variable's scope, visibility and default.
+    pub fn declared(&self, var: i32) -> Option<(VarScope, Visibility, i64)> {
+        self.decl(var)
+            .map(|decl| (decl.scope, decl.visibility, decl.default))
+    }
+
+    /// The object-scope values `id` holds apart from their defaults, by
+    /// variable ID.
+    pub fn object_values(&self, id: u64) -> impl Iterator<Item = (i32, i64)> + '_ {
+        self.values
+            .object
+            .range((id, i32::MIN)..=(id, i32::MAX))
+            .map(|((_, var), value)| (*var, *value))
+    }
+
     /// Drops a removed object's values.
     pub(super) fn forget_object(&mut self, id: u64) {
         let keys: Vec<_> = self

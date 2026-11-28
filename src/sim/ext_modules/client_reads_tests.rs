@@ -416,7 +416,9 @@ fn invisible_and_cloaked_enemies_do_not_exist_unless_detected() {
 
 #[test]
 fn a_disguised_enemy_reads_as_its_disguise() {
-    let scene = scene();
+    let mut scene = scene();
+    let object = scene.spy;
+    scene.sim_mut().ext_modules.held.set_image(object, Some("SPY".into()));
     let view = scene.player();
     let spy = scene.spy as i64;
     assert!(sees_object(&view, spy));
@@ -426,6 +428,7 @@ fn a_disguised_enemy_reads_as_its_disguise() {
         (house_ref(scene.americans), Status::Ok)
     );
     assert_eq!(read(&view, spy, "Category"), (0, Status::Ok));
+    assert_eq!(read(&view, spy, "ImageOverride"), (0, Status::Ok));
     // The GI's Strength, at the spy's full health.
     assert_eq!(read(&view, spy, "Strength"), (125, Status::Ok));
     assert_eq!(read(&view, spy, "Health"), (125, Status::Ok));
@@ -436,6 +439,7 @@ fn a_disguised_enemy_reads_as_its_disguise() {
     }
     // A spectator sees through it.
     let spectator = scene.spectator(true);
+    assert_eq!(read(&spectator, spy, "ImageOverride"), (scene.techno("SPY"), Status::Ok));
     assert_eq!(
         read(&spectator, spy, "Type"),
         (scene.techno("SPY"), Status::Ok)
@@ -612,6 +616,41 @@ fn find_clauses_read_through_the_gate() {
     });
     assert_eq!(found(&view, &money), vec![house_ref(scene.americans)]);
     assert_eq!(found(&view, &query(SCOPE_HOUSES)).len(), 3);
+}
+
+#[test]
+fn raised_cells_list_and_report_the_same_exploration() {
+    use crate::map::resolved_terrain::NativeCellQuery;
+    use crate::sim::vision::MapRevealProjection;
+
+    let mut scene = scene();
+    let sim = &mut scene.runtime.simulation;
+    let player = sim.interner.get("Americans").unwrap();
+    let terrain = sim.resolved_terrain.as_mut().unwrap();
+    // The first cell projects onto the last explored column. The second
+    // projects off the map, onto the explored fallback cell.
+    for x in [EXPLORED, 0] {
+        terrain.cell_mut_for_test(x, 10).unwrap().level = 2;
+    }
+    let cells = NativeCellQuery::isolated(terrain);
+    sim.fog.reveal_map_cell(
+        player,
+        (u16::MAX, 9),
+        false,
+        Some(&cells),
+        MapRevealProjection::Source,
+    );
+    sim.session.game_options_mut_for_test().fog_of_war = true;
+
+    let view = scene.player();
+    let result = [EXPLORED, 0].map(|x| {
+        (
+            view.cell_listed(x, 10),
+            read(&view, cell_ref(x, 10), "Revealed"),
+        )
+    });
+    assert_eq!(result, [(true, (1, Status::Ok)); 2]);
+    assert!(!view.cell_in_sight(0, 10));
 }
 
 #[test]

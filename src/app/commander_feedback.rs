@@ -1149,7 +1149,7 @@ fn spotted_houses(sim: &crate::sim::world::Simulation, local: InternedId) -> BTr
             ry: entity.position.ry(),
         }),
         local,
-        |rx, ry| fog.is_cell_visible(local, rx, ry) && !fog.is_cell_gap_covered(local, rx, ry),
+        |rx, ry| fog.shows_objects_to(local, rx, ry, true, sim.resolved_terrain()),
     )
 }
 

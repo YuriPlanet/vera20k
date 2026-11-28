@@ -230,6 +230,11 @@ jobs:
         if: runner.os == 'Windows'
         run: git config --global core.autocrlf false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # Both Mac runners default to Xcode 16.4. AppKit uses the linked SDK
+      # to choose the appearance of the game's window controls on newer Macs.
+      - name: Select Xcode 26.3 for the Mac build
+        if: runner.os == 'macOS'
+        run: sudo xcode-select --switch /Applications/Xcode_26.3.app/Contents/Developer
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
         with:
           toolchain: stable
@@ -629,8 +634,11 @@ jobs:
           # Info.plist name the same oldest macOS.
           build="$(plutil -extract CFBundleVersion raw "$plist")"
           test "$build" = "${STAMP/-/.}" || { echo "CFBundleVersion is $build" >&2; exit 1; }
+          build_info="$(vtool -show-build "$app/Contents/MacOS/VERA20K")"
+          sdk="$(awk '$1 == "sdk" { print $2 }' <<< "$build_info")"
+          test "${sdk%%.*}" -ge 26 || { echo "Game linked against macOS SDK '$sdk', need 26 or newer" >&2; exit 1; }
           for minimum in "$(plutil -extract LSMinimumSystemVersion raw "$plist")" \
-            "$(vtool -show-build "$app/Contents/MacOS/VERA20K" | awk '$1 == "minos" { print $2 }')"; do
+            "$(awk '$1 == "minos" { print $2 }' <<< "$build_info")"; do
             test "$minimum" = "$MACOSX_DEPLOYMENT_TARGET" \
               || { echo "oldest macOS $minimum, not $MACOSX_DEPLOYMENT_TARGET" >&2; exit 1; }
           done

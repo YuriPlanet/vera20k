@@ -90,6 +90,12 @@
 //!   (SecondaryFacing, whose rate `Facing_Update` rewrites from `ROT=` on
 //!   each aim), Fly's turns (SecondaryFacing), Hover's steering facing,
 //!   Jumpjet's flight facing and Walk's snapped body.
+//! - `TintColor` (`0xRRGGBB`, `Override` only) and `TintIntensity`
+//!   (`fixed`, `Add` only): the custom tint Phobos' `TechnoExt::
+//!   UpdateTintValues` folds from shields and AttachEffects. The draw
+//!   (`app::presentation::lighting::custom_tint`) ORs the colour's RGB565
+//!   word into theirs and adds the intensity, the same for every viewer
+//!   ([`GameEntity::module_tint`]). Nothing in the simulation reads it.
 //!
 //! Each stage starts from the Phobos AttachEffect product (1.0 without
 //! Phobos), scales it by `1 + sum of additions` (an additive property:
@@ -175,6 +181,8 @@ pub enum Stat {
     DisableWeapons,
     Immunity,
     Rot,
+    TintColor,
+    TintIntensity,
 }
 
 /// `ImmunityFlags` bits (appendix 7.2).
@@ -192,6 +200,9 @@ pub(crate) enum Immunity {
 /// The bits `ImmunityFlags` defines.
 const IMMUNITY_MASK: i64 = 0x7F;
 
+/// The bits a `TintColor` (`0xRRGGBB`) defines.
+const COLOR_MASK: i64 = 0xFF_FFFF;
+
 /// How a property's value reads and composes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Unit {
@@ -205,10 +216,12 @@ enum Unit {
     Flag,
     /// A bit mask, written only with `Override`.
     Mask,
+    /// A `0xRRGGBB` colour, written only with `Override`.
+    Color,
 }
 
 impl Stat {
-    const COUNT: usize = 14;
+    const COUNT: usize = 16;
 
     pub(super) fn from_property(name: &str) -> Option<Self> {
         Some(match name {
@@ -226,6 +239,8 @@ impl Stat {
             "DisableWeapons" => Self::DisableWeapons,
             "ImmunityFlags" => Self::Immunity,
             "ROTMultiplier" => Self::Rot,
+            "TintColor" => Self::TintColor,
+            "TintIntensity" => Self::TintIntensity,
             _ => return None,
         })
     }
@@ -251,6 +266,8 @@ impl Stat {
             Self::DisableWeapons => "DisableWeapons",
             Self::Immunity => "ImmunityFlags",
             Self::Rot => "ROTMultiplier",
+            Self::TintColor => "TintColor",
+            Self::TintIntensity => "TintIntensity",
         }
     }
 
@@ -278,27 +295,34 @@ impl Stat {
             | Self::RangeMultiplier
             | Self::CritMultiplier
             | Self::Rot => Unit::Factor,
-            Self::CritExtraChance => Unit::Fixed,
+            Self::CritExtraChance | Self::TintIntensity => Unit::Fixed,
             Self::RangeExtra => Unit::Leptons,
             Self::Unkillable | Self::Cloakable | Self::ForceDecloak | Self::DisableWeapons => {
                 Unit::Flag
             }
             Self::Immunity => Unit::Mask,
+            Self::TintColor => Unit::Color,
         }
     }
 
     /// Whether a module may put `op` with `value` on this property: a mask
-    /// takes only an `Override` of its defined bits.
+    /// takes only an `Override` of its defined bits, a colour only an
+    /// `Override` of `0xRRGGBB`, and `TintIntensity` only an `Add`
+    /// (appendix 7.2).
     pub(super) fn admits(self, op: ModifierOp, value: i64) -> bool {
-        self.unit() != Unit::Mask
-            || (op == ModifierOp::Override && value & !IMMUNITY_MASK == 0)
+        match (self, self.unit()) {
+            (_, Unit::Mask) => op == ModifierOp::Override && value & !IMMUNITY_MASK == 0,
+            (_, Unit::Color) => op == ModifierOp::Override && value & !COLOR_MASK == 0,
+            (Self::TintIntensity, _) => op == ModifierOp::Add,
+            _ => true,
+        }
     }
 
     /// One unit of the property in its raw module value.
     fn scale(self) -> f64 {
         match self.unit() {
             Unit::Factor | Unit::Fixed => FIXED_ONE,
-            Unit::Leptons | Unit::Flag | Unit::Mask => 1.0,
+            Unit::Leptons | Unit::Flag | Unit::Mask | Unit::Color => 1.0,
         }
     }
 
@@ -311,6 +335,7 @@ impl Stat {
             (_, Unit::Leptons) => (-16_777_216.0, 16_777_216.0),
             (_, Unit::Flag) => (0.0, 1.0),
             (_, Unit::Mask) => (0.0, IMMUNITY_MASK as f64),
+            (_, Unit::Color) => (0.0, COLOR_MASK as f64),
         }
     }
 
@@ -330,6 +355,9 @@ impl Stat {
             // Phobos has no turn-rate effect.
             Self::RangeMultiplier | Self::CritMultiplier | Self::Rot => 1.0,
             Self::RangeExtra | Self::CritExtraChance | Self::DisableWeapons => 0.0,
+            // Phobos' tints compose with the module tint where the draw
+            // folds them (`lighting::custom_tint`), not here.
+            Self::TintColor | Self::TintIntensity => 0.0,
             // Read through `GameEntity::immunity_flags`, which knows the type.
             Self::Immunity => 0.0,
             Self::Unkillable => flag(entity.phobos_unkillable()),
@@ -413,7 +441,9 @@ impl Terms {
             None => {
                 let start = match stat.unit() {
                     Unit::Factor => base * (1.0 + self.added),
-                    Unit::Fixed | Unit::Leptons | Unit::Flag | Unit::Mask => base + self.added,
+                    Unit::Fixed | Unit::Leptons | Unit::Flag | Unit::Mask | Unit::Color => {
+                        base + self.added
+                    }
                 };
                 self.multipliers
                     .iter()
@@ -626,6 +656,25 @@ impl GameEntity {
             return None;
         }
         Some((multiplier.unwrap_or(1.0), extra.unwrap_or(0.0)))
+    }
+
+    /// The module tint (appendix 7.2 `TintColor`, `TintIntensity`): the
+    /// most recent colour override as `[R, G, B]` (black without one) and
+    /// the summed intensity, 1.0 = full. `None` when no modifier touches
+    /// either. The same for every viewer: the draw folds it into the custom
+    /// tint beside Phobos' shields and AttachEffects.
+    pub fn module_tint(&self) -> Option<([u8; 3], f64)> {
+        let terms = self.module_terms()?;
+        let color = terms.applied(Stat::TintColor, 0.0);
+        let intensity = terms.applied(Stat::TintIntensity, 0.0);
+        if color.is_none() && intensity.is_none() {
+            return None;
+        }
+        let rgb = color.map_or(0, |color| color as u32);
+        Some((
+            [(rgb >> 16) as u8, (rgb >> 8) as u8, rgb as u8],
+            intensity.unwrap_or(0.0),
+        ))
     }
 
     /// A wired property's effective value, raw: `fixed` for factors and
@@ -854,6 +903,8 @@ const ALL_STATS: [Stat; Stat::COUNT] = [
     Stat::DisableWeapons,
     Stat::Immunity,
     Stat::Rot,
+    Stat::TintColor,
+    Stat::TintIntensity,
 ];
 
 impl Modifier {

@@ -1,7 +1,7 @@
 //! Movie list dialog `0x129` model: the retail movie table, the campaign
 //! movie unlock progress, list rows and the retained selection.
 //!
-//! Table `0x00832C20`: `{file, CSF label, CD}` triples. The intro row is
+//! YR table `0x00832C20`: `{file, CSF label, CD}` triples. The intro row is
 //! always listed; the Soviet (`0x00832CA0`) and Allied (`0x00832C30`) rows are
 //! listed up to OptionsClass `+0x4C` / `+0x50`. Those progress fields default
 //! to -1 (OptionsClass__SetDefaults `0x005FA3C7`), persist in RA2MD.INI as the
@@ -201,7 +201,7 @@ const fn entry(file: &'static str, label_key: &'static str, cd: i32) -> MovieEnt
 
 const INTRO_MOVIE: MovieEntry = entry("A00_F00E", "Name:IntroMovie", -1);
 
-const SOVIET_MOVIES: [MovieEntry; 8] = [
+const YR_SOVIET_MOVIES: [MovieEntry; 8] = [
     entry("S01_F00e", "Name:Sov01MD", 2),
     entry("S02_F00e", "Name:Sov02MD", 2),
     entry("S03_F00e", "Name:Sov03MD", 2),
@@ -212,7 +212,7 @@ const SOVIET_MOVIES: [MovieEntry; 8] = [
     entry("S08_F00e", "Name:SovFinalMovie", 2),
 ];
 
-const ALLIED_MOVIES: [MovieEntry; 8] = [
+const YR_ALLIED_MOVIES: [MovieEntry; 8] = [
     entry("A01_F00e", "Name:All01MD", 2),
     entry("A02_F00e", "Name:All02MD", 2),
     entry("A03_F00e", "Name:All03MD", 2),
@@ -221,6 +221,38 @@ const ALLIED_MOVIES: [MovieEntry; 8] = [
     entry("A06_F00e", "Name:All06MD", 2),
     entry("A07_F00e", "Name:All07MD", 2),
     entry("A08_F00e", "Name:AllFinalMovie", 2),
+];
+
+// RA2 game.exe stores the intro at 0x007E8248, Allied rows at 0x007E8258
+// and Soviet rows at 0x007E82F8. Mission twelve is the last on each side.
+const RA2_SOVIET_MOVIES: [MovieEntry; 12] = [
+    entry("S01_F00e", "Name:Sov01", 1),
+    entry("S02_F00e", "Name:Sov02", 1),
+    entry("S03_F00e", "Name:Sov03", 1),
+    entry("S04_F00e", "Name:Sov04", 1),
+    entry("S05_F00e", "Name:Sov05", 1),
+    entry("S06_F00e", "Name:Sov06", 1),
+    entry("S07_F00e", "Name:Sov07", 1),
+    entry("S08_F00e", "Name:Sov08", 1),
+    entry("S09_F00e", "Name:Sov09", 1),
+    entry("S10_F00e", "Name:Sov10", 1),
+    entry("S11_F00e", "Name:Sov11", 1),
+    entry("S12_F00e", "Name:Sov12", 1),
+];
+
+const RA2_ALLIED_MOVIES: [MovieEntry; 12] = [
+    entry("A01_F00e", "Name:All01", 0),
+    entry("A02_F00e", "Name:All02", 0),
+    entry("A03_F00e", "Name:All03", 0),
+    entry("A04_F00e", "Name:All04", 0),
+    entry("A05_F00e", "Name:All05", 0),
+    entry("A06_F00e", "Name:All06", 0),
+    entry("A07_F00e", "Name:All07", 0),
+    entry("A08_F00e", "Name:All08", 0),
+    entry("A09_F00e", "Name:All09", 0),
+    entry("A10_F00e", "Name:All10", 0),
+    entry("A11_F00e", "Name:All11", 0),
+    entry("A12_F00e", "Name:All12", 0),
 ];
 
 /// Campaign movie unlock progress (OptionsClass `+0x4C` Soviet, `+0x50`
@@ -247,23 +279,55 @@ fn table_index(table: &[MovieEntry], stem: &str) -> i32 {
         .map_or(-1, |index| index as i32)
 }
 
-impl MovieProgress {
-    /// `0x005FBF80`: raise each side's progress to the `_stricmp` table index
-    /// of `stem` (the movie name truncated at its first `.`).
-    pub fn note_played(&mut self, stem: &str) {
-        self.soviet = self.soviet.max(table_index(&SOVIET_MOVIES, stem));
-        self.allied = self.allied.max(table_index(&ALLIED_MOVIES, stem));
-    }
+/// The movie table of the edition selected at launch.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MovieCatalog {
+    YurisRevenge = 0,
+    RedAlert2 = 1,
 }
 
-/// Rows added by `0x005FC000`, in insertion order: the intro, then Soviet
-/// rows `0..=soviet`, then Allied rows `0..=allied`.
-pub fn active_movie_entries(progress: MovieProgress) -> Vec<MovieEntry> {
-    let take = |progress: i32| usize::try_from(progress.saturating_add(1)).unwrap_or(0);
-    std::iter::once(INTRO_MOVIE)
-        .chain(SOVIET_MOVIES.iter().copied().take(take(progress.soviet)))
-        .chain(ALLIED_MOVIES.iter().copied().take(take(progress.allied)))
-        .collect()
+impl MovieCatalog {
+    pub fn for_launch() -> Self {
+        if crate::util::ra2_launch::enabled() {
+            Self::RedAlert2
+        } else {
+            Self::YurisRevenge
+        }
+    }
+
+    fn campaigns(self) -> (&'static [MovieEntry], &'static [MovieEntry]) {
+        match self {
+            Self::YurisRevenge => (&YR_SOVIET_MOVIES, &YR_ALLIED_MOVIES),
+            Self::RedAlert2 => (&RA2_SOVIET_MOVIES, &RA2_ALLIED_MOVIES),
+        }
+    }
+
+    pub fn full_progress(self) -> MovieProgress {
+        let (soviet, allied) = self.campaigns();
+        MovieProgress {
+            soviet: soviet.len() as i32 - 1,
+            allied: allied.len() as i32 - 1,
+        }
+    }
+
+    /// OptionsClass__UnlockCampaignMovie (gamemd 0x005FBF80, RA2 0x005DA3F0)
+    /// raises the progress for the side that played this movie.
+    pub fn note_played(self, progress: &mut MovieProgress, stem: &str) {
+        let (soviet, allied) = self.campaigns();
+        progress.soviet = progress.soviet.max(table_index(soviet, stem));
+        progress.allied = progress.allied.max(table_index(allied, stem));
+    }
+
+    /// OptionsClass__FillMovieList (gamemd 0x005FC000, RA2 0x005DA470)
+    /// lists the intro, then unlocked Soviet and Allied rows.
+    pub fn entries(self, progress: MovieProgress) -> Vec<MovieEntry> {
+        let (soviet, allied) = self.campaigns();
+        let take = |index: i32| usize::try_from(index.saturating_add(1)).unwrap_or(0);
+        std::iter::once(INTRO_MOVIE)
+            .chain(soviet.iter().copied().take(take(progress.soviet)))
+            .chain(allied.iter().copied().take(take(progress.allied)))
+            .collect()
+    }
 }
 
 #[cfg(all(test, tests_ui))]
@@ -275,7 +339,7 @@ mod tests {
     fn list_page() -> (Gui, NodeId) {
         let mut gui = Gui::new(8);
         let root = gui.create(NodeKind::Dialog, None).unwrap();
-        let list = active_movie_entries(MovieProgress::default());
+        let list = MovieCatalog::YurisRevenge.entries(MovieProgress::default());
         let node = build_family_list(
             &mut gui,
             root,
@@ -333,7 +397,8 @@ mod tests {
     }
 
     fn files(progress: MovieProgress) -> Vec<&'static str> {
-        active_movie_entries(progress)
+        MovieCatalog::YurisRevenge
+            .entries(progress)
             .iter()
             .map(|movie| movie.file)
             .collect()
@@ -342,7 +407,7 @@ mod tests {
     #[test]
     fn playing_a_campaign_movie_unlocks_its_prefix_case_insensitively() {
         let mut progress = MovieProgress::default();
-        progress.note_played("s03_f00e");
+        MovieCatalog::YurisRevenge.note_played(&mut progress, "s03_f00e");
         assert_eq!(
             progress,
             MovieProgress {
@@ -350,9 +415,9 @@ mod tests {
                 allied: -1
             }
         );
-        progress.note_played("S01_F00E");
+        MovieCatalog::YurisRevenge.note_played(&mut progress, "S01_F00E");
         assert_eq!(progress.soviet, 2, "progress never decreases");
-        progress.note_played("A08_F00e");
+        MovieCatalog::YurisRevenge.note_played(&mut progress, "A08_F00e");
         assert_eq!(
             files(progress),
             [
@@ -365,8 +430,8 @@ mod tests {
     #[test]
     fn intro_and_sneak_peek_do_not_unlock() {
         let mut progress = MovieProgress::default();
-        progress.note_played("A00_F00E");
-        progress.note_played("RENEGADE");
+        MovieCatalog::YurisRevenge.note_played(&mut progress, "A00_F00E");
+        MovieCatalog::YurisRevenge.note_played(&mut progress, "RENEGADE");
         assert_eq!(progress, MovieProgress::default());
     }
 }

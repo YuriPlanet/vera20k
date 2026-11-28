@@ -11,6 +11,7 @@ use std::path::Path;
 
 use crate::app::frontend::startup_options::{RetailStartupOptions, ScreenSize};
 use crate::rules::ini_parser::{IniFile, IniSection};
+use crate::ui::movies_credits_shell::{MovieCatalog, MovieEntry, MovieProgress};
 use crate::util::ini_writer::set_ini_values;
 
 use super::profile_file;
@@ -116,11 +117,10 @@ pub(crate) struct RetailOptionsProfile {
     pub(crate) sound_latency: u16,
     pub(crate) in_game_music: bool,
 
-    // [Network] NetID: campaign movie unlock progress (OptionsClass +0x4C
-    // Soviet, +0x50 Allied), -1 when none. The obfuscated key is decoded by
-    // `ReadFromINI` `0x005FABA6..0x005FAC54` and written by `WriteToINI`
-    // `0x005FAF9E`; Play_Movie raises it through `0x005FBF80`.
-    pub(crate) movie_progress: crate::ui::movies_credits_shell::MovieProgress,
+    // Indexed by MovieCatalog. YR keeps [Network] NetID (OptionsClass__ReadFromINI
+    // 0x005FABA6, WriteToINI 0x005FAF9E). The two games have separate native
+    // profiles, so VERA.INI keeps the RA2 campaign in [VERA] RA2MovieProgress.
+    pub(crate) movie_progress: [MovieProgress; 2],
 
     // OptionsClass +0x4A/+0x54/+0x58; ReadFromINI 5FAC88..5FACDE.
     pub(crate) network_socket: u16,
@@ -163,8 +163,9 @@ pub(crate) struct RetailOptionsProfile {
     /// own string-table key. Off by default; a start with it on shows the
     /// texts until the hotkey asks for keys.
     pub(crate) show_string_keys: bool,
-    /// `[VERA] MouseWheelZoom=`: let the mouse wheel change the battle's
-    /// view distance. Off by default; this is a local camera preference.
+    /// `[VERA] MouseWheelZoom=`: let the mouse wheel zoom the battle's
+    /// camera, continuously (`app::input::camera::wheel_zoom`). Off by
+    /// default; this is a local camera preference.
     pub(crate) mouse_wheel_zoom: bool,
     /// `[VERA] RightClickOrders=`: left selects, right issues context orders,
     /// and a double-click on an object selects its type on screen (the T key's
@@ -197,6 +198,8 @@ pub(crate) struct RetailOptionsProfile {
     /// (`GpuContext::set_vsync`). On by default; untick it for lower input
     /// latency, with tearing. Presentation only.
     pub(crate) vsync: bool,
+    /// `[VERA] RenderInterpolation=`: draw moving units between logic frames.
+    pub(crate) render_interpolation: bool,
     /// `[VERA] HighRefreshRateInBattle=`: allow battlefield draws at the monitor's refresh rate.
     pub(crate) high_refresh_rate_in_battle: bool,
     /// `[VERA] HdMapPreviews=`: the setup screens' map preview shows VERA's
@@ -303,7 +306,7 @@ pub(crate) struct RetailOptionsProfile {
     /// change applies from the next start. Auto keeps the game's data in
     /// charge; an unknown value reads as Auto.
     pub(crate) kratos: crate::util::kratos_launch::KratosSetting,
-    /// `[VERA] RA2Mode=`: the Options page's RA2 Mode box (docs/ra2-mode.md).
+    /// `[VERA] RA2Mode=`: the player's saved edition (docs/ra2-mode.md).
     /// On, the game plays original Red Alert 2 from the installation's
     /// non-md files (`util::ra2_launch`). Read at start, like the Ares
     /// setting: a change applies from the next start. Off by default.
@@ -430,7 +433,7 @@ impl Default for RetailOptionsProfile {
             is_score_shuffle: false,
             sound_latency: 9,
             in_game_music: true,
-            movie_progress: crate::ui::movies_credits_shell::MovieProgress::default(),
+            movie_progress: [MovieProgress::default(); 2],
             network_socket: u16::MAX,
             network_card: 0,
             network_destination: String::new(),
@@ -452,6 +455,7 @@ impl Default for RetailOptionsProfile {
             smooth_sidebar: false,
             smooth_online_menus: false,
             vsync: true,
+            render_interpolation: true,
             high_refresh_rate_in_battle: false,
             hd_map_previews: true,
             house_color_strength: crate::rules::house_colors::STRENGTH_RETAIL,
@@ -503,7 +507,7 @@ pub(crate) struct FormattedProfileSections {
     pub(crate) audio: [(&'static str, String); 7],
     pub(crate) network: [(&'static str, String); 4],
     /// VERA's own section, written after the native ones.
-    pub(crate) vera: [(&'static str, String); 48],
+    pub(crate) vera: [(&'static str, String); 50],
 }
 
 impl RetailOptionsLoad {
@@ -602,6 +606,14 @@ impl RetailOptionsLoad {
 }
 
 impl RetailOptionsProfile {
+    pub(crate) fn unlocked_movies(&self, catalog: MovieCatalog) -> Vec<MovieEntry> {
+        catalog.entries(self.movie_progress[catalog as usize])
+    }
+
+    pub(crate) fn note_movie_played(&mut self, catalog: MovieCatalog, stem: &str) {
+        catalog.note_played(&mut self.movie_progress[catalog as usize], stem);
+    }
+
     /// The YR Original Style box as this start plays it. RA2 Mode paints the
     /// shell with RA2 art: the YR style (GLSMD.PAL / GLSLMD.SHP, the
     /// Cooperative setup art, the YR menu movie) lives in md archives RA2
@@ -692,8 +704,17 @@ impl RetailOptionsProfile {
                 audio.read_int("SoundLatency", i32::from(self.sound_latency)) as u16;
         }
 
-        self.movie_progress = decode_net_id(ini.section_or_empty(NETWORK_SECTION));
         let network = ini.section_or_empty(NETWORK_SECTION);
+        let yr = decode_net_id(network, "NetID", MovieCatalog::YurisRevenge);
+        let vera = ini.section_or_empty(VERA_SECTION);
+        // Older VERA profiles shared NetID across both editions. Seed both
+        // lists from that progress until their first separate write.
+        let ra2 = if vera.is_present("RA2MovieProgress") {
+            decode_net_id(vera, "RA2MovieProgress", MovieCatalog::RedAlert2)
+        } else {
+            decode_net_id(network, "NetID", MovieCatalog::RedAlert2)
+        };
+        self.movie_progress = [yr, ra2];
         self.network_socket = network.read_int("Socket", i32::from(self.network_socket)) as u16;
         self.network_card = network.read_int("NetCard", self.network_card);
         self.network_destination = network.read_string("DestNet", "", 0x40);
@@ -730,6 +751,8 @@ impl RetailOptionsProfile {
             self.smooth_online_menus =
                 vera.read_bool("SmoothOnlineMenus", self.smooth_online_menus);
             self.vsync = vera.read_bool("VSync", self.vsync);
+            self.render_interpolation =
+                vera.read_bool("RenderInterpolation", self.render_interpolation);
             self.high_refresh_rate_in_battle =
                 vera.read_bool("HighRefreshRateInBattle", self.high_refresh_rate_in_battle);
             self.hd_map_previews = vera.read_bool("HdMapPreviews", self.hd_map_previews);
@@ -900,7 +923,10 @@ impl RetailOptionsProfile {
                 ("Socket", self.network_socket.to_string()),
                 ("NetCard", self.network_card.to_string()),
                 ("DestNet", self.network_destination.clone()),
-                ("NetID", encode_net_id(self.movie_progress)),
+                (
+                    "NetID",
+                    encode_net_id(self.movie_progress[MovieCatalog::YurisRevenge as usize]),
+                ),
             ],
             vera: [
                 ("FullScreen", format_bool(self.full_screen).to_string()),
@@ -966,6 +992,10 @@ impl RetailOptionsProfile {
                 ),
                 ("VSync", format_bool(self.vsync).to_string()),
                 (
+                    "RenderInterpolation",
+                    format_bool(self.render_interpolation).to_string(),
+                ),
+                (
                     "HighRefreshRateInBattle",
                     format_bool(self.high_refresh_rate_in_battle).to_string(),
                 ),
@@ -1010,6 +1040,10 @@ impl RetailOptionsProfile {
                 ),
                 ("AutoRepair", format_bool(self.auto_repair).to_string()),
                 ("RA2Mode", format_bool(self.ra2_mode).to_string()),
+                (
+                    "RA2MovieProgress",
+                    encode_net_id(self.movie_progress[MovieCatalog::RedAlert2 as usize]),
+                ),
                 (
                     "MinimapBeacons",
                     format_bool(self.minimap_beacons).to_string(),
@@ -1060,7 +1094,6 @@ impl RetailOptionsProfile {
             VERA_SECTION,
             &[
                 "RA2Look",
-                "RenderInterpolation",
                 "SoundDefaultsApplied",
                 "SkipStartupLogo",
                 "WindowX",
@@ -1264,29 +1297,37 @@ fn flip_net_id_units(units: &[u16]) -> Vec<u16> {
 
 /// Decode `[Network] NetID` into movie progress. Both fields start at -1, the
 /// first two `wcstok(L" ")` tokens are read with `wcstol` minus one, and a
-/// value outside -1..=7 falls back to -1.
-fn decode_net_id(network: &IniSection) -> crate::ui::movies_credits_shell::MovieProgress {
-    let units = network.read_comma_hex_utf16("NetID", &[], NET_ID_UNITS);
+/// value beyond the edition's last row falls back to -1 (gamemd 0x005FAC36,
+/// RA2 game.exe 0x005D90D3).
+fn decode_net_id(section: &IniSection, key: &str, catalog: MovieCatalog) -> MovieProgress {
+    let units = section.read_comma_hex_utf16(key, &[], NET_ID_UNITS);
     let text = flip_net_id_units(&units);
     let mut tokens = text
         .split(|unit| *unit == u16::from(b' '))
         .filter(|token| !token.is_empty());
-    let mut progress = crate::ui::movies_credits_shell::MovieProgress::default();
+    let mut progress = MovieProgress::default();
     if let Some(token) = tokens.next() {
         progress.soviet = crate::util::native_string::crt_wcstol(token, 10).wrapping_sub(1);
         if let Some(token) = tokens.next() {
             progress.allied = crate::util::native_string::crt_wcstol(token, 10).wrapping_sub(1);
         }
     }
-    let clamp = |value: i32| if (-1..8).contains(&value) { value } else { -1 };
-    progress.soviet = clamp(progress.soviet);
-    progress.allied = clamp(progress.allied);
+    let last = catalog.full_progress();
+    let clamp = |value, last| {
+        if (-1..=last).contains(&value) {
+            value
+        } else {
+            -1
+        }
+    };
+    progress.soviet = clamp(progress.soviet, last.soviet);
+    progress.allied = clamp(progress.allied, last.allied);
     progress
 }
 
 /// Encode movie progress the way `WriteToINI` does: `swprintf(L"%d %d",
 /// soviet + 1, allied + 1)`, flipped, then written as comma hex.
-fn encode_net_id(progress: crate::ui::movies_credits_shell::MovieProgress) -> String {
+fn encode_net_id(progress: MovieProgress) -> String {
     let text = format!(
         "{} {}",
         progress.soviet.wrapping_add(1),
@@ -2385,23 +2426,30 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
     }
 
     #[test]
-    fn original_yr_style_round_trips_and_retired_keys_are_dropped() {
+    fn original_yr_style_and_saved_tank_smoothing_round_trip_independently() {
         let startup = RetailStartupOptions::default();
+        assert!(
+            load_snapshot(&startup, b"")
+                .retained_profile
+                .render_interpolation
+        );
         for style in [false, true] {
             let input = format!(
-                "[VERA]\nYROriginalStyle={}\nRenderInterpolation=yes\nRA2Look=yes\nWolTestService=yes\nUnowned=keep\n",
+                "[VERA]\nYROriginalStyle={}\nRenderInterpolation={}\nRA2Look=yes\nWolTestService=yes\nUnowned=keep\n",
                 format_bool(style),
+                format_bool(!style),
             );
             let profile = load_snapshot(&startup, input.as_bytes()).retained_profile;
             assert_eq!(profile.yr_original_style, style);
             let written = profile.transform_settings(input.as_bytes());
             let text = String::from_utf8_lossy(&written);
             assert!(!text.contains("RA2Look="));
-            assert!(!text.contains("RenderInterpolation="));
+            assert_eq!(profile.render_interpolation, !style);
             assert!(!text.contains("WolTestService="), "{text}");
             assert!(text.contains("Unowned=keep"));
             let reloaded = load_snapshot(&startup, &written).retained_profile;
             assert_eq!(reloaded.yr_original_style, style);
+            assert_eq!(reloaded.render_interpolation, !style);
         }
     }
 
@@ -2721,15 +2769,79 @@ IsScoreRepeat=no\r\nIsScoreShuffle=no\r\nSoundLatency=9\r\nInGameMusic=yes\r\n\
     }
 
     #[test]
+    fn movie_list_uses_each_editions_title_and_movie_for_legacy_progress() {
+        use MovieCatalog::{RedAlert2, YurisRevenge};
+        // Older VERA kept one Soviet and one Allied movie in the shared NetID.
+        let profile = load_snapshot(
+            &RetailStartupOptions::default(),
+            b"[Network]\nNetID=ffce,ffdf,ffce,\n",
+        )
+        .retained_profile;
+        let rows = profile.unlocked_movies(RedAlert2);
+        let names: Vec<_> = rows
+            .iter()
+            .map(|row| (row.file, row.label_key, row.cd))
+            .collect();
+        assert_eq!(
+            names,
+            [
+                ("A00_F00E", "Name:IntroMovie", -1),
+                ("S01_F00e", "Name:Sov01", 1),
+                ("A01_F00e", "Name:All01", 0),
+            ]
+        );
+        assert_eq!(
+            profile.unlocked_movies(YurisRevenge)[2].label_key,
+            "Name:All01MD"
+        );
+
+        // A base-game NetID of "12 0" is valid for RA2's Soviet campaign.
+        let imported = load_snapshot(
+            &RetailStartupOptions::default(),
+            b"[Network]\nNetID=ffce,ffcd,ffdf,ffcf,\n",
+        )
+        .retained_profile;
+        assert_eq!(
+            imported.unlocked_movies(RedAlert2).last().unwrap().file,
+            "S12_F00e"
+        );
+        assert_eq!(imported.unlocked_movies(YurisRevenge).len(), 1);
+    }
+
+    #[test]
+    fn late_ra2_movies_survive_restart_and_unlock_only_their_own_campaign() {
+        use MovieCatalog::{RedAlert2, YurisRevenge};
+        let startup = RetailStartupOptions::default();
+        let mut profile = RetailOptionsProfile::default();
+        profile.note_movie_played(YurisRevenge, "a08_f00e");
+        profile.note_movie_played(RedAlert2, "s12_f00e");
+        profile.note_movie_played(RedAlert2, "a09_f00e");
+        let saved = profile.transform_settings(b"");
+        let reloaded = load_snapshot(&startup, &saved).retained_profile;
+        let ra2 = reloaded.unlocked_movies(RedAlert2);
+        assert_eq!(ra2.len(), 1 + 12 + 9);
+        assert_eq!(
+            (ra2[12].file, ra2[12].label_key),
+            ("S12_F00e", "Name:Sov12")
+        );
+        assert_eq!(
+            (ra2[21].file, ra2[21].label_key),
+            ("A09_F00e", "Name:All09")
+        );
+        let yr = reloaded.unlocked_movies(YurisRevenge);
+        assert_eq!(yr.len(), 1 + 8);
+        assert_eq!(yr[8].label_key, "Name:AllFinalMovie");
+    }
+
+    #[test]
     fn net_id_decodes_movie_progress_like_read_from_ini() {
-        use crate::ui::movies_credits_shell::MovieProgress;
         let progress = |soviet, allied| MovieProgress { soviet, allied };
         let decode_net_id = |raw: Option<&str>| {
             let mut network = IniSection::new(NETWORK_SECTION.to_string());
             if let Some(raw) = raw {
                 network.set("NetID", raw);
             }
-            decode_net_id(&network)
+            decode_net_id(&network, "NetID", MovieCatalog::YurisRevenge)
         };
         // Retail default "0 0" and the obfuscated all-0xFFFF form.
         assert_eq!(decode_net_id(Some("ffcf,ffdf,ffcf,")), progress(-1, -1));
@@ -2745,14 +2857,16 @@ IsScoreRepeat=no\r\nIsScoreShuffle=no\r\nSoundLatency=9\r\nInGameMusic=yes\r\n\
 
     #[test]
     fn net_id_encodes_like_write_to_ini_and_round_trips() {
-        use crate::ui::movies_credits_shell::MovieProgress;
         assert_eq!(encode_net_id(MovieProgress::default()), "ffcf,ffdf,ffcf,");
         for soviet in -1..8 {
             for allied in -1..8 {
                 let value = MovieProgress { soviet, allied };
                 let mut network = IniSection::new(NETWORK_SECTION.to_string());
                 network.set("NetID", &encode_net_id(value));
-                assert_eq!(decode_net_id(&network), value);
+                assert_eq!(
+                    decode_net_id(&network, "NetID", MovieCatalog::YurisRevenge),
+                    value
+                );
             }
         }
     }

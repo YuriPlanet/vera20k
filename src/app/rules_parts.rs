@@ -99,6 +99,39 @@ pub(crate) struct RulesSettings {
     pub(crate) resources: Option<ResourceSelection>,
     #[serde(rename = "mod")]
     pub(crate) mod_in_use: Option<ModIdentity>,
+    /// The VERA.INI values this game read that its rules digest covers
+    /// ([`agreed_ini`]), by section and key, as VERA.INI writes them. Always
+    /// sent, defaults included: a launcher writes a host's into its player's
+    /// VERA.INI to play the host's game without knowing what each key means,
+    /// and names a differing one by its key (AGENTS.md, "Multiplayer rules").
+    pub(crate) ini: AgreedIni,
+}
+
+/// VERA.INI sections, each holding its keys' values as VERA.INI writes them.
+pub(crate) type AgreedIni =
+    std::collections::BTreeMap<&'static str, std::collections::BTreeMap<&'static str, String>>;
+
+/// The VERA.INI keys whose values a launcher's network match plays and its
+/// rules digest covers: the launch settings (Ares, Kratos, RA2 Mode) and the
+/// player's own rule switches that match plays (`cncnet::start_spawn`, which
+/// leaves the Building Production Queue off). A new VERA.INI setting that
+/// changes the digest is named here in the same change.
+pub(crate) fn agreed_ini(
+    ares: crate::util::ares_launch::AresSetting,
+    kratos: crate::util::kratos_launch::KratosSetting,
+    ra2: bool,
+    personal: &crate::rules::personal_rules::PersonalRules,
+) -> AgreedIni {
+    let yes_no = |on: bool| if on { "yes" } else { "no" }.to_owned();
+    let vera = std::collections::BTreeMap::from([
+        ("Ares", ares.ini_value().to_owned()),
+        ("Kratos", kratos.ini_value().to_owned()),
+        ("RA2Mode", yes_no(ra2)),
+        ("TerrainDeformation", yes_no(personal.terrain_deformation())),
+        ("SuperweaponLimit", personal.superweapon_limit().to_string()),
+        ("WasmBudget", personal.wasm_budget().to_string()),
+    ]);
+    AgreedIni::from([("VERA", vera)])
 }
 
 fn is_zero(value: &u32) -> bool {
@@ -234,6 +267,7 @@ impl RulesParts {
                 ra2: false,
                 resources: None,
                 mod_in_use: None,
+                ini: AgreedIni::new(),
             },
             None,
         )
@@ -289,7 +323,7 @@ mod tests {
     #[test]
     fn the_digest_hashes_the_canonical_form_without_itself() {
         let parts = RulesParts::new(vec![file("rules", false)], settings(), None);
-        let canonical = r#"{"v":1,"files":[{"id":"rules","name":"rulesmd.ini","digest":"0123456789abcdef","source":"retail","changed":false}],"settings":{"terrain_deformation":false,"superweapon_limit":0,"ares":"auto","ares_mix":false,"ini_roots_stock":true,"mod":null},"mod_check":null}"#;
+        let canonical = r#"{"v":1,"files":[{"id":"rules","name":"rulesmd.ini","digest":"0123456789abcdef","source":"retail","changed":false}],"settings":{"terrain_deformation":false,"superweapon_limit":0,"ares":"auto","ares_mix":false,"ini_roots_stock":true,"mod":null,"ini":{}},"mod_check":null}"#;
         assert_eq!(
             parts.digest,
             &crate::util::sha256::sha256_hex(canonical.as_bytes())[..16]

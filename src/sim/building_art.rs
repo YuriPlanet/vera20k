@@ -1254,6 +1254,28 @@ pub fn gate_open_body_frame(
     })
 }
 
+/// VERA: a gate's body frame while a Wasm module's `DoorOpen` write holds
+/// its door open (`ext_modules::held`): [`gate_open_body_frame`]'s open
+/// stage, `GateStages - 1`, with its damaged offset. A held shut door draws
+/// GetCurrentFrame's (`None`).
+pub fn gate_held_body_frame(
+    entity: &GameEntity,
+    gate_stages: i32,
+    strength: i32,
+    yellow: f64,
+    open: bool,
+) -> Option<i32> {
+    if !open {
+        return None;
+    }
+    let stage = gate_stages.wrapping_sub(1).max(0);
+    Some(if requested_damage_state(entity.health, strength, yellow) {
+        stage.wrapping_add(gate_stages.wrapping_add(1))
+    } else {
+        stage
+    })
+}
+
 /// The image `BuildingClass::GetImage @ 0x004513D0` hands DrawBody.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BuildingImage {

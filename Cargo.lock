@@ -1580,6 +1580,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "image-webp"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "525e9ff3e1a4be2fbea1fdf0e98686a6d98b4d8f937e1bf7402245af1909e8c3"
+dependencies = [
+ "byteorder-lite",
+ "quick-error",
+]
+
+[[package]]
 name = "indexmap"
 version = "2.14.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2421,6 +2431,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7e036b411754132fd6b74e94b74e9a13c5cf606fa93d1885c35860d3060820b1"
 
 [[package]]
+name = "opus-pure"
+version = "0.2.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2da6dcc20af557d030b6f206e75c764bcda8c28a5bd03c73935c7e8fcf5f4f4a"
+
+[[package]]
 name = "orbclient"
 version = "0.3.50"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2691,6 +2707,12 @@ name = "pxfm"
 version = "0.1.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b5a041e753da8b807c9255f28de81879c78c876392ff2469cde94799b2896b9d"
+
+[[package]]
+name = "quick-error"
+version = "2.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a993555f31e5a609f617c12db6250dedcac1b0a85076912c436e6fc9b2c8e6a3"
 
 [[package]]
 name = "quick-xml"
@@ -3687,7 +3709,7 @@ checksum = "accd4ea62f7bb7a82fe23066fb0957d48ef677f6eeb8215f372f52e48bb32426"
 
 [[package]]
 name = "vera20k"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "anyhow",
  "arboard",
@@ -3741,7 +3763,7 @@ dependencies = [
 
 [[package]]
 name = "vera20k-android"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "android-activity",
  "anyhow",
@@ -3755,9 +3777,10 @@ dependencies = [
 
 [[package]]
 name = "vera20k-core"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "anyhow",
+ "bitflags 2.11.0",
  "bytemuck",
  "chacha20",
  "fixed",
@@ -3768,6 +3791,7 @@ dependencies = [
  "half",
  "hashbrown 0.16.1",
  "hashbrown 0.17.1",
+ "image-webp",
  "js-sys",
  "libc",
  "libm",
@@ -3777,6 +3801,8 @@ dependencies = [
  "num-bigint",
  "num-traits",
  "once_cell",
+ "opus-pure",
+ "png",
  "rayon",
  "rustix 1.1.4",
  "serde",

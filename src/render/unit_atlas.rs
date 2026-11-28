@@ -124,6 +124,27 @@ pub struct UnitSpriteKey {
     pub barrel_pitch: i8,
 }
 
+impl UnitSpriteKey {
+    fn raster_params(
+        &self,
+        slope_blend: Option<VxlSlopeBlend>,
+        use_buffer: bool,
+    ) -> VxlRenderParams {
+        VxlRenderParams {
+            frame: if self.layer == VxlLayer::Shadow {
+                0
+            } else {
+                self.frame
+            },
+            facing: self.facing,
+            slope_type: self.slope_type,
+            slope_blend,
+            use_buffer,
+            ..VxlRenderParams::default()
+        }
+    }
+}
+
 /// UV and offset data for one sprite within the unit atlas.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct UnitSpriteEntry {
@@ -217,8 +238,10 @@ pub struct UnitAtlas {
     vpl: Option<VplFile>,
     /// The device's 2D texture limit, which bounds pages and pictures.
     max_texture_dim: u32,
-    /// VERA's HD art pages: each page's pictures at twice the resolution
-    /// (`render::hd_art`), made with the first HD picture placed on it.
+    /// VERA-only, experimental (`docs/zoom-one-pass.md`): each page's
+    /// pictures at twice the resolution ([`vxl_raster::VxlHd`]), made with
+    /// the first HD picture placed on it and bound beside the page, which
+    /// the voxel blitters read while the camera zooms in.
     hd_pages: Vec<Option<wgpu::TextureView>>,
 }
 
@@ -303,6 +326,10 @@ enum VoxelModel<'a> {
     Ground(&'a str),
     Air(&'a str),
     Turret(&'a str),
+    /// A voxel type drawn from its declared model
+    /// (`docs/picture-model-art.md`): it has no picture here, but the unit
+    /// draw visits objects only while an atlas exists, so it asks for one.
+    Declared,
 }
 
 /// The voxel models `objects` draw with, keyed by rules type, each once
@@ -328,6 +355,12 @@ fn voxel_models<'a>(
             return None;
         }
         let type_str = interner.map_or("", |i| i.resolve(entity.type_ref()));
+        // A type drawn from a declared model (`docs/picture-model-art.md`)
+        // never draws its VXL; retail art declares none. A building's
+        // declared guns draw without the atlas.
+        if rules.is_some_and(|rules| rules.draws_declared_model(type_str)) {
+            return voxel.then_some(VoxelModel::Declared);
+        }
         if voxel {
             return Some(if aircraft {
                 VoxelModel::Air(type_str)
@@ -343,7 +376,8 @@ fn voxel_models<'a>(
 
 /// Whether `atlas` — None while no unit atlas exists — has admitted every
 /// voxel model the world draws, so no admission is needed. It asks once for
-/// each model and stops at the first miss.
+/// each model and stops at the first miss. A world of voxel objects that all
+/// draw declared models still needs an atlas to exist ([`VoxelModel::Declared`]).
 pub fn atlas_covers_world(
     atlas: Option<&UnitAtlas>,
     entities: &crate::sim::entity_store::EntityStore,
@@ -382,6 +416,7 @@ impl UnitAtlasDemand {
                     VoxelModel::Ground(type_id) => (&mut demand.ground, type_id),
                     VoxelModel::Air(type_id) => (&mut demand.air, type_id),
                     VoxelModel::Turret(type_id) => (&mut demand.turrets, type_id),
+                    VoxelModel::Declared => continue,
                 };
                 set.insert(type_id.to_string());
             }
@@ -394,6 +429,7 @@ impl UnitAtlasDemand {
             VoxelModel::Ground(type_id) => self.ground.contains(type_id),
             VoxelModel::Air(type_id) => self.air.contains(type_id),
             VoxelModel::Turret(type_id) => self.turrets.contains(type_id),
+            VoxelModel::Declared => true,
         }
     }
 
@@ -532,10 +568,18 @@ impl UnitAtlas {
             if self.hd_pages.len() <= texels.page {
                 self.hd_pages.resize_with(texels.page + 1, || None);
             }
-            let view = self.hd_pages[texels.page].get_or_insert_with(|| {
-                device
+            let slot = &mut self.hd_pages[texels.page];
+            if slot.is_none() {
+                // A cleared picture on a page with no HD page clears nothing.
+                if hd_texels.iter().all(|&texel| texel == 0) {
+                    continue;
+                }
+                let Some(page) = self.pages.get_mut(texels.page) else {
+                    continue;
+                };
+                let view = device
                     .create_texture(&wgpu::TextureDescriptor {
-                        label: Some("HD art unit atlas page"),
+                        label: Some("HD unit atlas page"),
                         size: wgpu::Extent3d {
                             width,
                             height,
@@ -548,8 +592,13 @@ impl UnitAtlas {
                         usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
                         view_formats: &[],
                     })
-                    .create_view(&Default::default())
-            });
+                    .create_view(&Default::default());
+                batch.bind_unit_atlas_hd(device, &mut page.texture, &view);
+                *slot = Some(view);
+            }
+            let Some(view) = slot.as_ref() else {
+                continue;
+            };
             atlas_growth::write_texels(
                 queue,
                 view.texture(),
@@ -559,12 +608,6 @@ impl UnitAtlas {
                 hd_texels,
             );
         }
-    }
-
-    /// VERA's HD art page of `page`: its pictures at twice the resolution,
-    /// 0 where a picture has none.
-    pub(crate) fn hd_page(&self, page: usize) -> Option<&wgpu::TextureView> {
-        self.hd_pages.get(page)?.as_ref()
     }
 
     /// Number of pictures drawn so far.
@@ -741,20 +784,19 @@ impl Resident {
         let Some(&[page_width, page_height]) = self.page_sizes.get(entry.page) else {
             return;
         };
-        // The HD picture no longer matches: clear it, so the native one shows.
+        // The HD picture no longer matches: clear it, so the native one shows
+        // (`UnitAtlas::upload` skips the clear on a page with no HD page).
         let origin = [
             (entry.uv_origin[0] * page_width as f32).round() as u32,
             (entry.uv_origin[1] * page_height as f32).round() as u32,
         ];
         let size = entry.pixel_size.map(|side| side as u32);
-        if vxl_raster::hd_voxels() {
-            self.hd_uploads.push(PendingTexels {
-                page: entry.page,
-                origin: origin.map(|v| v * 2),
-                size: size.map(|v| v * 2),
-                texels: StagedTexels::Written(vec![0; (size[0] * size[1] * 4) as usize]),
-            });
-        }
+        self.hd_uploads.push(PendingTexels {
+            page: entry.page,
+            origin: origin.map(|v| v * 2),
+            size: size.map(|v| v * 2),
+            texels: StagedTexels::Written(vec![0; (size[0] * size[1] * 4) as usize]),
+        });
         self.uploads.push(PendingTexels {
             page: entry.page,
             origin: [
@@ -1136,7 +1178,57 @@ pub(crate) fn admit_world_models(
     interner: Option<&crate::sim::intern::StringInterner>,
     max_texture_dim: u32,
 ) {
-    if atlas_covers_world(atlas.as_ref(), entities, rules, interner) {
+    admit_world_and_image_models(
+        atlas,
+        entities,
+        std::iter::empty(),
+        asset_manager,
+        rules,
+        interner,
+        max_texture_dim,
+    );
+}
+
+/// [`admit_world_models`] with the types a Wasm module's `ImageOverride`
+/// draws objects as (`Simulation::ext_module_images`): a voxel one no
+/// object of the map has is admitted too.
+pub(crate) fn admit_world_and_image_models<'i>(
+    atlas: &mut Option<UnitAtlas>,
+    entities: &crate::sim::entity_store::EntityStore,
+    images: impl Iterator<Item = &'i str>,
+    asset_manager: &AssetManager,
+    rules: Option<&RuleSet>,
+    interner: Option<&crate::sim::intern::StringInterner>,
+    max_texture_dim: u32,
+) {
+    let mut images = images.peekable();
+    if images.peek().is_none() && atlas_covers_world(atlas.as_ref(), entities, rules, interner) {
+        return;
+    }
+    let mut demand = UnitAtlasDemand::of_world(entities, rules, interner);
+    if let Some(rules) = rules {
+        for image in images {
+            let Some(object) = rules.object(image) else {
+                continue;
+            };
+            if !crate::sim::game_entity::GameEntity::object_uses_voxel(&object.id, object, rules) {
+                continue;
+            }
+            let set = if object.category == crate::rules::object_type::ObjectCategory::Aircraft {
+                &mut demand.air
+            } else {
+                &mut demand.ground
+            };
+            set.insert(object.id.clone());
+        }
+    }
+    // No atlas yet is made even with nothing to read: the unit draw visits
+    // objects only while an atlas exists, and a world whose voxel units all
+    // draw declared models (`docs/picture-model-art.md`) demands no VXL.
+    if atlas
+        .as_ref()
+        .is_some_and(|atlas| demand.without(&atlas.covered).is_empty())
+    {
         return;
     }
     let started = Instant::now();
@@ -1147,7 +1239,7 @@ pub(crate) fn admit_world_models(
     // For turret units, separate Body/Turret/Barrel keys per facing; for the
     // rest a single Composite key per facing. Multi-frame HVA units get keys
     // for each frame.
-    let missing = UnitAtlasDemand::of_world(entities, rules, interner).without(&atlas.covered);
+    let missing = demand.without(&atlas.covered);
     let (needed, frame_counts) = needed_unit_keys(&missing, asset_manager, rules);
     let mut by_model: BTreeMap<smol_str::SmolStr, Vec<UnitSpriteKey>> = BTreeMap::new();
     for key in needed {
@@ -1250,6 +1342,14 @@ pub(crate) struct UnitModel {
     /// `GetTechnoType()+0xDAC` for its body, turret and barrel draws alike,
     /// so its parts are always depth-tested. The shadow raster ignores it.
     use_buffer: bool,
+}
+
+/// VERA-only, experimental (`docs/picture-model-art.md`): whether
+/// `type_id` draws a voxel shadow at all ([`ShadowModel::for_type`]), and if
+/// so whether its viewer is halved (`ConsideredAircraft=`), for a declared
+/// model's shadow.
+pub(crate) fn voxel_shadow_viewer(rules: &RuleSet, type_id: &str) -> Option<bool> {
+    ShadowModel::for_type(rules, type_id).map(|shadow| shadow.considered_aircraft)
 }
 
 #[derive(Clone, Copy)]
@@ -1418,6 +1518,26 @@ impl UnitModel {
         self.render_styled(key, vpl, None, &mut None, true, depth)
     }
 
+    /// A stable composite of one physical body has the native raster's exact
+    /// crop. Composite parts with separate floating-point depths, and parts
+    /// padded to the hull and gun union, use `render_styled`.
+    pub(super) fn buffered_body(
+        &self,
+        key: &UnitSpriteKey,
+        vpl: Option<&VplFile>,
+    ) -> Option<(vxl_raster::BufferedVoxelRaster, Option<[i32; 4]>)> {
+        let body = self.body.as_ref()?;
+        let (turret, barrel) = self.gun_parts(key.turret_index);
+        if key.layer != VxlLayer::Composite || turret.is_some() || barrel.is_some() {
+            return None;
+        }
+        let params = key.raster_params(None, true);
+        let raster =
+            vxl_raster::BufferedVoxelRaster::prepare(body.vxl(), body.hva(), &params, vpl)?;
+        let bounds = self.native_draw_bounds(&params, key.layer, key.turret_index);
+        Some((raster, bounds))
+    }
+
     /// The style supplied by the native drawer/cache (706F02, 706640),
     /// independently of the selected model's own UseBuffer default.
     /// `depth` rasterizes the requested part, or each part of a Composite,
@@ -1437,18 +1557,7 @@ impl UnitModel {
         {
             return None;
         }
-        let params: VxlRenderParams = VxlRenderParams {
-            frame: if key.layer == VxlLayer::Shadow {
-                0
-            } else {
-                key.frame
-            },
-            facing: key.facing, // already quantized by atlas key generation
-            slope_type: key.slope_type,
-            slope_blend,
-            use_buffer,
-            ..VxlRenderParams::default()
-        };
+        let params = key.raster_params(slope_blend, use_buffer);
         // Aircraft templates are unmasked: the original4148A0->4DB0D0->
         //706BD0->707280 caller supplies NULL for its body-mask surface.
         // Unit Jumpjet has a distinct grounded first-fill mask and fresh

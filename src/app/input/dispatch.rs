@@ -239,20 +239,6 @@ fn handle_mouse_input_inner(state: &mut AppState, button: MouseButton, btn_state
             crate::app::input::chrome_input::cancel(&mut state.match_state.match_presentation);
         }
         match state.match_state.match_presentation.in_game_menu {
-            crate::ui::pause_menu::InGameMenuState::Page => {
-                if button == MouseButton::Left {
-                    crate::app::shell_wol::page::mouse(
-                        &mut state.frontend,
-                        &mut state.platform,
-                        &mut state.match_state,
-                        &state.process_assets,
-                        &state.renderer,
-                        &mut state.audio,
-                        &mut state.persistence,
-                        pressed,
-                    );
-                }
-            }
             crate::ui::pause_menu::InGameMenuState::SavedGame(_) => {
                 if button == MouseButton::Left {
                     crate::app::App::saved_game_mouse(state, pressed);
@@ -1710,16 +1696,6 @@ pub(crate) fn handle_cursor_moved_in_game(state: &mut AppState) {
     // selection drag or camera pan behind the overlay.
     if state.match_state.paused() {
         match state.match_state.match_presentation.in_game_menu {
-            crate::ui::pause_menu::InGameMenuState::Page => {
-                crate::app::shell_wol::page::cursor_moved(
-                    &mut state.frontend,
-                    &state.platform.window,
-                    &state.match_state,
-                    &state.process_assets,
-                    &state.renderer,
-                    &mut state.audio.sfx_player,
-                );
-            }
             crate::ui::pause_menu::InGameMenuState::SavedGame(_) => {
                 crate::app::App::update_saved_game_browser(state, true);
             }

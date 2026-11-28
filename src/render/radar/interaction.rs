@@ -160,10 +160,10 @@ fn tracker_object_signed_cell(
     let stable_id = tracker.object_at_pixel(pixel.0, pixel.1)?;
     // Original6567EF..656828 dispatches virtual+4C with a null requester,
     // then truncates signed XY toward zero and packs each low word
-    // (captured as `RadarFacts::click_cell`). A moving Foot's navigation
+    // (captured as `RadarFacts::navigation_cell_words`). A moving Foot's navigation
     // head can precede its physical Object+48 cell. Do not perform a Map
     // lookup here: the handler clamps these words first.
-    let cell = frame.object(stable_id)?.radar().click_cell?;
+    let cell = frame.object(stable_id)?.radar().navigation_cell_words?;
     Some((stable_id, cell))
 }
 
@@ -346,6 +346,45 @@ impl MinimapRenderer {
     /// copy. The active side's exact sidebar text color is supplied by app
     /// composition; each edge is one generated-surface pixel thick and clips
     /// against the complete retained sidebar surface, not the radar aperture.
+    /// VERA `MapMarker`s on the radar (`ui_modules::field`): a 2x2 dot
+    /// in each marker's tint at its cell's radar pixel (`CellToRadarPixel`),
+    /// in the same screen frame as the camera window. A cell off the
+    /// generated surface shows none.
+    pub fn build_marker_dots_in_rect(
+        &self,
+        camera_x: f32,
+        camera_y: f32,
+        rect_x: f32,
+        rect_y: f32,
+        rect_w: f32,
+        rect_h: f32,
+        markers: impl IntoIterator<Item = ((u16, u16), [f32; 3])>,
+    ) -> Vec<SpriteInstance> {
+        let Some(surface) = self.native_radar_surface else {
+            return Vec::new();
+        };
+        let screen = NativeRadarScreenGeometry::new(
+            surface,
+            [rect_x, rect_y, rect_w, rect_h],
+        );
+        markers
+            .into_iter()
+            .filter_map(|(cell, tint)| {
+                let (x, y) = screen.surface_pixel_screen_point(surface.cell_to_surface_pixel(cell))?;
+                Some(SpriteInstance {
+                    position: [camera_x + x - 1.0, camera_y + y - 1.0],
+                    size: [2.0, 2.0],
+                    uv_origin: [0.0, 0.0],
+                    uv_size: [1.0, 1.0],
+                    depth: super::helpers::MINIMAP_DEPTH,
+                    tint,
+                    alpha: 1.0,
+                    ..Default::default()
+                })
+            })
+            .collect()
+    }
+
     pub fn build_viewport_rect_in_rect(
         &mut self,
         camera_x: f32,

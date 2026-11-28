@@ -6,9 +6,7 @@
 use super::actions::queue;
 use super::chat_notice as message;
 use super::*;
-use crate::app::audio_runtime::AppAudioRuntime;
 use crate::app::match_runtime::sim_host::SimHost;
-use crate::app::persistence::PersistenceState;
 use crate::app::renderer_state::RendererState;
 use crate::audio::sfx::SfxPlayer;
 use crate::render::gpu::GpuContext;
@@ -611,13 +609,8 @@ pub(super) fn clear_guest_acceptance(
 /// host may Start again); a match closes the setup and runs Start Game Now
 /// (`0x794BA0`), whose timing block decides MaxAhead.
 pub(super) fn game_started(
-    platform: &mut PlatformState,
-    renderer: &RendererState,
     frontend: &mut FrontendState,
     match_state: &mut MatchState,
-    process_assets: &ProcessAssets,
-    audio: &mut AppAudioRuntime,
-    persistence: &mut PersistenceState,
     users: Vec<WolStartUser>,
     pings: Vec<i32>,
 ) -> anyhow::Result<()> {
@@ -626,11 +619,6 @@ pub(super) fn game_started(
     if verify(frontend.network_setup_protocol.as_ref()).is_some() {
         return Ok(());
     }
-    // 0x7A7B82..0x7A7B9E: the page reply window restarts with no time.
-    let now = crate::ui::wol_page::reply_window_now(
-        crate::app::match_runtime::frame_pacer::wall_clock_ms(),
-    );
-    frontend.wol_lobby_globals.page_reply_window.arm(now, 0);
     let launch = match_state
         .session
         .network_setup()
@@ -652,15 +640,7 @@ pub(super) fn game_started(
     // 0x7A7CC3..0x7A7CE9: modes 1-3 close 0x117; 0x7A7CEE..0x7A7CFC: an
     // open 0xCF closes.
     crate::app::shell_wol::quick_match::game_started(frontend);
-    crate::app::shell_wol::page::close_page_dialog(
-        frontend,
-        platform,
-        match_state,
-        process_assets,
-        renderer,
-        audio,
-        persistence,
-    );
+    crate::app::shell_wol::page::close_page_dialog(frontend);
     // 0x794F6F..: the first user row with flag bit0 is the channel owner.
     let channel_owner = users
         .iter()

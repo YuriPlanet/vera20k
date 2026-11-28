@@ -498,7 +498,8 @@ fn intersects(a: [u32; 4], b: [u32; 4]) -> bool {
 }
 
 /// Bounds of combat_light.wgsl's light surface, after its existing integer
-/// world projection. Zoom moves the centre; the mask remains 256x128 pixels.
+/// world projection. Zoom moves the centre and scales the 256x128 world-pixel
+/// mask by `zoom` target pixels per mask texel (`docs/zoom-one-pass.md`).
 fn light_copy_bounds(center: [i32; 2], camera: &CameraUniform, target: [u32; 2]) -> [u32; 4] {
     let full = [0, 0, target[0], target[1]];
     // Restrict this optimisation to normal finite presentation inputs. The
@@ -524,12 +525,14 @@ fn light_copy_bounds(center: [i32; 2], camera: &CameraUniform, target: [u32; 2])
         let center = f64::from(center[axis]);
         let camera_pos = f64::from(camera.camera_pos[axis]);
         let zoom = f64::from(camera.zoom);
-        let half = f64::from([MASK_WIDTH, MASK_HEIGHT][axis]) / 2.0;
+        let half = f64::from([MASK_WIDTH, MASK_HEIGHT][axis]) / 2.0 * zoom;
         let extent = f64::from(target[axis]);
         let screen_center = (center - camera_pos) * zoom;
         // Outward rounding includes a conservative error budget for the small
         // f32 vertex expression (including reassociation and clip/viewport
-        // conversion), plus two pixels of raster margin. This is derived from
+        // conversion), plus two pixels of raster margin (the shader's quad
+        // reaches one block, `zoom` pixels, past the mask, but only mask
+        // texels light a pixel, so the margin needs no zoom). This is derived from
         // operand magnitude, not fitted to mask pixels. WGSL allows 2.5 ULP
         // division and reassociation; 64 epsilons covers those operations in
         // the bounded domain above:

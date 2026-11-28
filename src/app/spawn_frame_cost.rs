@@ -20,7 +20,7 @@
 //! the picture rate and the tick rate happened to be.
 
 use crate::app::diagnostics::thread_load::calling_thread_cpu;
-use crate::util::time::Duration;
+use crate::util::time::{Duration, Instant};
 
 /// A launch's record. Empty until the match reaches its first frame to count.
 #[derive(Debug, Default)]
@@ -31,6 +31,18 @@ pub(crate) struct FrameCost {
     frames: Option<(u32, u32)>,
     /// Each drawn picture's main-thread time.
     pictures: Vec<Duration>,
+    last_present: Option<Instant>,
+    present_intervals: Vec<Duration>,
+    intermediate_pictures: usize,
+    infantry_pictures: usize,
+    jumpjet_pictures: usize,
+    fly_pictures: usize,
+    shp_drive_pictures: usize,
+    hover_pictures: usize,
+    ship_pictures: usize,
+    buffered_voxels: crate::render::unit_pose_cache::BufferedDraws,
+    last_population_bucket: Option<u32>,
+    fewest_mobile: Option<usize>,
     /// The service passes' main-thread time, inline ticks included.
     service: Duration,
     /// The inline ticks' main-thread time inside `service`.
@@ -87,6 +99,44 @@ impl FrameCost {
         }
     }
 
+    /// Cost probe for an actual battlefield hand-off. Count the population
+    /// at most once per hundred logic frames, beside the per-picture timer.
+    pub(crate) fn battlefield_presented(
+        &mut self,
+        at: Instant,
+        motion: &crate::app::presentation::unit_motion::UnitMotion,
+        buffered: crate::render::unit_pose_cache::BufferedDraws,
+        population: impl FnOnce() -> Option<usize>,
+    ) {
+        let Some((_, frame)) = self.frames else {
+            return;
+        };
+        self.buffered_voxels.atlas += buffered.atlas;
+        self.buffered_voxels.gpu += buffered.gpu;
+        self.buffered_voxels.cpu += buffered.cpu;
+        if let Some(last) = self.last_present.replace(at) {
+            self.present_intervals
+                .push(at.saturating_duration_since(last));
+        }
+        if motion.intermediate_units() > 0 {
+            self.intermediate_pictures += 1;
+            let kinds = motion.intermediate_kinds();
+            self.jumpjet_pictures += usize::from(kinds.jumpjet);
+            self.fly_pictures += usize::from(kinds.fly);
+            self.infantry_pictures += usize::from(kinds.infantry);
+            self.shp_drive_pictures += usize::from(kinds.shp_drive);
+            self.hover_pictures += usize::from(kinds.hover);
+            self.ship_pictures += usize::from(kinds.ship);
+        }
+        let bucket = frame / 100;
+        if self.last_population_bucket != Some(bucket)
+            && let Some(n) = population()
+        {
+            self.fewest_mobile = Some(self.fewest_mobile.map_or(n, |last| last.min(n)));
+            self.last_population_bucket = Some(bucket);
+        }
+    }
+
     fn counting(&self) -> bool {
         self.frames.is_some()
     }
@@ -107,6 +157,8 @@ impl FrameCost {
         let at = |sorted: &[Duration], fraction: f64| {
             ms(sorted[((sorted.len() - 1) as f64 * fraction).round() as usize])
         };
+        let mut present_intervals = self.present_intervals.clone();
+        present_intervals.sort_unstable();
         let draw_ms = mean(&pictures);
         // A simulation frame's service: the passes' time, less the ticks
         // they ran themselves, over the frames they served.
@@ -121,6 +173,16 @@ impl FrameCost {
             draw_p99_ms: at(&pictures, 0.99),
             service_ms,
             pictures: pictures.len(),
+            present_p99_ms: (!present_intervals.is_empty()).then(|| at(&present_intervals, 0.99)),
+            intermediate_pictures: self.intermediate_pictures,
+            infantry_pictures: self.infantry_pictures,
+            jumpjet_pictures: self.jumpjet_pictures,
+            fly_pictures: self.fly_pictures,
+            shp_drive_pictures: self.shp_drive_pictures,
+            hover_pictures: self.hover_pictures,
+            ship_pictures: self.ship_pictures,
+            buffered_voxels: self.buffered_voxels,
+            fewest_mobile: self.fewest_mobile,
             tick_ms: mean(&ticks),
             tick_p99_ms: at(&ticks, 0.99),
             ticks: ticks.len(),
@@ -145,6 +207,23 @@ pub(crate) struct FrameCostReport {
     /// The mean simulation frame's service, without the frame's own tick.
     pub(crate) service_ms: f64,
     pub(crate) pictures: usize,
+    /// Wall time between battlefield hand-offs. This ends before display scanout.
+    pub(crate) present_p99_ms: Option<f64>,
+    /// Battlefield pictures with a moving unit sampled between adjacent ticks.
+    pub(crate) intermediate_pictures: usize,
+    /// Hand-offs with a submitted infantry body origin strictly between its endpoints.
+    pub(crate) infantry_pictures: usize,
+    /// Intermediate pictures containing motion from each flight locomotor.
+    pub(crate) jumpjet_pictures: usize,
+    pub(crate) fly_pictures: usize,
+    /// Intermediate translations of vessels, hover units and non-voxel Drive units.
+    pub(crate) ship_pictures: usize,
+    /// Uncached stable voxel draws with live native byte depth, by colour source.
+    pub(crate) buffered_voxels: crate::render::unit_pose_cache::BufferedDraws,
+    pub(crate) hover_pictures: usize,
+    pub(crate) shp_drive_pictures: usize,
+    /// Lowest live, on-map mobile population among the sampled pictures.
+    pub(crate) fewest_mobile: Option<usize>,
     /// The mean simulation frame's own wall time and its 99th percentile.
     pub(crate) tick_ms: f64,
     pub(crate) tick_p99_ms: f64,

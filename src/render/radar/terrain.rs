@@ -46,19 +46,18 @@ pub(super) struct RadarShroudLattice {
 impl RadarShroudLattice {
     pub fn new(terrain: &crate::map::resolved_terrain::ResolvedTerrainGrid) -> Self {
         use crate::map::cell_index::NativeCellIdentity;
-        let cells = crate::map::resolved_terrain::NativeCellQuery::isolated(terrain);
         let pack = |cell| match cell {
             NativeCellIdentity::Dummy => DUMMY_CELL,
-            NativeCellIdentity::Real(_) => {
-                let (x, y) = cells.coord(cell);
-                u32::from(x as u16) | u32::from(y as u16) << 16
+            NativeCellIdentity::Real(index) => {
+                let cell = &terrain.cells()[index];
+                u32::from(cell.rx) | u32::from(cell.ry) << 16
             }
         };
         let raised = terrain
             .iter()
             .map(|cell| {
                 let (first, next) =
-                    crate::sim::vision::cell_shroud_lattice(&cells, (cell.rx, cell.ry));
+                    crate::sim::vision::cell_shroud_lattice(terrain, (cell.rx, cell.ry));
                 (
                     u32::from(cell.rx) | u32::from(cell.ry) << 16,
                     [pack(first), next.map_or(NO_CELL, pack)],

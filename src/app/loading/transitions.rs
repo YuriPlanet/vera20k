@@ -177,6 +177,7 @@ pub(crate) fn install_world_presentation(
         .runtime()
         .map(|runtime| runtime.resources.rules.retain_overlay_registry());
 
+    match_state.match_presentation.unit_motion.clear();
     match_state.match_presentation.combat_lights.clear();
     renderer.performance_overlay.clear_simulation_rate();
     match_state.match_presentation.lasers.clear_on_load();
@@ -216,6 +217,8 @@ pub(crate) fn install_world_presentation(
     match_state.match_presentation.unit_atlas = assets.unit_atlas;
     // Both voxel caches resolve model images through the replaced RuleSet.
     *renderer.vxl_pose_frame_cache.borrow_mut() = Default::default();
+    // The declared models' GPU copies belong to the replaced RuleSet.
+    *renderer.model_frame.borrow_mut() = Default::default();
     match_state.match_presentation.palette_set = assets.palette_set;
     match_state.match_presentation.surface_palette = Default::default();
     match_state.match_presentation.sprite_atlas = assets.sprite_atlas;
@@ -310,8 +313,11 @@ pub(crate) fn install_world_presentation(
     match_state.match_presentation.overlay_names = assets.overlay_names;
     match_state.match_presentation.overlay_radar_colors = assets.overlay_radar_colors;
     match_state.match_presentation.house_color_map = assets.house_color_map;
-    // VERA relation colours start each scenario off, in the player colours.
+    // VERA relation and team colours start each scenario off, in the player
+    // colours; the launch team cache belongs to the match that just ended.
     match_state.match_presentation.relation_colors = false;
+    match_state.match_presentation.team_colors = false;
+    match_state.match_presentation.team_by_owner = None;
     match_state.match_presentation.relation_color_map = None;
     // VERA's Super Weapon Building Timers start from the saved switch; a
     // match's own hotkey flips it from there.
@@ -374,10 +380,18 @@ pub(crate) fn install_world_presentation(
             )
         });
     match_state.match_presentation.minimap = minimap;
+    // The interface pictures take `PictureSize=` from the match's art.
+    let picture_sizes = match_state.sim_runtime.runtime().map_or(
+        crate::render::interface_picture::PictureSizes::None,
+        |runtime| {
+            crate::render::interface_picture::PictureSizes::Art(runtime.resources.rules.art())
+        },
+    );
     match_state.match_presentation.selection_overlay = Some(SelectionOverlay::new(
         &renderer.gpu,
         &renderer.batch_renderer,
         process_assets.manager(),
+        picture_sizes,
     ));
     // Phobos DigitalDisplay `Shape=`/`Palette=` assets, retained once per match
     // like `DigitalDisplayTypeClass`'s SHP pointers.
@@ -395,6 +409,7 @@ pub(crate) fn install_world_presentation(
             &renderer.batch_renderer,
             assets,
             rules.digital_display_types().types(),
+            crate::render::interface_picture::PictureSizes::Art(rules.art()),
         );
     }
     // Ares/Phobos `Insignia` SHPs, retained once per match like the
@@ -478,6 +493,7 @@ pub(crate) fn install_world_presentation(
             beacon_ares,
             unit_palette.as_ref(),
             &ramps,
+            crate::render::interface_picture::PictureSizes::Art(runtime.resources.rules.art()),
         ))
     });
     let shroud_buffer = process_assets.manager().and_then(|assets| {
@@ -820,6 +836,16 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
     }
     state.match_state.match_presentation.message_list = message_list;
     crate::app::input::messages::post_layout_problem(
+        &state.platform,
+        &state.renderer,
+        &state.diag,
+        &state.frontend,
+        &mut state.match_state,
+        &state.process_assets,
+        &mut state.audio.sfx_player,
+        &state.persistence,
+    );
+    crate::app::input::messages::post_art_problems(
         &state.platform,
         &state.renderer,
         &state.diag,

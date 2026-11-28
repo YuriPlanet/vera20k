@@ -57,13 +57,17 @@ impl ChronoScreenPresentation {
 
     /// Native4F4480 skips tactical draws while53BAE0 is active, then
     /// redraws sidebar/UI. Apply stores at that boundary, before chrome.
+    /// `source` is the match composition and `tactical` the battlefield in
+    /// its pixels (the window's in a zoomed match, `docs/zoom-one-pass.md`);
+    /// `bar_rows` is the command bar's height there when it lies under the
+    /// battlefield.
     pub(crate) fn draw_tactical(
         &mut self,
         gpu: &crate::render::gpu::GpuContext,
         encoder: &mut wgpu::CommandEncoder,
         source: &wgpu::Texture,
         tactical: [u32; 4],
-        bar_under: bool,
+        bar_rows: Option<u32>,
     ) {
         let Some(draw) = self.draw else {
             return;
@@ -86,7 +90,7 @@ impl ChronoScreenPresentation {
         self.renderer
             .as_ref()
             .unwrap()
-            .draw(gpu, encoder, source, draw, tactical, bar_under);
+            .draw(gpu, encoder, source, draw, tactical, bar_rows);
         if matches!(draw, ChronoScreenDraw::Restore) {
             self.draw = None;
             self.renderer = None;

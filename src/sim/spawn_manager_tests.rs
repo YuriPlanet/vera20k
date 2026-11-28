@@ -525,6 +525,100 @@ fn gsi_05_08_v3_minimum_accepts_1280_and_clears_1279() {
     }
 }
 
+#[test]
+fn player_load_expires_manager_clocks_and_preserves_child_clocks() {
+    use crate::sim::slave_manager::SlaveNode;
+    use crate::sim::snapshot::GameSnapshot;
+    let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules_with_art() else {
+        return;
+    };
+    let mut sim = Simulation::new();
+    let owner = sim.interner.intern("Russians");
+    sim.houses
+        .register(crate::sim::house_state::HouseState::new(
+            owner, 1, None, true, 0, 10,
+        ));
+    sim.session.set_binary_frame_for_test(100);
+    let dread = sim
+        .spawn_object("DRED", "Russians", 10, 10, 0, &rules)
+        .unwrap();
+    let miner = sim
+        .spawn_object("SMIN", "Russians", 16, 16, 0, &rules)
+        .unwrap();
+    let gate = CdTimer::started(98, 10);
+    let child = CdTimer::started(75, 500);
+    let spawns = sim
+        .substrate
+        .entities
+        .get_mut(dread)
+        .unwrap()
+        .spawn_manager
+        .as_mut()
+        .unwrap();
+    spawns.update_timer = gate;
+    spawns.spawn_timer = gate;
+    spawns.slots[0].timer = child;
+    let slaves = sim
+        .substrate
+        .entities
+        .get_mut(miner)
+        .unwrap()
+        .slave_manager
+        .as_mut()
+        .unwrap();
+    let mut nodes = slaves.nodes().to_vec();
+    nodes[0] = SlaveNode::for_test(nodes[0].slave(), nodes[0].state(), child);
+    slaves.set_for_test(slaves.state(), slaves.frame(), nodes, gate);
+
+    let clocks = |sim: &Simulation| {
+        let spawns = sim
+            .entities()
+            .get(dread)
+            .unwrap()
+            .spawn_manager
+            .as_ref()
+            .unwrap();
+        let slaves = sim
+            .entities()
+            .get(miner)
+            .unwrap()
+            .slave_manager
+            .as_ref()
+            .unwrap();
+        (
+            [
+                spawns.update_timer(),
+                spawns.spawn_timer(),
+                slaves.ai_timer(),
+            ],
+            [spawns.slots()[0].timer(), *slaves.nodes()[0].timer()],
+        )
+    };
+    let terrain = crate::map::resolved_terrain::test_grid(
+        32,
+        32,
+        crate::map::resolved_terrain::test_clear_cell,
+    );
+    *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
+    sim.install_resolved_terrain_for_new_map(terrain.clone());
+    let bytes = GameSnapshot::save(&sim, 0, 0, "special unit clocks", 0);
+    let snapshot = GameSnapshot::load(&bytes).unwrap();
+    assert_eq!(clocks(&snapshot.sim), ([gate; 3], [child; 2]));
+    let (restored, _) = snapshot
+        .restore_player_world(
+            crate::sim::world::SnapshotProcessState::Live(&sim),
+            &rules,
+            terrain,
+            Default::default(),
+            crate::sim::snapshot::PlayerSaveCells::FixtureBaseline,
+        )
+        .unwrap();
+    assert_eq!(
+        clocks(&restored),
+        ([CdTimer::started(100, 0); 3], [child; 2])
+    );
+}
+
 /// Negative half only: proves the gate holds work back before the 20th frame.
 /// It does not prove the pass runs *on* the boundary frame, nor that the
 /// period becomes 10 afterwards — `hornet_launcher_maximum_matches_native_distance_ties`

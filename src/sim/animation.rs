@@ -486,6 +486,16 @@ pub(crate) fn foot_body_frame_due(
     // Foot4DA886..4DAA01: the same+538 feeds SHP and voxel drawing.
     // HoverAttack is Type+390, not TurretSpins. Native deploy6E0 only
     // excludes that hover-attack walk arm; it does not suppress IdleRate.
+    if cadence.walk_rate > 0
+        && cadence.idle_rate >= 0
+        && (binary_frame as i32) % cadence.walk_rate != 0
+        && (cadence.idle_rate == 0 || (binary_frame as i32) % cadence.idle_rate != 0)
+    {
+        // Neither cadence arm can advance the counter, so the moving and
+        // HoverAttack reads cannot change the answer.
+        return deploy_to_land
+            && crate::sim::movement::air_movement::current_fly_height(entity, terrain) > 0;
+    }
     let moving = crate::sim::movement::motion_query::is_moving_now(entity, rules, binary_frame);
     let walking = moving
         || (entity.category() == crate::map::entities::EntityCategory::Unit

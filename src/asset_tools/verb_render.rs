@@ -132,6 +132,9 @@ pub struct RenderOptions {
     pub vpl: Option<String>,
     /// PCX only: palette index to treat as transparent.
     pub transparent_index: Option<u8>,
+    /// `export-picture` only: indices 16–31 keep their palette colour, for
+    /// art without house colour (overlays, terrain, tiles).
+    pub plain: bool,
 }
 
 impl Default for RenderOptions {
@@ -148,6 +151,7 @@ impl Default for RenderOptions {
             facings: Vec::new(),
             vpl: None,
             transparent_index: None,
+            plain: false,
         }
     }
 }

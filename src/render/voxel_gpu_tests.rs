@@ -62,6 +62,95 @@ fn crop(sprite: &VxlSprite) -> [u32; 2] {
     [sprite.width, sprite.height]
 }
 
+#[test]
+#[ignore = "requires a wgpu adapter"]
+fn buffered_stores_cross_native_rows_clip_and_keep_the_last_colour() {
+    let word = |address: u16, colour: u8| u32::from(address) | (u32::from(colour) << 16);
+    let first = GpuImage::buffered(
+        [0, 0, 256, 256],
+        vec![
+            word(0xfffe, 9),
+            word(0x00ff, 22),
+            word(0xffff, 77),
+            word(0x00fe, 0),
+        ],
+    );
+    let second = GpuImage::buffered(
+        [34, 17, 3, 1],
+        vec![word(17 * 256 + 33, 18), word(17 * 256 + 35, 51)],
+    );
+    let empty = GpuImage::buffered([2, 2, 3, 1], Vec::new());
+    let mut whole = vec![0; 65536];
+    whole[0x0100] = 22;
+    whole[0xfffe] = 9;
+    whole[0xffff] = 77;
+    let expected = [whole, vec![18, 51, 51], vec![0; 3]];
+    let images = [(first, [256, 256]), (second, [3, 1]), (empty, [3, 1])];
+    let gpu = Gpu::new();
+    let batch = BatchRenderer::new_with_device(
+        &gpu.device,
+        &gpu.queue,
+        wgpu::TextureFormat::Rgba8UnormSrgb,
+    );
+    let read = draw(&gpu, &batch, &mut VoxelGpu::default(), &images, None);
+    for ((pixels, (image, _)), expected) in read.into_iter().zip(&images).zip(expected) {
+        assert_eq!(pixels, expected, "GPU pose page");
+        assert_eq!(image.buffered_indices().unwrap(), expected, "CPU body mask");
+    }
+}
+
+#[test]
+#[ignore = "requires a wgpu adapter and retail assets"]
+fn buffered_retail_hull_matches_the_native_raster_on_stale_depth() {
+    let Some((_, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+        return;
+    };
+    let part = VoxelPart::load(&assets, "DRED", false).expect("retail Dreadnought hull");
+    let vpl = VplFile::from_bytes(assets.get_ref("VOXELS.VPL").unwrap()).unwrap();
+    let params = VxlRenderParams {
+        facing: 96,
+        use_buffer: true,
+        ..Default::default()
+    };
+    let program =
+        vxl_raster::BufferedVoxelRaster::prepare(part.vxl(), part.hva(), &params, Some(&vpl))
+            .unwrap();
+    let mut depth: Box<vxl_raster::DepthMap> = Box::new([0; 65536]);
+    // Existing solid rows cut the hull. Both rasters see the same incoming map.
+    for row in depth.chunks_exact_mut(256).step_by(3) {
+        row.fill(255);
+    }
+    let mut reference_depth = depth.clone();
+    let expected = vxl_raster::render_vxl_on(
+        part.vxl(),
+        part.hva(),
+        &params,
+        Some(&vpl),
+        Some(&mut reference_depth),
+    );
+    let mut stores = Vec::new();
+    program.apply(&mut depth, Some(&mut stores));
+    assert!(!stores.is_empty());
+    let [_, _, x, y, width, height] = program.rect();
+    let image = GpuImage::buffered([x, y, width, height], stores);
+    let gpu = Gpu::new();
+    let batch = BatchRenderer::new_with_device(
+        &gpu.device,
+        &gpu.queue,
+        wgpu::TextureFormat::Rgba8UnormSrgb,
+    );
+    assert_eq!(
+        draw(
+            &gpu,
+            &batch,
+            &mut VoxelGpu::default(),
+            &[(image, crop(&expected))],
+            Some(&vpl)
+        )[0],
+        expected.palette_indices,
+    );
+}
+
 /// Ordinary draws of retail bodies across facings and tilts take every
 /// raster orientation (mirrored X and Y columns, backward walks); the GPU
 /// image of each is the CPU raster's, stores of zero included.

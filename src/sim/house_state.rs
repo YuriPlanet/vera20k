@@ -14,6 +14,7 @@ use crate::sim::cell_rect::PlayfieldBounds;
 use crate::sim::economy::Economy;
 use crate::sim::houses::Houses;
 use crate::sim::intern::InternedId;
+use crate::sim::snapshot::retired_driver::{Discarded, SavedDriverPolicy};
 use crate::sim::timer::CdTimer;
 use crate::util::native_x87::{NativeF32Bits, NativeF64Bits};
 
@@ -648,12 +649,12 @@ pub struct HouseState {
     /// mutable `HouseClass` bytes — gamemd keeps this one on the house type.
     #[serde(default)]
     multiplay_passive: bool,
-    /// This house's decisions are owned by an external command-layer
-    /// controller, so the native AI rungs stand down for it. Not a gamemd
-    /// port: native `HouseClass` has no such byte, and it stays out of the
-    /// retail-state concerns entirely.
-    #[serde(default)]
-    command_driven: bool,
+    // Keep the two historical wire fields for player saves. They occupy
+    // no live house storage and always write the ordinary computer defaults.
+    #[serde(default, rename = "command_driven")]
+    retired_controller: Discarded<bool>,
+    #[serde(default, rename = "driver_policy")]
+    retired_policy: Discarded<SavedDriverPolicy>,
     /// The HouseType's `Cost*Mult=`, projected from the rules at creation.
     /// Like `multiplay_passive` it is the type's, so it is left out of the
     /// state hash.
@@ -1206,18 +1207,6 @@ impl HouseState {
     /// native write changes it later.
     pub fn make_multiplay_passive(&mut self) {
         self.multiplay_passive = true;
-    }
-
-    /// Hand this house's decisions to an external command-layer controller:
-    /// the native AI rungs stand down for it (no in-tree caller sets this).
-    pub fn make_command_driven(&mut self) {
-        self.command_driven = true;
-    }
-
-    /// The external-driver-ownership flag (see the field's docs): the native
-    /// AI rungs read this to stand down for a command-layer-driven house.
-    pub const fn command_driven(&self) -> bool {
-        self.command_driven
     }
 
     /// Player control (`+0x1ED`): Create_Houses (`688109..10F`) grants it to
@@ -3044,7 +3033,8 @@ impl HouseState {
             difficulty_biases: HouseDifficultyBiases::default(),
             personality: None,
             multiplay_passive: false,
-            command_driven: false,
+            retired_controller: Default::default(),
+            retired_policy: Default::default(),
             country_cost_mults: CountryCostMults::default(),
             country_speed_mults: CountrySpeedMults::default(),
             is_defeated: false,

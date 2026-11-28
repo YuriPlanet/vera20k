@@ -32,6 +32,8 @@ pub enum Verb {
     PaletteFor { name: String },
     Archives,
     Extract { name: String },
+    ExportPicture { name: String },
+    ExportModel { name: String },
     CsfGet { key: String },
     CsfGrep { text: String },
     Sound { name: String },
@@ -83,6 +85,10 @@ pub struct Cli {
     pub ini_strict: bool,
     pub ini_source_only: bool,
     pub ini_max_depth: usize,
+    /// `export-picture` and `export-model --theater`: the theater whose
+    /// archives are mounted before the SHP or VXL is looked up (TEMPERATE, SNOW, URBAN, DESERT,
+    /// NEWURBAN, LUNAR).
+    pub theater: Option<String>,
 }
 
 pub fn usage() -> &'static str {
@@ -111,6 +117,15 @@ VERBS
   palette-for <NAME>   Which palette applies, and the full reasoning chain.
   archives             Every mounted archive, with lookup reachability marked.
   extract <NAME>       Write an asset's raw bytes to disk.
+  export-picture <NAME>  Write an SHP as picture art (APNG and mask) for
+                       Picture= (docs/picture-model-art.md). --palette, --out,
+                       --theater <T> (tem, sno, urb, lun, des, ubn) to reach
+                       a theater's archives, --plain for art without house
+                       colour; a theater SHP or TMP by its full file name.
+  export-model <NAME>  Write NAME.VXL with NAMETUR/NAMEBARL and their HVAs as
+                       model art (NAME.glb, mask) for Model=, and suggest
+                       ModelSize= (docs/picture-model-art.md). --palette,
+                       --out, --theater.
   csf-get <KEY>        One string-table entry, with its normalisation flagged.
   csf-grep <TEXT>      Search keys and values of the string table.
   sound <NAME>         One audio-bag entry; --wav decodes it.
@@ -264,6 +279,7 @@ pub fn parse<I: IntoIterator<Item = String>>(argv: I) -> Result<Cli, String> {
         ini_strict: false,
         ini_source_only: false,
         ini_max_depth: 64,
+        theater: None,
     };
 
     let mut args = argv.into_iter().peekable();
@@ -337,6 +353,12 @@ pub fn parse<I: IntoIterator<Item = String>>(argv: I) -> Result<Cli, String> {
         "archives" => Verb::Archives,
         "extract" => Verb::Extract {
             name: require_target(target, "extract", "<NAME>")?,
+        },
+        "export-picture" => Verb::ExportPicture {
+            name: require_target(target, "export-picture", "<NAME>")?,
+        },
+        "export-model" => Verb::ExportModel {
+            name: require_target(target, "export-model", "<NAME>")?,
         },
         "csf-get" => Verb::CsfGet {
             key: require_target(target, "csf-get", "<KEY>")?,
@@ -569,7 +591,17 @@ pub fn parse<I: IntoIterator<Item = String>>(argv: I) -> Result<Cli, String> {
             "--transparent-index" => {
                 cli.render.transparent_index = Some(number::<u8>(&mut args, "--transparent-index")?)
             }
-            "--theater" => cli.art.theater = value(&mut args, "--theater")?,
+            "--theater" => {
+                let theater = value(&mut args, "--theater")?;
+                if matches!(
+                    cli.verb,
+                    Verb::ExportPicture { .. } | Verb::ExportModel { .. }
+                ) {
+                    cli.theater = Some(theater_name(&theater));
+                } else {
+                    cli.art.theater = theater;
+                }
+            }
             "--image" => cli.art_image = value(&mut args, "--image")?,
             "--prefix" => cli.sound.prefix = Some(value(&mut args, "--prefix")?),
             "--wav" => cli.sound.wav = true,
@@ -582,6 +614,7 @@ pub fn parse<I: IntoIterator<Item = String>>(argv: I) -> Result<Cli, String> {
                 cli.compare.scale = Some(n);
             }
             "--house" => cli.render.house = Some(number::<u8>(&mut args, "--house")?),
+            "--plain" => cli.render.plain = true,
             "--palette" => {
                 let name = value(&mut args, "--palette")?;
                 cli.render.palette = Some(name.clone());
@@ -667,6 +700,21 @@ fn number<T: std::str::FromStr>(
         .map_err(|_| format!("{flag} needs a non-negative integer"))
 }
 
+/// A theater's full name from `--theater`'s short form (`tem`, `sno`, `urb`,
+/// `lun`, `des`, `ubn`) or its full name, upper case.
+fn theater_name(text: &str) -> String {
+    match text.to_ascii_lowercase().as_str() {
+        "tem" => "TEMPERATE",
+        "sno" => "SNOW",
+        "urb" => "URBAN",
+        "lun" => "LUNAR",
+        "des" => "DESERT",
+        "ubn" => "NEWURBAN",
+        _ => return text.to_ascii_uppercase(),
+    }
+    .to_owned()
+}
+
 fn flag_not_valid(flag: &str, verb: &Verb) -> String {
     let verb_name = match verb {
         Verb::Find { .. } => "find",
@@ -676,6 +724,8 @@ fn flag_not_valid(flag: &str, verb: &Verb) -> String {
         Verb::PaletteFor { .. } => "palette-for",
         Verb::Archives => "archives",
         Verb::Extract { .. } => "extract",
+        Verb::ExportPicture { .. } => "export-picture",
+        Verb::ExportModel { .. } => "export-model",
         Verb::CsfGet { .. } => "csf-get",
         Verb::CsfGrep { .. } => "csf-grep",
         Verb::Sound { .. } => "sound",

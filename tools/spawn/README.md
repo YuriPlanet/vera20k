@@ -100,6 +100,16 @@ by every `-SPAWN` launch, one human against computer houses included
   whichever thread ran it), the counts `pictures`, `ticks` and `lent_ticks`
   (ticks run on the simulation thread), and the frames it spans
   (`first_frame`, `last_frame`).
+  It also reports `present_p99_ms` between battlefield hand-offs
+  and `intermediate_pictures` showing interpolated unit movement. The latter includes
+  `jumpjet_pictures` and `fly_pictures` for voxel aircraft or vehicles, and
+  `infantry_pictures` for hand-offs with a submitted infantry sprite origin strictly
+  between its endpoints. The same positional test counts `ship_pictures`,
+  `hover_pictures` and `shp_drive_pictures` for vessels, hover units and
+  SHP Drive vehicles. At native zoom those origins are whole pixels. `fewest_mobile` gives the lowest live mobile population
+  sampled every 100 logic frames. `buffered_voxels` counts unkeyed stable body draws
+  that use the native shared voxel depth. `atlas` reuses an existing colour
+  image, `gpu` paints the accepted stores, and `cpu` uses the software raster.
 
 The test hook `VERA20K_SPAWN_LEAVE_AFTER_SECONDS=N` presses the abort box's
 Leave N seconds after the match appears. It is read only by external

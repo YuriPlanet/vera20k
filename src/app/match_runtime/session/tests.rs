@@ -828,6 +828,10 @@ fn network_freeze_keeps_guest_identity_seed_and_return_context_through_loading()
         (SessionMode::Wol, NetworkReturnContext::Wol),
     ] {
         let mut session = MatchSession::default();
+        assert_eq!(
+            session.staged_tiberium(),
+            crate::sim::scenario_session::TiberiumFlags::COLD
+        );
         session.enter_network(context);
         session
             .accept_network_setup(network_fixture(), false, Some(7), false)
@@ -880,6 +884,11 @@ fn network_freeze_keeps_guest_identity_seed_and_return_context_through_loading()
         session.leave_network();
         assert_eq!(session.shell_mode(), Some(SessionMode::Campaign));
         assert!(session.network_return_context().is_none());
+        session.begin_offline(SessionMode::Skirmish, None);
+        assert_eq!(
+            session.staged_tiberium(),
+            crate::sim::scenario_session::TiberiumFlags::NETWORK_PREGAME
+        );
     }
 }
 

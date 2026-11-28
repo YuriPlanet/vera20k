@@ -269,6 +269,9 @@ pub(crate) fn tactical_entity_admission(
         // Unit DrawIt 73D30E skips both voxel and SHP bodies in a tube;
         // Infantry DrawIt 5190DE branches to AddSelectable at 519609.
         || (purpose == TacticalEntityPurpose::Drawing && entity.in_tube)
+        // VERA: a client module's `Decoration` with `HideAnchor` hides the
+        // body on this screen; it is still listed and selected.
+        || (purpose == TacticalEntityPurpose::Drawing && entity.local_look().hidden)
         || entity.lifecycle.in_limbo()
         || entity.passenger_role.is_inside_transport()
         // UnitClass::DrawIt returns before AddSelectable while the unit
@@ -380,12 +383,11 @@ fn tactical_bounded_entity_encounter_order(
 
     compose_tactical_screen_entity_encounter_order(
         sim,
-        &frame,
+        frame,
+        &match_state.match_presentation.unit_motion,
         (min_x, min_y, max_x, max_y),
         local_owner_id,
-        sim.fog(),
         match_state.sandbox_full_visibility,
-        sim.session().binary_frame(),
         bulk_register_live_buildings,
     )
 }
@@ -393,11 +395,10 @@ fn tactical_bounded_entity_encounter_order(
 fn compose_tactical_screen_entity_encounter_order(
     sim: &crate::sim::world::Simulation,
     frame: &crate::app::presentation::frame::PresentationFrame,
+    unit_motion: &crate::app::presentation::unit_motion::UnitMotion,
     bounds: (f32, f32, f32, f32),
     local_owner_id: Option<InternedId>,
-    fog: &FogState,
     ignore_visibility: bool,
-    current_frame: u32,
     bulk_register_live_buildings: bool,
 ) -> Vec<u64> {
     let (min_x, min_y, max_x, max_y) = bounds;
@@ -435,9 +436,9 @@ fn compose_tactical_screen_entity_encounter_order(
                         TacticalEntityPurpose::ScreenSelection,
                         entity,
                         local_owner_id,
-                        fog,
+                        sim.fog(),
                         ignore_visibility,
-                        current_frame,
+                        sim.session().binary_frame(),
                         0,
                         entity.seen.observer,
                     )
@@ -447,8 +448,10 @@ fn compose_tactical_screen_entity_encounter_order(
                     return false;
                 }
                 // `entity_pick::PresentedWorld::screen_position`.
-                let [x, y] = entity.pose.screen;
-                let y = y - f32::from(entity.ion_blast_lift_pixels());
+                let [x, y] = unit_motion.painted_anchor(*id).unwrap_or_else(|| {
+                    let [x, y] = entity.pose.screen;
+                    [x, y - entity.pose.visual_lift]
+                });
                 x >= min_x && x <= max_x && y >= min_y && y <= max_y
             })
         })
@@ -625,6 +628,7 @@ pub(crate) fn object_shown_to_local_owner(
     pos: &Position,
     owner: &str,
     current_sight_only: bool,
+    terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
 ) -> bool {
     let Some(local_owner) = local_owner else {
         return true;
@@ -635,6 +639,7 @@ pub(crate) fn object_shown_to_local_owner(
             pos.rx(),
             pos.ry(),
             current_sight_only,
+            terrain,
         )
 }
 
@@ -648,11 +653,12 @@ pub(crate) fn translucent_fog_conceals_cell(
     rx: u16,
     ry: u16,
     fog_of_war: bool,
+    terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
 ) -> bool {
     let (Some(viewer), Some(fog)) = (viewer, fog) else {
         return false;
     };
-    !fog.shows_objects_to(viewer, rx, ry, fog_of_war)
+    !fog.shows_objects_to(viewer, rx, ry, fog_of_war, terrain)
 }
 
 /// The local house VERA's translucent fog conceals other houses' unseen
@@ -697,6 +703,7 @@ pub(crate) fn translucent_fog_conceals(
         position,
         interner.resolve(owner),
         sim.session().game_options().fog_of_war,
+        sim.resolved_terrain(),
     )
 }
 
@@ -724,7 +731,14 @@ pub(crate) fn translucent_fog_conceals_bullet(
         return false;
     }
     let cell = lepton_cell(coord[0], coord[1]);
-    translucent_fog_conceals_cell(viewer, Some(sim.fog()), cell.0, cell.1, fog_of_war)
+    translucent_fog_conceals_cell(
+        viewer,
+        Some(sim.fog()),
+        cell.0,
+        cell.1,
+        fog_of_war,
+        sim.resolved_terrain(),
+    )
 }
 
 /// World-lepton coordinates to their map cell, clamped to the addressable
@@ -778,28 +792,32 @@ pub(crate) fn cell_visibility_for_local_owner(
     let Some(fog) = fog else {
         return CellVisibilityState::Visible;
     };
+    let cells = terrain.map(crate::map::resolved_terrain::NativeCellQuery::isolated);
+    if cell_revealed(fog, local_owner_id, (rx, ry), cells.as_ref()) {
+        CellVisibilityState::Visible
+    } else {
+        CellVisibilityState::Shrouded
+    }
+}
+
+/// Read the viewer's shroud with the caller's cell query. A draw shares
+/// its isolated query (including its private Dummy) across visible objects.
+pub(super) fn cell_revealed(
+    fog: &FogState,
+    viewer: InternedId,
+    cell: (u16, u16),
+    cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
+) -> bool {
     // Display::ProcessClickCoords69244C..692480 asks Map578080 for the
     // clicked Cell centre's floor, then IsShrouded586360. The shroud lattice
     // is flat: raw map coordinates reject visible high-ground targets.
     // CellGetCoords486840 has the same floor input and no bridge-deck term.
     // Executed suffix/Pick controls: spatial_oracle/click_shroud.json.
     // Standard YR has FogOfWar=false; current sight is not an extra gate.
-    let shrouded = terrain.map_or_else(
-        || !fog.is_cell_revealed(local_owner_id, rx, ry),
-        |terrain| {
-            crate::sim::vision::cell_is_shrouded(
-                fog,
-                &crate::map::resolved_terrain::NativeCellQuery::isolated(terrain),
-                local_owner_id,
-                (rx, ry),
-            )
-        },
-    );
-    if !shrouded {
-        CellVisibilityState::Visible
-    } else {
-        CellVisibilityState::Shrouded
-    }
+    cells.map_or_else(
+        || fog.is_cell_revealed(viewer, cell.0, cell.1),
+        |cells| !crate::sim::vision::cell_is_shrouded(fog, cells, viewer, cell),
+    )
 }
 
 /// The battlefield every Display member is admitted in, in world pixels: its
@@ -1046,11 +1064,10 @@ mod tests {
         let candidates = compose_tactical_screen_entity_encounter_order(
             sim,
             frame,
+            &Default::default(),
             bounds,
             Some(owner),
-            sim.fog(),
             true,
-            0,
             true,
         );
         assert_eq!(candidates, [2, 1]);
@@ -1443,11 +1460,10 @@ mod tests {
             compose_tactical_screen_entity_encounter_order(
                 &sim,
                 &frame,
+                &Default::default(),
                 bounds,
                 Some(owner),
-                sim.fog(),
                 false,
-                0,
                 bulk,
             )
         };
@@ -1518,11 +1534,10 @@ mod tests {
         let order = compose_tactical_screen_entity_encounter_order(
             &sim,
             &frame,
+            &Default::default(),
             (-1.0e6, -1.0e6, 1.0e6, 1.0e6),
             Some(owner),
-            sim.fog(),
             true,
-            0,
             false,
         );
         assert_eq!(order, [1]);
@@ -1592,21 +1607,19 @@ mod tests {
         let visible = compose_tactical_screen_entity_encounter_order(
             &sim,
             &frame,
+            &Default::default(),
             bounds,
             Some(local_owner),
-            sim.fog(),
             false,
-            0,
             false,
         );
         let preflight = compose_tactical_screen_entity_encounter_order(
             &sim,
             &frame,
+            &Default::default(),
             bounds,
             Some(local_owner),
-            sim.fog(),
             false,
-            0,
             true,
         );
 
@@ -1807,6 +1820,7 @@ mod tests {
                 &entity.position,
                 owner,
                 fog_of_war,
+                None,
             )
         };
 
@@ -1820,7 +1834,8 @@ mod tests {
             Some(&fog),
             3,
             3,
-            false
+            false,
+            None
         ));
 
         // Explored in standard YR: enemies stay visible even without current
@@ -1836,20 +1851,64 @@ mod tests {
             Some(&explored),
             3,
             3,
-            false
+            false,
+            None
         ));
         assert!(translucent_fog_conceals_cell(
             Some(viewer),
             Some(&explored),
             3,
             3,
-            true
+            true,
+            None
         ));
 
         // Current sight keeps the enemy object in both modes.
         explored.mark_visible_for_owner(viewer, 3, 3);
         assert!(!conceal(&explored, &enemy_entity, "Soviet", false));
         assert!(!conceal(&explored, &enemy_entity, "Soviet", true));
+    }
+
+    #[test]
+    fn a_scout_sees_only_the_defender_in_sight_on_a_raised_gap_field() {
+        use crate::map::resolved_terrain::{ResolvedTerrainCell, ResolvedTerrainGrid};
+
+        let mut sim = crate::sim::world::Simulation::new();
+        let viewer = sim.intern("Russians");
+        let enemy = sim.intern("Americans");
+        sim.session_mut_for_test()
+            .game_options_mut_for_test()
+            .fog_of_war = true;
+        let terrain = (0..16).flat_map(|y| {
+            (0..16).map(move |x| {
+                let mut cell = ResolvedTerrainCell::clear_for_test(x, y);
+                cell.level = if (x, y) == (10, 10) { 9 } else { 10 };
+                cell
+            })
+        });
+        *sim.resolved_terrain_mut_for_test() =
+            Some(ResolvedTerrainGrid::from_cells(16, 16, terrain.collect()));
+        let mut fog = FogState::new(16, 16);
+        fog.mark_visible_for_owner(viewer, 6, 6);
+        crate::sim::vision::apply_gap_generators(
+            &mut fog,
+            sim.house_alliances(),
+            &[(enemy, 6, 6, 10)],
+            sim.interner(),
+        );
+        fog.mark_visible_for_owner(viewer, 6, 6);
+        *sim.fog_mut_for_test() = fog;
+
+        // The far unit's raw cell is lit. The unit on level 9 sits between
+        // two shroud cells, only the second of which is lit.
+        let hidden = |x, y, level| {
+            let position = Position::new(x, y, level, None, Default::default(), Default::default());
+            translucent_fog_conceals(&sim, viewer, &position, enemy)
+        };
+        assert_eq!(
+            [hidden(11, 11, 10), hidden(6, 6, 10), hidden(10, 10, 9)],
+            [false, true, false]
+        );
     }
 
     /// The pass-by window is the union of the views widened by its margin:
