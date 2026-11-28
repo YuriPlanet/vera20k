@@ -149,17 +149,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         let (length, source) = match socket.recv_from(&mut buffer) {
             Ok(packet) => packet,
-            Err(error)
-                if matches!(
-                    error.kind(),
-                    io::ErrorKind::WouldBlock
-                        | io::ErrorKind::TimedOut
-                        | io::ErrorKind::Interrupted
-                ) =>
-            {
-                continue;
-            }
-            Err(error) => return Err(error.into()),
+            Err(error) => match receive_error(&error, cfg!(windows)) {
+                ReceiveError::Continue => continue,
+                ReceiveError::MalformedDatagram => {
+                    counts.received += 1;
+                    counts.malformed += 1;
+                    continue;
+                }
+                ReceiveError::Fatal => return Err(error.into()),
+            },
         };
         counts.received += 1;
         let SocketAddr::V4(source) = source else {
@@ -178,6 +176,36 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Err(error) => counts.reject(error),
         }
     }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum ReceiveError {
+    Continue,
+    MalformedDatagram,
+    Fatal,
+}
+
+fn receive_error(error: &io::Error, windows: bool) -> ReceiveError {
+    if matches!(
+        error.kind(),
+        io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut | io::ErrorKind::Interrupted
+    ) {
+        return ReceiveError::Continue;
+    }
+    if windows {
+        // These Winsock recvfrom results have datagram-specific meanings.
+        // https://learn.microsoft.com/windows/win32/api/winsock2/nf-winsock2-recvfrom
+        const WSAEMSGSIZE: i32 = 10040;
+        const WSAECONNRESET: i32 = 10054;
+        match error.raw_os_error() {
+            // A truncated packet is discarded without parsing its contents.
+            Some(WSAEMSGSIZE) => return ReceiveError::MalformedDatagram,
+            // Datagram delivery notices, not a received packet or a closed socket.
+            Some(WSAECONNRESET) => return ReceiveError::Continue,
+            _ => {}
+        }
+    }
+    ReceiveError::Fatal
 }
 
 fn send_datagrams(socket: &UdpSocket, counts: &mut TrafficCounts, datagrams: Vec<ForwardDatagram>) {
@@ -226,4 +254,46 @@ fn decode_key(text: &str) -> Result<[u8; 32], &'static str> {
         key[index] = (digit(pair[0])? << 4) | digit(pair[1])?;
     }
     Ok(key)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn windows_udp_per_datagram_errors_are_not_fatal() {
+        for (code, expected) in [
+            (10040, ReceiveError::MalformedDatagram),
+            (10054, ReceiveError::Continue),
+        ] {
+            let error = io::Error::from_raw_os_error(code);
+            assert_eq!(receive_error(&error, true), expected);
+            assert_eq!(receive_error(&error, false), ReceiveError::Fatal);
+        }
+    }
+
+    #[test]
+    fn retries_and_fatal_errors_stay_narrow() {
+        for windows in [false, true] {
+            for kind in [
+                io::ErrorKind::WouldBlock,
+                io::ErrorKind::TimedOut,
+                io::ErrorKind::Interrupted,
+            ] {
+                assert_eq!(
+                    receive_error(&io::Error::from(kind), windows),
+                    ReceiveError::Continue
+                );
+            }
+            for error in [
+                io::Error::from(io::ErrorKind::PermissionDenied),
+                io::Error::from(io::ErrorKind::ConnectionReset),
+                io::Error::from_raw_os_error(10038), // WSAENOTSOCK
+                io::Error::from_raw_os_error(10052), // WSAENETRESET stays fatal
+                io::Error::from_raw_os_error(10058), // WSAESHUTDOWN
+            ] {
+                assert_eq!(receive_error(&error, windows), ReceiveError::Fatal);
+            }
+        }
+    }
 }
