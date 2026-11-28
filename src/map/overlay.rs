@@ -35,9 +35,9 @@ const NO_OVERLAY: u8 = 0xFF;
 ///
 /// The vector keeps its actual decoded length: `ReadMapOverlayPacks` attempts
 /// one byte at every 512x512 coordinate and a short body's failed reads keep
-/// the initialized `0xFF` sentinel. A zero-length body is inactive under the
-/// reader's signed-positive length gate. The map's cell grid, not the body's
-/// length, sets the row stride: 512 on retail-size maps, 1024 on extended ones.
+/// the initialized no-overlay sentinel. Empty decoded identity data therefore
+/// places no overlays even if a compressed section was present. The map's
+/// cell grid sets the row stride: 512 on retail-size maps, 1024 on extended ones.
 #[derive(Debug, Default)]
 pub struct OverlayIdentityPack {
     bytes: Vec<u8>,
@@ -93,8 +93,9 @@ pub struct OverlayEntry {
 
 /// Full `[OverlayDataPack]` byte grid.
 ///
-/// `present` matters because `gamemd.exe` only performs the final per-cell
-/// `cell+0x11E` overwrite when the section exists and decodes.
+/// ReadMapOverlayPacks (0x5FD580..0x5FD589) starts the final per-cell
+/// `cell+0x11E` overwrite when the packed section supplied compressed bytes.
+/// A short first LCW frame can leave the decoded byte grid entirely empty.
 #[derive(Debug, Clone)]
 pub struct OverlayDataPack {
     bytes: Vec<u8>,
@@ -204,7 +205,11 @@ pub fn parse_overlay_packs(ini: &IniFile, grid: CellGrid) -> ParsedOverlayPacks 
         .map(|bytes| OverlayIdentityPack::from_decoded(bytes, grid))
         .unwrap_or_default();
     let data: OverlayDataPack = decode_pack_section(ini, "OverlayDataPack", grid)
-        .map(|bytes| OverlayDataPack::from_decoded(bytes, grid))
+        .map(|bytes| OverlayDataPack {
+            bytes,
+            present: true,
+            grid,
+        })
         .unwrap_or_else(OverlayDataPack::missing);
 
     let mut entries: Vec<OverlayEntry> = Vec::new();
@@ -295,8 +300,12 @@ fn decode_pack_section(ini: &IniFile, section_name: &str, grid: CellGrid) -> Opt
     let side = usize::from(grid.side());
     let limit = side * side;
     let mut data = Vec::new();
-    let blocks =
-        super::packed::decoded_blocks(&b64_data, limit, lcw::lcw_decompress, |size, remaining| {
+    let blocks = super::packed::decoded_blocks(
+        &b64_data,
+        limit,
+        super::packed::EmptyFrame::Skip,
+        lcw::lcw_decompress,
+        |size, remaining| {
             // LCWStraw is constructed with an 8192-byte block (0x5FD3D2/
             // 0x5FD5D5). Its final block can extend beyond the last grid cell.
             let capacity = remaining.max(8192);
@@ -308,7 +317,8 @@ fn decode_pack_section(ini: &IniFile, section_name: &str, grid: CellGrid) -> Opt
             } else {
                 Ok(())
             }
-        });
+        },
+    );
     for block in blocks {
         match block {
             Ok(block) => data.extend_from_slice(&block),
@@ -334,7 +344,8 @@ mod tests {
         let mut grid = vec![NO_OVERLAY; 512 * 512];
         *grid.last_mut().unwrap() = 7;
         grid.push(9); // Extra output in the final block, past (511, 511).
-        let mut packed = lcw::compress_chunks(&grid, 8191);
+        let mut packed = vec![0; 4]; // An empty frame before real overlay data.
+        packed.extend(lcw::compress_chunks(&grid, 8191));
         packed.extend_from_slice(&[7, 0, 1, 0]);
         let text = base64::base64_encode(&packed);
         let rows: String = text
@@ -359,7 +370,7 @@ mod tests {
         let ini = IniFile::from_str(&format!("[OverlayPack]\n{rows}[OverlayDataPack]\n{rows}"));
         let rejected = parse_overlay_packs(&ini, CellGrid::Extended);
         assert!(!rejected.identity.has_positive_length());
-        assert!(!rejected.data.has_positive_length());
+        assert!(!rejected.data.is_present());
         // Five exceed the retail 512-square plane a retail-size map reads.
         let retail_over =
             IniFile::from_str(&format!("[OverlayPack]\n1={}\n", "BQD///7///+A".repeat(5)));

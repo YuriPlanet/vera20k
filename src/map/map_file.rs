@@ -700,6 +700,7 @@ fn parse_iso_map_pack(
     let blocks = super::packed::decoded_blocks(
         &b64_data,
         iso_map_max_bytes(grid),
+        super::packed::EmptyFrame::End,
         lzo::lzo1x_decompress,
         |size, remaining| {
             if size > remaining {
@@ -795,7 +796,12 @@ fn parse_iso_map_blocks<B: AsRef<[u8]>>(
         let consumed = pending.len() - remaining.len();
         pending.drain(..consumed);
     }
-    if !pending.is_empty() {
+    // After a record, 0x56BBAE..0x56BBB7 resets the next coordinate to
+    // the end marker. A short all-zero read leaves both components zero.
+    let reset_coordinate = !lookups.is_empty()
+        && pending.len() < CELL_HEADER_SIZE
+        && pending.iter().all(|&byte| byte == 0);
+    if !pending.is_empty() && !reset_coordinate {
         let expected = if pending.len() < CELL_HEADER_SIZE {
             CELL_HEADER_SIZE
         } else {
@@ -914,6 +920,24 @@ mod tests {
         .expect("the next block ended before its compressed payload was available");
         assert_eq!(map.cells.len(), 1);
         assert_eq!(map.cells[0].tile_index, 17);
+    }
+
+    #[test]
+    fn packed_terrain_short_zero_coordinate_uses_the_previous_cell_reset() {
+        for count in [1, 3] {
+            let mut cell = iso_map_record(2, 3, 17, 1, 0).to_vec();
+            cell.extend_from_slice(&[0; 3][..count]);
+            let mut packed = lzo::compress_chunks(&cell, 8192);
+            packed.extend_from_slice(&[0; 4]); // LZO's empty frame ends this stream.
+            packed.extend(lzo::compress_chunks(&iso_map_record(4, 5, 18, 0, 0), 8192));
+            let text = base64::base64_encode(&packed);
+            let map = MapFile::from_ini(IniFile::from_str(&format!(
+                "[Map]\nSize=0,0,8,8\n[IsoMapPack5]\n1={text}\n"
+            )))
+            .expect("the next coordinate remains zero");
+            assert_eq!(map.cells.len(), 1);
+            assert_eq!(map.cells[0].tile_index, 17);
+        }
     }
 
     #[test]
