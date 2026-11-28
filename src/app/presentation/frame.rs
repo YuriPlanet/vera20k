@@ -415,30 +415,20 @@ pub(crate) struct Place {
     pub(crate) landing_base: i32,
     /// `sim::movement::hover::hover_draw_slope` with the pose's rocking angles.
     pub(crate) hover_draw_slope: u8,
-    /// `sim::movement::motion_query::is_moving_now` at that frame.
-    pub(crate) moving_now: bool,
     /// `sim::movement::motion_query::is_moving`.
     pub(crate) moving: Option<bool>,
-    /// `sim::movement::ground_pose::object_center_xy`.
-    pub(crate) center_xy: [i32; 2],
     /// `object_world_z_leptons` without the map: its exact Z, else its
     /// stored level's.
     pub(crate) world_z_leptons_off_map: i32,
-    /// `sim::movement::turret::facing_toward_target` of its attack target.
-    pub(crate) facing_toward_target: Option<u16>,
+    /// The attack-target facing used by the jumpjet infantry SHP draw.
+    pub(crate) jumpjet_target_facing: Option<u16>,
     /// A Structure's art (`sim::building_art`), for its own type.
     pub(crate) structure: Option<StructureArt>,
     /// Its radio contact 0, the object it talks to.
     pub(crate) contact0: Option<Contact>,
-    /// `presentation::lighting::body_extra_light`.
-    pub(crate) extra_light: i32,
-    /// Infantry5192C9 reads the navigation cell for top lighting.
-    pub(crate) infantry_light_cell: Option<(u16, u16)>,
     /// Its action line's world endpoints
     /// (`target_lines::action_line_endpoints`).
     pub(crate) action_line: Option<crate::app::presentation::target_lines::SelectedActionLine>,
-    /// A Structure's rally line (`target_lines::rally_line_coords`).
-    pub(crate) rally_line: Option<[crate::sim::components::DriveCoord; 2]>,
     /// `Simulation::techno_intent_psychically_detected` by the current
     /// house's detectors.
     pub(crate) psychically_detected: bool,
@@ -553,8 +543,9 @@ impl StructureArt {
 impl Place {
     /// `world_z_leptons` is `object_world_z_leptons` on the live map.
     fn of(entity: &GameEntity, pose: &RenderPose, world_z_leptons: i32, at: &Capture<'_>) -> Self {
+        use crate::rules::locomotor_type::LocomotorKind;
         let sim = at.sim;
-        let display_frame = at.binary_frame.wrapping_sub(1);
+        let locomotor = entity.locomotor.as_ref().map(|loco| loco.active_kind());
         let psychically_detected = at.psychic.as_ref().is_some_and(|(viewer, sites)| {
             sim.techno_intent_psychically_detected(
                 entity.stable_id(),
@@ -586,40 +577,30 @@ impl Place {
                 sim.entities(),
                 Some((at.rules(), sim.interner())),
             ),
-            hover_draw_slope: crate::sim::movement::hover::hover_draw_slope(
-                entity,
-                at.cells.as_ref(),
-                pose.angles,
-            ),
-            moving_now: crate::sim::movement::motion_query::is_moving_now(
-                entity,
-                crate::sim::movement::SpeedRules::new(at.rules(), sim.interner(), sim.houses()),
-                display_frame,
-            ),
+            hover_draw_slope: if locomotor == Some(LocomotorKind::Hover) {
+                crate::sim::movement::hover::hover_draw_slope(
+                    entity,
+                    at.cells.as_ref(),
+                    pose.angles,
+                )
+            } else {
+                0
+            },
             moving: crate::sim::movement::motion_query::is_moving(entity),
-            center_xy: crate::sim::movement::ground_pose::object_center_xy(entity),
-            infantry_light_cell: (entity.category() == EntityCategory::Infantry)
-                .then(|| sim.foot_navigation_coordinate(entity.stable_id()).ok())
-                .flatten()
-                .map(|coord| {
-                    (
-                        crate::util::lepton::lepton_to_cell_packed(coord.x) as u16,
-                        crate::util::lepton::lepton_to_cell_packed(coord.y) as u16,
-                    )
-                }),
             world_z_leptons_off_map: crate::sim::movement::ground_pose::object_world_z_leptons(
                 entity, None,
             ),
-            facing_toward_target: entity.attack_target.target().and_then(|target| {
-                crate::sim::movement::turret::facing_toward_target(entity, &target, sim)
-            }),
+            jumpjet_target_facing: entity
+                .attack_target
+                .target()
+                .filter(|_| {
+                    entity.category() == EntityCategory::Infantry
+                        && locomotor == Some(LocomotorKind::Jumpjet)
+                })
+                .and_then(|target| {
+                    crate::sim::movement::turret::facing_toward_target(entity, &target, sim)
+                }),
             structure: StructureArt::of(entity, at),
-            extra_light: crate::app::presentation::lighting::body_extra_light(
-                entity,
-                at.rules(),
-                sim,
-                at.cells.as_ref(),
-            ),
             airstrike_designation: AirstrikeDesignation::of(entity, at),
             action_line: draws_action_line
                 .then(|| {
@@ -631,9 +612,6 @@ impl Place {
                     )
                 })
                 .flatten(),
-            rally_line: at.cells.as_ref().and_then(|cells| {
-                crate::app::presentation::target_lines::rally_line_coords(entity, sim, cells)
-            }),
             psychically_detected,
             // Only a Structure's is ever active.
             airstrike_tint_active: entity.category() == EntityCategory::Structure
@@ -781,7 +759,16 @@ impl ObjectRecord {
             building_art: entity.building_art.clone(),
             animation: entity.animation,
             miner: entity.miner.as_deref().map(|miner| Miner {
-                harvesting: miner.harvesting(),
+                harvesting_at_rest: miner.harvesting()
+                    && !crate::sim::movement::motion_query::is_moving_now(
+                        entity,
+                        crate::sim::movement::SpeedRules::new(
+                            at.rules(),
+                            at.sim.interner(),
+                            at.sim.houses(),
+                        ),
+                        at.binary_frame.wrapping_sub(1),
+                    ),
             }),
             cloak: entity.cloak.as_deref().map(|cloak| Cloak {
                 state: cloak.state(),
@@ -1063,7 +1050,7 @@ impl crate::render::snapshot::SnapshotObject for ObjectRecord {
         self.seen.visual_character
     }
     fn center_xy(&self) -> [i32; 2] {
-        self.place.center_xy
+        [self.hud.get_coords.x, self.hud.get_coords.y]
     }
     fn screen_position(&self) -> (f32, f32) {
         let [x, y] = self.pose.screen;
@@ -1132,13 +1119,8 @@ impl Mission {
 /// `GameEntity::miner` as drawing reads it.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Miner {
-    harvesting: bool,
-}
-
-impl Miner {
-    pub(crate) fn harvesting(&self) -> bool {
-        self.harvesting
-    }
+    /// The ore-gathering overlay reads Is_Moving_Now at the display frame (0x0073D114).
+    pub(crate) harvesting_at_rest: bool,
 }
 
 /// `GameEntity::cloak` as drawing reads it.

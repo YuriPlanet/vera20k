@@ -35,9 +35,10 @@ pub(crate) fn body_palette_light(
 ///
 /// The caller supplies its frame's isolated query; drawing never stamps the
 /// simulation's shared fallback Cell. Native controls: tools/unit_light.json.
-/// Captured into each object's presentation record (`presentation::frame`).
+/// Both the object and the map are from the frame being drawn. A distant
+/// object can enter the view on this same frame when the camera jumps.
 pub(crate) fn body_extra_light(
-    entity: &crate::sim::game_entity::GameEntity,
+    entity: &crate::app::presentation::frame::ObjectRecord,
     rules: &RuleSet,
     sim: &Simulation,
     cells: Option<&NativeCellQuery<'_>>,
@@ -57,7 +58,8 @@ pub(crate) fn body_extra_light(
             // Unit73CF1D retains Object41BEA0's packed cell before the
             // GetHeight73CF74 and world-coordinate lookup73CFA0. Keep the
             // two query forms distinct, including their signed narrowing.
-            let [x, y] = ground_pose::position_world_xy(&entity.position);
+            let location = entity.hud.location;
+            let (x, y) = (location.x, location.y);
             let packed = (
                 crate::util::lepton::lepton_to_cell_packed(x),
                 crate::util::lepton::lepton_to_cell_packed(y),
@@ -66,11 +68,11 @@ pub(crate) fn body_extra_light(
             let flags = cells.flags(current);
             // Only a structural bridge cell reads the height.
             let above_deck = || {
-                let height = air_movement::queried_flight_height(entity, Some(cells));
+                let height = entity.place.flight_height;
                 if entity.on_bridge() {
                     height >= 0
                 } else if let Some(deck) = ground_pose::corrected_deck_z(cells.terrain(), current) {
-                    ground_pose::object_world_z_leptons(entity, Some(cells.terrain())) >= deck
+                    location.z >= deck
                 } else {
                     height >= crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS
                 }
@@ -103,7 +105,11 @@ pub(crate) fn body_extra_light(
             //Unit's actual vt54/4DE620 forwards to the common Object owner.
             let draw_cell = cells.lookup(packed);
             if cells.flags(draw_cell) & BRIDGE_FLAG_EXTRA_SIDE != 0
-                && !air_movement::is_high_flying_in_query(entity, cells, None)
+                && !air_movement::object_flight_predicate(
+                    entity.lifecycle.cell_marked(),
+                    || entity.place.flight_height,
+                    true,
+                )
             {
                 extra.wrapping_sub(500)
             } else {
@@ -112,7 +118,7 @@ pub(crate) fn body_extra_light(
         }
         EntityCategory::Infantry => {
             use crate::map::bridge_facts::BRIDGE_FLAG_EXTRA_SIDE;
-            use crate::sim::movement::{air_movement, ground_pose};
+            use crate::sim::movement::ground_pose;
 
             let extra = rules.general.extra_infantry_light;
             let Some(cells) = cells else {
@@ -121,7 +127,7 @@ pub(crate) fn body_extra_light(
             // Infantry DrawIt51933B..5193C5: OnBridge bypasses the side
             // test. Map565730 reads the physical world-coordinate Cell,
             // independently of the navigation Cell's top intensity.
-            let location = ground_pose::object_location(entity, Some(cells.terrain()));
+            let location = entity.hud.location;
             let side = !entity.on_bridge()
                 && cells.flags(cells.lookup_world(location.x, location.y)) & BRIDGE_FLAG_EXTRA_SIDE
                     != 0;
@@ -136,7 +142,7 @@ pub(crate) fn body_extra_light(
                 //OnBridge deck. Signed height/208 truncates toward zero;
                 //an ordinary deck height0 adds no Level. The shared weather
                 //owner selects Ion, Dominator, Nuke fade-in, then Normal.
-                let height = air_movement::queried_flight_height(entity, Some(cells));
+                let height = entity.place.flight_height;
                 let level = sim
                     .session()
                     .lighting()
@@ -154,7 +160,7 @@ pub(crate) fn body_extra_light(
         }
         EntityCategory::Aircraft => aircraft_extra_light(
             rules.general.extra_aircraft_light,
-            crate::sim::movement::air_movement::queried_flight_height(entity, cells),
+            entity.place.flight_height,
             crate::sim::superweapon::lightning_storm::raging(sim),
             &sim.session().lighting(),
         ),

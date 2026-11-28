@@ -299,8 +299,8 @@ fn infantry_shp_material_matches_original_gi_draws() {
         );
         gi.berserk
             .set_active_for_test(row["input"]["berserk"].as_bool().unwrap());
-        let light = body_palette_light(&grid, (10, 20), body_extra_light(&gi, rules, &sim, None));
         let gi = ObjectRecord::of_test(&gi);
+        let light = body_palette_light(&grid, (10, 20), body_extra_light(&gi, rules, &sim, None));
         let (_, light) = techno_effect_light(&gi, [1.; 3], light, &sim, None, TechnoDraw::Shape);
         assert_eq!(
             light.brightness(),

@@ -126,6 +126,14 @@ VERA20K ใช้กติกาของ Yuri's Revenge ภาคต้นฉ�
   <a href="https://www.youtube.com/watch?v=ucz-EiMeW88">Red Alert 2 ใน VERA20K 0.41</a><br clear="all">
 </p>
 
+## เครื่องมือแก้ไขแผนที่
+
+<p>
+  <a href="https://github.com/996666925/ra2-map-editor"><img src="https://avatars.githubusercontent.com/u/52450772?s=128" width="64" height="64" align="left" alt="996666925"></a>
+  <a href="https://github.com/996666925/ra2-map-editor">YR Map Editor</a><br>
+  สร้างแผนที่สำหรับ Yuri’s Revenge แล้วทดลองเล่นใน VERA20K<br clear="all">
+</p>
+
 ## เครดิตและข้อกฎหมาย
 
 ขอบคุณ OpenRA, XCC Mixer, วิกิ ModEnc, Project Perfect Mod, EA ที่เผยแพร่ซอร์สโค้ดของ

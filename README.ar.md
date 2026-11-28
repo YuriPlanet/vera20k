@@ -138,6 +138,14 @@ cargo run --release --bin vera20k
   <a href="https://www.youtube.com/watch?v=ucz-EiMeW88">Red Alert 2 في VERA20K 0.41</a><br clear="all">
 </p>
 
+## محررات الخرائط
+
+<p>
+  <a href="https://github.com/996666925/ra2-map-editor"><img src="https://avatars.githubusercontent.com/u/52450772?s=128" width="64" height="64" align="left" alt="996666925"></a>
+  <a href="https://github.com/996666925/ra2-map-editor">YR Map Editor</a><br>
+  أنشئ خرائط Yuri’s Revenge وجرّب اللعب بها في VERA20K.<br clear="all">
+</p>
+
 ## شكر ومعلومات قانونية
 
 نشكر OpenRA وXCC Mixer وويكي ModEnc وProject Perfect Mod، وشركة EA على نشر الكود المصدري
