@@ -1,6 +1,7 @@
 //! Original Unit73CF70 body-light controls through the production selector.
 
 use super::*;
+use crate::app::presentation::frame::{ObjectRecord, PresentationFrame};
 use crate::map::entities::EntityCategory;
 use crate::map::resolved_terrain::{test_grid, test_smudge_cell};
 use crate::rules::ini_parser::IniFile;
@@ -81,7 +82,8 @@ fn unit_body_light_matches_original_bridge_side_and_weather_controls() {
         let hash = sim.state_hash();
         let dummy = terrain.shared_cell_dummy().snapshot();
         let cells = crate::map::resolved_terrain::NativeCellQuery::isolated(&terrain);
-        let extra = body_extra_light(&unit, &rules, &sim, Some(&cells));
+        let record = ObjectRecord::of_test_in(&unit, Some(&terrain), &rules);
+        let extra = body_extra_light(&record, &rules, &sim, Some(&cells));
         assert_eq!(
             int("word").wrapping_add(extra),
             row["light"].as_i64().unwrap() as i32,
@@ -151,7 +153,13 @@ fn retail_mtnk_body_light_follows_bridge_arrival_and_ground_side_cell() {
             );
             let hash = sim.state_hash();
             let dummy = terrain.shared_cell_dummy().snapshot();
-            let extra = body_extra_light(entity, &scene.runtime.resources.rules, sim, Some(&cells));
+            let frame = PresentationFrame::capture(&scene.runtime, &Default::default(), false);
+            let extra = body_extra_light(
+                frame.object(id).unwrap(),
+                &scene.runtime.resources.rules,
+                sim,
+                Some(&cells),
+            );
             let expected = native["light"].as_i64().unwrap() as i32
                 - native["input"]["word"].as_i64().unwrap() as i32;
             assert_eq!(extra, expected, "retail cell {coord:?}");

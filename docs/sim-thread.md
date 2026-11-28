@@ -8,8 +8,9 @@ With its own thread, a slow simulation slows only game time: the camera,
 the cursor and the interface keep the picture rate, while objects move once
 a tick, as they always draw their current state (`RenderPose`).
 
-This changes no gameplay. Every phase must keep `sim-bench --frame-hashes`
-identical frame by frame.
+The simulation owns gameplay. Presentation reads a committed frame, so moving
+the camera, zooming and drawing at different rates leave the match independent
+of each player's view.
 
 ## Where the main thread coupled
 
@@ -437,19 +438,21 @@ Not done:
   hashes and the final `a76b4b338c2e955a` matched. The cells a write reached
   sync instead of their whole columns, and the House array and substrate
   stores clone on the pool. Capturing the frame (5.0–5.6 ms on the earlier
-  12-core machine) and freeing are unchanged, so the whole snapshot is still
-  above 2 ms. A record is 1,104 bytes, and capture is bound by reading 20,000
+  12-core machine) and freeing put the whole snapshot above 2 ms in that
+  measurement. Each record then occupied 1,104 bytes. Capture read 20,000
   objects scattered in memory, each touching several cache lines of its
-  `GameEntity`. Left: answer placement, lighting and the status strip only for
-  objects near the screen (radar facts stay for every object).
+  `GameEntity`. All object positions, visibility, radar and line endpoints stay
+  in the frame. The renderer calculates body lighting and expands repeated HUD
+  pips as it draws visible units. A minimap jump or zoom-out can show any
+  part of the same frame while the simulation thread owns the world.
 - **The simulation thread ticking on its own**, several ticks per hand-off
   (Phase 4's first residual), is the next phase.
 
 ## Validation
 
-- `sim-bench --frame-hashes` stays identical before and after every phase:
-  1v29 on the 30-start map, and retail `xmp34u4.map` for bridges.
-- Replay determinism tests pass.
+- Replaying the same inputs on the same build gives the same game state
+  when the camera moves or the renderer runs at a different rate. The 30-start
+  1v29 map exercises large battles, and retail `xmp34u4.map` exercises bridges.
 - Browser (multi-threaded package): an offline 1v29 skirmish with
   `set_simulation_thread("always")` takes no tick back early and accepts
   input, and `tools/spawn/run.sh browser` with `SIM_THREAD=always,0` and

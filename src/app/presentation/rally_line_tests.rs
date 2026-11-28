@@ -478,6 +478,48 @@ fn retail_gapile_house_color_and_production_crop_match_original_rally_and_no_tar
 }
 
 #[test]
+fn a_selected_offscreen_factory_draws_its_line_at_the_rally_point_on_a_lent_frame() {
+    use crate::app::match_runtime::sim_host::SimHost;
+    use crate::sim::runtime::{SimResources, SimRuntime};
+
+    let mut row = rally_native()["producer_cases"][0].clone();
+    row["input"]["target_cell"] = serde_json::json!([100, 20]);
+    let (sim, rules) = simulation_fixture(&row);
+    let mut host = SimHost::default();
+    host.install(Some(SimRuntime {
+        simulation: sim,
+        resources: SimResources::new(rules).into(),
+    }));
+    assert!(host.lend(Box::new(|_| Box::new(()))));
+    let runtime = host.presentation().unwrap();
+    let frame = host.frame().unwrap();
+    let draw = |camera| {
+        build_factory_rally_line_strokes(
+            Some(&runtime.simulation),
+            Some(frame),
+            Some(&runtime.resources.rules),
+            &[10],
+            &HouseColorMap::new(),
+            Some("Americans"),
+            TacticalViewport {
+                camera,
+                clip: [0, 0, 80, 60],
+            },
+        )
+    };
+    // The fixture's factory is at (10,20). The target is 90 cells east.
+    let (x, y) =
+        crate::util::lepton::absolute_leptons_to_screen(100 * 256 + 128, 20 * 256 + 128, 0);
+    assert!(draw([x as i32, y as i32 + 200]).iter().all(Vec::is_empty));
+    assert!(
+        draw([x as i32 - 40, y as i32 - 30])
+            .iter()
+            .all(|pass| !pass.is_empty())
+    );
+    assert!(host.take_job_result().is_some());
+}
+
+#[test]
 fn presentation_target_query_does_not_stamp_simulation_dummy_cell() {
     let row = &rally_native()["producer_cases"][0];
     let (mut sim, rules) = simulation_fixture(row);

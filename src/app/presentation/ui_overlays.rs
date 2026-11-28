@@ -40,6 +40,8 @@ pub(crate) struct HudFacts {
     pub(crate) location: DriveCoord,
     /// A Structure's part.
     structure: Option<StructureHud>,
+    /// An empty transport or a magazine keeps its final scale row inline.
+    uniform_pips: UniformPips,
     /// What few objects have; `None` for an object with none of it.
     more: Option<Box<HudMore>>,
 }
@@ -60,7 +62,9 @@ struct StructureHud {
 
 #[derive(Clone, Debug, Default)]
 struct HudMore {
-    /// [`scale_pip_rows`]: its pip-scale rows before the draw's admission.
+    /// A building's rally destination. Its line starts at the captured `get_coords`.
+    rally_target: Option<DriveCoord>,
+    /// Scale pips that depend on individual passengers, occupants or other slot contents.
     scale_pips: Vec<ScalePipDraw>,
     /// `MindControlLink::controller`.
     controller: Option<u64>,
@@ -86,7 +90,8 @@ struct HudMore {
 
 impl HudMore {
     fn is_empty(&self) -> bool {
-        self.scale_pips.is_empty()
+        self.rally_target.is_none()
+            && self.scale_pips.is_empty()
             && self.controller.is_none()
             && self.radial_radius == 0
             && self.capture_links.is_empty()
@@ -158,10 +163,12 @@ impl HudFacts {
                 .observer_id
                 .is_some_and(|viewer| entity.shows_production_to(viewer)),
         });
+        let pips = scale_pip_rows(sim, entity, object, rules);
         let more = HudMore {
-            // Owned rows, as the frame outlives this tick; an object with no
-            // pip rows gets an empty list, which allocates nothing.
-            scale_pips: scale_pip_rows(sim, entity, rules),
+            rally_target: at.cells.as_ref().and_then(|cells| {
+                crate::app::presentation::target_lines::rally_target(entity, sim, cells)
+            }),
+            scale_pips: pips.individual,
             controller: entity.seldom.mind_control.controller(),
             // Ares ObjectClass_DrawRadialIndicator (10049A70, hook
             // 0x0041BE80; the stock body is empty and Buildings override
@@ -246,6 +253,7 @@ impl HudFacts {
             get_coords: crate::sim::movement::ground_pose::object_get_coords(entity, terrain),
             location,
             structure,
+            uniform_pips: pips.uniform,
             // Boxed so a record without extras, most of them, stays small;
             // only one with extras allocates.
             more: (!more.is_empty()).then(|| Box::new(more)),
@@ -257,8 +265,15 @@ impl HudFacts {
     }
 
     /// Its pip-scale rows ([`scale_pip_rows`]).
-    pub(crate) fn scale_pips(&self) -> &[ScalePipDraw] {
-        self.more().map_or(&[], |more| &more.scale_pips)
+    pub(crate) fn scale_pips(&self) -> impl Iterator<Item = ScalePipDraw> + '_ {
+        self.more()
+            .into_iter()
+            .flat_map(|more| more.scale_pips.iter().copied())
+            .chain(self.uniform_pips.draws())
+    }
+
+    pub(crate) fn rally_target(&self) -> Option<DriveCoord> {
+        self.more()?.rally_target
     }
 
     /// The object that mind-controls it.
@@ -2078,11 +2093,11 @@ fn stock_rank_frames() -> (usize, usize, usize) {
 /// YR 13 = green filled magazine, 14 = dark empty magazine. Drawing YR's 13
 /// over RA2's strip selects the dark empty frame, so a loaded aircraft's
 /// pips look empty.
-fn stock_ammo_pip_frame() -> usize {
+fn stock_ammo_pip_frame() -> u8 {
     ammo_pip_frame_for(crate::util::ra2_launch::enabled())
 }
 
-fn ammo_pip_frame_for(ra2: bool) -> usize {
+fn ammo_pip_frame_for(ra2: bool) -> u8 {
     if ra2 { 12 } else { 13 }
 }
 
@@ -2749,6 +2764,37 @@ pub(crate) struct ScalePipDraw {
     pub lift: i16,
 }
 
+/// A magazine or an empty passenger row draws one frame in consecutive slots.
+#[derive(Clone, Copy, Debug, Default)]
+struct UniformPips {
+    count: u16,
+    frame: u8,
+    lift: i8,
+    /// Stock Gunner vehicles leave two places between their first and second pips.
+    gap_after_first: u8,
+}
+
+impl UniformPips {
+    fn draws(self) -> impl ExactSizeIterator<Item = ScalePipDraw> {
+        (0..usize::from(self.count)).map(move |slot| ScalePipDraw {
+            slot: if slot == 0 {
+                0
+            } else {
+                slot + usize::from(self.gap_after_first)
+            },
+            frame: usize::from(self.frame),
+            lift: i16::from(self.lift),
+        })
+    }
+}
+
+#[derive(Default)]
+struct ScalePipRows {
+    /// Independent spawn/garrison rows precede the final scale row.
+    individual: Vec<ScalePipDraw>,
+    uniform: UniformPips,
+}
+
 /// VERA's bound on the pips one scale row draws. A row's count comes from
 /// INI keys gameplay keeps raw (`Passengers=`, `MaxNumberOccupants=`,
 /// `Ammo=`, a MindControl weapon's `Damage=`), and each frame builds one pip
@@ -2857,20 +2903,17 @@ pub(crate) fn scale_pip_draws<'a>(
     hovered_id: Option<u64>,
     local_owner_id: Option<crate::sim::intern::InternedId>,
     rules: &RuleSet,
-) -> &'a [ScalePipDraw] {
+) -> impl Iterator<Item = ScalePipDraw> + 'a {
     // Ares6F6A58 ->1004A260 skips mobile scale pips to6F6AB6. The health
     // strip itself still draws; it has a separate admission path. Runs in
     // every game: only Ares code (when `RuleSet::ares`) kills a driver.
-    if entity.driver_killed() {
-        return &[];
-    }
-    if entity.sinking.is_active()
-        || entity.passenger_role.is_inside_transport()
-        || !entity_status_pips_drawable(sim, entity, hovered_id, local_owner_id, Some(rules))
-    {
-        return &[];
-    }
-    entity.hud.scale_pips()
+    let show = !entity.driver_killed()
+        && !entity.sinking.is_active()
+        && !entity.passenger_role.is_inside_transport()
+        && entity_status_pips_drawable(sim, entity, hovered_id, local_owner_id, Some(rules));
+    show.then_some(&entity.hud)
+        .into_iter()
+        .flat_map(HudFacts::scale_pips)
 }
 
 /// The 709A90 spawn, garrison and passenger/PipScale rows of `entity`, which
@@ -2880,10 +2923,12 @@ pub(crate) fn scale_pip_draws<'a>(
 fn scale_pip_rows(
     sim: &crate::sim::world::Simulation,
     entity: &crate::sim::game_entity::GameEntity,
+    object: Option<&crate::rules::object_type::ObjectType>,
     rules: &RuleSet,
-) -> Vec<ScalePipDraw> {
-    let Some(object) = sim.interner().object_type(entity.type_ref(), rules) else {
-        return Vec::new();
+) -> ScalePipRows {
+    let mut rows = ScalePipRows::default();
+    let Some(object) = object else {
+        return rows;
     };
     let building = entity.category() == EntityCategory::Structure;
     let pip = |slot: usize, frame: usize| ScalePipDraw {
@@ -2891,7 +2936,7 @@ fn scale_pip_rows(
         frame,
         lift: 0,
     };
-    let mut pips = Vec::new();
+    let pips = &mut rows.individual;
     //709B73..C25 is independent of Passengers/PipScale. Current type+D5C
     //sets capacity; canonical6B7D50 counts retained states0 OR6, including
     //reloading children. Empty slots still draw frame0. Consumed original
@@ -2941,27 +2986,39 @@ fn scale_pip_rows(
                 frame,
             )
         }));
-        return pips;
+        return rows;
     }
     if object.passengers > 0 && !rules.ares() {
         let slots = usize::try_from(object.pip_max(rules))
             .unwrap_or(0)
             .min(PIP_ROW_LIMIT);
-        let row_start = pips.len();
-        pips.extend((0..slots).map(|slot| {
+        let empty = UniformPips {
+            count: slots as u16,
             //709F50..A06F: later Gunner slots advance two extra steps.
-            let gunner_step = if object.gunner && slot > 0 { 2 } else { 0 };
-            pip(slot + gunner_step, 0)
-        }));
-        let Some(cargo) = entity.passenger_role().cargo() else {
-            return pips;
+            gap_after_first: if object.gunner { 2 } else { 0 },
+            ..UniformPips::default()
         };
+        let cargo = entity.passenger_role().cargo();
+        let absorber = building && object.absorbs_passengers();
+        if !absorber && cargo.is_some_and(|cargo| cargo.total_size() > slots as i32) {
+            // RESIDUAL (dormant, no retail type): an overfull row returns from
+            // DrawPipScale at 0x00709E48..0x00709E62, so the self-heal pip,
+            // DrawExtraInfo and group digit after 0x0070A4EC are skipped too;
+            // VERA drops only this row.
+            return rows;
+        }
+        let Some(cargo) = cargo.filter(|cargo| !cargo.passengers().is_empty()) else {
+            rows.uniform = empty;
+            return rows;
+        };
+        let row_start = pips.len();
+        pips.extend(empty.draws());
         //4598A0/709DD4..9E43: absorbers walk the head forward, consuming
         //one slot per passenger, not Size. Unit frame4 differs from ordinary
         //transport5; Infantry reads Pip, not the garrison OccupyPip above.
         //Consumed original readers/raster: procedural_drawing_oracle/absorber_pips.
         //A malformed overfull list cannot overrun this frame-local array.
-        if building && object.absorbs_passengers() {
+        if absorber {
             for (slot, &id) in cargo.passengers().iter().take(slots).enumerate() {
                 let Some(passenger) = sim.entities().get(id) else {
                     break;
@@ -2975,28 +3032,14 @@ fn scale_pip_rows(
                     _ => 1,
                 };
             }
-            return pips;
+            return rows;
         }
         //473460 rereads current binary64 Size and truncates after each entry;
         //PassengerCargo retains that signed native result. Negative totals
         //produce no passenger frames in the native drawing path.
-        let total = cargo.total_size();
-        if total < 0 {
-            return pips;
-        }
-        let Ok(total) = usize::try_from(total) else {
-            pips.truncate(row_start);
-            return pips;
+        let Ok(mut next) = usize::try_from(cargo.total_size()) else {
+            return rows;
         };
-        if total > slots {
-            // RESIDUAL (dormant, no retail type): an overfull row returns from
-            // DrawPipScale at 0x00709E48..0x00709E62, so the self-heal pip,
-            // DrawExtraInfo and group digit after 0x0070A4EC are skipped too;
-            // VERA drops only this row.
-            pips.truncate(row_start);
-            return pips;
-        }
-        let mut next = total;
         for &id in cargo.passengers() {
             let Some(passenger) = sim.entities().get(id) else {
                 break;
@@ -3030,7 +3073,7 @@ fn scale_pip_rows(
             pips[row_start + index].frame = frame;
             next = index;
         }
-        return pips;
+        return rows;
     }
     if object.pip_scale == crate::rules::object_type::PipScale::Ammo {
         //709A90/70A345..41C: ordinary stock ORCA reaches the unwrapped
@@ -3042,7 +3085,7 @@ fn scale_pip_rows(
         // draws frame 13 from PIPS2 for buildings too; VERA's building row
         // draws it from PIPS.
         if object.pip_wrap() != 0 {
-            return pips;
+            return rows;
         }
         let filled = entity
             .techno_pip_fill_level(object, rules, None)
@@ -3050,12 +3093,13 @@ fn scale_pip_rows(
             .min(PIP_ROW_LIMIT as i32);
         //70A3B7 resets this arm three pixels above the ordinary Y anchor,
         //even after a preceding spawn row. No empty Ammo outlines are drawn.
-        let ammo_frame = stock_ammo_pip_frame();
-        pips.extend((0..filled as usize).map(|slot| ScalePipDraw {
+        rows.uniform = UniformPips {
+            count: filled as u16,
+            frame: stock_ammo_pip_frame(),
             lift: -3,
-            ..pip(slot, ammo_frame)
-        }));
-        return pips;
+            gap_after_first: 0,
+        };
+        return rows;
     }
     if object.pip_scale == crate::rules::object_type::PipScale::MindControl {
         //716290 case5 reads current primary Weapon.Damage, independently of
@@ -3080,10 +3124,10 @@ fn scale_pip_rows(
                 pips.push(pip(slots, if active { 3 } else { 4 }));
             }
         }
-        return pips;
+        return rows;
     }
     if object.pip_scale != crate::rules::object_type::PipScale::Tiberium {
-        return pips;
+        return rows;
     }
     //70A1E9..70A340 reads the Techno's Storage (+0x33C) for every
     //PipScale=Tiberium type, with no harvester or slave test: a Yuri Slave
@@ -3118,7 +3162,7 @@ fn scale_pip_rows(
         };
         pip(slot, frame)
     }));
-    pips
+    rows
 }
 
 /// Resolve the active cursor id for the current game state, noting it as the
@@ -3424,6 +3468,28 @@ mod tests {
         assert_eq!(rows(building), rows(unit));
     }
 
+    #[test]
+    fn an_empty_gunner_keeps_its_gap_without_allocating_a_hud_box() {
+        let rules = RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(
+            "[VehicleTypes]\n0=BUS\n[BUS]\nStrength=100\nPassengers=3\nPipScale=Passengers\nGunner=yes\n",
+        )).unwrap();
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 7);
+        let id = sim
+            .spawn_object("BUS", "Americans", 8, 8, 0, &rules)
+            .unwrap();
+        let record = ObjectRecord::of_test_sim(&sim, &rules, id);
+        let draws: Vec<_> = record
+            .hud
+            .scale_pips()
+            .map(|p| (p.slot, p.frame, p.lift))
+            .collect();
+        assert_eq!(draws, [(0, 0, 0), (3, 0, 0), (4, 0, 0)]);
+        assert!(
+            record.hud.more().is_none(),
+            "uniform pips fit in the captured record"
+        );
+    }
+
     /// A huge `Ammo=` or `Passengers=` builds a pip row of
     /// [`super::PIP_ROW_LIMIT`] pips, not one per unit of the key.
     #[test]
@@ -3440,9 +3506,12 @@ mod tests {
             let id = sim
                 .spawn_object(name, "Americans", cell, cell, 0, &rules)
                 .unwrap();
-            let entity = sim.entities().get(id).unwrap();
-            let rows = super::scale_pip_rows(&sim, entity, &rules);
-            assert_eq!(rows.len(), super::PIP_ROW_LIMIT, "{name}");
+            let record = ObjectRecord::of_test_sim(&sim, &rules, id);
+            assert_eq!(
+                record.hud.scale_pips().count(),
+                super::PIP_ROW_LIMIT,
+                "{name}"
+            );
         }
     }
 
@@ -4234,19 +4303,19 @@ mod tests {
             b.passenger_role_mut_for_test()
                 .set_occupants_for_test(vec![e1, e2], 0);
         }
-        let entity = sim.entities().get(building).unwrap();
-
         crate::util::ra2_launch::set(false);
-        let yr = scale_pip_rows(&sim, entity, &rules);
-        assert!(yr.len() >= 2, "YR draws one pip per occupant slot");
+        let yr = ObjectRecord::of_test_sim(&sim, &rules, building)
+            .hud
+            .scale_pips()
+            .count();
+        assert!(yr >= 2, "YR draws one pip per occupant slot");
 
         crate::util::ra2_launch::set(true);
-        let ra2 = scale_pip_rows(&sim, entity, &rules);
-        assert_eq!(
-            ra2.len(),
-            yr.len(),
-            "RA2 must draw the same occupant pip rows as YR"
-        );
+        let ra2 = ObjectRecord::of_test_sim(&sim, &rules, building)
+            .hud
+            .scale_pips()
+            .count();
+        assert_eq!(ra2, yr, "RA2 must draw the same occupant pip rows as YR");
 
         crate::util::ra2_launch::set(before);
     }
