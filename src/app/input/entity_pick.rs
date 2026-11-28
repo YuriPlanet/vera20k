@@ -25,6 +25,9 @@ use crate::sim::world::ControlProjection;
 /// mutation of authoritative entities. Native callers/tests retain raw geometry.
 pub(crate) trait PickSource: Copy {
     fn entities(&self) -> &EntityStore;
+    fn terrain(&self) -> Option<&crate::map::resolved_terrain::ResolvedTerrainGrid> {
+        None
+    }
     /// Last displayed unit anchor in projected world pixels, independent of camera motion.
     fn painted_anchor(&self, _id: u64) -> Option<[f32; 2]> {
         None
@@ -99,6 +102,9 @@ pub(crate) trait PickWorld: PickSource {
     }
 }
 impl PickSource for &crate::sim::world::Simulation {
+    fn terrain(&self) -> Option<&crate::map::resolved_terrain::ResolvedTerrainGrid> {
+        self.resolved_terrain()
+    }
     fn entities(&self) -> &EntityStore {
         crate::sim::world::Simulation::entities(self)
     }
@@ -134,6 +140,9 @@ pub(crate) struct PresentedWorld<'a> {
     pub translucent_viewer: Option<InternedId>,
 }
 impl PickSource for PresentedWorld<'_> {
+    fn terrain(&self) -> Option<&crate::map::resolved_terrain::ResolvedTerrainGrid> {
+        self.sim.resolved_terrain()
+    }
     fn painted_anchor(&self, id: u64) -> Option<[f32; 2]> {
         self.unit_motion?.painted_anchor(id)
     }
@@ -737,6 +746,7 @@ fn is_drawn_for_local_owner(
     entity_owner: &str,
     entity: &crate::sim::game_entity::GameEntity,
     local_owner_id: Option<InternedId>,
+    terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
 ) -> bool {
     let Some((fog, alliances)) = fog else {
         // Sandbox full visibility: everything is drawn.
@@ -750,6 +760,7 @@ fn is_drawn_for_local_owner(
         &entity.position,
         entity_owner,
         false,
+        terrain,
     )
 }
 
@@ -1066,7 +1077,14 @@ fn type_select_candidates(
                 })
                 || (screen_only
                     && entity.category() != EntityCategory::Structure
-                    && !is_drawn_for_local_owner(fog, local_owner, owner, entity, local_owner_id))
+                    && !is_drawn_for_local_owner(
+                        fog,
+                        local_owner,
+                        owner,
+                        entity,
+                        local_owner_id,
+                        source.terrain(),
+                    ))
             {
                 return None;
             }

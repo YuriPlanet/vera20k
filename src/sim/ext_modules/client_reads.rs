@@ -252,10 +252,13 @@ impl ClientView<'_> {
     fn cell_in_sight(&self, x: u16, y: u16) -> bool {
         let sim = self.sim();
         match self.me().id {
-            Some(viewer) => {
-                sim.fog
-                    .shows_objects_to(viewer, x, y, sim.session.game_options().fog_of_war)
-            }
+            Some(viewer) => sim.fog.shows_objects_to(
+                viewer,
+                x,
+                y,
+                sim.session.game_options().fog_of_war,
+                sim.resolved_terrain(),
+            ),
             None => self.viewer.spectator && self.viewer.sees_whole_map,
         }
     }
@@ -264,7 +267,11 @@ impl ClientView<'_> {
     /// draws, explored and not under a hostile gap.
     fn cell_listed(&self, x: u16, y: u16) -> bool {
         match self.me().id {
-            Some(viewer) => self.sim().fog.shows_objects_to(viewer, x, y, false),
+            Some(viewer) => {
+                self.sim()
+                    .fog
+                    .shows_objects_to(viewer, x, y, false, self.sim().resolved_terrain())
+            }
             None => self.viewer.spectator && self.viewer.sees_whole_map,
         }
     }

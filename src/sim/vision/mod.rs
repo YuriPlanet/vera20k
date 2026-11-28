@@ -2039,26 +2039,40 @@ impl FogState {
             .is_some_and(|s| s.is_gap_covered(rx, ry))
     }
 
-    /// Does `viewer` see another house's objects on this cell? Explored (with
-    /// `current_sight_only`, currently seen) and not covered by a hostile gap.
-    /// With `current_sight_only == false` this is the A plane's own admission
-    /// (`render::shroud_buffer::cell_fill`), so overlays whose material reads
-    /// no A can ask it instead of inventing a second fog interpretation. The
-    /// draw plan, the pickers and the extension modules' `Visible` read it.
+    /// Whether the viewer sees objects at this map cell. Sight and hostile
+    /// gaps are written to the flat shroud lattice. Look up the cell at its
+    /// floor height, as MapClass::IsShrouded (0x00586360) does. Under fog of
+    /// war the translucent draw and its consumers also require current sight.
     pub fn shows_objects_to(
         &self,
         viewer: InternedId,
         rx: u16,
         ry: u16,
         current_sight_only: bool,
+        terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
     ) -> bool {
-        let lit = if current_sight_only {
-            self.is_cell_visible(viewer, rx, ry)
-        } else {
-            // Standard YR has no fog-of-war layer: explored ground stays visible.
-            self.is_cell_revealed(viewer, rx, ry)
+        let Some(view) = self.by_owner.get(&viewer) else {
+            return false;
         };
-        lit && !self.is_cell_gap_covered(viewer, rx, ry)
+        let required = if current_sight_only {
+            FLAG_VISIBLE
+        } else {
+            FLAG_REVEALED
+        };
+        let shown = |x, y| {
+            view.index(x, y)
+                .is_some_and(|i| view.cells[i] & (required | FLAG_GAP_COVERED) == required)
+        };
+        let Some(terrain) = terrain else {
+            return shown(rx, ry);
+        };
+        let Some(cell) = terrain.cell(rx, ry) else {
+            return false;
+        };
+        let point = crate::sim::cell_rect::CellRef::Real(cell).get_coords();
+        let ((x, y), odd_level) = shroud_lattice_origin(point);
+        shown(x as u16, y as u16)
+            || (odd_level && shown(x.wrapping_add(1) as u16, y.wrapping_add(1) as u16))
     }
 
     /// Returns true if the cell is covered by a friendly gap generator for this owner.
@@ -3101,6 +3115,17 @@ const REVEAL_MIRROR: [(i8, i8); 309] = [
     (0, -1), (0, -1), (0, -1), (0, -1), (0, -1), (0, -1), (0, -1),
 ];
 
+/// First flat shroud cell beneath a world point and whether its height lies
+/// between two cells (MapClass::IsShrouded, 0x00586368..0x00586441).
+fn shroud_lattice_origin(point: crate::sim::components::DriveCoord) -> ((i16, i16), bool) {
+    let level = point.z / crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS;
+    let odd_level = level & 1 != 0;
+    let shift = (level / 2 + i32::from(odd_level)) as i16;
+    let x = ((point.x / 256) as i16).wrapping_sub(shift);
+    let y = ((point.y / 256) as i16).wrapping_sub(shift);
+    ((x, y), odd_level)
+}
+
 /// The lattice `MapClass::IsShrouded @ 0x00586360` and `IsFogged @
 /// 0x005864A0` share: `test` holds for the Cell under `point` projected up
 /// by half its height level and, for an odd level, also for the next Cell
@@ -3110,16 +3135,12 @@ fn raised_cells_all(
     point: crate::sim::components::DriveCoord,
     mut test: impl FnMut(crate::map::cell_index::NativeCellIdentity) -> Result<bool, String>,
 ) -> Result<bool, String> {
-    let level = point.z / crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS;
-    let shift = level / 2 + i32::from(level & 1 != 0);
-    let first = cells.lookup((
-        ((point.x / 256) as i16).wrapping_sub(shift as i16),
-        ((point.y / 256) as i16).wrapping_sub(shift as i16),
-    ));
+    let (origin, odd_level) = shroud_lattice_origin(point);
+    let first = cells.lookup(origin);
     if !test(first)? {
         return Ok(false);
     }
-    if level & 1 != 0 {
+    if odd_level {
         let (x, y) = cells.coord(first);
         return test(cells.lookup((x.wrapping_add(1), y.wrapping_add(1))));
     }

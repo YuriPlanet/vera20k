@@ -488,6 +488,7 @@ fn health_strip_widened(
         entity.position.rx(),
         entity.position.ry(),
         sim.session().game_options().fog_of_war,
+        sim.resolved_terrain(),
     )
 }
 
@@ -680,12 +681,12 @@ pub(crate) fn module_status_anchor(
     admitted_techno_observer(sim, entity, player)?;
     if let Some(viewer) = player.filter(|viewer| !ignore_visibility && *viewer != entity.owner()) {
         if !sim.fog().shows_objects_to(
-                viewer,
-                entity.position.rx(),
-                entity.position.ry(),
-                sim.session().game_options().fog_of_war,
-            )
-        {
+            viewer,
+            entity.position.rx(),
+            entity.position.ry(),
+            sim.session().game_options().fog_of_war,
+            sim.resolved_terrain(),
+        ) {
             return None;
         }
     }
@@ -801,6 +802,7 @@ pub(crate) fn control_group_status_labels(
                     &entity.position,
                     entity.owner(),
                     ignore_visibility,
+                    sim.resolved_terrain(),
                 ))
         {
             return None;
@@ -1180,6 +1182,7 @@ pub(crate) fn build_building_status_render_instances(
             entity.position.rx(),
             entity.position.ry(),
             sim.session().game_options().fog_of_war,
+            sim.resolved_terrain(),
         );
         let lines: &[crate::sim::superweapon::SuperChargeLine] =
             if superweapon_building_timers && visible && super_shift.is_some() {
@@ -3335,6 +3338,7 @@ fn status_entity_visible_plain(
     pos: &Position,
     entity_owner: crate::sim::intern::InternedId,
     ignore_visibility: bool,
+    terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
 ) -> bool {
     if ignore_visibility {
         return true;
@@ -3345,8 +3349,7 @@ fn status_entity_visible_plain(
     if local_owner == entity_owner {
         return true;
     }
-    fog.is_cell_revealed(local_owner, pos.rx(), pos.ry())
-        && !fog.is_cell_gap_covered(local_owner, pos.rx(), pos.ry())
+    fog.shows_objects_to(local_owner, pos.rx(), pos.ry(), false, terrain)
 }
 
 #[cfg(all(test, tests_app_presentation))]

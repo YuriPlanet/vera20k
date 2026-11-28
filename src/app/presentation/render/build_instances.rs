@@ -824,6 +824,7 @@ pub(super) fn build_world_instances(
                     cell.0,
                     cell.1,
                     fog_of_war,
+                    sim.resolved_terrain(),
                 )
             });
         }
