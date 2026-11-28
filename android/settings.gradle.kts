@@ -4,6 +4,7 @@
 pluginManagement {
     repositories {
         google()
+        System.getenv("VERA20K_CI_MAVEN_CENTRAL")?.let { maven(it) }
         mavenCentral()
         gradlePluginPortal()
     }
@@ -13,6 +14,7 @@ dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
         google()
+        System.getenv("VERA20K_CI_MAVEN_CENTRAL")?.let { maven(it) }
         mavenCentral()
     }
 }

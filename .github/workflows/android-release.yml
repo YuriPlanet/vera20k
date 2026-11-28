@@ -17,6 +17,7 @@ on:
       - '.github/release/android/**'
       - '.github/release/about.toml'
       - 'android/app/build.gradle.kts'
+      - 'android/settings.gradle.kts'
 
 permissions:
   contents: read
