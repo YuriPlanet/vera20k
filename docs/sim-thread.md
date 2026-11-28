@@ -400,11 +400,14 @@ that fill one at once both compute it, and one value is kept. (`wasm_sync`'s own
 once-cell reads the standard library's private state and spins forever on
 the nightly the build uses.) The host and the worker hand each other the
 runtime through a one-slot mailbox on the same mutex, since a standard
-channel's sender can wait on a lock of its own. A panic aborts a Wasm
-worker, so its tick never comes back: the panic hook keeps the message, and
-the main thread panics with it at its next pass, which reports
-`engine-error` to the host. A trap the hook never sees, such as an
-allocation failure, reaches the same place through the worker's script.
+channel's sender can wait on a lock of its own. The worker's script marks
+shared memory when it catches a trap, since the main thread can be spinning
+for the lent tick and cannot process JavaScript messages. The panic hook
+and the worker launcher retain the failure detail for the log. If a worker
+stops with a tick still outstanding, the launch ends and the host receives
+`worker-stopped` followed by `engine-error`. If the runtime is already back,
+the main thread resumes ticking and the host receives one `worker-stopped`
+notice for the page. Reloading starts a fresh worker.
 
 Residuals:
 
@@ -416,6 +419,10 @@ Residuals:
   brings that pass at once.
 - A pool worker's panic during an inline tick still leaves the main thread
   spinning in rayon, so the tab freezes instead of reporting it.
+- A worker that is killed without running its script (the browser ends it)
+  writes nothing into the shared memory, so a main thread spinning for that
+  worker's tick keeps spinning. The script's own failure path covers the
+  traps and the panics.
 
 ## Status (render snapshot, phases 2–3)
 

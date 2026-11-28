@@ -59,7 +59,7 @@ python3 tools/wasm/serve.py
 
 共享内存要求跨源隔离，所以页面必须带上 `Cross-Origin-Opener-Policy: same-origin` 和 `Cross-Origin-Embedder-Policy: require-corp` 响应头。`serve.py` 会发送这两个头；普通的 `http.server` 不会，此时宿主页面会提示缺少响应头。其他宿主同样要发送它们，并在 `init()` 之后等待 `initThreadPool(workers)` 完成；不调用时，这个包会在主线程上串行执行模拟工作。
 
-渲染、音频、输入和网络会话留在主线程，主线程从不等待其他线程，因为在主线程等待会 trap。页面还可以让 tick 在绘制旁边的模拟 Worker 上运行，和桌面版的模拟线程一样（[浏览器](sim-thread.md#the-browser)）。它默认关闭：在 `start_game` 或 `start_spawn` 之前调用 `set_simulation_thread("1")`（自带宿主页面用 `?simulation-thread=1`）。之后 tick 的开销超过发布一帧时，这一帧交给 Worker；`"always"` 把 Worker 能接的每一帧都交给它，`"0"` 保持关闭。tick 运行期间，页面绘制最近发布的帧，并把窗口事件留到 tick 回来后再处理。仍在主线程 tick 的帧（关闭 Worker 时是全部帧；否则是后面还有一轮的追帧、回放、网络恢复）在线程池工作期间自旋等待，不运行引擎代码。结果不依赖线程池大小，也不依赖 tick 在哪个线程运行。模拟 Worker 上的 panic 或 trap，或线程池 Worker 在它的 tick 中的 panic，会在下一帧以 `engine-error` 上报；线程池 Worker 在主线程 tick 中的 panic 仍会让主线程一直自旋，页面会卡死。
+渲染、音频、输入和网络会话留在主线程，主线程从不等待其他线程，因为在主线程等待会 trap。页面还可以让 tick 在绘制旁边的模拟 Worker 上运行，和桌面版的模拟线程一样（[浏览器](sim-thread.md#the-browser)）。它默认关闭：在 `start_game` 或 `start_spawn` 之前调用 `set_simulation_thread("1")`（自带宿主页面用 `?simulation-thread=1`）。之后 tick 的开销超过发布一帧时，这一帧交给 Worker；`"always"` 把 Worker 能接的每一帧都交给它，`"0"` 保持关闭。tick 运行期间，页面绘制最近发布的帧，并把窗口事件留到 tick 回来后再处理。仍在主线程 tick 的帧（关闭 Worker 时是全部帧；否则是后面还有一轮的追帧、回放、网络恢复）在线程池工作期间自旋等待，不运行引擎代码。结果不依赖线程池大小，也不依赖 tick 在哪个线程运行。模拟 Worker 上的 panic 或 trap，或线程池 Worker 在它的 tick 中的 panic，会在下一帧以 `engine-error` 上报；线程池 Worker 在主线程 tick 中的 panic 仍会让主线程一直自旋，页面会卡死。完全起不来的模拟 Worker（取不到脚本、Worker 起不来或引擎导入失败）同样会上报，玩家会看到发生了什么：没有 tick 在 Worker 上时，游戏继续在主线程上运行；有 tick 在它上面时，世界随之丢失，游戏就此结束。给玩家看的信息说明发生了什么、该怎么做；Worker 自己的报告（带内部细节）只留在日志里。
 
 ## 兼容边界
 
@@ -111,6 +111,11 @@ python3 -m unittest tools.tests.test_wasm_build
   `error`，`error` 携带错误文本或 `null`。资源加载失败后点击退出也携带原错误。
 - `engine-error`：panic 的尽力通知，不能视为已正常收尾。浏览器终止页面或
   没有经过 panic hook 的 Wasm trap 无法保证回调。
+- `worker-stopped`：浏览器的模拟 Worker 已停止。`message` 是引擎的措辞，页面可以
+  用玩家语言复述。`fatal: false` 时游戏改在主线程上继续运行，速度会变慢，页面
+  会一直保留提示；Worker 不会回来，之后没有 tick 再交给它。`fatal: true` 时
+  世界随 Worker 一起丢失，游戏就此结束：该事件先于随后的 `engine-error` 到达，
+  页面因此能说明原因。
 
 外部 `start_spawn` 启动的对局跳过结算页“继续”和战役下一关，在已有网络
 finish/leave 收尾完成后发送 `match-ended`，随即请求退出引擎，然后通知
@@ -145,5 +150,9 @@ finish/leave 收尾完成后发送 `match-ended`，随即请求退出引擎，�
 游戏、等待 IndexedDB 写入完成后尝试关闭标签页，保存失败时保留警告；网站宿主
 可在保存完成后返回自己的大厅。重新加载后需重新选择游戏资源。引擎退出也
 会暂停 WebAudio。桌面原生启动、结算、退出码和结果文件逻辑保持不变。
+
+`engine-error` 之后引擎已经死了：示例宿主会隐藏冻结的画面、说明发生了什么，
+并提供重新加载以开启新的实例。`worker-stopped` 之后游戏仍在运行：示例宿主会
+一直保留提示，游戏改在主线程上继续 tick。
 
 完整字段和接入示例见 [英文说明](wasm.md#lifecycle-callbacks)。
