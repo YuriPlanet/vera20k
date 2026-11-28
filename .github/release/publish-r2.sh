@@ -128,6 +128,14 @@ if jq -e --arg name "$intel" 'any(.assets[]; .name == $name)' "$work/release.jso
   platforms+=(macos-x64)
   types+=(application/x-apple-diskimage)
 fi
+# The signed Android APK starts with v0.4.3. An older release keeps the
+# original installer set and signed manifest when it is mirrored again.
+apk="vera20k-$version-android-arm64.apk"
+if jq -e --arg name "$apk" 'any(.assets[]; .name == $name)' "$work/release.json" >/dev/null; then
+  names+=("$apk")
+  platforms+=(android)
+  types+=(application/vnd.android.package-archive)
+fi
 jq -e --arg tag "$tag" '
   .tag_name == $tag and .draft == false and .prerelease == false
   and ([.assets[].name] | sort == ($ARGS.positional | sort))
@@ -266,7 +274,7 @@ if fetch_optional latest.json "$work/prior-latest.json"; then
     type == "object" and (.tag | type == "string") and (.version | type == "string")
     and (.version | test("^(0|[1-9][0-9]{0,8})\\.(0|[1-9][0-9]{0,8})\\.(0|[1-9][0-9]{0,8})$"))
     and .tag == ("v" + .version) and (.commit | test("^[0-9a-f]{40}$"))
-    and (.files | type == "object") and (.files | keys - ["macos-x64"] == ["linux","macos","windows"])
+    and (.files | type == "object") and (.files | keys - ["macos-x64","android"] == ["linux","macos","windows"])
   ' "$work/prior-latest.json" >/dev/null || die 'existing latest manifest is malformed'
   if jq -e --arg version "$version" \
       '(.version | split(".") | map(tonumber)) > ($version | split(".") | map(tonumber))' \

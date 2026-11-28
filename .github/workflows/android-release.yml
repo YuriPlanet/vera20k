@@ -1,0 +1,110 @@
+name: Android release APK
+
+# Release supplies its build stamp. A manual run checks the same packaging and
+# signing path on main and leaves the APK as an Actions artifact.
+on:
+  workflow_call:
+    inputs:
+      stamp:
+        description: UTC stamp of the dev build to package
+        type: string
+        required: true
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/android-release.yml'
+      - '.github/workflows/build-android-apk.yml'
+      - '.github/release/android/**'
+      - '.github/release/about.toml'
+      - 'android/app/build.gradle.kts'
+      - 'android/settings.gradle.kts'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-release-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      version: ${{ steps.names.outputs.version }}
+      stamp: ${{ steps.names.outputs.stamp }}
+      code: ${{ steps.names.outputs.code }}
+      filename: ${{ steps.names.outputs.filename }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Identify this build
+        id: names
+        env:
+          RELEASE_STAMP: ${{ inputs.stamp }}
+        run: |
+          set -euo pipefail
+          version=$(python3 -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["package"]["version"])')
+          stamp=${RELEASE_STAMP:-$(date -u +%Y%m%d-%H%M%S)}
+          code=$(python3 .github/release/android/apk.py version-code "$stamp")
+          {
+            echo "version=$version"
+            echo "stamp=$stamp"
+            echo "code=$code"
+            echo "filename=vera20k-$version-android-arm64-$stamp-${GITHUB_SHA:0:7}.apk"
+          } >> "$GITHUB_OUTPUT"
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: stable
+      - uses: taiki-e/install-action@86f7a0ffb25f40114606501a311ebcfaf882ea32 # v2.88.0
+        with:
+          tool: cargo-about@0.9.2
+      - name: License notices for the Android crate and its dependencies
+        run: |
+          cargo about generate --locked --fail --manifest-path android/Cargo.toml \
+            -c .github/release/about.toml -o THIRD_PARTY_LICENSES.html .github/release/about.hbs
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: android-third-party-licenses
+          path: THIRD_PARTY_LICENSES.html
+          if-no-files-found: error
+
+  build:
+    needs: prepare
+    uses: ./.github/workflows/build-android-apk.yml
+    with:
+      release: true
+      version_code: ${{ needs.prepare.outputs.code }}
+      stamp: ${{ needs.prepare.outputs.stamp }}
+
+  sign:
+    needs: [prepare, build]
+    if: github.repository == 'YuriPlanet/vera20k' && github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch'
+    environment: android-signing
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: android-unsigned
+          path: unsigned
+      - name: Sign and verify the release APK
+        env:
+          ANDROID_SIGNING_KEYSTORE: ${{ secrets.ANDROID_SIGNING_KEYSTORE }}
+          ANDROID_SIGNING_PASSWORD: ${{ secrets.ANDROID_SIGNING_PASSWORD }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          VERSION_CODE: ${{ needs.prepare.outputs.code }}
+          FILENAME: ${{ needs.prepare.outputs.filename }}
+        run: |
+          python3 .github/release/android/apk.py sign unsigned/vera20k-android-arm64-unsigned.apk \
+            "signed/$FILENAME" --version "$VERSION" --version-code "$VERSION_CODE"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: android-arm64
+          path: signed/*.apk
+          if-no-files-found: error
+          compression-level: 0

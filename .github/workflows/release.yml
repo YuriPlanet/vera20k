@@ -2,7 +2,8 @@ name: Release
 
 # Downloadable builds of the game for players who do not compile it: one
 # installer per platform and nothing else (a Windows setup program, a macOS disk
-# image each for Apple Silicon and Intel Macs, and a Linux AppImage). This
+# image each for Apple Silicon and Intel Macs, a Linux AppImage, and an
+# Android ARM64 APK). This
 # project changes too fast for every main commit to be a release, so there are
 # two kinds, both started by hand (and
 # nightly.yml starts a dev build of main each day that main has changed):
@@ -44,7 +45,7 @@ name: Release
 # `toolchain: stable` in place of its @stable branch. Refresh the pins about
 # once a year, to releases that have been out for a few weeks.
 #
-# Each native runner instruments the shipping game and sim-bench, trains on headless
+# Each desktop runner instruments the shipping game and sim-bench, trains on headless
 # retail gameplay and uses its own merged Rust LLVM profile to rebuild the game before
 # packaging (.github/release/pgo.py). Stable promotion keeps those exact bytes.
 #
@@ -88,8 +89,7 @@ env:
 jobs:
   # One cheap job decides the names and the publish mode, so all platform jobs
   # and the publish job agree instead of each recomputing a date that may roll
-  # over midnight mid-run. It also writes the third-party notices every
-  # installer carries.
+  # over midnight mid-run. It also writes the desktop third-party notices.
   prepare:
     name: prepare
     # A release reuses a dev build's installers; only a dev build builds.
@@ -121,7 +121,7 @@ jobs:
           # The signing environment is independently restricted to main. Do
           # not spend a build on a ref that cannot produce a signed installer.
           if [ "$GITHUB_REF" != refs/heads/main ]; then
-            echo '::error::Dev builds must run from main to use the protected macOS signing environment.'
+            echo '::error::Dev builds must run from main to use the protected signing environments.'
             exit 1
           fi
           version="$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)"
@@ -164,7 +164,7 @@ jobs:
             echo "| tag | \`$tag\` |"
             echo "| publish | \`$publish\` |"
           } >> "$GITHUB_STEP_SUMMARY"
-      # Once for all four installers: about.toml names every target, so the
+      # Once for the four desktop installers: about.toml names every target, so the
       # notices are the same on any runner (v0.2.5's Apple Silicon and Intel
       # Mac images hold byte-identical ones). Here, before the builds, a crate
       # with an unrecognized or GPL-incompatible license stops the release
@@ -188,6 +188,12 @@ jobs:
           name: third-party-licenses
           path: dist/THIRD_PARTY_LICENSES.html
           if-no-files-found: error
+
+  android:
+    needs: prepare
+    uses: ./.github/workflows/android-release.yml
+    with:
+      stamp: ${{ needs.prepare.outputs.stamp }}
 
   build:
     name: build (${{ matrix.target }})
@@ -1045,7 +1051,7 @@ jobs:
 
   publish:
     name: publish
-    needs: [prepare, build, test, macos-sign, update-test]
+    needs: [prepare, build, test, macos-sign, android, update-test]
     # "none" stops here, with the installers left as workflow artifacts.
     if: needs.prepare.outputs.publish != 'none'
     #
@@ -1090,21 +1096,25 @@ jobs:
         with:
           name: macos-arm64
           path: dist
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: android-arm64
+          path: dist
       - name: Check the installers
         shell: bash
         run: |
           set -euo pipefail
           # `gh release create TAG dist/*` uploads every match, so dist/ must hold
-          # exactly the four installers, as regular files.
+          # exactly the five installers, as regular files.
           cd dist
           ls -l
           for pattern in 'vera20k-*-windows-x64-*-setup.exe' 'vera20k-*-macos-arm64-*.dmg' \
-            'vera20k-*-macos-x64-*.dmg' 'vera20k-*-linux-x64-*.AppImage'; do
+            'vera20k-*-macos-x64-*.dmg' 'vera20k-*-linux-x64-*.AppImage' 'vera20k-*-android-arm64-*.apk'; do
             test "$(find . -maxdepth 1 -type f -name "$pattern" | wc -l)" -eq 1 \
               || { echo "!! dist/ needs exactly one $pattern" >&2; exit 1; }
           done
-          test "$(find . -mindepth 1 | wc -l)" -eq 4 \
-            || { echo '!! dist/ holds more than the four installers' >&2; exit 1; }
+          test "$(find . -mindepth 1 | wc -l)" -eq 5 \
+            || { echo '!! dist/ must hold exactly five installers' >&2; exit 1; }
       - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-path: dist/vera20k-*
@@ -1223,8 +1233,8 @@ jobs:
           # and nothing else: an asset added to the dev build by hand fails here
           # rather than reach players.
           ls -l
-          if [ "$(find . -mindepth 1 | wc -l)" -ne 4 ]; then
-            echo "!! $FROM must hold exactly its four installers" >&2
+          if [ "$(find . -mindepth 1 | wc -l)" -ne 5 ]; then
+            echo "!! $FROM must hold exactly its five installers, including the signed Android APK" >&2
             exit 1
           fi
           shopt -s nullglob
@@ -1241,6 +1251,13 @@ jobs:
             mv "${found[0]}" "vera20k-$version-$platform$ext"
             echo "provenance verified: ${found[0]} -> vera20k-$version-$platform$ext"
           done
+          apk="vera20k-$version-android-arm64-$stamp-${commit:0:7}.apk"
+          gh attestation verify "$apk" --repo "$GITHUB_REPOSITORY" \
+            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml" \
+            --source-ref refs/heads/main --source-digest "$commit" > /dev/null
+          code=$(python3 ../.github/release/android/apk.py version-code "$stamp")
+          python3 ../.github/release/android/apk.py verify "$apk" --version "$version" --version-code "$code"
+          mv "$apk" "vera20k-$version-android-arm64.apk"
           {
             echo "tag=v$version"
             echo "commit=$commit"

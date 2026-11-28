@@ -26,14 +26,19 @@ class ReleaseDownloadsTests(unittest.TestCase):
         except (OSError, RuntimeError, subprocess.CalledProcessError):
             self.skipTest("publisher requires OpenSSL with Ed25519")
         self.publisher = Publisher(self.root, self.public_key)
-        self.names = ["vera20k-0.2.2-windows-x64-setup.exe", "vera20k-0.2.2-macos-arm64.dmg", "vera20k-0.2.2-linux-x64.AppImage"]
+        self.make_release("0.2.2")
+
+    def make_release(self, version, *extra_installers):
+        tag = f"v{version}"
+        installers = ("windows-x64-setup.exe", "macos-arm64.dmg", "linux-x64.AppImage", *extra_installers)
+        self.names = [f"vera20k-{version}-{installer}" for installer in installers]
         assets = []
         for index, name in enumerate(self.names):
             data = (name + "\n").encode()
             (self.root / "assets" / name).write_bytes(data)
             assets.append({"id": index + 1, "name": name, "size": len(data), "digest": "sha256:" + hashlib.sha256(data).hexdigest(), "state": "uploaded"})
-        self.config = {"tag": "v0.2.2", "commit": "a" * 40, "updater_version": f"{UPDATER}\n",
-                       "release": {"id": 10, "tag_name": "v0.2.2", "draft": False, "prerelease": False, "assets": assets}}
+        self.config = {"tag": tag, "commit": "a" * 40, "updater_version": f"{UPDATER}\n",
+                       "release": {"id": 10, "tag_name": tag, "draft": False, "prerelease": False, "assets": assets}}
 
     def run_publisher(self, tag="v0.2.2", signing_key=None, roll_back=False, build=None):
         return self.publisher.run(tag, self.config, self.signing_key if signing_key is None else signing_key,
@@ -88,19 +93,45 @@ class ReleaseDownloadsTests(unittest.TestCase):
         self.assertEqual(len(self.puts()), 6, "an identical retry must not overwrite any object")
 
     def test_a_release_with_an_intel_mac_image_publishes_it_for_intel_macs(self):
-        name = "vera20k-0.2.2-macos-x64.dmg"
-        data = (name + "\n").encode()
-        (self.root / "assets" / name).write_bytes(data)
-        self.config["release"]["assets"].append({"id": 4, "name": name, "size": len(data),
-                                                 "digest": "sha256:" + hashlib.sha256(data).hexdigest(),
-                                                 "state": "uploaded"})
+        self.make_release("0.2.2", "macos-x64.dmg")
+        name = self.names[-1]
         self.prior_pointer()
         result = self.run_publisher()
         self.assertEqual(result.returncode, 0, result.stderr)
         files = json.loads((self.root / "objects/latest.json").read_text())["files"]
         self.assertEqual(set(files), {"windows", "macos", "macos-x64", "linux"})
         self.assertEqual(files["macos-x64"]["name"], name)
-        self.assertEqual((self.root / "objects" / files["macos-x64"]["key"]).read_bytes(), data)
+        self.assertEqual((self.root / "objects" / files["macos-x64"]["key"]).read_bytes(),
+                         (self.root / "assets" / name).read_bytes())
+
+    def test_android_apk_is_attested_and_published_alongside_desktop_updates(self):
+        self.make_release("0.4.3", "macos-x64.dmg", "android-arm64.apk")
+        result = self.run_publisher(tag="v0.4.3")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        manifest = (self.root / "objects/latest.json").read_bytes()
+        signature = (self.root / "objects/releases/v0.4.3/manifest.json.sig").read_text()
+        self.assertTrue(verify_signature(self.public_key, manifest, signature, self.root))
+        files = json.loads(manifest)["files"]
+        self.assertEqual(set(files), {"windows", "macos", "macos-x64", "linux", "android"})
+        name = self.names[-1]
+        key = "releases/v0.4.3/" + name
+        data = (self.root / "assets" / name).read_bytes()
+        self.assertEqual(files["android"], {"name": name, "key": key,
+                                            "size": len(data), "sha256": hashlib.sha256(data).hexdigest()})
+        self.assertEqual((self.root / "objects" / key).read_bytes(), data)
+        self.assertTrue(any(tool == "gh" and args[:2] == ["attestation", "verify"] and Path(args[2]).name == name
+                            for tool, args in self.calls()))
+        put = next(args for tool, args in self.calls() if tool == "aws" and "put-object" in args and key in args)
+        self.assertEqual(put[put.index("--content-type") + 1], "application/vnd.android.package-archive")
+        self.assertEqual(put[put.index("--content-disposition") + 1], f'attachment; filename="{name}"')
+
+    def test_tampered_android_apk_blocks_publication_before_any_storage_write(self):
+        self.make_release("0.4.3", "macos-x64.dmg", "android-arm64.apk")
+        self.config["tamper_name"] = self.names[-1]
+        result = self.run_publisher(tag="v0.4.3")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(self.names[-1], result.stderr)
+        self.assertEqual(self.puts(), [])
 
     def test_signed_manifest_lists_the_release_pages_changes(self):
         # As .github/release/notes.sh writes it, saved from GitHub's editor.
@@ -181,13 +212,14 @@ class ReleaseDownloadsTests(unittest.TestCase):
         self.assertEqual((self.root / "objects/latest.json").read_bytes(), old_pointer)
 
     def test_release_shape_and_provenance_fail_before_storage_writes(self):
-        for failure in ("draft", "extra", "digest", "attestation"):
+        for failure in ("draft", "extra", "wrong-apk", "digest", "attestation"):
             with self.subTest(failure=failure):
                 original = json.loads(json.dumps(self.config))
                 if failure == "draft":
                     self.config["release"]["draft"] = True
-                elif failure == "extra":
-                    self.config["release"]["assets"].append(dict(self.config["release"]["assets"][0], name="unexpected.zip"))
+                elif failure in ("extra", "wrong-apk"):
+                    name = "unexpected.zip" if failure == "extra" else "vera20k-9.9.9-android-arm64.apk"
+                    self.config["release"]["assets"].append(dict(self.config["release"]["assets"][0], name=name))
                 elif failure == "digest":
                     self.config["tamper_name"] = self.names[-1]
                 else:
@@ -258,6 +290,15 @@ class ReleaseDownloadsTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual((self.root / "objects/latest.json").read_bytes(), old_pointer)
         self.assertTrue((self.root / "objects/releases/v0.2.2/manifest.json").exists())
+
+    def test_rollback_to_the_last_desktop_only_release_drops_the_android_download(self):
+        self.make_release("0.4.2", "macos-x64.dmg")
+        self.prior_pointer("0.4.3", ("windows", "macos", "linux", "macos-x64", "android"))
+        result = self.run_publisher(tag="v0.4.2", roll_back=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        manifest = json.loads((self.root / "objects/latest.json").read_text())
+        self.assertEqual(manifest["tag"], "v0.4.2")
+        self.assertEqual(set(manifest["files"]), {"windows", "macos", "linux", "macos-x64"})
 
     def test_concurrent_pointer_is_not_overwritten(self):
         self.prior_pointer()

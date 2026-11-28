@@ -24,6 +24,10 @@ zenity or kdialog. It keeps config.toml, its settings, logs, saves and
 replays in ~/.local/share/VERA20k. To use another game folder, change ra2_dir
 in that config.toml.
 
+On Android, open the ARM64 APK on your phone or tablet. On first launch,
+choose Import Game Files and select your Yuri's Revenge folder. To update
+an official installation and keep your files, open the newer release APK.
+
 SNOW MAPS
 Map makers can copy vera_ice.mix and vera_ice_tiles.ini from the Terrain
 folder into their map editor's data directory. On Windows, Terrain is beside
@@ -32,6 +36,7 @@ Terrain folder beside VERA.INI. See docs/ts-ice.md in the source for the map
 editor's file and tileset settings.
 
 REQUIREMENTS
+  Android: a 64-bit ARM device with Android 8.0 or later and Vulkan support.
   A GPU with Vulkan, DirectX 12 or Metal. Some older GPUs with DirectX 12,
     such as Intel's 4th generation, are not enough; VERA20k then draws with
     the processor, very slowly, and says so when it starts.
@@ -50,9 +55,9 @@ REQUIREMENTS
 This is early software: expect missing features and differences from the
 original game. Report them at https://github.com/YuriPlanet/vera20k/issues
 
-Official downloads come only from
-https://github.com/YuriPlanet/vera20k/releases. To check that an installer was
-built there, run: gh attestation verify <installer> --repo YuriPlanet/vera20k
+Official downloads are at https://vera20k.org and
+https://github.com/YuriPlanet/vera20k/releases. To verify an installer's
+build provenance, run: gh attestation verify <installer> --repo YuriPlanet/vera20k
 
 Copyright 2026 Halvor Nikolai Rusten and VERA20k contributors.
 VERA20k is licensed under the GNU General Public License version 3
