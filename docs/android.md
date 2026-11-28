@@ -28,8 +28,9 @@ artifact is `libvera20k_android.so`, and the manifest's
 
 ## Official release APKs
 
-From v0.4.3, the GitHub release includes `vera20k-<version>-android-arm64.apk`
-for 64-bit ARM Android phones and tablets. Open it to install VERA20K, then
+From v0.4.3, [download the Android ARM64 APK](https://vera20k.org/download/android)
+for 64-bit ARM phones and tablets. The GitHub release carries the same
+`vera20k-<version>-android-arm64.apk`. Open it to install VERA20K, then
 choose **Import Game Files** and select your retail game folder. To update an
 official installation, open the newer APK on the same device. Android checks
 the signing certificate and keeps the app's files and settings.

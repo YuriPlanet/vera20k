@@ -3,9 +3,12 @@
 GitHub releases offer the Windows setup, Linux AppImage, Apple Silicon and
 Intel Mac disk images, and the signed Android ARM64 APK from v0.4.3.
 After a stable release is published, `downloads.yml` runs `publish-r2.sh`
-to mirror the desktop installers to Cloudflare R2. Releases before v0.2.4
-have only the Apple Silicon Mac image. Android players install and update
-from the APK on the GitHub release page.
+to mirror its installers to Cloudflare R2. Releases before v0.2.4 have
+only the Apple Silicon Mac image. For releases with an Android APK, the signed
+manifest's `files.android` entry points to the same APK as GitHub, and
+[`/download/android`](https://vera20k.org/download/android) serves it as an
+attachment with the Android package MIME type. Android players open the APK
+to install or update VERA20K.
 
 The publisher verifies the release tag, GitHub size/SHA-256 and the build
 attestation. It uploads immutable `releases/v<version>/<filename>` objects,

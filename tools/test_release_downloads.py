@@ -104,13 +104,34 @@ class ReleaseDownloadsTests(unittest.TestCase):
         self.assertEqual((self.root / "objects" / files["macos-x64"]["key"]).read_bytes(),
                          (self.root / "assets" / name).read_bytes())
 
-    def test_a_github_release_with_an_android_apk_still_serves_all_desktop_updates(self):
+    def test_android_apk_is_attested_and_published_alongside_desktop_updates(self):
         self.make_release("0.4.3", "macos-x64.dmg", "android-arm64.apk")
         result = self.run_publisher(tag="v0.4.3")
         self.assertEqual(result.returncode, 0, result.stderr)
-        files = json.loads((self.root / "objects/latest.json").read_text())["files"]
-        self.assertEqual(set(files), {"windows", "macos", "macos-x64", "linux"})
-        self.assertFalse(any(key.endswith(".apk") for key in self.puts()))
+        manifest = (self.root / "objects/latest.json").read_bytes()
+        signature = (self.root / "objects/releases/v0.4.3/manifest.json.sig").read_text()
+        self.assertTrue(verify_signature(self.public_key, manifest, signature, self.root))
+        files = json.loads(manifest)["files"]
+        self.assertEqual(set(files), {"windows", "macos", "macos-x64", "linux", "android"})
+        name = self.names[-1]
+        key = "releases/v0.4.3/" + name
+        data = (self.root / "assets" / name).read_bytes()
+        self.assertEqual(files["android"], {"name": name, "key": key,
+                                            "size": len(data), "sha256": hashlib.sha256(data).hexdigest()})
+        self.assertEqual((self.root / "objects" / key).read_bytes(), data)
+        self.assertTrue(any(tool == "gh" and args[:2] == ["attestation", "verify"] and Path(args[2]).name == name
+                            for tool, args in self.calls()))
+        put = next(args for tool, args in self.calls() if tool == "aws" and "put-object" in args and key in args)
+        self.assertEqual(put[put.index("--content-type") + 1], "application/vnd.android.package-archive")
+        self.assertEqual(put[put.index("--content-disposition") + 1], f'attachment; filename="{name}"')
+
+    def test_tampered_android_apk_blocks_publication_before_any_storage_write(self):
+        self.make_release("0.4.3", "macos-x64.dmg", "android-arm64.apk")
+        self.config["tamper_name"] = self.names[-1]
+        result = self.run_publisher(tag="v0.4.3")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(self.names[-1], result.stderr)
+        self.assertEqual(self.puts(), [])
 
     def test_signed_manifest_lists_the_release_pages_changes(self):
         # As .github/release/notes.sh writes it, saved from GitHub's editor.
@@ -269,6 +290,15 @@ class ReleaseDownloadsTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual((self.root / "objects/latest.json").read_bytes(), old_pointer)
         self.assertTrue((self.root / "objects/releases/v0.2.2/manifest.json").exists())
+
+    def test_rollback_to_the_last_desktop_only_release_drops_the_android_download(self):
+        self.make_release("0.4.2", "macos-x64.dmg")
+        self.prior_pointer("0.4.3", ("windows", "macos", "linux", "macos-x64", "android"))
+        result = self.run_publisher(tag="v0.4.2", roll_back=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        manifest = json.loads((self.root / "objects/latest.json").read_text())
+        self.assertEqual(manifest["tag"], "v0.4.2")
+        self.assertEqual(set(manifest["files"]), {"windows", "macos", "linux", "macos-x64"})
 
     def test_concurrent_pointer_is_not_overwritten(self):
         self.prior_pointer()

@@ -55,9 +55,9 @@ REQUIREMENTS
 This is early software: expect missing features and differences from the
 original game. Report them at https://github.com/YuriPlanet/vera20k/issues
 
-Official downloads come only from
-https://github.com/YuriPlanet/vera20k/releases. To check that an installer was
-built there, run: gh attestation verify <installer> --repo YuriPlanet/vera20k
+Official downloads are at https://vera20k.org and
+https://github.com/YuriPlanet/vera20k/releases. To verify an installer's
+build provenance, run: gh attestation verify <installer> --repo YuriPlanet/vera20k
 
 Copyright 2026 Halvor Nikolai Rusten and VERA20k contributors.
 VERA20k is licensed under the GNU General Public License version 3

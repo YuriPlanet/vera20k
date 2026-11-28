@@ -88,7 +88,7 @@ disabled (`gh workflow list --all` shows its state). By hand:
    `https://downloads.vera20k.org/releases/vX.Y.Z/`:
 
    ```bash
-   for p in windows macos macos-x64 linux; do
+   for p in windows macos macos-x64 linux android; do
      curl -s -o /dev/null -w '%{redirect_url}\n' "https://vera20k.org/download/$p"
    done
    ```
