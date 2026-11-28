@@ -333,10 +333,13 @@ impl Simulation {
                         .and_then(|entity| self.interner.object_type(entity.type_ref(), rules));
                     chrono_warp_out_frames(object, rules)
                 };
-                if let Some(warp) = self.substrate.chrono_warp_mut(id) {
-                    warp.set_bytes(true, true, false);
-                    warp.start_timer(frame, warp_out_frames);
-                    warp.set_state(1);
+                if let Some(entity) = self.substrate.entities.get_mut(id) {
+                    entity.set_warped_out(true); // 7197D0
+                    if let Some(warp) = entity.chrono_warp_mut() {
+                        warp.set_bytes(true, false);
+                        warp.start_timer(frame, warp_out_frames);
+                        warp.set_state(1);
+                    }
                 }
             }
             1 | 6 => {
@@ -359,14 +362,15 @@ impl Simulation {
                     rules,
                 );
                 if let Some(entity) = self.substrate.entities.get_mut(id) {
+                    entity.set_warped_out(false); // 7198EE, even when an erase head remains
+                    if let Some(warp) = entity.chrono_warp_mut() {
+                        warp.set_bytes(false, true);
+                    }
                     // The warp-out's OnBridge clear (`0x007198FA`).
                     entity.on_bridge.store(false);
                     if let Some(locomotor) = entity.locomotor.as_mut() {
                         locomotor.store_ground_layer(false);
                     }
-                }
-                if let Some(warp) = self.substrate.chrono_warp_mut(id) {
-                    warp.set_bytes(false, false, true);
                 }
                 let landed = self.chrono_update_position(
                     id,
@@ -473,6 +477,12 @@ impl Simulation {
                     if let Some(warp) = self.substrate.chrono_warp_mut(id) {
                         warp.extend_warp_in_delay(delay);
                     }
+                    if delay > 0
+                        && let Some(entity) = self.substrate.entities.get_mut(id)
+                    {
+                        // Phobos keeps the shared +270 byte set for this delay.
+                        entity.set_warped_out(true);
+                    }
                 }
                 if let Some(warp) = self.substrate.chrono_warp_mut(id) {
                     warp.set_state(6);
@@ -493,12 +503,17 @@ impl Simulation {
                 // Phobos `FootExt::UpdateWarpInDelay`
                 // (`Ext/Foot/Body.cpp:149-164`): End_Piggyback's wait
                 // (`0x00719F30`) lasts until the remaining delay is zero.
+                let chrono_sphered = warp.chrono_sphered();
                 let still_warped_in = self
                     .substrate
                     .chrono_warp_mut(id)
                     .is_some_and(|warp| warp.tick_warp_in_delay());
                 if still_warped_in {
                     return Ok(bridge_state_changed);
+                }
+                if chrono_sphered && let Some(entity) = self.substrate.entities.get_mut(id) {
+                    // `UpdateWarpInDelay` clears the shared +270 byte on expiry.
+                    entity.set_warped_out(false);
                 }
                 if let Some(runtime) = self
                     .substrate
@@ -1110,15 +1125,9 @@ impl Simulation {
 }
 
 impl crate::sim::world::ObjectSubstrate {
-    /// The warp of the Teleport running this Process, which the Unit
-    /// setter may have suspended under a Drive by now.
+    /// The warp on the active Teleport or one suspended by the Unit setter.
     fn chrono_warp_mut(&mut self, id: u64) -> Option<&mut ChronoWarp> {
-        self.entities
-            .get_mut(id)?
-            .locomotor
-            .as_mut()?
-            .warp_teleport_mut()?
-            .chrono_mut()
+        self.entities.get_mut(id)?.chrono_warp_mut()
     }
 }
 
@@ -1126,7 +1135,13 @@ impl crate::sim::world::ObjectSubstrate {
 mod chrono_pre_delay_tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;
-    use crate::rules::object_type::{ObjectCategory, ObjectType};
+
+    fn rules(extra: &str) -> RuleSet {
+        RuleSet::from_ini(&IniFile::from_str(&format!(
+            "[VehicleTypes]\n0=MTNK\n[AI]\nEnablePowerSurplus=yes\n{extra}"
+        )))
+        .unwrap()
+    }
 
     /// Phobos `ChronoSpherePreDelay=` (`Ext/TechnoType/Body.h:131`,
     /// `Ext/Rules/Body.h:39,579`; hook `0x7197E4`,
@@ -1134,24 +1149,17 @@ mod chrono_pre_delay_tests {
     /// then `[General]`, else the native `MOV ECX,0x3C`.
     #[test]
     fn chrono_sphere_pre_delay_reads_the_type_then_the_general() {
-        let object = |ini: &str| {
-            let file = IniFile::from_str(ini);
-            ObjectType::from_ini_section(
-                "MTNK",
-                file.section("MTNK").unwrap(),
-                ObjectCategory::Vehicle,
-            )
-        };
-        let rules = |ini: &str| RuleSet::from_ini(&IniFile::from_str(ini)).unwrap();
         let general = rules("[General]\nChronoSpherePreDelay=45\n");
-        let typed = object("[MTNK]\nStrength=300\nChronoSpherePreDelay=30\n");
+        let typed_rules = rules("[MTNK]\nStrength=300\nChronoSpherePreDelay=30\n");
+        let typed = typed_rules.object("MTNK").unwrap();
         assert_eq!(typed.phobos_chrono_sphere_pre_delay, Some(30));
-        assert_eq!(chrono_warp_out_frames(Some(&typed), &general), 30);
-        let bare = object("[MTNK]\nStrength=300\n");
+        assert_eq!(chrono_warp_out_frames(Some(typed), &general), 30);
+        let bare_rules = rules("[MTNK]\nStrength=300\n");
+        let bare = bare_rules.object("MTNK").unwrap();
         assert_eq!(bare.phobos_chrono_sphere_pre_delay, None);
-        assert_eq!(chrono_warp_out_frames(Some(&bare), &general), 45);
+        assert_eq!(chrono_warp_out_frames(Some(bare), &general), 45);
         assert_eq!(
-            chrono_warp_out_frames(Some(&bare), &rules("")),
+            chrono_warp_out_frames(Some(bare), &rules("")),
             CHRONO_WARP_OUT_FRAMES
         );
         assert_eq!(chrono_warp_out_frames(None, &rules("")), 0x3C);
@@ -1163,22 +1171,15 @@ mod chrono_pre_delay_tests {
     /// key, which constructs as **0** so the stock warp is unchanged.
     #[test]
     fn chrono_sphere_delay_reads_the_type_then_the_general() {
-        let object = |ini: &str| {
-            let file = IniFile::from_str(ini);
-            ObjectType::from_ini_section(
-                "MTNK",
-                file.section("MTNK").unwrap(),
-                ObjectCategory::Vehicle,
-            )
-        };
-        let rules = |ini: &str| RuleSet::from_ini(&IniFile::from_str(ini)).unwrap();
         let general = rules("[General]\nChronoSphereDelay=45\n");
-        let typed = object("[MTNK]\nStrength=300\nChronoSphereDelay=30\n");
+        let typed_rules = rules("[MTNK]\nStrength=300\nChronoSphereDelay=30\n");
+        let typed = typed_rules.object("MTNK").unwrap();
         assert_eq!(typed.phobos_chrono_sphere_delay, Some(30));
-        assert_eq!(chrono_sphere_in_delay(Some(&typed), &general), 30);
-        let bare = object("[MTNK]\nStrength=300\n");
+        assert_eq!(chrono_sphere_in_delay(Some(typed), &general), 30);
+        let bare_rules = rules("[MTNK]\nStrength=300\n");
+        let bare = bare_rules.object("MTNK").unwrap();
         assert_eq!(bare.phobos_chrono_sphere_delay, None);
-        assert_eq!(chrono_sphere_in_delay(Some(&bare), &general), 45);
-        assert_eq!(chrono_sphere_in_delay(Some(&bare), &rules("")), 0);
+        assert_eq!(chrono_sphere_in_delay(Some(bare), &general), 45);
+        assert_eq!(chrono_sphere_in_delay(Some(bare), &rules("")), 0);
     }
 }

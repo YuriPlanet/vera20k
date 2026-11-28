@@ -49,16 +49,21 @@ pub(crate) fn exit_sell_mode_without_buildings(
     }
 }
 
-/// How many times Sidebar Action 6A7780 runs on this pass, for the per-visit
-/// work it drives: StripClass::AI's scroll step and tab poll, FlashAI 69E010
-/// (6A7A8C), PowerClass AnimationTick
-/// 63FEA0 (its only call, 6A7B0A) and, through TabClass::Action 6D099D,
-/// CreditsClass::AI 4A2600. GScreen Input 4F4320 reaches it, behind the gates
-/// of `RuntimePassDecision::sidebar_action`. Main_Tick polls Input once per
-/// frame (55D8AB); in g_GameMode 0 and 5 that is all, since ThrottleFrame
-/// skips its spin (55E1A5..55E1B6). The network modes' spin also polls Input,
-/// then draws a picture, while more than 10 ms of the frame remain
-/// (55E23A..55E271): one VERA pass stands for that poll.
+/// How many times the Sidebar Action 6A7780 clocks run on this pass, for the
+/// per-visit work they drive: StripClass::AI's scroll step and tab poll,
+/// FlashAI 69E010 (6A7A8C), PowerClass AnimationTick 63FEA0 (its only call,
+/// 6A7B0A) and, through TabClass::Action 6D099D, CreditsClass::AI 4A2600.
+///
+/// VERA keeps these UI clocks in step with the world: a deactivated window
+/// does not stop them (unlike gamemd's `A8ED80`-gated GScreen Input poll at
+/// 55D8AB). Only an offline focus
+/// freeze, a menu, a scenario pause or a Wait_For_Players dialog stops them,
+/// through `RuntimePassDecision::sidebar_action`. In g_GameMode 0 and 5
+/// Main_Tick polls Input once per frame (55D8AB) because ThrottleFrame skips
+/// its spin (55E1A5..55E1B6); the network modes' spin also polls Input while
+/// more than 10 ms of the frame remain (55E23A..55E271). One VERA pass stands
+/// for that poll. Offline the single-player world supplies one tick per frame,
+/// so `tick - last_tick` visits the clocks once per simulated frame.
 pub(crate) fn sidebar_action_visits(
     sidebar_action: bool,
     single_player: bool,

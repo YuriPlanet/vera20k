@@ -1168,27 +1168,6 @@ impl App {
                 }
                 return;
             }
-            // 0xCF's loop takes every key; Escape names nothing. A release
-            // still drops its held key: the loop's KeyboardClear
-            // (0x0077D861) leaves nothing latched.
-            _ if in_game && menu == InGameMenuState::Page => {
-                if pressed {
-                    crate::app::shell_wol::page::key_press(
-                        &mut state.frontend,
-                        &mut state.platform,
-                        &mut state.match_state,
-                        &state.process_assets,
-                        &state.renderer,
-                        &mut state.audio,
-                        &mut state.persistence,
-                        Some(code),
-                        event.text.as_deref(),
-                    );
-                } else {
-                    state.match_state.input.keys_held.remove(&code);
-                }
-                return;
-            }
             // B8 has no IDOK/IDCANCEL close command. Neither has 0x73: its
             // proc keys commands by GetDlgCtrlID(lParam) (0x006581A7), and
             // Return 0x423 is owner-drawn, so Enter and Escape name no child
@@ -2297,7 +2276,13 @@ impl ApplicationHandler for App {
                 let hidden = size.width == 0
                     || size.height == 0
                     || state.platform.window.is_minimized().unwrap_or(false);
-                Self::set_window_hidden(&mut state.platform, &mut state.frontend, hidden);
+                Self::set_window_hidden(
+                    &mut state.platform,
+                    &mut state.frontend,
+                    state.match_state.session_mode(),
+                    &mut state.match_state.match_presentation,
+                    hidden,
+                );
                 // A minimise carries no usable client size: the surface cannot
                 // be configured to 0x0 and the UI-scale heuristic would read a
                 // zero viewport. The restore edge delivers the real size.
@@ -2435,6 +2420,8 @@ impl ApplicationHandler for App {
                 Self::set_window_hidden(
                     &mut state.platform,
                     &mut state.frontend,
+                    state.match_state.session_mode(),
+                    &mut state.match_state.match_presentation,
                     occluded && !invisible_spawn,
                 );
             }

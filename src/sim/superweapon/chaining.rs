@@ -88,6 +88,9 @@ pub(super) fn apply_phobos_launch_tail(
     overlay_registry: Option<&OverlayTypeRegistry>,
     effects: &mut FrameEffects<'_>,
 ) {
+    if !rules.phobos() {
+        return;
+    }
     if sim.super_weapon_chain_depth.at_limit() {
         log::warn!(
             "Phobos superweapon chain from \"{}\" stopped at depth {MAX_CHAIN_DEPTH}",
@@ -100,15 +103,7 @@ pub(super) fn apply_phobos_launch_tail(
     // SW.Link (`Ext/SWType/FireSuperWeapon.cpp:13-40`).
     super::limbo::apply_limbo_delivery(sim, rules, owner, sw, overlay_registry, effects);
     super::limbo::apply_limbo_kill(sim, rules, owner, sw, overlay_registry, effects);
-    super::detonate::apply(
-        sim,
-        rules,
-        owner,
-        sw,
-        cell,
-        overlay_registry,
-        effects,
-    );
+    super::detonate::apply(sim, rules, owner, sw, cell, overlay_registry, effects);
     let chaining = rules
         .phobos_super_weapon_chaining(&sw.id)
         .cloned()

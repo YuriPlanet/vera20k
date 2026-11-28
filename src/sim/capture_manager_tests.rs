@@ -322,7 +322,7 @@ fn native_mirage_ring_tail_uses_current_house_or_campaign_control_flags() {
 /// top-left cell, not at GetCoords' foundation centre.
 #[test]
 fn a_building_ring_anchors_at_its_location() {
-    let rules = rules();
+    let rules = enhanced_rules(&[]);
     let mut sim = sim(9);
     let plant = spawn(&mut sim, &rules, "GAPOWR", "Americans", 14, 10);
     sim.attach_control_ring(plant, "MINDANIM", &rules);
@@ -1149,9 +1149,6 @@ fn native_overload_update_corpus() {
         // bound is exceeded; Phobos' rewritten walk (`Hooks.cpp:131-139`)
         // selects row one. The production Phobos walk has its own case in
         // `phobos_overload_tables_sound_and_particle_count_override_the_rules`.
-        if true && name == "single_row_damages_without_lean" {
-            continue;
-        }
         let (count, damage, frames) = match input.get("tables") {
             Some(tables) => (
                 ints(&tables["count"]),
@@ -1360,18 +1357,7 @@ fn native_overload_update_corpus() {
                 .rocking
                 .map_or(0, |state| state.native_bits()[2]);
             let native_rate = (final_state["lean"].as_f64().unwrap() as f32).to_bits();
-            // Phobos `CaptureManagerClass_Overload_AI` (`Hooks.cpp:186`)
-            // inverts the stock magnitude: rows above one play 0.015 and row
-            // one plays 0.03. The sign draw is unchanged.
-            let expected_rate = {
-                let sign = native_rate & 0x8000_0000;
-                match native_rate & 0x7fff_ffff {
-                    0x3c75_c28f => sign | 0x3cf5_c28f,
-                    0x3cf5_c28f => sign | 0x3c75_c28f,
-                    other => other,
-                }
-            };
-            assert_eq!(rate, expected_rate, "{name}: final native sideways rate");
+            assert_eq!(rate, native_rate, "{name}: final native sideways rate");
             let manager = sim
                 .substrate
                 .entities
@@ -1437,7 +1423,7 @@ fn native_joined_overload_preserves_constructor_rng_ids_and_rate_words() {
     assert_eq!(json!(object.primary().unwrap()), initial["type"]["primary"]);
     assert_eq!(json!(weapon.damage), initial["type"]["primary_damage"]);
     assert_eq!(
-        format!("{:016x}", object.weight.to_bits()),
+        format!("{:016x}", object.weight.to_num::<f64>().to_bits()),
         initial["type"]["weight_bits"].as_str().unwrap()
     );
     assert_eq!(
@@ -2626,13 +2612,46 @@ fn control_link_timer_selection_ports_cleanup_and_snapshot_share_the_manager() {
     );
     sim.session.set_binary_frame_for_test(119);
     assert_eq!(sim.capture_link_coordinates(controller, &rules).len(), 2);
-    let bytes = crate::sim::snapshot::GameSnapshot::save_validated(&sim, 0, 0, "control links", 0);
-    let restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
-        .unwrap()
-        .sim;
+    let terrain = crate::map::resolved_terrain::test_grid(
+        32,
+        32,
+        crate::map::resolved_terrain::test_clear_cell,
+    );
+    let mut file_world = sim.clone();
+    *file_world.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
+    file_world.install_resolved_terrain_for_new_map(terrain.clone());
+    let bytes =
+        crate::sim::snapshot::GameSnapshot::save_validated(&file_world, 0, 0, "control links", 0);
+    let saved = crate::sim::snapshot::GameSnapshot::load(&bytes).unwrap();
     assert_eq!(
-        restored.capture_link_coordinates(controller, &rules),
+        saved.sim.capture_link_coordinates(controller, &rules),
         sim.capture_link_coordinates(controller, &rules)
+    );
+    // An exact checkpoint above preserves the visible line. An ordinary
+    // player load restores the node references and expires its display timer.
+    let (restored, _) = saved
+        .restore_player_world(
+            crate::sim::world::SnapshotProcessState::Live(&sim),
+            &rules,
+            terrain,
+            Default::default(),
+            crate::sim::snapshot::PlayerSaveCells::FixtureBaseline,
+        )
+        .unwrap();
+    assert!(
+        restored
+            .capture_link_coordinates(controller, &rules)
+            .is_empty()
+    );
+    assert_eq!(
+        restored
+            .entities()
+            .get(first)
+            .unwrap()
+            .seldom
+            .mind_control
+            .controller(),
+        Some(controller),
     );
     sim.session.set_binary_frame_for_test(120);
     assert!(sim.capture_link_coordinates(controller, &rules).is_empty());
@@ -2743,7 +2762,7 @@ fn yuri_prime_building_capture_and_release_request_atlas_refresh() {
 // needs the key.
 
 fn enhanced_rules(replacements: &[(&str, &str)]) -> RuleSet {
-    let mut text = RULES.to_owned();
+    let mut text = RULES.replace("[General]\n", "[General]\nAIFireSale=yes\n");
     for (from, to) in replacements {
         assert!(text.contains(from), "fixture anchor {from:?}");
         text = text.replace(from, to);
@@ -3241,10 +3260,13 @@ fn ra2_mind_control_capacity_is_one_regardless_of_damage() {
 #[test]
 fn phobos_overload_tables_sound_and_particle_count_override_the_rules() {
     let run = |type_lines: &str, captives: usize| {
-        let text = RULES.replace(
-            "[MIND]\nStrength=500",
-            &format!("[MIND]\nStrength=50000\n{type_lines}"),
-        ) + "[ParticleSystems]\n0=SparkSys\n[SparkSys]\nBehavesLike=Spark\nLifetime=5\n";
+        let text = RULES
+            .replace("[General]\n", "[General]\nAIFireSale=yes\n")
+            .replace(
+                "[MIND]\nStrength=500",
+                &format!("[MIND]\nStrength=50000\n{type_lines}"),
+            )
+            + "[ParticleSystems]\n0=SparkSys\n[SparkSys]\nBehavesLike=Spark\nLifetime=5\n";
         let rules = RuleSet::from_ini_with_fixed_art_and_sounds_for_test(
             &IniFile::from_str(&text),
             &IniFile::from_str(ART),
@@ -3353,11 +3375,13 @@ fn phobos_overload_tables_sound_and_particle_count_override_the_rules() {
 #[test]
 fn phobos_overload_count_needs_more_links_than_the_bound() {
     let run = |captives: usize| {
-        let text = RULES.replace(
-            "[MIND]\nStrength=500",
-            "[MIND]\nStrength=50000\nOverload.Count=2\nOverload.Damage=0,25\n\
-             Overload.Frames=7",
-        );
+        let text = RULES
+            .replace("[General]\n", "[General]\nAIFireSale=yes\n")
+            .replace(
+                "[MIND]\nStrength=500",
+                "[MIND]\nStrength=50000\nOverload.Count=2\nOverload.Damage=0,25\n\
+                 Overload.Frames=7",
+            );
         let rules = RuleSet::from_ini_with_fixed_art_and_sounds_for_test(
             &IniFile::from_str(&text),
             &IniFile::from_str(ART),
@@ -3410,11 +3434,13 @@ fn phobos_overload_count_needs_more_links_than_the_bound() {
 /// the captives with the release voice.
 #[test]
 fn phobos_overload_episode_kills_on_the_type_rows_with_one_voice() {
-    let text = RULES.replace(
-        "[MIND]\nStrength=500",
-        "[MIND]\nStrength=50000\nOverload.Count=1\nOverload.Damage=25\n\
-         Overload.Frames=2\nOverload.DeathSound=TypeVoice",
-    );
+    let text = RULES
+        .replace("[General]\n", "[General]\nAIFireSale=yes\n")
+        .replace(
+            "[MIND]\nStrength=500",
+            "[MIND]\nStrength=50000\nOverload.Count=1\nOverload.Damage=25\n\
+             Overload.Frames=2\nOverload.DeathSound=TypeVoice",
+        );
     let rules = RuleSet::from_ini_with_fixed_art_and_sounds_for_test(
         &IniFile::from_str(&text),
         &IniFile::from_str(ART),

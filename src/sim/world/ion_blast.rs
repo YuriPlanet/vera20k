@@ -16,11 +16,11 @@
 //! Numeric evidence: tools/ion_blast_forces.json; frame retirement and ripple
 //! tables: tools/superweapon_oracle.json. Other flow rests on instructions.
 //!
-//! Native uses a process-global vector; this port does not establish its
-//! complete save/load and cross-scenario clearing behavior. Rust keeps it
-//! match-owned: pending damaging blasts are saved and hashed so match restore
-//! preserves future gameplay; visual-only blasts are omitted. Native global
-//! retention across world replacement remains an explicit coverage boundary.
+//! The native vector lives from process startup (53CA70) to exit (53CAB0).
+//! Clear_Scene (6851F0) leaves its plain Dominator ripples at their current
+//! ages across player load and scenario restart. The client holds these
+//! records between worlds. VERA omits visual blasts from saves and preserves
+//! pending damaging blasts in saves and hashes for deterministic restore.
 
 use super::{FrameEffects, Simulation};
 use crate::map::cell_index::NativeCellIdentity;
@@ -50,6 +50,29 @@ pub(crate) struct IonBlast {
     ares_warhead: Option<crate::sim::intern::InternedId>,
 }
 
+/// Dominator ripples between installed worlds. A live world advances them
+/// in Logic (55B64B); the load dialog and shell never visit that pass.
+#[derive(Default)]
+pub struct RetainedDominatorRipples(Vec<IonBlast>);
+
+impl RetainedDominatorRipples {
+    /// MindControlArea (53B0CB..53B0D4) creates a forceless record holding
+    /// only its coordinates and age. Ares PsyDom_Fire (10037840) uses the
+    /// same record. Warhead applyRipples (10051AE0) also maps a warhead.
+    pub fn take_from(&mut self, world: &mut Simulation) {
+        self.0.extend(world.ion_blasts.extract_if(.., |blast| {
+            blast.skip_forces && blast.ares_warhead.is_none()
+        }));
+    }
+
+    /// Older records precede incoming effects in constructor order (53CB10).
+    pub fn resume_in(&mut self, world: &mut Simulation) {
+        if !self.0.is_empty() {
+            world.ion_blasts.splice(..0, self.0.drain(..));
+        }
+    }
+}
+
 /// The stock fields hash as the derived hash did; an Ares warhead adds its
 /// own fold, so a stock game's state hash keeps its stream.
 impl Hash for IonBlast {
@@ -77,7 +100,11 @@ pub(super) fn save<S: serde::Serializer>(
 pub(super) fn load<'de, D: serde::Deserializer<'de>>(
     deserializer: D,
 ) -> Result<Forked<Vec<IonBlast>>, D::Error> {
-    Vec::deserialize(deserializer).map(Forked::new)
+    // A file supplies the same pending damage that save writes. A visual
+    // ripple can return only from the live world's RetainedDominatorRipples.
+    let mut blasts = Vec::<IonBlast>::deserialize(deserializer)?;
+    blasts.retain(|blast| !blast.skip_forces);
+    Ok(Forked::new(blasts))
 }
 
 impl Simulation {

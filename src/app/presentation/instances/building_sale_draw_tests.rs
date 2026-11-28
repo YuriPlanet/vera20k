@@ -210,6 +210,8 @@ fn gate_piece(
         false,
     );
     let input = ShpInputs {
+        motion: None,
+        diagnostics: None,
         runtime,
         frame: &presented,
         atlas: Some(atlas),

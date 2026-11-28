@@ -41,6 +41,8 @@ palabra sobre su rumbo.
 
 ## Contribuir
 
+**PR que valoramos** — refactorización, rendimiento, búsqueda de rutas, UI/UX, generador de mapas aleatorios.
+
 Los colaboradores pueden hacerse cargo de áreas del motor, con amplia libertad para introducir
 cambios que hagan avanzar VERA20K.
 

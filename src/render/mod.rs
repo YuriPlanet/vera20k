@@ -37,6 +37,7 @@ pub mod chrome_atlas;
 pub(crate) mod chrono_screen;
 pub(crate) mod color_vision;
 pub(crate) mod hd_art;
+pub(crate) mod hd_loader;
 pub(crate) mod hd_terrain;
 pub(crate) mod hd_voxel;
 pub(crate) mod hd_switch;

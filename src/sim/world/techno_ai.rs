@@ -1105,14 +1105,14 @@ fn techno_ai_shell(
         turret_rotate_sample = sim.sample_building_turret_rotation(id, rules);
     }
     // A quiet unit is neither warped nor warping (`world::quiet_units`).
-    let temporal_frozen = !sim.quiet(id)
+    let temporal_visit = !sim.quiet(id);
+    let temporal_frozen = temporal_visit
         && sim.temporal_ai_prologue(id, rules, ctx, &mut outcome.bridge_state_changed);
-    // Phobos `ShieldClass::AI_Temporal` pauses recovery during the Temporal
-    // prologue; frozen leaves never reach the normal `ShieldClass::AI` at
-    // `TechnoClass_AI @ 0x6F9E50+0x5`. The shield owner handles that paused
-    // visit or the normal recovery visit after this frame's warp update.
-    if rules.phobos() {
-        crate::sim::shield::tick(sim, id, rules);
+    // Phobos `ShieldClass::AI_Temporal` runs from the Temporal prologue even
+    // when the leaf is frozen; a thawed Infantry can then reach normal AI and
+    // clear the shield's temporal flag in the same visit.
+    if temporal_visit && rules.phobos() {
+        crate::sim::shield::tick_temporal(sim, id, rules);
     }
     if temporal_frozen {
         return;
@@ -1156,6 +1156,9 @@ fn techno_ai_shell(
     // leaf's own steps and before the common Techno body's estimated-health
     // recover.
     if rules.phobos() {
+        // OnEarlyUpdate runs UpdateShield first, after the leaf's freeze and
+        // death returns. A thawed object can reach it with an erase head.
+        crate::sim::shield::tick(sim, id, rules);
         sim.apply_spawn_limit_range(id, rules, ctx.overlay_registry, &mut ctx.effects);
         sim.apply_mind_control_range_limit(id, rules, ctx.overlay_registry, &mut ctx.effects);
     }

@@ -7,7 +7,9 @@
 
 use super::*;
 use crate::rules::ini_parser::IniFile;
+use crate::rules::process_owner::{NativeRulesProcessOwner, NativeScenarioRulesPrefix};
 use crate::rules::ruleset::RuleSet;
+use crate::rules::sound_ini::{EvaRegistry, SoundRegistry};
 use crate::sim::superweapon::chronosphere_tests::{charge_super, click, world_with};
 use crate::sim::world::SimSoundEvent;
 
@@ -16,17 +18,35 @@ const ROOT: &str = "RootSpecial";
 const LINK: &str = "LinkSpecial";
 const TARGET: (u16, u16) = (30, 30);
 
-const BASE: &str = "[InfantryTypes]\n0=E1\n[AircraftTypes]\n[VehicleTypes]\n[BuildingTypes]\n\
+const BASE: &str = "[General]\nAIFireSale=yes\n[InfantryTypes]\n0=E1\n[AircraftTypes]\n[VehicleTypes]\n[BuildingTypes]\n\
 [E1]\nStrength=100\nSpeed=4\nSight=5\n\
 [SuperWeaponTypes]\n0=RootSpecial\n1=LinkSpecial\n\
 [RootSpecial]\nType=PsychicReveal\nRechargeTime=1\nIsPowered=no\n\
 [LinkSpecial]\nType=PsychicReveal\nRechargeTime=1\nIsPowered=no\n";
 
 fn rules_with(extra: &str) -> RuleSet {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let mut ini = IniFile::from_str(BASE);
     ini.merge(&IniFile::from_str(extra));
-    RuleSet::from_ini_with_fixed_art_for_test(&ini, &IniFile::empty())
-        .expect("rules with the announcement keys parse")
+    let eva = EvaRegistry::from_ini(&IniFile::from_str(
+        "[DialogList]\n0=EVA_LinkedSW\n[EVA_LinkedSW]\nAllied=LINKED\n",
+    ));
+    let mut owner = NativeRulesProcessOwner::from_cold_start_sources(
+        ini,
+        None,
+        IniFile::empty(),
+        std::sync::Arc::new(SoundRegistry::from_ini(&IniFile::empty())),
+        std::sync::Arc::new(eva),
+    )
+    .unwrap();
+    owner
+        .load_scenario(
+            NativeScenarioRulesPrefix::NonCampaign(None),
+            &IniFile::from_str("[Map]\nTheater=TEMPERATE\n[Basic]\nName=Chaining\n"),
+        )
+        .unwrap()
+        .into_parts()
+        .0
 }
 
 fn world(rules: RuleSet) -> (RuleSet, Simulation, InternedId) {

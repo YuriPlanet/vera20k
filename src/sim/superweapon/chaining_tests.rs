@@ -16,7 +16,7 @@ const OTHER: &str = "OtherSpecial";
 const LINK: &str = "LinkSpecial";
 const TARGET: (u16, u16) = (30, 30);
 
-const BASE: &str = "[InfantryTypes]\n0=E1\n1=INHIB\n[VehicleTypes]\n[AircraftTypes]\n[BuildingTypes]\n\
+const BASE: &str = "[General]\nAIFireSale=yes\n[InfantryTypes]\n0=E1\n1=INHIB\n[VehicleTypes]\n[AircraftTypes]\n[BuildingTypes]\n\
 [E1]\nStrength=100\nSpeed=4\n\
 [INHIB]\nStrength=100\nSpeed=4\nSight=5\n\
 [SuperWeaponTypes]\n0=RootSpecial\n1=NextSpecial\n2=OtherSpecial\n3=LinkSpecial\n\

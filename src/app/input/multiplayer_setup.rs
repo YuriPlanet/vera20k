@@ -312,8 +312,6 @@ pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Optio
             &mut state.match_state,
             &state.process_assets,
             &state.renderer,
-            &mut state.audio,
-            &mut state.persistence,
             code,
             text,
         );
@@ -679,7 +677,6 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
             &state.process_assets,
             &state.renderer,
             &mut state.audio,
-            &mut state.persistence,
             pressed,
         );
         return;

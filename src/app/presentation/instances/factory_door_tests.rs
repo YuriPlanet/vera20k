@@ -266,7 +266,6 @@ fn a_damaged_factory_draws_its_damaged_bib_and_its_shadow() {
             Some(art),
             BibDraw {
                 entity: &ObjectRecord::of_test_sim(&sim, rules, factory),
-                cells: None,
                 decision: DrawDecision {
                     visible: true,
                     state: DrawState::default(),

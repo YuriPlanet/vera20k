@@ -231,7 +231,7 @@ const SHORTCUT_COMMANDS: [CommandMetadata; 15] = [
     ),
 ];
 
-const RETAIL_COMMANDS: [CommandMetadata; 87] = [
+const RETAIL_COMMANDS: [CommandMetadata; 86] = [
     command!(
         HotkeyCommand::Follow,
         "Follow",
@@ -904,14 +904,8 @@ const RETAIL_COMMANDS: [CommandMetadata; 87] = [
         "TXT_SCRNCAP_DESC",
         None
     ),
-    command!(
-        HotkeyCommand::PageUser,
-        "PageUser",
-        "TXT_PAGEUSER",
-        "TXT_INTERFACE",
-        "TXT_PAGEUSER_DESC",
-        None
-    ),
+    // VERA omits PageUser (gamemd 0x00537E50): the friend pager belongs
+    // to the online lobby. Old KEYBOARDMD.INI assignments must not open it in play.
     command!(
         HotkeyCommand::CursorCheat,
         "CursorCheat",

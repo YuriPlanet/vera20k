@@ -303,6 +303,8 @@ pub(crate) struct LoadingRequest {
     /// Freeze the process flag before the early generated-map Full_Init; the
     /// later continuation consumes its result without selecting sources again.
     the_team_enabled: bool,
+    /// Replay frame zero or process staging from an earlier network game.
+    supplied_tiberium: Option<crate::sim::scenario_session::TiberiumFlags>,
 }
 
 impl LoadingRequest {
@@ -343,6 +345,7 @@ impl LoadingRequest {
             random_map_preview: None,
             skirmish_colors: None,
             the_team_enabled: false,
+            supplied_tiberium: Some(startup.tiberium_flags()),
         })
     }
 
@@ -353,6 +356,7 @@ impl LoadingRequest {
             random_map_preview: None,
             skirmish_colors: None,
             the_team_enabled: false,
+            supplied_tiberium: None,
         }
     }
 
@@ -367,6 +371,7 @@ impl LoadingRequest {
             random_map_preview: None,
             skirmish_colors: None,
             the_team_enabled: false,
+            supplied_tiberium: None,
         }
     }
 
@@ -377,6 +382,7 @@ impl LoadingRequest {
             random_map_preview: None,
             skirmish_colors: None,
             the_team_enabled: false,
+            supplied_tiberium: None,
         }
     }
 
@@ -393,6 +399,7 @@ impl LoadingRequest {
             random_map_preview: None,
             skirmish_colors: None,
             the_team_enabled: false,
+            supplied_tiberium: None,
         }
     }
 
@@ -406,6 +413,7 @@ impl LoadingRequest {
             random_map_preview: None,
             skirmish_colors: None,
             the_team_enabled: false,
+            supplied_tiberium: None,
         }
     }
 
@@ -649,8 +657,12 @@ impl LoadingRequest {
             .into_random_map_launch_snapshot(assets, prepared.context))
     }
 
-    fn prepare_initial(mut self, initial: MapLoadInitial) -> anyhow::Result<PreparedScenarioLoad> {
+    fn prepare_initial(
+        mut self,
+        mut initial: MapLoadInitial,
+    ) -> anyhow::Result<PreparedScenarioLoad> {
         let context = self.admit_context(&initial)?;
+        initial.supplied_tiberium = self.supplied_tiberium;
         Ok(PreparedScenarioLoad {
             request: self,
             initial,
@@ -1460,6 +1472,13 @@ pub(crate) fn begin_loading(state: &mut AppState, request: LoadingRequest) {
         crate::app::state::active_rules(&state.frontend, &state.match_state)
             .map(crate::rules::ruleset::RuleSet::skirmish_colors),
     );
+    if request.startup().session_mode() == crate::sim::scenario_session::ScenarioGameMode::Skirmish
+        && request.startup().match_spec().rules().uses_room_options()
+    {
+        request
+            .supplied_tiberium
+            .get_or_insert(state.match_state.session.staged_tiberium());
+    }
     request.the_team_enabled = state
         .frontend
         .main_menu_shell_state

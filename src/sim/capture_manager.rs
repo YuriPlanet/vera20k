@@ -127,6 +127,14 @@ pub struct CaptureManagerState {
 }
 
 impl CaptureManagerState {
+    /// CaptureManagerClass::Load 0x47282E..0x472841 restores the two node
+    /// references and starts a zero-length line timer at the load frame.
+    pub(crate) fn restart_timers_after_load(&mut self, frame: i32) {
+        for node in &mut self.nodes {
+            node.line_timer.start(frame, 0);
+        }
+    }
+
     pub(crate) fn constructed(max_control: i32, infinite: bool) -> Self {
         Self {
             max_control,
@@ -501,7 +509,7 @@ impl MindControlLink {
 pub(crate) struct CaptureVictimFacts {
     owner: InternedId,
     capturable: bool,
-    /// Phobos `MindControlSize=`; 1 in non-Phobos builds.
+    /// Phobos `MindControlSize=`; the stock default is 1.
     mind_control_size: i32,
 }
 
@@ -716,9 +724,7 @@ impl Simulation {
         })
     }
 
-    /// Non-Phobos builds keep the stock node count for shared callers.
-
-    /// `IsFull`/`CannotControlAnyMore` over the effective count.
+    /// `IsFull`/`CannotControlAnyMore` over the rules-selected effective count.
     pub(crate) fn capture_manager_is_full(&self, controller_id: u64, rules: &RuleSet) -> bool {
         let Some(manager) = self
             .substrate
@@ -881,8 +887,9 @@ impl Simulation {
         )
     }
 
-    /// Phobos `CaptureUnit`'s release-first block
-    /// (`src/Ext/CaptureManager/Body.cpp`): only a finite manager releases.
+    /// `CaptureUnit`'s release-first block. Stock replaces the sole victim of
+    /// a single-slot manager, infinite or not. Phobos
+    /// (`src/Ext/CaptureManager/Body.cpp`) releases only a finite manager.
     /// A single-slot one replaces its victim; a multi-slot one frees the
     /// oldest node only with `MultiMindControl.ReleaseVictim=`, and with
     /// `MindControl.IgnoreSize=no` keeps freeing until the target's
@@ -895,6 +902,27 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
+        if !rules.phobos() {
+            let replace = self
+                .substrate
+                .entities
+                .get(controller_id)
+                .and_then(|controller| controller.capture_manager.as_ref())
+                .is_some_and(|manager| manager.max_control() == 1 && manager.count() == 1);
+            if replace {
+                let Some(victim) = self
+                    .substrate
+                    .entities
+                    .get(controller_id)
+                    .and_then(|controller| controller.capture_manager.as_ref())
+                    .and_then(|manager| manager.victims().next())
+                else {
+                    return false;
+                };
+                return self.free_unit(controller_id, victim, rules, registry, frame_effects);
+            }
+            return true;
+        }
         let Some(controller) = self.substrate.entities.get(controller_id) else {
             return false;
         };
@@ -1417,10 +1445,10 @@ impl Simulation {
         } else {
             object.mind_control_ring_offset
         };
-        // `ApplyOwnerChange` anchors the anim at `pTarget->Location`
+        // Phobos `ApplyOwnerChange` anchors the anim at `pTarget->Location`
         // (`Ext/WarheadType/Detonate.cpp:504`), so a building uses its
         // top-left cell rather than GetCoords' foundation centre.
-        let coord = if building {
+        let coord = if building && rules.phobos() {
             let location = crate::sim::movement::ground_pose::object_location(
                 target,
                 self.resolved_terrain.as_ref(),
@@ -1715,10 +1743,7 @@ impl Simulation {
             return;
         };
         let mut choice = i32::from(choice);
-        let controller_team = self
-            .team_script_vm
-            .team_for_member(controller_id)
-            .map(|(team_id, _)| team_id);
+        let controller_team = self.team_script_vm.team_of(controller_id);
         if let Some(decision) = controller_team
             .and_then(|team_id| self.team_script_vm.mind_control_decision(team_id))
             .filter(|&decision| decision != 0)
@@ -1815,13 +1840,14 @@ impl Simulation {
         frame_effects: &mut FrameEffects<'_>,
     ) {
         let table = &rules.mind_control;
+        let phobos = rules.phobos();
         // Phobos `CaptureManagerClass_Overload_AI` (`Ext/CaptureManager/
         // Hooks.cpp:111-219`): a `NullableVector<int>` type list replaces the
         // Rules table when present, so a present empty list disables the
         // checks; a registered `Overload.DeathSound=` replaces the stock
         // voice, `Overload.ParticleSys=` replaces the spark system, and the
         // count falls back to the `[CombatDamage]` global.
-        let (counts, frames, damages, death_sound, particle_sys, particle_count) = {
+        let (counts, frames, damages, death_sound, particle_sys, particle_count) = if phobos {
             let settings = self
                 .substrate
                 .entities
@@ -1846,6 +1872,15 @@ impl Simulation {
                 settings
                     .particle_sys_count
                     .unwrap_or(rules.phobos_globals.overload_particle_sys_count),
+            )
+        } else {
+            (
+                table.overload_count.clone(),
+                table.overload_frames.clone(),
+                table.overload_damage.clone(),
+                table.overload_sound.clone(),
+                None,
+                5,
             )
         };
         // Only an infinite manager overloads; checking it before the
@@ -1888,7 +1923,7 @@ impl Simulation {
         // Original `0x00471A82..0x00471AB1`: the first row whose bound the
         // count does not exceed, capped at the last row. Phobos rewrote the
         // walk as the last row whose bound the count exceeds.
-        let index = {
+        let index = if phobos {
             let mut index = 0;
             for slot in 0..counts.len() {
                 if count > counts[slot] {
@@ -1896,14 +1931,32 @@ impl Simulation {
                 }
             }
             index
+        } else {
+            let Some(&first) = counts.first() else {
+                return;
+            };
+            let mut index = 0;
+            if count > first {
+                while index + 1 < counts.len() {
+                    index += 1;
+                    if count <= counts[index] {
+                        break;
+                    }
+                }
+            }
+            index
         };
         // Phobos' `FixIdx` clamps an out-of-range row to the list's last
         // entry; the original tables read zero past their end.
         let fix = |values: &[i32]| -> i32 {
-            if values.is_empty() {
-                0
+            if phobos {
+                if values.is_empty() {
+                    0
+                } else {
+                    values[index.min(values.len() - 1)]
+                }
             } else {
-                values[index.min(values.len() - 1)]
+                values.get(index).copied().unwrap_or(0)
             }
         };
         manager.overload_countdown = fix(&frames);
@@ -1950,37 +2003,64 @@ impl Simulation {
         }
         // 0x00471B48..0x00471C23: five `DefaultSparkSystem=` systems, each at
         // the controller's Location offset by (second draw, first draw, +100).
-        let spark_type = particle_sys
-            .as_deref()
-            .and_then(|name| rules.ps_type_id_by_name(name))
-            .or_else(|| {
-                rules
-                    .combat_damage
-                    .default_spark_system
-                    .as_deref()
-                    .and_then(|name| rules.ps_type_id_by_name(name))
-            });
-        // Phobos draws the two offsets only inside `if (pParticle)`; the
-        // original draws them before the missing-type check.
-        for _ in 0..particle_count.max(0) {
-            let Some(system_type) = spark_type else {
-                continue;
-            };
-            let dy = self.scenario_rng.next_range_i32_inclusive(-200, 200);
-            let dx = self.scenario_rng.next_range_i32_inclusive(-200, 200);
-            self.spawn_particle_system(
-                system_type,
-                glam::IVec3::new(
-                    location.x.wrapping_add(dx),
-                    location.y.wrapping_add(dy),
-                    location.z.wrapping_add(100),
-                ),
-                None,
-                None,
-                glam::IVec3::ZERO,
-                None,
-                rules,
-            );
+        if phobos {
+            let spark_type = particle_sys
+                .as_deref()
+                .and_then(|name| rules.ps_type_id_by_name(name))
+                .or_else(|| {
+                    rules
+                        .combat_damage
+                        .default_spark_system
+                        .as_deref()
+                        .and_then(|name| rules.ps_type_id_by_name(name))
+                });
+            // Phobos draws the two offsets only inside `if (pParticle)`.
+            for _ in 0..particle_count.max(0) {
+                let Some(system_type) = spark_type else {
+                    continue;
+                };
+                let dy = self.scenario_rng.next_range_i32_inclusive(-200, 200);
+                let dx = self.scenario_rng.next_range_i32_inclusive(-200, 200);
+                self.spawn_particle_system(
+                    system_type,
+                    glam::IVec3::new(
+                        location.x.wrapping_add(dx),
+                        location.y.wrapping_add(dy),
+                        location.z.wrapping_add(100),
+                    ),
+                    None,
+                    None,
+                    glam::IVec3::ZERO,
+                    None,
+                    rules,
+                );
+            }
+        } else {
+            let spark_type = rules
+                .combat_damage
+                .default_spark_system
+                .as_deref()
+                .and_then(|name| rules.ps_type_id_by_name(name));
+            // The original draws both offsets before the missing-type check.
+            for _ in 0..5 {
+                let dy = self.scenario_rng.next_range_i32_inclusive(-200, 200);
+                let dx = self.scenario_rng.next_range_i32_inclusive(-200, 200);
+                if let Some(system_type) = spark_type {
+                    self.spawn_particle_system(
+                        system_type,
+                        glam::IVec3::new(
+                            location.x.wrapping_add(dx),
+                            location.y.wrapping_add(dy),
+                            location.z.wrapping_add(100),
+                        ),
+                        None,
+                        None,
+                        glam::IVec3::ZERO,
+                        None,
+                        rules,
+                    );
+                }
+            }
         }
         // 0x00471C29..0x00471C78: after the receiver and all five full Spark
         // constructors, a surviving controller above row zero replaces its

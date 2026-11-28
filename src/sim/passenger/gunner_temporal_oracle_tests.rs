@@ -254,7 +254,9 @@ fn install_temporal_boundary(sim: &mut Simulation, actors: &Actors, native: &Val
         .entities
         .get_mut(actors.victim)
         .unwrap()
-        .temporal = serde_json::from_value(json!({"link": null, "head": head})).unwrap();
+        .set_temporal_for_test(
+            serde_json::from_value(json!({"link": null, "head": head})).unwrap(),
+        );
 }
 
 fn assert_state(sim: &Simulation, actors: &Actors, native: &Value, label: &str) {

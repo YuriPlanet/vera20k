@@ -216,7 +216,15 @@ fn click_fire_matches_native() {
 /// a stock-handled type counts too; Ares' 100226D0 shares the field.
 #[test]
 fn an_accepted_stock_launch_counts_one_shot() {
-    let rules = rules();
+    let art = IniFile::from_str(ART);
+    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
+        &crate::sim::arena_fixture::clear_ground_ini(&format!(
+            "[General]\nAIFireSale=yes\n{RULES}"
+        )),
+        &art,
+    )
+    .unwrap();
+    rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
     let mut sim = sim(&rules, true, &[]);
     let owner = sim.interner.intern(OWNER);
     let name = "IronCurtainSpecial";

@@ -8,6 +8,14 @@ use crate::util::native_x87::{
     MaskedX87Chop53 as X87, MaskedX87Ordering, MaskedX87Value, NativeF32Bits, NativeF64Bits,
 };
 
+/// Values read from a non-null WarheadType by the 489180 damage kernel.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct DamageWarhead {
+    pub cell_spread: f64,
+    pub percent_at_max: f64,
+    pub armor_multiplier: NativeF64Bits,
+}
+
 /// Original binary32 constant `007E2224`.
 const KERNEL_LEPTONS_PER_CELL: NativeF32Bits = NativeF32Bits::from_bits(0x4380_0000);
 

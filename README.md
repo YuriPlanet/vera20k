@@ -40,6 +40,8 @@ Stuck? See the [help page](https://vera20k.org/help).
 
 ## Contributing
 
+**Valued PRs** — refactoring, performance, pathfinding, UI/UX, random map generator.
+
 Contributors can take responsibility for engine areas, with broad freedom to make changes that
 move VERA20K forward.
 

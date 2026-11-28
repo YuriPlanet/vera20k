@@ -12,7 +12,8 @@ const VERSES: &str = "Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,1
 /// A vehicle whose `TEST` type binds `ShieldType=TestShield`.
 fn rules(shield: &str, warhead: &str) -> RuleSet {
     let ini = IniFile::from_str(&format!(
-        "[VehicleTypes]\n0=TEST\n\
+        "[General]\nAIFireSale=yes\n\
+         [VehicleTypes]\n0=TEST\n\
          [Warheads]\n0=WH\n\
          [TEST]\nStrength=200\nArmor=heavy\nShieldType=TestShield\n\
          [ShieldTypes]\n0=TestShield\n\
@@ -65,7 +66,8 @@ fn shield(sim: &Simulation) -> &ShieldState {
         .get(1)
         .unwrap()
         .seldom
-        .shield.as_ref()
+        .shield
+        .as_ref()
         .unwrap()
 }
 
@@ -203,7 +205,8 @@ fn self_healing_restores_points_on_its_rate() {
         .get_mut(1)
         .unwrap()
         .seldom
-        .shield.as_mut()
+        .shield
+        .as_mut()
         .unwrap()
         .hp = 40;
     sim.session.set_binary_frame_for_test(0);
@@ -234,17 +237,15 @@ fn broken_shield_respawns_after_its_rate() {
     );
 }
 
-/// TemporalClass::Update's Phobos hook calls `ShieldClass::AI_Temporal`;
-/// the frozen leaf then skips Techno AI (`UnitClass::AI @ 0x736204`).
-#[test]
-fn temporal_freeze_preserves_recovery_time_until_the_object_resumes() {
+fn temporal_shield_scene() -> (RuleSet, Simulation, u64, u64) {
     let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
-        "[VehicleTypes]\n0=TEST\n1=WARPER\n\
-         [Warheads]\n0=WH\n\
+        "[General]\nAIFireSale=yes\n\
+         [VehicleTypes]\n0=TEST\n1=WARPER\n\
+         [Warheads]\n0=WH\n1=WarpWH\n\
          [TEST]\nStrength=200\nArmor=heavy\nShieldType=TestShield\n\
          [WARPER]\nStrength=100\nPrimary=Beam\n\
-         [Beam]\nDamage=1\nWarhead=WH\n\
-         [WH]\nTemporal=yes\n{VERSES}\n\
+         [Beam]\nDamage=1\nWarhead=WarpWH\n\
+         [WarpWH]\nTemporal=yes\n{VERSES}\n[WH]\n{VERSES}\n\
          [ShieldTypes]\n0=TestShield\n\
          [TestShield]\nStrength=100\nSelfHealing=0.25\nSelfHealing.Rate=0.1\nRespawn=0.5\nRespawn.Rate=0.1\n"
     ))).unwrap();
@@ -255,13 +256,22 @@ fn temporal_freeze_preserves_recovery_time_until_the_object_resumes() {
     let warper = sim
         .spawn_object("WARPER", "Neutral", 11, 10, 0, &rules)
         .unwrap();
+    (rules, sim, target, warper)
+}
+
+/// TemporalClass::Update's Phobos hook calls `ShieldClass::AI_Temporal`;
+/// the frozen leaf then skips Techno AI (`UnitClass::AI @ 0x736204`).
+#[test]
+fn temporal_freeze_preserves_recovery_time_until_the_object_resumes() {
+    let (rules, mut sim, target, warper) = temporal_shield_scene();
     let points = |sim: &Simulation| {
         sim.substrate
             .entities
             .get(target)
             .unwrap()
             .seldom
-            .shield.as_ref()
+            .shield
+            .as_ref()
             .unwrap()
             .hp()
     };
@@ -270,7 +280,8 @@ fn temporal_freeze_preserves_recovery_time_until_the_object_resumes() {
         .get_mut(target)
         .unwrap()
         .seldom
-        .shield.as_mut()
+        .shield
+        .as_mut()
         .unwrap()
         .hp = 40;
     super::tick(&mut sim, target, &rules);
@@ -308,6 +319,68 @@ fn temporal_freeze_preserves_recovery_time_until_the_object_resumes() {
 }
 
 #[test]
+fn thawed_target_resumes_shield_recovery_under_a_living_erase_head() {
+    let (rules, mut sim, target, warper) = temporal_shield_scene();
+    hit(&mut sim, &rules, 60);
+    super::tick(&mut sim, target, &rules);
+    sim.session.set_binary_frame_for_test(30);
+    sim.temporal_initiate_warp(
+        warper,
+        Some(target),
+        &rules,
+        None,
+        &mut FrameEffects::default(),
+    );
+    sim.object_ai_visit_one(target, Some(&rules), &mut ObjectAiCtx::default());
+    assert!(shield(&sim).temporal);
+
+    sim.session.set_binary_frame_for_test(300);
+    sim.substrate
+        .entities
+        .get_mut(target)
+        .unwrap()
+        .set_warped_out(false);
+    sim.object_ai_visit_one(target, Some(&rules), &mut ObjectAiCtx::default());
+    assert_eq!(
+        sim.substrate
+            .entities
+            .get(target)
+            .unwrap()
+            .temporal
+            .chain_head(),
+        Some(warper)
+    );
+    assert!(!shield(&sim).temporal);
+    sim.session.set_binary_frame_for_test(360);
+    sim.object_ai_visit_one(target, Some(&rules), &mut ObjectAiCtx::default());
+    assert_eq!(shield(&sim).hp(), 65);
+}
+
+#[test]
+fn splash_damage_uses_the_shield_temporal_flag_between_object_visits() {
+    let (rules, mut sim, target, warper) = temporal_shield_scene();
+    sim.temporal_initiate_warp(
+        warper,
+        Some(target),
+        &rules,
+        None,
+        &mut FrameEffects::default(),
+    );
+    hit(&mut sim, &rules, 20); // Warp just began; AI_Temporal has not run yet.
+    assert_eq!((health(&sim), shield(&sim).hp()), (200, 80));
+    sim.object_ai_visit_one(target, Some(&rules), &mut ObjectAiCtx::default());
+    Simulation::temporal_let_go(
+        &mut sim.substrate,
+        &mut sim.houses,
+        &mut sim.power_states,
+        warper,
+        rules.ares_form(),
+    );
+    hit(&mut sim, &rules, 20); // The ordinary Shield AI has not cleared its flag.
+    assert_eq!((health(&sim), shield(&sim).hp()), (180, 80));
+}
+
+#[test]
 fn chronosphere_launch_latch_suppresses_due_recovery_before_warp_out() {
     let rules = rules("SelfHealing=0.25\nSelfHealing.Rate=0.1", "");
     let (mut sim, _) = scene(&rules);
@@ -316,7 +389,8 @@ fn chronosphere_launch_latch_suppresses_due_recovery_before_warp_out() {
         .get_mut(1)
         .unwrap()
         .seldom
-        .shield.as_mut()
+        .shield
+        .as_mut()
         .unwrap()
         .hp = 40;
     super::tick(&mut sim, 1, &rules);
@@ -339,7 +413,8 @@ fn chronosphere_skips_recovery_but_keeps_the_original_countdown() {
         .get_mut(1)
         .unwrap()
         .seldom
-        .shield.as_mut()
+        .shield
+        .as_mut()
         .unwrap()
         .hp = 40;
     super::tick(&mut sim, 1, &rules);
@@ -354,18 +429,9 @@ fn chronosphere_skips_recovery_but_keeps_the_original_countdown() {
     assert_eq!(shield(&sim).hp(), 40, "a frozen leaf cannot heal yet");
     // State 2 (0x7198DA..0x7198EE) clears the latch and warp-out byte,
     // keeping WarpingIn set: normal Shield AI may now run.
-    sim.substrate
-        .entities
-        .get_mut(1)
-        .unwrap()
-        .locomotor
-        .as_mut()
-        .unwrap()
-        .teleport_runtime_mut()
-        .unwrap()
-        .chrono_mut()
-        .unwrap()
-        .set_bytes(false, false, true);
+    let mut ctx = ObjectAiCtx::default();
+    sim.process_chrono_warp(1, &rules, &mut ctx).unwrap(); // state 1 timer expires
+    sim.process_chrono_warp(1, &rules, &mut ctx).unwrap(); // state 2 clears +270
     super::tick(&mut sim, 1, &rules);
     assert_eq!(shield(&sim).hp(), 65, "the pre-warp deadline remains due");
 }
@@ -394,7 +460,8 @@ fn an_offline_shield_absorbs_nothing() {
         .get_mut(1)
         .unwrap()
         .seldom
-        .shield.as_mut()
+        .shield
+        .as_mut()
         .unwrap()
         .online = false;
     hit(&mut sim, &rules, 40);
@@ -661,7 +728,8 @@ fn detonation_scene(
     sections: &str,
 ) -> (Simulation, RuleSet, u64, u64) {
     let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
-        "[Countries]\n0=Americans\n1=Russians\n\
+        "[General]\nAIFireSale=yes\n\
+         [Countries]\n0=Americans\n1=Russians\n\
          [VehicleTypes]\n0=FIRER\n1=TARGET\n2=NEIGHBOR\n\
          [WeaponTypes]\n0=GUN\n1=BRKWPN\n\
          [GUN]\nDamage=0\nRange=5\nROF=20\nWarhead=WH\n\
@@ -669,7 +737,7 @@ fn detonation_scene(
          [Warheads]\n0=WH\n{warheads}\
          [WH]\nCellSpread=0\n{VERSES}\n{wh_ini}\n\
          [FIRER]\nStrength=500\nArmor=none\nSpeed=6\nPrimary=GUN\n\
-         [TARGET]\nStrength=500\nArmor=none\nSpeed=6\nShieldType=TestShield\n\
+         [TARGET]\nStrength=500\nArmor=none\nSpeed=6\nPrimary=GUN\nSecondary=BRKWPN\nShieldType=TestShield\n\
          [NEIGHBOR]\nStrength=500\nArmor=none\nSpeed=6\n\
          [ShieldTypes]\n0=TestShield\n1=SecondShield\n2=ThirdShield\n3=OtherShield\n\
          [TestShield]\nStrength=100\nInitialStrength=100\nArmor=none\n\
@@ -753,7 +821,9 @@ fn set_target_shield_hp(sim: &mut Simulation, target: u64, hp: i32) {
         .entities
         .get_mut(target)
         .unwrap()
-        .seldom.shield.as_mut()
+        .seldom
+        .shield
+        .as_mut()
         .unwrap()
         .hp = hp;
 }
@@ -797,7 +867,12 @@ fn warhead_remove_types_strips_the_shield() {
     shoot(&mut sim, &rules, "WH", firer, target, 0);
 
     assert!(
-        sim.substrate.entities.get(target).unwrap().shield().is_none(),
+        sim.substrate
+            .entities
+            .get(target)
+            .unwrap()
+            .shield()
+            .is_none(),
         "the removed shield is gone"
     );
     assert_eq!(target_health(&sim, target), 500, "no damage rides the pass");
@@ -904,7 +979,7 @@ fn warhead_break_emits_the_break_anim_and_weapon() {
          [BRKWPN]\nDamage=5\nRange=5\nROF=20\nWarhead=WHBRK\n",
     );
     let neighbor = sim
-        .spawn_object("NEIGHBOR", "Russians", 23, 20, 0, &rules)
+        .spawn_object("NEIGHBOR", "Americans", 23, 20, 0, &rules)
         .expect("neighbor");
     shoot(&mut sim, &rules, "WH", firer, target, 0);
 
@@ -1146,7 +1221,8 @@ fn the_hit_anim_emits_unless_skip_hit_anim() {
 /// (`:56..57,92..93`).
 fn idle_rules(shield: &str, art_extra: &str) -> RuleSet {
     let ini = IniFile::from_str(&format!(
-        "[VehicleTypes]\n0=TEST\n\
+        "[General]\nAIFireSale=yes\n\
+         [VehicleTypes]\n0=TEST\n\
          [TEST]\nStrength=200\nArmor=heavy\nShieldType=TestShield\n\
          [ShieldTypes]\n0=TestShield\n\
          [TestShield]\nStrength=100\nInitialStrength=100\nArmor=none\n{shield}\n\
@@ -1314,7 +1390,7 @@ fn a_temporal_freeze_hides_the_idle_anim() {
         .get_mut(1)
         .unwrap()
         .set_temporal_for_test(warped);
-    super::tick(&mut sim, 1, &rules);
+    super::tick_temporal(&mut sim, 1, &rules);
     sim.flush_pending_delete();
     assert_eq!(
         idle_anims(&sim, "IDLE").len(),
@@ -1399,7 +1475,8 @@ fn a_tunnel_owner_hides_and_restores_the_shield_idle_anim() {
 /// whose `OtherShield` is twice as strong.
 fn convert_rules(shield: &str, changed_shield: &str) -> RuleSet {
     let ini = IniFile::from_str(&format!(
-        "[VehicleTypes]\n0=TEST\n1=CHANGED\n\
+        "[General]\nAIFireSale=yes\n\
+         [VehicleTypes]\n0=TEST\n1=CHANGED\n\
          [TEST]\nStrength=200\nArmor=heavy\nShieldType=TestShield\n\
          [CHANGED]\nStrength=200\nArmor=heavy\n{changed_shield}\n\
          [ShieldTypes]\n0=TestShield\n1=OtherShield\n\
@@ -1549,7 +1626,7 @@ fn a_temporal_paused_anim_freezes_and_resumes() {
         .get_mut(1)
         .unwrap()
         .set_temporal_for_test(warped);
-    super::tick(&mut sim, 1, &rules);
+    super::tick_temporal(&mut sim, 1, &rules);
     {
         let anim = idle_anims(&sim, "IDLE")[0];
         assert!(anim.runtime().paused, "PausedTemporal pauses");
@@ -1594,7 +1671,9 @@ fn the_shield_ratio_selects_the_idle_band() {
         .entities
         .get_mut(1)
         .unwrap()
-        .seldom.shield.as_mut()
+        .seldom
+        .shield
+        .as_mut()
         .unwrap()
         .hp = 60;
     super::tick(&mut sim, 1, &rules);

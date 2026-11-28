@@ -40,6 +40,8 @@ Gặp khó khăn? Xem [trang trợ giúp](https://vera20k.org/help) (tiếng Anh
 
 ## Đóng góp
 
+**Các PR được đánh giá cao** — tái cấu trúc mã, hiệu năng, tìm đường, UI/UX, trình tạo bản đồ ngẫu nhiên.
+
 Người đóng góp có thể nhận phụ trách các phần của engine, với nhiều tự do để thực hiện những thay
 đổi giúp VERA20K tiến lên.
 

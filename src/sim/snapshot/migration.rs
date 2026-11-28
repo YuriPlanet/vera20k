@@ -88,6 +88,11 @@ const HELD_IMAGES: u32 = 0xAA20_1352;
 // Earlier saves gain their neutral encoding. The loader discards both
 // fields; see snapshot::retired_driver.
 const DRIVER_POLICY: u32 = 0xD5A9_6CCA;
+// The Phobos branch's merged writer already holds its own fields and the
+// upstream module state, but predates the independent Techno+270 flag.
+const PHOBOS_MERGE: u32 = 0xC3A0_2A31;
+// This upstream writer saves Techno+270 independently of its erase head and locomotor.
+const SHARED_WARP_OUT: u32 = 0xC0BB_86C8;
 
 fn historical_layouts() -> &'static [u32] {
     &[
@@ -115,6 +120,8 @@ fn historical_layouts() -> &'static [u32] {
         HELD_DOORS,
         HELD_IMAGES,
         DRIVER_POLICY,
+        PHOBOS_MERGE,
+        SHARED_WARP_OUT,
     ]
 }
 
@@ -153,30 +160,43 @@ pub fn supports(header: &GameSnapshotHeader) -> bool {
         && current_layout_is_audited()
 }
 
-/// The merged writer adds Phobos's saved transport-reloader queue beside the
-/// upstream module state. Its traced layout hash is new, so audit the two
-/// owning fields directly rather than reusing either branch's old hash.
+/// The merged writer combines Phobos's saved transport-reloader queue with
+/// upstream's independent warp-out flag beside the module state. Its traced
+/// layout hash is new, so audit the owning fields directly rather than reusing
+/// either branch's old hash.
 fn current_layout_is_audited() -> bool {
     static AUDITED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *AUDITED.get_or_init(|| {
         let Ok(description) = save_codec::layout::describe::<GameSnapshot>() else {
             return false;
         };
-        description.lines().any(|line| {
-            let Some((_, fields)) = line.split_once("struct{") else {
+        let has_warp_out = description.lines().any(|line| {
+            let Some((name, fields)) = line.split_once(" struct{") else {
                 return false;
             };
-            let Some(fields) = fields.strip_suffix('}') else {
-                return false;
-            };
-            let mut trailing = fields.rsplit(',');
-            trailing
-                .next()
-                .is_some_and(|field| field.starts_with("ext_modules:"))
-                && trailing
+            name == "GameEntity"
+                && fields.strip_suffix('}').is_some_and(|fields| {
+                    fields
+                        .split(',')
+                        .any(|field| field.starts_with("being_warped_out:"))
+                })
+        });
+        has_warp_out
+            && description.lines().any(|line| {
+                let Some((_, fields)) = line.split_once("struct{") else {
+                    return false;
+                };
+                let Some(fields) = fields.strip_suffix('}') else {
+                    return false;
+                };
+                let mut trailing = fields.rsplit(',');
+                trailing
                     .next()
-                    .is_some_and(|field| field.starts_with("transport_reloaders:"))
-        })
+                    .is_some_and(|field| field.starts_with("ext_modules:"))
+                    && trailing
+                        .next()
+                        .is_some_and(|field| field.starts_with("transport_reloaders:"))
+            })
     })
 }
 
@@ -219,15 +239,16 @@ fn layout_fields(
     const DOORS_AND_IMAGES: (&str, &[&str]) = ("ActionHeld", &["doors", "images"]);
     const IMAGES: (&str, &[&str]) = ("ActionHeld", &["images"]);
     const POLICY: (&str, &[&str]) = ("HouseState", &["driver_policy"]);
+    const WARP_OUT: (&str, &[&str]) = ("GameEntity", &["being_warped_out"]);
     type AbsentField = (&'static str, &'static [&'static str]);
 
-    // Every released writer represented by `previous_layout` is an upstream
-    // writer. The Phobos branch added these fields independently, so each old
-    // layout lacks the union of both branches' additions. Keep the upstream
-    // timeline below intact and add this common tail once when building the
-    // audited table. The codec's existing all-zero absent-field encoding is
-    // unchanged; no layout hash or field default is invented here. Skipped
-    // caches are not wire fields and stay out.
+    // Every upstream writer represented by `previous_layout` lacks the Phobos
+    // branch's independent additions. Keep the upstream timeline intact and
+    // add this common tail once when building the audited table. The Phobos
+    // merge writer already holds these fields, so only its warp-out flag is
+    // absent. The codec's all-zero absent-field encoding is unchanged; no
+    // layout hash or field default is invented here. Skipped caches are not
+    // wire fields and stay out.
     const PHOBOS_FIELDS: &[AbsentField] = &[
         ("BasicSection", &["show_briefing"]),
         ("HouseDefinition", &["repair_base_nodes"]),
@@ -477,6 +498,7 @@ fn layout_fields(
 
     let upstream_fields: &[(&str, &[&str])] = match source {
         V0_3_8_AND_0_3_9 | V0_4_0 => &[
+            WARP_OUT,
             POLICY,
             HELD_VISUALS,
             IMAGE_FLAGS,
@@ -504,6 +526,7 @@ fn layout_fields(
             NPATCH_KEYS,
         ],
         ALPHA_SHAPE_LISTENER => &[
+            WARP_OUT,
             POLICY,
             HELD_VISUALS,
             IMAGE_FLAGS,
@@ -530,6 +553,7 @@ fn layout_fields(
             NPATCH_KEYS,
         ],
         ALTERNATE_THEATER_ART => &[
+            WARP_OUT,
             POLICY,
             HELD_VISUALS,
             DECK,
@@ -555,6 +579,7 @@ fn layout_fields(
             NPATCH_KEYS,
         ],
         BRIDGE_DECK_AND_FLY_SPIN => &[
+            WARP_OUT,
             POLICY,
             HELD_VISUALS,
             DEGRADES,
@@ -577,6 +602,7 @@ fn layout_fields(
             NPATCH_KEYS,
         ],
         HOUSE_DEGRADES => &[
+            WARP_OUT,
             POLICY,
             HELD_VISUALS,
             ICE_TIMER,
@@ -598,6 +624,7 @@ fn layout_fields(
             NPATCH_KEYS,
         ],
         TS_ICE => &[
+            WARP_OUT,
             POLICY,
             HELD_VISUALS,
             DENT,
@@ -616,6 +643,7 @@ fn layout_fields(
             NPATCH_KEYS,
         ],
         TERRAIN_DENT => &[
+            WARP_OUT,
             POLICY,
             HELD_VISUALS,
             LIMPETS,
@@ -633,6 +661,7 @@ fn layout_fields(
             NPATCH_KEYS,
         ],
         TS_LIMPETS => &[
+            WARP_OUT,
             POLICY,
             HELD_VISUALS,
             ANIM_SOUNDS,
@@ -648,6 +677,7 @@ fn layout_fields(
             NPATCH_KEYS,
         ],
         TS_ANIM_SOUNDS => &[
+            WARP_OUT,
             POLICY,
             HELD_VISUALS,
             KRATOS_INPUTS,
@@ -662,6 +692,7 @@ fn layout_fields(
             NPATCH_KEYS,
         ],
         KRATOS_FLH => &[
+            WARP_OUT,
             POLICY,
             HELD_VISUALS,
             WEB,
@@ -674,6 +705,7 @@ fn layout_fields(
             NPATCH_KEYS,
         ],
         TS_WEBS => &[
+            WARP_OUT,
             POLICY,
             HELD_VISUALS,
             EXT_MODULES,
@@ -682,6 +714,7 @@ fn layout_fields(
             NPATCH_KEYS,
         ],
         WASM_MODULES => &[
+            WARP_OUT,
             POLICY,
             HELD_VISUALS,
             CONTROL_POINT_STATE,
@@ -691,6 +724,7 @@ fn layout_fields(
             MESSAGES,
         ],
         ART_IMAGE_SWAP => &[
+            WARP_OUT,
             POLICY,
             HELD_VISUALS,
             EXT_MODULES,
@@ -698,6 +732,7 @@ fn layout_fields(
             NPATCH_KEYS,
         ],
         MODULES_AND_IMAGE_SWAP => &[
+            WARP_OUT,
             POLICY,
             HELD_VISUALS,
             CONTROL_POINT_STATE,
@@ -705,8 +740,16 @@ fn layout_fields(
             NPATCH_KEYS,
             MESSAGES,
         ],
-        CONTROL_POINTS => &[POLICY, HELD_VISUALS, IMAGE_SWAP, NPATCH_KEYS, MESSAGES],
+        CONTROL_POINTS => &[
+            WARP_OUT,
+            POLICY,
+            HELD_VISUALS,
+            IMAGE_SWAP,
+            NPATCH_KEYS,
+            MESSAGES,
+        ],
         NPATCH_INPUTS => &[
+            WARP_OUT,
             POLICY,
             HELD_VISUALS,
             EXT_MODULES,
@@ -714,21 +757,28 @@ fn layout_fields(
             IMAGE_SWAP,
         ],
         MODULES_SWAP_AND_NPATCH => &[
+            WARP_OUT,
             POLICY,
             HELD_VISUALS,
             CONTROL_POINT_STATE,
             NATIVE_ROTS,
             MESSAGES,
         ],
-        CONTROL_POINTS_SWAP_AND_NPATCH => &[POLICY, HELD_VISUALS, MESSAGES],
-        CLIENT_MESSAGES => &[POLICY, HELD_VISUALS],
-        HELD_ANIMS => &[POLICY, DOORS_AND_IMAGES],
-        HELD_DOORS => &[POLICY, IMAGES],
-        HELD_IMAGES => &[POLICY],
-        DRIVER_POLICY => &[],
+        CONTROL_POINTS_SWAP_AND_NPATCH => &[WARP_OUT, POLICY, HELD_VISUALS, MESSAGES],
+        CLIENT_MESSAGES => &[WARP_OUT, POLICY, HELD_VISUALS],
+        HELD_ANIMS => &[WARP_OUT, POLICY, DOORS_AND_IMAGES],
+        HELD_DOORS => &[WARP_OUT, POLICY, IMAGES],
+        HELD_IMAGES => &[WARP_OUT, POLICY],
+        DRIVER_POLICY | PHOBOS_MERGE => &[WARP_OUT],
+        SHARED_WARP_OUT => &[],
         _ => return None,
     };
-    Some((upstream_fields, PHOBOS_FIELDS))
+    let phobos_fields: &[AbsentField] = if source == PHOBOS_MERGE {
+        &[]
+    } else {
+        PHOBOS_FIELDS
+    };
+    Some((upstream_fields, phobos_fields))
 }
 
 fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
@@ -939,6 +989,35 @@ mod tests {
             ));
             assert_eq!(bytes, before);
         });
+    }
+
+    #[test]
+    fn pre_overlap_player_save_restores_warp_out_from_its_temporal_head() {
+        use crate::sim::game_entity::GameEntity;
+        use crate::sim::temporal::TemporalState;
+
+        let mut objects = crate::sim::entity_store::EntityStore::default();
+        let mut target = GameEntity::test_default(1, "MTNK", "Americans", 5, 6);
+        let head = 2;
+        target.set_temporal_for_test(TemporalState::warped_by_for_test(head));
+        objects.insert(target);
+        objects.insert(GameEntity::test_default(head, "CLEG", "Russians", 5, 7));
+
+        // The frame-60000 ALL06 save and the Phobos merge writer both predate
+        // the independent +270 flag. Their targets hold +278 and no +270.
+        for source in [DRIVER_POLICY, PHOBOS_MERGE] {
+            let previous = previous_layout(source).expect("pre-overlap save layout");
+            let bytes = save_codec::serialize_previous(&objects, &previous).unwrap();
+            let (restored, rest) = save_codec::deserialize_previous::<
+                crate::sim::entity_store::EntityStore,
+            >(&bytes, previous, &mut Vec::new())
+            .unwrap();
+            assert!(rest.is_empty());
+            let target = restored.get(1).unwrap();
+            assert_eq!(target.temporal.chain_head(), Some(head));
+            assert!(target.is_warped_out());
+            assert!(!restored.get(head).unwrap().is_warped_out());
+        }
     }
 
     #[test]

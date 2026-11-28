@@ -105,11 +105,9 @@ pub enum WolTarget {
     LobbyKicked,
     /// A lost connection during a WOL match: one `TXT_WOL_CONNLOST` row.
     IngameConnectionLost,
-    /// A page during a WOL match: its two rows, then PageUser opens `0xCF`
-    /// prefilled with the pager and a reply is paged; the match runs on.
+    /// A private message during a WOL match appears on the battlefield. The
+    /// former pager shortcut leaves it in play.
     IngamePage,
-    /// The same, then Cancel ends state 7.
-    IngamePageCancel,
     /// The same, then the match left: the runner logs in again first, and
     /// `0x10F` settles.
     AbortRelogin,
@@ -642,7 +640,6 @@ impl WolTarget {
                 | Self::InternetMenu
                 | Self::IngameConnectionLost
                 | Self::IngamePage
-                | Self::IngamePageCancel
                 | Self::AbortRelogin
                 | Self::VerifyDialog
                 | Self::ClanLeaver
@@ -672,7 +669,6 @@ impl WolTarget {
                 | Self::InternetMenu
                 | Self::IngameConnectionLost
                 | Self::IngamePage
-                | Self::IngamePageCancel
                 | Self::AbortRelogin
                 | Self::ClanLeaver
                 | Self::ClanSurrender
@@ -720,7 +716,6 @@ pub(crate) const WOL_CHECKPOINTS: &[(&str, WolTarget)] = &[
     ("wol-0x113-kicked", WolTarget::LobbyKicked),
     ("wol-ingame-connlost", WolTarget::IngameConnectionLost),
     ("wol-ingame-page", WolTarget::IngamePage),
-    ("wol-ingame-page-cancel", WolTarget::IngamePageCancel),
     ("wol-abort-relogin", WolTarget::AbortRelogin),
     ("wol-0x113-join-admission", WolTarget::JoinAdmission),
     ("wol-0xe1-password", WolTarget::JoinPassword),
@@ -976,7 +971,7 @@ pub(super) struct WolCapture {
     options_before: Option<(Option<Vec<u8>>, WolPreferences)>,
     /// The locale `0xFE` OK sent, ahead of the runner's requests.
     chosen_locale: Option<i32>,
-    /// The sim tick when the in-match `0xCF` sent its page.
+    /// The sim tick when the in-match page arrived.
     page_tick: Option<u64>,
 }
 
@@ -1158,10 +1153,9 @@ impl WolCapture {
             || frontend.shell_route == ShellRoute::NetworkSetup;
         if let Some(menu) = match self.target {
             WolTarget::InternetMenu => Some(crate::ui::pause_menu::InGameMenuState::Menu),
-            WolTarget::IngameConnectionLost | WolTarget::IngamePageCancel => {
+            WolTarget::IngameConnectionLost | WolTarget::IngamePage => {
                 Some(crate::ui::pause_menu::InGameMenuState::Closed)
             }
-            WolTarget::IngamePage => Some(crate::ui::pause_menu::InGameMenuState::Page),
             WolTarget::ClanSurrender => Some(crate::ui::pause_menu::InGameMenuState::Surrender),
             WolTarget::ClanLeaver => Some(crate::ui::pause_menu::InGameMenuState::Closed),
             _ => None,
@@ -1177,12 +1171,12 @@ impl WolCapture {
                     let count = message.reveal_count() as usize;
                     count == 0 || count > message.text.encode_utf16().count() + 8
                 });
-            // State 7 keeps the match running (the modal pump's Main_Tick).
-            let ran_on = self.page_tick.is_none_or(|sent| {
+            // The match must still advance after an in-game page arrives.
+            let ran_on = self.page_tick.is_none_or(|received| {
                 match_state
                     .sim_runtime
                     .runtime()
-                    .is_some_and(|runtime| runtime.simulation.session().tick() > sent)
+                    .is_some_and(|runtime| runtime.simulation.session().tick() > received)
             });
             return Ok(self.phase == WolPhase::Settle(0)
                 && frontend.screen == GameScreen::InGame
@@ -1190,9 +1184,7 @@ impl WolCapture {
                 && ran_on
                 && (!matches!(
                     self.target,
-                    WolTarget::IngameConnectionLost
-                        | WolTarget::IngamePage
-                        | WolTarget::IngamePageCancel
+                    WolTarget::IngameConnectionLost | WolTarget::IngamePage
                 ) || revealed));
         }
         // The guest's badge help types itself out in the room's own status

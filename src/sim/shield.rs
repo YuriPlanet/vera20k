@@ -729,9 +729,8 @@ fn shield_stage(
     };
     let shield_return = (|| {
         // `!health || Temporal || damage == 0` returns the damage unchanged.
-        let temporal = target.is_warped_out();
         let mut remaining = receiver_input;
-        if !shield_was_active || temporal || receiver_input == 0 {
+        if !shield_was_active || state.temporal || receiver_input == 0 {
             return remaining;
         }
 
@@ -1277,6 +1276,86 @@ struct ShieldObjectContext {
     coords: [i32; 3],
 }
 
+/// Phobos TemporalClass_AI (71A88D) -> TechnoExt::UpdateTemporal ->
+/// ShieldClass::AI_Temporal. Pause the selected clock only on entry.
+pub(crate) fn enter_temporal(
+    substrate: &mut crate::sim::world::ObjectSubstrate,
+    target: u64,
+    frame: i32,
+) {
+    let Some(state) = substrate
+        .entities
+        .get_mut_if(target, |entity| {
+            entity
+                .seldom
+                .shield
+                .as_ref()
+                .is_some_and(|shield| !shield.temporal)
+        })
+        .and_then(|entity| entity.seldom.shield.as_mut())
+    else {
+        return;
+    };
+    state.temporal = true;
+    pause_recovery(state, frame);
+}
+
+fn pause_recovery(state: &mut ShieldState, frame: i32) {
+    if state.hp <= 0 {
+        state.timers.respawn.pause(frame);
+    } else {
+        state.timers.self_healing.pause(frame);
+    }
+}
+
+/// The target-side `ShieldClass::AI_Temporal` visit after its Temporal head
+/// updates. The normal Techno AI is still skipped for a frozen leaf, so this
+/// owner applies the temporal idle-animation action and pauses recovery here.
+pub(crate) fn tick_temporal(sim: &mut Simulation, id: u64, rules: &RuleSet) {
+    let frame = sim.session.binary_frame() as i32;
+    let temporal = {
+        let Some(entity) = sim.substrate.entities.get(id) else {
+            return;
+        };
+        if entity.lifecycle.in_limbo() || entity.chrono_warp_latch() {
+            return;
+        }
+        if entity.health.current() <= 0
+            || !entity.lifecycle.object_alive()
+            || entity.sinking.is_active()
+        {
+            if let Some(entity) = sim.substrate.entities.get_mut(id) {
+                entity.seldom.shield = None;
+            }
+            return;
+        }
+        entity.temporal.is_warped()
+    };
+    if !temporal {
+        return;
+    }
+    enter_temporal(&mut sim.substrate, id, frame);
+    let Some(mut state) = sim
+        .substrate
+        .entities
+        .get(id)
+        .and_then(|entity| entity.seldom.shield.clone())
+    else {
+        return;
+    };
+    let Some(ty) = rules.shield_type(state.type_name()) else {
+        return;
+    };
+    // `AI_Temporal` runs `CloakCheck` before the action switch
+    // (`ShieldClass.cpp:409..427`).
+    cloak_check_idle_anim(sim, rules, id, &mut state);
+    apply_idle_anim_action(sim, rules, &mut state, ty.idle_anim_temporal_action());
+    pause_recovery(&mut state, frame);
+    if let Some(entity) = sim.substrate.entities.get_mut(id) {
+        entity.seldom.shield = Some(state);
+    }
+}
+
 /// One `TechnoExt::OnEarlyUpdate -> ShieldClass::AI` visit, in the object's
 /// own AI turn.
 pub(crate) fn tick(sim: &mut Simulation, id: u64, rules: &RuleSet) {
@@ -1293,24 +1372,21 @@ pub(crate) fn tick(sim: &mut Simulation, id: u64, rules: &RuleSet) {
 
     // `InLimbo || IsImmobilized` skips the visit; a dead, removed or sinking
     // object drops its shield entirely.
-    if entity.lifecycle.in_limbo() {
+    if entity.lifecycle.in_limbo() || entity.chrono_warp_latch() {
         return;
     }
-    if entity.health.current() <= 0 || !entity.lifecycle.object_alive() {
+    if entity.health.current() <= 0
+        || !entity.lifecycle.object_alive()
+        || entity.sinking.is_active()
+    {
         if let Some(entity) = sim.substrate.entities.get_mut(id) {
             entity.seldom.shield = None;
         }
         return;
     }
 
-    // Capture this visit's entity facts before any state write; the online
-    // query is native `OnlineCheck`'s `IsPowerOnline`/deactivation read.
-    let temporal_now = entity.temporal.is_warped();
-    // Chronosphere skips ShieldClass::AI through IsImmobilized (+0x27C),
-    // but never calls AI_Temporal: its global-frame countdown keeps running.
-    // The latch also gates the launch frame before BeingWarpedOut is set.
-    // Teleport Process state 2 clears it at 0x7198E4 as warp-in begins.
-    let immobilized = entity.chrono_warp_latch() || entity.ai_frozen();
+    // Capture the online query before any animation write; it is native
+    // `OnlineCheck`'s `IsPowerOnline`/deactivation read.
     let powered_active = ty.powered().then(|| {
         !entity.deactivated.is_offline()
             && crate::sim::power_system::is_building_powered(
@@ -1320,37 +1396,13 @@ pub(crate) fn tick(sim: &mut Simulation, id: u64, rules: &RuleSet) {
                 &sim.interner,
             )
     });
-
-    // Phobos `ShieldClass::AI_Temporal` (src/New/Entity/ShieldClass.cpp,
-    // b90ab4b) pauses recovery during the leaf's TemporalClass::Update;
-    // frozen leaves skip `TechnoClass::AI @ 0x6F9E50` entirely. Persist
-    // the pause without entering the normal AI's resume/recovery block.
+    // Phobos ShieldClass::AI calls TemporalCheck before OnlineCheck. Its
+    // own flag clears even when an erase head still targets this object;
+    // `tick_temporal` owns the separate TemporalClass::AI visit.
     let was_temporal = state.temporal;
-    state.temporal = temporal_now;
-    if state.temporal {
-        if !was_temporal {
-            // `AI_Temporal` runs `CloakCheck` before the action switch
-            // (`ShieldClass.cpp:409..427`).
-            cloak_check_idle_anim(sim, rules, id, &mut state);
-            apply_idle_anim_action(sim, rules, &mut state, ty.idle_anim_temporal_action());
-        }
-        if state.hp <= 0 {
-            state.timers.respawn.pause(frame);
-        } else {
-            state.timers.self_healing.pause(frame);
-        }
-        if let Some(entity) = sim.substrate.entities.get_mut(id) {
-            entity.seldom.shield = Some(state);
-        }
-        return;
-    }
+    state.temporal = false;
     if was_temporal {
-        // `ShieldClass::TemporalCheck`: clear the temporal look and resume.
         resume_idle_anim(sim, &mut state);
-    }
-
-    if immobilized {
-        return;
     }
 
     // `OnlineCheck` for a Powered shield type.

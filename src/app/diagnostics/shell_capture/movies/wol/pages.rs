@@ -98,25 +98,21 @@ impl WolCapture {
         Ok(())
     }
 
-    /// `0xCF` opened over `0x113` or C2: the target's name and text through
-    /// the real input routes.
-    /// The in-match page path: an ANSI page posts its two rows and arms the
-    /// reply window; PageUser (U) inside it opens `0xCF` with the pager and
-    /// the caret in the text; a reply goes out and the stand-in answers.
+    /// A private message stays on the battlefield. Its arrival and the
+    /// former pager shortcut must both leave the player in control.
     pub(super) fn ingame_page(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
-        use crate::app::shell_wol::page;
-        use crate::ui::pause_menu::InGameMenuState;
-        let rows = |state: &AppState| -> Vec<String> {
-            state
-                .match_state
-                .match_presentation
-                .message_list
-                .messages()
-                .iter()
-                .map(|row| row.text.clone())
-                .collect()
+        let on_battlefield = |state: &AppState| {
+            state.frontend.screen == GameScreen::InGame
+                && state.match_state.match_presentation.in_game_menu
+                    == crate::ui::pause_menu::InGameMenuState::Closed
+                && !crate::app::shell_wol::page::open(state.frontend.wol.as_ref())
         };
-        let before = rows(state).len();
+        let before = state
+            .match_state
+            .match_presentation
+            .message_list
+            .messages()
+            .len();
         service_event(
             state,
             WolServiceEvent::Page {
@@ -125,163 +121,53 @@ impl WolCapture {
                 ansi: true,
             },
         );
-        let hint = state
-            .process_assets
-            .csf_label("TXT_HOW_TO_REPLY", "TXT_HOW_TO_REPLY");
-        let after = rows(state);
+        let messages = state.match_state.match_presentation.message_list.messages();
         ensure!(
-            after.len() == before + 2
-                && after[before].contains("(Tanya) where are you?")
-                && after[before + 1].contains(&hint),
-            "the in-match page did not post its two rows: {after:?}"
+            messages.len() == before + 1
+                && messages
+                    .last()
+                    .is_some_and(|row| row.text.contains("(Tanya) where are you?"))
+                && on_battlefield(state),
+            "expected one battlefield message and no page dialog"
         );
-        self.event(frame, json!({"in-match page rows": &after[before..]}));
-        // U as the window handler hands it to the in-game key edge.
+        self.event(frame, "Private message displayed on the battlefield");
         let u = winit::keyboard::Key::Character("u".into());
-        crate::app::input::keyboard::in_game_key_edge(
-            state,
-            crate::app::input::keyboard::InGameKeyEdge {
-                physical: winit::keyboard::KeyCode::KeyU,
-                logical: &u,
-                unmodified: &u,
-                location: winit::keyboard::KeyLocation::Standard,
-                state: winit::event::ElementState::Pressed,
-                repeat: false,
-                text: Some("u"),
-            },
-            false,
-        );
-        let opened = page::page_dialog(state.frontend.wol.as_ref()).is_some()
-            && crate::app::shell_wol::leaf::text(
-                &state.frontend.shell_controller,
-                crate::ui::wol_page::PAGE_DIALOG,
-                crate::ui::wol_page::NAME,
-            ) == "Tanya"
-            && crate::app::shell_wol::leaf::focused(&state.frontend.shell_controller)
-                == Some(crate::ui::wol_page::TEXT);
-        ensure!(
-            state.match_state.match_presentation.in_game_menu == InGameMenuState::Page && opened,
-            "PageUser did not open 0xCF with the pager prefilled"
-        );
-        self.event(frame, "PageUser opened 0xCF, prefilled");
-        page::key_press(
-            &mut state.frontend,
-            &mut state.platform,
-            &mut state.match_state,
-            &state.process_assets,
-            &state.renderer,
-            &mut state.audio,
-            &mut state.persistence,
-            None,
-            Some("on my way"),
-        );
-        page::key_press(
-            &mut state.frontend,
-            &mut state.platform,
-            &mut state.match_state,
-            &state.process_assets,
-            &state.renderer,
-            &mut state.audio,
-            &mut state.persistence,
-            Some(winit::keyboard::KeyCode::Enter),
-            None,
-        );
-        self.page_tick = state
-            .match_state
-            .sim_runtime
-            .runtime()
-            .map(|runtime| runtime.simulation.session().tick());
-        // The controlled service answers the request it was sent.
-        let requests = self.requests(&mut state.frontend.wol, frame)?;
-        let paged = requests.iter().any(|request| {
-            matches!(request, WolServiceRequest::Chat {
-                line: WolChatLine::Page { name, text },
-                ..
-            } if String::from_utf16_lossy(name) == "Tanya"
-                && String::from_utf16_lossy(text) == "on my way")
-        });
-        ensure!(paged, "the in-match 0xCF sent no page: {requests:?}");
-        self.event(
-            frame,
-            json!({"in-match 0xCF paged at tick": self.page_tick}),
-        );
-        service_event(state, WolServiceEvent::PageResult(Ok(())));
-        service_event(
-            state,
-            WolServiceEvent::Page {
-                from: member("Tanya", MEMBER_VOICE, ""),
-                text: "Got your page.".encode_utf16().collect(),
-                ansi: false,
-            },
-        );
-        self.ingame_page_answers(state, frame)
-    }
-
-    /// The stand-in's answers in the in-match `0xCF`: the echo, the result
-    /// and its UTF-16 page back, which posts one row with no reply hint.
-    fn ingame_page_answers(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
-        use crate::app::shell_wol::page;
-        use crate::ui::pause_menu::InGameMenuState;
-        let texts: Vec<String> = page::page_dialog(state.frontend.wol.as_ref())
-            .context("the in-match 0xCF closed")?
-            .lines
-            .iter()
-            .map(|line| String::from_utf16_lossy(&line.text))
-            .collect();
-        let sent = state
-            .process_assets
-            .csf_label("TXT_PAGESENT", "TXT_PAGESENT");
-        ensure!(
-            texts.contains(&format!("[{NICKNAME}] on my way"))
-                && texts.contains(&sent)
-                && texts.iter().any(|text| text == "(Tanya) Got your page."),
-            "the in-match 0xCF lacks the echo or the result: {texts:?}"
-        );
-        let rows: Vec<String> = state
-            .match_state
-            .match_presentation
-            .message_list
-            .messages()
-            .iter()
-            .map(|row| row.text.clone())
-            .collect();
-        let hint = state
-            .process_assets
-            .csf_label("TXT_HOW_TO_REPLY", "TXT_HOW_TO_REPLY");
-        ensure!(
-            rows.last()
-                .is_some_and(|row| row.contains("(Tanya) Got your page."))
-                && rows.iter().filter(|row| row.contains(&hint)).count() == 1,
-            "the answer did not post one row without a hint: {rows:?}"
-        );
-        self.event(frame, json!({"in-match 0xCF lines": texts, "rows": rows}));
-        if self.target == WolTarget::IngamePageCancel {
-            let cancel = page::page_layout(&state.renderer, &state.frontend.screen)
-                .rect_of(crate::ui::shell::modal::control::CANCEL)
-                .unwrap_or_default();
-            state.match_state.input.cursor_x = (cancel.x + cancel.w / 2) as f32;
-            state.match_state.input.cursor_y = (cancel.y + cancel.h / 2) as f32;
-            for pressed in [
-                winit::event::ElementState::Pressed,
-                winit::event::ElementState::Released,
-            ] {
-                crate::app::input::dispatch::handle_mouse_input(
-                    state,
-                    winit::event::MouseButton::Left,
-                    pressed,
-                );
-            }
-            ensure!(
-                state.match_state.match_presentation.in_game_menu == InGameMenuState::Closed
-                    && page::page_dialog(state.frontend.wol.as_ref()).is_none(),
-                "Cancel did not end state 7"
+        for key_state in [
+            winit::event::ElementState::Pressed,
+            winit::event::ElementState::Released,
+        ] {
+            crate::app::input::keyboard::in_game_key_edge(
+                state,
+                crate::app::input::keyboard::InGameKeyEdge {
+                    physical: winit::keyboard::KeyCode::KeyU,
+                    logical: &u,
+                    unmodified: &u,
+                    location: winit::keyboard::KeyLocation::Standard,
+                    state: key_state,
+                    repeat: false,
+                    text: key_state.is_pressed().then_some("u"),
+                },
+                false,
             );
-            self.event(frame, "Cancel ended state 7");
+            ensure!(on_battlefield(state), "U opened a modal during the match");
         }
+        self.page_tick = Some(
+            state
+                .match_state
+                .sim_runtime
+                .runtime()
+                .context("the WOL match has no simulation")?
+                .simulation
+                .session()
+                .tick(),
+        );
+        self.event(frame, "U left battlefield input active");
         self.phase = WolPhase::Settle(SETTLE_FRAMES);
         Ok(())
     }
 
+    /// `0xCF` opened over `0x113` or C2: the target's name and text through
+    /// the real input routes.
     pub(super) fn page_input(
         &mut self,
         state: &mut AppState,
@@ -294,7 +180,7 @@ impl WolCapture {
             "Page did not open 0xCF"
         );
         self.event(frame, "0xCF opened");
-        let layout = page::page_layout(&state.renderer, &state.frontend.screen);
+        let layout = page::page_layout(&state.renderer);
         let click = |state: &mut AppState, rect: RectPx| {
             if setup {
                 setup_click(state, rect);

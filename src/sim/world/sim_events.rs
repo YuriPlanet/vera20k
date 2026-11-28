@@ -545,9 +545,9 @@ pub enum SimSoundEvent {
         line: bool,
         eva: Option<AllianceEva>,
     },
-    /// ForceShield Launch6CD176 plays StartSound before its blackout/curtain
-    /// receivers. The later SuperWeaponLaunched owns only that case's local
-    /// selection/Ready-line cleanup; the original signed deck is retained.
+    /// Stock ForceShield plays StartSound before its receivers (6CD176).
+    /// Stock nuclear plays its launch EVA before or after DigSound (6CDC98
+    /// or 6CDE01), including when the Ares handler resumes this stock arm.
     SuperWeaponActivation {
         sw_type: InternedId,
         world: crate::sim::anim_class::AnimWorldCoord,
@@ -568,6 +568,8 @@ pub enum SimSoundEvent {
     /// what lets the app read both the case index and `StartSound=` off one
     /// object, as `param_1[10]` does. ForceShield carries its activation
     /// through SuperWeaponActivation at the original earlier call site.
+    /// Stock nuclear reports this after its ordered activation, DigSound and
+    /// local cleanup. Accepted Ares handlers report it from their own Launch.
     SuperWeaponLaunched {
         owner: InternedId,
         sw_type: InternedId,
@@ -594,6 +596,12 @@ pub enum SimSoundEvent {
     /// the granting House's own client (`pHouse->IsCurrentPlayer()`), in the
     /// current player's colour (`:487`); the app applies that local test.
     SuperWeaponLinkedAcquired {
+        owner: InternedId,
+        sw_type: InternedId,
+    },
+    /// Stock nuclear Launch reached the PlayerPtr tail (6CDCB3 / 6CDE06).
+    /// Its local targeting and Ready cleanup also runs when no silo was found.
+    NuclearLaunchFinished {
         owner: InternedId,
         sw_type: InternedId,
     },

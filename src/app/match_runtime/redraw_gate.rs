@@ -125,7 +125,7 @@ impl PictureClock {
 /// while none of its self-moving owners runs (module docs). The shown
 /// performance panel changes it once a second, when it has new figures.
 /// `None` keeps drawing within the limits: captures, modals, other screens,
-/// replay matches, a network match's moving composite, recovery line or
+/// a replay's terminal picture, a network match's moving composite, recovery line or
 /// in-game menu, exits and loads, a held mouse button (gadgets repeat on it)
 /// and a shake still decaying.
 pub(crate) fn still_frame(
@@ -156,7 +156,10 @@ pub(crate) fn still_frame(
         && modal.is_none()
         && frontend.screen == GameScreen::InGame
         && !network_picture_moves(match_state, simulation, clock)
-        && !match_state.match_diagnostics.is_replay_playback()
+        // A running replay samples the same picture inputs as local play.
+        // When it ends or fails, draw the verdict and any requested capture.
+        && (!match_state.match_diagnostics.is_replay_playback()
+            || match_state.match_diagnostics.playback_can_advance())
         && !match_state
             .match_diagnostics
             .actor_presentation_observer_active()
@@ -429,6 +432,9 @@ pub(crate) enum NextPass {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ProbeVerdict {
     Draw,
+    /// Only a visible unit's position or facing changed between ticks. Show
+    /// it with the same tactical effects the previous picture showed.
+    DrawMotion,
     /// The presented picture is still right.
     Stands,
     /// The picture's inputs did not change, but the pointer moved: what it
@@ -589,6 +595,11 @@ impl RedrawGate {
         self.last_draw.is_some_and(|last| now < last.picture_due)
     }
 
+    pub(crate) fn picture_interval(&self) -> Duration {
+        self.last_draw
+            .map_or(PICTURE_INTERVAL, |draw| draw.limits.picture)
+    }
+
     pub(crate) fn next_pass(&self, now: Instant) -> NextPass {
         if self.input_draw_due(now) {
             NextPass::Draw
@@ -610,12 +621,19 @@ impl RedrawGate {
 
     /// After a probe's service: what happens to `current`, the picture it
     /// would draw.
-    pub(crate) fn probe_verdict(&self, current: Option<StillFrame>, now: Instant) -> ProbeVerdict {
+    pub(crate) fn probe_verdict(
+        &self,
+        current: Option<StillFrame>,
+        now: Instant,
+        unit_moved: bool,
+    ) -> ProbeVerdict {
         if self.input_draw_due(now) {
             return ProbeVerdict::Draw;
         }
         let stands = !self.redraw_held && current.is_some() && current == self.presented;
         match (stands, self.pointer_since_present) {
+            (true, _) if unit_moved && self.inside_picture_limit(now) => ProbeVerdict::DrawWaits,
+            (true, _) if unit_moved => ProbeVerdict::DrawMotion,
             (true, false) => ProbeVerdict::Stands,
             (true, true) => ProbeVerdict::PointerWaits,
             (false, _) if self.inside_picture_limit(now) => ProbeVerdict::DrawWaits,
@@ -706,10 +724,16 @@ mod tests {
         assert_eq!(gate.next_pass(t), NextPass::Draw);
         gate.record_presented(Some(shown), t, LIMITS);
         assert_eq!(gate.next_pass(t), NextPass::Probe);
-        assert_eq!(gate.probe_verdict(Some(shown), t), ProbeVerdict::Stands);
+        assert_eq!(
+            gate.probe_verdict(Some(shown), t, false),
+            ProbeVerdict::Stands
+        );
         gate.note_input();
         assert_eq!(gate.next_pass(t), NextPass::Draw);
-        assert_eq!(gate.probe_verdict(Some(shown), t), ProbeVerdict::Draw);
+        assert_eq!(
+            gate.probe_verdict(Some(shown), t, false),
+            ProbeVerdict::Draw
+        );
     }
 
     #[test]
@@ -724,11 +748,14 @@ mod tests {
             menu(120, false, [-1, 0]),
         ] {
             assert_eq!(
-                gate.probe_verdict(Some(changed), after_limit),
+                gate.probe_verdict(Some(changed), after_limit, false),
                 ProbeVerdict::Draw
             );
         }
-        assert_eq!(gate.probe_verdict(None, after_limit), ProbeVerdict::Draw);
+        assert_eq!(
+            gate.probe_verdict(None, after_limit, false),
+            ProbeVerdict::Draw
+        );
         gate.record_presented(None, t, LIMITS);
         assert_eq!(gate.next_pass(after_limit), NextPass::Draw);
     }
@@ -755,8 +782,16 @@ mod tests {
         gate.record_presented(Some(shown), t, LIMITS);
         assert_eq!(gate.next_pass(after_limit), NextPass::Probe);
         assert_eq!(
-            gate.probe_verdict(Some(shown), after_limit),
+            gate.probe_verdict(Some(shown), after_limit, false),
             ProbeVerdict::Stands
+        );
+        assert_eq!(
+            gate.probe_verdict(Some(shown), t, true),
+            ProbeVerdict::DrawWaits
+        );
+        assert_eq!(
+            gate.probe_verdict(Some(shown), after_limit, true),
+            ProbeVerdict::DrawMotion
         );
         for changed in [
             battlefield(121, 480.0, 7, true),
@@ -768,7 +803,7 @@ mod tests {
             module_nodes,
         ] {
             assert_eq!(
-                gate.probe_verdict(Some(changed), after_limit),
+                gate.probe_verdict(Some(changed), after_limit, false),
                 ProbeVerdict::Draw
             );
         }
@@ -834,7 +869,7 @@ mod tests {
         gate.note_pointer_motion();
         assert_eq!(gate.next_pass(early), NextPass::Probe);
         assert_eq!(
-            gate.probe_verdict(Some(shown), early),
+            gate.probe_verdict(Some(shown), early, false),
             ProbeVerdict::PointerWaits
         );
         let wake = gate.probe_wake(early, None);
@@ -848,7 +883,7 @@ mod tests {
         );
         assert_eq!(gate.next_pass(pointer_limit), NextPass::Draw);
         assert_eq!(
-            gate.probe_verdict(Some(shown), pointer_limit),
+            gate.probe_verdict(Some(shown), pointer_limit, false),
             ProbeVerdict::Draw
         );
 
@@ -862,7 +897,10 @@ mod tests {
         gate.record_presented(Some(shown), t, cursor_in_frame);
         gate.note_pointer_motion();
         assert_eq!(gate.next_pass(t), NextPass::Draw);
-        assert_eq!(gate.probe_verdict(Some(shown), t), ProbeVerdict::Draw);
+        assert_eq!(
+            gate.probe_verdict(Some(shown), t, false),
+            ProbeVerdict::Draw
+        );
     }
 
     /// A moving picture, and a redraw asked for over a standing one, wait for
@@ -876,13 +914,16 @@ mod tests {
         let mut gate = RedrawGate::default();
         gate.record_presented(None, t, LIMITS);
         assert_eq!(gate.next_pass(early), NextPass::Probe);
-        assert_eq!(gate.probe_verdict(None, early), ProbeVerdict::DrawWaits);
+        assert_eq!(
+            gate.probe_verdict(None, early, false),
+            ProbeVerdict::DrawWaits
+        );
         assert_eq!(gate.next_pass(after_limit), NextPass::Draw);
 
         gate.record_presented(Some(shown), t, LIMITS);
         assert!(gate.hold_requested_draw(early));
         assert_eq!(
-            gate.probe_verdict(Some(shown), early),
+            gate.probe_verdict(Some(shown), early, false),
             ProbeVerdict::DrawWaits
         );
         assert_eq!(gate.next_pass(after_limit), NextPass::Draw);
@@ -890,7 +931,10 @@ mod tests {
 
         gate.note_input();
         assert!(!gate.hold_requested_draw(early));
-        assert_eq!(gate.probe_verdict(Some(shown), early), ProbeVerdict::Draw);
+        assert_eq!(
+            gate.probe_verdict(Some(shown), early, false),
+            ProbeVerdict::Draw
+        );
     }
 
     #[test]

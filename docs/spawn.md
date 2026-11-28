@@ -77,7 +77,9 @@ agree.
           {"id":"art","name":"artmd.ini","digest":"<16 hex>","source":"loose","changed":true,
            "sections":["General","NUKE"],"sections_more":0}],
  "settings":{"terrain_deformation":false,"superweapon_limit":0,"ares":"auto","ares_mix":false,
-             "ini_roots_stock":true,"mod":null},
+             "ini_roots_stock":true,"mod":null,
+             "ini":{"VERA":{"Ares":"Auto","Kratos":"Auto","RA2Mode":"no","SuperweaponLimit":"0",
+                            "TerrainDeformation":"no","WasmBudget":"0"}}},
  "mod_check":null}
 ```
 
@@ -116,6 +118,16 @@ agree.
   When the host enables automation, the rules parts include
   `settings.automation_allowed: true`. The player-facing label is “Allow automation”.
   While the switch is off, the field is omitted.
+  `settings.ini` lists the effective launch settings in VERA.INI form, including defaults.
+  The `[VERA]` keys are `Ares`, `Kratos`, `RA2Mode`, `TerrainDeformation`, `SuperweaponLimit`
+  and `WasmBudget`. A launcher can show a difference by section and key.
+  To apply the host's settings, use the player's own probe to determine which section and key
+  pairs may be written. Ignore unknown pairs. Accept only single-line scalar strings in the
+  format the game writes for that key, and assign each value through an INI writer. Probe
+  again and compare `rules_digest` before starting. On leaving the room, restore the player's
+  original file entries and remove keys that were originally absent.
+  A new build can expose another key through its own probe. Settings from the game folder
+  (`ares_mix`) or config.toml (`ini_roots_stock` and `resources`) are reported separately.
 - `mod_check`: with a mod that carries a `mod-files.txt`, where its files part from that list
   (`changed`, `missing`, `extra`, at most 20 paths each); otherwise null. It can name a file the
   `mod_files` part leaves out: one that only shows, plays or tells something, such as a `.csf`

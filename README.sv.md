@@ -40,6 +40,8 @@ Fastnat? Läs [hjälpsidan](https://vera20k.org/sv/help).
 
 ## Bidra
 
+**Uppskattade PR:er** — refaktorering, prestanda, vägval för enheter, UI/UX, slumpkartgenerator.
+
 Medverkande kan ta ansvar för delar av motorn, med stor frihet att göra ändringar som driver
 VERA20K framåt.
 

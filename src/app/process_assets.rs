@@ -989,6 +989,12 @@ impl ProcessAssets {
                     crate::app::mods::name_and_version(dir, &self.mod_folder_name());
                 ModIdentity { title, version }
             }),
+            ini: crate::app::rules_parts::agreed_ini(
+                assets.ares_setting(),
+                self.kratos_setting,
+                crate::util::ra2_launch::enabled(),
+                rules.personal_rules(),
+            ),
         };
         let mod_check = mod_files.and_then(|files| match &files.against {
             crate::app::mod_files::Against::Same => Some(ModCheck {

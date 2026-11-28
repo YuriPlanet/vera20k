@@ -579,6 +579,7 @@ fn free_anim_draw_in(
         crate::app::presentation::render::draw_plan_lowering::PlannedObjects::default();
     build_display_effect_instances(
         &DisplayEffectInputs {
+            unit_motion: None,
             sim: &sim,
             frame: &frame,
             rules: &rules,
@@ -967,6 +968,7 @@ fn phobos_draw_offset_relocates_an_owned_anim_to_the_foot_bracket() {
         crate::app::presentation::render::draw_plan_lowering::PlannedObjects::default();
     build_display_effect_instances(
         &DisplayEffectInputs {
+            unit_motion: None,
             sim: &sim,
             frame: &frame,
             rules: &rules,

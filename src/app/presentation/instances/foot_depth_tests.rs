@@ -43,12 +43,19 @@ fn unit_z_adjust_in_runtime(
     world_z: Option<i32>,
 ) -> i32 {
     with_record(runtime, entity, |world, record| {
-        super::unit_z_adjust_in(world, record, unloading_body, world_z)
+        super::unit_z_adjust_in(
+            world,
+            record,
+            unloading_body,
+            world_z.map(|z| [record.hud.location.x, record.hud.location.y, z]),
+        )
     })
 }
 
 fn shp_z_adjust_in_runtime(runtime: Option<&SimRuntime>, entity: &GameEntity) -> f32 {
-    with_record(runtime, entity, super::shp_z_adjust)
+    with_record(runtime, entity, |world, record| {
+        super::shp_z_adjust(world, record, None)
+    })
 }
 
 fn unit_bridge_split_in_runtime(
@@ -57,12 +64,14 @@ fn unit_bridge_split_in_runtime(
     unloading_body: bool,
 ) -> bool {
     with_record(runtime, entity, |world, record| {
-        super::unit_bridge_condition(world, record, unloading_body, true)
+        super::unit_bridge_condition(world, record, unloading_body, true, None)
     })
 }
 
 fn shp_unit_bridge_fudge_in_runtime(runtime: Option<&SimRuntime>, entity: &GameEntity) -> bool {
-    with_record(runtime, entity, super::shp_unit_bridge_fudge)
+    with_record(runtime, entity, |world, record| {
+        super::shp_unit_bridge_fudge(world, record, None)
+    })
 }
 
 const RULES: &str = "\
@@ -281,6 +290,47 @@ fn composite_split_uses_live_raw_bridge_terms_and_native_on_bridge() {
     }
     tank.set_category_for_test(EntityCategory::Infantry);
     assert!(!evaluate(&runtime, &tank));
+}
+
+#[test]
+fn interpolated_voxel_split_waits_for_the_displayed_bridge_cell() {
+    let mut rt = runtime();
+    let mut ship = entity(&mut rt, "TANK", EntityCategory::Unit);
+    let edge = 3 * 256;
+    let y = 2 * 256 + 128;
+    ship.position
+        .put_location(crate::sim::components::DriveCoord {
+            x: edge + 1,
+            y,
+            z: 0,
+        });
+    let id = ship.stable_id();
+    rt.simulation.entities_mut_for_test().insert(ship);
+    rt.simulation
+        .resolved_terrain_mut_for_test()
+        .as_mut()
+        .unwrap()
+        .cell_mut_for_test(4, 2)
+        .unwrap()
+        .bridge_facts
+        .raw_flags = 0x100;
+    let mut host = crate::app::match_runtime::sim_host::SimHost::default();
+    host.install(Some(rt));
+    let record = host.frame().unwrap().object(id).unwrap();
+    // The leading part of this step is adjacent to the bridge. Its trailing
+    // part is one cell farther away and keeps the ordinary blit.
+    assert!(super::unit_bridge_split(
+        &host,
+        record,
+        true,
+        [edge + 1, y, 0]
+    ));
+    assert!(!super::unit_bridge_split(
+        &host,
+        record,
+        true,
+        [edge - 1, y, 0]
+    ));
 }
 
 #[test]

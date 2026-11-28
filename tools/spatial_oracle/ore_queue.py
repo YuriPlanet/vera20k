@@ -972,8 +972,8 @@ def generate_authored_natural():
     read32 = lambda p: struct.unpack('<I', u.mem_read(p, 4))[0]
     sp = STACK_BASE + STACK_SIZE - 0x1000
     rng_bytes, queue_state = context['rng_bytes'], context['state']
-    # Independent UI/session data priors; execute the ordinary skirmish producer
-    # and later FullInit overwrite, never supply the final gameplay flags.
+    # Execute the network PregameSetup producer and the Full_Init overwrite
+    # using the recorded input bytes. A fresh solo Battle skips PregameSetup.
     session_prior = dict(special_flags=0, ui_a8b260=0, ui_a8b31d=0, game_speed=1, game_mode=1)
     u.mem_write(0xA8E960, dwords(session_prior['special_flags']))
     u.mem_write(0xA8B260, bytes([session_prior['ui_a8b260']]))
