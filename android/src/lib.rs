@@ -38,7 +38,10 @@ fn with_activity<R>(f: impl FnOnce(&mut jni::JNIEnv, &JObject) -> R) -> Option<R
     let mut env = vm.attach_current_thread().ok()?;
     // SAFETY: the activity handle is the loader's JNI global reference above.
     let activity = unsafe { JObject::from_raw(context.context().cast()) };
-    Some(f(&mut env, &activity))
+    // android_main stays attached to the VM for the whole event loop. In
+    // particular, each Mod picker poll returns a local String, even when empty.
+    env.with_local_frame(16, |env| Ok::<_, jni::errors::Error>(f(env, &activity)))
+        .ok()
 }
 
 /// Display-inset hook for `vera20k::util::display_insets`.

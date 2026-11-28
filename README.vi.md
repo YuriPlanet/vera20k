@@ -140,6 +140,14 @@ Các hình thức chi trả cho người đóng góp:
   <a href="https://www.youtube.com/watch?v=ucz-EiMeW88">Red Alert 2 trên VERA20K 0.41</a><br clear="all">
 </p>
 
+## Trình chỉnh sửa bản đồ
+
+<p>
+  <a href="https://github.com/996666925/ra2-map-editor"><img src="https://avatars.githubusercontent.com/u/52450772?s=128" width="64" height="64" align="left" alt="996666925"></a>
+  <a href="https://github.com/996666925/ra2-map-editor">YR Map Editor</a><br>
+  Tạo bản đồ cho Yuri’s Revenge rồi chơi thử trong VERA20K.<br clear="all">
+</p>
+
 ## Ghi công và pháp lý
 
 Cảm ơn OpenRA, XCC Mixer, wiki ModEnc, Project Perfect Mod, bản phát hành mã nguồn GPL của

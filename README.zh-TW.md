@@ -133,6 +133,14 @@ VERA20K 預設使用《尤里的復仇》原版規則。你可以在 **Options**
   <a href="https://www.youtube.com/watch?v=ucz-EiMeW88">在 VERA20K 0.41 中玩《紅色警戒 2》</a><br clear="all">
 </p>
 
+## 地圖編輯器
+
+<p>
+  <a href="https://github.com/996666925/ra2-map-editor"><img src="https://avatars.githubusercontent.com/u/52450772?s=128" width="64" height="64" align="left" alt="996666925"></a>
+  <a href="https://github.com/996666925/ra2-map-editor">YR Map Editor</a><br>
+  製作《尤里的復仇》地圖，並在 VERA20K 中試玩。<br clear="all">
+</p>
+
 ## 致謝與法律宣告
 
 感謝 OpenRA、XCC Mixer、ModEnc wiki、Project Perfect Mod、EA 以 GPL 許可證釋出的
