@@ -1106,6 +1106,26 @@ impl HouseTracking {
         counts.get(&type_id).copied().unwrap_or(0)
     }
 
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_active_count_for_test(
+        &mut self,
+        category: EntityCategory,
+        type_id: InternedId,
+        count: i32,
+    ) {
+        let counts = match category {
+            EntityCategory::Unit => &mut self.active_unit_types,
+            EntityCategory::Infantry => &mut self.active_infantry_types,
+            EntityCategory::Aircraft => &mut self.active_aircraft_types,
+            EntityCategory::Structure => &mut self.active_building_types,
+        };
+        if count == 0 {
+            counts.remove(&type_id);
+        } else {
+            counts.insert(type_id, count);
+        }
+    }
+
     /// Phobos `HouseClass_UpdatePower_AfterBuildings` (`0x508D8D`,
     /// `Ext/House/Hooks.cpp:34-58`): each owned and present Infantry, Unit
     /// and Aircraft type adds `Power * count` to output when positive, else

@@ -47,6 +47,7 @@ released_saves! {
     main_c3609b58a: "main-c3609b58a", 0xD5A9_6CCA, Skirmish;
     main_2ccbb749: "main-2ccbb749", 0xC3A0_2A31, Skirmish;
     main_a17a144ca: "main-a17a144ca", 0xC0BB_86C8, Skirmish;
+    main_8cb10d8608: "main-8cb10d8608", 0xC59A_5630, Skirmish;
 }
 
 const TUNNEL_FIXTURE: &str = "v0.3.9-tunnel";
@@ -319,6 +320,11 @@ fn released_alpha_shapes_retain_their_owners_and_purge_only_the_expired_glow() {
                         (2, [-31, 44], "COMPATGLOW", false, false),
                     ]
                 );
+                runtime
+                    .simulation
+                    .session_mut_for_test()
+                    .game_options_mut_for_test()
+                    .short_game = false;
                 let commands = runtime.simulation.take_due_commands();
                 runtime.advance_frame_for_tooling(&commands, 67).unwrap();
                 remaining(&runtime.simulation);
@@ -362,6 +368,20 @@ fn check_released_transit() {
                     .active_tube()
                     .is_some()
             );
+            runtime
+                .simulation
+                .session_mut_for_test()
+                .game_options_mut_for_test()
+                .short_game = false;
+            let owner = runtime.simulation.session().current_house().unwrap();
+            let unit_type = runtime.simulation.entities().get(1).unwrap().type_ref();
+            if let Some(house) = runtime.simulation.houses_mut_for_test().get_mut(&owner) {
+                house.tracking_mut_for_test().set_active_count_for_test(
+                    crate::map::entities::EntityCategory::Unit,
+                    unit_type,
+                    1,
+                );
+            }
             for _ in 0..400 {
                 let commands = runtime.simulation.take_due_commands();
                 runtime.advance_frame_for_tooling(&commands, 67).unwrap();
