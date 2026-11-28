@@ -218,10 +218,11 @@ fn status_sections(ini: &IniFile) -> Option<IniFile> {
 
 /// `VeraUI` or `VeraUI.<part>`, case as the INI reader keeps it.
 fn is_map_layout_section(name: &str) -> bool {
-    name.len() >= MAP_LAYOUT_PREFIX.len()
-        && name[..MAP_LAYOUT_PREFIX.len()].eq_ignore_ascii_case(MAP_LAYOUT_PREFIX)
-        && (name.len() == MAP_LAYOUT_PREFIX.len()
-            || name.as_bytes()[MAP_LAYOUT_PREFIX.len()] == b'.')
+    name.split_at_checked(MAP_LAYOUT_PREFIX.len())
+        .is_some_and(|(prefix, rest)| {
+            prefix.eq_ignore_ascii_case(MAP_LAYOUT_PREFIX)
+                && (rest.is_empty() || rest.starts_with('.'))
+        })
 }
 
 /// The map's file name, the default map storage key (RFC 10, "Storage").
@@ -997,24 +998,23 @@ mod tests {
 
     #[test]
     fn a_map_layout_and_storage_key_are_read_from_the_map() {
-        let map = IniFile::from_str(
-            "[VeraUI]\nParts=Score\n[VeraUI.Score]\nType=Text\n[Basic]\nName=X\n[VeraWasm]\nStorageId=my-map\n",
-        );
-        let layout: Vec<_> = map
-            .section_names()
-            .into_iter()
-            .filter(|name| is_map_layout_section(name))
-            .collect();
-        assert_eq!(layout.len(), 2);
-        assert_eq!(
-            map.section_or_empty("VeraWasm").read_name("StorageId", 64),
-            Some("my-map")
-        );
+        use crate::assets::asset_manager::{AssetManager, test_support::TestDirectory};
+
+        let directory = TestDirectory::new("map-ui-sections");
+        let assets = AssetManager::from_loose_root_for_test(directory.path());
+        let map = IniFile::from_bytes(
+            b"[Alpha\xe9]\nValue=1\n[VeraUI]\nParts=Score\n[VeraUI.Score]\nType=Text\n[VeraWasm]\nStorageId=my-map\n",
+        )
+        .unwrap();
         let bundled = crate::map::source::LoadedMapSource::Bundled {
             logical_name: "Isle.map".to_owned(),
             payload_len: 8,
             source_sha256: String::new(),
         };
+        let sources = UiModuleSources::read(&assets, &map, &bundled);
+        let layout = sources.map_layout.unwrap();
+        assert_eq!(layout.section_names(), ["VeraUI", "VeraUI.Score"]);
+        assert_eq!(sources.map_storage_id, "my-map");
         assert_eq!(map_file_name(&bundled), "Isle.map");
     }
 }
