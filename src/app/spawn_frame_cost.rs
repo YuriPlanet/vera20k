@@ -40,6 +40,7 @@ pub(crate) struct FrameCost {
     shp_drive_pictures: usize,
     hover_pictures: usize,
     ship_pictures: usize,
+    buffered_voxels: crate::render::unit_pose_cache::BufferedDraws,
     last_population_bucket: Option<u32>,
     fewest_mobile: Option<usize>,
     /// The service passes' main-thread time, inline ticks included.
@@ -104,11 +105,15 @@ impl FrameCost {
         &mut self,
         at: Instant,
         motion: &crate::app::presentation::unit_motion::UnitMotion,
+        buffered: crate::render::unit_pose_cache::BufferedDraws,
         population: impl FnOnce() -> Option<usize>,
     ) {
         let Some((_, frame)) = self.frames else {
             return;
         };
+        self.buffered_voxels.atlas += buffered.atlas;
+        self.buffered_voxels.gpu += buffered.gpu;
+        self.buffered_voxels.cpu += buffered.cpu;
         if let Some(last) = self.last_present.replace(at) {
             self.present_intervals
                 .push(at.saturating_duration_since(last));
@@ -176,6 +181,7 @@ impl FrameCost {
             shp_drive_pictures: self.shp_drive_pictures,
             hover_pictures: self.hover_pictures,
             ship_pictures: self.ship_pictures,
+            buffered_voxels: self.buffered_voxels,
             fewest_mobile: self.fewest_mobile,
             tick_ms: mean(&ticks),
             tick_p99_ms: at(&ticks, 0.99),
@@ -212,6 +218,8 @@ pub(crate) struct FrameCostReport {
     pub(crate) fly_pictures: usize,
     /// Intermediate translations of vessels, hover units and non-voxel Drive units.
     pub(crate) ship_pictures: usize,
+    /// Uncached stable voxel draws with live native byte depth, by colour source.
+    pub(crate) buffered_voxels: crate::render::unit_pose_cache::BufferedDraws,
     pub(crate) hover_pictures: usize,
     pub(crate) shp_drive_pictures: usize,
     /// Lowest live, on-map mobile population among the sampled pictures.

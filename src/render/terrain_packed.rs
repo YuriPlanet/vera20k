@@ -47,8 +47,10 @@ struct Params {
     /// [`warp_param`].
     warp: u32,
     reads_depth: u32,
-    /// WGSL rounds the uniform struct up to 32 bytes.
-    _pad: u32,
+    /// The camera's zoom: a warp's offsets and parities are in world pixels,
+    /// `zoom`-sized blocks of the target (`docs/zoom-one-pass.md`). Fills the
+    /// 32 bytes WGSL rounds the uniform struct up to.
+    zoom: f32,
 }
 
 pub(super) struct Stencil {
@@ -427,7 +429,7 @@ impl TerrainDrawRenderer {
             .expect("packed footprint after prepare")
             .source_color
             .size();
-        Some(read_halo(rect, size.width))
+        Some(read_halo(rect, size.width, self.camera.zoom))
     }
 
     /// Pixel-local composites commute only when their complete conservative
@@ -674,19 +676,28 @@ impl TerrainDrawRenderer {
                 continue;
             };
             pieces += member.pieces.len();
-            // A warp's parities are in native pixels. Only world draws warp,
-            // at scale 1: the sidebar's packed layers (mask and gclock
-            // selectors, `draw_packed_surface`) never do.
+            // A warp's parities are in world pixels, which the camera's zoom
+            // maps to target pixels (`warp_param`). Only world draws warp, at
+            // surface scale 1, whatever the camera zoom: the sidebar's packed
+            // layers (mask and gclock selectors, `draw_packed_surface`) never
+            // do.
             debug_assert!(
                 scale == 1.0 || !warps(first.instance, member.render_z),
-                "a packed warp blit needs native pixels"
+                "a packed warp blit draws through the camera, at surface scale 1"
             );
             let params = Params {
                 rect,
                 selector: first.instance.draw_state.native_selector_bits(),
-                warp: warp_param(first.instance, member.render_z, rect, tactical),
+                warp: warp_param(
+                    first.instance,
+                    member.render_z,
+                    rect,
+                    tactical,
+                    camera,
+                    member.pieces,
+                ),
                 reads_depth: u32::from(member.render_z != RenderZPolicy::None),
-                _pad: 0,
+                zoom: camera.zoom,
             };
             // Selector0 is the original opaque copy (494B60), also used when
             // a signed candidate cannot be compared as a wrapped hardware depth.
@@ -769,7 +780,7 @@ impl TerrainDrawRenderer {
                 let [x, y, width, height] = if params.warp == 0 {
                     params.rect
                 } else {
-                    read_halo(params.rect, size.width)
+                    read_halo(params.rect, size.width, params.zoom)
                 };
                 pass.set_scissor_rect(x, y, width, height);
                 pass.draw(0..3, 0..1);
@@ -950,6 +961,14 @@ fn warps(instance: &SpriteInstance, render_z: RenderZPolicy) -> bool {
 /// the stock tactical view at x 0, so VERA measures it from its tactical
 /// left. `rect` is the composite's clipped rect, in native pixels.
 ///
+/// A zoomed camera (`docs/zoom-one-pass.md`) draws each world pixel as a
+/// `zoom`-sized block, so the parities are of world pixels: the tactical top
+/// and left are the world pixels holding their target pixels (target pixel
+/// `p` is world pixel `floor((p + 0.5) / zoom)`), and the clipped left is the
+/// leftmost snapped world-pixel left edge of `pieces`
+/// (`floor(position - camera_pos + 0.5)`, as the blitters snap), clipped to
+/// the tactical left. The shader reads with the same world rows.
+///
 /// RESIDUAL: RLE_Blit 0x00437A10, which VXL_CacheBlit 0x0070750E uses for
 /// cached voxels, also XORs the warp by 3 for every source row its clip
 /// skips (0x00437D5B), and its tinted slot keeps the warp (0x00498C90).
@@ -960,11 +979,28 @@ fn warp_param(
     render_z: RenderZPolicy,
     rect: [u32; 4],
     tactical: [u32; 4],
+    camera: CameraUniform,
+    pieces: &[PackedCompositePiece<'_>],
 ) -> u32 {
     if !warps(instance, render_z) {
         return 0;
     }
-    4 | ((tactical[1] & 1) << 1) | ((rect[0] ^ tactical[0]) & 1)
+    if camera.zoom == 1.0 {
+        return 4 | ((tactical[1] & 1) << 1) | ((rect[0] ^ tactical[0]) & 1);
+    }
+    let world = |target: u32| ((target as f32 + 0.5) / camera.zoom).floor() as i64;
+    let tactical_left = world(tactical[0]);
+    let top = world(tactical[1]);
+    let left = pieces
+        .iter()
+        .filter(|piece| piece_scissor(piece.instance, camera, tactical).is_some())
+        .map(|piece| {
+            ((piece.instance.position[0] - camera.camera_pos[0] + 0.5).floor() as i64)
+                .max(tactical_left)
+        })
+        .min()
+        .unwrap_or(tactical_left);
+    4 | (((top & 1) as u32) << 1) | (((left ^ tactical_left) & 1) as u32)
 }
 
 fn composite_rect(
@@ -1007,12 +1043,19 @@ fn scratch_pass<'e>(
 }
 
 /// A warp's stores plus the up to three words right of them it reads, within
-/// a surface `width` wide.
-fn read_halo(rect: [u32; 4], width: u32) -> [u32; 4] {
+/// a surface `width` wide. At a zoomed camera a word is a `zoom`-wide world
+/// pixel: the shader reads up to `3 * zoom + 0.5` target pixels on
+/// (`terrain_packed.wgsl` `snapshot_word`).
+fn read_halo(rect: [u32; 4], width: u32, zoom: f32) -> [u32; 4] {
+    let reach = if zoom == 1.0 {
+        3
+    } else {
+        (3.0 * zoom + 0.5).ceil() as u32
+    };
     [
         rect[0],
         rect[1],
-        (rect[2] + 3).min(width - rect[0]),
+        (rect[2] + reach).min(width - rect[0]),
         rect[3],
     ]
 }

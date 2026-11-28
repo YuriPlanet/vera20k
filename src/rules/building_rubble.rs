@@ -38,11 +38,17 @@ pub const RUBBLE_BODY_FRAME: u16 = 3;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RubbleArt {
     /// The SHP file the type's image resolved to (the building's own draw
-    /// resolves the same name).
+    /// resolves the same name), or the picture file when its art declares
+    /// `Picture=` (docs/picture-model-art.md).
     pub shp: String,
     pub body_frame: u16,
     /// Physical frame selected by BuildingType45F1D0 for this own image.
     pub shadow_frame: u16,
+    /// VERA-only (docs/picture-model-art.md): the body art's `Picture=`
+    /// declaration when `shp` names its picture, which the renderers draw
+    /// at its `PictureSize=`; None for an SHP. Presentation only, so the
+    /// hash below leaves it out.
+    pub picture: Option<crate::rules::art_data::PictureDecl>,
 }
 
 // Rules' simulation-config hash already includes this catalog because its
@@ -121,29 +127,51 @@ impl RubbleAssetCatalog {
             .all_objects()
             .filter(|object| object.category == ObjectCategory::Building && object.leave_rubble)
         {
-            let image = rules
+            let (shp, raw, picture) = if let Some((section, decl)) = rules
                 .art()
-                .resolve_effective_image_id(&object.id, &object.image);
-            let Some((shp, data)) = crate::rules::art_data::building_body_shp_candidates(
-                Some(rules.art()),
-                &object.image,
-                &image,
-                theater_ext,
-                theater_name,
-            )
-            .into_iter()
-            .find_map(|candidate| {
-                let data = folder.read_noting(
-                    &candidate,
-                    |bytes| frame_word(bytes).and_then(rubble_body_frame),
-                    &mut catalog.folder_files,
-                )?;
-                Some((candidate, data))
-            }) else {
-                continue;
-            };
-            let Some(raw) = frame_word(data) else {
-                continue;
+                .resolve_declared_picture(&object.id, &object.image)
+            {
+                // VERA-only (docs/picture-model-art.md): the body picture's
+                // frame count stands in for the SHP header's `+6`; the SHP is
+                // never opened, and a missing picture leaves no rubble.
+                let Some(facts) =
+                    rules
+                        .art()
+                        .picture_header(section, decl, asset_manager, theater_name)
+                else {
+                    continue;
+                };
+                (
+                    facts.file,
+                    i16::try_from(facts.frames).unwrap_or(i16::MAX),
+                    Some(decl.clone()),
+                )
+            } else {
+                let image = rules
+                    .art()
+                    .resolve_effective_image_id(&object.id, &object.image);
+                let Some((shp, data)) = crate::rules::art_data::building_body_shp_candidates(
+                    Some(rules.art()),
+                    &object.image,
+                    &image,
+                    theater_ext,
+                    theater_name,
+                )
+                .into_iter()
+                .find_map(|candidate| {
+                    let data = folder.read_noting(
+                        &candidate,
+                        |bytes| frame_word(bytes).and_then(rubble_body_frame),
+                        &mut catalog.folder_files,
+                    )?;
+                    Some((candidate, data))
+                }) else {
+                    continue;
+                };
+                let Some(raw) = frame_word(data) else {
+                    continue;
+                };
+                (shp, raw, None)
             };
             let Some(body_frame) = rubble_body_frame(raw) else {
                 continue;
@@ -154,6 +182,7 @@ impl RubbleAssetCatalog {
                     shp,
                     body_frame,
                     shadow_frame: rubble_shadow_frame(raw).expect("same own-image admission"),
+                    picture,
                 },
             );
         }
@@ -239,10 +268,58 @@ mod tests {
                 shp: "CGWASH01.SHP".into(),
                 body_frame: RUBBLE_BODY_FRAME,
                 shadow_frame: 7,
+                picture: None,
             })
         );
         assert!(catalog.art("GAPOWR").is_none());
     }
+    /// A `LeaveRubble` building whose art declares `Picture=` leaves rubble
+    /// by the picture's frame count, not its SHP's, and names the picture
+    /// (docs/picture-model-art.md).
+    #[test]
+    fn a_declared_body_picture_decides_rubble_by_its_frames() {
+        let root =
+            std::env::temp_dir().join(format!("vera20k-rubble-picture-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let mut shp = vec![0_u8; 8];
+        shp[6..8].copy_from_slice(&8_i16.to_le_bytes());
+        for name in ["CAONE.SHP", "CGONE.SHP", "CATWO.SHP", "CGTWO.SHP"] {
+            std::fs::write(root.join(name), &shp).unwrap();
+        }
+        let picture = |frames| crate::assets::picture_file::test_picture(4, 4, Some(frames));
+        std::fs::write(root.join("one.png"), picture(8)).unwrap();
+        std::fs::write(root.join("two.png"), picture(6)).unwrap();
+        let assets = AssetManager::from_loose_root_for_test(&root);
+        let ini = |text: &str| crate::rules::ini_parser::IniFile::from_str(text);
+        let mut rules =
+            RuleSet::from_ini(&ini("[InfantryTypes]\n[VehicleTypes]\n[AircraftTypes]\n\
+             [BuildingTypes]\n0=CAONE\n1=CATWO\n\
+             [CAONE]\nLeaveRubble=yes\n[CATWO]\nLeaveRubble=yes\n"))
+            .unwrap();
+        rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&ini(
+            "[CAONE]\nPicture=one.png\n[CATWO]\nPicture=two.png\n",
+        )));
+        let catalog = RubbleAssetCatalog::bind(&rules, &assets, "tem", "TEMPERATE");
+        let _ = std::fs::remove_dir_all(&root);
+
+        assert_eq!(
+            catalog.art("CAONE"),
+            Some(&RubbleArt {
+                shp: "one.png".into(),
+                body_frame: RUBBLE_BODY_FRAME,
+                shadow_frame: 7,
+                picture: Some(crate::rules::art_data::PictureDecl {
+                    file: "one.png".into(),
+                    size: None,
+                }),
+            })
+        );
+        assert!(
+            catalog.art("CATWO").is_none(),
+            "6/2 = 3 frames carry no rubble, though its SHP's 8 would"
+        );
+    }
+
     #[test]
     fn shadow_material_does_not_change_the_existing_simulation_config_hash() {
         let mut rules = RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
@@ -253,6 +330,7 @@ mod tests {
             shp: "RUIN.SHP".into(),
             body_frame: 3,
             shadow_frame: 7,
+            picture: None,
         };
         rules.set_building_rubble_art_for_test("RUIN", art.clone());
         let baseline = rules.simulation_config_hash();

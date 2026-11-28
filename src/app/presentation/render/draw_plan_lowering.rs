@@ -406,6 +406,9 @@ pub(crate) enum ObjectExtrasRun {
         #[cfg(test)]
         parent: DrawId,
         bomb_clock: Option<u32>,
+        /// The Ares `IvanBomb.Image` strip `bomb_clock` was cut from; `None`
+        /// binds BOMBCURS.SHP (`SelectionOverlay::bomb_strip`).
+        bomb_image: Option<usize>,
         wrench: Option<u32>,
         /// Ares POWEROFF marker (10049FE0), after the wrench; `None` unless
         /// the Rules were read the Ares way (`techno_extras_for_parent`).
@@ -810,6 +813,7 @@ pub(crate) fn lower_object_instances(plan: PlannedObjects) -> [ObjectLayerPass; 
                     #[cfg(test)]
                     parent: owner,
                     bomb_clock,
+                    bomb_image: strip.bomb_image,
                     wrench,
                     power_off,
                     rank,
@@ -835,6 +839,7 @@ pub(crate) fn lower_object_instances(plan: PlannedObjects) -> [ObjectLayerPass; 
             if lines.as_ref().is_some_and(|lines| !lines.extras.is_empty()) {
                 if let Some(ObjectExtrasRun::Status {
                     bomb_clock,
+                    bomb_image,
                     wrench,
                     power_off,
                     rank,
@@ -852,6 +857,7 @@ pub(crate) fn lower_object_instances(plan: PlannedObjects) -> [ObjectLayerPass; 
                         #[cfg(test)]
                         parent: owner,
                         bomb_clock: *bomb_clock,
+                        bomb_image: *bomb_image,
                         wrench: *wrench,
                         power_off: *power_off,
                         rank: *rank,
@@ -923,6 +929,7 @@ pub(crate) fn lower_object_instances(plan: PlannedObjects) -> [ObjectLayerPass; 
             };
             if let Some(ObjectExtrasRun::Status {
                 bomb_clock,
+                bomb_image,
                 wrench,
                 power_off,
                 rank,
@@ -974,6 +981,7 @@ pub(crate) fn lower_object_instances(plan: PlannedObjects) -> [ObjectLayerPass; 
                         #[cfg(test)]
                         parent: owner,
                         bomb_clock,
+                        bomb_image,
                         wrench,
                         power_off,
                         rank,

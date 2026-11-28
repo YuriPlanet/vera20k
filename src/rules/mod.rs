@@ -295,6 +295,7 @@ pub mod art_data;
 #[cfg(all(test, tests_rules_a_n))]
 #[path = "art_data_translucency_tests.rs"]
 mod art_data_translucency_tests;
+pub mod art_problems;
 pub mod bridge_warheads;
 pub mod building_extra_power;
 pub mod building_light;

@@ -150,6 +150,10 @@ impl Gpu {
             let texture =
                 self.texture(&layer.rgba, layer.size, wgpu::TextureFormat::Rgba8UnormSrgb);
             let indices = self.texture(&[1], [1, 1], wgpu::TextureFormat::R8Uint);
+            // An ordinary page's placeholders for a picture HD binding's house
+            // layer and house ramps (`sprite_source.wgsl`).
+            let no_house = self.texture(&[0; 2], [1, 1], wgpu::TextureFormat::Rg8Unorm);
+            let no_low_page = self.texture(&[0; 4], [1, 1], wgpu::TextureFormat::Rgba8Unorm);
             let group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: None,
                 layout: &pipeline.get_bind_group_layout(1),
@@ -165,6 +169,14 @@ impl Gpu {
                     wgpu::BindGroupEntry {
                         binding: 3,
                         resource: wgpu::BindingResource::TextureView(&indices),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 4,
+                        resource: wgpu::BindingResource::TextureView(&no_house),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 5,
+                        resource: wgpu::BindingResource::TextureView(&no_low_page),
                     },
                 ],
             });

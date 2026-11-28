@@ -11,6 +11,7 @@
 //! - `overlays` — map overlays, AnimClass objects, fog snapshots
 //! - `cell_bodies` — the one native sweep order for every overlay body
 //! - `voxel_anims` — VoxelAnimClass debris (tumbling VXL pieces)
+//! - `model_art` — declared `Model=` building guns, projectiles and debris
 //! - `tether_redraw` — an unloading building's redraw of its tethered contacts
 //!
 //! ## Dependency rules
@@ -27,6 +28,11 @@ mod parachute_scene_tests;
 
 mod units;
 pub(crate) use units::*;
+
+mod model_units;
+pub(crate) use model_units::begin_model_frame;
+
+mod model_art;
 
 mod shp;
 pub(crate) use shp::*;

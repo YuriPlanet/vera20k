@@ -387,7 +387,6 @@ fn stock_turreted_shp_pieces(carrier: Option<[f32; 2]>) -> Vec<ObjectPieceInstan
         building_viewport: crate::app::presentation::render::tactical_world_viewport(
             camera,
             [0, 0, 800, 600],
-            None,
         ),
         axis: crate::render::batch::DepthAxis {
             origin_y: 0.0,
@@ -398,6 +397,7 @@ fn stock_turreted_shp_pieces(carrier: Option<[f32; 2]>) -> Vec<ObjectPieceInstan
         lighting: &crate::map::lighting::CellLightGrid::new(),
         house_colors: &colors,
         building_zshape: None,
+        model_frame: None,
     };
     let order = frame.display_order();
     if let Some(carrier) = carrier {

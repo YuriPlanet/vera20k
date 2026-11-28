@@ -150,6 +150,12 @@ serde_json = { workspace = true }
 # hand-written readers in `assets/` — no parser library, no RA2-specific crates.
 # memmap2 maps disk MIX archives instead of reading them into memory.
 
+# --- Picture art ---
+# VERA's experimental `Picture=` art (docs/picture-model-art.md) reads PNG and
+# APNG headers in the core crate: their frame counts reach the simulation as an
+# SHP header's do. Already in the lock via `image`.
+png = "0.18"
+
 # --- Error handling ---
 thiserror = { workspace = true }
 anyhow = { workspace = true }
@@ -207,6 +213,8 @@ half = { version = "2", default-features = false, features = ["num-traits"] }
 hashbrown = { version = "0.16", default-features = false, features = ["default-hasher", "inline-more"] }
 num-traits = { version = "0.2", features = ["libm"] }
 unicode-ident = "1"
+# `png` (picture art) brings bitflags; the client's other crates enable std.
+bitflags = { version = "2", features = ["std"] }
 # Extension module tests write their modules in WAT.
 wat = "1"
 

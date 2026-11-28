@@ -2114,6 +2114,10 @@ impl RuleSet {
             &parse_registry(ini, "AIPersonalities"),
         );
 
+        let mut overlay_registry =
+            crate::rules::overlay_types::OverlayTypeRegistry::from_processed_rules(processed);
+        overlay_registry.project_tiberium_ramps(&tiberium_types);
+
         let mut rules = RuleSet {
             object_list,
             object_index,
@@ -2232,9 +2236,7 @@ impl RuleSet {
             terrain_rules,
             tiberium_types,
             terrain_object_types,
-            overlay_registry: std::sync::Arc::new(
-                crate::rules::overlay_types::OverlayTypeRegistry::from_processed_rules(processed),
-            ),
+            overlay_registry: std::sync::Arc::new(overlay_registry),
             bridge_rules,
             crate_rules,
             powerups,

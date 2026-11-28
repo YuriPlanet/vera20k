@@ -199,7 +199,6 @@ static TS_NORMALS: [[f32; 3]; TS_NORMAL_COUNT] = [
 ///
 /// Mode 4 (RA2) uses the 245-entry table. Mode 2 (TS) uses the 36-entry table.
 /// Out-of-range indices return Vec3::Z (pointing up) as a safe fallback.
-#[cfg(test)]
 pub fn get_normal(normals_mode: u8, index: u8) -> Vec3 {
     let table: &[[f32; 3]] = match normals_mode {
         4 => &RA2_NORMALS,
@@ -264,6 +263,13 @@ fn voxel_world_light(source: [f32; 3]) -> Vec3 {
             + VOXEL_DEFAULT_MATRIX[2][1] * unit[1]
             + VOXEL_DEFAULT_MATRIX[2][2] * unit[2],
     )
+}
+
+/// VERA-only, experimental (`docs/picture-model-art.md`): the world light
+/// in the voxel camera's space ([`YR_WORLD_LIGHT`]), viewer +Z, for the
+/// declared models' GPU lighting.
+pub(crate) fn world_light() -> Vec3 {
+    YR_WORLD_LIGHT
 }
 
 fn fp(value: f32) -> X87Value {
@@ -737,7 +743,6 @@ VoxelLightSource=-0.70710678,-0.70710678,0
 
         let set = read("[AudioVisual]\nUseFixedVoxelLighting=yes\n");
         assert!(VoxelLight::for_rules(Some(&set)).fixed);
-        assert!(!VoxelLight::for_rules(Some(&set)).fixed);
 
         // The key lives in `[AudioVisual]`, not `[General]`.
         let wrong = read("[General]\nUseFixedVoxelLighting=yes\n");

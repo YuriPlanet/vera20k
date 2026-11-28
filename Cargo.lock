@@ -3758,6 +3758,7 @@ name = "vera20k-core"
 version = "0.4.3"
 dependencies = [
  "anyhow",
+ "bitflags 2.11.0",
  "bytemuck",
  "chacha20",
  "fixed",
@@ -3777,6 +3778,7 @@ dependencies = [
  "num-bigint",
  "num-traits",
  "once_cell",
+ "png",
  "rayon",
  "rustix 1.1.4",
  "serde",

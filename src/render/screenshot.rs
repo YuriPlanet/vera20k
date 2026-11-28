@@ -358,8 +358,14 @@ impl PresentedFrameCache {
 }
 
 impl PresentedFrameCacheState {
-    /// A zoomed match frame keeps its source size here: the retained source
-    /// fills the frame's corner, and the frame's own zoom pass scales both.
+    /// The retained composition is a match frame at the window's pixels (the
+    /// frame's rect there, `docs/zoom-one-pass.md`) or an active-game shell's
+    /// at frame pixels. Into a `frame` the cache's own size it is copied.
+    /// Into the whole client it goes through the zoom pass: a match
+    /// composition between the bars (`UpscalePass::present`), a shell's
+    /// scaled (`UpscalePass::draw_texture`). Into a frame-pixel corner (a
+    /// shell painting over the match) a match composition is taken back to
+    /// frame pixels (`UpscalePass::shrink`).
     fn encode_previous_composition(
         &self,
         device: &wgpu::Device,
@@ -383,31 +389,42 @@ impl PresentedFrameCacheState {
                 destination.as_image_copy(),
                 source.size(),
             );
+            return Ok(true);
+        }
+        let upscale =
+            upscale.context("cursor-free source differs from the frame without a zoom pass")?;
+        let geometry = upscale.geometry();
+        let composition = geometry.frame_size();
+        let shell = (upscale.src_width(), upscale.src_height());
+        if frame == (destination.width(), destination.height()) {
+            if (self.width, self.height) == composition {
+                upscale.present(encoder, source, destination);
+            } else {
+                ensure!(
+                    (self.width, self.height) == shell,
+                    "cursor-free cache is {}x{}, zoom source is {}x{}",
+                    self.width,
+                    self.height,
+                    shell.0,
+                    shell.1
+                );
+                upscale.draw_texture(
+                    device,
+                    encoder,
+                    source,
+                    &destination.create_view(&Default::default()),
+                );
+            }
         } else {
             ensure!(
-                frame == (destination.width(), destination.height()),
+                frame == shell && (self.width, self.height) == composition,
                 "cursor-free cache is {}x{}, the frame is {}x{}",
                 self.width,
                 self.height,
                 frame.0,
                 frame.1
             );
-            let upscale = upscale
-                .context("cursor-free source differs from client size without a zoom pass")?;
-            ensure!(
-                upscale.src_width() == self.width && upscale.src_height() == self.height,
-                "cursor-free cache is {}x{}, zoom source is {}x{}",
-                self.width,
-                self.height,
-                upscale.src_width(),
-                upscale.src_height()
-            );
-            upscale.draw_texture(
-                device,
-                encoder,
-                source,
-                &destination.create_view(&Default::default()),
-            );
+            upscale.shrink(device, encoder, source, destination);
         }
         Ok(true)
     }

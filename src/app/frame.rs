@@ -1988,12 +1988,17 @@ impl App {
                 );
                 //53B460 copies the already-composed surface, before this
                 //frame's world replaces it. The effect owns the retained copy.
-                let chrono_tactical = crate::app::input::camera::tactical_viewport_px(
-                    &state.platform,
-                    &state.renderer,
+                //The composition is at the window's pixels
+                //(`docs/zoom-one-pass.md`), and so is the battlefield's rect.
+                let chrono_tactical = state.renderer.frame_to_composition(
                     &state.frontend.screen,
-                    &state.match_state.match_presentation,
-                    &state.persistence,
+                    crate::app::input::camera::tactical_viewport_px(
+                        &state.platform,
+                        &state.renderer,
+                        &state.frontend.screen,
+                        &state.match_state.match_presentation,
+                        &state.persistence,
+                    ),
                 );
                 state
                     .match_state
@@ -2003,12 +2008,7 @@ impl App {
                         &state.renderer.gpu,
                         &mut encoder,
                         state.renderer.game_frame_texture(),
-                        [
-                            chrono_tactical.0,
-                            chrono_tactical.1,
-                            chrono_tactical.2,
-                            chrono_tactical.3,
-                        ],
+                        chrono_tactical,
                     );
                 let times = render::GameRenderTimes {
                     radar_ms: crate::app::diagnostics::state::radar_presentation_ms(
@@ -2040,44 +2040,21 @@ impl App {
                 // minimap keeps its own radar-terrain backlog, so the frame
                 // moves the simulation's newly marked cells there first.
                 Self::drain_radar_terrain_marks(&mut state.match_state);
-                let game_output = if state.renderer.upscale_pass.is_some() {
-                    // Render game to intermediate texture, then upscale to swapchain.
-                    let up = state.renderer.upscale_pass.as_ref().unwrap();
+                let game_output = if let Some(up) = state.renderer.upscale_pass.as_ref() {
+                    // The frame's rect in the window: the game draws its
+                    // composition at the window's pixels with that rect's
+                    // depth (`docs/zoom-one-pass.md`), which the zoom pass
+                    // then puts between the bars.
                     let game_depth = up.depth_view().clone();
                     let saved_depth = std::mem::replace(&mut state.renderer.depth_view, game_depth);
                     let result = render::render_game(state, &mut encoder, times, cadence);
                     state.renderer.depth_view = saved_depth;
                     let render_output = result?;
-                    state.renderer.copy_game_frame_to(
+                    let renderer = &state.renderer;
+                    renderer.upscale_pass.as_ref().unwrap().present(
                         &mut encoder,
-                        state
-                            .renderer
-                            .upscale_pass
-                            .as_ref()
-                            .unwrap()
-                            .color_texture(),
-                    );
-                    state
-                        .renderer
-                        .upscale_pass
-                        .as_ref()
-                        .unwrap()
-                        .draw(&mut encoder, &view);
-                    render::draw_world_window_copy(
-                        &state.platform,
-                        &state.renderer,
-                        &state.frontend.screen,
-                        &state.match_state.match_presentation,
-                        &state.persistence,
-                        &mut encoder,
-                        &view,
-                    );
-                    crate::app::presentation::sidebar_surface::draw_window_copy(
-                        &state.renderer,
-                        &state.frontend.screen,
-                        &state.match_state.match_presentation,
-                        &mut encoder,
-                        &view,
+                        renderer.game_frame_texture(),
+                        &output.texture,
                     );
                     crate::app::presentation::window_ui::draw_battlefield(
                         &state.platform,
@@ -2308,10 +2285,8 @@ impl App {
             &output.texture,
         );
         // Text drawn in the window (`window_ui`) is not in the frame the
-        // screenshot retains, and neither is the wheel-zoomed battlefield's
-        // window copy: this frame's go over its copy, the battlefield only
-        // when this frame drew it (not under an in-game menu). A zoomed frame
-        // is always copied, being smaller than the window.
+        // screenshot retains: this frame's goes over its copy. A zoomed frame
+        // is always copied, being the frame's rect of the window.
         let window_text = state.renderer.window_ui.drew_text();
         let previous_composition = state
             .renderer
@@ -2330,17 +2305,6 @@ impl App {
             .as_ref()
             .and_then(|previous| previous.copy())
         {
-            if game_render_output.is_some() {
-                render::draw_world_window_copy(
-                    &state.platform,
-                    &state.renderer,
-                    &state.frontend.screen,
-                    &state.match_state.match_presentation,
-                    &state.persistence,
-                    &mut encoder,
-                    &copy.create_view(&Default::default()),
-                );
-            }
             if window_text {
                 state
                     .renderer
@@ -2414,6 +2378,7 @@ impl App {
                 cost.battlefield_presented(
                     presented_at,
                     &state.match_state.match_presentation.unit_motion,
+                    state.renderer.vxl_pose_frame_cache.borrow().buffered_draws,
                     || {
                         let frame = state.match_state.sim_runtime.frame()?;
                         Some(

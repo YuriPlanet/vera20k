@@ -86,6 +86,11 @@ fn mod_export(folder: &str, done: &str, failed: &str) -> bool {
     activity_flag("exportMod", &[folder, done, failed])
 }
 
+/// Mods page: pack `folder` into a ZIP through the system picker.
+fn mod_export_zip(folder: &str, done: &str, failed: &str, progress: &str) -> bool {
+    activity_flag("exportModZip", &[folder, done, failed, progress])
+}
+
 /// Mods page: pick a mod ZIP in the system file manager; the toast says
 /// `failed` when the copy does not work.
 fn mod_pick_zip(failed: &str) -> bool {
@@ -592,6 +597,7 @@ fn android_main(app: AndroidApp) {
     // Add Mod's pickers and the shortcut pin run in the activity.
     vera20k::util::mod_actions::install(vera20k::util::mod_actions::Hooks {
         export: mod_export,
+        export_zip: mod_export_zip,
         pin: mod_pin,
         forget: mod_forget,
         pick_zip: mod_pick_zip,

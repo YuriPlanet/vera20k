@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- Mods packed for the share panel, below the app's cache. -->
+    <cache-path name="zip_exports" path="zip-exports/" />
+</paths>

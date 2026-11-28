@@ -23,9 +23,8 @@
 use std::collections::HashMap;
 
 use super::{
-    CURSOR_TIMER_UNIT_MS, CursorHotspot, CursorId, PlanningBadge, SoftwareCursor,
-    SoftwareCursorFrame, SoftwareCursorSequence, build_cursor_frame, frame_to_canvas_rgba,
-    load_mouse_shape, next_art_id, resolve_hotspot,
+    CURSOR_TIMER_UNIT_MS, CursorHotspot, CursorId, SoftwareCursor, SoftwareCursorFrame,
+    SoftwareCursorSequence, build_cursor_frame, load_mouse_shape, next_art_id, resolve_hotspot,
 };
 use crate::assets::asset_manager::AssetManager;
 use crate::render::batch::BatchRenderer;
@@ -203,8 +202,9 @@ pub(crate) fn build_ares_software_cursor(
     batch: &BatchRenderer,
     asset_manager: &AssetManager,
     cursors: &MouseCursors,
+    sizes: crate::render::interface_picture::PictureSizes<'_>,
 ) -> Option<SoftwareCursor> {
-    let (shp, palette) = load_mouse_shape(asset_manager)?;
+    let art = load_mouse_shape(asset_manager, sizes)?;
     let mut frames: HashMap<usize, Option<SoftwareCursorFrame>> = HashMap::new();
     let mut sequences = HashMap::new();
     for (index, cursor) in cursors.iter() {
@@ -222,7 +222,7 @@ pub(crate) fn build_ares_software_cursor(
                 .filter_map(|frame| {
                     frames
                         .entry(frame)
-                        .or_insert_with(|| build_cursor_frame(gpu, batch, &shp, &palette, frame))
+                        .or_insert_with(|| build_cursor_frame(gpu, batch, &art, frame))
                         .clone()
                 })
                 .collect();
@@ -234,7 +234,7 @@ pub(crate) fn build_ares_software_cursor(
                 SoftwareCursorSequence {
                     frames: sequence_frames,
                     interval_ms,
-                    hotspot: resolve_hotspot(hotspot(cursor), &shp),
+                    hotspot: resolve_hotspot(hotspot(cursor), &art),
                 },
             );
         }
@@ -246,18 +246,13 @@ pub(crate) fn build_ares_software_cursor(
     })?;
     let planning_badges = [76, 77].map(|row| {
         let frame = usize::try_from(cursors.get(row)?.frame).ok()?;
-        Some(PlanningBadge {
-            width: i32::from(shp.width),
-            height: i32::from(shp.height),
-            rgba: frame_to_canvas_rgba(&shp, frame, &palette).ok()?,
-        })
+        art.badge(frame)
     });
     Some(SoftwareCursor {
         sequences,
         planning_badges,
         ares: true,
-        shp,
-        palette,
+        art,
         art_id: next_art_id(),
     })
 }

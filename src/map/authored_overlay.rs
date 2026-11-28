@@ -554,7 +554,7 @@ impl<'load, 'resources, H: AuthoredOverlayLoadHost> AuthoredOverlayFinalizer<'lo
             }
         }
 
-        if self.signed_new_ini_format > 1 && data.has_positive_length() {
+        if self.signed_new_ini_format > 1 && data.is_present() {
             for y in 0..crate::map::cell_index::CellGrid::for_map_size(
                 self.shape.width,
                 self.shape.height,
@@ -1918,33 +1918,47 @@ mod tests {
         assert_eq!(rejected_cell.overlay_id(), None);
         assert_eq!(rejected_cell.state(), 7);
 
-        let mut short_terrain = flat_terrain(6, 6);
-        let low_registry = registry_with_count(0x7C);
-        let low_shp = BTreeSet::from([0x7B]);
-        let mut short_host = LoadHost::default();
-        let short_payload = AuthoredOverlayFinalizer::new(
-            &mut short_terrain,
-            shape,
-            &low_registry,
-            &tiberium_types,
-            &low_shp,
-            4,
-            AuthoredCratePolicy::Keep,
-            &mut short_host,
-        )
-        .run(raw_packs(&[(2, 2, 0x7B)], &[(0, 0, 37)]))
-        .expect("positive short data body still visits every radar cell");
-        let (_, _, short_cells, _) = short_payload.into_parts();
-        for index in [8usize, 14, 20] {
-            assert_eq!(short_cells[index].state(), 0);
-        }
-        assert!(short_host.events.iter().any(|event| matches!(
-            event,
-            LoadEvent::Recalc(
-                AuthoredOverlayCellRef { coord: (2, 3), .. },
-                FinalizedOverlayCell { state: 2, .. }
+        // Base64 supplies one compressed byte; the LCW reader cannot read
+        // its first four-byte header. The native data pass still visits cells.
+        let ini = IniFile::from_str("[OverlayDataPack]\n1=AQ==\n");
+        let short = crate::map::overlay::parse_overlay_packs(
+            &ini,
+            crate::map::cell_index::CellGrid::Retail,
+        );
+        assert!(short.data.is_present());
+        let (identity, _) = raw_packs(&[(2, 2, 0x7B)], &[]).into_parts();
+        for packs in [
+            raw_packs(&[(2, 2, 0x7B)], &[(0, 0, 37)]),
+            AuthoredOverlayPackReceipt::from_parts_for_test(identity, short.data),
+        ] {
+            let mut short_terrain = flat_terrain(6, 6);
+            let low_registry = registry_with_count(0x7C);
+            let low_shp = BTreeSet::from([0x7B]);
+            let mut short_host = LoadHost::default();
+            let short_payload = AuthoredOverlayFinalizer::new(
+                &mut short_terrain,
+                shape,
+                &low_registry,
+                &tiberium_types,
+                &low_shp,
+                4,
+                AuthoredCratePolicy::Keep,
+                &mut short_host,
             )
-        )));
+            .run(packs)
+            .expect("positive short data body still visits every radar cell");
+            let (_, _, short_cells, _) = short_payload.into_parts();
+            for index in [8usize, 14, 20] {
+                assert_eq!(short_cells[index].state(), 0);
+            }
+            assert!(short_host.events.iter().any(|event| matches!(
+                event,
+                LoadEvent::Recalc(
+                    AuthoredOverlayCellRef { coord: (2, 3), .. },
+                    FinalizedOverlayCell { state: 2, .. }
+                )
+            )));
+        }
     }
 
     #[test]

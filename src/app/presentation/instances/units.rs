@@ -269,8 +269,18 @@ pub(super) fn cached_part_entry(
         }
         None => {
             let render = images.render_part(drawer.use_buffer, size);
-            let stale = live(render, images.depth_map(), LivePage::Frame);
-            (render.depth_tested, stale.map(|(stale, _)| stale))
+            let stale = depth_tested_images
+                .filter(|_| render.live)
+                .and_then(|live| {
+                    live.pose_cache.borrow_mut().uncached_body(
+                        live.assets,
+                        live.rules,
+                        &drawn,
+                        images.depth_map(),
+                        render.stale,
+                    )
+                });
+            (render.depth_tested, stale)
         }
     };
     if let Some(stale) = stale {
@@ -618,7 +628,7 @@ impl VehicleGeometry {
 ///
 /// The entity's height comes off the sort key. Bridge depth treatment belongs
 /// to the unit's composite blit, never to a separate object painter queue.
-fn body_sort_depth(
+pub(super) fn body_sort_depth(
     presentation: &MatchPresentationState,
     entity: &crate::app::presentation::frame::ObjectRecord,
     drawn_row_y: f32,
@@ -723,6 +733,10 @@ pub(crate) fn unit_visitor<'a>(
     let ignore_visibility = match_state.sandbox_full_visibility;
     let art_reg: Option<&crate::rules::art_data::ArtRegistry> =
         crate::app::state::active_rules(frontend, match_state).map(|rules| rules.art());
+    // VERA-only, experimental (docs/picture-model-art.md): the rules when a
+    // type declares a model, else None and no draw looks for one.
+    let model_art = crate::app::state::active_rules(frontend, match_state)
+        .filter(|rules| rules.declares_models());
     let terrain = match_state
         .sim_runtime
         .presentation()
@@ -882,6 +896,10 @@ pub(crate) fn unit_visitor<'a>(
                         .and_then(|rules| sim.interner().object_type(entity.type_ref(), rules))
                         .is_some_and(|object| object.no_shadow);
                 let type_str = type_name.as_ref();
+                // VERA-only, experimental: the drawn type's declared model,
+                // which replaces its VXL parts (`model_units`).
+                let declared_model = model_art
+                    .and_then(|rules| super::model_units::declared_model_of(rules, type_str));
                 // The drawn model's record, once for its turret index and
                 // gun parts below.
                 let model_object = drawn_model_object(
@@ -1061,7 +1079,7 @@ pub(crate) fn unit_visitor<'a>(
                 // Aircraft4148A0 draws the unmasked ground shadow before its body
                 // at4149D7. Unlike Unit's masked suffix, the body's later pixels
                 // cover its own stencil when parked or low above the ground.
-                if let Some(pose) = aircraft_shadow {
+                if let Some(pose) = aircraft_shadow.filter(|_| declared_model.is_none()) {
                     emit_aircraft_shadow_sprite(
                         match_state,
                         atlas,
@@ -1088,7 +1106,66 @@ pub(crate) fn unit_visitor<'a>(
                     ground_pose.body_facing =
                         crate::render::vxl_raster::voxel_facing_step_u16(render_pose.body) * 8;
                 }
-                if let BodyDraw::Pose(tilt) = body {
+                if let Some(declared) = declared_model {
+                    let (turret_facing, barrel_elevation) = match body {
+                        BodyDraw::Turret { .. } => (render_pose.turret, render_pose.barrel),
+                        _ => (render_pose.body, render_pose.barrel),
+                    };
+                    let shadow = model_shadow_draw(
+                        match_state,
+                        crate::app::state::active_rules(frontend, match_state),
+                        entity,
+                        [type_str, sim.interner().resolve(entity.type_ref())],
+                        no_shadow,
+                        band,
+                        aircraft_shadow.as_ref(),
+                        &geometry,
+                        body_facing,
+                        shadow_slope,
+                        [center_x, center_y],
+                    );
+                    super::model_units::emit_model_unit(
+                        super::model_units::ModelUnitContext {
+                            platform,
+                            renderer,
+                            frontend,
+                            match_state,
+                            persistence,
+                        },
+                        declared,
+                        super::model_units::ModelUnitPose {
+                            tilt: match body {
+                                BodyDraw::Pose(tilt) => Some(tilt),
+                                _ => None,
+                            },
+                            ground: ground_pose,
+                            slope_type: stable_slope_for_key(slope_state),
+                            slope_blend: slope_blend_for_render_state(slope_state),
+                            body_facing,
+                            turret_facing: (turret_facing >> 8) as u8,
+                            barrel_pitch: crate::render::vxl_raster::voxel_facing_step_u16(
+                                barrel_elevation,
+                            ) as i8
+                                - 8,
+                            turret_offset: model.turret_offset,
+                            gun: u32::try_from(turret_index).ok(),
+                        },
+                        super::model_units::ModelUnitDraw {
+                            entity,
+                            center: body_point,
+                            depth_xyz: geometry.depth_xyz,
+                            lift_correction: geometry.lift_correction,
+                            dock_depth_y_offset,
+                            z: interp_z,
+                            tint: body_tint,
+                            light: body_light,
+                            draw_state,
+                            house: hc,
+                        },
+                        shadow,
+                        pieces,
+                    );
+                } else if let BodyDraw::Pose(tilt) = body {
                     let key = UnitSpriteKey {
                         type_id: type_str.into(),
                         turret_index,
@@ -1339,21 +1416,24 @@ pub(crate) fn unit_visitor<'a>(
                     }
                 }
 
-                emit_lifted_unit_shadow(
-                    &renderer.vxl_pose_frame_cache,
-                    frontend,
-                    match_state,
-                    atlas,
-                    drawer,
-                    entity,
-                    type_str,
-                    [center_x, center_y],
-                    &geometry,
-                    no_shadow,
-                    draw_state,
-                    band,
-                    pieces,
-                );
+                // A declared model draws its own shadow (`model_units`).
+                if declared_model.is_none() {
+                    emit_lifted_unit_shadow(
+                        &renderer.vxl_pose_frame_cache,
+                        frontend,
+                        match_state,
+                        atlas,
+                        drawer,
+                        entity,
+                        type_str,
+                        [center_x, center_y],
+                        &geometry,
+                        no_shadow,
+                        draw_state,
+                        band,
+                        pieces,
+                    );
+                }
 
                 // OREGATH is an SHP sprite from sprite_atlas, but remains an owned piece
                 // of its harvester's Ground slot so atlas identity cannot re-sort it.
@@ -1625,18 +1705,32 @@ fn animation_frames_of(
     turret_index: i32,
     frame_counts: &VoxelFrameCounts,
 ) -> (u32, u32) {
-    let body = ((entity.body_frame_counter.get() as i32) % frames as i32) as u32;
-    let turret = if body != 0 || entity.turret_anim_frame.frame() == 0 {
-        body
-    } else {
+    animation_frames_with(entity, frames, || {
         frame_counts
             .get(&(
                 smol_str::SmolStr::new(model),
                 VxlLayer::Turret,
                 turret_index,
             ))
-            .filter(|&&frames| frames > 1)
-            .map_or(0, |&frames| {
+            .copied()
+    })
+}
+
+/// [`unit_animation_frames`] from a body frame count and the turret's,
+/// asked only when the turret takes its own frame: the voxel atlas's HVA
+/// counts, or a declared model's clip frames (`model_units::model_frames`).
+pub(super) fn animation_frames_with(
+    entity: &crate::app::presentation::frame::ObjectRecord,
+    frames: u32,
+    turret_frames: impl FnOnce() -> Option<u32>,
+) -> (u32, u32) {
+    let body = ((entity.body_frame_counter.get() as i32) % frames as i32) as u32;
+    let turret = if body != 0 || entity.turret_anim_frame.frame() == 0 {
+        body
+    } else {
+        turret_frames()
+            .filter(|&frames| frames > 1)
+            .map_or(0, |frames| {
                 (entity.turret_anim_frame.frame() % frames as i32) as u32
             })
     };
@@ -2882,6 +2976,89 @@ fn emit_lifted_unit_shadow(
     );
 }
 
+/// VERA-only, experimental (docs/picture-model-art.md): where a declared
+/// model's shadow draws, under the admission its voxel shadow takes: none
+/// for a type the unit atlas draws no voxel shadow for (`ShadowModel`, of
+/// the drawn type, else the object's own `types[1]`); an aircraft's at its
+/// ground point (`aircraft_draw_shadow`, Aircraft `0x004148A0`); a lifted
+/// Unit's at its suffix pose ([`lifted_unit_shadow_pose`], `0x0073C1D2..
+/// 0x0073C5C4`); else a ground Unit's at its body point (`0x0073C5C4`), each
+/// with that path's facing, slope and Z adjustment. `NoShadow=`, cloaking,
+/// sinking and Tunnel travel refuse it as they refuse the voxel shadow.
+#[allow(clippy::too_many_arguments)]
+fn model_shadow_draw(
+    match_state: &MatchState,
+    rules: Option<&crate::rules::ruleset::RuleSet>,
+    entity: &crate::app::presentation::frame::ObjectRecord,
+    types: [&str; 2],
+    no_shadow: bool,
+    band: EntityDrawBand,
+    aircraft_shadow: Option<&crate::render::aircraft_shadow::AircraftShadowPose>,
+    geometry: &VehicleGeometry,
+    body_facing: u8,
+    shadow_slope: u8,
+    body_anchor: [f32; 2],
+) -> Option<super::model_units::ModelShadowDraw> {
+    use super::model_units::{ModelShadowDraw, ShadowDepth};
+    let rules = rules?;
+    let considered_aircraft = types
+        .into_iter()
+        .find_map(|type_id| crate::render::unit_atlas::voxel_shadow_viewer(rules, type_id))?;
+    if entity.category() == EntityCategory::Aircraft {
+        let pose = aircraft_shadow?;
+        return Some(ModelShadowDraw {
+            anchor: pose.anchor,
+            facing: pose.facing,
+            slope: pose.slope,
+            considered_aircraft,
+            depth: ShadowDepth::Ground,
+            z_adjust: super::foot_depth::unit_z_adjust(
+                &match_state.sim_runtime,
+                entity,
+                false,
+                Some([geometry.xyz[0], geometry.xyz[1], pose.world_z]),
+            ) as f32,
+        });
+    }
+    if !unit_shadow_admitted(entity, no_shadow, band) {
+        return None;
+    }
+    let z_adjust = super::foot_depth::unit_z_adjust(
+        &match_state.sim_runtime,
+        entity,
+        true,
+        Some(geometry.depth_xyz),
+    ) as f32;
+    if has_lifted_unit_shadow(entity) {
+        let runtime = match_state.sim_runtime.presentation()?;
+        let view = runtime.view();
+        let pose = lifted_unit_shadow_pose(
+            entity,
+            view.resolved_terrain()?,
+            geometry,
+            view.session().binary_frame(),
+        )?;
+        return Some(ModelShadowDraw {
+            anchor: pose.anchor,
+            facing: pose.facing,
+            slope: pose.slope,
+            considered_aircraft,
+            depth: ShadowDepth::Own {
+                lift_correction: geometry.lift_correction,
+            },
+            z_adjust,
+        });
+    }
+    Some(ModelShadowDraw {
+        anchor: body_anchor,
+        facing: canonical_unit_facing(body_facing),
+        slope: shadow_slope,
+        considered_aircraft,
+        depth: ShadowDepth::Body,
+        z_adjust,
+    })
+}
+
 /// AircraftClass projects the ground independently of its body. A Fly uses
 /// SecondaryFacing for the shadow, including during its turn; the same
 /// sampled world point drives the floor, bridge-deck and depth queries.
@@ -3027,9 +3204,9 @@ fn unit_draw_anchor(
 /// any of them. Only parts without native bounds fall back to the storage
 /// rectangle.
 #[derive(Clone, Copy)]
-struct CompositeDrawBounds {
-    padded: [f32; 2],
-    native: Option<[i32; 4]>,
+pub(super) struct CompositeDrawBounds {
+    pub(super) padded: [f32; 2],
+    pub(super) native: Option<[i32; 4]>,
 }
 
 impl CompositeDrawBounds {
@@ -3085,7 +3262,7 @@ fn composite_draw_bounds(
     }
 }
 
-fn unit_body_draw_state(
+pub(super) fn unit_body_draw_state(
     platform: &PlatformState,
     renderer: &RendererState,
     screen: &GameScreen,

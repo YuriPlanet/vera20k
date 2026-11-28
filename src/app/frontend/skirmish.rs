@@ -174,6 +174,7 @@ pub(crate) fn build_overlay_presentation(
             theater_ext,
             theater_name,
             overlay_registry,
+            rules.art(),
             &rubble_arts,
         )
     });

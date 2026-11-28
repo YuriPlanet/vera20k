@@ -1062,10 +1062,19 @@ impl App {
                 // arrow and hides the OS cursor, matching the original which hides the
                 // OS cursor for the whole process and blits the cursor SHP every frame.
                 let startup_software_cursor = startup_asset_manager.as_ref().and_then(|assets| {
+                    // Before a match, `mouse.png`'s `PictureSize=` comes
+                    // from the process's fixed art INI.
+                    let sizes = process_assets.native_rules().map_or(
+                        crate::render::interface_picture::PictureSizes::None,
+                        |rules| {
+                            crate::render::interface_picture::PictureSizes::Ini(rules.fixed_art())
+                        },
+                    );
                     crate::render::cursor_atlas::build_software_cursor(
                         &gpu,
                         &batch_renderer,
                         assets,
+                        sizes,
                     )
                 });
                 let hotkey_bindings = game_config.as_ref().map_or_else(
@@ -1500,7 +1509,6 @@ impl App {
                 depth_view,
                 shell_surface_presenter,
                 upscale_pass: None,
-                world_zoom_pass: None,
                 sidebar_surface: None,
                 in_game_shell_surface: None,
                 status_screen_fill,
@@ -1509,14 +1517,12 @@ impl App {
                 window_ui,
                 outcome_banner_art,
                 vxl_pose_frame_cache: std::cell::RefCell::new(Default::default()),
+                model_frame: Default::default(),
                 retail_screenshot_frame_cache: Default::default(),
                 tooltip_blur: None,
                 terrain_picture: Default::default(),
                 native_z_seed: Default::default(),
-                hd_art: None,
-                hd_terrain: None,
-                hd_voxel: None,
-                hd_art_seen: false,
+                hd_voxels_seen: false,
                 hd_art_zoom_pending: true,
             },
             process_assets,

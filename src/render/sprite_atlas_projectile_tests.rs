@@ -300,6 +300,7 @@ fn firer_registration_covers_each_house_scheme_and_lookup_uses_the_supplied_one(
         &house_colors,
         "tem",
         "TEMPERATE",
+        None,
     );
     let expected: HashSet<_> = (0..2)
         .flat_map(|frame| {
@@ -381,6 +382,7 @@ fn retail_hills_projectile_assets_match_original_reader_and_physical_bytes() {
         &HouseColorMap::new(),
         "tem",
         "TEMPERATE",
+        None,
     );
     let (file, count) = &files["CANNON"];
     assert_eq!(
@@ -542,6 +544,7 @@ fn projectile_asset_binding_uses_native_last_load_not_current_image_text() {
                 &HouseColorMap::new(),
                 "tem",
                 "TEMPERATE",
+                None,
             );
             assert_eq!(
                 needed.len(),

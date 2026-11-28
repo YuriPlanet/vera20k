@@ -21,8 +21,8 @@ pub(super) struct MapAudioProfile {
 
 /// The battle's Options presentation choices for one capture, as their
 /// `[VERA]` values. Absent, a capture keeps zoom 100%, the Normal sidebar,
-/// the native radar and the sidebar's own pixels.
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+/// the native radar, the sidebar's own pixels and the stock view distance.
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub(super) struct MapPresentationProfile {
     /// `Zoom=`: 0 for Auto, otherwise a percent.
@@ -35,6 +35,14 @@ pub(super) struct MapPresentationProfile {
     /// `SmoothSidebar=`: optional, off when absent.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub(super) smooth_sidebar: bool,
+    /// Optional mouse-wheel view distance (`MouseWheelZoom=`), as the
+    /// multiple of the stock view the battlefield shows: any value whose
+    /// camera zoom (1 / `wheel_zoom`) lies in the wheel's range
+    /// (`camera::MIN_ZOOM`..=`camera::MAX_ZOOM`, so 0.25 to 2). An f64, so the
+    /// receipt echoes the profile's decimal exactly (an f32 0.8 reads back as
+    /// 0.800000011920929).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) wheel_zoom: Option<f64>,
 }
 
 impl MapPresentationProfile {
@@ -47,6 +55,68 @@ impl MapPresentationProfile {
         ensure!(
             SidebarSize::from_ini_value(self.sidebar).ini_value() == self.sidebar,
             "presentation.sidebar must be 100, 150 or 200"
+        );
+        self.wheel_camera_zoom()?;
+        Ok(())
+    }
+
+    /// The camera zoom `wheel_zoom` names, if any.
+    fn wheel_camera_zoom(&self) -> Result<Option<f32>> {
+        use crate::app::input::camera::{MAX_ZOOM, MIN_ZOOM};
+        self.wheel_zoom
+            .map(|scale| {
+                let zoom = (1.0 / scale) as f32;
+                ensure!(
+                    scale.is_finite() && scale > 0.0 && (MIN_ZOOM..=MAX_ZOOM).contains(&zoom),
+                    "presentation.wheel_zoom {scale} must be a view distance from {} to {}",
+                    1.0 / MAX_ZOOM,
+                    1.0 / MIN_ZOOM
+                );
+                Ok(zoom)
+            })
+            .transpose()
+    }
+
+    /// Select `wheel_zoom` once the battle has loaded, before the first
+    /// observed frame: the wheel's ease around the battlefield's centre
+    /// (`camera::ease_zoom_to_centre`, the owner turning wheel zoom off and
+    /// HD art's start use; a capture's cursor would move a cursor-anchored
+    /// zoom), then the production ease (`animate_zoom`) until it settles, so
+    /// every observed frame shows the selected distance.
+    pub(super) fn apply_wheel_zoom(&self, state: &mut AppState) -> Result<()> {
+        use crate::app::input::camera;
+        let Some(target) = self.wheel_camera_zoom()? else {
+            return Ok(());
+        };
+        ensure!(
+            state.match_state.input.zoom_target == 1.0,
+            "presentation.wheel_zoom requires the loaded battle at the stock view distance"
+        );
+        camera::ease_zoom_to_centre(
+            &state.platform,
+            &state.renderer,
+            &state.frontend.screen,
+            &mut state.match_state,
+            &state.persistence,
+            target,
+        );
+        for _ in 0..256 {
+            if camera::zoom_settled(&state.match_state.input) {
+                break;
+            }
+            camera::animate_zoom(
+                &state.platform,
+                &state.renderer,
+                &state.frontend.screen,
+                &mut state.match_state,
+                &state.persistence,
+            );
+        }
+        let zoom = state.match_state.input.zoom_level;
+        ensure!(
+            camera::zoom_settled(&state.match_state.input) && (zoom - target).abs() <= 1e-6,
+            "presentation.wheel_zoom settled at zoom {zoom}, not {target} \
+             (the GPU's texture limit can raise the minimum zoom)"
         );
         Ok(())
     }

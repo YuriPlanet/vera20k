@@ -799,6 +799,9 @@ fn turret_shadow_gate_follows_the_art_key_and_seeds_turret_stencils() {
         "TANKTUR.VXL",
         bytes(fixture["vxl"].as_str().unwrap()).as_slice(),
     );
+    for name in ["TANK.HVA", "TANKTUR.HVA"] {
+        dir.write(name, bytes(fixture["hva"].as_str().unwrap()).as_slice());
+    }
     let assets = AssetManager::from_loose_root_for_test(dir.path());
 
     let rules_text = |draw: &str| {
@@ -807,7 +810,8 @@ fn turret_shadow_gate_follows_the_art_key_and_seeds_turret_stencils() {
         ))
     };
     let shadow_keys = |draw: &str, art: &IniFile| {
-        let rules = RuleSet::from_ini_with_fixed_art_for_test(&rules_text(draw), art).unwrap();
+        let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&rules_text(draw), art).unwrap();
+        rules.bind_effect_assets(&assets, "TEM", "TEMPERATE");
         let turret: Vec<_> = needed_unit_keys(
             &UnitAtlasDemand {
                 ground: BTreeSet::from(["TANK".to_string()]),
@@ -825,7 +829,10 @@ fn turret_shadow_gate_follows_the_art_key_and_seeds_turret_stencils() {
 
     // `DrawTurretShadow=` alone opens the gate; the seeded keys sit on the
     // turret facing step, which is finer than the body's.
-    let (rules, turret) = shadow_keys("DrawTurretShadow=yes\n", &IniFile::from_str("[TANK]\n"));
+    let (rules, turret) = shadow_keys(
+        "DrawTurretShadow=yes\n",
+        &IniFile::from_str("[TANK]\nVoxel=yes\n"),
+    );
     assert!(turret_shadow_enabled(
         Some(&rules),
         rules.object("TANK").unwrap()
@@ -841,7 +848,7 @@ fn turret_shadow_gate_follows_the_art_key_and_seeds_turret_stencils() {
     // An ART `TurretShadow=no` overrides the global yes.
     let (rules, art_off) = shadow_keys(
         "DrawTurretShadow=yes\n",
-        &IniFile::from_str("[TANK]\nTurretShadow=no\n"),
+        &IniFile::from_str("[TANK]\nVoxel=yes\nTurretShadow=no\n"),
     );
     assert!(!turret_shadow_enabled(
         Some(&rules),
@@ -850,7 +857,7 @@ fn turret_shadow_gate_follows_the_art_key_and_seeds_turret_stencils() {
     assert!(art_off.is_empty());
 
     // Default `DrawTurretShadow=no` (`Ext/Rules/Body.h:737`): no stencil.
-    let (rules, default_off) = shadow_keys("", &IniFile::from_str("[TANK]\n"));
+    let (rules, default_off) = shadow_keys("", &IniFile::from_str("[TANK]\nVoxel=yes\n"));
     assert!(!turret_shadow_enabled(
         Some(&rules),
         rules.object("TANK").unwrap()
@@ -1261,6 +1268,60 @@ fn tumble_selects_one_physical_section_for_body_and_shadow() {
             .len(),
         1
     );
+}
+
+/// A world whose only voxel unit draws a declared model
+/// (`docs/picture-model-art.md`) still makes the atlas, reading no VXL: the
+/// unit draw visits objects only while an atlas exists, so without one that
+/// unit, and every other, drew nothing.
+#[test]
+fn a_world_of_declared_models_makes_the_atlas() {
+    let directory = crate::map::source::test_support::TestDirectory::new("declared-atlas");
+    let glb = crate::assets::model_file::test_glb::box_model(2.0, 1.0, 4.0, &[]);
+    std::fs::write(directory.path().join("tank.glb"), &glb).unwrap();
+    let assets = AssetManager::from_loose_root_for_test(directory.path());
+    let art = IniFile::from_str("[BODY]\nVoxel=yes\nModel=tank.glb\nModelSize=120\n");
+    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
+        &IniFile::from_str("[VehicleTypes]\n0=TEST\n[TEST]\nImage=BODY\nStrength=300\n"),
+        &art,
+    )
+    .unwrap();
+    rules.install_art_fixture(crate::rules::art_data::ArtRegistry::from_ini(&art));
+    rules.bind_effect_assets(&assets, "TEM", "TEMPERATE");
+    assert!(rules.draws_declared_model("TEST"));
+    let mut entity =
+        crate::sim::game_entity::GameEntity::test_default(1, "TEST", "Americans", 5, 5);
+    entity.set_is_voxel_for_test(true);
+    let mut world = crate::sim::entity_store::EntityStore::new();
+    world.insert(entity);
+    let interner = crate::sim::intern::test_interner();
+    let rules = Some(&rules);
+
+    assert!(!atlas_covers_world(None, &world, rules, Some(&interner)));
+    let mut atlas = None;
+    admit_world_models(&mut atlas, &world, &assets, rules, Some(&interner), 8192);
+    let atlas = atlas.expect("a world of declared models makes the atlas");
+    assert!(atlas.models.is_empty(), "no VXL is read");
+    assert!(atlas_covers_world(
+        Some(&atlas),
+        &world,
+        rules,
+        Some(&interner)
+    ));
+
+    let mut image_atlas = None;
+    admit_world_and_image_models(
+        &mut image_atlas,
+        &crate::sim::entity_store::EntityStore::new(),
+        ["TEST"].into_iter(),
+        &assets,
+        rules,
+        Some(&interner),
+        8192,
+    );
+    let image_atlas = image_atlas.expect("an image override makes the atlas");
+    assert!(image_atlas.models.is_empty(), "no VXL is read");
+    assert!(image_atlas.covered.is_empty(), "no VXL demand is covered");
 }
 
 /// A placed sprite waits for its upload as the resident cache's pixels

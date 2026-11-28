@@ -244,6 +244,8 @@ pub(crate) fn install_world_presentation(
     match_state.match_presentation.unit_atlas = assets.unit_atlas;
     // Both voxel caches resolve model images through the replaced RuleSet.
     *renderer.vxl_pose_frame_cache.borrow_mut() = Default::default();
+    // The declared models' GPU copies belong to the replaced RuleSet.
+    *renderer.model_frame.borrow_mut() = Default::default();
     match_state.match_presentation.palette_set = assets.palette_set;
     match_state.match_presentation.surface_palette = Default::default();
     match_state.match_presentation.sprite_atlas = assets.sprite_atlas;
@@ -411,10 +413,18 @@ pub(crate) fn install_world_presentation(
             )
         });
     match_state.match_presentation.minimap = minimap;
+    // The interface pictures take `PictureSize=` from the match's art.
+    let picture_sizes = match_state.sim_runtime.runtime().map_or(
+        crate::render::interface_picture::PictureSizes::None,
+        |runtime| {
+            crate::render::interface_picture::PictureSizes::Art(runtime.resources.rules.art())
+        },
+    );
     match_state.match_presentation.selection_overlay = Some(SelectionOverlay::new(
         &renderer.gpu,
         &renderer.batch_renderer,
         process_assets.manager(),
+        picture_sizes,
     ));
     // Phobos DigitalDisplay `Shape=`/`Palette=` assets, retained once per match
     // like `DigitalDisplayTypeClass`'s SHP pointers.
@@ -431,6 +441,7 @@ pub(crate) fn install_world_presentation(
             &renderer.batch_renderer,
             assets,
             rules.digital_display_types().types(),
+            crate::render::interface_picture::PictureSizes::Art(rules.art()),
         );
     }
     // Ares/Phobos `Insignia` SHPs, retained once per match like the
@@ -520,6 +531,7 @@ pub(crate) fn install_world_presentation(
             beacon_ares,
             unit_palette.as_ref(),
             &ramps,
+            crate::render::interface_picture::PictureSizes::Art(runtime.resources.rules.art()),
         ))
     });
     let shroud_buffer = process_assets.manager().and_then(|assets| {
@@ -863,6 +875,16 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
     }
     state.match_state.match_presentation.message_list = message_list;
     crate::app::input::messages::post_layout_problem(
+        &state.platform,
+        &state.renderer,
+        &state.diag,
+        &state.frontend,
+        &mut state.match_state,
+        &state.process_assets,
+        &mut state.audio.sfx_player,
+        &state.persistence,
+    );
+    crate::app::input::messages::post_art_problems(
         &state.platform,
         &state.renderer,
         &state.diag,
