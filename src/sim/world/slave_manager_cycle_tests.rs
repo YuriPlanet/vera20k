@@ -270,6 +270,9 @@ fn a_destroyed_refinery_frees_its_slaves_to_the_killer() {
         "ore": [[17, 12, 0, 0, 5]],
     }));
     s.scene.rules.general.slaves_free_sound = Some("SlavesFreed".to_string());
+    // The killer's house has only a tank when it receives the slaves. Keep
+    // that house in play through their cheer and the queued Move.
+    s.scene.sim.session.game_options_mut_for_test().short_game = false;
     let russians = s.scene.sim.interner.intern("Russians");
     s.scene
         .sim

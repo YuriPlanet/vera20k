@@ -509,6 +509,94 @@ fn rocking_phase_fixture() -> (Simulation, RuleSet, u64, u64) {
     (sim, rules, first, second)
 }
 
+#[test]
+fn a_plain_active_unit_skips_absent_common_managers() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[VehicleTypes]\n0=TEST\n[TEST]\nStrength=300\nSpeed=4\n\
+         Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n",
+    ))
+    .unwrap();
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 17);
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    let tank = sim
+        .spawn_object("TEST", "Americans", 5, 5, 0, &rules)
+        .unwrap();
+    sim.session.set_binary_frame_for_test(1);
+
+    let lookups_before = sim.substrate.entities.lookups().0;
+    let handouts_before = sim.substrate.entities.hand_outs();
+    let rng_before = sim.rng_state();
+    let mut ctx = ObjectAiCtx {
+        effects: FrameEffects::empty(),
+        overlay_registry: None,
+    };
+    let mut outcome = ObjectAiOutcome::default();
+    assert!(techno_after_acquisition(
+        &mut sim,
+        tank,
+        &rules,
+        &mut ctx,
+        &mut outcome
+    ));
+    let lookups = sim.substrate.entities.lookups().0 - lookups_before;
+    assert!(
+        lookups <= 10,
+        "the empty manager slots took extra lookups: {lookups}"
+    );
+    assert_eq!(sim.substrate.entities.hand_outs(), handouts_before);
+    assert_eq!(sim.rng_state(), rng_before);
+    assert!(outcome.frame_error.is_none());
+}
+
+#[test]
+fn a_slave_manager_stays_untouched_until_its_update_is_due() {
+    let mut sim = Simulation::new();
+    let mut entity = GameEntity::test_default(1, "TEST", "Americans", 5, 5);
+    entity.slave_manager = Some(Box::new(crate::sim::slave_manager::SlaveManager::new(
+        sim.interner.intern("SLAVE"),
+        [],
+        0,
+        0,
+        1,
+    )));
+    register_entity(&mut sim, entity);
+    sim.session.set_binary_frame_for_test(2);
+    let rules = RuleSet::empty_for_test();
+
+    let handouts_before = sim.substrate.entities.hand_outs();
+    let mut ctx = ObjectAiCtx {
+        effects: FrameEffects::empty(),
+        overlay_registry: None,
+    };
+    sim.slave_manager_ai(1, &rules, None, &mut ctx.effects)
+        .unwrap();
+    assert_eq!(sim.substrate.entities.hand_outs(), handouts_before);
+
+    sim.session.set_binary_frame_for_test(11);
+    let mut outcome = ObjectAiOutcome::default();
+    assert!(techno_after_acquisition(
+        &mut sim,
+        1,
+        &rules,
+        &mut ctx,
+        &mut outcome
+    ));
+    assert_eq!(
+        sim.substrate
+            .entities
+            .get(1)
+            .unwrap()
+            .slave_manager
+            .as_ref()
+            .unwrap()
+            .ai_timer()
+            .start_frame(),
+        11
+    );
+    assert!(outcome.frame_error.is_none());
+}
+
 /// A tank's tint step reads no airstrike state: UpdateAirstrikeTint70E920
 /// admits only a building, so the step passes the tank by its category
 /// column. The quiet mark and the curtain gate take the other two lookups.
