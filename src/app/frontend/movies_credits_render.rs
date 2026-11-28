@@ -299,9 +299,8 @@ mod tests {
     fn list_rows_match_the_native_capture() {
         let list = RectPx::new(120, 128, 399, 304);
         // Selection fill measured at x 121..=518, y 129..=147.
-        let state = crate::ui::movies_credits_shell::active_movie_entries(
-            crate::ui::movies_credits_shell::MovieProgress::default(),
-        );
+        let state = crate::ui::movies_credits_shell::MovieCatalog::YurisRevenge
+            .entries(crate::ui::movies_credits_shell::MovieProgress::default());
         let geometry = |rows, top| list_box_geometry(list, rows, top, ListMetrics::RETAIL);
         let short = geometry(state.len(), 0);
         assert_eq!(short.row(0), RectPx::new(121, 129, 398, 19));
@@ -309,7 +308,7 @@ mod tests {
         assert!(short.scrollbar.is_none());
         // Retail list with all 17 movies (`list17-*.png`): bar columns
         // 499..=518, thumb rows 151..=352 at top 0 and 208..=409 at top 2.
-        let rows = crate::ui::movies_credits_shell::active_movie_entries(
+        let rows = crate::ui::movies_credits_shell::MovieCatalog::YurisRevenge.entries(
             crate::ui::movies_credits_shell::MovieProgress {
                 soviet: 7,
                 allied: 7,
