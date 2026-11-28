@@ -160,10 +160,10 @@ fn tracker_object_signed_cell(
     let stable_id = tracker.object_at_pixel(pixel.0, pixel.1)?;
     // Original6567EF..656828 dispatches virtual+4C with a null requester,
     // then truncates signed XY toward zero and packs each low word
-    // (captured as `RadarFacts::click_cell`). A moving Foot's navigation
+    // (captured as `RadarFacts::navigation_cell_words`). A moving Foot's navigation
     // head can precede its physical Object+48 cell. Do not perform a Map
     // lookup here: the handler clamps these words first.
-    let cell = frame.object(stable_id)?.radar().click_cell?;
+    let cell = frame.object(stable_id)?.radar().navigation_cell_words?;
     Some((stable_id, cell))
 }
 

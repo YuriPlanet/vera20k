@@ -1752,8 +1752,11 @@ impl RuleSet {
     /// sizes, the frame count, bounds and middle frame of each animation that
     /// affects play or that a simulation owner waits on, the first weather
     /// bolt's image height, whether a scorching or cratering animation's
-    /// frame is large, and in an Ares game which particle AlphaImage SHPs
-    /// loaded. A file that changes only how something looks (other pixels,
+    /// frame is large, which overlay types without a CellAnim have an image,
+    /// and in an Ares game which particle AlphaImage SHPs loaded. Each is
+    /// the fact itself, whichever file gave it (an SHP, a VXL, a picture or
+    /// a model), so equal facts fold equally whether or not the retail file
+    /// is there. A file that changes only how something looks (other pixels,
     /// another palette, a model's other parts, the file that supplied an
     /// image, the frames of an effect animation that changes nothing but its
     /// picture) leaves the number as it is, so players with such files play
@@ -1775,7 +1778,9 @@ impl RuleSet {
         self.buildup_assets.hash(&mut hasher);
         self.terrain_assets.hash(&mut hasher);
         self.rubble_assets.fold_admissions(&mut hasher);
-        self.effect_assets.hash_overlay_picture_inputs(&mut hasher);
+        // Which overlays authored placement admits (`authored_overlay`),
+        // from an SHP or a picture alike.
+        self.effect_assets.fold_overlay_admission(&mut hasher);
         // IsVoxel and the tilt matrix behind a shot's origin
         // (`combat::area_rocker`, `combat::fire_coord`).
         self.voxel_assets.fold_loaded(&mut hasher);

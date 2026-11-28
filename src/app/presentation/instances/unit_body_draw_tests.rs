@@ -1409,7 +1409,6 @@ fn only_ares_hides_the_gather_overlay_under_emp() {
                 Some(&runtime.resources.rules),
                 &runtime.simulation,
                 frame.object(id).unwrap(),
-                0,
             )
             .is_some()
         };

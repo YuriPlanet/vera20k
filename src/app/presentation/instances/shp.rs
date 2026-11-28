@@ -900,16 +900,21 @@ pub(crate) fn shp_visitor<'a>(
             }
         };
         let depth: f32 = base_depth;
-        let extra_light = entity.place.extra_light;
+        let extra_light = crate::app::presentation::lighting::body_extra_light(
+            entity,
+            &runtime.resources.rules,
+            sim,
+            cells.as_ref(),
+        );
         // Infantry5192C9 retains Object5F69C0 -> Foot4DBDF0's navigation
         // Cell for both top-light arms51940A/51943F. A destination alone
         // does not change it: the active locomotor's head/null-current
         // projection (or Tube exit) owns this read. Physical position still
         // owns shroud, depth and the extra's side/ground/height queries.
-        let light_cell = entity
-            .place
-            .infantry_light_cell
-            .unwrap_or((pos.rx(), pos.ry()));
+        let light_cell = match (entity.category(), entity.scene.radar.navigation_cell_words) {
+            (EntityCategory::Infantry, Some((x, y))) => (x as u16, y as u16),
+            _ => (pos.rx(), pos.ry()),
+        };
         let tint = shp_body_tint(input.lighting, light_cell, entity.category(), extra_light);
         // Asked only where it is used: a building's body takes its own
         // light below, so only a voxel turret reads this one.
@@ -921,7 +926,7 @@ pub(crate) fn shp_visitor<'a>(
             )
         };
         let palette_light = if entity.category() == EntityCategory::Structure {
-            let [x, y] = entity.place.center_xy;
+            let crate::sim::components::DriveCoord { x, y, .. } = entity.hud.get_coords;
             let coords_cell = (
                 crate::util::lepton::lepton_to_cell(x) as u16,
                 crate::util::lepton::lepton_to_cell(y) as u16,
@@ -951,7 +956,7 @@ pub(crate) fn shp_visitor<'a>(
             Some(rules) => {
                 crate::app::presentation::lighting::shp_colour_word(entity, sim, rules, || {
                     let cell = if entity.category() == EntityCategory::Structure {
-                        let [x, y] = entity.place.center_xy;
+                        let crate::sim::components::DriveCoord { x, y, .. } = entity.hud.get_coords;
                         ((x / 256) as u16, (y / 256) as u16)
                     } else {
                         (pos.rx(), pos.ry())
@@ -2427,7 +2432,12 @@ pub(crate) fn build_building_anim_instances(
         );
         let cell = (building.position.rx(), building.position.ry());
         let tint = grid.building_body_tint_at(cell);
-        let extra_light = building.place.extra_light;
+        let extra_light = crate::app::presentation::lighting::body_extra_light(
+            building,
+            rules,
+            sim,
+            cells.as_ref(),
+        );
         let selected_palette =
             crate::app::presentation::lighting::body_palette_light(grid, cell, extra_light);
         emit_building_anims(
@@ -3135,12 +3145,7 @@ fn resolve_object_shp_frame_with_facing(
                 )
             })
             .filter(|object| object.jumpjet && !object.jumpjet_turn)
-            .filter(|_| {
-                entity.locomotor.as_ref().is_some_and(|loco| {
-                    loco.active_kind() == crate::rules::locomotor_type::LocomotorKind::Jumpjet
-                })
-            })
-            .and(entity.place.facing_toward_target)
+            .and(entity.place.jumpjet_target_facing)
             .unwrap_or(facing);
         // Native EAX remains signed. A negative/wide result cannot alias an
         // unrelated valid frame in the u16 SHP atlas. This is an asset boundary,

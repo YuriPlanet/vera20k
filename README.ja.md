@@ -120,6 +120,14 @@ VERA20K は標準で Yuri's Revenge オリジナル版のルールを使いま�
   <a href="https://www.youtube.com/watch?v=ucz-EiMeW88">VERA20K 0.41 で遊ぶ Red Alert 2</a><br clear="all">
 </p>
 
+## マップエディター
+
+<p>
+  <a href="https://github.com/996666925/ra2-map-editor"><img src="https://avatars.githubusercontent.com/u/52450772?s=128" width="64" height="64" align="left" alt="996666925"></a>
+  <a href="https://github.com/996666925/ra2-map-editor">YR Map Editor</a><br>
+  「Yuri’s Revenge」のマップを作成し、VERA20K でテストプレイできます。<br clear="all">
+</p>
+
 ## 謝辞と法的事項
 
 OpenRA、XCC Mixer、ModEnc wiki、Project Perfect Mod、EA が GPL で公開した Command & Conquer と Red Alert のソースコード、World-Altering Editor、Final Alert、YRpp、Ares、Phobos、そのほか多くの皆さんに感謝します。

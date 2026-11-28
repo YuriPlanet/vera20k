@@ -203,7 +203,8 @@ impl ObjectImageState {
         theater: ImageTheater,
     ) -> Option<&'a IniSection> {
         self.read_input(input);
-        let art = fixed_art.section(&self.image);
+        // A section of only VERA's drawing keys is none to the simulation.
+        let art = crate::rules::art_data::sim_art_section(fixed_art, &self.image);
         self.read_art(art);
         self.load_for_read(kind, theater, Some(fixed_art));
         art
@@ -240,7 +241,7 @@ impl ObjectImageState {
     /// section already read. Native art `Image=` remains building-only
     /// (`0x0045F945`); this path runs only while the Phobos key is on.
     pub(crate) fn apply_phobos_art_image_swap(&mut self, fixed_art: &IniFile) {
-        let Some(section) = fixed_art.section(&self.image) else {
+        let Some(section) = crate::rules::art_data::sim_art_section(fixed_art, &self.image) else {
             return;
         };
         if let Some(image) = section.read_name("Image", 0x40) {
@@ -292,7 +293,7 @@ impl ObjectImageState {
                 // 10041098 formats into a 0x20-byte buffer and copies at most
                 // 24 characters back into the 25-byte ImageFile.
                 let name = format!("{}{letter}", self.image);
-                if art.section(&name).is_some() {
+                if crate::rules::art_data::sim_art_section(art, &name).is_some() {
                     self.image = name.chars().take(24).collect();
                     self.arctic_applied = true;
                 }

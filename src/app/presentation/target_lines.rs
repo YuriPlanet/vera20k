@@ -356,10 +356,10 @@ pub(crate) fn build_factory_rally_line_strokes(
         if !obj.has_rally_line() {
             continue;
         }
-        let Some([start, target]) = entity.place.rally_line else {
+        let Some(target) = entity.hud.rally_target() else {
             continue;
         };
-        let start = project(start);
+        let start = project(entity.hud.get_coords);
         let end = project(target);
         let word = rally_word_for_owner(owner, house_color_map, &rules.house_color_ramps);
         emit_rally_line(
@@ -387,24 +387,21 @@ fn selected_action_line_for_entity(
     entity.place.action_line
 }
 
-/// A Structure's rally line in world coordinates (`TechnoClass::
-/// ArchiveTarget`'s coordinate, its deck-adjusted ground, and the building's
-/// GetCoords), captured into its presentation record.
-pub(crate) fn rally_line_coords(
+/// The world coordinate of a building's `TechnoClass::ArchiveTarget`, at its
+/// deck-adjusted ground height.
+pub(crate) fn rally_target(
     entity: &crate::sim::game_entity::GameEntity,
     sim: &Simulation,
     cells: &NativeCellQuery<'_>,
-) -> Option<[crate::sim::components::DriveCoord; 2]> {
-    use crate::sim::movement::ground_pose::{
-        object_get_coords, query_surface_z, target_get_coords,
-    };
+) -> Option<crate::sim::components::DriveCoord> {
+    use crate::sim::movement::ground_pose::{query_surface_z, target_get_coords};
     if entity.category() != EntityCategory::Structure {
         return None;
     }
     let mut target = target_get_coords(entity.archive_target()?, sim, Some(cells))?;
     let on_bridge = cells.flags(cells.lookup_world(target.x, target.y)) & 0x100 != 0;
     target.z = query_surface_z(cells, target, on_bridge).ok()?;
-    Some([object_get_coords(entity, Some(cells.terrain())), target])
+    Some(target)
 }
 
 /// The endpoints Foot4DC060 and Foot4DC340 share: with a Target, the +300

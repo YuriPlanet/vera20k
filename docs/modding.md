@@ -401,7 +401,8 @@ mod's.
 Put your version in your mod's folder under the same name, such as `rulesmd.ini` or
 `aimd.ini`. To add new units, buildings or weapons, add them to `rulesmd.ini` and
 `artmd.ini` as in the original, and put their art in the same folder. A mod using other
-root names declares them in `[Files]`.
+root names declares them in `[Files]`. A sound or music track can also be replaced by an
+Ogg Opus file named after it, such as `igisea.opus`; see [Opus sounds and music](opus-audio.md).
 
 ### Add to every map
 

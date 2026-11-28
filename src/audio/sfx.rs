@@ -2117,12 +2117,20 @@ impl SfxPlayer {
         if let Some(output) = self.taunt_player.take() {
             output.player.stop();
         }
-        let decoded = match assets.read_install_file(&name) {
+        // VERA: a `.opus` file beside the taunt plays in its place, looked up
+        // the same two ways once per name ([`ClipCache::load_override`]).
+        let opus = self.clips.load_override(&name, |file| {
+            assets
+                .read_install_file(file)
+                .map(std::borrow::Cow::Owned)
+                .or_else(|| assets.get_ref(file).map(std::borrow::Cow::Borrowed))
+        });
+        let decoded = opus.or_else(|| match assets.read_install_file(&name) {
             Some(bytes) => decode_wav(&bytes, &name),
             None => assets
                 .get_ref(&name)
                 .and_then(|bytes| decode_wav(bytes, &name)),
-        };
+        });
         let Some(decoded) = decoded else {
             log::debug!("Taunt {name} is missing");
             return;
@@ -3105,6 +3113,26 @@ fn decode_index_clip(
         } else {
             1
         },
+    })
+}
+
+/// Decode a sample's `.opus` override (`assets::opus_file`) to interleaved
+/// f32 stereo at 48 kHz. The native layout it reports is 16-bit at the
+/// stream's channel count, the PCM it decodes to, so a ring that chains it
+/// after a retail 16-bit clip of the same channels needs no conversion.
+fn decode_opus_clip(data: &[u8], filename: &str) -> Option<DecodedAudio> {
+    let Some(audio) = crate::assets::opus_file::decode(data) else {
+        log::warn!("Sound {filename}: its .opus override is not mono or stereo Ogg Opus");
+        return None;
+    };
+    let mut stereo = Vec::new();
+    upmix_i16_to_f32_stereo(&mut stereo, &audio.samples_i16, audio.channels);
+    Some(DecodedAudio {
+        samples: stereo.into(),
+        sample_rate: crate::assets::opus_file::OPUS_SAMPLE_RATE,
+        channels: 2,
+        native_channels: audio.channels,
+        native_sample_bytes: 2,
     })
 }
 

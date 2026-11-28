@@ -27,7 +27,7 @@ impl RulesPassProcessor {
                 .map(|member| member.native_stored_id.clone());
             if let Some(section) = native_stored_id
                 .as_deref()
-                .and_then(|identity| fixed_art.section(identity))
+                .and_then(|identity| crate::rules::art_data::sim_art_section(fixed_art, identity))
             {
                 // ReadTypeData 0x00679A5D..0x00679A82 visits the live Anim
                 // registry before Techno readers can allocate later roots.

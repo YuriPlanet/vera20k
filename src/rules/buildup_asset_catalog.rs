@@ -116,8 +116,8 @@ pub struct BuildupAssetCatalog {
     /// type; an unbound type keeps the constructor's 0. Only a bind for Rules
     /// read the Ares way fills it.
     sell_rates: BTreeMap<String, i32>,
-    /// VERA: the game-folder files whose Buildup SHP has another frame
-    /// count than the copy a retail install reads
+    /// VERA: the game-folder files whose Buildup SHP, or Buildup picture,
+    /// has another frame count than the copy a retail install reads
     /// (`retail_sources::FolderFiles`); not hashed.
     folder_files: std::collections::BTreeSet<String>,
 }
@@ -174,14 +174,24 @@ impl BuildupAssetCatalog {
                     file: format!("{buildup}.png"),
                     size: None,
                 };
-                let Some(facts) =
-                    rules
-                        .art()
-                        .picture_header(section, &decl, asset_manager, theater_name)
-                else {
+                let facts = rules
+                    .art()
+                    .picture_header(section, &decl, asset_manager, theater_name);
+                let raw = facts
+                    .as_ref()
+                    .map(|facts| i16::try_from(facts.frames).unwrap_or(i16::MAX));
+                // Named when its frame word is not the retail Buildup's.
+                folder.note_stand_in(
+                    facts.as_ref().map_or(&decl.file, |facts| &facts.file),
+                    raw,
+                    crate::rules::art_data::building_shp_names(buildup, theater_name),
+                    frame_word,
+                    &mut catalog.folder_files,
+                );
+                let Some(raw) = raw else {
                     continue;
                 };
-                i16::try_from(facts.frames).unwrap_or(i16::MAX)
+                raw
             } else {
                 let Some(data) = crate::rules::art_data::building_shp_names(buildup, theater_name)
                     .iter()

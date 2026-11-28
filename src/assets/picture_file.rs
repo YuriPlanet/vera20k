@@ -1,11 +1,15 @@
 //! VERA-only, experimental picture art (`Picture=`,
-//! `docs/picture-model-art.md`): the header facts of a PNG or APNG that the
-//! simulation takes where it takes an SHP header's, read without decoding a
-//! pixel, and its frames composited one at a time ([`FrameStream`]) or all
-//! together ([`PictureFrames`]).
+//! `docs/picture-model-art.md`): the header facts of a PNG, APNG or WebP
+//! (still or animated) that the simulation takes where it takes an SHP
+//! header's, read without decoding a pixel, its frames composited one at a
+//! time ([`FrameStream`]) or all together ([`PictureFrames`]), and the one
+//! lookup that finds a picture file by name ([`find_picture`]).
+
+use std::borrow::Cow;
 
 /// A picture's canvas, in its own pixels, and its frame count: the APNG's
-/// animation frames (`acTL`), or 1 for a plain PNG.
+/// animation frames (`acTL`) or the animated WebP's (`ANMF`), or 1 for a
+/// plain PNG or a still WebP.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PictureHeader {
     pub width: u32,
@@ -17,6 +21,8 @@ pub struct PictureHeader {
 pub enum PictureError {
     #[error("not a readable PNG: {0}")]
     Png(#[from] png::DecodingError),
+    #[error("not a readable WebP: {0}")]
+    Webp(#[from] image_webp::DecodingError),
     #[error("an APNG with no frames")]
     NoFrames,
     #[error("{0} decoded bytes exceeds the picture storage limit of {PICTURE_BYTES_MAX}")]
@@ -25,6 +31,8 @@ pub enum PictureError {
     CanvasTooLarge,
     #[error("a frame region outside the canvas")]
     FrameOutside,
+    #[error("a WebP animation frame that is not its ANMF size")]
+    FrameSize,
 }
 
 /// Maximum bytes for a stream's working canvases or one retained set of
@@ -48,31 +56,130 @@ pub struct PictureFrames {
     pub frames: Vec<Vec<u8>>,
 }
 
-/// The frames of a PNG or APNG composited one at a time, in order, onto one
-/// reused canvas, as an APNG viewer shows them. An APNG's default image that
-/// is not part of its animation is skipped; each animation frame is drawn
-/// onto the canvas by its blend operation and disposed of by its dispose
-/// operation (APNG 1.0, `fcTL`) just before the next frame is drawn.
+/// The frames of a PNG, APNG or WebP composited one at a time, in order,
+/// onto one reused canvas, as a viewer shows them. An APNG's default image
+/// that is not part of its animation is skipped; each animation frame is
+/// drawn onto the canvas by its blend operation and disposed of by its
+/// dispose operation (APNG 1.0, `fcTL`; WebP `ANMF`) just before the next
+/// frame is drawn. The format is told by the bytes' signature, not the file
+/// name, so a picture named `.png` that holds a WebP still reads.
 ///
 /// It holds the canvas, the decoder's output buffer for one frame (at most a
-/// canvas), and, only while a `Previous`-disposed frame shows, the region
-/// that frame covers: so memory stays at about two canvases whatever the
-/// frame count. Frames come strictly in order: compositing depends on every
-/// frame before, so reaching frame `n` means drawing frames `0..n`.
+/// canvas), and, only while a `Previous`-disposed APNG frame shows, the
+/// region that frame covers. So memory stays at about two canvases whatever
+/// the frame count. Frames come strictly in order: compositing depends on
+/// every frame before, so reaching frame `n` means drawing frames `0..n`.
 pub struct FrameStream<'a> {
-    reader: png::Reader<std::io::Cursor<&'a [u8]>>,
+    decoder: Decoder<'a>,
     width: u32,
     height: u32,
     frame_count: usize,
     /// The frame `next_frame` draws next.
     next: usize,
+    canvas: Vec<u8>,
+}
+
+/// The format's own reader and what it keeps between frames. One lives in
+/// each stream, never in a collection, so the variants' sizes need not match.
+#[allow(clippy::large_enum_variant)]
+enum Decoder<'a> {
+    Png(PngFrames<'a>),
+    Webp(WebpFrames<'a>),
+}
+
+/// A PNG or APNG being read: the frames are composited here
+/// ([`PngFrames::draw_next`]), since the `png` crate gives each frame's own
+/// region only.
+struct PngFrames<'a> {
+    reader: png::Reader<std::io::Cursor<&'a [u8]>>,
     /// The decoder's output for one frame, its own region's samples.
     buffer: Vec<u8>,
-    canvas: Vec<u8>,
     /// What the frame on the canvas leaves when it is disposed of.
     pending: Dispose,
     /// The canvas region under a `Previous`-disposed frame, before it drew.
     saved: Vec<u8>,
+}
+
+/// A WebP being read. An animation's frames are composited here
+/// ([`WebpFrames::draw_next`]): `image-webp` 0.2.4's own compositing clears
+/// a disposed frame's region with RGB strides when the next frame has no
+/// alpha, on an RGBA canvas, so pixels of the frame before stay. Each `ANMF`
+/// frame's bitstream is decoded by `image-webp` as a still image instead.
+struct WebpFrames<'a> {
+    bytes: &'a [u8],
+    /// The `ANMF` frames, in order; empty for a still WebP.
+    frames: Vec<AnmfFrame>,
+    /// The decoder's output for one frame (RGB or RGBA), at most a canvas.
+    buffer: Vec<u8>,
+    /// The region the frame on the canvas clears to transparent before the
+    /// next frame draws (WebP "dispose to background", transparent as an
+    /// APNG's Background is).
+    pending: Option<[u32; 4]>,
+}
+
+/// One `ANMF` chunk: its region on the canvas, its blend and dispose bits,
+/// and where its frame bitstream (`ALPH` + `VP8 `, or `VP8L`) lies.
+#[derive(Debug, Clone)]
+struct AnmfFrame {
+    region: [u32; 4],
+    blend: bool,
+    dispose: bool,
+    payload: std::ops::Range<usize>,
+}
+
+/// The `ANMF` frames of the WebP `bytes`, from its chunk list (RIFF, each
+/// chunk padded to even length).
+fn anmf_frames(bytes: &[u8]) -> Result<Vec<AnmfFrame>, PictureError> {
+    let truncated = || PictureError::Webp(image_webp::DecodingError::InvalidChunkSize);
+    let u24 = |b: &[u8]| u32::from(b[0]) | u32::from(b[1]) << 8 | u32::from(b[2]) << 16;
+    let mut frames = Vec::new();
+    let mut at = 12usize;
+    while at + 8 <= bytes.len() {
+        let size = u32::from_le_bytes(bytes[at + 4..at + 8].try_into().unwrap()) as usize;
+        let start = at + 8;
+        let end = start
+            .checked_add(size)
+            .filter(|&end| end <= bytes.len())
+            .ok_or_else(truncated)?;
+        if &bytes[at..at + 4] == b"ANMF" {
+            if size < 16 {
+                return Err(truncated());
+            }
+            let header = &bytes[start..start + 16];
+            frames.push(AnmfFrame {
+                region: [
+                    u24(&header[0..3]) * 2,
+                    u24(&header[3..6]) * 2,
+                    u24(&header[6..9]) + 1,
+                    u24(&header[9..12]) + 1,
+                ],
+                blend: header[15] & 0b10 == 0,
+                dispose: header[15] & 0b01 != 0,
+                payload: start + 16..end,
+            });
+        }
+        at = end + (size & 1);
+    }
+    Ok(frames)
+}
+
+/// The `ANMF` frame bitstream `payload` (`w` x `h`) as a still WebP file:
+/// with a `VP8X` header saying alpha when it starts with an `ALPH` chunk.
+fn still_webp(payload: &[u8], [w, h]: [u32; 2]) -> Vec<u8> {
+    let alpha = payload.starts_with(b"ALPH");
+    let mut body = b"WEBP".to_vec();
+    if alpha {
+        body.extend_from_slice(b"VP8X");
+        body.extend_from_slice(&10u32.to_le_bytes());
+        body.extend_from_slice(&[0x10, 0, 0, 0]);
+        body.extend_from_slice(&(w - 1).to_le_bytes()[..3]);
+        body.extend_from_slice(&(h - 1).to_le_bytes()[..3]);
+    }
+    body.extend_from_slice(payload);
+    let mut file = b"RIFF".to_vec();
+    file.extend_from_slice(&(body.len() as u32).to_le_bytes());
+    file.extend_from_slice(&body);
+    file
 }
 
 /// The disposal still owed by the frame on the canvas: its region and op.
@@ -82,10 +189,19 @@ struct Dispose {
     op: png::DisposeOp,
 }
 
+/// Whether `bytes` are a WebP (`RIFF` size `WEBP`); anything else is read as
+/// a PNG, so a PNG costs one signature compare more than before.
+fn is_webp(bytes: &[u8]) -> bool {
+    bytes.len() >= 12 && bytes[..4] == *b"RIFF" && bytes[8..12] == *b"WEBP"
+}
+
 impl<'a> FrameStream<'a> {
-    /// Start reading the PNG or APNG `bytes`: its header, and past an APNG
-    /// default image that is not an animation frame.
+    /// Start reading the PNG, APNG or WebP `bytes`: its header, and past an
+    /// APNG default image that is not an animation frame.
     pub fn new(bytes: &'a [u8]) -> Result<Self, PictureError> {
+        if is_webp(bytes) {
+            return Self::new_webp(bytes);
+        }
         let mut decoder = png::Decoder::new(std::io::Cursor::new(bytes));
         decoder.set_transformations(png::Transformations::normalize_to_color8());
         let mut reader = decoder.read_info()?;
@@ -114,18 +230,64 @@ impl<'a> FrameStream<'a> {
             reader.next_frame(&mut buffer)?;
         }
         Ok(Self {
-            reader,
+            decoder: Decoder::Png(PngFrames {
+                reader,
+                buffer,
+                pending: Dispose {
+                    region: [0; 4],
+                    op: png::DisposeOp::None,
+                },
+                saved: Vec::new(),
+            }),
             width,
             height,
             frame_count: usize::try_from(frame_count).map_err(|_| PictureError::CanvasTooLarge)?,
             next: 0,
-            buffer,
             canvas: vec![0; canvas_len],
-            pending: Dispose {
-                region: [0; 4],
-                op: png::DisposeOp::None,
-            },
-            saved: Vec::new(),
+        })
+    }
+
+    /// [`Self::new`] for a WebP: its header only, no pixel decoded yet.
+    fn new_webp(bytes: &'a [u8]) -> Result<Self, PictureError> {
+        let decoder = image_webp::WebPDecoder::new(std::io::Cursor::new(bytes))?;
+        let (width, height) = decoder.dimensions();
+        let frames = if decoder.is_animated() {
+            anmf_frames(bytes)?
+        } else {
+            Vec::new()
+        };
+        let frame_count = if decoder.is_animated() {
+            frames.len()
+        } else {
+            1
+        };
+        if frame_count == 0 {
+            return Err(PictureError::NoFrames);
+        }
+        for frame in &frames {
+            let [x, y, w, h] = frame.region;
+            if x.checked_add(w).is_none_or(|right| right > width)
+                || y.checked_add(h).is_none_or(|bottom| bottom > height)
+            {
+                return Err(PictureError::FrameOutside);
+            }
+        }
+        let canvas_bytes = (u64::from(width) * u64::from(height)).saturating_mul(4);
+        // The canvas and one frame's output (at most a canvas) coexist.
+        check_picture_storage(canvas_bytes.saturating_mul(2))?;
+        let canvas_len = usize::try_from(canvas_bytes).map_err(|_| PictureError::CanvasTooLarge)?;
+        Ok(Self {
+            decoder: Decoder::Webp(WebpFrames {
+                bytes,
+                frames,
+                buffer: Vec::new(),
+                pending: None,
+            }),
+            width,
+            height,
+            frame_count: usize::try_from(frame_count).map_err(|_| PictureError::CanvasTooLarge)?,
+            next: 0,
+            canvas: vec![0; canvas_len],
         })
     }
 
@@ -134,7 +296,8 @@ impl<'a> FrameStream<'a> {
         [self.width, self.height]
     }
 
-    /// The animation frames (`acTL`), or 1 for a plain PNG.
+    /// The animation frames (`acTL`, `ANMF`), or 1 for a plain PNG or a
+    /// still WebP.
     pub fn frame_count(&self) -> usize {
         self.frame_count
     }
@@ -159,13 +322,106 @@ impl<'a> FrameStream<'a> {
         }
     }
 
-    /// Dispose of the frame on the canvas, then decode the next one and draw
-    /// it by its blend operation.
+    /// Draw the next frame onto the canvas, by the format's own reader.
     fn draw_next(&mut self) -> Result<(), PictureError> {
-        self.dispose();
+        let size = [self.width, self.height];
+        match &mut self.decoder {
+            Decoder::Png(frames) => frames.draw_next(&mut self.canvas, size, self.next),
+            Decoder::Webp(frames) => frames.draw_next(&mut self.canvas, size, self.next),
+        }
+    }
+
+    /// The bytes of canvases and buffers this stream holds, for tests of its
+    /// memory bound.
+    #[cfg(all(test, tests_assets))]
+    fn held_bytes(&self) -> usize {
+        self.canvas.capacity()
+            + match &self.decoder {
+                Decoder::Png(frames) => frames.buffer.capacity() + frames.saved.capacity(),
+                Decoder::Webp(frames) => frames.buffer.capacity(),
+            }
+    }
+}
+
+impl WebpFrames<'_> {
+    /// Draw frame `index` onto `canvas` (`size`): a still WebP is the whole
+    /// canvas; an animation frame clears the region the frame before
+    /// disposes of, then draws its own region by its blend bit (WebP
+    /// container spec: alpha-blend, or overwrite).
+    fn draw_next(
+        &mut self,
+        canvas: &mut [u8],
+        size: [u32; 2],
+        index: usize,
+    ) -> Result<(), PictureError> {
+        let [width, _] = size;
+        let (still, region, blend, dispose) = match self.frames.get(index) {
+            Some(frame) => {
+                let [_, _, w, h] = frame.region;
+                let still = still_webp(&self.bytes[frame.payload.clone()], [w, h]);
+                (Some(still), frame.region, frame.blend, frame.dispose)
+            }
+            None => (None, [0, 0, size[0], size[1]], false, false),
+        };
+        let bytes = still.as_deref().unwrap_or(self.bytes);
+        let mut decoder = image_webp::WebPDecoder::new(std::io::Cursor::new(bytes))?;
+        let [x, y, w, h] = region;
+        if decoder.dimensions() != (w, h) {
+            return Err(PictureError::FrameSize);
+        }
+        let channels = if decoder.has_alpha() { 4 } else { 3 };
+        let len = decoder
+            .output_buffer_size()
+            .ok_or(PictureError::CanvasTooLarge)?;
+        self.buffer.resize(len, 0);
+        decoder.read_image(&mut self.buffer)?;
+        if let Some([px, py, pw, ph]) = self.pending.take() {
+            for row in canvas
+                .chunks_exact_mut(width as usize * 4)
+                .skip(py as usize)
+                .take(ph as usize)
+            {
+                row[px as usize * 4..(px + pw) as usize * 4].fill(0);
+            }
+        }
+        for (row, source) in self.buffer.chunks_exact(w as usize * channels).enumerate() {
+            let start = ((y as usize + row) * width as usize + x as usize) * 4;
+            let target = &mut canvas[start..start + w as usize * 4];
+            for (dst, src) in target
+                .chunks_exact_mut(4)
+                .zip(source.chunks_exact(channels))
+            {
+                let alpha = if channels == 4 { src[3] } else { 255 };
+                let source = [src[0], src[1], src[2], alpha];
+                // The WebP container spec's alpha-blend is APNG's OVER.
+                let drawn = if blend {
+                    blend_over(source, (&*dst).try_into().unwrap())
+                } else {
+                    source
+                };
+                dst.copy_from_slice(&drawn);
+            }
+        }
+        if dispose {
+            self.pending = Some(region);
+        }
+        Ok(())
+    }
+}
+
+impl PngFrames<'_> {
+    /// Dispose of the frame on `canvas` (`size`), then decode frame `index`
+    /// and draw it by its blend operation.
+    fn draw_next(
+        &mut self,
+        canvas: &mut [u8],
+        size: [u32; 2],
+        index: usize,
+    ) -> Result<(), PictureError> {
+        let [width, height] = size;
+        self.dispose(canvas, width);
         let output = self.reader.next_frame(&mut self.buffer)?;
         let control = self.reader.info().frame_control;
-        let (width, height) = (self.width, self.height);
         let region = control.map_or([0, 0, width, height], |control| {
             [
                 control.x_offset,
@@ -182,7 +438,7 @@ impl<'a> FrameStream<'a> {
         }
         let op = control.map_or(png::DisposeOp::None, |control| control.dispose_op);
         // A first frame's Previous disposal acts as Background (APNG 1.0).
-        let op = match (self.next, op) {
+        let op = match (index, op) {
             (0, png::DisposeOp::Previous) => png::DisposeOp::Background,
             (_, op) => op,
         };
@@ -193,7 +449,7 @@ impl<'a> FrameStream<'a> {
             for row in y..y + h {
                 let start = ((row * width + x) * 4) as usize;
                 self.saved
-                    .extend_from_slice(&self.canvas[start..start + row_bytes]);
+                    .extend_from_slice(&canvas[start..start + row_bytes]);
             }
         }
         let over = control.is_some_and(|control| control.blend_op == png::BlendOp::Over);
@@ -201,7 +457,7 @@ impl<'a> FrameStream<'a> {
         let color = output.color_type;
         for row in 0..h {
             let to = (((y + row) * width + x) * 4) as usize;
-            let target = &mut self.canvas[to..to + row_bytes];
+            let target = &mut canvas[to..to + row_bytes];
             let first = (row * w) as usize;
             // RGBA output replacing the canvas is copied as it is; anything
             // else goes pixel by pixel.
@@ -222,8 +478,8 @@ impl<'a> FrameStream<'a> {
         Ok(())
     }
 
-    /// Apply the disposal the frame on the canvas still owes.
-    fn dispose(&mut self) {
+    /// Apply the disposal the frame on `canvas`, `width` wide, still owes.
+    fn dispose(&mut self, canvas: &mut [u8], width: u32) {
         let Dispose {
             region: [x, y, w, h],
             op,
@@ -239,8 +495,8 @@ impl<'a> FrameStream<'a> {
         }
         let row_bytes = (w * 4) as usize;
         for row in 0..h {
-            let start = (((y + row) * self.width + x) * 4) as usize;
-            let target = &mut self.canvas[start..start + row_bytes];
+            let start = (((y + row) * width + x) * 4) as usize;
+            let target = &mut canvas[start..start + row_bytes];
             if op == png::DisposeOp::Previous {
                 let from = row as usize * row_bytes;
                 target.copy_from_slice(&self.saved[from..from + row_bytes]);
@@ -249,17 +505,10 @@ impl<'a> FrameStream<'a> {
             }
         }
     }
-
-    /// The bytes of canvases and buffers this stream holds, for tests of its
-    /// memory bound.
-    #[cfg(all(test, tests_assets))]
-    fn held_bytes(&self) -> usize {
-        self.buffer.capacity() + self.canvas.capacity() + self.saved.capacity()
-    }
 }
 
 impl PictureFrames {
-    /// Decode and composite every frame of the PNG or APNG `bytes`
+    /// Decode and composite every frame of the PNG, APNG or WebP `bytes`
     /// ([`FrameStream`]), refusing a picture whose frames together are more
     /// than [`PICTURE_BYTES_MAX`]: one that big must be streamed.
     pub fn decode(bytes: &[u8]) -> Result<Self, PictureError> {
@@ -301,7 +550,8 @@ fn rgba_sample(samples: &[u8], color: png::ColorType, index: usize) -> [u8; 4] {
     }
 }
 
-/// Straight-alpha `source` over `target` (APNG `APNG_BLEND_OP_OVER`).
+/// Straight-alpha `source` over `target` (APNG `APNG_BLEND_OP_OVER`; the
+/// WebP container spec's alpha-blend is the same).
 fn blend_over(source: [u8; 4], target: [u8; 4]) -> [u8; 4] {
     let source_alpha = u32::from(source[3]);
     if source_alpha == 255 {
@@ -396,9 +646,63 @@ pub fn mean_color(rgba: &[u8]) -> Option<[u8; 3]> {
     (count > 0).then(|| sum.map(|total| ((total + count / 2) / count) as u8))
 }
 
+/// VERA-only, experimental (docs/picture-model-art.md): the size, in game
+/// pixels, of the rectangle frame `frame` of the picture `bytes` draws on its
+/// `canvas` (game pixels; the picture is a whole multiple of it), by
+/// [`shrunk_region`]'s coverage rule: what an SHP frame header stores as its
+/// own width and height (`+0x08`, `+0x0A`), the rectangle of its drawn
+/// pixels. `[0, 0]` for a frame with nothing drawn. None when the picture
+/// cannot be read, has no such frame or is not a whole multiple of
+/// `canvas`. Frames up to `frame` are composited and dropped
+/// ([`FrameStream`]).
+pub fn drawn_size(bytes: &[u8], frame: usize, canvas: [i32; 2]) -> Option<[i32; 2]> {
+    let mut stream = FrameStream::new(bytes).ok()?;
+    let [width, height] = stream.size();
+    let [canvas_width, canvas_height] = canvas.map(|side| u32::try_from(side).unwrap_or(0));
+    let scale = width.checked_div(canvas_width)?;
+    if scale == 0 || canvas_width * scale != width || canvas_height * scale != height {
+        return None;
+    }
+    for _ in 0..frame {
+        stream.next_frame()?.ok()?;
+    }
+    let rgba = stream.next_frame()?.ok()?;
+    let shrunk = shrunk_region(rgba, [width, height], scale, [canvas_width, canvas_height])?;
+    let mut drawn = shrunk
+        .chunks_exact(4)
+        .enumerate()
+        .filter(|(_, pixel)| pixel[3] != 0)
+        .map(|(index, _)| (index as u32 % canvas_width, index as u32 / canvas_width));
+    let Some((x, y)) = drawn.next() else {
+        return Some([0, 0]);
+    };
+    let [left, top, right, bottom] = drawn.fold([x, y, x, y], |[l, t, r, b], (x, y)| {
+        [l.min(x), t.min(y), r.max(x), b.max(y)]
+    });
+    Some([(right - left + 1) as i32, (bottom - top + 1) as i32])
+}
+
 impl PictureHeader {
-    /// The header of the PNG or APNG `bytes`.
+    /// The header of the PNG, APNG or WebP `bytes`.
     pub fn read(bytes: &[u8]) -> Result<Self, PictureError> {
+        if is_webp(bytes) {
+            // The header and the chunk index only; no frame is decoded.
+            let decoder = image_webp::WebPDecoder::new(std::io::Cursor::new(bytes))?;
+            let (width, height) = decoder.dimensions();
+            let frames = if decoder.is_animated() {
+                decoder.num_frames()
+            } else {
+                1
+            };
+            if frames == 0 {
+                return Err(PictureError::NoFrames);
+            }
+            return Ok(Self {
+                width,
+                height,
+                frames,
+            });
+        }
         let reader = png::Decoder::new(std::io::Cursor::new(bytes)).read_info()?;
         let info = reader.info();
         let frames = info
@@ -413,6 +717,36 @@ impl PictureHeader {
             frames,
         })
     }
+}
+
+/// The picture file `name` names, through `lookup` (the caller's own asset
+/// lookup), with the name it was found by: `name` itself, else, for a
+/// `NAME.png` (`NAME.mask.png` too) that is not there, its WebP twin
+/// `NAME.webp`. An art pack may ship every picture as WebP to be small,
+/// and art INIs keep naming them `.png`. A name that is there costs one
+/// lookup, as before; only a miss asks for the twin. Every lookup of a
+/// picture file by name goes through here, so the rule is one.
+pub fn find_picture<'n, T>(
+    name: &'n str,
+    mut lookup: impl FnMut(&str) -> Option<T>,
+) -> Option<(Cow<'n, str>, T)> {
+    if let Some(found) = lookup(name) {
+        return Some((Cow::Borrowed(name), found));
+    }
+    let twin = webp_twin(name)?;
+    let found = lookup(&twin)?;
+    Some((Cow::Owned(twin), found))
+}
+
+/// `NAME.webp` for `NAME.png` (in the extension's case when it is all one
+/// case); None for any other name.
+fn webp_twin(name: &str) -> Option<String> {
+    let (stem, extension) = name.rsplit_once('.')?;
+    if !extension.eq_ignore_ascii_case("png") {
+        return None;
+    }
+    let webp = if extension == "PNG" { "WEBP" } else { "webp" };
+    Some(format!("{stem}.{webp}"))
 }
 
 /// Encode `frames`, each `width * height * 4` straight RGBA bytes, as a PNG
@@ -458,9 +792,173 @@ pub(crate) fn test_picture(width: u32, height: u32, frames: Option<u32>) -> Vec<
     bytes
 }
 
+/// A lossless WebP of `frames`, each `[x, y, width, height]` (`x` and `y`
+/// even), its `ANMF` flags (bit 1 no blending, bit 0 dispose to the
+/// background) and its straight RGBA: a still WebP for one whole-canvas
+/// frame with no flags, else an animation on a `canvas` with alpha. For
+/// tests of picture readers; `image-webp` encodes stills only, so the
+/// animation container is assembled here (WebP container spec, `VP8X`,
+/// `ANIM`, `ANMF`).
+#[cfg(test)]
+pub(crate) fn test_webp(canvas: [u32; 2], frames: &[([u32; 4], u8, Vec<u8>)]) -> Vec<u8> {
+    let still = |[_, _, width, height]: [u32; 4], rgba: &[u8]| {
+        let mut bytes = Vec::new();
+        image_webp::WebPEncoder::new(&mut bytes)
+            .encode(rgba, width, height, image_webp::ColorType::Rgba8)
+            .unwrap();
+        bytes
+    };
+    if let [(region, 0, rgba)] = frames
+        && region[2..] == canvas[..]
+    {
+        return still(*region, &rgba[..]);
+    }
+    let chunk = |name: &[u8; 4], data: &[u8]| {
+        let mut bytes = name.to_vec();
+        bytes.extend_from_slice(&(data.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(data);
+        if data.len() % 2 == 1 {
+            bytes.push(0);
+        }
+        bytes
+    };
+    let u24 = |value: u32| value.to_le_bytes()[..3].to_vec();
+    // Flags: alpha (0x10) and animation (0x02).
+    let mut header = vec![0x12, 0, 0, 0];
+    header.extend(u24(canvas[0] - 1));
+    header.extend(u24(canvas[1] - 1));
+    let mut body = b"WEBP".to_vec();
+    body.extend(chunk(b"VP8X", &header));
+    // A background colour and loop count the decoder is told to ignore.
+    body.extend(chunk(b"ANIM", &[0xFF, 0xFF, 0xFF, 0xFF, 0, 0]));
+    for &([x, y, width, height], flags, ref rgba) in frames {
+        let mut frame = [
+            u24(x / 2),
+            u24(y / 2),
+            u24(width - 1),
+            u24(height - 1),
+            u24(100),
+        ]
+        .concat();
+        frame.push(flags);
+        // The still's VP8L chunk, past its `RIFF` size `WEBP` header.
+        frame.extend_from_slice(&still([x, y, width, height], &rgba[..])[12..]);
+        body.extend(chunk(b"ANMF", &frame));
+    }
+    let mut bytes = b"RIFF".to_vec();
+    bytes.extend_from_slice(&(body.len() as u32).to_le_bytes());
+    bytes.extend(body);
+    bytes
+}
+
 #[cfg(all(test, tests_assets))]
 mod tests {
     use super::*;
+
+    /// A still WebP reads as one frame with its pixels and alpha as stored,
+    /// by its signature, through the same stream a PNG takes.
+    #[test]
+    fn a_still_webp_streams_one_frame_with_its_alpha() {
+        let rgba = [
+            [255, 0, 0, 255],
+            [0, 0, 0, 0],
+            [10, 20, 30, 128],
+            [0, 255, 0, 255],
+        ]
+        .concat();
+        let bytes = test_webp([2, 2], &[([0, 0, 2, 2], 0, rgba.clone())]);
+        assert_eq!(
+            PictureHeader::read(&bytes).unwrap(),
+            PictureHeader {
+                width: 2,
+                height: 2,
+                frames: 1
+            }
+        );
+        let mut stream = FrameStream::new(&bytes).unwrap();
+        assert_eq!((stream.size(), stream.frame_count()), ([2, 2], 1));
+        assert_eq!(stream.next_frame().unwrap().unwrap(), &rgba[..]);
+        assert!(stream.next_frame().is_none());
+    }
+
+    /// An animated WebP's frames composite onto the whole canvas: disposal
+    /// clears to transparent, a frame without blending replaces, one with
+    /// blending keeps what its transparent pixels cover.
+    #[test]
+    fn an_animated_webp_composites_by_blend_and_dispose() {
+        const RED: [u8; 4] = [255, 0, 0, 255];
+        const GREEN: [u8; 4] = [0, 255, 0, 255];
+        const CLEAR: [u8; 4] = [0; 4];
+        let bytes = test_webp(
+            [4, 1],
+            &[
+                ([0, 0, 4, 1], 0b11, RED.repeat(4)),
+                ([2, 0, 2, 1], 0b10, GREEN.repeat(2)),
+                ([2, 0, 2, 1], 0b00, [CLEAR, RED].concat()),
+            ],
+        );
+        assert_eq!(PictureHeader::read(&bytes).unwrap().frames, 3);
+        let picture = PictureFrames::decode(&bytes).unwrap();
+        assert_eq!((picture.width, picture.height), (4, 1));
+        assert_eq!(picture.frames[0], RED.repeat(4));
+        assert_eq!(picture.frames[1], [CLEAR, CLEAR, GREEN, GREEN].concat());
+        assert_eq!(
+            &picture.frames[2][..12],
+            &[CLEAR, CLEAR, GREEN].concat()[..]
+        );
+        // Opaque red blended over green, within the decoder's rounding.
+        let last = &picture.frames[2][12..];
+        assert!(last[0] >= 254 && last[1..] == [0, 0, 255], "{last:?}");
+    }
+
+    /// A lossy frame without alpha after a disposed frame shows its own
+    /// pixels only: the disposed frame's region is cleared whole (here a
+    /// libwebp file; `image-webp` 0.2.4's compositing leaves part of it).
+    #[test]
+    fn a_disposed_webp_frame_clears_before_an_opaque_lossy_frame() {
+        let bytes = include_bytes!("../../tests/fixtures/pictures/dispose_then_opaque.webp");
+        let picture = PictureFrames::decode(bytes).unwrap();
+        assert_eq!(
+            (picture.width, picture.height, picture.frames.len()),
+            (16, 16, 2)
+        );
+        let shown: Vec<(usize, usize)> = picture.frames[1]
+            .chunks_exact(4)
+            .enumerate()
+            .filter(|(_, pixel)| pixel[3] != 0)
+            .map(|(index, _)| (index % 16, index / 16))
+            .collect();
+        let square: Vec<(usize, usize)> =
+            (6..10).flat_map(|y| (6..10).map(move |x| (x, y))).collect();
+        assert_eq!(shown, square);
+        // Frame 0's band is still read, with its alpha.
+        assert!(
+            picture.frames[0]
+                .chunks_exact(4)
+                .filter(|p| p[3] == 255)
+                .count()
+                >= 120
+        );
+    }
+
+    /// A `.png` name that is missing finds its `.webp` twin, a mask's too;
+    /// a `.png` that is there wins and is the only name asked.
+    #[test]
+    fn a_missing_png_finds_its_webp_twin() {
+        let files = ["a.png", "a.webp", "b.webp", "b.mask.webp"];
+        let asked = std::cell::RefCell::new(Vec::new());
+        let lookup = |name: &str| {
+            asked.borrow_mut().push(name.to_owned());
+            files.contains(&name).then_some(name.len())
+        };
+        let found = |name: &str| find_picture(name, &lookup).map(|(found, _)| found.into_owned());
+        assert_eq!(found("a.png").as_deref(), Some("a.png"));
+        assert_eq!(*asked.borrow(), ["a.png"]);
+        assert_eq!(found("b.png").as_deref(), Some("b.webp"));
+        assert_eq!(found("b.mask.png").as_deref(), Some("b.mask.webp"));
+        assert_eq!(found("c.webp"), None);
+        assert_eq!(found("c.shp"), None);
+    }
 
     #[test]
     fn an_apng_counts_its_animation_frames_and_a_png_one() {

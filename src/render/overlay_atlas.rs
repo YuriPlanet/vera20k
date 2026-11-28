@@ -1355,10 +1355,10 @@ pub fn compute_overlay_radar_colors(
     // mean colour of its drawn pixels in place of the SHP header's.
     let picture_colors = |section: &str, decl: &art_data::PictureDecl| {
         art_registry
-            .picture_candidates(section, decl, theater_name)
-            .iter()
-            .find_map(|file| asset_manager.get_ref(file))
-            .and_then(|bytes| {
+            .find_picture(section, decl, theater_name, |file| {
+                asset_manager.get_ref(file)
+            })
+            .and_then(|(_, bytes)| {
                 // Frame by frame as the file is read, so no picture is too
                 // large to colour the radar.
                 let mut stream = crate::assets::picture_file::FrameStream::new(bytes).ok()?;

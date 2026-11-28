@@ -153,8 +153,18 @@ serde_json = { workspace = true }
 # --- Picture art ---
 # VERA's experimental `Picture=` art (docs/picture-model-art.md) reads PNG and
 # APNG headers in the core crate: their frame counts reach the simulation as an
-# SHP header's do. Already in the lock via `image`.
+# SHP header's do. `png` is already in the lock via `image`.
 png = "0.18"
+
+# --- Opus audio overrides ---
+# `<name>.opus` files that replace retail sounds and music (docs/opus-audio.md).
+# Pure Rust with Ogg demuxing built in, no dependencies; the choice is argued in
+# src/assets/opus_file.rs.
+opus-pure = "0.2.5"
+# The same facts and frames from a WebP picture (still or animated), which an
+# art pack ships to be small. Pure Rust with no threads or files, so the
+# browser build decodes it too. Read only when a `.webp` file is used.
+image-webp = "0.2.4"
 
 # --- Error handling ---
 thiserror = { workspace = true }
