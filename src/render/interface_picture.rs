@@ -108,8 +108,11 @@ fn stem(file_name: &str) -> &str {
 
 /// The picture beside `file_name`, whose own file gives `original` (None
 /// without one), and its mask when `masked`, through `lookup`, the file's
-/// own lookup; its size from `sizes`. None without the picture; None,
-/// reported in the game, for one that cannot be read or does not fit.
+/// own lookup; its size from `sizes`. Each is `NAME.png`, else its WebP
+/// twin (`crate::assets::picture_file::find_picture`): for a retail file,
+/// which has neither, two name lookups once a load. None without the
+/// picture; None, reported in the game, for one that cannot be read or does
+/// not fit.
 pub(crate) fn find<'a>(
     file_name: &str,
     original: Option<ArtShape>,
@@ -117,9 +120,9 @@ pub(crate) fn find<'a>(
     masked: bool,
     lookup: impl Fn(&str) -> Option<&'a [u8]>,
 ) -> Option<InterfacePicture> {
-    let name = picture_name(file_name);
-    let bytes = lookup(&name)?;
-    let mask_name = format!("{}.mask.png", stem(file_name));
+    let png_name = picture_name(file_name);
+    let (name, bytes) = crate::assets::picture_file::find_picture(&png_name, &lookup)?;
+    let mask_png = format!("{}.mask.png", stem(file_name));
     // An interface file is small: its bytes are copied once, so the strips
     // can stream it again at its own resolution.
     let shared = |bytes: &[u8]| {
@@ -129,8 +132,11 @@ pub(crate) fn find<'a>(
         let picture = PictureFrames::decode(bytes)
             .map_err(|error| format!("it is not readable ({error})"))?;
         let (canvas, scale) = fit(&picture, original, sizes.get(stem(file_name)))?;
-        let mask = match masked.then(|| lookup(&mask_name)).flatten() {
-            Some(bytes) => {
+        let found_mask = masked
+            .then(|| crate::assets::picture_file::find_picture(&mask_png, &lookup))
+            .flatten();
+        let mask = match found_mask {
+            Some((mask_name, bytes)) => {
                 let mask = crate::assets::picture_file::PictureHeader::read(bytes)
                     .map_err(|error| format!("{mask_name} is not readable ({error})"))?;
                 if [mask.width, mask.height] != [picture.width, picture.height]

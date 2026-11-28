@@ -41,6 +41,7 @@ pub mod map_export;
 pub mod map_file;
 pub mod overlay;
 pub(crate) mod overlay_mark;
+pub(crate) mod packed;
 pub mod playfield;
 pub mod preview;
 pub mod ranking;

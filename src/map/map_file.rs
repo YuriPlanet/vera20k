@@ -44,7 +44,6 @@ use crate::map::waypoints::{self, Waypoint};
 use crate::rules::error::RulesError;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::ini_value::{crt_atoi, strtok};
-use crate::util::base64;
 use crate::util::lzo::{self, LzoError};
 
 /// Size of one terrain cell record in the decompressed IsoMapPack5 data.
@@ -682,12 +681,8 @@ pub fn parse_header(ini: &IniFile) -> Result<MapHeader, MapError> {
     })
 }
 
-/// Extract and decode the [IsoMapPack5] terrain data.
-///
-/// 1. Concatenate all numbered key values from the section.
-/// 2. Base64 decode the concatenated string.
-/// 3. LZO decompress the chunks.
-/// 4. Parse 11-byte terrain cell records.
+/// Read the [IsoMapPack5] entries in file order and decompress the LZO
+/// blocks requested by the cell reader, within this map's grid budget.
 fn parse_iso_map_pack(
     ini: &IniFile,
     grid: crate::map::cell_index::CellGrid,
@@ -702,11 +697,20 @@ fn parse_iso_map_pack(
         return Err(MapError::MissingIsoMapPack);
     }
 
-    // Base64 decode → LZO decompress.
-    let compressed: Vec<u8> = base64::base64_decode(&b64_data).map_err(MapError::Base64)?;
-    let decompressed: Vec<u8> = lzo::decompress_chunks(&compressed, iso_map_max_bytes(grid))?;
-
-    let parsed = parse_iso_map_pack_records(&decompressed, grid)?;
+    let blocks = super::packed::decoded_blocks(
+        &b64_data,
+        iso_map_max_bytes(grid),
+        super::packed::EmptyFrame::End,
+        lzo::lzo1x_decompress,
+        |size, remaining| {
+            if size > remaining {
+                Err(LzoError::OutputOverflow)
+            } else {
+                Ok(())
+            }
+        },
+    );
+    let parsed = parse_iso_map_blocks(blocks, grid)?;
 
     // Diagnostic: tile_index distribution. Lets a reader of the load logs see
     // how high a map's IsoMapPack5 reaches vs. what the theater INI defines.
@@ -739,75 +743,75 @@ fn parse_iso_map_pack(
     Ok(parsed)
 }
 
-/// Parse native IsoMapPack5 records after chunk decompression.
-fn parse_iso_map_pack_records(
-    decompressed: &[u8],
+/// ReadIsoMapPack5 (0x56BAC0) asks for four coordinate bytes, then seven
+/// payload bytes per cell. It stops on an empty coordinate before asking
+/// the LZO straw for another block. A record can span two blocks.
+fn parse_iso_map_blocks<B: AsRef<[u8]>>(
+    blocks: impl IntoIterator<Item = Result<B, LzoError>>,
     grid: crate::map::cell_index::CellGrid,
 ) -> Result<ParsedIsoMapPack, MapError> {
-    let maximum = iso_map_max_bytes(grid);
-    if decompressed.len() > maximum {
-        return Err(MapError::CellDataTooLarge {
-            actual: decompressed.len(),
-            maximum,
-        });
+    let mut cells = Vec::new();
+    let mut lookups = Vec::new();
+    let mut pending = Vec::new();
+    for block in blocks {
+        pending.extend_from_slice(block?.as_ref());
+        let mut remaining = pending.as_slice();
+        while remaining.len() >= CELL_HEADER_SIZE {
+            let x = i16::from_le_bytes([remaining[0], remaining[1]]);
+            let y = i16::from_le_bytes([remaining[2], remaining[3]]);
+            if x == 0 && y == 0 {
+                return Ok(ParsedIsoMapPack { cells, lookups });
+            }
+            let Some((d, tail)) = remaining.split_at_checked(CELL_RECORD_SIZE) else {
+                break;
+            };
+            remaining = tail;
+            let tile_index: i32 = i32::from_le_bytes([d[4], d[5], d[6], d[7]]);
+            let sub_tile: u8 = d[8];
+            let z: u8 = d[9];
+            let legacy_ice_byte: u8 = d[10];
+
+            // ReadIsoMapPack5 0x0056BB15..0x0056BB27 sign-extends both words
+            // before the fixed-table lookup. The shared owner also preserves our
+            // map-owned extended-grid policy.
+            let canonical = grid.canonical_coord(i32::from(x), i32::from(y));
+            lookups.push(IsoMapPackLookup {
+                raw_x: x,
+                raw_y: y,
+                canonical,
+            });
+            let Some((rx, ry)) = canonical else {
+                continue;
+            };
+
+            cells.push(MapCell {
+                rx,
+                ry,
+                tile_index,
+                sub_tile,
+                z,
+                legacy_ice_byte,
+            });
+        }
+        let consumed = pending.len() - remaining.len();
+        pending.drain(..consumed);
     }
-    let mut cells: Vec<MapCell> = Vec::with_capacity(decompressed.len() / CELL_RECORD_SIZE);
-    let mut lookups: Vec<IsoMapPackLookup> =
-        Vec::with_capacity(decompressed.len() / CELL_RECORD_SIZE);
-    let mut offset: usize = 0;
-
-    while offset < decompressed.len() {
-        let remaining: usize = decompressed.len() - offset;
-        if remaining < CELL_HEADER_SIZE {
-            return Err(MapError::CellDataTruncated {
-                expected: CELL_HEADER_SIZE,
-                actual: remaining,
-            });
-        }
-
-        let x: i16 = i16::from_le_bytes([decompressed[offset], decompressed[offset + 1]]);
-        let y: i16 = i16::from_le_bytes([decompressed[offset + 2], decompressed[offset + 3]]);
-        if x == 0 && y == 0 {
-            break;
-        }
-
-        if remaining < CELL_RECORD_SIZE {
-            return Err(MapError::CellDataTruncated {
-                expected: CELL_RECORD_SIZE,
-                actual: remaining,
-            });
-        }
-
-        let d: &[u8] = &decompressed[offset..offset + CELL_RECORD_SIZE];
-        let tile_index: i32 = i32::from_le_bytes([d[4], d[5], d[6], d[7]]);
-        let sub_tile: u8 = d[8];
-        let z: u8 = d[9];
-        let legacy_ice_byte: u8 = d[10];
-        offset += CELL_RECORD_SIZE;
-
-        // ReadIsoMapPack5 0x0056BB15..0x0056BB27 sign-extends both words
-        // before the fixed-table lookup. The shared owner also preserves our
-        // map-owned extended-grid policy.
-        let canonical = grid.canonical_coord(i32::from(x), i32::from(y));
-        lookups.push(IsoMapPackLookup {
-            raw_x: x,
-            raw_y: y,
-            canonical,
-        });
-        let Some((rx, ry)) = canonical else {
-            continue;
+    // After a record, 0x56BBAE..0x56BBB7 resets the next coordinate to
+    // the end marker. A short all-zero read leaves both components zero.
+    let reset_coordinate = !lookups.is_empty()
+        && pending.len() < CELL_HEADER_SIZE
+        && pending.iter().all(|&byte| byte == 0);
+    if !pending.is_empty() && !reset_coordinate {
+        let expected = if pending.len() < CELL_HEADER_SIZE {
+            CELL_HEADER_SIZE
+        } else {
+            CELL_RECORD_SIZE
         };
-
-        cells.push(MapCell {
-            rx,
-            ry,
-            tile_index,
-            sub_tile,
-            z,
-            legacy_ice_byte,
+        return Err(MapError::CellDataTruncated {
+            expected,
+            actual: pending.len(),
         });
     }
-
     Ok(ParsedIsoMapPack { cells, lookups })
 }
 
@@ -892,9 +896,65 @@ mod smudge_parse_tests {
 #[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
+    use crate::util::base64;
+
+    fn parse_iso_map_pack_records(
+        bytes: &[u8],
+        grid: crate::map::cell_index::CellGrid,
+    ) -> Result<ParsedIsoMapPack, MapError> {
+        parse_iso_map_blocks([Ok(bytes)], grid)
+    }
 
     const ONE_CELL_ISO_MAP_PACK: &str = "DwALABwBAAIA/////wAAABEAAA==";
     const TWO_PIXEL_PREVIEW_PACK: &str = "CgAGABcBAgMEBQYRAAA=";
+
+    #[test]
+    fn packed_terrain_ends_on_short_read_after_a_complete_cell() {
+        let mut packed = lzo::compress_chunks(&iso_map_record(2, 3, 17, 1, 0), 8192);
+        packed.extend_from_slice(&[8, 0, 11, 0, 1, 2]);
+        let text = base64::base64_encode(&packed);
+        let map = MapFile::from_ini(IniFile::from_str(&format!(
+            "[Map]\nSize=0,0,8,8\n[IsoMapPack5]\n1={}\n",
+            text.trim_end_matches('=')
+        )))
+        .expect("the next block ended before its compressed payload was available");
+        assert_eq!(map.cells.len(), 1);
+        assert_eq!(map.cells[0].tile_index, 17);
+    }
+
+    #[test]
+    fn packed_terrain_short_zero_coordinate_uses_the_previous_cell_reset() {
+        for count in [1, 3] {
+            let mut cell = iso_map_record(2, 3, 17, 1, 0).to_vec();
+            cell.extend_from_slice(&[0; 3][..count]);
+            let mut packed = lzo::compress_chunks(&cell, 8192);
+            packed.extend_from_slice(&[0; 4]); // LZO's empty frame ends this stream.
+            packed.extend(lzo::compress_chunks(&iso_map_record(4, 5, 18, 0, 0), 8192));
+            let text = base64::base64_encode(&packed);
+            let map = MapFile::from_ini(IniFile::from_str(&format!(
+                "[Map]\nSize=0,0,8,8\n[IsoMapPack5]\n1={text}\n"
+            )))
+            .expect("the next coordinate remains zero");
+            assert_eq!(map.cells.len(), 1);
+            assert_eq!(map.cells[0].tile_index, 17);
+        }
+    }
+
+    #[test]
+    fn packed_terrain_stops_at_a_cell_end_marker_across_blocks() {
+        let mut records = iso_map_record(1, 2, 8, 0, 0).to_vec();
+        records.extend_from_slice(&[0; 4]);
+        let mut packed = lzo::compress_chunks(&records, 13);
+        // A complete but unreadable LZO block follows the four-byte end marker.
+        packed.extend_from_slice(&[1, 0, 11, 0, 0xff]);
+        let text = base64::base64_encode(&packed);
+        let map = MapFile::from_ini(IniFile::from_str(&format!(
+            "[Map]\nSize=0,0,8,8\n[IsoMapPack5]\n1={text}\n"
+        )))
+        .expect("the map reader has already reached its end marker");
+        assert_eq!(map.cells.len(), 1);
+        assert_eq!(map.cells[0].tile_index, 8);
+    }
 
     /// VERA: a mod's map additions set their keys over the map's, as a
     /// launcher merges such a file into the map, a later addition over an
@@ -1017,9 +1077,9 @@ mod tests {
             Some(MapError::InvalidDimensions { .. })
         ));
 
-        // Each 270-byte chunk uses a two-byte zero literal and an M3
+        // Each 270-byte chunk uses a two-byte 0x01 literal and an M3
         // distance-one match to produce 65535 bytes. The 45th exceeds the grid.
-        let chunk = "CgH//xMAACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA3AAAEQAA";
+        let chunk = "CgH//xMBASAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA3AAAEQAA";
         let packed = chunk.repeat(45);
         let mut bomb = "[Map]\nSize=0,0,2,1\n[IsoMapPack5]\n".to_owned();
         for (index, line) in packed.as_bytes().chunks(72).enumerate() {

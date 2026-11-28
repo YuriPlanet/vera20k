@@ -1566,7 +1566,9 @@ impl<'r> EntityAtlasCoverage<'r> {
         if let Some(rules) = rules {
             for image in sim.ext_module_images() {
                 if let Some(object) = rules.object(image)
-                    && !extra_types.iter().any(|known| known.eq_ignore_ascii_case(&object.id))
+                    && !extra_types
+                        .iter()
+                        .any(|known| known.eq_ignore_ascii_case(&object.id))
                 {
                     extra_types.push(&object.id);
                 }
@@ -2666,14 +2668,15 @@ impl<'a> PictureRoutes<'a> {
         theater_name: &'a str,
     ) -> Option<Self> {
         let art = art?;
-        let mut declared = false;
+        // Sections of only VERA's drawing keys declare pictures too, but no
+        // BibShape= or factory door (`ArtRegistry::declares_any_picture`).
+        let declared = art.declares_any_picture();
         let mut bibs = HashMap::new();
         let mut doors = HashMap::new();
         for (name, entry) in art.iter_entries() {
             if entry.picture.is_none() {
                 continue;
             }
-            declared = true;
             let Some(source) = Self::declared(art, name, "") else {
                 continue;
             };
@@ -4362,7 +4365,9 @@ impl ShpAtlasUpload {
                 atlas.append_sprites(device, queue, batch, rendered, rows);
                 atlas
             }
-            None if rendered.is_empty() => {
+            // Picture pages alone make an atlas too (an art pack that
+            // replaces every SHP the world draws).
+            None if rendered.is_empty() && pictures.keys.is_empty() => {
                 log::warn!("No SHP sprites rendered");
                 return false;
             }

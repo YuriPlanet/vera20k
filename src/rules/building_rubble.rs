@@ -80,9 +80,9 @@ fn rubble_shadow_frame(raw_frames: i16) -> Option<u16> {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct RubbleAssetCatalog {
     art: BTreeMap<String, RubbleArt>,
-    /// VERA: the game-folder files whose LeaveRubble image is long enough
-    /// where the copy a retail install reads is not, or the reverse
-    /// (`retail_sources::FolderFiles`); not hashed.
+    /// VERA: the game-folder files whose LeaveRubble image (SHP or
+    /// picture) is long enough where the copy a retail install reads is
+    /// not, or the reverse (`retail_sources::FolderFiles`); not hashed.
     folder_files: std::collections::BTreeSet<String>,
 }
 
@@ -134,11 +134,29 @@ impl RubbleAssetCatalog {
                 // VERA-only (docs/picture-model-art.md): the body picture's
                 // frame count stands in for the SHP header's `+6`; the SHP is
                 // never opened, and a missing picture leaves no rubble.
-                let Some(facts) =
-                    rules
-                        .art()
-                        .picture_header(section, decl, asset_manager, theater_name)
-                else {
+                let facts = rules
+                    .art()
+                    .picture_header(section, decl, asset_manager, theater_name);
+                // Named when its rubble is not the retail body SHP's.
+                let image = rules
+                    .art()
+                    .resolve_effective_image_id(&object.id, &object.image);
+                folder.note_stand_in(
+                    facts.as_ref().map_or(&decl.file, |facts| &facts.file),
+                    facts.as_ref().and_then(|facts| {
+                        rubble_body_frame(i16::try_from(facts.frames).unwrap_or(i16::MAX))
+                    }),
+                    crate::rules::art_data::building_body_shp_candidates(
+                        Some(rules.art()),
+                        &object.image,
+                        &image,
+                        theater_ext,
+                        theater_name,
+                    ),
+                    |bytes| frame_word(bytes).and_then(rubble_body_frame),
+                    &mut catalog.folder_files,
+                );
+                let Some(facts) = facts else {
                     continue;
                 };
                 (

@@ -1602,15 +1602,18 @@ impl GpuModel {
         let model = &declared.model;
         // Sidecar files beside the model replace its embedded images:
         // NAME.texture.png the base colour, NAME.normals.png the normal map,
-        // NAME.mask.png the house-colour mask (docs/picture-model-art.md).
+        // NAME.mask.png the house-colour mask (docs/picture-model-art.md),
+        // each else its WebP twin, as any picture is found.
         let stem = declared
             .decl
             .file
             .rsplit_once('.')
             .map_or(declared.decl.file.as_str(), |(stem, _)| stem);
         let sidecar = |suffix: &str, format| {
-            let name = format!("{stem}.{suffix}");
-            let bytes = assets?.get_ref(&name)?;
+            let assets = assets?;
+            let png = format!("{stem}.{suffix}");
+            let (name, bytes) =
+                crate::assets::picture_file::find_picture(&png, |name| assets.get_ref(name))?;
             match crate::assets::picture_file::PictureFrames::decode(bytes) {
                 Ok(picture) => picture.frames.first().map(|frame| {
                     rgba_texture(

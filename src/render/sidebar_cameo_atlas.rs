@@ -623,19 +623,21 @@ fn render_pcx_cameo(
 const CAMEO_CANVAS: [u32; 2] = [60, 48];
 
 /// VERA-only, experimental (docs/picture-model-art.md): frame 0 of the
-/// cameo picture `file` on the 60x48 cameo canvas. A picture that is a whole
+/// cameo picture `declared` on the 60x48 cameo canvas. A picture that is a whole
 /// multiple (2x, 4x) of it is shrunk as other pictures are; a pixel at least
 /// half covered is drawn. None, reported in the game, when the file is
-/// missing, unreadable or another size.
+/// missing, unreadable or another size. The file is found as any picture
+/// is (`crate::assets::picture_file::find_picture`), its WebP twin too.
 fn render_picture_cameo(
     key: &str,
-    file: &str,
+    declared: &str,
     asset_manager: &AssetManager,
 ) -> Option<RenderedCameo> {
-    let shrunk = asset_manager
-        .get_shared(file)
-        .ok_or_else(|| "the file is not found".to_owned())
-        .and_then(|bytes| {
+    let (file, shrunk) = match crate::assets::picture_file::find_picture(declared, |name| {
+        asset_manager.get_shared(name)
+    }) {
+        Some((file, bytes)) => (
+            file,
             crate::render::picture_atlas::GamePictureFrames::stream(
                 crate::render::picture_atlas::PictureBytes {
                     picture: bytes,
@@ -643,15 +645,20 @@ fn render_picture_cameo(
                 },
                 Some(CAMEO_CANVAS),
             )
-            .map_err(|error| error.to_string())
-        });
+            .map_err(|error| error.to_string()),
+        ),
+        None => (
+            std::borrow::Cow::Borrowed(declared),
+            Err("the file is not found".to_owned()),
+        ),
+    };
     let frames = match shrunk {
         Ok(frames) => frames,
         Err(error) => {
             log::warn!("[{key}] cameo picture {file} cannot be drawn: {error}");
             crate::rules::art_problems::report(
                 key,
-                &format!("CameoPicture={file}"),
+                &format!("CameoPicture={declared}"),
                 &format!("{file} cannot be drawn ({error})"),
                 "the placeholder cameo is drawn",
             );
