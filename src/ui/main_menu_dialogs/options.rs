@@ -72,10 +72,6 @@ pub(crate) const HAS_CHECK_FOR_UPDATES: bool = !BROWSER;
 /// The column's Mods button, which opens VERA's Mods page
 /// (`ui::mods_shell`). The browser build has no Mods folder.
 pub(crate) const HAS_MODS: bool = !BROWSER;
-/// The Gameplay page's RA2 Mode (`util::ra2_launch`). The browser build keeps
-/// one game instance across its starts, and its launcher probe reads no saved
-/// choice, so it has no box.
-pub(crate) const HAS_RA2_MODE: bool = !BROWSER;
 /// The Esc menu's Set Window Size button. A browser tab's canvas takes its size
 /// from the page and an Android window fills the screen, so those builds have
 /// none.
@@ -415,24 +411,6 @@ impl ZoomGeometry {
             x * scale + self.origin.0 as f32,
             y * scale + self.origin.1 as f32,
         )
-    }
-
-    /// The window pixels wholly inside source rect `(x, y, width, height)`
-    /// once scaled: one it shares with a neighbour keeps the zoom's blend.
-    pub(crate) fn window_rect(self, (x, y, width, height): (u32, u32, u32, u32)) -> [u32; 4] {
-        let (left, top) = self.source_to_window(x as f32, y as f32);
-        let (right, bottom) = self.source_to_window((x + width) as f32, (y + height) as f32);
-        let (frame_width, frame_height) = self.frame_size();
-        let left = left.ceil() as u32;
-        let top = top.ceil() as u32;
-        let right = (right.floor() as u32).min(self.origin.0 + frame_width);
-        let bottom = (bottom.floor() as u32).min(self.origin.1 + frame_height);
-        [
-            left,
-            top,
-            right.saturating_sub(left),
-            bottom.saturating_sub(top),
-        ]
     }
 }
 
@@ -989,8 +967,8 @@ pub(crate) enum LauncherCheckboxId {
     ShiftQueue,
     /// The player's damaged buildings are sent the Repair order by themselves.
     AutoRepair,
-    /// The next start plays original Red Alert 2 (`[VERA] RA2Mode=`,
-    /// docs/ra2-mode.md).
+    /// Android applies the saved edition when the player next starts the app.
+    #[cfg(target_os = "android")]
     Ra2Mode,
     /// The wheel changes battle view distance.
     MouseWheelZoom,
@@ -1009,6 +987,8 @@ pub(crate) enum LauncherCheckboxId {
     /// The online client's enlarged art draws lightly smoothed.
     SmoothOnlineMenus,
     VSync,
+    /// Moving tanks draw between two committed simulation poses.
+    RenderInterpolation,
     /// Battles draw at the monitor's refresh rate where draw time allows
     /// (`[VERA] HighRefreshRateInBattle=`), with either VSync setting.
     HighRefreshRateInBattle,
@@ -1082,7 +1062,6 @@ impl Setting {
             ) => HAS_VSYNC,
             Self::List(LauncherComboId::GraphicsApi) => HAS_GRAPHICS_API,
             Self::Checkbox(LauncherCheckboxId::HdMapPreviews) => HAS_HD_MAP_PREVIEWS,
-            Self::Checkbox(LauncherCheckboxId::Ra2Mode) => HAS_RA2_MODE,
             _ => true,
         }
     }
@@ -1164,6 +1143,7 @@ pub(crate) const ROWS: &[Row] = {
             "BuildingProductionQueue"
         ),
         row!(Gameplay, Checkbox(AutoRepair), "AutoRepair"),
+        #[cfg(target_os = "android")]
         row!(Gameplay, Checkbox(Ra2Mode), "Ra2Mode"),
         row!(Gameplay, List(Ares), "AresSetting"),
         row!(Gameplay, List(Kratos), "KratosSetting"),
@@ -1243,6 +1223,7 @@ pub(crate) const ROWS: &[Row] = {
         // VERA's HD art switch; Display is full at 640x480.
         row!(General, List(HdLook), "HdLook"),
         row!(General, Checkbox(YrOriginalStyle), "YrOriginalStyle"),
+        row!(General, Checkbox(RenderInterpolation), "RenderInterpolation"),
         row!(General, Checkbox(SmoothOnlineMenus), "SmoothOnlineMenus"),
         row!(General, Checkbox(HdMapPreviews), "HdMapPreviews"),
         row!(General, Checkbox(VeraIcon), "VeraIcon"),
@@ -1454,6 +1435,7 @@ impl Default for LauncherOptionsValues {
             C::Tooltips,
             C::TargetLines,
             C::VSync,
+            C::RenderInterpolation,
             C::HdMapPreviews,
             C::CommanderFeedback,
         ] {

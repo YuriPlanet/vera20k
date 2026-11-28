@@ -72,6 +72,11 @@ mod hidden_run;
 mod in_game;
 mod initialize;
 pub(crate) mod input;
+
+/// Android's hardware pointing-device bridge (the JNI entry point in the
+/// `vera20k-android` cdylib).
+#[cfg(target_os = "android")]
+pub use input::android_mouse;
 pub(crate) mod lan_service;
 pub(crate) mod loading;
 #[cfg(target_os = "macos")]
@@ -141,6 +146,7 @@ pub(crate) mod telemetry_capture;
 #[cfg(feature = "telemetry-dashboard")]
 pub(crate) mod telemetry_server;
 pub(crate) mod types;
+pub(crate) mod ui_modules;
 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 pub(crate) mod updater;
 pub(crate) mod web_link;
@@ -194,6 +200,8 @@ pub struct App {
     /// (`input::touch`). A synthetic `CursorMoved` must not pass for the OS
     /// pointer, which is what clears the touch-parked cursor.
     dispatching_touch: bool,
+    #[cfg(target_os = "android")]
+    android_pointer: input::android_mouse::PointerTracker,
     /// docs/sim-thread.md: window events that came while a tick was on the
     /// simulation thread, in order, for the pass that finds it back
     /// ([`Self::release_held_events`]).
@@ -256,6 +264,8 @@ impl App {
             mod_switch: None,
             ask_for_game_folder: false,
             dispatching_touch: false,
+            #[cfg(target_os = "android")]
+            android_pointer: Default::default(),
             held_window_events: Vec::new(),
             #[cfg(not(target_arch = "wasm32"))]
             sim_wake: None,
@@ -282,6 +292,8 @@ impl App {
             mod_switch: None,
             ask_for_game_folder: false,
             dispatching_touch: false,
+            #[cfg(target_os = "android")]
+            android_pointer: Default::default(),
             held_window_events: Vec::new(),
             #[cfg(not(target_arch = "wasm32"))]
             sim_wake: None,
@@ -310,6 +322,8 @@ impl App {
             mod_switch: None,
             ask_for_game_folder: false,
             dispatching_touch: false,
+            #[cfg(target_os = "android")]
+            android_pointer: Default::default(),
             held_window_events: Vec::new(),
             #[cfg(not(target_arch = "wasm32"))]
             sim_wake: None,
@@ -338,6 +352,8 @@ impl App {
             mod_switch: None,
             ask_for_game_folder: false,
             dispatching_touch: false,
+            #[cfg(target_os = "android")]
+            android_pointer: Default::default(),
             held_window_events: Vec::new(),
             #[cfg(not(target_arch = "wasm32"))]
             sim_wake: None,

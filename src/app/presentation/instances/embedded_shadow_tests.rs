@@ -3,7 +3,7 @@
 //! the real dispatcher are checked by the retail GPU and normal-game runs.
 use super::*;
 use crate::app::presentation::frame::ObjectRecord;
-use crate::map::resolved_terrain::{NativeCellQuery, test_flat_cell, test_grid};
+use crate::map::resolved_terrain::{test_flat_cell, test_grid};
 use crate::render::draw_state::DrawDecision;
 use crate::render::sprite_atlas::{ShpPaletteContext, ShpSpriteEntry, SpriteAtlas};
 use crate::render::tactical_draw_plan::RenderZPolicy;
@@ -109,7 +109,6 @@ fn unit_shadow_matches_original_type_gate_point_and_read_only_policy() {
         cell.level = 4;
         cell
     });
-    let cells = NativeCellQuery::isolated(&terrain);
     let (atlas, key, entry) = atlas();
     for row in original["drawing"].as_array().unwrap() {
         let input = &row["input"];
@@ -142,7 +141,7 @@ fn unit_shadow_matches_original_type_gate_point_and_read_only_policy() {
             &atlas,
             rules.object("MGTK"),
             &ObjectRecord::of_test_in(&entity, Some(&terrain), &rules),
-            Some(&cells),
+            None,
             &key,
             &entry,
             SpriteInstance {
@@ -202,7 +201,6 @@ fn unit_and_infantry_shadow_query_live_ground_and_bridge_height() {
         cell.level = 4;
         cell
     });
-    let cells = NativeCellQuery::isolated(&terrain);
     let decision = DrawDecision {
         visible: true,
         state: DrawState::default(),
@@ -228,7 +226,7 @@ fn unit_and_infantry_shadow_query_live_ground_and_bridge_height() {
                         Some(&terrain),
                         crate::rules::ruleset::RuleSet::empty_for_test()
                     ),
-                    Some(&cells),
+                    None,
                     decision
                 ),
                 admitted,
@@ -280,6 +278,7 @@ fn a_visceroid_refuses_the_embedded_shadow_but_the_turreted_one_has_no_gate() {
             frame: None,
         },
         &ObjectRecord::of_test_in(&entity, None, &rules),
+        None,
         &key,
         [10.0, 20.0],
         SpriteInstance::default(),
@@ -372,6 +371,8 @@ fn stock_turreted_shp_pieces(carrier: Option<[f32; 2]>) -> Vec<ObjectPieceInstan
         crate::map::houses::HouseColorMap::from([("Americans".to_owned(), HouseColorIndex(0))]);
     let mut draws = crate::app::presentation::render::draw_plan_lowering::PlannedObjects::default();
     let input = ShpInputs {
+        motion: None,
+        diagnostics: None,
         runtime: &runtime,
         frame: &frame,
         atlas: Some(&atlas),
@@ -386,7 +387,6 @@ fn stock_turreted_shp_pieces(carrier: Option<[f32; 2]>) -> Vec<ObjectPieceInstan
         building_viewport: crate::app::presentation::render::tactical_world_viewport(
             camera,
             [0, 0, 800, 600],
-            None,
         ),
         axis: crate::render::batch::DepthAxis {
             origin_y: 0.0,
@@ -397,6 +397,7 @@ fn stock_turreted_shp_pieces(carrier: Option<[f32; 2]>) -> Vec<ObjectPieceInstan
         lighting: &crate::map::lighting::CellLightGrid::new(),
         house_colors: &colors,
         building_zshape: None,
+        model_frame: None,
     };
     let order = frame.display_order();
     if let Some(carrier) = carrier {

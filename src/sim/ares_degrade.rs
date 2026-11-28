@@ -96,7 +96,7 @@ impl Simulation {
             };
             let ext = object.building_type_ext();
             // BuildingType PowerDrain (`+0xEE4`), the negated `Power=`.
-            let consumer = crate::sim::power_system::native_building_power_drain(object.power) != 0;
+            let consumer = object.power_drain() != 0;
             let damage = ext.degrade_amount.unwrap_or(if consumer {
                 globals.degrade_amount_consumer
             } else {

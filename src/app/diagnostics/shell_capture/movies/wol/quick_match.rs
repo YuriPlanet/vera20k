@@ -75,7 +75,9 @@ impl WolCapture {
                 Ok(())
             }
             QmPhase::Box(key) => {
-                if box_body(&state.frontend.wol).is_some_and(|body| body == state.csf_text(key)) {
+                if box_body(&state.frontend.wol)
+                    .is_some_and(|body| body == state.process_assets.csf_text(key))
+                {
                     self.qm_box_shown(state, frame, key)?;
                 }
                 Ok(())
@@ -201,7 +203,7 @@ impl WolCapture {
                 ],
             })),
         );
-        let requesting = state.csf_text("WOL:RequestingMatch");
+        let requesting = state.process_assets.csf_text("WOL:RequestingMatch");
         self.expect_rows(&state.frontend.wol, frame, from, &[requesting])?;
         let requests = self.requests(&mut state.frontend.wol, frame)?;
         // The user-list sink's ladder batch (0x007A77CB), then the request.
@@ -292,7 +294,7 @@ impl WolCapture {
             WolTarget::QmExit => {
                 let from = qm_rows(&state.frontend.wol)?.len();
                 matchbot_says(state, "Exit", false, None);
-                let exit = state.csf_text("WOL:MatchFailExit");
+                let exit = state.process_assets.csf_text("WOL:MatchFailExit");
                 self.expect_rows(&state.frontend.wol, frame, from, &[exit])?;
                 self.phase = WolPhase::Qm(QmPhase::Box("WOL:MatchFailExit"));
             }
@@ -305,19 +307,29 @@ impl WolCapture {
     /// The matchbot's progress, fail and unknown texts, one row each.
     fn qm_lines(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
         let says = [
-            ("Working", true, state.csf_text("GUI:MatchingProgress2")),
+            (
+                "Working",
+                true,
+                state.process_assets.csf_text("GUI:MatchingProgress2"),
+            ),
             ("Info hello", false, "hello".to_owned()),
             (
                 "Pool 12",
                 false,
                 csf_name(&state.process_assets, "WOL:MatchingPlayerPool", "12"),
             ),
-            ("Fail", true, state.csf_text("WOL:MatchFail")),
-            ("PingFail", true, state.csf_text("WOL:MatchFailPing")),
+            ("Fail", true, state.process_assets.csf_text("WOL:MatchFail")),
+            (
+                "PingFail",
+                true,
+                state.process_assets.csf_text("WOL:MatchFailPing"),
+            ),
             (
                 "Status 7",
                 true,
-                state.csf_text("WOL:MatchUnknownServerCommand"),
+                state
+                    .process_assets
+                    .csf_text("WOL:MatchUnknownServerCommand"),
             ),
         ];
         for (text, private, expected) in says {
@@ -402,8 +414,10 @@ impl WolCapture {
         );
         let found = [
             csf_name(&state.process_assets, "WOL:MatchFoundWith", PEER),
-            state.csf_text("WOL:MatchOpponentPingUnknown"),
-            state.csf_text("WOL:MatchCreatingGame"),
+            state
+                .process_assets
+                .csf_text("WOL:MatchOpponentPingUnknown"),
+            state.process_assets.csf_text("WOL:MatchCreatingGame"),
         ];
         self.expect_rows(&state.frontend.wol, frame, from, &found)?;
         ensure!(
@@ -649,7 +663,9 @@ impl WolCapture {
         );
         let found = [
             csf_name(&state.process_assets, "WOL:MatchFoundWith", PEER),
-            state.csf_text("WOL:MatchOpponentPingUnknown"),
+            state
+                .process_assets
+                .csf_text("WOL:MatchOpponentPingUnknown"),
             csf_name(&state.process_assets, "WOL:MatchAttemptingToFindGame", PEER),
         ];
         self.expect_rows(&state.frontend.wol, frame, from, &found)?;
@@ -710,7 +726,7 @@ impl WolCapture {
                 members: vec![member(PEER, MEMBER_OPERATOR, ""), member(NICKNAME, 0, "")],
             })),
         );
-        let joined = state.csf_text("WOL:MatchJoinedGame");
+        let joined = state.process_assets.csf_text("WOL:MatchJoinedGame");
         self.expect_rows(&state.frontend.wol, frame, from, &[joined])?;
         ensure!(
             qm::stage(state.frontend.wol.as_ref()) == stage::WAITING

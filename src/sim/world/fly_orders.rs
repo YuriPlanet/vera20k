@@ -168,14 +168,22 @@ impl Simulation {
         ) else {
             return ControlFlow::Continue(Some(dock));
         };
-        let in_contact = !aircraft.seldom.radio_contacts.is_empty();
-        let has_slot = target.seldom.radio_contacts.has_free_or(id);
-        let holds_aircraft = target.seldom.radio_contacts.contains(id);
         let archive = |sim: &mut Self, target: Option<NavTargetRef>| {
             if let Some(entity) = sim.substrate.entities.get_mut(id) {
                 entity.set_archive_target(target.map(TargetKind::from));
             }
         };
+        // VERA defers ordinary death cleanup. A zero-health aircraft refuses
+        // HELLO (RadioClass::Receive_Message, 0x0065A8B2), so MOVE_HERE would
+        // re-enter this setter (FootClass, 0x004D91E1) without forming a link.
+        // Keep the dock destination for the Foot setter and skip the handshake.
+        if !aircraft.is_alive() {
+            archive(self, Some(dock));
+            return ControlFlow::Continue(Some(dock));
+        }
+        let in_contact = !aircraft.seldom.radio_contacts.is_empty();
+        let has_slot = target.seldom.radio_contacts.has_free_or(id);
+        let holds_aircraft = target.seldom.radio_contacts.contains(id);
         if in_contact {
             if !has_slot {
                 archive(self, Some(dock));

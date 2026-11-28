@@ -125,8 +125,10 @@ pub(crate) struct ChromeNodes {
     /// index: it fires on the left or right press. Grown, never shrunk.
     sw_buttons: Vec<NodeId>,
     layout_group: NodeId,
-    /// The layout's added parts, a node each by part index: a part that is
-    /// no button takes no pointer. Grown to fit, never shrunk.
+    /// The layout's added parts, a node each by part index, named by the
+    /// part and of its kind, which client modules find and write (RFC 0001
+    /// section 10): a part that is no button takes no pointer here. Grown
+    /// to fit, never shrunk; made anew when a part's name or kind changes.
     pub(crate) layout_buttons: Vec<NodeId>,
     pub(crate) timer_dock: NodeId,
     /// Each sidebar part's node by `SidebarPart as usize`, in a group of
@@ -202,6 +204,8 @@ struct SyncKey {
     minimap: bool,
     timer: Option<Rect>,
     layout: Vec<Option<Rect>>,
+    /// Each added part's name and node kind, for its node.
+    layout_parts: Vec<(String, NodeKind)>,
 }
 
 /// The chrome's state on the match presentation.
@@ -599,8 +603,8 @@ fn timer_rect(
     Some(Rect::new(rect.x + left, rect.y + top, rect.w, rect.h))
 }
 
-/// The buttons the side's layout adds take clicks where they are drawn: a
-/// rect per added part, `None` for a part that takes no click.
+/// Each added part's frame-pixel rect: none for a row, a column or a cameo
+/// grid (which place or take their own) and for a part a client module hid.
 fn layout_rects(
     platform: &PlatformState,
     renderer: &RendererState,
@@ -620,7 +624,7 @@ fn layout_rects(
     .iter()
     .take(LAYOUT_BUTTONS_MAX)
     .map(|part| {
-        part.button.then(|| {
+        (!part.group && !part.hidden).then(|| {
             let [x, y, w, h] = crate::app::presentation::layout_parts::click_rect(
                 platform,
                 renderer,
@@ -633,6 +637,61 @@ fn layout_rects(
         })
     })
     .collect()
+}
+
+/// Each added part's name (its section's after the layout's) and the kind
+/// of node it is.
+fn layout_parts(presentation: &MatchPresentationState) -> Vec<(String, NodeKind)> {
+    use crate::ui::added_parts::AddedKind;
+    presentation
+        .added_parts
+        .iter()
+        .take(LAYOUT_BUTTONS_MAX)
+        .map(|part| {
+            let name = part
+                .section
+                .split_once('.')
+                .map_or(part.section.as_str(), |(_, name)| name);
+            let kind = match part.kind {
+                AddedKind::Button { .. } => NodeKind::Button,
+                AddedKind::Text { .. } => NodeKind::Text,
+                AddedKind::Image { .. } => NodeKind::Image,
+                AddedKind::Bar => NodeKind::Bar,
+                AddedKind::List => NodeKind::List,
+                AddedKind::Group { .. } | AddedKind::CameoGrid { .. } => NodeKind::Panel,
+            };
+            (name.to_owned(), kind)
+        })
+        .collect()
+}
+
+/// The node of the layout's added part `index`, in the chrome's GUI.
+pub(crate) fn layout_part_node(
+    presentation: &MatchPresentationState,
+    index: usize,
+) -> Option<(&Gui, NodeId)> {
+    let (gui, nodes) = chrome(presentation)?;
+    Some((gui, *nodes.layout_buttons.get(index)?))
+}
+
+/// The node of the cameo grid that `view`'s cameo `slot` is in: a grid the
+/// layout adds is its part's node, any other cameo the sidebar's own grid's
+/// (the part `Cameos`). Client modules find either by its part name and
+/// write its `ItemTooltips` (RFC 0001 appendix 7.10).
+pub(crate) fn cameo_grid_node(
+    presentation: &MatchPresentationState,
+    view: &SidebarView,
+    slot: usize,
+) -> Option<NodeId> {
+    let (_, nodes) = chrome(presentation)?;
+    match view
+        .added_grids
+        .iter()
+        .find(|grid| (grid.first..grid.first + grid.len).contains(&slot))
+    {
+        Some(grid) => nodes.layout_buttons.get(grid.part).copied(),
+        None => Some(nodes.sidebar_parts[SidebarPart::Cameos as usize]),
+    }
 }
 
 fn sync_key(
@@ -671,6 +730,7 @@ fn sync_key(
             process_assets,
             persistence,
         ),
+        layout_parts: layout_parts(&match_state.match_presentation),
     }
 }
 
@@ -782,7 +842,7 @@ fn write_places(gui: &mut Gui, nodes: &mut ChromeNodes, places: &Places, key: &S
     write_cameos(gui, nodes, &places.cameos);
     command_bar::sync(gui, &nodes.command_bar, &places.command_bar);
     place(gui, nodes.timer_dock, places.timer, true);
-    write_layout_buttons(gui, nodes, &key.layout);
+    write_layout_buttons(gui, nodes, &key.layout, &key.layout_parts);
 }
 
 /// Phobos' column: the toggle, and the button pool grown to the column's
@@ -827,22 +887,60 @@ fn write_cameos(gui: &mut Gui, nodes: &mut ChromeNodes, rects: &[Rect]) {
 /// One node per added part, in the layout group at the list's head so a
 /// button over the battlefield comes before the full-tactical catcher. The
 /// gadget driver added each at the head, so the last part comes first; a
-/// pool that grows is laid out again in that order.
-fn write_layout_buttons(gui: &mut Gui, nodes: &mut ChromeNodes, rects: &[Option<Rect>]) {
-    if nodes.layout_buttons.len() < rects.len() {
+/// pool that grows, or whose parts' names or kinds change, is laid out
+/// again in that order. `parts` gives each part's name and kind (a part
+/// past it is an unnamed button). Only a button takes the pointer here; any
+/// other part's rect is where a client module's pointer events find it.
+fn write_layout_buttons(
+    gui: &mut Gui,
+    nodes: &mut ChromeNodes,
+    rects: &[Option<Rect>],
+    parts: &[(String, NodeKind)],
+) {
+    let part = |index: usize| {
+        parts
+            .get(index)
+            .map_or(("", NodeKind::Button), |(name, kind)| (name.as_str(), *kind))
+    };
+    let stale = nodes.layout_buttons.iter().enumerate().any(|(index, &node)| {
+        let (name, kind) = part(index);
+        let named = match gui.get(node, Prop::Name) {
+            Ok(Some(Value::Text(own))) => own == name,
+            Ok(_) => name.is_empty(),
+            Err(_) => false,
+        };
+        index < parts.len() && (gui.tree().kind(node) != Ok(kind) || !named)
+    });
+    if nodes.layout_buttons.len() < rects.len() || stale {
         for node in nodes.layout_buttons.drain(..) {
             let _ = gui.remove(node);
         }
-        let mut made = Vec::with_capacity(rects.len());
-        for index in (0..rects.len()).rev() {
-            match button(gui, nodes.layout_group, ID_LAYOUT_BASE + index as u16, LEFT) {
+        let count = rects.len().max(parts.len());
+        let mut made = Vec::with_capacity(count);
+        for index in (0..count).rev() {
+            let (name, kind) = part(index);
+            let id = ID_LAYOUT_BASE + index as u16;
+            let node = match kind {
+                NodeKind::Button => button(gui, nodes.layout_group, id, LEFT),
+                kind => gui.create(kind, Some(nodes.layout_group)).and_then(|node| {
+                    gui.set(node, Prop::Id, Value::Int(i32::from(id)))?;
+                    Ok(node)
+                }),
+            };
+            let named = node.and_then(|node| {
+                if !name.is_empty() {
+                    gui.set(node, Prop::Name, Value::Text(name.to_owned()))?;
+                }
+                Ok(node)
+            });
+            match named {
                 Ok(node) => made.push(node),
                 Err(_) => break,
             }
         }
         made.reverse();
         // A pool cut short by the node budget keeps none of its tail.
-        if made.len() == rects.len() {
+        if made.len() == count {
             nodes.layout_buttons = made;
         } else {
             for node in made {
@@ -851,7 +949,13 @@ fn write_layout_buttons(gui: &mut Gui, nodes: &mut ChromeNodes, rects: &[Option<
         }
     }
     for (index, node) in nodes.layout_buttons.iter().enumerate() {
-        place(gui, *node, rects.get(index).copied().flatten(), true);
+        let rect = rects.get(index).copied().flatten();
+        if part(index).1 == NodeKind::Button {
+            place(gui, *node, rect, true);
+        } else if let Some(rect) = rect {
+            // No pointer here: its enabled state is the client module's.
+            let _ = gui.set(*node, Prop::HitRect, Value::Rect(rect));
+        }
     }
 }
 
@@ -1138,7 +1242,18 @@ pub(crate) fn play_gui_main_button_sound(
 /// identically (study §2.2: `key & ~0x4000`). The retained sidebar view the
 /// press ran on is read before the action that may change it.
 fn apply_result(state: &mut AppState, id: u16, right: bool) {
-    if command_bar::apply(state, id, right) {
+    if command_bar::apply(
+        &mut state.platform,
+        &mut state.renderer,
+        &state.diag,
+        &mut state.frontend,
+        &mut state.match_state,
+        &mut state.process_assets,
+        &mut state.audio,
+        &mut state.persistence,
+        id,
+        right,
+    ) {
         return;
     }
     let (side2_tiles, cameos) = current_sidebar_view(&state.match_state.match_presentation)
@@ -1527,7 +1642,7 @@ mod tests {
         let (mut gui, mut nodes) = test_layer();
         place(&mut gui, nodes.tactical, Some(r(0, 0, 800, 600)), true);
         // The layout's first part is a text, its second a button.
-        write_layout_buttons(&mut gui, &mut nodes, &[None, Some(r(20, 100, 60, 17))]);
+        write_layout_buttons(&mut gui, &mut nodes, &[None, Some(r(20, 100, 60, 17))], &[]);
         let hit = |gui: &Gui, x, y| gui.chrome_hit(x, y).filter(|n| *n != nodes.tactical);
         assert!(hit(&gui, 25, 105).is_some());
         assert!(hit(&gui, 400, 300).is_none());
@@ -1543,7 +1658,7 @@ mod tests {
         assert_eq!(press.passthrough, Some(nodes.tactical));
         edge(&mut gui, 300, 300, GuiButton::Left, false);
         // A layout without the button leaves its node off the pointer.
-        write_layout_buttons(&mut gui, &mut nodes, &[None, None]);
+        write_layout_buttons(&mut gui, &mut nodes, &[None, None], &[]);
         let (press, _) = edge(&mut gui, 30, 108, GuiButton::Left, true);
         assert_eq!(press.passthrough, Some(nodes.tactical));
     }
@@ -1553,11 +1668,12 @@ mod tests {
     #[test]
     fn a_later_layout_button_comes_first_as_the_gadget_list_had_it() {
         let (mut gui, mut nodes) = test_layer();
-        write_layout_buttons(&mut gui, &mut nodes, &[Some(r(0, 0, 50, 20))]);
+        write_layout_buttons(&mut gui, &mut nodes, &[Some(r(0, 0, 50, 20))], &[]);
         write_layout_buttons(
             &mut gui,
             &mut nodes,
             &[Some(r(0, 0, 50, 20)), Some(r(0, 0, 50, 20))],
+            &[],
         );
         edge(&mut gui, 5, 5, GuiButton::Left, true);
         assert_eq!(gui.pressed_in(nodes.layer), Some(nodes.layout_buttons[1]));

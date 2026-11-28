@@ -57,9 +57,65 @@ pub(crate) fn post_trigger_message(
     persistence: &PersistenceState,
     csf_key: &str,
 ) {
-    let Some(runtime) = match_state.sim_runtime.runtime() else {
+    let Some((rgb, timeout)) = trigger_message_style(match_state) else {
         return;
     };
+    post_localized_message(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        sfx_player,
+        persistence,
+        &crate::ui::messages::MessagePost {
+            prefix: None,
+            text: csf_key,
+            rgb,
+            timeout_ms: timeout,
+            silent: false,
+        },
+    );
+}
+
+/// A client module's `ShowMessage` (RFC 0001 appendix 5.4): the CSF entry
+/// `text` names, or else `text` itself (the rule of the node `Label`,
+/// appendix 7.10), as a trigger message row; `rgb` replaces the trigger
+/// message's colour.
+pub(crate) fn post_module_message(state: &mut crate::app::AppState, text: &str, rgb: Option<[f32; 3]>) {
+    let Some((side_rgb, timeout)) = trigger_message_style(&state.match_state) else {
+        return;
+    };
+    let resolved = state
+        .process_assets
+        .csf
+        .as_ref()
+        .and_then(|csf| csf.get(text))
+        .unwrap_or(text)
+        .to_owned();
+    post_resolved_message(
+        &state.platform,
+        &state.renderer,
+        &state.diag,
+        &state.frontend,
+        &mut state.match_state,
+        &state.process_assets,
+        &mut state.audio.sfx_player,
+        &state.persistence,
+        &crate::ui::messages::MessagePost {
+            prefix: None,
+            text: &resolved,
+            rgb: rgb.unwrap_or(side_rgb),
+            timeout_ms: timeout,
+            silent: false,
+        },
+    );
+}
+
+/// TAction11's row style: the scenario side's colour and MessageDelay.
+fn trigger_message_style(match_state: &MatchState) -> Option<([f32; 3], Option<u64>)> {
+    let runtime = match_state.sim_runtime.runtime()?;
     // The selected campaign opening keeps its startup player/country. The
     // existing House owner supplies that side; a later scenario-side change
     // independent of the current House remains a separate retained-field gap.
@@ -86,23 +142,7 @@ pub(crate) fn post_trigger_message(
         trigger_message_rgb(&rules.color_schemes, side, rules.skirmish_colors())
     };
     let timeout = message_delay_timeout_ms(rules.general.message_delay_minutes);
-    post_localized_message(
-        platform,
-        renderer,
-        diag,
-        frontend,
-        match_state,
-        process_assets,
-        sfx_player,
-        persistence,
-        &crate::ui::messages::MessagePost {
-            prefix: None,
-            text: csf_key,
-            rgb,
-            timeout_ms: timeout,
-            silent: false,
-        },
-    );
+    Some((rgb, timeout))
 }
 
 fn message_delay_buckets(delay: crate::util::native_x87::NativeF64Bits) -> i32 {
@@ -1426,54 +1466,10 @@ pub(crate) fn post_observer_refusal(
     );
 }
 
-/// The WOL page sinks in a match (`0x007A92F9..0x007A93B4`): the page line
-/// and, from the ANSI sink, `TXT_HOW_TO_REPLY` under it, each a Grey row
-/// with flags 0x16, `MessageDelay * 900` and silent 0.
-pub(crate) fn post_wol_page_rows(
-    platform: &PlatformState,
-    renderer: &RendererState,
-    diag: &DiagnosticsState,
-    frontend: &FrontendState,
-    match_state: &mut MatchState,
-    process_assets: &ProcessAssets,
-    sfx_player: &mut Option<SfxPlayer>,
-    persistence: &PersistenceState,
-    line: &str,
-    reply_hint: bool,
-) {
-    post_grey_row(
-        platform,
-        renderer,
-        diag,
-        frontend,
-        match_state,
-        process_assets,
-        sfx_player,
-        persistence,
-        line,
-        false,
-        false,
-    );
-    if reply_hint {
-        post_grey_row(
-            platform,
-            renderer,
-            diag,
-            frontend,
-            match_state,
-            process_assets,
-            sfx_player,
-            persistence,
-            "TXT_HOW_TO_REPLY",
-            true,
-            false,
-        );
-    }
-}
-
-/// A WOL find or page-result row in a match with no window to take it
-/// (`0x007AA5D5..`, `0x007A9800`): the same Grey row, silent 0.
-pub(crate) fn post_wol_result_row(
+/// The message row for a WOL page, locate or send result during a match
+/// (0x007A92F9, 0x007AA5D5, 0x007A9800). VERA omits the retail pager's
+/// reply hint because that dialog is only available outside the match.
+pub(crate) fn post_wol_row(
     platform: &PlatformState,
     renderer: &RendererState,
     diag: &DiagnosticsState,
@@ -1763,6 +1759,51 @@ pub(crate) fn post_layout_problem(
         false,
         false,
     );
+}
+
+/// The most art problems [`post_art_problems`] shows as rows of their own.
+const ART_PROBLEM_ROWS: usize = 3;
+
+/// VERA: declared `Picture=` or `Model=` art that this load could not use as
+/// written (`rules::art_problems`, docs/picture-model-art.md), said once when
+/// the match has loaded: the first few problems, then how many more the log
+/// lists. The lines name sections, keys and files, so they stay in English.
+/// Art that declares neither key reports nothing, and nothing is shown.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn post_art_problems(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
+) {
+    let problems = crate::rules::art_problems::take();
+    let mut post = |text: &str, silent: bool| {
+        post_grey_row(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            sfx_player,
+            persistence,
+            text,
+            false,
+            silent,
+        );
+    };
+    // One incoming-message sound for the lot.
+    for (row, line) in problems.iter().take(ART_PROBLEM_ROWS).enumerate() {
+        post(line, row > 0);
+    }
+    if problems.len() > ART_PROBLEM_ROWS {
+        let more = problems.len() - ART_PROBLEM_ROWS;
+        post(&format!("And {more} more art problems (see the log)."), true);
+    }
 }
 
 /// What the layout edit mode tells the player (`input::layout_edit`).
@@ -2094,7 +2135,7 @@ fn poll_is_admitted(main_tick_admitted: bool, currently_frozen: bool) -> bool {
 #[cfg(target_os = "android")]
 pub(crate) fn lane_contains_window_px(state: &AppState, px: i32, py: i32) -> bool {
     let (lx, ly, lw, lh) = state.match_state.match_presentation.message_list.lane_box();
-    let (lx, ly, lw, lh) = match state.tactical_zoom() {
+    let (lx, ly, lw, lh) = match state.renderer.tactical_zoom(&state.frontend.screen) {
         Some(zoom) => {
             let (x, y) = zoom.source_to_window(lx as f32, ly as f32);
             let scale = zoom.scale();

@@ -116,8 +116,8 @@ pub struct BuildupAssetCatalog {
     /// type; an unbound type keeps the constructor's 0. Only a bind for Rules
     /// read the Ares way fills it.
     sell_rates: BTreeMap<String, i32>,
-    /// VERA: the game-folder files whose Buildup SHP has another frame
-    /// count than the copy a retail install reads
+    /// VERA: the game-folder files whose Buildup SHP, or Buildup picture,
+    /// has another frame count than the copy a retail install reads
     /// (`retail_sources::FolderFiles`); not hashed.
     folder_files: std::collections::BTreeSet<String>,
 }
@@ -134,8 +134,9 @@ impl std::hash::Hash for BuildupAssetCatalog {
 }
 
 impl BuildupAssetCatalog {
-    /// Bind every BuildingType's Buildup SHP. A type whose art names none, or
-    /// whose SHP the theater lacks, keeps [`NO_BUILDUP`].
+    /// Bind every BuildingType's Buildup SHP, or its Buildup picture when its
+    /// art declares `Picture=`. A type whose art names none, or whose file the
+    /// theater lacks, keeps [`NO_BUILDUP`].
     pub fn bind(rules: &RuleSet, asset_manager: &AssetManager, theater_name: &str) -> Self {
         let mut catalog = Self::default();
         let folder = crate::rules::retail_sources::FolderFiles::new(asset_manager);
@@ -158,16 +159,52 @@ impl BuildupAssetCatalog {
             let Some(buildup) = art.buildup.as_deref() else {
                 continue;
             };
-            let Some(data) = crate::rules::art_data::building_shp_names(buildup, theater_name)
-                .iter()
-                .find_map(|candidate| {
-                    folder.read_noting(candidate, frame_word, &mut catalog.folder_files)
-                })
-            else {
-                continue;
-            };
-            let Some(raw) = frame_word(data) else {
-                continue;
+            let raw = if art.picture.is_some() {
+                // VERA-only (docs/picture-model-art.md): beside a declared
+                // `Picture=`, `Buildup=` names a picture, whose frame count
+                // stands in for the SHP header's `+6`; the SHP is never
+                // opened, and a missing picture binds as a missing SHP.
+                let Some((section, _)) = rules
+                    .art()
+                    .resolve_declared_picture(&object.id, &object.image)
+                else {
+                    continue;
+                };
+                let decl = crate::rules::art_data::PictureDecl {
+                    file: format!("{buildup}.png"),
+                    size: None,
+                };
+                let facts = rules
+                    .art()
+                    .picture_header(section, &decl, asset_manager, theater_name);
+                let raw = facts
+                    .as_ref()
+                    .map(|facts| i16::try_from(facts.frames).unwrap_or(i16::MAX));
+                // Named when its frame word is not the retail Buildup's.
+                folder.note_stand_in(
+                    facts.as_ref().map_or(&decl.file, |facts| &facts.file),
+                    raw,
+                    crate::rules::art_data::building_shp_names(buildup, theater_name),
+                    frame_word,
+                    &mut catalog.folder_files,
+                );
+                let Some(raw) = raw else {
+                    continue;
+                };
+                raw
+            } else {
+                let Some(data) = crate::rules::art_data::building_shp_names(buildup, theater_name)
+                    .iter()
+                    .find_map(|candidate| {
+                        folder.read_noting(candidate, frame_word, &mut catalog.folder_files)
+                    })
+                else {
+                    continue;
+                };
+                let Some(raw) = frame_word(data) else {
+                    continue;
+                };
+                raw
             };
             let gate_stages = object.gate.then_some(art.building_gate_stages);
             let control = if crate::rules::ares_switch::ares_way() {
@@ -303,6 +340,44 @@ mod tests {
         assert_eq!(
             ares_buildup_frames(1, None, default, two_minutes),
             ([0, 0, 1], 1)
+        );
+    }
+
+    /// Beside a declared `Picture=`, `Buildup=` names a picture whose APNG
+    /// frames bind as an SHP of as many frames does, and the type can be
+    /// sold; a missing picture binds as a missing SHP (docs/picture-model-art.md).
+    #[test]
+    fn a_buildup_picture_binds_as_an_shp_of_its_frame_count() {
+        let root =
+            std::env::temp_dir().join(format!("vera20k-buildup-picture-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let mut shp = vec![0_u8; 8];
+        shp[6..8].copy_from_slice(&12_i16.to_le_bytes());
+        std::fs::write(root.join("SHPMK.SHP"), shp).unwrap();
+        let picture = crate::assets::picture_file::test_picture(4, 4, Some(12));
+        std::fs::write(root.join("PICMK.png"), &picture).unwrap();
+        std::fs::write(root.join("PICBLD.png"), &picture).unwrap();
+        let assets = AssetManager::from_loose_root_for_test(&root);
+        let ini = |text: &str| crate::rules::ini_parser::IniFile::from_str(text);
+        let mut rules =
+            RuleSet::from_ini(&ini("[InfantryTypes]\n[VehicleTypes]\n[AircraftTypes]\n\
+             [BuildingTypes]\n0=SHPBLD\n1=PICBLD\n2=LOSTBLD\n"))
+            .unwrap();
+        rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&ini(
+            "[SHPBLD]\nBuildup=SHPMK\n\
+             [PICBLD]\nPicture=PICBLD.png\nBuildup=PICMK\n\
+             [LOSTBLD]\nPicture=PICBLD.png\nBuildup=SHPMK\n",
+        )));
+        let catalog = BuildupAssetCatalog::bind(&rules, &assets, "TEMPERATE");
+        let _ = std::fs::remove_dir_all(&root);
+
+        assert!(catalog.has_buildup("SHPBLD"));
+        assert_eq!(catalog.control("SHPBLD")[1], 6, "12 frames, shadows halved");
+        assert!(catalog.has_buildup("PICBLD"), "it can be sold");
+        assert_eq!(catalog.control("PICBLD"), catalog.control("SHPBLD"));
+        assert!(
+            !catalog.has_buildup("LOSTBLD"),
+            "SHPMK.png is missing; SHPMK.SHP is never opened"
         );
     }
 

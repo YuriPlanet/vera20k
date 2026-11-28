@@ -30,6 +30,9 @@
 //! - cell and global properties and `find` over cells ([`cells`]);
 //! - superweapon properties and `find` over superweapons ([`supers`]);
 //! - house orders for computer houses ([`orders`]);
+//! - client messages for `on_message` ([`messages`]), notifications
+//!   (`send_notify`) and forwarded simulation events for client modules
+//!   ([`client_outbox`]);
 //! - `rules_get`, and `rules_set` and `on_rules` while the rules are
 //!   processed ([`rules`]).
 //!
@@ -66,37 +69,51 @@ use std::hash::{Hash, Hasher};
 
 use vera20k_wasm_ext::decide::{EVENT_DEFEAT, EVENT_PRODUCTION_ALLOWED};
 use vera20k_wasm_ext::{
-    ActionParams, Area, ClauseSubject, Export, Fault, FindPage, Invalid, Limits, ModuleState,
-    NAME_ACTION_KIND, NAME_ANIM, NAME_COUNTRY, NAME_MODULE_EVENT, NAME_PARTICLE_SYSTEM,
-    NAME_PROJECTILE, NAME_PROPERTY, NAME_STRING, NAME_SUPER_WEAPON, NAME_TEAM_TYPE,
-    NAME_TECHNO_TYPE, NAME_VARIABLE, NAME_VOXEL_ANIM, NAME_WARHEAD, NAME_WEAPON, Order, Query,
-    SCOPE_CELLS, SCOPE_HOUSES, SCOPE_MODIFIERS, SCOPE_OBJECTS, SCOPE_SUPER_WEAPONS, SimHost,
-    SimModule, Status, TABLE_ACTION, TABLE_NAME_KIND, TABLE_PROPERTY, TABLE_SCOPE, property_name,
+    ActionParams, Area, ClauseSubject, Export, Fault, FindPage, Invalid, Limits,
+    MAX_NOTIFIES_PER_FRAME, ModuleState, NAME_ACTION_KIND, NAME_ANIM, NAME_COUNTRY,
+    NAME_MODULE_EVENT, NAME_NOTIFY, NAME_PARTICLE_SYSTEM, NAME_PROJECTILE, NAME_PROPERTY,
+    NAME_STRING, NAME_SUPER_WEAPON, NAME_TEAM_TYPE, NAME_TECHNO_TYPE, NAME_VARIABLE,
+    NAME_VOXEL_ANIM, NAME_WARHEAD, NAME_WEAPON, Order, Query, SCOPE_CELLS, SCOPE_HOUSES,
+    SCOPE_MODIFIERS, SCOPE_OBJECTS, SCOPE_SUPER_WEAPONS, SCOPE_TYPES, SimHost, SimModule, Status,
+    TABLE_ACTION, TABLE_NAME_KIND, TABLE_PROPERTY, TABLE_SCOPE, property_name,
 };
 
 mod actions;
 mod cells;
 mod chains;
+pub mod client_reads;
 mod claims;
+mod client_outbox;
+mod control;
 mod decide;
 mod events;
 mod held;
 mod ini_names;
 mod ini_start;
 mod ini_triggers;
+mod messages;
 pub(crate) mod modifiers;
+mod motion;
 mod orders;
+mod paths;
+pub(crate) mod projectiles;
 mod props;
 mod rules;
 mod supers;
-pub(crate) mod vars;
+mod unit_ai;
+pub mod vars;
 mod writes;
 
 pub use actions::{ActionContext, run_action};
+pub(crate) use client_outbox::CLIENT_FORWARDED_EVENTS;
+pub use client_outbox::{ClientNotify, ClientOutbox, ClientSimEvent};
 pub(crate) use decide::CommandAdmission;
 use modifiers::{Modifier, ModifierOp, ModifierStore, Stat};
+pub use orders::{CheckedOrder, check_client_order};
 pub(crate) use orders::take_due_orders;
-use props::{View, type_property};
+pub(crate) use props::View;
+use props::type_property;
+use rules::check_notify_collision;
 pub use rules::{MapUi, PreparedExtModules, WasmPolicy};
 use vars::{FIRST_DECLARED_VAR, VarStore, VarValues};
 
@@ -165,7 +182,7 @@ pub const fn house_ref(index: usize) -> i64 {
 /// 2^46) and every house reference (bit 47 clear).
 const SUPER_REF_BIT: i64 = 1 << 46;
 
-const fn super_ref(house: usize, index: usize) -> i64 {
+pub(crate) const fn super_ref(house: usize, index: usize) -> i64 {
     SUPER_REF_BIT | ((house as i64) << 16) | index as i64
 }
 
@@ -432,15 +449,16 @@ pub struct ExtModules {
     /// The merged rules text `rules_get` reads during the match; `None`
     /// without modules.
     rules_ini: Option<IniFile>,
-    /// The mod's `[VeraWasm] MapUI=`, kept for client modules (phase 2).
-    /// Not saved: a loaded match reads the default.
-    map_ui: MapUi,
     /// Decision `random` substreams of the current frame ([`decide`]); not saved.
     decide: decide::DecideState,
     /// Registered INI names and the string table ([`ini_names`]).
     ini: ini_names::IniNames,
     /// House domain claims (RFC 6i, [`claims`]).
     claims: claims::DomainClaims,
+    /// Per-projectile module data and `Launch` paths ([`projectiles`]).
+    projectiles: projectiles::ModuleProjectiles,
+    /// The `Push`es in progress ([`motion`]).
+    motions: motion::ModuleMotions,
     /// The mod's `[VeraWasm] Controller=`, for "mod AI" seats
     /// ([`Simulation::seat_mod_ai_houses`]). Not saved: seats are given
     /// when the match starts, and a save carries the claims.
@@ -448,6 +466,20 @@ pub struct ExtModules {
     /// The `Commanded` serials of the current frame ([`orders`]); not
     /// saved, as a save resumes at a frame boundary.
     command_serial: orders::CommandSerial,
+    /// Client messages waiting for `on_message` and the rate counts
+    /// ([`messages`]).
+    messages: messages::ClientMessages,
+    /// (frame, notifications sent) per source, for
+    /// [`MAX_NOTIFIES_PER_FRAME`]; not saved, as a save resumes at a frame
+    /// boundary.
+    notify_count: [(u32, u32); 2],
+    /// What client modules receive ([`client_outbox`]); not saved, not
+    /// hashed.
+    client_outbox: ClientOutbox,
+    /// The room switch "Allow automation", the global `AutomationAllowed`
+    /// (appendix 7.8, RFC 6i): from the room's settings
+    /// (`PersonalRules::automation_allowed`), saved with the match.
+    automation_allowed: bool,
 }
 
 /// What a save holds: the modules, the modifiers and the variable values
@@ -465,6 +497,13 @@ struct SavedExtModules {
     ini: ini_names::IniNames,
     #[serde(default)]
     claims: claims::DomainClaims,
+    #[serde(default)]
+    projectiles: projectiles::ModuleProjectiles,
+    #[serde(default)]
+    motions: motion::ModuleMotions,
+    messages: messages::ClientMessages,
+    #[serde(default)]
+    automation_allowed: bool,
 }
 
 impl serde::Serialize for ExtModules {
@@ -495,6 +534,10 @@ impl serde::Serialize for ExtModules {
             held: self.held.clone(),
             ini: self.ini.clone(),
             claims: self.claims.clone(),
+            projectiles: self.projectiles.clone(),
+            motions: self.motions.clone(),
+            messages: self.messages.clone(),
+            automation_allowed: self.automation_allowed,
         }
         .serialize(serializer)
     }
@@ -510,6 +553,10 @@ impl<'de> serde::Deserialize<'de> for ExtModules {
             held: saved.held,
             ini: saved.ini,
             claims: saved.claims,
+            projectiles: saved.projectiles,
+            motions: saved.motions,
+            messages: saved.messages,
+            automation_allowed: saved.automation_allowed,
             ..Self::default()
         };
         modules.vars.values = saved.vars;
@@ -518,9 +565,16 @@ impl<'de> serde::Deserialize<'de> for ExtModules {
 }
 
 /// The presentation copy excludes module state (RFC 15.1, item 8).
+/// A copy holds no module, only the variable declarations: the world copy
+/// drawing reads while the simulation ticks elsewhere
+/// (`Simulation::presentation_copy`) names variables for the status
+/// templates and client reads. The values stay the simulation's.
 impl Clone for ExtModules {
     fn clone(&self) -> Self {
-        Self::default()
+        Self {
+            vars: self.vars.declarations_only(),
+            ..Self::default()
+        }
     }
 }
 
@@ -556,9 +610,10 @@ impl ExtModules {
         self.slots.iter().map(|s| s.last_frame_ops).collect()
     }
 
-    /// How map modules may show interface under the selected mod.
-    pub fn map_ui(&self) -> MapUi {
-        self.map_ui
+    /// Each loaded module's memory size in bytes (`memory.size`).
+    #[cfg(test)]
+    pub(crate) fn memory_bytes(&self) -> Vec<usize> {
+        self.slots.iter().map(|s| s.module.memory_len()).collect()
     }
 
     /// Keeps `line`, dropping the oldest past [`LOG_KEPT`].
@@ -585,6 +640,24 @@ impl ExtModules {
     /// The modifiers modules hold.
     pub fn modifiers(&self) -> &ModifierStore {
         &self.modifiers
+    }
+
+    /// The declared variables (RFC 6e), for client reads.
+    pub fn vars(&self) -> &VarStore {
+        &self.vars
+    }
+
+    /// Declares variables as loaded modules would, for client read tests.
+    #[cfg(test)]
+    pub(crate) fn declare_vars_for_test(
+        &mut self,
+        decls: &[(ModuleSource, vera20k_wasm_ext::VarDecl)],
+    ) {
+        self.vars.declare(
+            decls
+                .iter()
+                .map(|(source, decl)| (*source, std::slice::from_ref(decl))),
+        );
     }
 
     /// A declared variable's value for `holder` (`0` global, else a house
@@ -620,10 +693,17 @@ impl ExtModules {
             || !values.object.is_empty();
         let ini = (!self.ini.is_empty()).then(|| fnv1a(self.ini.state_bytes()));
         let claims = (!self.claims.is_empty()).then(|| fnv1a(self.claims.state_bytes()));
+        let projectiles =
+            (!self.projectiles.is_empty()).then(|| fnv1a(self.projectiles.state_bytes()));
+        let motions = (!self.motions.is_empty()).then(|| fnv1a(self.motions.state_bytes()));
+        let messages = (!self.messages.is_empty()).then(|| fnv1a(self.messages.state_bytes()));
         modules
             .chain(held.then(|| fnv1a(self.held_state_bytes())))
             .chain(ini)
             .chain(claims)
+            .chain(projectiles)
+            .chain(motions)
+            .chain(messages)
     }
 
     /// The modifiers and declared-variable values as checksum bytes.
@@ -694,7 +774,40 @@ impl ExtModules {
         if !self.claims.is_empty() {
             self.claims.hash(hasher);
         }
+        if !self.projectiles.is_empty() {
+            self.projectiles.hash(hasher);
+        }
+        if !self.motions.is_empty() {
+            self.motions.hash(hasher);
+        }
+        if !self.messages.is_empty() {
+            self.messages.hash(hasher);
+        }
+        if self.automation_allowed {
+            b"automation-allowed".hash(hasher);
+        }
     }
+
+    /// The global `AutomationAllowed` (appendix 7.8): whether the room
+    /// allows client modules to play for their player (RFC 6i,
+    /// `client_send_order`).
+    pub fn automation_allowed(&self) -> bool {
+        self.automation_allowed
+    }
+}
+
+/// `lookup(Notify, name)` for the client (`client_lookup`, RFC 0001 section
+/// 10): the ID of a notification name some simulation module of this match
+/// declares in its `vera.notify` (ASCII case-insensitive), `None` for a name
+/// none declares, so a client cannot match an undeclared name by its hash.
+pub fn notify_id(sim: &Simulation, name: &str) -> Option<i32> {
+    sim.ext_modules.slots.iter().find_map(|slot| {
+        slot.module
+            .notify_names()
+            .iter()
+            .find(|(declared, _)| declared.eq_ignore_ascii_case(name))
+            .map(|(_, id)| *id)
+    })
 }
 
 /// 32-bit FNV-1a over `bytes`.
@@ -714,18 +827,18 @@ const REF_GLOBAL: i64 = 4;
 const REF_LIMIT: i64 = 1 << 53;
 
 /// A type reference: name kind and ID.
-const fn type_ref(kind: i32, id: u32) -> i64 {
+pub(crate) const fn type_ref(kind: i32, id: u32) -> i64 {
     (REF_TYPE << REF_KIND_SHIFT) | ((kind as i64) << 32) | id as i64
 }
 
 /// A cell reference, in cells.
-const fn cell_ref(x: u16, y: u16) -> i64 {
+pub(crate) const fn cell_ref(x: u16, y: u16) -> i64 {
     (REF_CELL << REF_KIND_SHIFT) | ((x as i64) << 16) | y as i64
 }
 
 /// What a nonzero reference names.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Ref {
+pub(crate) enum Ref {
     Object(u64),
     House(usize),
     /// House `house`'s Super of `[SuperWeaponTypes]` entry `index`.
@@ -749,7 +862,7 @@ enum Ref {
 
 /// Decodes a reference; `None` for 0. Client kinds (5, 6) and unknown kinds
 /// are invalid in the simulation.
-fn decode_ref(reference: i64) -> Result<Option<Ref>, Invalid> {
+pub(crate) fn decode_ref(reference: i64) -> Result<Option<Ref>, Invalid> {
     if reference == 0 {
         return Ok(None);
     }
@@ -785,6 +898,36 @@ fn decode_ref(reference: i64) -> Result<Option<Ref>, Invalid> {
     }))
 }
 
+/// A client module's cell argument (RFC 10; appendix "References"): a
+/// cell, or a waypoint's cell (`NotFound` for a waypoint the map does not
+/// set). Any other reference is invalid.
+pub fn client_cell(
+    sim: &Simulation,
+    reference: i64,
+) -> Result<Result<(u16, u16), Status>, Invalid> {
+    match decode_ref(reference)? {
+        Some(Ref::Cell { x, y }) => Ok(Ok((x, y))),
+        Some(Ref::Waypoint(number)) => {
+            Ok(orders::waypoint_cell(sim, number).ok_or(Status::NotFound))
+        }
+        _ => Err(Invalid(format!("{reference:#x} is not a cell"))),
+    }
+}
+
+/// A client module's object argument: the object ID. Any other reference
+/// (0 included) is invalid.
+pub fn client_object(reference: i64) -> Result<u64, Invalid> {
+    match decode_ref(reference)? {
+        Some(Ref::Object(id)) => Ok(id),
+        _ => Err(Invalid(format!("{reference:#x} is not an object"))),
+    }
+}
+
+/// A cell's reference, for a client read (the camera's `Cell`).
+pub const fn client_cell_ref(x: u16, y: u16) -> i64 {
+    cell_ref(x, y)
+}
+
 /// Object categories (appendix 8.3 `Category`).
 const fn category_value(category: EntityCategory) -> i64 {
     match category {
@@ -811,8 +954,53 @@ struct Host<'a, 'f> {
     rules_ini: Option<&'a IniFile>,
 }
 
-/// `has_kind`, the same in every call (the rules stage included).
-fn has_kind(rules: &RuleSet, table: i32, id: i32) -> bool {
+impl Host<'_, '_> {
+    /// What this call's reads (`get`, `find`, `var_get`, filter clauses)
+    /// go through: the simulation, read-only, with no client gate.
+    fn reader(&self) -> Reader<'_> {
+        Reader {
+            sim: &*self.sim,
+            rules: self.rules,
+            overlay_registry: self.overlay_registry,
+            gate: None,
+        }
+    }
+}
+
+/// The one reader of module-visible state (appendix 7, 8.2): property
+/// reads, variable reads and `find`, over a simulation it never writes. The
+/// module host reads through it ([`Host::reader`]); client modules read
+/// through it too (`app::ui_modules::reads`), behind their visibility gate,
+/// on whatever runtime the app reads (possibly the presentation copy).
+#[derive(Clone, Copy)]
+pub(crate) struct Reader<'a> {
+    pub(crate) sim: &'a Simulation,
+    pub(crate) rules: &'a RuleSet,
+    /// For `Placeable` (the placement owner's overlay test).
+    pub(crate) overlay_registry: Option<&'a OverlayTypeRegistry>,
+    /// A client's view (RFC 10, "Client reads"); `None` in the simulation.
+    /// With one, `find` lists only the candidates the gate admits and reads
+    /// every clause through it.
+    pub(crate) gate: Option<&'a dyn ReadGate>,
+}
+
+/// What a client may see of a `find` (RFC 10, "Client reads"; appendix 8.2
+/// "client" column): which candidates exist for it, and how its clauses
+/// read. Candidates it does not list are passed over like keys without a
+/// candidate ([`FindPage::skip`]), so a page says nothing about them.
+pub(crate) trait ReadGate {
+    /// Whether `find` may list `reference`: an object, a cell or a
+    /// superweapon reference.
+    fn lists(&self, reference: i64) -> bool;
+    /// A clause's reading of `prop` on `reference`, for the query's `view`.
+    fn clause_read(&self, reference: i64, prop: i32, view: View) -> Result<(i64, Status), Invalid>;
+    /// A clause's reading of variable `var` in `scope`.
+    fn clause_var(&self, scope: i64, var: i32) -> Result<(i64, Status), Invalid>;
+}
+
+/// `has_kind`, the same in every call (the rules stage included); client
+/// modules answer the simulation's tables with it too.
+pub(crate) fn has_kind(rules: &RuleSet, table: i32, id: i32) -> bool {
     match table {
         vera20k_wasm_ext::triggers::TABLE_EVENT => {
             events::raises(rules, id)
@@ -843,10 +1031,16 @@ fn has_kind(rules: &RuleSet, table: i32, id: i32) -> bool {
                 | NAME_ACTION_KIND
                 | NAME_STRING
                 | NAME_MODULE_EVENT
+                | NAME_NOTIFY
         ),
         TABLE_SCOPE => matches!(
             id,
-            SCOPE_OBJECTS | SCOPE_HOUSES | SCOPE_CELLS | SCOPE_MODIFIERS | SCOPE_SUPER_WEAPONS
+            SCOPE_OBJECTS
+                | SCOPE_HOUSES
+                | SCOPE_CELLS
+                | SCOPE_TYPES
+                | SCOPE_MODIFIERS
+                | SCOPE_SUPER_WEAPONS
         ),
         _ => false,
     }
@@ -941,9 +1135,61 @@ fn variable_name(vars: &VarStore, id: i32) -> Result<(String, Status), Invalid> 
 }
 
 /// TechnoType `id`: an index into the rules' type registry.
-fn techno_type(rules: &RuleSet, id: i32) -> Option<&crate::rules::object_type::ObjectType> {
+pub(crate) fn techno_type(
+    rules: &RuleSet,
+    id: i32,
+) -> Option<&crate::rules::object_type::ObjectType> {
     let id = usize::try_from(id).ok()?;
     rules.all_objects().nth(id)
+}
+
+/// `lookup` of the name kinds the simulation answers, for a module of
+/// `source` (whose variables a name without a `mod.`/`map.` prefix finds).
+/// The module host and client modules (`client_lookup`) both answer with it;
+/// `Property`, `ActionKind` and `ModuleAction` are the sandbox's.
+pub(crate) fn lookup_name(
+    sim: &Simulation,
+    rules: &RuleSet,
+    source: ModuleSource,
+    kind: i32,
+    name: &str,
+) -> (i32, Status) {
+    let id = match kind {
+        NAME_TEAM_TYPE => sim
+            .stock_definition(crate::sim::trigger_runtime::StockReferenceKind::Team, name)
+            .map(|index| index as i32),
+        NAME_VARIABLE => sim.ext_modules.vars.lookup(source, name),
+        NAME_STRING => sim.ext_modules.ini.string_id(name),
+        NAME_MODULE_EVENT => sim.ext_modules.ini.event_id(name),
+        _ => match rules_name_id(rules, kind, name) {
+            Some(id) => id,
+            None => return (-1, Status::Unsupported),
+        },
+    };
+    id.map_or((-1, Status::NotFound), |id| (id, Status::Ok))
+}
+
+/// `name_of` of the name kinds the simulation answers ([`lookup_name`]'s).
+pub(crate) fn name_of_id(
+    sim: &Simulation,
+    rules: &RuleSet,
+    kind: i32,
+    id: i32,
+) -> Result<(String, Status), Invalid> {
+    let name = match kind {
+        NAME_VARIABLE => return variable_name(&sim.ext_modules.vars, id),
+        NAME_STRING | NAME_MODULE_EVENT => {
+            return Ok(ini_name_of(&sim.ext_modules.ini, kind, id));
+        }
+        NAME_TEAM_TYPE => usize::try_from(id)
+            .ok()
+            .and_then(|id| sim.stock_team_type_name(id)),
+        _ => match rules_id_name(rules, kind, id) {
+            Some(name) => name,
+            None => return Ok((String::new(), Status::Unsupported)),
+        },
+    };
+    name_answer(name, kind, id)
 }
 
 impl SimHost for Host<'_, '_> {
@@ -980,44 +1226,28 @@ impl SimHost for Host<'_, '_> {
     }
 
     fn lookup(&mut self, kind: i32, name: &str) -> Result<(i32, Status), Invalid> {
-        let id = match kind {
-            NAME_TEAM_TYPE => self
-                .sim
-                .stock_definition(crate::sim::trigger_runtime::StockReferenceKind::Team, name)
-                .map(|index| index as i32),
-            NAME_VARIABLE => self.sim.ext_modules.vars.lookup(self.source, name),
-            NAME_STRING => self.sim.ext_modules.ini.string_id(name),
-            NAME_MODULE_EVENT => self.sim.ext_modules.ini.event_id(name),
-            _ => match rules_name_id(self.rules, kind, name) {
-                Some(id) => id,
-                None => return Ok((-1, Status::Unsupported)),
-            },
-        };
-        Ok(id.map_or((-1, Status::NotFound), |id| (id, Status::Ok)))
+        Ok(lookup_name(self.sim, self.rules, self.source, kind, name))
     }
 
     fn name_of(&mut self, kind: i32, id: i32) -> Result<(String, Status), Invalid> {
-        let name = match kind {
-            NAME_VARIABLE => return variable_name(&self.sim.ext_modules.vars, id),
-            NAME_STRING | NAME_MODULE_EVENT => {
-                return Ok(ini_name_of(&self.sim.ext_modules.ini, kind, id));
-            }
-            NAME_TEAM_TYPE => usize::try_from(id)
-                .ok()
-                .and_then(|id| self.sim.stock_team_type_name(id)),
-            _ => match rules_id_name(self.rules, kind, id) {
-                Some(name) => name,
-                None => return Ok((String::new(), Status::Unsupported)),
-            },
-        };
-        name_answer(name, kind, id)
+        name_of_id(self.sim, self.rules, kind, id)
     }
 
     fn get(&mut self, reference: i64, prop: i32) -> Result<(i64, Status), Invalid> {
         if let Some(answer) = self.trigger_property(reference, prop, None) {
             return Ok(answer);
         }
-        self.read(reference, prop)
+        // A string property's text gets its string ID here, added when new.
+        let name = property_name(prop).unwrap_or_default();
+        if let Some(decoded) = decode_ref(reference)?
+            && let Some(text) = self.reader().property_text(decoded, name)?
+        {
+            return Ok(match text {
+                Ok(text) => (i64::from(self.sim.ext_modules.ini.intern(&text)), Status::Ok),
+                Err(status) => (0, status),
+            });
+        }
+        self.reader().read(reference, prop)
     }
 
     fn set(&mut self, reference: i64, prop: i32, value: i64) -> Result<Status, Invalid> {
@@ -1034,6 +1264,12 @@ impl SimHost for Host<'_, '_> {
             return self.write_super_weapon(house, index, name, value);
         }
         if let Some(Ref::Object(id)) = decode_ref(reference)?
+            && self.sim.entities().get(id).is_none()
+            && self.sim.projectiles.get(id).is_some()
+        {
+            return Ok(self.write_projectile_property(id, name, value));
+        }
+        if let Some(Ref::Object(id)) = decode_ref(reference)?
             && self.sim.entities().get(id).is_some()
         {
             match name {
@@ -1043,10 +1279,12 @@ impl SimHost for Host<'_, '_> {
                 "Mission" => return self.order_mission(id, value, None),
                 "Ammo" => return Ok(self.write_ammo(id, value)),
                 "Online" => return Ok(self.write_online(id, value)),
+                "DoorOpen" => return self.write_door(id, value),
+                "ImageOverride" => return self.write_image_override(id, value),
                 _ => {}
             }
         }
-        let (_, status) = self.read(reference, prop)?;
+        let (_, status) = self.reader().read(reference, prop)?;
         Ok(match status {
             Status::Ok => Status::Refused,
             other => other,
@@ -1093,11 +1331,16 @@ impl SimHost for Host<'_, '_> {
                 },
             ));
         };
+        let op = ModifierOp::from_abi(op);
+        // A mask (`ImmunityFlags`) takes only an override of its bits.
+        if !stat.admits(op, value) {
+            return Ok((0, Status::Refused));
+        }
         let frame = self.sim.session.binary_frame();
         let modifier = Modifier {
             target,
             stat,
-            op: ModifierOp::from_abi(op),
+            op,
             value,
             expires: u32::try_from(frames)
                 .ok()
@@ -1140,18 +1383,11 @@ impl SimHost for Host<'_, '_> {
     }
 
     fn find(&mut self, query: &Query, cap: usize) -> Result<(FindPage, Status), Invalid> {
-        match query.scope {
-            SCOPE_OBJECTS => self.find_objects(query, cap),
-            SCOPE_HOUSES => self.find_houses(query, cap),
-            SCOPE_CELLS => self.find_cells(query, cap),
-            SCOPE_MODIFIERS => self.find_modifiers(query, cap),
-            SCOPE_SUPER_WEAPONS => self.find_super_weapons(query, cap),
-            _ => Ok((FindPage::default(), Status::Unsupported)),
-        }
+        self.reader().find(query, cap)
     }
 
     fn var_get(&mut self, scope: i64, var: i32) -> Result<(i64, Status), Invalid> {
-        self.read_var(scope, var)
+        self.reader().read_var(scope, var)
     }
 
     fn var_set(&mut self, scope: i64, var: i32, value: i64) -> Result<Status, Invalid> {
@@ -1224,6 +1460,36 @@ impl SimHost for Host<'_, '_> {
     fn order(&mut self, house: i64, order: &Order) -> Result<Status, Invalid> {
         self.queue_order(house, order)
     }
+
+    /// `send_notify` (RFC 0001 section 10): `to` is a house reference or 0
+    /// for the observers; a house that does not exist is `Gone`. Past
+    /// [`MAX_NOTIFIES_PER_FRAME`] this frame `Refused`. The notification
+    /// goes to the client outbox, never into simulation state.
+    fn send_notify(&mut self, to: i64, id: i32, data: &[u8]) -> Result<Status, Invalid> {
+        if to != 0 && self.reader().house(to)?.is_none() {
+            return Ok(Status::Gone);
+        }
+        let frame = self.sim.session.binary_frame();
+        let source = self.source as usize;
+        let count = &mut self.sim.ext_modules.notify_count[source];
+        if count.0 != frame {
+            *count = (frame, 0);
+        }
+        if count.1 >= MAX_NOTIFIES_PER_FRAME {
+            return Ok(Status::Refused);
+        }
+        count.1 += 1;
+        self.sim
+            .ext_modules
+            .client_outbox
+            .push_notify(ClientNotify {
+                to,
+                source: self.source.into(),
+                id,
+                data: data.to_vec(),
+            });
+        Ok(Status::Ok)
+    }
 }
 
 /// The properties [`Host::get`] reads (others answer `Unsupported`).
@@ -1281,12 +1547,31 @@ const READABLE: &[&str] = &[
     "Deployed",
     "UnderConstruction",
     "Parasite",
+    // Objects past the first set (props.rs).
+    "Cloaked",
+    "NearbyEnemyCount",
+    "TargetInRange",
+    "CanFireAtTarget",
+    "DoorOpen",
+    "Animating",
+    "ImageOverride",
+    // Projectiles (projectiles.rs, appendix 7.4).
+    "VX",
+    "VY",
+    "VZ",
+    "Source",
+    "Data0",
+    "Data1",
     // Viewpoint properties: in filter clauses and queries only.
     "Relation",
     "Revealed",
     "Placeable",
     "Visible",
     "Engage",
+    "Buildable",
+    // Strings (props.rs): a type's name, the multiplayer mode.
+    "Name",
+    "GameMode",
     // Houses.
     "TechLevel",
     "Country",
@@ -1330,6 +1615,7 @@ const READABLE: &[&str] = &[
     "InitialAmmo",
     "Passengers",
     "SizeLimit",
+    "Points",
     "Damage",
     "ROF",
     "Burst",
@@ -1385,7 +1671,20 @@ fn property_id_range((first, last): (&str, &str)) -> std::ops::RangeInclusive<i3
     id(first)..=id(last)
 }
 
-impl Host<'_, '_> {
+impl Reader<'_> {
+    /// `find`, by scope (appendix 8.2).
+    pub(crate) fn find(&self, query: &Query, cap: usize) -> Result<(FindPage, Status), Invalid> {
+        match query.scope {
+            SCOPE_OBJECTS => self.find_objects(query, cap),
+            SCOPE_HOUSES => self.find_houses(query, cap),
+            SCOPE_CELLS => self.find_cells(query, cap),
+            SCOPE_TYPES => self.find_types(query, cap),
+            SCOPE_MODIFIERS => self.find_modifiers(query, cap),
+            SCOPE_SUPER_WEAPONS => self.find_super_weapons(query, cap),
+            _ => Ok((FindPage::default(), Status::Unsupported)),
+        }
+    }
+
     /// A house reference's house; `None` for a house that does not exist.
     fn house(&self, reference: i64) -> Result<Option<crate::sim::intern::InternedId>, Invalid> {
         if reference & HOUSE_REF_BIT == 0 || reference >> 48 != 0 {
@@ -1396,7 +1695,7 @@ impl Host<'_, '_> {
     }
 
     /// A property, as `get` reads it: without a viewpoint.
-    fn read(&self, reference: i64, prop: i32) -> Result<(i64, Status), Invalid> {
+    pub(crate) fn read(&self, reference: i64, prop: i32) -> Result<(i64, Status), Invalid> {
         self.read_in(reference, prop, View::default())
     }
 
@@ -1405,11 +1704,30 @@ impl Host<'_, '_> {
     /// house, or an object: `Engage` reads for it, the house properties for
     /// its owner). A direct `get` has none, and the viewpoint properties
     /// answer `Unsupported` there.
-    fn read_in(&self, reference: i64, prop: i32, view: View) -> Result<(i64, Status), Invalid> {
+    pub(crate) fn read_in(
+        &self,
+        reference: i64,
+        prop: i32,
+        view: View,
+    ) -> Result<(i64, Status), Invalid> {
         let name = property_name(prop).unwrap_or_default();
         let Some(reference) = decode_ref(reference)? else {
             return Ok((0, Status::Gone));
         };
+        // A string property outside `get` adds no string: a text not yet
+        // held has no ID to match.
+        if let Some(text) = self.property_text(reference, name)? {
+            return Ok(match text {
+                Ok(text) if text.is_empty() => (0, Status::Ok),
+                Ok(text) => self
+                    .sim
+                    .ext_modules
+                    .ini
+                    .string_id(&text)
+                    .map_or((0, Status::NotFound), |id| (i64::from(id), Status::Ok)),
+                Err(status) => (0, status),
+            });
+        }
         Ok(match reference {
             Ref::Object(id) => match self.sim.entities().get(id) {
                 Some(entity) => match name {
@@ -1418,6 +1736,9 @@ impl Host<'_, '_> {
                     "Engage" => self.engage(id, view),
                     _ => self.object_property(entity, name),
                 },
+                None if self.sim.projectiles.get(id).is_some() => {
+                    self.projectile_property(id, name)
+                }
                 None => match self.sim.ext_modules.modifiers.get(id) {
                     Some(modifier) => modifier
                         .property(name, self.sim.session.binary_frame())
@@ -1433,6 +1754,10 @@ impl Host<'_, '_> {
             }
             Ref::House(index) => self.house_property(index, name),
             Ref::SuperWeapon { house, index } => self.super_weapon_property(house, index, name),
+            Ref::Type {
+                kind: NAME_TECHNO_TYPE,
+                id,
+            } if name == "Buildable" => self.buildable(id, view)?,
             Ref::Type { kind, id } => type_property(self.rules, kind, id, name)?,
             Ref::Cell { x, y } => self.cell_property(x, y, name, view),
             Ref::Waypoint(number) => match self.waypoint_cell(number) {
@@ -1444,7 +1769,7 @@ impl Host<'_, '_> {
     }
 
     /// A variable, as `var_get` reads it.
-    fn read_var(&self, scope: i64, var: i32) -> Result<(i64, Status), Invalid> {
+    pub(crate) fn read_var(&self, scope: i64, var: i32) -> Result<(i64, Status), Invalid> {
         if var >= FIRST_DECLARED_VAR {
             let holder = self.sim.module_var_holder(scope, var)?;
             return Ok(self.sim.ext_modules.vars.read(var, holder));
@@ -1517,6 +1842,10 @@ impl Host<'_, '_> {
                 i64::from(entity.building_online())
             }
             "Online" => return (0, Status::Unsupported),
+            "ImmunityFlags" => match object() {
+                Some(object) => entity.immunity_flags(object, self.rules),
+                None => return (0, Status::Unsupported),
+            },
             _ => match Stat::wired_property(name) {
                 Some(stat) => entity.effective_stat(stat),
                 None => return self.more_object_property(entity, name),
@@ -1561,7 +1890,8 @@ impl Host<'_, '_> {
 
     /// Whether `candidate` passes every clause; `None` when a clause needs
     /// what is not kept yet. Clauses read like `get`, for the query's
-    /// viewpoint; a reading that is not `Ok` fails its clause.
+    /// viewpoint; a reading that is not `Ok` fails its clause. A client
+    /// reads them through its gate.
     fn passes(&self, candidate: i64, query: &Query) -> Result<Option<bool>, Invalid> {
         let view = if query.clauses.is_empty() {
             View::default()
@@ -1569,10 +1899,17 @@ impl Host<'_, '_> {
             self.query_view(query)?
         };
         for clause in &query.clauses {
-            let (reading, status) = match clause.subject {
-                ClauseSubject::Property(prop) => self.read_in(candidate, prop, view)?,
-                ClauseSubject::Var { var, subject } => {
-                    self.read_var(if subject { candidate } else { 0 }, var)?
+            let (reading, status) = match (clause.subject, self.gate) {
+                (ClauseSubject::Property(prop), None) => self.read_in(candidate, prop, view)?,
+                (ClauseSubject::Property(prop), Some(gate)) => {
+                    gate.clause_read(candidate, prop, view)?
+                }
+                (ClauseSubject::Var { var, subject }, gate) => {
+                    let scope = if subject { candidate } else { 0 };
+                    match gate {
+                        None => self.read_var(scope, var)?,
+                        Some(gate) => gate.clause_var(scope, var)?,
+                    }
                 }
             };
             if status != Status::Ok || !clause.op.holds(reading, clause.value) {
@@ -1650,7 +1987,17 @@ impl Host<'_, '_> {
         };
         let mut page = FindPage::default();
         for (id, entity) in candidates {
-            if page.found.len() == cap || !page.examine(id as i64, query) {
+            if page.found.len() == cap {
+                break;
+            }
+            // What a client cannot see is no candidate for it.
+            if self.gate.is_some_and(|gate| !gate.lists(id as i64)) {
+                if !page.skip(id as i64) {
+                    break;
+                }
+                continue;
+            }
+            if !page.examine(id as i64, query) {
                 break;
             }
             if centre.is_some_and(|(cx, cy)| !in_area(entity, query.area, cx, cy))
@@ -1695,7 +2042,9 @@ impl Host<'_, '_> {
         }
         Ok((page, Status::Ok))
     }
+}
 
+impl Host<'_, '_> {
     /// `Health`: sets health without kill credit or damage events, clamped
     /// to the type's Strength. Writing 0 or less would kill without credit,
     /// which needs the death owner's credit-free path: it answers `Refused`.
@@ -1738,7 +2087,7 @@ impl Host<'_, '_> {
         let Some(Ref::House(_)) = decode_ref(value)? else {
             return Err(Invalid(format!("{value:#x} is not a house reference")));
         };
-        let Some(house) = self.house(value)? else {
+        let Some(house) = self.reader().house(value)? else {
             return Ok(Status::Gone);
         };
         let Some(entity) = self.sim.entities().get(id) else {
@@ -1760,6 +2109,73 @@ impl Host<'_, '_> {
         Ok(Status::Ok)
     }
 
+    /// `DoorOpen` (appendix 7.1): 1 draws a war factory's or gate's door
+    /// open and 0 shut until -1 lets it show its own state; the door and
+    /// what it lets through run on (`held::ActionHeld`). Other objects
+    /// answer `Unsupported`.
+    fn write_door(&mut self, id: u64, value: i64) -> Result<Status, Invalid> {
+        let Some(entity) = self.sim.entities().get(id) else {
+            return Ok(Status::Gone);
+        };
+        let drawn = entity.category() == crate::map::entities::EntityCategory::Structure
+            && self
+                .sim
+                .entity_object_type(entity, self.rules)
+                .is_some_and(|object| object.weapons_factory || object.gate);
+        if !drawn {
+            return Ok(Status::Unsupported);
+        }
+        let open = match value {
+            -1 => None,
+            0 => Some(false),
+            1 => Some(true),
+            _ => return Err(Invalid(format!("DoorOpen {value}"))),
+        };
+        self.sim.ext_modules.held.hold_door(id, open);
+        Ok(Status::Ok)
+    }
+
+    /// `ImageOverride` (appendix 7.1): 0 draws the object as itself; a
+    /// TechnoType of its own category draws it as that type. A building,
+    /// another category or a non-TechnoType answers `Refused`.
+    fn write_image_override(&mut self, id: u64, value: i64) -> Result<Status, Invalid> {
+        let image = match decode_ref(value)? {
+            None => None,
+            Some(Ref::Type { kind, id: type_id }) if kind == NAME_TECHNO_TYPE => {
+                let Some(image) = i32::try_from(type_id)
+                    .ok()
+                    .and_then(|type_id| techno_type(self.rules, type_id))
+                else {
+                    return Ok(Status::NotFound);
+                };
+                Some(image)
+            }
+            Some(_) => return Ok(Status::Refused),
+        };
+        let Some(entity) = self.sim.entities().get(id) else {
+            return Ok(Status::Gone);
+        };
+        let own = self.sim.entity_object_type(entity, self.rules);
+        let fits = image.is_none_or(|image| {
+            own.is_some_and(|own| {
+                own.category == image.category
+                    && own.category != crate::rules::object_type::ObjectCategory::Building
+            })
+        });
+        if !fits {
+            return Ok(Status::Refused);
+        }
+        let image = image.map(|image| image.id.clone());
+        // The draw finds the type by its interned name.
+        if let Some(image) = image.as_deref() {
+            self.sim.interner.intern(image);
+        }
+        self.sim.ext_modules.held.set_image(id, image);
+        // The atlas checks the objects whose look changed.
+        self.sim.substrate.entities.note_look(id);
+        Ok(Status::Ok)
+    }
+
     /// `Rank`: VeterancyStruct's SetRookie/SetVeteran/SetElite; the next
     /// AI_Update sample announces a promotion as for a crate.
     fn write_rank(&mut self, id: u64, value: i64) -> Result<Status, Invalid> {
@@ -1774,7 +2190,9 @@ impl Host<'_, '_> {
         }
         Ok(Status::Ok)
     }
+}
 
+impl Reader<'_> {
     /// `find` over houses, in house array order. Houses have no place or
     /// type: a query with an area, type or owner answers `Unsupported`.
     fn find_houses(&self, query: &Query, cap: usize) -> Result<(FindPage, Status), Invalid> {
@@ -1896,7 +2314,15 @@ impl Simulation {
         bytes: &[u8],
     ) -> Result<(), String> {
         let module = SimModule::load(bytes, source.limits()).map_err(|e| e.to_string())?;
+        for slot in &self.ext_modules.slots {
+            let (first, second) = match slot.source < source {
+                true => (&slot.module, &module),
+                false => (&module, &slot.module),
+            };
+            check_notify_collision(first, second)?;
+        }
         let position = self.insert_ext_slot(source, module, FRAME_BUDGET, SEAT_BUDGET, 0);
+        self.trigger_runtime.set_client_forwarding(true);
         self.init_ext_slot(rules, position)
     }
 
@@ -2001,10 +2427,12 @@ impl Simulation {
                 crate::sim::trigger_runtime::TriggerEffect::ExtModuleNotice { text },
             ]);
         }
-        self.ext_modules.map_ui = policy.map_ui;
         self.ext_modules.controller = policy.controller;
+        self.ext_modules.automation_allowed = policy.automation_allowed;
         if !modules.is_empty() {
             self.ext_modules.rules_ini = Some(rules_ini);
+            // Client modules hear the forwarded events ([`client_outbox`]).
+            self.trigger_runtime.set_client_forwarding(true);
         }
         let mut uninitialized = Vec::new();
         for prepared in modules {
@@ -2067,6 +2495,9 @@ impl Simulation {
         self.ext_modules
             .modifiers
             .refresh_all(&mut self.substrate.entities);
+        if !self.ext_modules.slots.is_empty() {
+            self.trigger_runtime.set_client_forwarding(true);
+        }
         Ok(())
     }
 
@@ -2078,6 +2509,8 @@ impl Simulation {
         }
         self.ext_modules.vars.forget_object(stable_id);
         self.ext_modules.held.forget_object(stable_id);
+        self.ext_modules.projectiles.forget(stable_id);
+        self.ext_modules.motions.end_push(stable_id);
     }
 
     pub fn ext_modules(&self) -> &ExtModules {
@@ -2089,10 +2522,12 @@ impl Simulation {
     }
 
     /// The module phase: modifiers whose time is up expire, timed
-    /// conversions whose time is up revert and `Timer` triggers whose
+    /// conversions whose time is up revert, kept animations whose time is
+    /// up or whose object went are destroyed, and `Timer` triggers whose
     /// period ends fire, then each enabled module in order
-    /// gets its `on_scenario_start` once, its queued event records
-    /// (`on_events`), then `on_frame`.
+    /// gets its `on_scenario_start` once, its client messages
+    /// (`on_message`, [`messages`]), its queued event records
+    /// (`on_events`), then `on_frame` (RFC section 5).
     pub(crate) fn run_ext_module_phase(
         &mut self,
         rules: &RuleSet,
@@ -2118,9 +2553,11 @@ impl Simulation {
         // runs (`decide`).
         self.decide_production_allowed(rules);
         self.revert_ext_module_conversions(rules, frame_effects);
+        self.maintain_ext_module_anims(rules);
         self.fire_deferred_module_triggers(rules, frame_effects);
         self.poll_module_events(rules, frame_effects);
         self.raise_module_timers(rules, frame_effects);
+        self.ext_modules.messages.prune(frame);
         for index in 0..self.ext_modules.slots.len() {
             if self.ext_modules.slots[index].disabled.is_some() {
                 continue;
@@ -2158,9 +2595,25 @@ impl Simulation {
                     continue;
                 }
             }
-            if let Err(fault) =
-                self.deliver_ext_module_events(rules, overlay_registry, frame_effects, index)
-            {
+            let messaged = match self.deliver_ext_module_messages(
+                rules,
+                overlay_registry,
+                frame_effects,
+                index,
+            ) {
+                Ok(called) => called,
+                Err(fault) => {
+                    self.disable_ext_module(index, Export::Message, fault);
+                    continue;
+                }
+            };
+            if let Err(fault) = self.deliver_ext_module_events(
+                rules,
+                overlay_registry,
+                frame_effects,
+                index,
+                messaged,
+            ) {
                 self.disable_ext_module(index, Export::Events, fault);
                 continue;
             }
@@ -2265,6 +2718,8 @@ impl Simulation {
         let source = slot.source;
         // Its house domain claims; the native AI takes them back (RFC 6i).
         self.ext_modules.claims.release(source);
+        // Its waiting client messages.
+        self.ext_modules.messages.clear(source);
         self.ext_modules.keep_log(reason.clone());
         self.trigger_runtime
             .module_triggers_mut()
@@ -2296,6 +2751,18 @@ mod ini_trigger_tests;
 mod decide_tests;
 
 #[cfg(all(test, tests_sim_c_g))]
+#[path = "ext_modules_flight_tests.rs"]
+mod flight_tests;
+
+#[cfg(all(test, tests_sim_c_g))]
+#[path = "ext_modules_death_tests.rs"]
+mod death_tests;
+
+#[cfg(all(test, tests_sim_c_g))]
+#[path = "ext_modules_unit_ai_tests.rs"]
+mod unit_ai_tests;
+
+#[cfg(all(test, tests_sim_c_g))]
 #[path = "ext_modules_event_tests.rs"]
 mod event_tests;
 
@@ -2314,3 +2781,15 @@ mod drive_tests;
 #[cfg(all(test, tests_sim_c_g))]
 #[path = "ext_modules_order_tests.rs"]
 mod order_tests;
+
+#[cfg(all(test, tests_sim_c_g))]
+#[path = "ext_modules_control_tests.rs"]
+mod control_tests;
+
+#[cfg(all(test, tests_sim_c_g))]
+#[path = "ext_modules_movement_tests.rs"]
+mod movement_tests;
+
+#[cfg(all(test, tests_sim_c_g))]
+#[path = "ext_modules_message_tests.rs"]
+mod message_tests;

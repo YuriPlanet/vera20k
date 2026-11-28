@@ -1,0 +1,85 @@
+name: Android ARM64 APK
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/build-android-apk.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      # Match android/app/build.gradle.kts.
+      NDK_VERSION: '28.2.13676358'
+      BUILD_TOOLS_VERSION: '36.1.0'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up JDK 17
+        run: |
+          echo "JAVA_HOME=$JAVA_HOME_17_X64" >> "$GITHUB_ENV"
+          echo "$JAVA_HOME_17_X64/bin" >> "$GITHUB_PATH"
+
+      - name: Install Android SDK & NDK packages
+        run: |
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install \
+            "platforms;android-36" \
+            "build-tools;$BUILD_TOOLS_VERSION" \
+            "ndk;$NDK_VERSION"
+
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: stable
+          targets: aarch64-linux-android
+
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk --version 4.1.2 --locked
+
+      - name: Generate debug keystore
+        run: |
+          mkdir -p android/.android
+          keytool -genkeypair -keystore android/.android/debug.keystore \
+            -storepass android -alias androiddebugkey -keypass android \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -dname "CN=Android Debug,O=Android,C=US"
+
+      - name: Build native library
+        env:
+          CARGO_PROFILE_SHIPPING_STRIP: symbols
+        run: |
+          # cargo-ndk otherwise picks the runner's default NDK. AAudio needs API 26.
+          export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/$NDK_VERSION"
+          export ANDROID_NDK_ROOT="$ANDROID_NDK_HOME"
+          cargo ndk -t arm64-v8a --platform 26 -o android/app/src/main/jniLibs build \
+            --locked --profile shipping -p vera20k-android --no-default-features
+
+      - name: Assemble and verify debug APK
+        run: |
+          ./android/gradlew -p android :app:assembleDebug
+          apk=android/app/build/outputs/apk/debug/app-debug.apk
+          build_tools="$ANDROID_HOME/build-tools/$BUILD_TOOLS_VERSION"
+          "$build_tools/apksigner" verify "$apk"
+          "$build_tools/zipalign" -c -P 16 4 "$apk"
+          unzip -tq "$apk" lib/arm64-v8a/libvera20k_android.so
+          mv "$apk" vera20k-android-arm64-debug.apk
+
+      - name: Upload test APK
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          path: vera20k-android-arm64-debug.apk
+          archive: false
+          if-no-files-found: error

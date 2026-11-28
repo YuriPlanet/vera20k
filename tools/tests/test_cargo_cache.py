@@ -510,6 +510,18 @@ class CacheTests(unittest.TestCase):
         registry = json.loads((self.store / 'cache-roots.json').read_text())
         self.assertNotIn(str(gone), registry['roots'])
 
+    def test_abandoned_host_builds_of_other_profiles_are_reclaimed(self):
+        # tools/scale_bench.py builds the `shipping` profile into the cache root.
+        gone = self.abandoned()
+        outputs = [self.put(gone, relative) for relative in (
+            'shipping/.cargo-lock',
+            'shipping/.fingerprint/vera20k-core-0123/lib-vera20k_core',
+            'shipping/deps/libvera20k_core-0123456789abcdef.rlib',
+            'shipping/sim-bench', 'shipping/sim-bench.d')]
+        result = self.trim(cache.CachePolicy(1 << 40, 1 << 40, 0))
+        self.assertEqual(set(result['removed_files']), set(map(str, outputs)), result)
+        self.assertFalse(gone.exists())
+
     def test_target_build_left_by_a_stopped_pass_still_goes(self):
         # A pass unlinks files first and directories last, so a stopped pass
         # leaves the emptied .fingerprint directory but maybe not the tag.

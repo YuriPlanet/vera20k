@@ -4,27 +4,9 @@
 //! Blowfish in ECB mode. The 56-byte Blowfish key is itself encrypted
 //! with RSA (public key hardcoded in the game executable).
 //!
-//! ## Decryption flow
-//! 1. Read the 80-byte RSA-encrypted key block from the MIX file
-//! 2. Byte-reverse the entire 80 bytes (file is LE, RSA math needs BE)
-//! 3. Split into two 40-byte halves, RSA-decrypt each as big-endian
-//! 4. Combine: `(s0 << 312) + s1` to form a 56-byte big-endian value
-//! 5. Byte-reverse the 56 bytes back to little-endian for Blowfish
-//! 6. Use standard Blowfish ECB to decrypt the file index
-//!
-//! ## Why standard Blowfish (not "Blowfish-LE")?
-//! Verified against two independent working implementations:
-//! - ccmixar (Go) uses standard `golang.org/x/crypto/blowfish`
-//! - ccmix (C++) uses Crypto++ `ECB_Mode<Blowfish>`
-//!
-//! Both use standard big-endian Blowfish and handle endianness at the
-//! RSA level (byte-reversing before/after RSA math) rather than at
-//! the Blowfish block level.
-//!
-//! ## Security note
-//! This is a 320-bit RSA key from 2000 — trivially breakable by modern
-//! standards. It's only meant to prevent casual file browsing, not
-//! real security. We're implementing it to read the game's own files.
+//! The MIX header supplies two little-endian RSA blocks. The game takes
+//! 39 bytes from each decrypted block and uses the first 56 bytes of that
+//! stream as the key for the Blowfish-encrypted index.
 //!
 //! ## Dependency rules
 //! - Part of assets/ — no dependencies on game modules.
@@ -79,21 +61,12 @@ const BLOWFISH_KEY_SIZE: usize = 56;
 /// Blowfish block size in bytes. ECB mode processes one block at a time.
 pub const BLOWFISH_BLOCK_SIZE: usize = 8;
 
-/// Bit shift for combining two RSA-decrypted halves.
-/// 312 bits = 39 bytes. The formula `(s0 << 312) + s1` concatenates
-/// the two halves into a single 56-byte value.
-const RSA_COMBINE_SHIFT_BITS: u64 = 312;
+/// PKey::Decrypt @ 0x632870 takes one fewer byte per block than the ciphertext.
+const RSA_PLAIN_BLOCK_SIZE: usize = RSA_HALF_SIZE - 1;
 
-/// Extract the 56-byte Blowfish key from the 80-byte RSA-encrypted block.
-///
-/// Algorithm (verified against ccmixar and ccmix implementations):
-/// 1. Reverse the 80 bytes (file LE → big-endian for RSA math)
-/// 2. Split into two 40-byte halves
-/// 3. RSA-decrypt each half: `plaintext = ciphertext^e mod n`
-/// 4. Combine: `(s0 << 312) + s1`
-/// 5. Encode as 56-byte big-endian, then reverse back to LE
+/// PKStraw::Get @ 0x633130 passes the first 56 decrypted bytes to Blowfish.
 pub fn extract_blowfish_key(encrypted_block: &[u8]) -> Result<[u8; BLOWFISH_KEY_SIZE], AssetError> {
-    if encrypted_block.len() < RSA_KEY_BLOCK_SIZE {
+    let Some(blocks) = encrypted_block.get(..RSA_KEY_BLOCK_SIZE) else {
         return Err(AssetError::MixDecryptionError {
             reason: format!(
                 "RSA key block too small: {} bytes (need {})",
@@ -101,41 +74,27 @@ pub fn extract_blowfish_key(encrypted_block: &[u8]) -> Result<[u8; BLOWFISH_KEY_
                 RSA_KEY_BLOCK_SIZE
             ),
         });
+    };
+
+    let modulus = BigUint::from_bytes_be(&RSA_MODULUS_BE);
+    let exponent = BigUint::from(RSA_EXPONENT);
+    let mut key = [0; BLOWFISH_KEY_SIZE];
+    for (ciphertext, destination) in blocks
+        .chunks_exact(RSA_HALF_SIZE)
+        .zip(key.chunks_mut(RSA_PLAIN_BLOCK_SIZE))
+    {
+        let ciphertext = BigUint::from_bytes_le(ciphertext);
+        // Modular exponentiation @ 0x5C8500 leaves its initial 1 when the
+        // ciphertext is at least the modulus. PKey::Decrypt still copies it.
+        let plaintext = if ciphertext < modulus {
+            ciphertext.modpow(&exponent, &modulus)
+        } else {
+            BigUint::from(1u8)
+        };
+        let bytes = plaintext.to_bytes_le();
+        let count = destination.len().min(bytes.len());
+        destination[..count].copy_from_slice(&bytes[..count]);
     }
-
-    // Step 1: Reverse the 80 bytes (convert from file's LE to BE for RSA).
-    let mut reversed: Vec<u8> = encrypted_block[..RSA_KEY_BLOCK_SIZE].to_vec();
-    reversed.reverse();
-
-    // Step 2: Split into two 40-byte halves.
-    let block0: &[u8] = &reversed[..RSA_HALF_SIZE];
-    let block1: &[u8] = &reversed[RSA_HALF_SIZE..RSA_KEY_BLOCK_SIZE];
-
-    // Step 3: RSA-decrypt each half as big-endian integers.
-    let s0: BigUint = rsa_decrypt_be(block0);
-    let s1: BigUint = rsa_decrypt_be(block1);
-
-    // Step 4: Combine into a single value: (s0 << 312) + s1
-    let combined: BigUint = (s0 << RSA_COMBINE_SHIFT_BITS) + s1;
-
-    // Step 5: Encode as 56-byte big-endian, then reverse to LE.
-    let be_bytes: Vec<u8> = combined.to_bytes_be();
-    let mut key: [u8; BLOWFISH_KEY_SIZE] = [0u8; BLOWFISH_KEY_SIZE];
-
-    // Right-align big-endian bytes within the 56-byte buffer
-    // (if the combined value has fewer than 56 bytes, pad left with zeros).
-    if be_bytes.len() <= BLOWFISH_KEY_SIZE {
-        let start: usize = BLOWFISH_KEY_SIZE - be_bytes.len();
-        key[start..].copy_from_slice(&be_bytes);
-    } else {
-        // Combined value is larger than 56 bytes — take the low 56 bytes.
-        let skip: usize = be_bytes.len() - BLOWFISH_KEY_SIZE;
-        key.copy_from_slice(&be_bytes[skip..]);
-    }
-
-    // Reverse to convert from big-endian to little-endian (file format).
-    key.reverse();
-
     Ok(key)
 }
 
@@ -170,18 +129,19 @@ pub fn blowfish_decrypt_ecb(key: &[u8], data: &mut [u8]) -> Result<(), AssetErro
     Ok(())
 }
 
-/// Perform textbook RSA decryption on big-endian bytes.
-///
-/// Computes: plaintext = ciphertext^exponent mod modulus
-///
-/// Returns the decrypted result as a BigUint (caller decides byte format).
-/// This is "textbook RSA" with no padding (PKCS#1, OAEP, etc.),
-/// which is what Westwood used in the original game.
-fn rsa_decrypt_be(ciphertext_be: &[u8]) -> BigUint {
-    let ciphertext: BigUint = BigUint::from_bytes_be(ciphertext_be);
-    let exponent: BigUint = BigUint::from(RSA_EXPONENT);
-    let modulus: BigUint = BigUint::from_bytes_be(&RSA_MODULUS_BE);
+#[cfg(all(test, tests_assets))]
+mod tests {
+    use super::*;
 
-    // Core RSA operation: m = c^e mod n
-    ciphertext.modpow(&exponent, &modulus)
+    #[test]
+    fn rsa_block_equal_to_modulus_decodes_to_one() {
+        let mut key_block = [0; RSA_KEY_BLOCK_SIZE];
+        for (byte, modulus_byte) in key_block.iter_mut().zip(RSA_MODULUS_BE.iter().rev()) {
+            *byte = *modulus_byte;
+        }
+        // Original PKey::Decrypt (0x632870), input blocks (modulus, 0).
+        let mut expected = [0; BLOWFISH_KEY_SIZE];
+        expected[0] = 1;
+        assert_eq!(extract_blowfish_key(&key_block).unwrap(), expected);
+    }
 }

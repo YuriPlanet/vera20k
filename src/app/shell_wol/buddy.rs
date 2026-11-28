@@ -15,12 +15,15 @@ use crate::util::time::{Duration, Instant};
 use super::WolPage;
 use super::leaf::{self, Pointer};
 use super::service;
+use crate::app::audio_runtime::AppAudioRuntime;
 use crate::app::frontend::state::FrontendState;
 use crate::app::frontend::{shell_layout, shell_transition};
+use crate::app::match_runtime::session::MatchSession;
 use crate::app::match_runtime::state::MatchState;
 use crate::app::persistence::options_profile::RetailOptionsProfile;
 use crate::app::process_assets::ProcessAssets;
 use crate::app::renderer_state::RendererState;
+use crate::app::shell_main_menu::ClientStep;
 use crate::app::shell_wol::WolVisit;
 use crate::app::{App, AppState};
 use crate::audio::sfx::SfxPlayer;
@@ -189,142 +192,178 @@ pub(crate) fn stopped(
 /// The runner returned 0 with mode 5: `WOL_Main` takes the return mode and
 /// clears it (`0x0077B491..0x0077B4A6`). Mode 4 keeps the login and runs
 /// the custom lobby; mode 6 is My Information's driver; mode 0 is the
-/// welcome.
-fn returned(state: &mut AppState) {
-    super::leaf::free_art(&mut state.frontend.wol_art, DIALOG);
-    let Some(visit) = state.frontend.wol.as_mut() else {
-        return;
-    };
+/// welcome. The runner that follows is the returned step.
+#[must_use]
+fn returned(
+    frontend: &mut FrontendState,
+    session: &mut MatchSession,
+    audio: &mut AppAudioRuntime,
+) -> Option<ClientStep> {
+    super::leaf::free_art(&mut frontend.wol_art, DIALOG);
+    let visit = frontend.wol.as_mut()?;
     let mode = visit.return_mode.take();
-    super::lobby::drop_runner(state.frontend.wol.as_mut());
+    super::lobby::drop_runner(frontend.wol.as_mut());
     match mode {
-        Some(WolMode::CustomMatch) => super::reopen_lobby(state),
+        Some(WolMode::CustomMatch) => Some(ClientStep::Now(Box::new(super::reopen_lobby))),
         Some(WolMode::MyInformation) => {
-            if let Some(visit) = state.frontend.wol.as_mut() {
+            if let Some(visit) = frontend.wol.as_mut() {
                 visit.mode = Some(WolMode::MyInformation);
                 visit.page = WolPage::Backdrop { wait: None };
             }
-            super::apply_wol_preferences(&mut state.frontend, &mut state.audio);
-            service::begin_my_information(state);
+            super::apply_wol_preferences(frontend, audio);
+            Some(ClientStep::Now(Box::new(service::begin_my_information)))
         }
         _ => {
-            state.match_state.session.leave_network();
-            App::reopen_wol_welcome(state);
+            session.leave_network();
+            Some(ClientStep::Now(Box::new(App::reopen_wol_welcome)))
         }
     }
 }
 
-/// `0x116`'s teardown has run with the button that ended it.
-pub(crate) fn commit_close(state: &mut AppState, control: u16) {
+/// `0x116`'s teardown has run with the button that ended it. Back's
+/// runner and Join's slide are the returned step.
+#[must_use]
+pub(crate) fn commit_close(
+    frontend: &mut FrontendState,
+    window: &Window,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    options_profile: &RetailOptionsProfile,
+    audio: &mut AppAudioRuntime,
+    control: u16,
+) -> Option<ClientStep> {
     match control {
         // 0x0079FB06: back to the lobby rejoins its lobby whatever its
         // population.
         BACK => {
-            if let Some(visit) = state.frontend.wol.as_mut()
+            if let Some(visit) = frontend.wol.as_mut()
                 && visit.return_mode == Some(WolMode::CustomMatch)
             {
                 visit.lobby_joined_before = false;
             }
-            returned(state);
+            returned(frontend, &mut match_state.session, audio)
         }
         CREATE => {
-            dialog_ended(&mut state.frontend);
-            super::lobby::begin_create(
-                &mut state.frontend,
-                &state.process_assets,
-                &state.renderer,
-                &state.persistence.options_profile,
-            );
+            dialog_ended(frontend);
+            super::lobby::begin_create(frontend, process_assets, renderer, options_profile);
+            None
         }
-        JOIN => join_selected(state),
+        JOIN => join_selected(
+            frontend,
+            window,
+            match_state,
+            process_assets,
+            renderer,
+            options_profile,
+            audio,
+        ),
         _ => {
-            dialog_ended(&mut state.frontend);
-            open_dialog(
-                &mut state.frontend,
-                &state.platform.window,
-                &state.process_assets,
-                &state.renderer,
-                &state.persistence.options_profile,
-            );
+            dialog_ended(frontend);
+            open_dialog(frontend, window, process_assets, renderer, options_profile);
+            None
         }
     }
 }
 
-/// Join (`0x0079F566`) for `[0xB76E24]` with its record and status.
-fn join_selected(state: &mut AppState) {
-    dialog_ended(&mut state.frontend);
-    let buddies = &state.frontend.wol_buddies;
+/// Join (`0x0079F566`) for `[0xB76E24]` with its record and status; the
+/// runner or the join's slide is the returned step.
+#[must_use]
+fn join_selected(
+    frontend: &mut FrontendState,
+    window: &Window,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    options_profile: &RetailOptionsProfile,
+    audio: &mut AppAudioRuntime,
+) -> Option<ClientStep> {
+    dialog_ended(frontend);
+    let buddies = &frontend.wol_buddies;
     let name = buddies.selected.clone();
     let status = buddies.status(&name);
     let Some(channel) = buddies.channel(&name).cloned().filter(|_| !name.is_empty()) else {
-        open_dialog(
-            &mut state.frontend,
-            &state.platform.window,
-            &state.process_assets,
-            &state.renderer,
-            &state.persistence.options_profile,
-        );
-        return;
+        open_dialog(frontend, window, process_assets, renderer, options_profile);
+        return None;
     };
     match status {
         // 0x0079FA75: mode 4 through the return mode; the buddy's chat
         // lobby, when listed, is the one the picker rejoins.
         Some(4) => {
-            let listed = super::lobby::lobbies(state.frontend.wol.as_ref())
+            let listed = super::lobby::lobbies(frontend.wol.as_ref())
                 .iter()
                 .any(|lobby| {
                     crate::util::native_string::crt_strcmpi(&lobby.name, &channel.name).is_eq()
                 });
             if listed {
-                state.frontend.wol_lobby_globals.lobby_number = channel
+                frontend.wol_lobby_globals.lobby_number = channel
                     .name
                     .get(crate::ui::wol_lobby::LOBBY_PREFIX.len()..)
                     .map(crate::rules::ini_value::crt_atoi)
                     .unwrap_or_default();
             }
-            if let Some(visit) = state.frontend.wol.as_mut() {
+            if let Some(visit) = frontend.wol.as_mut() {
                 visit.return_mode = Some(WolMode::CustomMatch);
                 if listed {
                     visit.lobby_joined_before = false;
                 }
             }
-            returned(state);
+            returned(frontend, &mut match_state.session, audio)
         }
-        Some(5) => game_listed(state, &channel.name, false),
-        _ => open_dialog(
-            &mut state.frontend,
-            &state.platform.window,
-            &state.process_assets,
-            &state.renderer,
-            &state.persistence.options_profile,
+        Some(5) => game_listed(
+            frontend,
+            window,
+            match_state,
+            process_assets,
+            renderer,
+            options_profile,
+            &channel.name,
+            false,
         ),
+        _ => {
+            open_dialog(frontend, window, process_assets, renderer, options_profile);
+            None
+        }
     }
 }
 
 /// A buddy's game is searched in the game list (`strcmpi`): found, the
-/// lobby's Join runs; missing the first time, the list is asked again;
-/// missing again (`again`), the loop goes on without a box.
-pub(super) fn game_listed(state: &mut AppState, name: &str, again: bool) {
-    let game = super::lobby::games(state.frontend.wol.as_ref())
+/// lobby's Join runs (its slide is the returned step); missing the first
+/// time, the list is asked again; missing again (`again`), the loop goes on
+/// without a box.
+#[must_use]
+pub(super) fn game_listed(
+    frontend: &mut FrontendState,
+    window: &Window,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    options_profile: &RetailOptionsProfile,
+    name: &str,
+    again: bool,
+) -> Option<ClientStep> {
+    let game = super::lobby::games(frontend.wol.as_ref())
         .iter()
         .find(|game| crate::util::native_string::crt_strcmpi(&game.name, name).is_eq())
         .cloned();
     match (game, again) {
-        (Some(game), _) => super::lobby::buddy_join(state, game),
-        (None, false) => super::lobby::buddy_find_game(
-            &mut state.frontend,
-            &state.process_assets,
-            name.to_owned(),
+        (Some(game), _) => super::lobby::buddy_join(
+            frontend,
+            window,
+            match_state,
+            process_assets,
+            renderer,
+            options_profile,
+            game,
         ),
+        (None, false) => {
+            super::lobby::buddy_find_game(frontend, process_assets, name.to_owned());
+            None
+        }
         (None, true) => {
             log::debug!("WOL Buddy List Join: no game {name} (Find Channel by name failed)");
-            open_dialog(
-                &mut state.frontend,
-                &state.platform.window,
-                &state.process_assets,
-                &state.renderer,
-                &state.persistence.options_profile,
-            );
+            open_dialog(frontend, window, process_assets, renderer, options_profile);
+            None
         }
     }
 }
@@ -484,7 +523,21 @@ fn apply(state: &mut AppState, action: WolBuddyAction) {
             App::leave_shell_dialog(
                 state,
                 shell_transition::ShellSlideKind::WolBuddyList,
-                move |state| crate::app::shell_wol::buddy::commit_close(state, control),
+                move |state| {
+                    let step = crate::app::shell_wol::buddy::commit_close(
+                        &mut state.frontend,
+                        &state.platform.window,
+                        &mut state.match_state,
+                        &state.process_assets,
+                        &state.renderer,
+                        &state.persistence.options_profile,
+                        &mut state.audio,
+                        control,
+                    );
+                    if let Some(step) = step {
+                        App::apply_step(state, step);
+                    }
+                },
             );
         }
         WolBuddyAction::Select(name) => {

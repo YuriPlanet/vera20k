@@ -103,7 +103,11 @@ impl EditRecord {
 /// recomputes `earlier`'s pixels from its quad, so that quad must sit on
 /// whole pixels at zoom 1 with one texel per pixel: there every pixel centre
 /// lies half a texel and half a row inside the interpolated value, and the
-/// recomputed pixel equals the one `earlier`'s own fragment draws. Both share
+/// recomputed pixel equals the one `earlier`'s own fragment draws. A zoomed
+/// world camera (`docs/zoom-one-pass.md`) never replays: an overlapping edit
+/// then draws in a wave of its own, each fragment reading and writing only its
+/// own target pixel's snapshot word and Z, which is correct at any zoom (only
+/// more passes). Both share
 /// one atlas page, the one bound for `later`. A shadow replays only native
 /// palette bodies, whose stored word it can recompute exactly.
 fn replays<'a>(
@@ -1898,8 +1902,11 @@ fn piece_scissor(
     tactical: [u32; 4],
 ) -> Option<[u32; 4]> {
     // Include the same half-screen-pixel zoom padding as the SHP vertex path.
+    // Zoomed in (`docs/zoom-one-pass.md`), the blitters snap each vertex to a
+    // world pixel, `floor(pos - camera_pos + 0.5) * zoom`, up to half a world
+    // pixel (`zoom / 2` target pixels) outside the unsnapped edge.
     let pad = if (camera.zoom - 1.0).abs() >= 0.001 {
-        0.5
+        0.5 * camera.zoom.max(1.0)
     } else {
         0.0
     };
@@ -1984,10 +1991,7 @@ mod webgl_shader_tests {
                 "ion blast",
                 tactical_shader::source(include_str!("terrain_ion_blast.wgsl")),
             ),
-            (
-                "scaled copy",
-                crate::render::scaled_copy::shader_source(true),
-            ),
+            ("scaled copy", crate::render::scaled_copy::shader_source()),
             (
                 "chrono screen",
                 crate::render::chrono_screen::shader_source(true),

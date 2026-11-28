@@ -52,7 +52,7 @@ use vera20k_wasm_ext::{
 
 use super::{
     ActionContext, GLOBAL_VARS, Host, LOCAL_VARS, ModuleSource, Ref, cell_ref, decode_ref,
-    house_ref, run_action, vars::VarStore,
+    house_ref, run_action, techno_type, vars::VarStore,
 };
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
@@ -79,6 +79,9 @@ pub(crate) struct ModuleEvent {
     pub(crate) id: i32,
     /// Record the subject's position (`x`, `y`, `z`).
     pub(crate) at_subject: bool,
+    /// A position in leptons the record carries instead (`Detonated`'s
+    /// detonation point).
+    pub(crate) at: Option<[i32; 3]>,
     /// The house the record carries instead of the trigger's (array index).
     pub(crate) house: Option<u32>,
     /// A polling event's index in the trigger it is checked for: only that
@@ -108,6 +111,7 @@ impl ModuleEvent {
             value2: -1,
             id: -1,
             at_subject: false,
+            at: None,
             house: None,
             poll: None,
             weapon: -1,
@@ -369,7 +373,7 @@ impl Host<'_, '_> {
                 kind: NAME_TECHNO_TYPE,
                 id,
             }) => {
-                let known = i32::try_from(id).is_ok_and(|id| self.techno_type(id).is_some());
+                let known = i32::try_from(id).is_ok_and(|id| techno_type(self.rules, id).is_some());
                 if !known {
                     return Err(Invalid(format!("no TechnoType {id}")));
                 }
@@ -498,6 +502,8 @@ impl Simulation {
         frame_effects: &mut FrameEffects<'_>,
         event: ModuleEvent,
     ) {
+        // Client modules' `SimEvent` ([`super::client_outbox`]).
+        self.forward_client_event(rules, &event);
         let triggers = self.trigger_runtime.module_triggers();
         let type_id = if triggers.has_type_bindings() {
             self.entities()
@@ -668,11 +674,14 @@ impl Simulation {
         let view = super::View::of_trigger_house(house);
         let house = house.map_or(0, |index| house_ref(index as usize));
         self.with_module_host(rules, source, |host| {
+            let reader = host.reader();
             clauses.iter().all(|clause| {
                 let reading = match clause.subject {
-                    FilterSubject::Subject(prop) => host.read_in(event.subject as i64, prop, view),
-                    FilterSubject::Other(prop) => host.read_in(event.other as i64, prop, view),
-                    FilterSubject::House(prop) => host.read_in(house, prop, view),
+                    FilterSubject::Subject(prop) => {
+                        reader.read_in(event.subject as i64, prop, view)
+                    }
+                    FilterSubject::Other(prop) => reader.read_in(event.other as i64, prop, view),
+                    FilterSubject::House(prop) => reader.read_in(house, prop, view),
                     FilterSubject::Var { var, target } => {
                         let scope = match target {
                             VarTarget::Global => 0,
@@ -680,7 +689,7 @@ impl Simulation {
                             VarTarget::Other => event.other as i64,
                             VarTarget::House => house,
                         };
-                        host.read_var(scope, var)
+                        reader.read_var(scope, var)
                     }
                 };
                 matches!(reading, Ok((value, Status::Ok)) if clause.holds(value))
@@ -812,10 +821,14 @@ impl Simulation {
         house: Option<u32>,
     ) -> EventRecord {
         let house = house.map_or(0, |index| house_ref(index as usize));
-        let [x, y, z] = if event.at_subject {
+        let [x, y, z] = if let Some(at) = event.at {
+            at
+        } else if event.at_subject {
             self.with_module_host(rules, source, |host| {
                 ["X", "Y", "Z"].map(|name| {
-                    match property_id(name).map(|prop| host.read(event.subject as i64, prop)) {
+                    match property_id(name)
+                        .map(|prop| host.reader().read(event.subject as i64, prop))
+                    {
                         Some(Ok((value, Status::Ok))) => i32::try_from(value).unwrap_or(-1),
                         _ => -1,
                     }
@@ -849,11 +862,12 @@ impl Simulation {
 
     /// The module phase's delivery for module `index`: its queued records go
     /// to `on_events` in batches of what the delivery area holds, 16 at most,
-    /// each with a whole budget. The first batch always starts, so
-    /// `ProductionAllowed` spending the frame's budget cannot starve
-    /// delivery; later batches start while the frame's use is below the
-    /// budget, up to [`MAX_RECORDS_PER_FRAME`] records. The rest wait, in
-    /// order, for the next frame. Records of a disabled or removed trigger,
+    /// each with a whole budget. The first batch always starts unless an
+    /// `on_message` call already did this frame (`messaged`, RFC section 5:
+    /// the first of either), so `ProductionAllowed` spending the frame's
+    /// budget cannot starve delivery; later batches start while the frame's
+    /// use is below the budget, up to [`MAX_RECORDS_PER_FRAME`] records.
+    /// The rest wait, in order, for the next frame. Records of a disabled or removed trigger,
     /// and every record once the game has ended, are dropped. The module
     /// stops when producers hit the queue cap or delivery leaves too much backlog.
     pub(super) fn deliver_ext_module_events(
@@ -862,6 +876,7 @@ impl Simulation {
         overlay_registry: Option<&OverlayTypeRegistry>,
         frame_effects: &mut FrameEffects<'_>,
         index: usize,
+        messaged: bool,
     ) -> Result<(), Fault> {
         let Some(slot) = self.ext_modules.slots.get(index) else {
             return Ok(());
@@ -881,7 +896,7 @@ impl Simulation {
         let mut delivered = 0;
         while delivered < ready {
             let slot = &mut self.ext_modules.slots[index];
-            if !slot.may_start_call(frame) && delivered > 0 {
+            if !slot.may_start_call(frame) && (delivered > 0 || messaged) {
                 break;
             }
             let budget = slot.frame_budget;

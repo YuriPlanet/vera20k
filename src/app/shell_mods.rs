@@ -10,11 +10,15 @@ use crate::util::time::Instant;
 
 use super::{App, AppState};
 use crate::app::PlatformState;
+use crate::app::audio_runtime::AppAudioRuntime;
+use crate::app::diagnostics::state::DiagnosticsState;
 use crate::app::frontend::shell_layout::mods_layout;
 use crate::app::frontend::shell_transition::ShellSlideKind;
 use crate::app::frontend::state::FrontendState;
 use crate::app::frontend::state::{ModFilesBox, ShellMessageBoxPurpose};
+use crate::app::match_runtime::state::MatchState;
 use crate::app::mod_files::{Against, Checked, PageCheck, Step};
+use crate::app::persistence::PersistenceState;
 use crate::app::persistence::options_profile::RetailOptionsProfile;
 use crate::app::process_assets::ProcessAssets;
 use crate::app::renderer_state::RendererState;
@@ -241,13 +245,35 @@ impl App {
                 target_os = "linux",
                 target_os = "android"
             ))]
-            Some(mods_shell::ADD) => Self::open_add_mod(
-                &state.platform.window,
-                &state.renderer,
-                &mut state.frontend,
-                &state.process_assets,
-                &state.persistence.options_profile,
-            ),
+            Some(mods_shell::ADD) => {
+                let selected =
+                    Self::mods_selected(&state.frontend.shell_controller).and_then(|row| {
+                        state
+                            .frontend
+                            .mods
+                            .page
+                            .as_ref()
+                            .and_then(|rows| rows.get(row))
+                            .and_then(|listed| listed.folder.clone())
+                    });
+                match selected {
+                    Some(folder) => Self::ask_add_or_append(
+                        &state.platform.window,
+                        &state.renderer,
+                        &mut state.frontend,
+                        &state.process_assets,
+                        &state.persistence.options_profile,
+                        folder,
+                    ),
+                    None => Self::open_add_mod(
+                        &state.platform.window,
+                        &state.renderer,
+                        &mut state.frontend,
+                        &state.process_assets,
+                        &state.persistence.options_profile,
+                    ),
+                }
+            }
             #[cfg(target_os = "android")]
             Some(mods_shell::NAME_OK) => Self::answer_name_dialog(state, true),
             #[cfg(target_os = "android")]
@@ -278,7 +304,7 @@ impl App {
                 &state.persistence.options_profile,
             ),
             #[cfg(target_os = "android")]
-            Some(mods_shell::OPEN_FOLDER) => Self::export_picked_mod(
+            Some(mods_shell::OPEN_FOLDER) => Self::ask_export_picked_mod(
                 &state.platform.window,
                 &state.renderer,
                 &mut state.frontend,
@@ -445,10 +471,9 @@ impl App {
         );
     }
 
-    /// Android: Export Mod, through the system file manager, which says how
-    /// it went.
+    /// Android: Export Mod asks whether to pack a ZIP or copy the folder.
     #[cfg(target_os = "android")]
-    fn export_picked_mod(
+    fn ask_export_picked_mod(
         window: &Window,
         renderer: &RendererState,
         frontend: &mut FrontendState,
@@ -458,9 +483,45 @@ impl App {
         let Some(folder) = Self::picked_folder(frontend) else {
             return;
         };
+        let title = tr_fill("VERA:ModExportChoice", &[("mod", &folder)]);
+        let shell_box = ShellBox::message(
+            title,
+            tr("VERA:ModExportZip"),
+            tr("VERA:Cancel"),
+            tr("VERA:ModExportFolder"),
+        );
+        let shell_box = crate::app::shell_mod_import::choice_box(shell_box);
+        Self::open_shell_message_box(
+            window,
+            renderer,
+            frontend,
+            process_assets,
+            options_profile,
+            shell_box,
+            ShellMessageBoxPurpose::ModExportChoice(folder),
+        );
+    }
+
+    /// Android: the Export Mod box's answer: ZIP, a folder copy or cancel.
+    #[cfg(target_os = "android")]
+    pub(crate) fn answer_mod_export(
+        window: &Window,
+        renderer: &RendererState,
+        frontend: &mut FrontendState,
+        process_assets: &ProcessAssets,
+        options_profile: &RetailOptionsProfile,
+        folder: &str,
+        zip: bool,
+    ) {
         let done = tr_fill("VERA:ModExported", &[("mod", &folder)]);
         let failed = tr("VERA:ModActionFailed");
-        if !crate::util::mod_actions::export(&folder, &done, &failed) {
+        let opened = if zip {
+            let progress = tr_fill("VERA:ModExporting", &[("mod", &folder)]);
+            crate::util::mod_actions::export_zip(folder, &done, &failed, &progress)
+        } else {
+            crate::util::mod_actions::export(folder, &done, &failed)
+        };
+        if !opened {
             log::warn!("Mods: no file manager to export {folder}");
             Self::mods_notice(
                 window,
@@ -959,6 +1020,42 @@ impl App {
         let _ = gui.set(nodes.close, Prop::Enabled, Value::Bool(open));
     }
 
+    /// Add Mod with a mod selected: a new mod, or parts for that folder
+    /// through the same picker.
+    #[cfg(any(
+        windows,
+        target_os = "macos",
+        target_os = "linux",
+        target_os = "android"
+    ))]
+    fn ask_add_or_append(
+        window: &Window,
+        renderer: &RendererState,
+        frontend: &mut FrontendState,
+        process_assets: &ProcessAssets,
+        options_profile: &RetailOptionsProfile,
+        folder: String,
+    ) {
+        let title = tr_fill("VERA:ModAddChoice", &[("mod", &folder)]);
+        let shell_box = ShellBox::message(
+            title,
+            tr("VERA:ModAddCreate"),
+            tr("VERA:Cancel"),
+            tr_fill("VERA:ModAppendTo", &[("mod", &folder)]),
+        );
+        let shell_box = crate::app::shell_mod_import::choice_box(shell_box);
+        let purpose = ShellMessageBoxPurpose::ModAddChoice(folder);
+        Self::open_shell_message_box(
+            window,
+            renderer,
+            frontend,
+            process_assets,
+            options_profile,
+            shell_box,
+            purpose,
+        );
+    }
+
     /// Android: a key pressed while the name dialog is up.
     #[cfg(target_os = "android")]
     pub(crate) fn name_dialog_key(state: &mut AppState, event: &winit::event::KeyEvent) {
@@ -1108,7 +1205,11 @@ impl App {
     /// page's own text.
     #[cfg(target_os = "android")]
     pub(crate) fn draw_name_dialog_over(
-        state: &AppState,
+        platform: &mut PlatformState,
+        renderer: &RendererState,
+        frontend: &FrontendState,
+        match_state: &mut MatchState,
+        persistence: &PersistenceState,
         encoder: &mut wgpu::CommandEncoder,
         destination: &wgpu::Texture,
     ) {
@@ -1116,14 +1217,14 @@ impl App {
         use crate::render::shell_paint::{self, ModalButton, ModalDepths};
         use crate::render::shell_text::TextRect;
         use crate::ui::shell::geom::{RectPx, ShellAlign};
-        let Some(dialog) = state.frontend.mods.name_dialog.as_ref() else {
+        let Some(dialog) = frontend.mods.name_dialog.as_ref() else {
             return;
         };
-        let Some(atlas) = state.frontend.skirmish_shell_chrome.as_ref() else {
+        let Some(atlas) = frontend.skirmish_shell_chrome.as_ref() else {
             return;
         };
-        let scale = mods_layout(&state.renderer.gpu).page.scale;
-        let parts = Self::name_dialog_parts(&state.renderer.gpu, &state.frontend);
+        let scale = mods_layout(&renderer.gpu).page.scale;
+        let parts = Self::name_dialog_parts(&renderer.gpu, frontend);
         let mut sprites = Vec::new();
         if let Some(art) = atlas.ra2_dialog_background {
             shell_paint::push_entry_sized(
@@ -1161,7 +1262,7 @@ impl App {
                 text: 0.00060,
             },
         ));
-        let font = &state.renderer.bit_font;
+        let font = &renderer.bit_font;
         let enabled = shell_paint::SHELL_TEXT_RGB_ENABLED;
         let line = |text: &str, rect, align| {
             crate::render::shell_text::draw_in_rect_scaled(
@@ -1188,7 +1289,7 @@ impl App {
             line_h + 2 * inset,
         );
         let mut text = Vec::new();
-        let controller = &state.frontend.shell_controller;
+        let controller = &frontend.shell_controller;
         let node = controller
             .root_in(mods_shell::DIALOG)
             .and_then(|root| find_child(controller.gui(), root, mods_shell::NAME_EDIT));
@@ -1225,15 +1326,25 @@ impl App {
             texture: &atlas.texture,
             instances: sprites,
         }];
+        // The dialog's art covers the page, so the cursor it covered is drawn
+        // again here, above the art.
+        let cursor = crate::app::frontend::shell_pass::top_software_cursor(
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            persistence,
+            shell_paint::CURSOR_DEPTH,
+        );
         crate::app::frontend::shell_pass::encode_shell_pass_over_page(
-            &state.renderer,
+            renderer,
             encoder,
             destination,
             "Mods Name Dialog",
             ShellComposition {
                 draws: &draws,
                 text: &text,
-                cursor: None,
+                cursor,
                 effects: None,
                 smooth_art: false,
             },
@@ -1368,23 +1479,43 @@ impl App {
     /// The restart question's answer. Restart keeps the choice for the next
     /// start, then leaves the way Exit Game does; the game starts again once
     /// this copy is gone (`app::restart`).
-    pub(super) fn answer_mod_restart(state: &mut AppState, folder: Option<String>, restart: bool) {
+    pub(super) fn answer_mod_restart(
+        platform: &PlatformState,
+        renderer: &RendererState,
+        diag: &DiagnosticsState,
+        frontend: &mut FrontendState,
+        match_state: &mut MatchState,
+        process_assets: &ProcessAssets,
+        audio: &mut AppAudioRuntime,
+        persistence: &PersistenceState,
+        folder: Option<String>,
+        restart: bool,
+    ) {
         if !restart {
             return;
         }
         if Self::keep_mod_choice(
-            &state.platform,
-            &state.renderer,
-            &mut state.frontend,
-            &state.process_assets,
-            &state.persistence.options_profile,
+            platform,
+            renderer,
+            frontend,
+            process_assets,
+            &persistence.options_profile,
             folder.as_deref(),
         ) {
             log::info!("Mods: restarting to use {folder:?}");
             crate::app::restart::ask();
             // As Exit Game leaves: from the empty backdrop, the page gone.
-            Self::close_mods_page(&mut state.frontend);
-            Self::confirm_quit(state);
+            Self::close_mods_page(frontend);
+            Self::confirm_quit(
+                platform,
+                renderer,
+                diag,
+                frontend,
+                match_state,
+                process_assets,
+                audio,
+                persistence,
+            );
         }
     }
 }

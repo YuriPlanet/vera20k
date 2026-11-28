@@ -796,9 +796,16 @@ impl LanCapture {
 
     /// BC after Use Map on the Soviet row: Cooperative on its first map,
     /// the stage's description, Random countries and the published C0.
-    fn assert_cooperative_campaign_used(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
-        let mode_id = cooperative_mode(&state.frontend.skirmish_modes)?.id;
-        let launch = state.match_state.session.network_setup().context("BC")?;
+    fn assert_cooperative_campaign_used(
+        &mut self,
+        renderer: &RendererState,
+        frontend: &mut FrontendState,
+        match_state: &MatchState,
+        process_assets: &ProcessAssets,
+        frame: u32,
+    ) -> Result<()> {
+        let mode_id = cooperative_mode(&frontend.skirmish_modes)?.id;
+        let launch = match_state.session.network_setup().context("BC")?;
         ensure!(launch.mode.id == mode_id, "Use Map left Cooperative");
         let file = launch.selected_map_file.clone().context("campaign map")?;
         ensure!(
@@ -809,7 +816,7 @@ impl LanCapture {
             launch.local_slot().country_random,
             "the Soviet first stage has three countries: Random"
         );
-        let requests = self.drain_requests(&mut state.frontend.network_setup_protocol);
+        let requests = self.drain_requests(&mut frontend.network_setup_protocol);
         let text = requests
             .iter()
             .find_map(|request| match request {
@@ -821,13 +828,7 @@ impl LanCapture {
             text.starts_with("C0,1,0,"),
             "C0 names another campaign: {text}"
         );
-        let view = setup::view(
-            &state.renderer,
-            &state.frontend,
-            &state.match_state,
-            &state.process_assets,
-        )
-        .context("BC")?;
+        let view = setup::view(renderer, frontend, match_state, process_assets).context("BC")?;
         ensure!(
             view.cooperative && view.cooperative_description.is_some(),
             "BC lacks the campaign description"
@@ -896,7 +897,9 @@ impl LanCapture {
             &state.process_assets,
         )
         .context("BD")?;
-        let expected = state.csf_label("NAME:COOPDESC21", "NAME:COOPDESC21");
+        let expected = state
+            .process_assets
+            .csf_label("NAME:COOPDESC21", "NAME:COOPDESC21");
         ensure!(
             view.cooperative && view.cooperative_description.as_deref() == Some(expected.as_str()),
             "BD lacks the received campaign's description"
@@ -1187,7 +1190,11 @@ impl LanCapture {
                     }
                     target if target.guest() || target == LanTarget::Discovery => {
                         lobby::service_event(
-                            state,
+                            &state.renderer,
+                            &mut state.frontend,
+                            &mut state.match_state,
+                            &state.process_assets,
+                            &mut state.audio.sfx_player,
                             LanServiceEvent::Games(vec![LanGameRow {
                                 id: 1,
                                 name: self.human(true)?.name,
@@ -1199,7 +1206,11 @@ impl LanCapture {
                             .unwrap_or_default();
                         lobby_click(state, RectPx::new(rect.x + 8, rect.y + 26, 4, 4));
                         lobby::service_event(
-                            state,
+                            &state.renderer,
+                            &mut state.frontend,
+                            &mut state.match_state,
+                            &state.process_assets,
+                            &mut state.audio.sfx_player,
                             LanServiceEvent::Players {
                                 game_id: Some(1),
                                 players: vec![LanPlayerRow {
@@ -1258,7 +1269,11 @@ impl LanCapture {
                     LanTarget::JoinDenied | LanTarget::JoinDeniedReturn
                 ) {
                     lobby::service_event(
-                        state,
+                        &state.renderer,
+                        &mut state.frontend,
+                        &mut state.match_state,
+                        &state.process_assets,
+                        &mut state.audio.sfx_player,
                         LanServiceEvent::JoinDenied {
                             game_id: 1,
                             reason: 1,
@@ -1268,9 +1283,9 @@ impl LanCapture {
                     self.phase = LanPhase::JoinDenied;
                     return Ok(());
                 }
-                lobby::service_event(
-                    state,
-                    LanServiceEvent::JoinAccepted(LanJoinAcceptance {
+                let step = lobby::join_accepted(
+                    &mut state.frontend,
+                    LanJoinAcceptance {
                         game_id: 1,
                         local: self.human(false)?,
                         host: self.human(true)?,
@@ -1280,8 +1295,11 @@ impl LanCapture {
                                 .context("native packet7 observer row")?
                                 as u8,
                         ),
-                    }),
+                    },
                 );
+                if let Some(step) = step {
+                    App::apply_step(state, step);
+                }
                 self.event(frame, "controlled type7 acceptance after real Join");
                 self.phase = LanPhase::Guest;
             }
@@ -1638,7 +1656,7 @@ impl LanCapture {
                             );
                             self.route.push(json!({"frame":frame,"action":"nonhost participant left",
                                 "removed_source":1,"survivor_source":1,"survivor_raw_row":2,
-                                "player_left_sound":state.rules().and_then(|rules|rules.general.player_left_sound())}));
+                                "player_left_sound":crate::app::state::active_rules(&state.frontend, &state.match_state).and_then(|rules|rules.general.player_left_sound())}));
                             self.settle(state);
                             return Ok(());
                         }
@@ -2125,8 +2143,9 @@ impl LanCapture {
                             && !state.match_state.session.network_player_ready(0),
                         "host Start prompt changed readiness or omitted the eligible button prompt"
                     );
-                    let expected =
-                        state.csf_label("GUI:HostGameStartJoiner", "GUI:HostGameStartJoiner");
+                    let expected = state
+                        .process_assets
+                        .csf_label("GUI:HostGameStartJoiner", "GUI:HostGameStartJoiner");
                     let actual = state
                         .frontend
                         .multiplayer_setup
@@ -2359,11 +2378,29 @@ impl LanCapture {
                 } else {
                     state.match_state.input.cursor_x = 720.;
                     state.match_state.input.cursor_y = 556.;
-                    ensure!(
-                        App::handle_choose_map_modal_mouse_down(state),
-                        "chooser Cancel press rejected"
+                    let (pressed, step) = App::handle_choose_map_modal_mouse_down(
+                        &state.platform,
+                        &state.renderer,
+                        &mut state.frontend,
+                        &state.match_state,
+                        &state.process_assets,
+                        &mut state.audio.sfx_player,
                     );
-                    App::handle_choose_map_modal_mouse_up(state);
+                    if let Some(step) = step {
+                        App::apply_step(state, step);
+                    }
+                    ensure!(pressed, "chooser Cancel press rejected");
+                    let step = App::handle_choose_map_modal_mouse_up(
+                        &state.platform,
+                        &state.renderer,
+                        &mut state.frontend,
+                        &state.match_state,
+                        &state.process_assets,
+                        &mut state.audio.sfx_player,
+                    );
+                    if let Some(step) = step {
+                        App::apply_step(state, step);
+                    }
                     self.phase = LanPhase::ChooserReturn;
                 }
             }
@@ -2385,7 +2422,13 @@ impl LanCapture {
                     "LAN Choose Map Cancel wrote the offline Skirmish selection"
                 );
                 if self.target.cooperative_host() {
-                    self.assert_cooperative_campaign_used(state, frame)?;
+                    self.assert_cooperative_campaign_used(
+                        &state.renderer,
+                        &mut state.frontend,
+                        &state.match_state,
+                        &state.process_assets,
+                        frame,
+                    )?;
                     self.cooperative_committed = true;
                     self.phase = LanPhase::Host;
                 } else {
@@ -2405,7 +2448,7 @@ impl LanCapture {
                 ensure!(bb.games.is_empty(), "returned BB retained old games");
                 if self.target == LanTarget::ModernHostLeft {
                     let key = "VERA:HostLeftRoomClosed";
-                    let expected = state.csf_label(key, key);
+                    let expected = state.process_assets.csf_label(key, key);
                     let text: Vec<_> = bb
                         .chat
                         .lines
@@ -2542,7 +2585,9 @@ impl LanCapture {
                                 .is_some_and(|house| !house.is_to_die()),
                         "timeout did not flag only the mapped remote House before first simulation tick"
                     );
-                    let template = state.csf_label("TXT_CONNECTION_LOST", "TXT_CONNECTION_LOST");
+                    let template = state
+                        .process_assets
+                        .csf_label("TXT_CONNECTION_LOST", "TXT_CONNECTION_LOST");
                     let text = crate::assets::csf_file::format_csf(
                         &template,
                         &[crate::assets::csf_file::CsfArg::Str(
@@ -2761,7 +2806,9 @@ impl LanCapture {
                     ensure!(!destructs_pending, "defeat preceded the DESTRUCT execution");
                     // MPlayer_Defeated's local line (4FC271..4FC2DB) names the
                     // House by its own +0x1602A, the host's handle.
-                    let template = state.csf_label("TXT_PLAYER_DEFEATED", "TXT_PLAYER_DEFEATED");
+                    let template = state
+                        .process_assets
+                        .csf_label("TXT_PLAYER_DEFEATED", "TXT_PLAYER_DEFEATED");
                     let line = crate::assets::csf_file::format_csf(
                         &template,
                         &[crate::assets::csf_file::CsfArg::Str(
@@ -2851,7 +2898,9 @@ impl LanCapture {
                     state.match_state.session.network_connected_source_indices() == [0],
                     "the peer's connection was not dropped"
                 );
-                let template = state.csf_label("TXT_LEFT_GAME", "TXT_LEFT_GAME");
+                let template = state
+                    .process_assets
+                    .csf_label("TXT_LEFT_GAME", "TXT_LEFT_GAME");
                 let line = crate::assets::csf_file::format_csf(
                     &template,
                     &[crate::assets::csf_file::CsfArg::Str(peer_name)],
@@ -3280,7 +3329,9 @@ impl LanCapture {
                     )
                     .unwrap_or_default()
                 };
-                let template = state.csf_label("TXT_HAS_ALLIED", "TXT_HAS_ALLIED");
+                let template = state
+                    .process_assets
+                    .csf_label("TXT_HAS_ALLIED", "TXT_HAS_ALLIED");
                 let line = |a: usize, b: usize| {
                     crate::assets::csf_file::format_csf(
                         &template,
@@ -3426,7 +3477,7 @@ impl LanCapture {
                     }
                 };
                 let prefix = crate::assets::csf_file::format_csf(
-                    &state.csf_label("TXT_FROM", "TXT_FROM"),
+                    &state.process_assets.csf_label("TXT_FROM", "TXT_FROM"),
                     &[crate::assets::csf_file::CsfArg::Str(&host)],
                 );
                 // Enter: the chat-mask set, now empty of connected peers.
@@ -4016,14 +4067,35 @@ impl RandomMapInput {
 }
 
 /// A press and release at `point` through the chooser's (or `0x105`'s)
-/// production handlers, with the pointer moved there first.
+/// production handlers, with the pointer moved there first; each step they
+/// return is applied at the call, as the routing applies it.
 fn random_map_click(state: &mut AppState, point: (i32, i32), chooser: bool) {
     state.match_state.input.cursor_x = point.0 as f32;
     state.match_state.input.cursor_y = point.1 as f32;
     App::handle_skirmish_shell_mouse_move(state);
     if chooser {
-        App::handle_choose_map_modal_mouse_down(state);
-        App::handle_choose_map_modal_mouse_up(state);
+        let (_, step) = App::handle_choose_map_modal_mouse_down(
+            &state.platform,
+            &state.renderer,
+            &mut state.frontend,
+            &state.match_state,
+            &state.process_assets,
+            &mut state.audio.sfx_player,
+        );
+        if let Some(step) = step {
+            App::apply_step(state, step);
+        }
+        let step = App::handle_choose_map_modal_mouse_up(
+            &state.platform,
+            &state.renderer,
+            &mut state.frontend,
+            &state.match_state,
+            &state.process_assets,
+            &mut state.audio.sfx_player,
+        );
+        if let Some(step) = step {
+            App::apply_step(state, step);
+        }
     } else {
         App::handle_random_map_setup_mouse_down(
             &state.platform.window,
@@ -4033,7 +4105,17 @@ fn random_map_click(state: &mut AppState, point: (i32, i32), chooser: bool) {
             &state.process_assets,
             &mut state.audio.sfx_player,
         );
-        App::handle_random_map_setup_mouse_up(state);
+        let steps = App::handle_random_map_setup_mouse_up(
+            &state.platform,
+            &state.renderer,
+            &mut state.frontend,
+            &mut state.match_state,
+            &mut state.process_assets,
+            &mut state.audio.sfx_player,
+        );
+        for step in steps {
+            App::apply_step(state, step);
+        }
     }
 }
 

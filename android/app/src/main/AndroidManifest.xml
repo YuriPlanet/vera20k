@@ -26,6 +26,18 @@
         android:allowBackup="false"
         android:theme="@style/Theme.Vera20k">
 
+        <!-- The ZIP export builds a cache file and hands it to the system share
+             panel; FileProvider is the only way another app can read it. -->
+        <provider
+            android:name="org.vera20k.ModZipFileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
         <!-- GameActivity calls android_main in libvera20k_android.so through
              `initializeNativeCode`: VeraActivity's companion loads that library
              before onCreate (android/src/lib.rs). configChanges lists

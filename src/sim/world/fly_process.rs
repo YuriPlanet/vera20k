@@ -372,6 +372,9 @@ impl Simulation {
                 .and_then(|locomotor| locomotor.fly_runtime())
                 .map_or(NativeF64Bits::POSITIVE_ZERO, |state| state.current_speed()),
         );
+        // VERA: a Wasm module `SpeedMultiplier` scales the paid speed
+        // (`ext_modules::modifiers`); none leaves the native value.
+        let speed = entity.module_scaled_speed(speed);
         let mut candidate = location;
         if speed > 0 {
             let [x, y] = crate::util::native_trig::facing_step_world_xy(

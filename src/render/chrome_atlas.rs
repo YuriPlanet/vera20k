@@ -99,9 +99,9 @@ pub(crate) fn read_ui_shp<T>(
     if assets.mod_selected() {
         decode_ui_art(assets, name, decode)
     } else {
-        let bytes = assets
-            .get_ref(name)
-            .with_context(|| format!("Required game-menu artwork {name} is missing or unreadable"))?;
+        let bytes = assets.get_ref(name).with_context(|| {
+            format!("Required game-menu artwork {name} is missing or unreadable")
+        })?;
         decode(bytes)
     }
 }

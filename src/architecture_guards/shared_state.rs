@@ -88,8 +88,8 @@ const POOL_ENTRY_PINS: &[(&str, usize, &str)] = &[
     ),
     (
         "sim/parallel.rs",
-        11,
-        "the pool's entries themselves; what their tasks do is their callers' pin",
+        13,
+        "the pool builder configures worker stacks and names; tasks run at their pinned callers",
     ),
     (
         "sim/pathfinding/zone_build.rs",

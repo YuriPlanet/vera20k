@@ -745,7 +745,11 @@ fn ares_chronoport(
         object.organic,
         object.teleporter,
         object.strength,
-        object.warpable,
+        // A module's `ImmunityFlags` bit 4 replaces `Warpable=`.
+        !entity.module_immune(
+            crate::sim::ext_modules::modifiers::Immunity::Chrono,
+            !object.warpable,
+        ),
         object.naval,
     );
     let frame = sim.session.binary_frame();

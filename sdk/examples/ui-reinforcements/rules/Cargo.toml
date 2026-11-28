@@ -1,0 +1,13 @@
+[package]
+name = "ui-reinforcements-rules"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "RFC 0001 section 10 example, rules.wasm: on_message buys reinforcements once per house"
+
+[lib]
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+
+[dependencies]
+vera20k-sdk = { path = "../../../rust/vera20k-sdk" }

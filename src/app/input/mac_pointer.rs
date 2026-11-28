@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use objc2::rc::Retained;
 use objc2::{AllocAnyThread, MainThreadMarker};
-use objc2_app_kit::{NSCursor, NSImage, NSView};
+use objc2_app_kit::{NSBitmapImageRep, NSCursor, NSImage, NSView};
 use objc2_foundation::{NSData, NSPoint, NSSize};
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use winit::window::Window;
@@ -45,20 +45,36 @@ pub(crate) struct MacCursor(Retained<NSCursor>);
 impl MacCursor {
     /// `backing` is the screen's physical pixels per point; an `NSImage`'s
     /// size and a cursor's hot spot are both in points.
+    ///
+    /// The cursor plane takes a cursor's size from a representation whose
+    /// pixels are its points, not from the image's size: an image holding only
+    /// the physical-pixel bitmap is shown one point per pixel, `backing` times
+    /// too large. So the image holds that bitmap shrunk to one pixel a point
+    /// beside the full one, both covering the same points.
     pub(crate) fn new(image: &OsCursorImage, backing: f64) -> Option<Self> {
         MainThreadMarker::new()?;
-        let mut png = std::io::Cursor::new(Vec::new());
-        image::RgbaImage::from_raw(
+        let full = image::RgbaImage::from_raw(
             u32::from(image.width),
             u32::from(image.height),
             image.rgba.clone(),
-        )?
-        .write_to(&mut png, image::ImageFormat::Png)
-        .ok()?;
-        let data = NSData::with_bytes(png.get_ref());
-        let ns_image = NSImage::initWithData(NSImage::alloc(), &data)?;
+        )?;
         let points = |pixels: u16| f64::from(pixels) / backing;
-        ns_image.setSize(NSSize::new(points(image.width), points(image.height)));
+        let size = NSSize::new(points(image.width), points(image.height));
+        let ns_image = NSImage::initWithSize(NSImage::alloc(), size);
+        let point_pixels = |pixels: u16| (points(pixels).round() as u32).max(1);
+        let one_per_point = (point_pixels(image.width), point_pixels(image.height));
+        if one_per_point != full.dimensions() {
+            let shrunk = image::imageops::resize(
+                &full,
+                one_per_point.0,
+                one_per_point.1,
+                image::imageops::FilterType::Triangle,
+            );
+            let rep = bitmap(&shrunk, size)?;
+            ns_image.addRepresentation(&rep);
+        }
+        let rep = bitmap(&full, size)?;
+        ns_image.addRepresentation(&rep);
         let hotspot = NSPoint::new(points(image.hotspot.0), points(image.hotspot.1));
         Some(Self(NSCursor::initWithImage_hotSpot(
             NSCursor::alloc(),
@@ -71,6 +87,15 @@ impl MacCursor {
     pub(crate) fn set(&self) {
         self.0.set();
     }
+}
+
+/// `pixels` as a bitmap representation covering `size` points.
+fn bitmap(pixels: &image::RgbaImage, size: NSSize) -> Option<Retained<NSBitmapImageRep>> {
+    let mut png = std::io::Cursor::new(Vec::new());
+    pixels.write_to(&mut png, image::ImageFormat::Png).ok()?;
+    let rep = NSBitmapImageRep::imageRepWithData(&NSData::with_bytes(png.get_ref()))?;
+    rep.setSize(size);
+    Some(rep)
 }
 
 /// Let AppKit apply the window's cursor rectangles, or stop it. winit's

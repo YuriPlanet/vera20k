@@ -690,6 +690,25 @@ impl MixArchive {
 mod tests {
     use super::*;
 
+    #[test]
+    fn encrypted_index_discards_each_rsa_blocks_high_byte() {
+        // PKey::Decrypt (0x632870) on little-endian blocks 2 and 1 gives the
+        // key for this one-entry index. Block 2 decrypts with a high byte of 9.
+        let mut archive = vec![0, 0, 2, 0];
+        let mut key_block = [0; 80];
+        key_block[0] = 2;
+        key_block[40] = 1;
+        archive.extend_from_slice(&key_block);
+        archive.extend_from_slice(&[
+            0x21, 0x20, 0xf1, 0x93, 0x17, 0x54, 0x51, 0xba, 0x43, 0x5f, 0xd8, 0x94, 0xf8, 0xc5,
+            0x33, 0xbc, 0xbe, 0x16, 0x3b, 0x8b, 0x09, 0x96, 0x1f, 0x21,
+        ]);
+        archive.extend_from_slice(b"ok");
+
+        let archive = MixArchive::from_bytes(archive).unwrap();
+        assert_eq!(archive.get_by_id(42), Some(b"ok".as_slice()));
+    }
+
     /// An archive whose index lists one id four times. The native resolver
     /// (`MixFileSystem__Resolve_First` @ `0x005B4430`) probes the midpoint of
     /// the sorted index and stops at equality, so the repeated id resolves to

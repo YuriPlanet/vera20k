@@ -63,24 +63,7 @@ jobs:
         shell: bash
         env:
           RETAIL_GAME_DATA_URL: ${{ secrets.RETAIL_GAME_DATA_URL }}
-        run: |
-          python - <<'EOF'
-          import os, pathlib, shutil, sys, urllib.request, zipfile
-          if not os.environ.get('RETAIL_GAME_DATA_URL'):
-              print('::error::Set the RETAIL_GAME_DATA_URL secret to a zip of the retail install')
-              sys.exit(1)
-          # Cloudflare refuses Python's default user agent (error 1010).
-          request = urllib.request.Request(os.environ['RETAIL_GAME_DATA_URL'],
-                                           headers={'User-Agent': 'vera20k-ci'})
-          with urllib.request.urlopen(request) as response, open('retail.zip', 'wb') as out:
-              shutil.copyfileobj(response, out)
-          with zipfile.ZipFile('retail.zip') as archive:
-              archive.extractall('retail')
-          os.remove('retail.zip')
-          mix = next(p for p in pathlib.Path('retail').rglob('*') if p.name.lower() == 'ra2md.mix')
-          with open(os.environ['GITHUB_ENV'], 'a') as env:
-              env.write(f'RA2_DIR={mix.parent.resolve()}\n')
-          EOF
+        run: python -m tools.ci_retail_data
       - name: Build sim-bench
         run: cargo build --locked --release -p vera20k-core --bin sim-bench
       - name: Play the skirmishes
@@ -136,24 +119,13 @@ jobs:
         shell: bash
         env:
           RETAIL_GAME_DATA_URL: ${{ secrets.RETAIL_GAME_DATA_URL }}
-        run: |
-          python - <<'EOF'
-          import os, pathlib, shutil, sys, urllib.request, zipfile
-          if not os.environ.get('RETAIL_GAME_DATA_URL'):
-              print('::error::Set the RETAIL_GAME_DATA_URL secret to a zip of the retail install')
-              sys.exit(1)
-          # Cloudflare refuses Python's default user agent (error 1010).
-          request = urllib.request.Request(os.environ['RETAIL_GAME_DATA_URL'],
-                                           headers={'User-Agent': 'vera20k-ci'})
-          with urllib.request.urlopen(request) as response, open('retail.zip', 'wb') as out:
-              shutil.copyfileobj(response, out)
-          with zipfile.ZipFile('retail.zip') as archive:
-              archive.extractall('retail')
-          os.remove('retail.zip')
-          mix = next(p for p in pathlib.Path('retail').rglob('*') if p.name.lower() == 'ra2md.mix')
-          with open(os.environ['GITHUB_ENV'], 'a') as env:
-              env.write(f'RA2_DIR={mix.parent.resolve()}\n')
-          EOF
+        run: python -m tools.ci_retail_data
+      - name: Run guest modules under WASI
+        # This runner takes its own -- before the test harness arguments.
+        run: >
+          CARGO_TARGET_WASM32_WASIP1_RUNNER="node $PWD/tools/wasm/wasi_run.mjs"
+          cargo test --release --locked -p vera20k-wasm-ext --lib --target wasm32-wasip1
+          -- -- --test-threads=1
       - name: Build sim-bench
         # The default 1 MiB wasm stack is too small for a map load.
         run: >

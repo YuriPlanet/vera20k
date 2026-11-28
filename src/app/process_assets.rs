@@ -942,10 +942,12 @@ impl ProcessAssets {
                     Some(shipped) => shipped.used(&name).and_then(|used| used.shipped_bytes()),
                     None => assets.installed_file(&name).map(|(_, bytes)| bytes),
                 };
+                // VERA's tile-picture key does not count
+                // (`retail_sources::vera_drawing_keys`).
                 let digest = bytes.and_then(|bytes| {
-                    IniFile::from_bytes(bytes)
-                        .ok()
-                        .map(|ini| ini.multiplayer_digest())
+                    IniFile::from_bytes(bytes).ok().map(|ini| {
+                        ini.multiplayer_digest_without(crate::map::theater::VERA_THEATER_KEYS)
+                    })
                 });
                 AgreedIni {
                     id: format!("theater:{}", name.to_ascii_lowercase()),
@@ -996,6 +998,7 @@ impl ProcessAssets {
             superweapon_limit: rules.personal_rules().superweapon_limit(),
             building_production_queue: rules.personal_rules().building_production_queue(),
             wasm_budget: rules.personal_rules().wasm_budget(),
+            automation_allowed: rules.personal_rules().automation_allowed(),
             // As the digest counts it.
             ares: match self.agreed_ares(Some(assets)) {
                 crate::util::ares_launch::AresSetting::Auto => "auto",
@@ -1018,6 +1021,12 @@ impl ProcessAssets {
                     crate::app::mods::name_and_version(dir, &self.mod_folder_name());
                 ModIdentity { title, version }
             }),
+            ini: crate::app::rules_parts::agreed_ini(
+                assets.ares_setting(),
+                self.kratos_setting,
+                crate::util::ra2_launch::enabled(),
+                rules.personal_rules(),
+            ),
         };
         let mod_check = mod_files.and_then(|files| match &files.against {
             crate::app::mod_files::Against::Same => Some(ModCheck {
@@ -1063,7 +1072,16 @@ impl ProcessAssets {
                                 let retail = retail
                                     .and_then(|bytes| IniFile::from_bytes(bytes).ok())
                                     .unwrap_or_else(IniFile::empty);
-                                part.set_sections(used.differing_sections(&retail));
+                                // VERA's drawing keys count neither here
+                                // nor in `ShippedCopy` (an INI that differs
+                                // only in them is `Same`), as the digests
+                                // leave them out.
+                                let dropped = crate::rules::retail_sources::vera_drawing_keys(
+                                    assets, &ini.name,
+                                );
+                                part.set_sections(
+                                    used.differing_sections_without(&retail, dropped),
+                                );
                             }
                         }
                     }
@@ -1175,7 +1193,7 @@ impl ProcessAssets {
                 .is_some_and(|used| used.shipped != ShippedCopy::Same);
             let digest = used
                 .and_then(|used| IniFile::from_bytes(used.bytes).ok())
-                .map(|ini| ini.multiplayer_digest());
+                .map(|ini| ini.multiplayer_digest_without(crate::map::theater::VERA_THEATER_KEYS));
             hash.update(&[u8::from(digest.is_some())]);
             if let Some(digest) = digest {
                 hash.update(digest.as_bytes());
@@ -1681,7 +1699,10 @@ mod tests {
 
         let install = audio_test_install("kratos-agreement");
         for (file, data) in [
-            ("rulesmd.ini", "[InfantryTypes]\n0=GI\n[GI]\nPrimary=GUN\nFearless=no\n"),
+            (
+                "rulesmd.ini",
+                "[InfantryTypes]\n0=GI\n[GI]\nPrimary=GUN\nFearless=no\n",
+            ),
             ("aimd.ini", "[AI]\nValue=1\n"),
         ] {
             std::fs::write(install.path().join(file), data).unwrap();
@@ -1694,7 +1715,10 @@ mod tests {
             process.return_from_loading(assets);
             let parts = process.multiplayer_rules_parts(&[""]).unwrap().remove(0);
             let parts: serde_json::Value = serde_json::from_str(&parts.json()).unwrap();
-            (process.multiplayer_rules_digest("").unwrap(), parts["settings"].get("kratos").cloned())
+            (
+                process.multiplayer_rules_digest("").unwrap(),
+                parts["settings"].get("kratos").cloned(),
+            )
         };
         let art = install.path().join("artmd.ini");
         std::fs::write(&art, "[GI]\nPrimaryFireFLH=12,0,60\n").unwrap();

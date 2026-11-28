@@ -354,12 +354,11 @@ pub(crate) fn paint_wol_verify(
     paint
 }
 
-/// The in-match `0xCF` (state 7) or the Surrender box (state 2) as GPU
-/// buffers for the screen-fixed UI pass: the battlefield keeps drawing under
-/// it, and the dialog goes down after the tooltips and before the cursor.
+/// The tournament Surrender box (state 2) as GPU buffers. The screen-fixed UI
+/// pass draws it over the battlefield after the tooltips and before the cursor.
 /// RESIDUAL: in a match `0x00622B50` skips `OwnerDraw__LoadNotInGameResources`;
-/// the buttons, edits and list here keep the shell's control art.
-pub(crate) struct InMatchPageDraw {
+/// the buttons here keep the shell's control art.
+pub(crate) struct SurrenderDraw {
     controls: Option<(wgpu::Buffer, u32)>,
     texts: Vec<(
         crate::render::shell_text::ScissorRect,
@@ -369,18 +368,23 @@ pub(crate) struct InMatchPageDraw {
 
 /// A zoomed match draws the dialog's text at the window's pixels after the
 /// zoom (`window_ui`), laid out in the frame as ever: that text comes back
-/// beside the draw, for `WindowUi::set_page_texts`, and is empty without a
+/// beside the draw, for `WindowUi::set_surrender_texts`, and is empty without a
 /// zoom.
-pub(crate) fn in_match_page_draw(
+pub(crate) fn surrender_draw(
     ime: &ImeState,
     renderer: &RendererState,
     frontend: &FrontendState,
     match_state: &MatchState,
     process_assets: &ProcessAssets,
 ) -> (
-    Option<InMatchPageDraw>,
-    crate::app::presentation::window_ui::PageTexts,
+    Option<SurrenderDraw>,
+    crate::app::presentation::window_ui::SurrenderTexts,
 ) {
+    if match_state.match_presentation.in_game_menu
+        != crate::ui::pause_menu::InGameMenuState::Surrender
+    {
+        return (None, Vec::new());
+    }
     let raster = crate::app::presentation::window_ui::dialog_raster(
         renderer,
         &frontend.screen,
@@ -389,33 +393,8 @@ pub(crate) fn in_match_page_draw(
     let frame_raster = renderer
         .bit_font
         .set_raster(raster.unwrap_or(crate::render::bit_font::TextRaster::NATIVE));
-    let paint = match match_state.match_presentation.in_game_menu {
-        crate::ui::pause_menu::InGameMenuState::Page => {
-            crate::app::shell_wol::page::page_dialog(frontend.wol.as_ref()).map(|page| {
-                paint_wol_page_dialog(
-                    ime,
-                    &renderer.bit_font,
-                    frontend,
-                    match_state,
-                    process_assets,
-                    page,
-                    &crate::app::shell_wol::page::page_layout(renderer, &frontend.screen),
-                )
-            })
-        }
-        crate::ui::pause_menu::InGameMenuState::Surrender => Some(paint_surrender_box(
-            ime,
-            renderer,
-            frontend,
-            match_state,
-            process_assets,
-        )),
-        _ => None,
-    };
+    let paint = paint_surrender_box(ime, renderer, frontend, match_state, process_assets);
     renderer.bit_font.set_raster(frame_raster);
-    let Some(paint) = paint else {
-        return (None, Vec::new());
-    };
     let batch = &renderer.batch_renderer;
     let gpu = &renderer.gpu;
     // The UI camera follows the world camera's scroll (see the message
@@ -441,13 +420,13 @@ pub(crate) fn in_match_page_draw(
                 (text.scissor, buffer)
             })
             .collect();
-        let draw = InMatchPageDraw {
+        let draw = SurrenderDraw {
             controls: screen(&paint.controls),
             texts: Vec::new(),
         };
         return (Some(draw), window_texts);
     }
-    let draw = InMatchPageDraw {
+    let draw = SurrenderDraw {
         controls: screen(&paint.controls),
         texts: texts
             .map(|text| (text.scissor, screen(&text.instances)))
@@ -456,7 +435,7 @@ pub(crate) fn in_match_page_draw(
     (Some(draw), Vec::new())
 }
 
-impl InMatchPageDraw {
+impl SurrenderDraw {
     pub(crate) fn draw<'a>(
         &'a self,
         pass: &mut wgpu::RenderPass<'a>,

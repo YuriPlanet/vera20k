@@ -439,6 +439,64 @@ fn drone_bites_on_its_weapon_rate_until_the_host_dies_then_drops_off() {
     assert_eq!(drone_entity.category(), EntityCategory::Unit);
 }
 
+/// An infested landing craft has just reached water facing the shore to its north.
+fn infected_landing_craft_at_shore() -> Option<(RuleSet, Arena, u64, u64)> {
+    let rules = crate::rules::retail_ini_fixture::retail_unlayered_rules_with_art()?;
+    let mut arena = Arena::new(&rules);
+    let drone = arena.spawn(&rules, "DRON", "Russians", (10, 10));
+    let host = arena.spawn(&rules, "LCRF", "Americans", (11, 10));
+    arena.infect(&rules, drone, host);
+    let frame = arena.frame();
+    let host_entity = arena.sim.substrate.entities.get_mut(host).unwrap();
+    host_entity.body_facing.snap(0, frame);
+    host_entity.health.set_for_test(1);
+    let terrain = arena.sim.resolved_terrain.as_mut().unwrap();
+    terrain.cell_mut_for_test(11, 10).unwrap().land_type =
+        crate::rules::terrain_rules::LandType::Water.as_index();
+    Some((rules, arena, drone, host))
+}
+
+#[test]
+fn a_drone_recenters_the_empty_release_spot_when_the_shore_is_occupied() {
+    let Some((rules, mut arena, drone, host)) = infected_landing_craft_at_shore() else {
+        return;
+    };
+    arena.spawn(&rules, "MTNK", "Americans", (11, 9));
+    arena.hit(&rules, host, None, 1, "Super");
+    arena.until(&rules, 60, |sim| sim.entities().get(host).is_none());
+    assert!(
+        !arena.gone(drone),
+        "the released drone survives off the playfield"
+    );
+    assert!(!arena.in_limbo(drone));
+    assert_eq!(arena.cell(drone), (0, 0));
+}
+
+#[test]
+fn a_drone_uses_the_lower_bridge_ground_to_choose_its_release_deck() {
+    let Some((rules, mut arena, drone, host)) = infected_landing_craft_at_shore() else {
+        return;
+    };
+    let terrain = arena.sim.resolved_terrain.as_mut().unwrap();
+    terrain.cell_mut_for_test(11, 10).unwrap().level = 4;
+    let shore = terrain.cell_mut_for_test(11, 9).unwrap();
+    shore.bridge_facts.raw_flags = crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL
+        | crate::map::bridge_facts::BRIDGE_FLAG_ANCHOR_SELF;
+    shore.bridge_facts.fixed_deck_level = Some(4);
+    shore.has_bridge_deck = true;
+    shore.bridge_walkable = true;
+    shore.bridge_deck_level = 4;
+    arena.hit(&rules, host, None, 1, "Super");
+    arena.until(&rules, 60, |sim| sim.entities().get(host).is_none());
+    assert_eq!(arena.cell(drone), (11, 9));
+    let released = arena.sim.entities().get(drone).unwrap();
+    assert!(released.on_bridge(), "the drone belongs on the deck");
+    assert_eq!(
+        crate::sim::movement::ground_pose::position_world_coord(&released.position).z,
+        4 * crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS,
+    );
+}
+
 #[test]
 fn third_party_fire_above_the_threshold_makes_the_drone_die_with_its_host() {
     // FootClass::ReceiveDamage 0x004D7374..0x004D73D1 arms `2*damage - 5`

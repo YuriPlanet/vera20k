@@ -19,8 +19,12 @@ use crate::shell::trackbar::{TrackbarPress, TrackbarRange};
 /// The trackbar's range; without its value plaque the track runs to the
 /// window's right end (`0x4AC` with 0).
 pub(crate) fn range(n: &Node) -> TrackbarRange {
-    TrackbarRange::new(n.int_prop(Prop::Min, 0), n.int_prop(Prop::Max, 100), n.int_prop(Prop::Step, 1))
-        .with_plaque(n.bool_prop(Prop::ShowValue, true))
+    TrackbarRange::new(
+        n.int_prop(Prop::Min, 0),
+        n.int_prop(Prop::Max, 100),
+        n.int_prop(Prop::Step, 1),
+    )
+    .with_plaque(n.bool_prop(Prop::ShowValue, true))
 }
 
 /// The scale trackbar `n` hits at: its `ScaleScreen`'s, else its dialog's.
@@ -38,11 +42,15 @@ pub(crate) fn press(ctx: &mut Ctx<'_>, node: NodeId, x: i32, y: i32) -> Option<b
     let range = range(n);
     let value = n.int_prop(Prop::Pos, range.min);
     let rect = n.rect();
+    // On Android the area above the thumb also admits a drag.
+    let touch = cfg!(target_os = "android");
     match range.press_in(value, x, y, rect, scale_of(ctx, n)) {
         TrackbarPress::Miss => None,
-        TrackbarPress::Hold => Some(false),
+        TrackbarPress::Hold => Some(touch),
         TrackbarPress::Drag => Some(true),
         TrackbarPress::Jump(to) => {
+            // A press beside the thumb jumps once; it does not start a drag
+            // (a track press that drags is hard to control on a touchpad).
             move_to(ctx, node, to);
             Some(false)
         }
@@ -60,13 +68,45 @@ pub(crate) fn drag(ctx: &mut Ctx<'_>, node: NodeId, x: i32) {
 pub(crate) fn release(ctx: &mut Ctx<'_>, node: NodeId) {
     let Ok(n) = ctx.tree.node(node) else { return };
     let value = Value::Int(n.int_prop(Prop::Pos, 0));
-    ctx.events.push(UiEvent::Changed { node, value, final_: true });
+    ctx.events.push(UiEvent::Changed {
+        node,
+        value,
+        final_: true,
+    });
 }
 
 fn move_to(ctx: &mut Ctx<'_>, node: NodeId, to: i32) {
-    let from = ctx.tree.node(node).map_or(to, |n| n.int_prop(Prop::Pos, range(n).min));
+    let from = ctx
+        .tree
+        .node(node)
+        .map_or(to, |n| n.int_prop(Prop::Pos, range(n).min));
     if from != to {
         let _ = ctx.tree.set(node, Prop::Pos, Value::Int(to));
-        ctx.events.push(UiEvent::Changed { node, value: Value::Int(to), final_: false });
+        ctx.events.push(UiEvent::Changed {
+            node,
+            value: Value::Int(to),
+            final_: false,
+        });
     }
+}
+
+/// The wheel over the trackbar: one step a notch, positive lines up the range.
+#[cfg(target_os = "android")]
+pub(crate) fn wheel(ctx: &mut Ctx<'_>, node: NodeId, lines: i32) -> bool {
+    let Ok(n) = ctx.tree.node(node) else {
+        return false;
+    };
+    let range = range(n);
+    if range.max <= range.min {
+        return false;
+    }
+    let pos = n.int_prop(Prop::Pos, range.min);
+    let step = range.step.max(1).saturating_mul(lines);
+    let to = (pos.saturating_add(step)).clamp(range.min, range.max);
+    if to == pos {
+        return false;
+    }
+    move_to(ctx, node, to);
+    release(ctx, node);
+    true
 }

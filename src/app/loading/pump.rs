@@ -303,6 +303,8 @@ pub(crate) struct LoadingRequest {
     /// Freeze the process flag before the early generated-map Full_Init; the
     /// later continuation consumes its result without selecting sources again.
     the_team_enabled: bool,
+    /// Replay frame zero or process staging from an earlier network game.
+    supplied_tiberium: Option<crate::sim::scenario_session::TiberiumFlags>,
 }
 
 impl LoadingRequest {
@@ -343,6 +345,7 @@ impl LoadingRequest {
             random_map_preview: None,
             skirmish_colors: None,
             the_team_enabled: false,
+            supplied_tiberium: Some(startup.tiberium_flags()),
         })
     }
 
@@ -353,6 +356,7 @@ impl LoadingRequest {
             random_map_preview: None,
             skirmish_colors: None,
             the_team_enabled: false,
+            supplied_tiberium: None,
         }
     }
 
@@ -367,6 +371,7 @@ impl LoadingRequest {
             random_map_preview: None,
             skirmish_colors: None,
             the_team_enabled: false,
+            supplied_tiberium: None,
         }
     }
 
@@ -377,6 +382,7 @@ impl LoadingRequest {
             random_map_preview: None,
             skirmish_colors: None,
             the_team_enabled: false,
+            supplied_tiberium: None,
         }
     }
 
@@ -393,6 +399,7 @@ impl LoadingRequest {
             random_map_preview: None,
             skirmish_colors: None,
             the_team_enabled: false,
+            supplied_tiberium: None,
         }
     }
 
@@ -406,6 +413,7 @@ impl LoadingRequest {
             random_map_preview: None,
             skirmish_colors: None,
             the_team_enabled: false,
+            supplied_tiberium: None,
         }
     }
 
@@ -649,8 +657,12 @@ impl LoadingRequest {
             .into_random_map_launch_snapshot(assets, prepared.context))
     }
 
-    fn prepare_initial(mut self, initial: MapLoadInitial) -> anyhow::Result<PreparedScenarioLoad> {
+    fn prepare_initial(
+        mut self,
+        mut initial: MapLoadInitial,
+    ) -> anyhow::Result<PreparedScenarioLoad> {
         let context = self.admit_context(&initial)?;
+        initial.supplied_tiberium = self.supplied_tiberium;
         Ok(PreparedScenarioLoad {
             request: self,
             initial,
@@ -1431,7 +1443,17 @@ pub(crate) fn begin_loading(state: &mut AppState, request: LoadingRequest) {
         .multiplayer_shell_runtime
         .begin_fresh_scenario_load();
     let wall_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
-    crate::app::radar_movie::retire(state, wall_ms);
+    crate::app::radar_movie::retire(
+        &state.platform,
+        &state.renderer,
+        &state.diag,
+        &state.frontend,
+        &mut state.match_state,
+        &state.process_assets,
+        &mut state.audio,
+        &state.persistence,
+        wall_ms,
+    );
     crate::app::chrono_screen::retire(
         &state.frontend.screen,
         &mut state.match_state,
@@ -1447,10 +1469,16 @@ pub(crate) fn begin_loading(state: &mut AppState, request: LoadingRequest) {
         request.startup(),
     );
     let mut request = request.with_skirmish_colors(
-        state
-            .rules()
+        crate::app::state::active_rules(&state.frontend, &state.match_state)
             .map(crate::rules::ruleset::RuleSet::skirmish_colors),
     );
+    if request.startup().session_mode() == crate::sim::scenario_session::ScenarioGameMode::Skirmish
+        && request.startup().match_spec().rules().uses_room_options()
+    {
+        request
+            .supplied_tiberium
+            .get_or_insert(state.match_state.session.staged_tiberium());
+    }
     request.the_team_enabled = state
         .frontend
         .main_menu_shell_state
@@ -1464,7 +1492,10 @@ pub(crate) fn begin_loading(state: &mut AppState, request: LoadingRequest) {
         .map(|config| config.paths.ra2_dir.clone());
     // Resolve the backing fill from the live rules `[Colors]` schemes now that
     // `state.rules` is reachable (the native ctor only sees the launch session).
-    if let (Some(native), Some(rules)) = (session.native.as_mut(), state.rules()) {
+    if let (Some(native), Some(rules)) = (
+        session.native.as_mut(),
+        crate::app::state::active_rules(&state.frontend, &state.match_state),
+    ) {
         // ReadScenario68479D..6847C9 projects raw HouseType+BC; ctor-only
         // countries retain -1. Only observer country selection maps to entry0.
         if let Some(launch) = session.stage.startup().launch_session() {
@@ -2493,7 +2524,7 @@ fn poll_network_load_wait(
             // Retire the held result and its asset lease through the normal
             // failure path before the world can be installed.
             state.frontend.loading_session = Some(session);
-            let text = state.csf_text("TXT_SYSTEM_NOT_RESPONDING");
+            let text = state.process_assets.csf_text("TXT_SYSTEM_NOT_RESPONDING");
             return Ok(LoadingPump::Failed(anyhow::anyhow!(text)));
         }
         let LoadingStage::AwaitingPeers { result, .. } = session.stage else {
@@ -3403,7 +3434,17 @@ fn advance_loading(state: &mut AppState, show_progress: bool) -> anyhow::Result<
             log::debug!(target: "vera20k::loading_attempt", "install_begin show_progress={show_progress}");
             super::transitions::finish_fresh_scenario_read(state, *result);
             for destroyed in disconnected {
-                crate::app::match_runtime::network_match::post_connection_line(state, destroyed);
+                crate::app::match_runtime::network_match::post_connection_line(
+                    &state.platform,
+                    &state.renderer,
+                    &state.diag,
+                    &state.frontend,
+                    &mut state.match_state,
+                    &state.process_assets,
+                    &mut state.audio.sfx_player,
+                    &state.persistence,
+                    destroyed,
+                );
             }
             log::debug!(target: "vera20k::loading_attempt", "install_end screen={:?} assets_available={} accepted={}", state.frontend.screen, state.process_assets.is_available(), state.match_state.startup.accepted().is_some());
         }
@@ -3567,55 +3608,59 @@ pub(crate) fn next_native_loading_frame(
 /// The retained B7 browser is not painted or mutated, so failure can redraw it.
 /// The dialog paints no pointer; the window's own stays as the frame owner
 /// last set it, hidden wherever mouse.sha loaded.
-pub(crate) fn present_saved_game_loading(state: &mut AppState) -> anyhow::Result<bool> {
+pub(crate) fn present_saved_game_loading(
+    platform: &mut crate::app::PlatformState,
+    renderer: &mut crate::app::renderer_state::RendererState,
+    frontend: &mut crate::app::frontend::state::FrontendState,
+    match_state: &mut crate::app::match_runtime::state::MatchState,
+    process_assets: &crate::app::process_assets::ProcessAssets,
+    persistence: &crate::app::persistence::PersistenceState,
+) -> anyhow::Result<bool> {
     if !crate::app::App::ensure_skirmish_shell_chrome(
-        &state.renderer,
-        &mut state.frontend,
-        &state.process_assets,
-        &state.persistence.options_profile,
+        renderer,
+        frontend,
+        process_assets,
+        &persistence.options_profile,
     ) {
         anyhow::bail!("Saved-game loading dialog has no shell chrome");
     }
-    let Some(output) = state
-        .renderer
+    let Some(output) = renderer
         .gpu
         .acquire_frame()
         .map_err(|error| anyhow::anyhow!("saved-game loading surface: {error}"))?
     else {
         return Ok(false);
     };
-    let mut encoder =
-        state
-            .renderer
-            .gpu
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("Saved Game Loading"),
-            });
-    state.renderer.window_ui.begin_frame();
+    let mut encoder = renderer
+        .gpu
+        .device
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("Saved Game Loading"),
+        });
+    renderer.window_ui.begin_frame();
     crate::app::frontend::skirmish_shell_render::render_saved_game_loading(
-        state,
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        process_assets,
+        persistence,
         &mut encoder,
         &output.texture,
     )?;
-    state.renderer.performance_overlay.encode(
-        &state.renderer.gpu,
-        &state.renderer.batch_renderer,
+    renderer.performance_overlay.encode(
+        &renderer.gpu,
+        &renderer.batch_renderer,
         &mut encoder,
         &output.texture,
-        &state.renderer.bit_font,
+        &renderer.bit_font,
         None,
     );
-    state
-        .renderer
+    renderer
         .gpu
         .encode_color_vision(&mut encoder, &output.texture);
-    state
-        .renderer
-        .gpu
-        .queue
-        .submit(std::iter::once(encoder.finish()));
-    output.present(&state.renderer.gpu.queue);
+    renderer.gpu.queue.submit(std::iter::once(encoder.finish()));
+    output.present(&renderer.gpu.queue);
     Ok(true)
 }
 

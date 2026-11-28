@@ -5,7 +5,11 @@
 //! The process audio owner selects this once after neutral archive registration;
 //! physical playback and scenario-specific side admission remain with that owner.
 
+use std::collections::BTreeSet;
+use std::sync::Arc;
+
 use crate::assets::asset_manager::AssetManager;
+use crate::assets::opus_file;
 use crate::rules::ini_parser::{IniFile, IniSection};
 
 const RA2_THEME_INI_NAME: &str = "theme.ini";
@@ -32,7 +36,8 @@ pub struct ThemeEntry {
     pub repeat: bool,
     /// `Side=` name (+0x28C holds the resolved index; default -1 = any side).
     pub side_name: Option<String>,
-    /// `CCFileClass::IsAvailable(Sound + ".WAV")` (+0x28A).
+    /// `CCFileClass::IsAvailable(Sound + ".WAV")` (+0x28A), or VERA's
+    /// `Sound + ".opus"` override (see [`ThemeCatalog::opus_sounds`]).
     pub available: bool,
 }
 
@@ -40,19 +45,24 @@ pub struct ThemeEntry {
 #[derive(Debug)]
 pub struct ThemeCatalog {
     entries: Vec<ThemeEntry>,
+    /// VERA: the lowercased `Sound=` stems the scan found a `<stem>.opus`
+    /// override for (docs/opus-audio.md). Empty for retail data, whose
+    /// playback then never looks for one.
+    opus_sounds: Arc<BTreeSet<String>>,
 }
 
 impl ThemeCatalog {
     /// ReadINI720590 + Scan7207F0, then the authorized RA2 gameplay append.
     /// Select independently so RA2 cannot replace YR lifecycle sections.
     pub fn select(assets: &AssetManager) -> Self {
+        let mut opus_sounds = BTreeSet::new();
         let mut entries =
             crate::rules::retail_sources::select_ini(assets, assets.ini_roots().theme())
                 .map_or_else(|_| Vec::new(), |selected| catalog_from_ini(&selected.ini));
-        scan_catalog_availability(&mut entries, assets);
+        scan_catalog_availability(&mut entries, assets, &mut opus_sounds);
         if let Ok(selected) = crate::rules::retail_sources::select_ini(assets, RA2_THEME_INI_NAME) {
             let mut ra2_entries = catalog_from_ini(&selected.ini);
-            scan_catalog_availability(&mut ra2_entries, assets);
+            scan_catalog_availability(&mut ra2_entries, assets, &mut opus_sounds);
             for entry in ra2_entries {
                 if entry.normal
                     && entry.available
@@ -64,7 +74,16 @@ impl ThemeCatalog {
                 }
             }
         }
-        Self { entries }
+        Self {
+            entries,
+            opus_sounds: Arc::new(opus_sounds),
+        }
+    }
+
+    /// The `Sound=` stems (lowercased) whose song plays from `<stem>.opus`,
+    /// shared with the players that prepare songs from this catalog.
+    pub fn opus_sounds(&self) -> &Arc<BTreeSet<String>> {
+        &self.opus_sounds
     }
 
     pub fn entries(&self) -> &[ThemeEntry] {
@@ -106,7 +125,10 @@ impl ThemeCatalog {
 
     #[cfg(any(test, feature = "test-support"))]
     pub fn from_entries_for_test(entries: Vec<ThemeEntry>) -> Self {
-        Self { entries }
+        Self {
+            entries,
+            opus_sounds: Arc::default(),
+        }
     }
 }
 
@@ -121,8 +143,26 @@ fn find_section<'a>(ini: &'a IniFile, name: &str) -> Option<&'a IniSection> {
 
 /// Native catalog scan `0x007207F0`: WAV availability and declared metadata
 /// supply the playlist row; the shared player owns subsequent decoding.
-fn scan_catalog_availability(entries: &mut [ThemeEntry], assets: &AssetManager) {
+///
+/// VERA: a `<Sound>.opus` file ([`opus_file::override_name`]) makes the entry
+/// available ahead of the WAV, with its length from the Ogg granule, and its
+/// stem joins `opus_sounds`. Retail data has none: one name-hash miss per
+/// entry, then the native scan unchanged.
+fn scan_catalog_availability(
+    entries: &mut [ThemeEntry],
+    assets: &AssetManager,
+    opus_sounds: &mut BTreeSet<String>,
+) {
     for entry in entries {
+        if let Some(opus) = (!entry.sound.is_empty())
+            .then(|| assets.get_ref(&opus_file::override_name(&entry.sound)))
+            .flatten()
+        {
+            entry.available = true;
+            entry.duration_seconds = opus_file::duration_seconds(opus).unwrap_or(0);
+            opus_sounds.insert(entry.sound.to_ascii_lowercase());
+            continue;
+        }
         let wav = (!entry.sound.is_empty())
             .then(|| assets.get_ref(&format!("{}.wav", entry.sound)))
             .flatten();
@@ -150,7 +190,8 @@ pub fn missing_install_music(assets: &AssetManager) -> Vec<String> {
             }
         };
         let mut entries = catalog_from_ini(&selected.ini);
-        scan_catalog_availability(&mut entries, assets);
+        // A `.opus` override counts as the track (docs/opus-audio.md).
+        scan_catalog_availability(&mut entries, assets, &mut BTreeSet::new());
         for entry in entries {
             if entry.sound.is_empty() {
                 continue;

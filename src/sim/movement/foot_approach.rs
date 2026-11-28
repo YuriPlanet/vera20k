@@ -21,6 +21,7 @@ use crate::sim::combat::{self, TargetKind, in_range};
 use crate::sim::components::{DriveCoord, NavTargetRef};
 use crate::sim::mission::MissionType;
 use crate::sim::movement::bump_crush::{CrushTarget, object_is_crushable_by};
+use crate::sim::pathfinding::zone_hierarchy::ThreatPrecheckMemo;
 use crate::sim::world::FrameEffects;
 use crate::sim::world::Simulation;
 use crate::util::direction::cell_delta_unchecked;
@@ -396,13 +397,9 @@ impl Simulation {
             return;
         }
         if !crate::sim::movement::motion_query::is_moving(actor).unwrap_or(false) {
-            if let Err(cause) = self.infantry_do_action(
-                id,
-                super::infantry_action::DO_DEPLOY,
-                false,
-                rules,
-                frame_effects,
-            ) {
+            // A deploy the Wasm module `DeployAllowed` refuses leaves him
+            // standing; the next Approach asks again.
+            if let Err(cause) = self.infantry_request_deploy(id, false, rules, frame_effects) {
                 log::debug!("infantry {id} Approach deploy: {cause}");
             }
             return;
@@ -744,6 +741,9 @@ impl Simulation {
         // PlaceInfantryInCell picks in the radial cell for the Target's
         // coordinate; anyone else's is the cell centre (4D60FB..613A).
         let spots = category == EntityCategory::Infantry && close_range;
+        // Every candidate's EstimateZoneCost asks under this Foot's threat;
+        // nothing the search does here changes the House threat or zones.
+        let zone_costs = ThreatPrecheckMemo::default();
         'rings: while chosen.is_none() && radius > 204 {
             for offset in OFFSETS {
                 let direction = (i16::from(facing_byte).wrapping_add(offset) as u16) << 8;
@@ -852,6 +852,7 @@ impl Simulation {
                     candidate_bridge,
                     target_bridge,
                     rules,
+                    Some(&zone_costs),
                 )? <= chebyshev(candidate, target_cell) + 8
                 {
                     chosen = Some(candidate);
@@ -873,6 +874,7 @@ impl Simulation {
                     source_bridge,
                     candidate_bridge,
                     rules,
+                    Some(&zone_costs),
                 )? <= chebyshev(start, candidate) + 8
                 {
                     chosen = Some(candidate);
@@ -882,6 +884,9 @@ impl Simulation {
             radius -= 256;
         }
         if let Some(cell) = chosen {
+            // A Wasm module's `ApproachPoint` (`ext_modules::paths`), after
+            // the search and its draws, before the destination is set.
+            let cell = self.module_approach_point(rules, id, target, cell);
             self.assign_destination_represented(
                 id,
                 Some(NavTargetRef::cell(cell.0 as u16, cell.1 as u16)),

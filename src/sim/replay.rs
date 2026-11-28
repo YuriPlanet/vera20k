@@ -886,6 +886,14 @@ impl ReplayStartup {
         self.blueprint.map_houses()
     }
 
+    /// Recorded before the first game frame, including older v6 solo starts.
+    pub fn tiberium_flags(&self) -> crate::sim::scenario_session::TiberiumFlags {
+        crate::sim::scenario_session::TiberiumFlags {
+            accelerated_growth: self.session().tiberium_grows_flag(),
+            spreads: self.session().tiberium_spreads_flag(),
+        }
+    }
+
     pub fn game_speed(&self) -> i32 {
         self.session().game_options().game_speed
     }
@@ -1538,34 +1546,8 @@ impl ReplayRunner {
     ) -> Result<ReplayVerification> {
         let startup = replay.standalone_startup()?;
         let map_file = map_beside.unwrap_or(&replay.header.map_name);
-        let accepted_prefix = Some(startup.native_id_prefix()?);
-        let mode = startup.game_mode();
-        let mut loaded = match startup.authored_campaign() {
-            Some(start) => crate::headless_scenario::load_campaign_stage(
-                retail_dir,
-                map_file,
-                startup.seed(),
-                crate::sim::scenario_bootstrap::AuthoredCampaignLaunch {
-                    start,
-                    mode,
-                    local_source: Some(0),
-                },
-                accepted_prefix,
-                Some(startup.game_speed()),
-                Some(startup.map_name()),
-            ),
-            None => crate::headless_scenario::load_with_launch_and_ini(
-                retail_dir,
-                map_file,
-                startup.seed(),
-                startup.launch_descriptor(map_file)?,
-                &Default::default(),
-                mode,
-                accepted_prefix,
-                None,
-            ),
-        }
-        .map_err(anyhow::Error::msg)?;
+        let mut loaded =
+            crate::headless_scenario::load_replay_start(retail_dir, map_file, startup)?;
         // The ordinary App handoff enables the path-search and target-scan
         // batches before recording frame zero. They change movement and
         // acquisition timing and are hashed. Presentation anims change the
@@ -1586,9 +1568,10 @@ impl ReplayRunner {
         playback.verification(&loaded.runtime)
     }
 
-    pub(crate) fn record_campaign_stage(
+    /// Record an authored match from frame zero for the standalone verifier.
+    pub fn record_authored_match(
         scene: &mut crate::headless_scenario::HeadlessScenario,
-        start: &crate::sim::scenario_bootstrap::AuthoredCampaignStart,
+        launch: ReplayLaunchInput<'_>,
         frames: u32,
     ) -> Result<ReplayLog> {
         let sim = &mut scene.runtime.simulation;
@@ -1606,7 +1589,7 @@ impl ReplayRunner {
         });
         log.startup = Some(Box::new(ReplayStartup::capture(
             &scene.runtime,
-            ReplayLaunchInput::MapHouses(start),
+            launch,
             &scene.source,
             scene.map.ini.content_hash(),
             tick_ms,
@@ -1628,7 +1611,7 @@ impl ReplayRunner {
             )?;
             anyhow::ensure!(
                 frame.tick.frame_committed && frame.tick.state_hash.is_some(),
-                "campaign stopped before frame {}; reduce the requested frame count or inspect the stage's trigger holds",
+                "match stopped before frame {}; reduce the requested frame count or inspect the map's trigger holds",
                 index + 1
             );
             log.record_tick(

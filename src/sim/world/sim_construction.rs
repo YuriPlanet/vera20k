@@ -439,6 +439,18 @@ impl Simulation {
             .values_mut()
             .map(HouseState::take_spatial_threat)
             .collect();
+        // The other large bodies the copy carries but no draw writes: a House
+        // array and the substrate stores whose clone ran on the main thread's
+        // critical path. Each is taken out and cloned on the pool below; the
+        // placeholders are empty and cost no clone here.
+        let houses = std::mem::take(&mut *self.houses);
+        let production = std::mem::take(&mut *self.production);
+        let logic = std::mem::take(&mut *self.substrate.logic);
+        let display = std::mem::take(&mut *self.substrate.display);
+        let voxel_anims = std::mem::take(&mut *self.substrate.voxel_anims);
+        let spotlights = std::mem::take(&mut *self.substrate.spotlights);
+        let particle_systems = std::mem::take(&mut *self.substrate.particle_systems);
+        let pending_delete = std::mem::take(&mut *self.substrate.pending_delete);
         #[cfg(any(test, feature = "test-support"))]
         let test_recorders = (
             std::mem::take(&mut *self.lifecycle_test_events),
@@ -460,30 +472,80 @@ impl Simulation {
         let mut copy = None;
         let mut fog_copy = None;
         let mut anims_copy = None;
+        let mut houses_copy = None;
+        let mut production_copy = None;
+        let mut logic_copy = None;
+        let mut display_copy = None;
+        let mut voxel_copy = None;
+        let mut spotlights_copy = None;
+        let mut particle_copy = None;
+        let mut pending_copy = None;
         let this = &*self;
         let fog_ref = &mut fog;
         let anims_ref = &anims;
-        // The parts share only reads, so they run at once: the syncs, and
-        // the viewer's fog then the anims, on the pool, the clone of the
-        // rest here.
+        let houses_ref = &houses;
+        let production_ref = &production;
+        let logic_ref = &logic;
+        let display_ref = &display;
+        let voxel_ref = &voxel_anims;
+        let spotlights_ref = &spotlights;
+        let particle_ref = &particle_systems;
+        let pending_ref = &pending_delete;
+        // The parts share only reads, so they run at once: the syncs, the
+        // viewer's fog, the anims, the House array and the substrate stores
+        // on the pool, the clone of the small rest here.
         crate::sim::parallel::alongside(
             || synced.sync_into(&mut theirs),
             || {
                 crate::sim::parallel::alongside(
                     || {
-                        fog_copy = Some(fog_ref.presentation_copy(viewer, old_fog));
-                        anims_copy = Some(anims_ref.clone());
+                        houses_copy = Some(houses_ref.presentation_copy());
+                        production_copy = Some(production_ref.clone());
+                        logic_copy = Some(logic_ref.clone());
+                        display_copy = Some(display_ref.clone());
+                        voxel_copy = Some(voxel_ref.clone());
+                        spotlights_copy = Some(spotlights_ref.clone());
+                        particle_copy = Some(particle_ref.clone());
+                        pending_copy = Some(pending_ref.clone());
                     },
-                    || copy = Some(this.clone()),
+                    || {
+                        crate::sim::parallel::alongside(
+                            || {
+                                fog_copy = Some(fog_ref.presentation_copy(viewer, old_fog));
+                                anims_copy = Some(anims_ref.clone());
+                            },
+                            || copy = Some(this.clone()),
+                        )
+                    },
                 )
             },
         );
+        // Put the live world's House bodies back before restoring their
+        // threat grids and before its sync writes into them.
+        *self.houses = houses;
         for (house, grid) in self.houses.values_mut().zip(spatial_threats) {
             house.restore_spatial_threat(grid);
         }
         let mut copy = copy.expect("cloned beside the syncs");
         let fog_copy = fog_copy.expect("fog copied beside the clone");
+        *self.production = production;
+        *self.substrate.logic = logic;
+        *self.substrate.display = display;
+        *self.substrate.voxel_anims = voxel_anims;
+        *self.substrate.spotlights = spotlights;
+        *self.substrate.particle_systems = particle_systems;
+        *self.substrate.pending_delete = pending_delete;
         synced.put(self);
+        *copy.houses = houses_copy.expect("houses cloned beside the rest");
+        *copy.production = production_copy.expect("production cloned beside the rest");
+        *copy.substrate.logic = logic_copy.expect("logic order cloned beside the rest");
+        *copy.substrate.display = display_copy.expect("display layers cloned beside the rest");
+        *copy.substrate.voxel_anims = voxel_copy.expect("voxel anims cloned beside the rest");
+        *copy.substrate.spotlights = spotlights_copy.expect("spotlights cloned beside the rest");
+        *copy.substrate.particle_systems =
+            particle_copy.expect("particle systems cloned beside the rest");
+        *copy.substrate.pending_delete =
+            pending_copy.expect("pending deletes cloned beside the rest");
         theirs.put(&mut copy);
         *copy.fog = fog_copy;
         *copy.substrate.anims = anims_copy.expect("anims cloned beside the rest");

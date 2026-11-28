@@ -617,6 +617,7 @@ mod tests {
                 shp: "CTHSE05.SHP".into(),
                 body_frame: 3,
                 shadow_frame: 7,
+                picture: None,
             },
         );
         let mut grid = crate::sim::overlay_grid::OverlayGrid::new(8, 8);

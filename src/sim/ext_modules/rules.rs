@@ -61,6 +61,23 @@ pub enum MapUi {
     No,
 }
 
+impl MapUi {
+    /// `[VeraWasm] MapUI=` of the mod's own `rulesmd.ini` (the stock one
+    /// without a mod). The client reads it when it installs its modules
+    /// (`app::ui_modules::install`), for a new match and a restored save
+    /// alike: the simulation does not hold it, so a save does not carry it.
+    pub fn read(mod_rules: &IniFile) -> Self {
+        match mod_rules
+            .section_or_empty("VeraWasm")
+            .read_name("MapUI", 16)
+        {
+            Some(name) if name.eq_ignore_ascii_case("full") => Self::Full,
+            Some(name) if name.eq_ignore_ascii_case("no") => Self::No,
+            _ => Self::Overlay,
+        }
+    }
+}
+
 /// The mod's `rulesmd.ini` `[VeraWasm]` keys (appendix "INI keys"), read
 /// from that file alone, without layering.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -76,11 +93,15 @@ pub struct WasmPolicy {
     pub seat_budget: u64,
     /// `MapWasm=`: whether maps with modules may start under this mod.
     pub map_wasm: bool,
-    pub map_ui: MapUi,
     /// `Controller=`: the lobby offers "mod AI" for computer seats, and
     /// such a seat's house starts with every domain claimed by the mod
     /// module (RFC 6i, `claims`).
     pub controller: bool,
+    /// The room switch "Allow automation" (global `AutomationAllowed`,
+    /// appendix 7.8): a room setting, not a `[VeraWasm]` key; the loader
+    /// sets it from the room's settings
+    /// ([`PreparedExtModules::set_automation_allowed`]).
+    pub automation_allowed: bool,
 }
 
 impl Default for WasmPolicy {
@@ -91,8 +112,8 @@ impl Default for WasmPolicy {
             map_budget: MAP_FRAME_BUDGET,
             seat_budget: SEAT_BUDGET,
             map_wasm: true,
-            map_ui: MapUi::Overlay,
             controller: false,
+            automation_allowed: false,
         }
     }
 }
@@ -112,19 +133,14 @@ impl WasmPolicy {
             0 => budget("Budget", FRAME_BUDGET, FRAME_BUDGET)?,
             value => checked_budget("WasmBudget", i64::from(value), FRAME_BUDGET)?,
         };
-        let map_ui = match section.read_name("MapUI", 16) {
-            Some(name) if name.eq_ignore_ascii_case("full") => MapUi::Full,
-            Some(name) if name.eq_ignore_ascii_case("no") => MapUi::No,
-            _ => MapUi::Overlay,
-        };
         Ok(Self {
             api: section.read_name("Api", 16).map(str::to_owned),
             budget: mod_budget,
             map_budget: budget("MapBudget", MAP_FRAME_BUDGET, FRAME_BUDGET)?,
             seat_budget: budget("SeatBudget", SEAT_BUDGET, SEAT_BUDGET)?,
             map_wasm: section.read_bool("MapWasm", true),
-            map_ui,
             controller: section.read_bool("Controller", false),
+            automation_allowed: false,
         })
     }
 
@@ -226,6 +242,11 @@ impl PreparedExtModules {
                 memory_seats: 0,
             });
         }
+        // A map notification whose ID a different mod name has rejects the
+        // map module (RFC 0001 section 3, step 7).
+        if let [first, second] = &modules[..] {
+            check_notify_collision(&first.module, &second.module)?;
+        }
         Ok(Self {
             policy,
             modules,
@@ -238,6 +259,13 @@ impl PreparedExtModules {
 
     pub fn policy(&self) -> &WasmPolicy {
         &self.policy
+    }
+
+    /// The room switch "Allow automation" (`PersonalRules::automation_allowed`;
+    /// a network room plays its host's), read as the global
+    /// `AutomationAllowed`. Off unless set.
+    pub fn set_automation_allowed(&mut self, allowed: bool) {
+        self.policy.automation_allowed = allowed;
     }
 
     /// The variables the modules declare, numbered as the match numbers
@@ -255,6 +283,20 @@ impl PreparedExtModules {
             .iter()
             .find(|m| !m.initialized && m.module.has_export(Export::Rules))
             .map(|m| m.source)
+    }
+}
+
+/// RFC 0001 section 3, step 7: notification names of the mod module
+/// (`first`) and the map module (`second`) that differ but share an ID
+/// reject the map module, naming both. The same name in both is one
+/// notification. Each module's own names were checked at its load.
+pub(super) fn check_notify_collision(first: &SimModule, second: &SimModule) -> Result<(), String> {
+    match vera20k_wasm_ext::sections::notify_collision(second.notify_names(), first.notify_names())
+    {
+        Some((map, mods)) => Err(format!(
+            "the map's rules module: its notification {map} has the same ID as the mod's {mods}"
+        )),
+        None => Ok(()),
     }
 }
 
@@ -430,14 +472,20 @@ impl SimHost for RulesHost<'_> {
     }
 
     fn get(&mut self, reference: i64, prop: i32) -> Result<(i64, Status), Invalid> {
-        // Only type references are readable here (appendix 1.1).
+        // Only type references are readable here (appendix 1.1); a type's
+        // `Name` gets its string ID as in a match.
+        let name = property_name(prop).unwrap_or_default();
         match super::decode_ref(reference)? {
-            Some(super::Ref::Type { kind, id }) if self.in_rules => super::type_property(
-                self.rules,
-                kind,
-                id,
-                property_name(prop).unwrap_or_default(),
-            ),
+            Some(super::Ref::Type { kind, id }) if self.in_rules && name == "Name" => {
+                let rules = self.rules;
+                Ok(match super::props::type_name(rules, kind, id)? {
+                    Some(text) => (i64::from(self.ini.intern(text)), Status::Ok),
+                    None => (0, Status::Unsupported),
+                })
+            }
+            Some(super::Ref::Type { kind, id }) if self.in_rules => {
+                super::type_property(self.rules, kind, id, name)
+            }
             _ => Ok((0, Status::Unsupported)),
         }
     }

@@ -48,19 +48,13 @@ fn veterancy_promotion_step(
     sound_events: &mut Forked<FrameChannel<SimSoundEvent>>,
     id: u64,
     rules: &RuleSet,
-) {
-    let Some(entity) = substrate
+) -> Option<crate::sim::combat::veterancy::Promotion> {
+    let entity = substrate
         .entities
-        .get_mut_if(id, |entity| entity.veterancy.rank_changed())
-    else {
-        return;
-    };
-    let Some(promotion) = entity
+        .get_mut_if(id, |entity| entity.veterancy.rank_changed())?;
+    let promotion = entity
         .veterancy
-        .sample_promotion(&mut entity.flashing, rules.general.elite_flash_timer)
-    else {
-        return;
-    };
+        .sample_promotion(&mut entity.flashing, rules.general.elite_flash_timer)?;
     let owner = entity.owner();
     // The promoted object's type is already interned on the entity; carry it
     // out so the accessibility line can name the game's own object without a
@@ -83,6 +77,7 @@ fn veterancy_promotion_step(
         world,
         eva: None,
     });
+    Some(promotion)
 }
 
 /// The house self-heal pulse of `TechnoClass::AI_Update`, read from the
@@ -635,15 +630,22 @@ pub(super) fn techno_common_steps(
     if rules.ares() {
         // Ares TechnoClass_Update_Veterancy1004F2E0 (hook6FA054..6FA14B).
         sim.update_ares_veterancy(id, false, true, rules, effects);
-    } else if !quiet {
-        veterancy_promotion_step(
+    } else if !quiet
+        && let Some(promotion) = veterancy_promotion_step(
             &mut sim.interner,
             &mut sim.substrate,
             sim.resolved_terrain.as_ref(),
             &mut sim.sound_events,
             id,
             rules,
-        );
+        )
+    {
+        // Wasm module `Promoted`, `value` the new rank (1 veteran, 2 elite).
+        let rank = match promotion {
+            crate::sim::combat::veterancy::Promotion::Veteran => 1,
+            crate::sim::combat::veterancy::Promotion::Elite => 2,
+        };
+        sim.raise_module_promoted(rules, effects, id, rank);
     }
     if !quiet {
         crate::sim::credit_income::drain_common_step(sim, id, rules);

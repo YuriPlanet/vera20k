@@ -456,6 +456,34 @@ impl Simulation {
         Ok(())
     }
 
+    /// An infantryman's deploy request, Do_Action(Deploy 0x1B) with
+    /// `force`, asked of the Wasm module `DeployAllowed` first (veto,
+    /// `ext_modules::control`). Every infantry deploy goes through it: the
+    /// pending deploy's Stop callback (`0x00521B40`), Mission_Unload
+    /// (`0x0051F6E0`), the computer's automatic deploy in Guard
+    /// (`0x00521631`) and the Approach deploy arm (`0x00522472`). `None`
+    /// when a module refused: nothing was requested and the caller leaves
+    /// the infantryman as he stands; otherwise Do_Action's own answer.
+    pub(crate) fn infantry_request_deploy(
+        &mut self,
+        id: u64,
+        force: bool,
+        rules: &RuleSet,
+        effects: &mut FrameEffects<'_>,
+    ) -> Result<Option<bool>, String> {
+        if !self.module_allows_deploy(rules, id) {
+            return Ok(None);
+        }
+        self.infantry_do_action(
+            id,
+            crate::sim::movement::infantry_action::DO_DEPLOY,
+            force,
+            rules,
+            effects,
+        )
+        .map(Some)
+    }
+
     /// Infantry vtable+54C = Stop callback521B40. Clear6E4 BEFORE calling
     /// unforced Do_Action27: a zero-health action may re-enter Stop_Driver.
     pub(crate) fn infantry_pending_deploy_stop_callback(
@@ -482,7 +510,9 @@ impl Simulation {
             .expect("same pending deployment receiver")
             .mission_leaf
             .take_infantry_pending_deploy();
-        self.infantry_do_action(id, 27, false, rules, effects)?;
+        // A refused deploy (`DeployAllowed`) leaves the pending byte dropped
+        // and the infantryman as he is.
+        self.infantry_request_deploy(id, false, rules, effects)?;
         Ok(())
     }
 
@@ -528,12 +558,17 @@ impl Simulation {
         if completed_doing == 27 {
             self.shorten_passive_scan_timer(id);
         }
+        // Wasm module `Deployed` (1 deployed, 0 undeployed).
+        self.raise_module_deployed(rules, effects, id, None, completed_doing == 27);
         Ok(())
     }
 
     /// Original Infantry Mission_Unload51F6E0. Action admission does not gate
     /// the subsequent weapon, direct Mission::Assign(Guard), or NULL class
     /// destination effects. FootUnload4DA2B0→Mission5B2EF0 returns450.
+    /// A deploy the Wasm module `DeployAllowed` refuses requests nothing,
+    /// aims no deploy weapon and ends in the same Guard, NULL destination
+    /// and 450: the infantryman stays standing.
     pub(crate) fn infantry_mission_unload(
         &mut self,
         id: u64,
@@ -572,8 +607,10 @@ impl Simulation {
             if rules.ares() {
                 delay = 1;
             }
-        } else {
-            self.infantry_do_action(id, 27, true, rules, effects)?;
+        } else if self
+            .infantry_request_deploy(id, true, rules, effects)?
+            .is_some()
+        {
             //70E120 uses the SprayAttack selector70DD70, not GetCurrentWeapon
             //70E1A0. The shared owner forwards it through GetWeapon70E140.
             let actor = self.substrate.entities.get(id).expect("same Unload actor");

@@ -53,9 +53,9 @@ mod placement_gpu_tests;
 mod status_gpu_tests;
 #[cfg(all(test, tests_app_presentation_render))]
 mod target_laser_gpu_tests;
+pub(crate) use draw_passes::draw_software_cursor;
 #[cfg(test)]
 pub(crate) use draw_passes::{draw_bridge_shadows, draw_pooled_cell_bodies};
-pub(crate) use draw_passes::{draw_software_cursor, draw_world_window_copy};
 pub(crate) mod draw_plan_lowering;
 mod merge_passes;
 pub(crate) mod minimap_transaction;
@@ -339,7 +339,10 @@ pub(crate) fn render_game(
     // back on `GameRenderOutput` and never written into the world here.
     let render_started =
         render_phases_wanted(&state.renderer.performance_overlay, &state.diag).then(Instant::now);
-    let (sw, sh) = (state.render_width() as f32, state.render_height() as f32);
+    let (sw, sh) = (
+        state.renderer.render_width(&state.frontend.screen) as f32,
+        state.renderer.render_height(&state.frontend.screen) as f32,
+    );
     // What this picture draws of the world (`presentation::frame`).
     state.match_state.sim_runtime.ensure_frame();
     // The sidebar chrome of the side the local player draws, built on the
@@ -361,13 +364,17 @@ pub(crate) fn render_game(
     // around the view (ALL06, SOV03) or jump the camera in the same trigger
     // (SOV01 SP3.6, action 112); only SOV01's SP4.5b and base-gained shrinks
     // can leave the view outside, until the player scrolls. VERA moves it at once.
-    // VERA's HD art (`render::hd_switch`): pictures the unit atlas rasterizes from
-    // here on (this frame's first draws included) also make their HD picture,
-    // and keep doing so once HD art has been on in this run, so turning it off
-    // and on again (Page Up) shows them at once.
-    let hd_art_on = state.hd_art_on().0;
-    state.renderer.hd_art_seen |= hd_art_on;
-    crate::render::vxl_raster::set_hd_voxels(state.renderer.hd_art_seen);
+    // HD voxels (`render::vxl_raster`): pictures the unit atlas rasterizes
+    // from here on (this frame's first draws included) also make their 2x
+    // picture once the camera has zoomed in during this run, so they show at
+    // once when it zooms in again.
+    let hd_art_on = crate::app::state::hd_art_on(&state.persistence).0;
+    // The camera's zoom: the wheel's times the Options zoom's.
+    let zooms_in = state.match_state.input.zoom_level
+        * state.renderer.frame_scale(&state.frontend.screen)
+        > 1.0;
+    state.renderer.hd_voxels_seen |= zooms_in;
+    crate::render::vxl_raster::set_hd_voxels(state.renderer.hd_voxels_seen);
     crate::render::hd_art::set_active(hd_art_on);
     if let Some(zoom) = crate::render::hd_switch::capture_zoom() {
         state.match_state.input.zoom_level = zoom;
@@ -389,8 +396,12 @@ pub(crate) fn render_game(
         );
     }
     // Posed voxels are drawn afresh each frame: make their HD picture only
-    // while HD art is on.
-    crate::render::vxl_raster::set_hd_poses(hd_art_on);
+    // while the camera zooms in.
+    // The capture zoom above may have changed the wheel's zoom.
+    let zooms_in = state.match_state.input.zoom_level
+        * state.renderer.frame_scale(&state.frontend.screen)
+        > 1.0;
+    crate::render::vxl_raster::set_hd_poses(zooms_in);
     crate::app::input::camera::clamp_camera_to_playable_area(
         &state.platform,
         &state.renderer,
@@ -401,13 +412,26 @@ pub(crate) fn render_game(
     );
     // Publish the final view once: world instances, CPU A admission and GPU
     // palette sampling must use this frame's clamped camera and zoom.
-    state.renderer.batch_renderer.update_camera(
-        &state.renderer.gpu,
-        sw,
-        sh,
-        state.match_state.input.camera_x,
-        state.match_state.input.camera_y,
-        state.match_state.input.zoom_level,
+    //
+    // One camera draws the battlefield at the window's pixels at every zoom
+    // (`docs/zoom-one-pass.md`): the composition is the frame's rect in the
+    // window, the world camera's zoom is the wheel zoom times the Options
+    // scale `frame_scale`, and the UI camera scales the frame's pixels by
+    // `frame_scale`. World pixels stay `frame / z`: what the instances, the
+    // A plane, the Z rows and the stores below count in. Without an Options
+    // zoom (`frame_scale` 1) the composition is the frame and, at wheel zoom
+    // 1, every draw is the original's.
+    let frame_scale = state.renderer.frame_scale(&state.frontend.screen);
+    let (target_width, target_height) = state.renderer.composition_size(&state.frontend.screen);
+    state.renderer.batch_renderer.update_match_camera(
+        &state.renderer.gpu.queue,
+        [target_width as f32, target_height as f32],
+        [
+            state.match_state.input.camera_x,
+            state.match_state.input.camera_y,
+        ],
+        state.match_state.input.zoom_level * frame_scale,
+        frame_scale,
         crate::app::presentation::instances::depth_axis(&state.match_state.match_presentation),
     );
     update_native_z_origin(
@@ -419,42 +443,13 @@ pub(crate) fn render_game(
     );
 
     let local_owner = preferred_local_owner_name(&state.match_state);
-    let translucent_fog = state.translucent_fog_enabled();
+    let translucent_fog = state.platform.translucent_fog_enabled();
     let sandbox = state.match_state.sandbox_full_visibility;
     // Effective viewport in world pixels — zoom shrinks what's visible.
     let z = state.match_state.input.zoom_level;
     let vsw = sw / z;
     let vsh = sh / z;
 
-    // Wheel zoom is a presentation copy of the fully resolved world. Keep all
-    // native source/depth/packed operations on the same one-texel lattice;
-    // filtering each sprite (or its palette indices) loses edges and details.
-    // HD art (`render::hd_switch`) draws its art on the zoom's copy, so it keeps
-    // one at 100% too.
-    if z == 1.0 && !hd_art_on {
-        state.renderer.world_zoom_pass = None;
-    } else {
-        // When the Options zoom scales the frame, the world also goes
-        // straight into the window (`draw_world_window_copy`). At 100% (the
-        // Original shape's bars) the frame's world is already the window's.
-        let window_copy = state.tactical_zoom().is_some_and(|zoom| zoom.percent > 100);
-        let renderer = &mut state.renderer;
-        let gpu = &renderer.gpu;
-        let target = [sw as u32, sh as u32];
-        let pass = renderer.world_zoom_pass.get_or_insert_with(|| {
-            crate::render::upscale_pass::WorldZoomPass::new(
-                &gpu.device,
-                &gpu.queue,
-                gpu.surface_format,
-                target,
-                z,
-            )
-        });
-        pass.set_view(&gpu.device, &gpu.queue, target, z, window_copy);
-        renderer
-            .batch_renderer
-            .set_native_world_resolution(&gpu.queue, pass.source_size());
-    }
     let world_camera = state.renderer.batch_renderer.camera_uniform();
 
     // Phase 1: Build game-world instances (terrain, overlays, entities).
@@ -513,6 +508,28 @@ pub(crate) fn render_game(
             )
         })
     });
+    // VERA-only, experimental: the page declared models draw on this frame,
+    // at the camera's scale.
+    crate::app::presentation::instances::begin_model_frame(state, world_camera.zoom);
+    let presentation = &mut state.match_state.match_presentation;
+    let (device, batch) = (&state.renderer.gpu.device, &state.renderer.batch_renderer);
+    // VERA's HD art (`render::hd_switch`) is sampled inside the ordinary
+    // blitters while the camera zooms in with it on.
+    crate::render::hd_art::bind_hd_twins(
+        device,
+        &state.renderer.gpu.queue,
+        batch,
+        presentation.sprite_atlas.as_mut(),
+        presentation.tile_atlas.as_mut(),
+        presentation.overlay_atlas.as_mut(),
+        world_camera.zoom,
+        hd_art_on,
+    );
+    // VERA-only, experimental (docs/zoom-one-pass.md): picture frames of art
+    // above 1x stream in at their own resolution while the camera zooms in.
+    if let Some(sprites) = presentation.sprite_atlas.as_mut() {
+        sprites.stream_pictures(device, &state.renderer.gpu.queue, batch, world_camera.zoom);
+    }
     let mut world = build_instances::build_world_instances(
         &state.platform,
         &state.renderer,
@@ -552,8 +569,8 @@ pub(crate) fn render_game(
     // Phase 3: Recompose the shroud ABuffer on the GPU, recorded into this
     // frame's encoder ahead of every reader: world blitters, surface lines
     // and A-gated surface stores all sample the same plane.
-    let rw = state.render_width();
-    let rh = state.render_height();
+    let rw = state.renderer.render_width(&state.frontend.screen);
+    let rh = state.renderer.render_height(&state.frontend.screen);
     // F10 cone: the render feed reads through SimView getters. This site
     // holds `&mut state.shroud_buffer`, so it keeps the field chain and views
     // the runtime directly for split borrows.
@@ -665,7 +682,16 @@ pub(crate) fn render_game(
         &state.persistence,
         &local_owner,
     );
-    let ui = build_instances::build_ui_instances(state, clock_ms as u32, &cursor_targets);
+    let ui = build_instances::build_ui_instances(
+        &state.platform,
+        &state.renderer,
+        &state.frontend,
+        &mut state.match_state,
+        &state.process_assets,
+        &state.persistence,
+        clock_ms as u32,
+        &cursor_targets,
+    );
     let after_ui = render_started.map(|_| Instant::now());
 
     // Phase 5: Build sidebar instances, once the smooth sidebar's copies
@@ -732,7 +758,13 @@ pub(crate) fn render_game(
     let composition_view = state.renderer.combat_light_renderer.composition_view();
     // The sidebar and its bar draw into their own surfaces at the Sidebar
     // size.
-    let sidebar_frame = state.sidebar_frame();
+    let sidebar_frame = crate::app::state::sidebar_frame(
+        &state.platform,
+        &state.persistence,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state.match_presentation.sidebar_layout_spec,
+    );
     let renderer = &mut state.renderer;
     let gpu = &renderer.gpu;
     if let Some(surface) = renderer.sidebar_surface.as_mut() {
@@ -752,11 +784,7 @@ pub(crate) fn render_game(
     state.renderer.terrain_draw_renderer.prepare(
         &state.renderer.gpu.device,
         state.renderer.combat_light_renderer.composition_texture(),
-        state
-            .renderer
-            .world_zoom_pass
-            .as_ref()
-            .map_or(&state.renderer.depth_view, |zoom| zoom.depth_view()),
+        &state.renderer.depth_view,
         state.renderer.batch_renderer.camera_uniform(),
     );
     let effects_started = render_started.map(|_| Instant::now());
@@ -771,8 +799,16 @@ pub(crate) fn render_game(
         &state.match_state,
         &state.persistence,
     );
-    let armed_super_weapon = state.armed_super_weapon_type().map(str::to_owned);
-    let armed_building = state.armed_building_type().map(str::to_owned);
+    let armed_super_weapon = state
+        .match_state
+        .input
+        .armed_super_weapon_type()
+        .map(str::to_owned);
+    let armed_building = state
+        .match_state
+        .input
+        .armed_building_type()
+        .map(str::to_owned);
     let cursor_cell = (armed_super_weapon.is_some() || armed_building.is_some()).then(|| {
         crate::app::match_runtime::sim_tick::screen_point_to_world_cell(
             &state.match_state,
@@ -1171,6 +1207,12 @@ fn update_native_z_origin(
 /// line keeps its depth against the objects wherever a layout puts the
 /// battlefield. The original's clip starts at row 0. Its seed is the panned
 /// one (`native_z::ZSeed`).
+///
+/// The logical pixels are world pixels, the frame's divided by the wheel
+/// zoom. The battlefield is drawn at the window's pixels
+/// (`docs/zoom-one-pass.md`), each logical pixel a block of the world
+/// camera's zoom (the wheel zoom times the Options scale), so the viewport
+/// takes the camera's zoom (the stores' zoom mode, 1 at the original's).
 pub(crate) fn tactical_surface_line_viewport(
     platform: &PlatformState,
     renderer: &RendererState,
@@ -1195,7 +1237,8 @@ pub(crate) fn tactical_surface_line_viewport(
         ),
         clip,
         z_origin_y: (2 * clip[1]).wrapping_sub(renderer.native_z_seed.pan()),
-        zoom: 1.0,
+        // The wheel zoom times the Options scale (`render_game`).
+        zoom: renderer.batch_renderer.camera_uniform().zoom,
     }
 }
 
@@ -1393,6 +1436,10 @@ fn upload_to_gpu(
         &state.persistence,
     );
     state.renderer.bit_font.set_raster(frame_raster);
+    // The client modules' panels and the map's overlay (`ui.wasm`, map
+    // `[VeraUI]`): laid out and painted at the frame's pixels, as the
+    // sidebar's text is.
+    crate::app::ui_modules::paint::build(state);
     let [
         message_fill,
         tooltip_fill,
@@ -1438,7 +1485,8 @@ fn upload_to_gpu(
 
     // Ares DisplayCredits' labels draw when Ares plays, the answer under
     // which the sim pays a bounty (`sim::combat::record_kill`).
-    let ares = state.rules().is_some_and(|rules| rules.ares());
+    let ares = crate::app::state::active_rules(&state.frontend, &state.match_state)
+        .is_some_and(|rules| rules.ares());
     let bounty_text = if ares {
         let presentation = &state.match_state.match_presentation;
         if presentation.chrono_screen.overrides_tactical_draw() {
@@ -1518,6 +1566,9 @@ fn upload_to_gpu(
 
     // Residual effects keep their existing uploads and pass ownership.
     pool.upload("cell_sparkles", &world.cell_sparkles);
+    pool.upload("module_field_fill", &world.module_field.fills);
+    pool.upload("module_field_art", &world.module_field.pictures);
+    pool.upload("module_field_text", &world.module_field.text);
     // The parts' pictures come from the sidebar's atlas and zoom with the frame.
     pool.upload(
         "layout_field_art",
@@ -1592,6 +1643,9 @@ fn upload_to_gpu(
     pool.upload("tooltip_fill", &tooltip_fill);
     pool.upload("tooltip_border", &tooltip_border);
     pool.upload("tooltip_text", &tooltip_text);
+    if let Some(ui) = state.match_state.ui_modules.as_ref() {
+        crate::app::ui_modules::paint::upload(ui, &mut pool);
+    }
     rendered_verdict
 }
 

@@ -34,6 +34,12 @@ pub struct PersonalRules {
     /// 15.4); 0 for none. A network room plays its host's.
     #[serde(default)]
     wasm_budget: u32,
+    /// The room switch "Allow automation" (RFC 0001 6i, 10): Wasm client
+    /// modules may send player orders for their player
+    /// (`client_send_order`), and simulation modules read it as the global
+    /// `AutomationAllowed`. Off by default; a network room plays its host's.
+    #[serde(default)]
+    automation_allowed: bool,
 }
 
 impl PersonalRules {
@@ -43,6 +49,14 @@ impl PersonalRules {
 
     pub fn wasm_budget(&self) -> u32 {
         self.wasm_budget
+    }
+
+    pub fn set_automation_allowed(&mut self, allowed: bool) {
+        self.automation_allowed = allowed;
+    }
+
+    pub fn automation_allowed(&self) -> bool {
+        self.automation_allowed
     }
 
     pub fn set_terrain_deformation(&mut self, on: bool) {
@@ -74,7 +88,7 @@ impl PersonalRules {
     /// A switch changes the game: [`Self::scenario_root`] composes it and
     /// [`Self::compatibility_crc`] adds it to the network rules digest.
     pub fn in_effect(&self) -> bool {
-        self.changes_rules() || self.wasm_budget != 0
+        self.changes_rules() || self.wasm_budget != 0 || self.automation_allowed
     }
 
     /// A switch that composes rules into the scenario root.
@@ -135,6 +149,9 @@ impl PersonalRules {
         }
         if self.wasm_budget != 0 {
             header.push_str(&format!("WasmBudget={}\n", self.wasm_budget));
+        }
+        if self.automation_allowed {
+            header.push_str("AllowAutomation=yes\n");
         }
         Some(IniFile::from_str(&header).native_crc())
     }

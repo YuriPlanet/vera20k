@@ -18,6 +18,7 @@ use super::{
 use crate::app::AppState;
 use crate::app::PlatformState;
 use crate::app::audio_runtime::AppAudioRuntime;
+use crate::app::diagnostics::performance_overlay::PerformanceOverlay;
 use crate::app::diagnostics::state::DiagnosticsState;
 use crate::app::frontend::state::FrontendState;
 use crate::app::input::commands::{
@@ -31,6 +32,7 @@ use crate::app::input::sidebar_eva;
 use crate::app::match_runtime::sim_host::SimWrite;
 use crate::app::match_runtime::state::MatchState;
 use crate::app::persistence::PersistenceState;
+use crate::app::persistence::options_profile::RetailOptionsProfile;
 use crate::app::presentation::state::MatchPresentationState;
 use crate::app::process_assets::ProcessAssets;
 use crate::app::renderer_state::RendererState;
@@ -216,7 +218,17 @@ fn handle_hotkey_pressed_inner(
         return;
     }
     match resolution {
-        HotkeyResolution::Command(command) => dispatch_retail_hotkey(state, command),
+        HotkeyResolution::Command(command) => dispatch_retail_hotkey(
+            &mut state.platform,
+            &mut state.renderer,
+            &state.diag,
+            &mut state.frontend,
+            &mut state.match_state,
+            &mut state.process_assets,
+            &mut state.audio,
+            &mut state.persistence,
+            command,
+        ),
         HotkeyResolution::Fallback(HotkeyFallback::DiplomacyDialog) => {
             crate::app::input::diplomacy::open(
                 &mut state.platform,
@@ -247,7 +259,16 @@ fn handle_hotkey_pressed_inner(
             let _ = physical_code;
         }
     }
-    crate::app::presentation::sidebar_render::refresh_sidebar_projection(state);
+    crate::app::presentation::sidebar_render::refresh_sidebar_projection(
+        &state.platform,
+        &state.renderer,
+        &state.diag,
+        &state.frontend,
+        &mut state.match_state,
+        &state.process_assets,
+        &mut state.audio,
+        &state.persistence,
+    );
 }
 
 /// One `Set{Structure,Defense,Infantry,Unit}TabCommandClass::Execute`
@@ -426,7 +447,17 @@ pub(super) fn centre_placement_on_factory(
     );
 }
 
-fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
+fn dispatch_retail_hotkey(
+    platform: &mut PlatformState,
+    renderer: &mut RendererState,
+    diag: &DiagnosticsState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &mut ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    persistence: &mut PersistenceState,
+    command: HotkeyCommand,
+) {
     match command {
         // Held camera commands are sampled by queue_keyboard_scroll.
         HotkeyCommand::CameraUp
@@ -434,388 +465,388 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
         | HotkeyCommand::CameraLeft
         | HotkeyCommand::CameraRight => {}
         HotkeyCommand::HealthNav => selection_navigation::execute_category_navigation(
-            &state.platform,
-            &state.renderer,
-            &state.diag,
-            &state.frontend,
-            &mut state.match_state,
-            &state.process_assets,
-            &mut state.audio.sfx_player,
-            &state.persistence,
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            &mut audio.sfx_player,
+            persistence,
             crate::app::types::CategoryNavigationKind::Health,
         ),
         HotkeyCommand::CombatantSelect => selection_navigation::execute_combatant_selection(
-            &state.platform,
-            &state.renderer,
-            &state.diag,
-            &state.frontend,
-            &mut state.match_state,
-            &state.process_assets,
-            &mut state.audio.sfx_player,
-            &state.persistence,
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            &mut audio.sfx_player,
+            persistence,
         ),
         HotkeyCommand::NextObject => selection_navigation::execute_object_navigation(
-            &state.platform,
-            &mut state.renderer,
-            &state.diag,
-            &state.frontend,
-            &mut state.match_state,
-            &state.process_assets,
-            &mut state.audio.sfx_player,
-            &state.persistence,
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            &mut audio.sfx_player,
+            persistence,
             selection_navigation::ObjectDirection::Next,
         ),
         HotkeyCommand::PreviousObject => selection_navigation::execute_object_navigation(
-            &state.platform,
-            &mut state.renderer,
-            &state.diag,
-            &state.frontend,
-            &mut state.match_state,
-            &state.process_assets,
-            &mut state.audio.sfx_player,
-            &state.persistence,
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            &mut audio.sfx_player,
+            persistence,
             selection_navigation::ObjectDirection::Previous,
         ),
         HotkeyCommand::CursorCheat => {
             // 537EF0: flag only; the next mouse move refreshes the tooltip.
-            state.match_state.input.cursor_coordinates =
-                !state.match_state.input.cursor_coordinates;
+            match_state.input.cursor_coordinates = !match_state.input.cursor_coordinates;
         }
         HotkeyCommand::StopObject => queue_stop_for_selected(
-            &state.platform,
-            &state.renderer,
-            &state.diag,
-            &state.frontend,
-            &mut state.match_state,
-            &state.process_assets,
-            &mut state.audio.sfx_player,
-            &state.persistence,
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            &mut audio.sfx_player,
+            persistence,
         ),
         HotkeyCommand::DeployObject => queue_deploy_undeploy_for_selected(
-            &state.platform,
-            &state.renderer,
-            &state.diag,
-            &state.frontend,
-            &mut state.match_state,
-            &state.process_assets,
-            &mut state.audio.sfx_player,
-            &state.persistence,
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            &mut audio.sfx_player,
+            persistence,
         ),
         HotkeyCommand::GuardObject => queue_guard_for_selected(
-            &state.platform,
-            &state.renderer,
-            &state.diag,
-            &state.frontend,
-            &mut state.match_state,
-            &state.process_assets,
-            &mut state.audio.sfx_player,
-            &state.persistence,
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            &mut audio.sfx_player,
+            persistence,
         ),
         // Set{Structure,Defense,Infantry,Unit}TabCommandClass::Execute
         // 535D90/535E50/535F10/535FA0: the target strip must hold an entry, and
         // the two structure tabs then place their completed building.
         HotkeyCommand::StructureTab => select_sidebar_tab_command(
-            &state.platform,
-            &state.renderer,
-            &state.diag,
-            &state.frontend,
-            &mut state.match_state,
-            &state.process_assets,
-            &mut state.audio.sfx_player,
-            &state.persistence,
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            &mut audio.sfx_player,
+            persistence,
             0,
         ),
         HotkeyCommand::DefenseTab => select_sidebar_tab_command(
-            &state.platform,
-            &state.renderer,
-            &state.diag,
-            &state.frontend,
-            &mut state.match_state,
-            &state.process_assets,
-            &mut state.audio.sfx_player,
-            &state.persistence,
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            &mut audio.sfx_player,
+            persistence,
             1,
         ),
         HotkeyCommand::InfantryTab => select_sidebar_tab_command(
-            &state.platform,
-            &state.renderer,
-            &state.diag,
-            &state.frontend,
-            &mut state.match_state,
-            &state.process_assets,
-            &mut state.audio.sfx_player,
-            &state.persistence,
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            &mut audio.sfx_player,
+            persistence,
             2,
         ),
         HotkeyCommand::UnitTab => select_sidebar_tab_command(
-            &state.platform,
-            &state.renderer,
-            &state.diag,
-            &state.frontend,
-            &mut state.match_state,
-            &state.process_assets,
-            &mut state.audio.sfx_player,
-            &state.persistence,
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            &mut audio.sfx_player,
+            persistence,
             3,
         ),
         // TypeSelect owns both edges in `handle_type_select_key_edge`.
         HotkeyCommand::TypeSelect => {}
         HotkeyCommand::ToggleRepair => apply_sidebar_action(
-            &mut state.platform,
-            &state.renderer,
-            &state.diag,
-            &mut state.frontend,
-            &mut state.match_state,
-            &state.process_assets,
-            &mut state.audio,
-            &mut state.persistence,
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            audio,
+            persistence,
             SidebarAction::ToggleRepairMode,
         ),
         HotkeyCommand::ToggleSell => apply_sidebar_action(
-            &mut state.platform,
-            &state.renderer,
-            &state.diag,
-            &mut state.frontend,
-            &mut state.match_state,
-            &state.process_assets,
-            &mut state.audio,
-            &mut state.persistence,
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            audio,
+            persistence,
             SidebarAction::ToggleSellMode,
         ),
-        HotkeyCommand::CenterBase => jump_camera_to_base(
-            &state.platform,
-            &mut state.renderer,
-            &state.frontend,
-            &mut state.match_state,
-            &state.persistence,
-        ),
+        HotkeyCommand::CenterBase => {
+            jump_camera_to_base(platform, renderer, frontend, match_state, persistence)
+        }
         HotkeyCommand::CenterOnRadarEvent => {
             // Native's eight-cell review ring lives in RadarClass and holds
             // the cell of every accepted event, whatever its type.
-            let event = state
-                .match_state
+            let event = match_state
                 .match_presentation
                 .minimap
                 .as_mut()
                 .and_then(|minimap| minimap.cycle_radar_event(crate::util::time::Instant::now()));
             if let Some((rx, ry)) = event {
                 crate::app::input::camera::center_camera_on_cell(
-                    &state.platform,
-                    &state.renderer,
-                    &state.frontend.screen,
-                    &mut state.match_state,
-                    &state.persistence,
+                    platform,
+                    renderer,
+                    &frontend.screen,
+                    match_state,
+                    persistence,
                     rx,
                     ry,
                 );
                 // With a building armed, its foundation follows the cursor's
                 // new Cell (`Center_View_On_Radar_Event`, `0x00734200`).
                 crate::app::match_runtime::sim_tick::update_building_placement_preview(
-                    &state.platform,
-                    &state.renderer,
-                    &state.frontend,
-                    &mut state.match_state,
-                    &state.persistence,
+                    platform,
+                    renderer,
+                    frontend,
+                    match_state,
+                    persistence,
                     crate::app::match_runtime::sim_tick::FoundationCentre::Cursor,
                 );
             }
         }
         HotkeyCommand::ScreenCapture => {
-            state.match_state.input.retail_screenshot_requested = true;
-            state.platform.window.request_redraw();
+            match_state.input.retail_screenshot_requested = true;
+            platform.window.request_redraw();
         }
         HotkeyCommand::View(slot) => crate::app::input::camera::recall_view_bookmark(
-            &state.platform,
-            &state.renderer,
-            &state.frontend,
-            &mut state.match_state,
-            &state.persistence,
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            persistence,
             slot,
         ),
         HotkeyCommand::SetView(slot) => crate::app::input::camera::set_view_bookmark(
-            &state.platform,
-            &state.renderer,
-            &state.frontend.screen,
-            &mut state.match_state,
-            &state.persistence,
+            platform,
+            renderer,
+            &frontend.screen,
+            match_state,
+            persistence,
             slot,
         ),
         HotkeyCommand::TeamSelect(slot) => handle_control_group_command(
-            &state.platform,
-            &mut state.renderer,
-            &state.diag,
-            &state.frontend,
-            &mut state.match_state,
-            &state.process_assets,
-            &mut state.audio.sfx_player,
-            &state.persistence,
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            &mut audio.sfx_player,
+            persistence,
             slot,
             GroupPress::Key,
         ),
         HotkeyCommand::TeamAddSelect(slot) => handle_control_group_command(
-            &state.platform,
-            &mut state.renderer,
-            &state.diag,
-            &state.frontend,
-            &mut state.match_state,
-            &state.process_assets,
-            &mut state.audio.sfx_player,
-            &state.persistence,
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            &mut audio.sfx_player,
+            persistence,
             slot,
             GroupPress::Fixed(GroupPressAction::AddToSelection),
         ),
         HotkeyCommand::TeamCreate(slot) => handle_control_group_command(
-            &state.platform,
-            &mut state.renderer,
-            &state.diag,
-            &state.frontend,
-            &mut state.match_state,
-            &state.process_assets,
-            &mut state.audio.sfx_player,
-            &state.persistence,
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            &mut audio.sfx_player,
+            persistence,
             slot,
             GroupPress::Fixed(GroupPressAction::Assign),
         ),
         HotkeyCommand::TeamCenter(slot) => handle_control_group_command(
-            &state.platform,
-            &mut state.renderer,
-            &state.diag,
-            &state.frontend,
-            &mut state.match_state,
-            &state.process_assets,
-            &mut state.audio.sfx_player,
-            &state.persistence,
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            &mut audio.sfx_player,
+            persistence,
             slot,
             GroupPress::Fixed(GroupPressAction::Center),
         ),
         // Native SidebarUp/Down execute SidebarClass::Scroll 0x6A6A00 on the
         // active strip (up=true/false, tab -1), as the wheel does.
         HotkeyCommand::SidebarUp => sidebar_scroll_command(
-            &state.platform,
-            &state.renderer,
-            &state.frontend.screen,
-            &mut state.match_state,
-            &state.persistence,
+            platform,
+            renderer,
+            &frontend.screen,
+            match_state,
+            persistence,
             WheelAction::SidebarUp,
         ),
         HotkeyCommand::SidebarDown => sidebar_scroll_command(
-            &state.platform,
-            &state.renderer,
-            &state.frontend.screen,
-            &mut state.match_state,
-            &state.persistence,
+            platform,
+            renderer,
+            &frontend.screen,
+            match_state,
+            persistence,
             WheelAction::SidebarDown,
         ),
         // VERA: Esc leaves the layout edit mode without saving, before it
         // would open the menu.
         HotkeyCommand::Options
-            if crate::app::input::layout_edit::active(&state.match_state.match_presentation)
-                && !state.match_state.paused() =>
+            if crate::app::input::layout_edit::active(&match_state.match_presentation)
+                && !match_state.paused() =>
         {
-            crate::app::input::layout_edit::cancel(state)
+            crate::app::input::layout_edit::cancel(
+                platform,
+                renderer,
+                diag,
+                frontend,
+                match_state,
+                process_assets,
+                audio,
+                persistence,
+            )
         }
         HotkeyCommand::Options => handle_options_hotkey(
-            &mut state.platform,
-            &state.renderer,
-            &mut state.frontend,
-            &mut state.match_state,
-            &state.process_assets,
-            &mut state.audio,
-            &mut state.persistence,
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            process_assets,
+            audio,
+            persistence,
         ),
         HotkeyCommand::CenterView => crate::app::input::camera::center_view_on_selection(
-            &state.platform,
-            &mut state.renderer,
-            &state.frontend,
-            &mut state.match_state,
-            &state.persistence,
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            persistence,
         ),
         HotkeyCommand::Follow => {
-            crate::app::input::camera::toggle_follow_target(&state.frontend, &mut state.match_state)
+            crate::app::input::camera::toggle_follow_target(frontend, match_state)
         }
         HotkeyCommand::PlanningMode => crate::app::input::planning_mode::toggle(
-            &state.platform,
-            &state.renderer,
-            &state.diag,
-            &state.frontend,
-            &mut state.match_state,
-            &state.process_assets,
-            &state.persistence,
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            persistence,
             false,
         ),
         // DeleteCommand731A10: the retained planning node, else the selected beacon.
         HotkeyCommand::Delete => {
-            if !crate::app::input::planning_mode::delete_highlighted(&mut state.match_state) {
-                crate::app::input::beacon::delete_selected(&mut state.match_state);
+            if !crate::app::input::planning_mode::delete_highlighted(match_state) {
+                crate::app::input::beacon::delete_selected(match_state);
             }
         }
         HotkeyCommand::ScatterObject => queue_scatter_for_selected(
-            &state.platform,
-            &state.renderer,
-            &state.diag,
-            &state.frontend,
-            &mut state.match_state,
-            &state.process_assets,
-            &mut state.audio.sfx_player,
-            &state.persistence,
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            &mut audio.sfx_player,
+            persistence,
         ),
-        HotkeyCommand::AllToCheer => queue_house_cheer(&mut state.match_state),
+        HotkeyCommand::AllToCheer => queue_house_cheer(match_state),
         HotkeyCommand::VeterancyNav => selection_navigation::execute_category_navigation(
-            &state.platform,
-            &state.renderer,
-            &state.diag,
-            &state.frontend,
-            &mut state.match_state,
-            &state.process_assets,
-            &mut state.audio.sfx_player,
-            &state.persistence,
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            &mut audio.sfx_player,
+            persistence,
             crate::app::types::CategoryNavigationKind::Veterancy,
         ),
-        HotkeyCommand::ToggleAlliance => crate::app::input::diplomacy::toggle_alliance_hotkey(
-            &state.frontend,
-            &mut state.match_state,
-        ),
+        HotkeyCommand::ToggleAlliance => {
+            crate::app::input::diplomacy::toggle_alliance_hotkey(frontend, match_state)
+        }
         // `TauntCommandClass::Execute 0x00536350`; the command's +4
         // parameter is the catalog's `n + 1`.
         HotkeyCommand::Taunt(n) => crate::app::input::taunt::execute(
-            &mut state.frontend.multiplayer_shell_runtime,
-            &mut state.match_state,
-            &state.process_assets,
-            &mut state.audio,
+            &mut frontend.multiplayer_shell_runtime,
+            match_state,
+            process_assets,
+            audio,
             n as u8 + 1,
             crate::app::match_runtime::frame_pacer::wall_clock_ms(),
         ),
-        HotkeyCommand::PageUser => crate::app::input::page_user::execute(state),
         HotkeyCommand::PlaceBeacon => crate::app::input::beacon::execute_command(
-            &state.platform,
-            &state.renderer,
-            &state.diag,
-            &state.frontend,
-            &mut state.match_state,
-            &state.process_assets,
-            &mut state.audio.sfx_player,
-            &state.persistence,
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            &mut audio.sfx_player,
+            persistence,
         ),
         #[cfg(feature = "phobos")]
         HotkeyCommand::FireTacticalSw(index) => {
-            if state
-                .rules()
+            if crate::app::state::active_rules(frontend, match_state)
                 .is_some_and(|rules| rules.sw_sidebar.keys_enabled)
                 && let Some(entry) = crate::app::presentation::sw_sidebar::positional_entry(
-                    &state.match_state.match_presentation,
+                    &match_state.match_presentation,
                     index,
                 )
             {
                 let type_id = entry.type_id.clone();
                 press_super_weapon(
-                    &state.platform,
-                    &state.renderer,
-                    &state.diag,
-                    &state.frontend,
-                    &mut state.match_state,
-                    &state.process_assets,
-                    &mut state.audio.sfx_player,
-                    &state.persistence,
+                    platform,
+                    renderer,
+                    diag,
+                    frontend,
+                    match_state,
+                    process_assets,
+                    &mut audio.sfx_player,
+                    persistence,
                     &type_id,
                     false,
                     false,
@@ -824,47 +855,50 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
         }
         #[cfg(feature = "phobos")]
         HotkeyCommand::ToggleSwSidebar => {
-            if state
-                .rules()
+            if crate::app::state::active_rules(frontend, match_state)
                 .is_some_and(|rules| rules.sw_sidebar.toggle_key_enabled)
-                && crate::app::presentation::sw_sidebar::toggle(
-                    &mut state.match_state.match_presentation,
-                )
+                && crate::app::presentation::sw_sidebar::toggle(&mut match_state.match_presentation)
             {
                 crate::app::input::chrome_input::play_gui_main_button_sound(
-                    &state.frontend,
-                    &state.match_state,
-                    &state.process_assets,
-                    &mut state.audio.sfx_player,
+                    frontend,
+                    match_state,
+                    process_assets,
+                    &mut audio.sfx_player,
                 );
-                crate::app::presentation::sidebar_render::refresh_sidebar_projection(state);
+                crate::app::presentation::sidebar_render::refresh_sidebar_projection(
+                    platform,
+                    renderer,
+                    diag,
+                    frontend,
+                    match_state,
+                    process_assets,
+                    audio,
+                    persistence,
+                );
             }
         }
         HotkeyCommand::AutoLoad => crate::app::input::smart_command::hotkey_pressed(
-            &state.platform,
-            &state.renderer,
-            &state.diag,
-            &state.frontend,
-            &mut state.match_state,
-            &state.process_assets,
-            &mut state.audio.sfx_player,
-            &state.persistence,
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            &mut audio.sfx_player,
+            persistence,
         ),
         HotkeyCommand::FpsCounter => {
-            crate::app::presentation::ares_tactical_text::execute_fps_counter(
-                &state.frontend,
-                &mut state.match_state,
-            )
+            crate::app::presentation::ares_tactical_text::execute_fps_counter(frontend, match_state)
         }
         HotkeyCommand::TogglePower => crate::app::input::power_mode::execute_command(
-            &state.platform,
-            &state.renderer,
-            &state.diag,
-            &state.frontend,
-            &mut state.match_state,
-            &state.process_assets,
-            &mut state.audio.sfx_player,
-            &state.persistence,
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            &mut audio.sfx_player,
+            persistence,
         ),
         // A chord runs in the window owner before this dispatch; a binding on
         // a typing key reaches here, after the chat edit.
@@ -872,27 +906,38 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
         | HotkeyCommand::ThreadStats
         | HotkeyCommand::LockCursor
         | HotkeyCommand::FullScreen
-        | HotkeyCommand::StringKeys => run_window_command(state, command),
+        | HotkeyCommand::StringKeys => run_window_command(
+            platform,
+            &mut renderer.performance_overlay,
+            frontend,
+            match_state,
+            process_assets,
+            &persistence.options_profile,
+            command,
+        ),
         // VERA: the mouse drags the interface's parts until Save, or until
         // the key comes again and puts them back.
-        HotkeyCommand::LayoutEdit => crate::app::input::layout_edit::toggle(state),
+        HotkeyCommand::LayoutEdit => crate::app::input::layout_edit::toggle(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            audio,
+            persistence,
+        ),
         // VERA: show or hide the countdown above every provider building.
         // Presentation only, and saved under the same `[VERA]` key the old
         // Options box wrote, so a match's choice seeds the next scenario.
         HotkeyCommand::SuperweaponTimers => {
-            let timers = &mut state
-                .match_state
-                .match_presentation
-                .superweapon_building_timers;
+            let timers = &mut match_state.match_presentation.superweapon_building_timers;
             *timers = !*timers;
             let on = *timers;
-            state
-                .persistence
-                .options_profile
-                .superweapon_building_timers = on;
+            persistence.options_profile.superweapon_building_timers = on;
             crate::app::persistence::options::persist_options_profile(
-                &state.platform,
-                &state.persistence.options_profile,
+                platform,
+                &persistence.options_profile,
             );
             log::info!(
                 "Super weapon building timers: {}",
@@ -904,14 +949,14 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
         // and saved under the same `[VERA]` key the Options box writes, so a
         // match's choice seeds the next scenario.
         HotkeyCommand::ConvenienceHelp => {
-            let help = &mut state.match_state.match_presentation.convenience_help;
+            let help = &mut match_state.match_presentation.convenience_help;
             *help = !*help;
             let on = *help;
-            state.persistence.options_profile.convenience_help = on;
-            state.match_state.sim_runtime.show_status_rows(on);
+            persistence.options_profile.convenience_help = on;
+            match_state.sim_runtime.show_status_rows(on);
             crate::app::persistence::options::persist_options_profile(
-                &state.platform,
-                &state.persistence.options_profile,
+                platform,
+                &persistence.options_profile,
             );
             log::info!("Convenience help: {}", if on { "shown" } else { "hidden" });
         }
@@ -919,29 +964,29 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
         HotkeyCommand::FormationLine => {}
         HotkeyCommand::FormationLock => {
             crate::app::input::context_order::toggle_formation_lock(
-                &state.platform,
-                &state.renderer,
-                &state.diag,
-                &state.frontend,
-                &mut state.match_state,
-                &state.process_assets,
-                &mut state.audio.sfx_player,
-                &state.persistence,
+                platform,
+                renderer,
+                diag,
+                frontend,
+                match_state,
+                process_assets,
+                &mut audio.sfx_player,
+                persistence,
             );
         }
         // VERA: the next left click names the drop spot.
-        HotkeyCommand::Ferry => crate::app::input::ferry::hotkey_pressed(&mut state.match_state),
+        HotkeyCommand::Ferry => crate::app::input::ferry::hotkey_pressed(match_state),
         // VERA: the selected factories take turns being primary.
         HotkeyCommand::RotatePrimary => {
             crate::app::input::primary_rotation::hotkey_pressed(
-                &state.platform,
-                &state.renderer,
-                &state.diag,
-                &state.frontend,
-                &mut state.match_state,
-                &state.process_assets,
-                &mut state.audio.sfx_player,
-                &state.persistence,
+                platform,
+                renderer,
+                diag,
+                frontend,
+                match_state,
+                process_assets,
+                &mut audio.sfx_player,
+                persistence,
             );
         }
         // VERA: toggle relation colours — recolour the world's units and
@@ -951,9 +996,15 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
         // who is who. Pure presentation: it never touches the simulation, so it
         // cannot affect determinism, networking, or replays.
         HotkeyCommand::RelationColors => {
-            let presentation = &mut state.match_state.match_presentation;
+            let presentation = &mut match_state.match_presentation;
             presentation.relation_colors = !presentation.relation_colors;
-            state.match_state.refresh_relation_colors();
+            // Both toggles write the same override map, so turning one on
+            // turns the other off rather than leaving the last word to the
+            // rebuild order.
+            if presentation.relation_colors {
+                presentation.team_colors = false;
+            }
+            match_state.refresh_relation_colors();
         }
         // VERA: turn HD art on or off at once (the HD art over the world and
         // the HD sidebar). The same setting as the Options list, saved like
@@ -964,36 +1015,70 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
             // needs and change nothing.
             if !crate::render::hd_art::pack_available() {
                 crate::app::input::messages::post_hd_art(
-                    &state.platform,
-                    &state.renderer,
-                    &state.diag,
-                    &state.frontend,
-                    &mut state.match_state,
-                    &state.process_assets,
-                    &mut state.audio.sfx_player,
-                    &state.persistence,
+                    platform,
+                    renderer,
+                    diag,
+                    frontend,
+                    match_state,
+                    process_assets,
+                    &mut audio.sfx_player,
+                    persistence,
                     None,
                 );
                 return;
             }
-            let on = !crate::app::state::hd_art_on(&state.persistence).0;
-            state.persistence.options_profile.hd_art_on = on;
+            let on = !crate::app::state::hd_art_on(persistence).0;
+            persistence.options_profile.hd_art_on = on;
             crate::app::persistence::options::persist_options_profile(
-                &state.platform,
-                &state.persistence.options_profile,
+                platform,
+                &persistence.options_profile,
             );
             crate::app::input::messages::post_hd_art(
-                &state.platform,
-                &state.renderer,
-                &state.diag,
-                &state.frontend,
-                &mut state.match_state,
-                &state.process_assets,
-                &mut state.audio.sfx_player,
-                &state.persistence,
+                platform,
+                renderer,
+                diag,
+                frontend,
+                match_state,
+                process_assets,
+                &mut audio.sfx_player,
+                persistence,
                 Some(on),
             );
             log::info!("HD art: {}", if on { "on" } else { "off" });
+        }
+        // VERA: toggle team colours — draw every house by its launch team, so
+        // one team shares one colour on the map and the radar. Unlike the
+        // relation toggle this groups by the match's real teams, which never
+        // change, and not by the alliance graph, which does. Pure
+        // presentation, like the relation toggle.
+        HotkeyCommand::TeamColours => {
+            let presentation = &mut match_state.match_presentation;
+            presentation.team_colors = !presentation.team_colors;
+            if presentation.team_colors {
+                presentation.relation_colors = false;
+            }
+            match_state.refresh_relation_colors();
+            // The toggle is silent when no house carries a team, which is
+            // what a player who never picked teams sees; name it in the log
+            // rather than leaving "the key did nothing".
+            let recoloured = match_state
+                .match_presentation
+                .relation_color_map
+                .as_ref()
+                .map_or(0, |map| {
+                    let plain = &match_state.match_presentation.house_color_map;
+                    map.iter()
+                        .filter(|(owner, color)| plain.get(*owner) != Some(*color))
+                        .count()
+                });
+            log::info!(
+                "VERA team colours {}: {recoloured} house(s) recoloured",
+                if match_state.match_presentation.team_colors {
+                    "on"
+                } else {
+                    "off"
+                }
+            );
         }
     }
 }
@@ -1022,51 +1107,45 @@ fn follow_performance_stats(
 /// dispatch for a binding on a typing key.
 ///
 /// [`HotkeyBindings::window_command`]: crate::app::input::hotkeys::HotkeyBindings::window_command
-pub(crate) fn run_window_command(state: &mut AppState, command: HotkeyCommand) {
+pub(crate) fn run_window_command(
+    platform: &mut PlatformState,
+    performance_overlay: &mut PerformanceOverlay,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &mut ProcessAssets,
+    options_profile: &RetailOptionsProfile,
+    command: HotkeyCommand,
+) {
     match command {
-        HotkeyCommand::LockCursor => {
-            crate::app::input::cursor::toggle_cursor_confinement(&mut state.platform)
-        }
+        HotkeyCommand::LockCursor => crate::app::input::cursor::toggle_cursor_confinement(platform),
         // A capture keeps its fixed surface.
-        HotkeyCommand::FullScreen if state.platform.capture_client_size.is_none() => {
-            let full_screen = state.platform.window.fullscreen().is_none();
-            crate::app::App::set_full_screen(
-                &mut state.platform,
-                &state.persistence.options_profile,
-                full_screen,
-            );
+        HotkeyCommand::FullScreen if platform.capture_client_size.is_none() => {
+            let full_screen = platform.window.fullscreen().is_none();
+            crate::app::App::set_full_screen(platform, options_profile, full_screen);
         }
         HotkeyCommand::PerformanceStats => {
-            let shown = state.renderer.performance_overlay.toggle();
-            follow_performance_stats(
-                &mut state.frontend,
-                &mut state.match_state.match_presentation,
-                shown,
-            );
+            let shown = performance_overlay.toggle();
+            follow_performance_stats(frontend, &mut match_state.match_presentation, shown);
         }
         // The rows are the panel's: asking for them while it is hidden
         // shows it.
         HotkeyCommand::ThreadStats => {
-            let rows = state.renderer.performance_overlay.toggle_thread_rows();
-            if rows && !state.renderer.performance_overlay.is_visible() {
-                state.renderer.performance_overlay.set_visible(true);
-                follow_performance_stats(
-                    &mut state.frontend,
-                    &mut state.match_state.match_presentation,
-                    true,
-                );
+            let rows = performance_overlay.toggle_thread_rows();
+            if rows && !performance_overlay.is_visible() {
+                performance_overlay.set_visible(true);
+                follow_performance_stats(frontend, &mut match_state.match_presentation, true);
             }
             log::info!("Thread stats: {}", if rows { "shown" } else { "hidden" });
         }
         HotkeyCommand::StringKeys => crate::app::shell_main_menu::toggle_string_keys_view(
-            &state.platform.window,
-            &mut state.frontend,
-            &mut state.match_state,
-            &mut state.process_assets,
+            &platform.window,
+            frontend,
+            match_state,
+            process_assets,
         ),
         _ => return,
     }
-    state.platform.window.request_redraw();
+    platform.window.request_redraw();
 }
 
 /// A superweapon cameo press. Phobos's `FireTacticalSW` keys call
@@ -1205,30 +1284,37 @@ pub(super) fn press_super_weapon(
 /// Native command-bar IDs use the same command endpoints as keyboard input.
 /// Team right-click clears its group (6D0660); the other source actions reuse
 /// the existing input owners rather than introducing a second gameplay path.
-pub(crate) fn dispatch_command_bar(state: &mut AppState, command: usize, right: bool) {
-    if crate::app::input::campaign_input::is_locked(&state.match_state) {
+pub(crate) fn dispatch_command_bar(
+    platform: &mut PlatformState,
+    renderer: &mut RendererState,
+    diag: &DiagnosticsState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &mut ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    persistence: &mut PersistenceState,
+    command: usize,
+    right: bool,
+) {
+    if crate::app::input::campaign_input::is_locked(match_state) {
         return;
     }
     let action = match command {
         0..=2 => {
             let group = command + 1;
             if right {
-                queue_control_group_assignment(
-                    &mut state.match_state.sim_runtime,
-                    group,
-                    Vec::new(),
-                );
+                queue_control_group_assignment(&mut match_state.sim_runtime, group, Vec::new());
                 return;
             }
             handle_control_group_command(
-                &state.platform,
-                &mut state.renderer,
-                &state.diag,
-                &state.frontend,
-                &mut state.match_state,
-                &state.process_assets,
-                &mut state.audio.sfx_player,
-                &state.persistence,
+                platform,
+                renderer,
+                diag,
+                frontend,
+                match_state,
+                process_assets,
+                &mut audio.sfx_player,
+                persistence,
                 group,
                 GroupPress::CommandBar,
             );
@@ -1236,20 +1322,20 @@ pub(crate) fn dispatch_command_bar(state: &mut AppState, command: usize, right: 
         }
         3 => {
             execute_type_select_tap(
-                &state.platform,
-                &state.renderer,
-                &state.diag,
-                &state.frontend,
-                &mut state.match_state,
-                &state.process_assets,
-                &mut state.audio.sfx_player,
-                &state.persistence,
+                platform,
+                renderer,
+                diag,
+                frontend,
+                match_state,
+                process_assets,
+                &mut audio.sfx_player,
+                persistence,
             );
             return;
         }
         4 => HotkeyCommand::DeployObject,
         5 => {
-            state.match_state.input.queued_order_mode = OrderMode::AttackMove;
+            match_state.input.queued_order_mode = OrderMode::AttackMove;
             return;
         }
         6 => HotkeyCommand::GuardObject,
@@ -1257,27 +1343,27 @@ pub(crate) fn dispatch_command_bar(state: &mut AppState, command: usize, right: 
         // directly, without the key's GameMode gate.
         7 => {
             crate::app::input::beacon::enter_placement_mode(
-                &state.platform,
-                &state.renderer,
-                &state.diag,
-                &state.frontend,
-                &mut state.match_state,
-                &state.process_assets,
-                &mut state.audio.sfx_player,
-                &state.persistence,
+                platform,
+                renderer,
+                diag,
+                frontend,
+                match_state,
+                process_assets,
+                &mut audio.sfx_player,
+                persistence,
             );
             return;
         }
         8 => HotkeyCommand::StopObject,
         9 => {
             crate::app::input::planning_mode::toggle(
-                &state.platform,
-                &state.renderer,
-                &state.diag,
-                &state.frontend,
-                &mut state.match_state,
-                &state.process_assets,
-                &state.persistence,
+                platform,
+                renderer,
+                diag,
+                frontend,
+                match_state,
+                process_assets,
+                persistence,
                 true,
             );
             return;
@@ -1285,7 +1371,17 @@ pub(crate) fn dispatch_command_bar(state: &mut AppState, command: usize, right: 
         10 => HotkeyCommand::AllToCheer,
         _ => return,
     };
-    dispatch_retail_hotkey(state, action);
+    dispatch_retail_hotkey(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        audio,
+        persistence,
+        action,
+    );
 }
 
 // Native 653952 -> GameState1 -> 48C9BA/4F10E0 opens the pause menu.

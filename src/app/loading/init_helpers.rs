@@ -368,6 +368,9 @@ pub(crate) fn bind_rules_art_metadata(
 ) {
     // ARTMD is read the way the game's Rules were (`ares_switch::ares_way`).
     let _ares_way = crate::rules::ares_switch::read_ares_way(rules.reads_ares_way());
+    // This load's art problems, shown once its match has loaded
+    // (`input::messages::post_art_problems`), start here.
+    crate::rules::art_problems::begin();
     rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(fixed_art));
     let (populated, fallback) = rules.populate_anim_frame_dims(assets, theater_ext, theater_name);
     log::info!("Anim frame dims: {populated} populated, {fallback} fallback (defaults to 30x30)");
@@ -514,9 +517,10 @@ pub(crate) fn prepare_presentation_manifest(
     // drawn the first time a frame shows it.
     let mut unit_atlas = None;
     if palette.is_some() {
-        unit_atlas::admit_world_models(
+        unit_atlas::admit_world_and_image_models(
             &mut unit_atlas,
             sim.entities(),
+            sim.ext_module_images(),
             asset_manager,
             rules,
             Some(sim.interner()),
@@ -730,9 +734,15 @@ pub(crate) fn finish_presentation_assets(
             batch,
             asset_manager,
             rules.ares_mouse_cursors(),
+            crate::render::interface_picture::PictureSizes::Art(rules.art()),
         )
     } else {
-        crate::render::cursor_atlas::build_software_cursor(gpu, batch, asset_manager)
+        crate::render::cursor_atlas::build_software_cursor(
+            gpu,
+            batch,
+            asset_manager,
+            crate::render::interface_picture::PictureSizes::Art(rules.art()),
+        )
     };
     if software_cursor.is_some() {
         log::info!("Software cursor loaded from mouse.sha — OS cursor will be hidden");
@@ -792,6 +802,10 @@ fn voxel_palette_demand(
     use crate::rules::house_colors::HouseColorIndex;
     let mut colors: Vec<_> = house_colors.values().copied().collect();
     if let Some(rules) = rules {
+        // The team-colour view (Alt+T) paints enemy houses in colours no
+        // active house carries, so their ramp rows must be uploaded up front
+        // like the relation bands' are.
+        colors.extend(rules.enemy_team_palette.entries().iter().copied());
         colors.extend(
             rules
                 .projectiles_iter()

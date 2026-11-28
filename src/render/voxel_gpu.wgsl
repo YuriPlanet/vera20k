@@ -122,6 +122,17 @@ fn vs_paint(@location(0) voxel: vec3u) -> Store {
     return place(pixel, f32(order) / 16777216.0, index);
 }
 
+// 757980/757BF0 store the colour at two consecutive raw addresses after one
+// successful host depth comparison. A neighbouring row can receive the
+// second store; a second address past 65535 lands outside every valid crop.
+@vertex
+fn vs_buffered(@builtin(vertex_index) second: u32, @builtin(instance_index) instance: u32,
+               @location(0) store: u32) -> Store {
+    let address = (store & 65535u) + second;
+    let pixel = vec2i(i32(address & 255u), i32(address >> 8u));
+    return place(pixel, f32(instance + 1u) / 16777216.0, (store >> 16u) & 255u);
+}
+
 // One marked column, x | y << 8; the second store is the adjacent byte.
 @vertex
 fn vs_stencil(@builtin(vertex_index) second: u32, @location(0) column: u32) -> Store {

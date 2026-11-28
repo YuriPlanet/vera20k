@@ -650,9 +650,15 @@ impl Gui {
                 InputResult { passthrough: None, consumed: modal }
             }
             InputEvent::Wheel { lines, .. } => {
-                let target = self.top_pointer().hovered.filter(|n| self.tree.kind(*n) == Ok(NodeKind::List));
-                let scrolled = target
-                    .is_some_and(|n| self.with_ctx(now, |ctx| widget::list::wheel(ctx, n, lines)));
+                let target = self.top_pointer().hovered;
+                let scrolled = target.is_some_and(|n| {
+                    self.with_ctx(now, |ctx| match ctx.tree.kind(n) {
+                        Ok(NodeKind::List) => widget::list::wheel(ctx, n, lines),
+                        #[cfg(target_os = "android")]
+                        Ok(NodeKind::Trackbar) => widget::trackbar::wheel(ctx, n, lines),
+                        _ => false,
+                    })
+                });
                 InputResult { passthrough: None, consumed: scrolled || modal }
             }
             InputEvent::Key(key) => {

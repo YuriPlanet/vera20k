@@ -261,18 +261,26 @@ fn tactical_world_tip_text(
     world: (f32, f32),
     cursor_coordinates: bool,
 ) -> String {
-    tactical_world_tip_text_for_viewer(view, rules, csf, world, cursor_coordinates, None, None)
+    let source = crate::app::input::entity_pick::PresentedWorld {
+        sim: view.simulation(),
+        rules: Some(rules),
+        translucent_viewer: None,
+        unit_motion: None,
+    };
+    tactical_world_tip_text_for_viewer(view, source, csf, world, cursor_coordinates, None)
 }
 
 fn tactical_world_tip_text_for_viewer(
     view: crate::sim::runtime::SimView<'_>,
-    rules: &crate::rules::ruleset::RuleSet,
+    source: crate::app::input::entity_pick::PresentedWorld<'_>,
     csf: Option<&crate::assets::csf_file::CsfFile>,
     world: (f32, f32),
     cursor_coordinates: bool,
-    translucent_viewer: Option<crate::sim::intern::InternedId>,
     frame: Option<&crate::app::presentation::frame::PresentationFrame>,
 ) -> String {
+    let Some(rules) = source.rules else {
+        return String::new();
+    };
     let Some((terrain, viewer)) = view.resolved_terrain().zip(view.session().current_house())
     else {
         return String::new();
@@ -304,11 +312,7 @@ fn tactical_world_tip_text_for_viewer(
         }
     };
     let picked = crate::app::input::entity_pick::pick_entity_at_point(
-        crate::app::input::entity_pick::PresentedWorld {
-            sim,
-            rules: Some(rules),
-            translucent_viewer,
-        },
+        source,
         order.iter().map(|(_, id)| id),
         Some(view.fog()),
         Some(view.interner().resolve(viewer)),
@@ -550,26 +554,19 @@ fn tactical_tip_at_cursor(
     view: crate::sim::runtime::SimView<'_>,
 ) -> String {
     let input = &match_state.input;
-    let Some(rules) = crate::app::state::active_rules(frontend, match_state) else {
-        return String::new();
-    };
     let world = crate::app::match_runtime::sim_tick::screen_point_to_world(
         &match_state.input,
         input.cursor_x,
         input.cursor_y,
     );
-    let translucent_viewer = crate::app::presentation::instances::translucent_fog_viewer(
-        platform,
-        match_state,
-        view.simulation(),
-    );
+    let source =
+        crate::app::input::entity_pick::presented(platform, frontend, match_state, view.simulation());
     tactical_world_tip_text_for_viewer(
         view,
-        rules,
+        source,
         process_assets.csf.as_ref(),
         world,
         input.cursor_coordinates,
-        translucent_viewer,
         match_state.sim_runtime.frame(),
     )
 }
@@ -711,6 +708,33 @@ fn cameo_tip_text(money_format: Option<&str>, name: &str, cost: Option<i64>) -> 
         _ => name.to_string(),
     };
     formatted.replace(' ', "\n")
+}
+
+/// A client module's `ItemTooltips` text for the type of the cameo at
+/// `slot`, on a line after its tip (RFC 0001 appendix 7.10): the line the
+/// module wrote on the grid the cameo is in, the sidebar's own included. A
+/// super weapon is named by its section, any other cameo by its type.
+fn with_item_tooltip(
+    match_state: &MatchState,
+    view: &SidebarView,
+    slot: usize,
+    item: &crate::ui::sidebar::SidebarItem,
+    tip: String,
+) -> String {
+    let Some(ui) = match_state.ui_modules.as_ref() else {
+        return tip;
+    };
+    let type_name = item
+        .super_weapon_section
+        .as_deref()
+        .unwrap_or(&item.type_id);
+    let extra = crate::app::input::chrome_input::cameo_grid_node(&match_state.match_presentation, view, slot)
+        .and_then(|grid| ui.item_tooltip(grid, type_name));
+    match extra {
+        Some(extra) if tip.is_empty() => extra,
+        Some(extra) => format!("{tip}\n{extra}"),
+        None => tip,
+    }
 }
 
 fn superweapon_money_tip(money_format: Option<&str>, name: &str, amount: i32) -> String {
@@ -874,7 +898,7 @@ fn in_game_regions(
     for (slot, item) in view.items.iter().enumerate() {
         let text = || {
             dynamic_tip_text(cursor, || {
-                if item.is_superweapon {
+                let tip = if item.is_superweapon {
                     // The retained view carries the same native UIName used for
                     // ordering. Only explicitly paid Supers add a localized cost.
                     let amount = item
@@ -903,7 +927,8 @@ fn in_game_regions(
                         &item.display_name,
                         item.cost.map(i64::from),
                     )
-                }
+                };
+                with_item_tooltip(match_state, view, slot, item, tip)
             })
         };
         regions.push(region(

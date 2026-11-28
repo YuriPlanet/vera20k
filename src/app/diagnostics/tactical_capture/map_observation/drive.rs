@@ -198,7 +198,8 @@ impl TacticalCaptureSession {
             // Simulation::intern_rule_type_ids owns these handles. Observation
             // reads the rules-owned names and installed handles without adding
             // an interner entry or translating a production command.
-            let rules = state.rules().context("loaded rules absent")?;
+            let rules = crate::app::state::active_rules(&state.frontend, &state.match_state)
+                .context("loaded rules absent")?;
             let mut rule_types = Vec::new();
             for (category, names) in production_type_names(rules) {
                 for name in names {
@@ -236,6 +237,7 @@ impl TacticalCaptureSession {
             }
             let camera_cell = profile.camera_cell;
             let cursor_position = profile.cursor_position;
+            let presentation = profile.presentation;
             let audio_config = profile.observe_audio.as_ref().map(MapAudioProfile::config);
             let allow_load_segments = profile.allow_load_segments == Some(true);
             let keyboard_bindings: Vec<_> = if profile.observes_local_input() {
@@ -295,6 +297,11 @@ impl TacticalCaptureSession {
                     &state.match_state.sim_runtime,
                     state.audio.sfx_player.as_mut(),
                 )?;
+            }
+            // The wheel's view distance first, so `camera_cell` centres its
+            // cell at the zoom every observed frame uses.
+            if let Some(presentation) = presentation {
+                presentation.apply_wheel_zoom(state)?;
             }
             if let Some([rx, ry]) = camera_cell {
                 crate::app::input::camera::center_camera_on_cell(
@@ -601,10 +608,13 @@ impl TacticalCaptureSession {
                     }
                     MapGesture::Sidebar { target, .. } => {
                         let (position, slot) =
-                            sidebar_before
-                                .as_ref()
-                                .expect("sidebar captured")
-                                .resolve(target, [state.render_width(), state.render_height()])?;
+                            sidebar_before.as_ref().expect("sidebar captured").resolve(
+                                target,
+                                [
+                                    state.renderer.render_width(&state.frontend.screen),
+                                    state.renderer.render_height(&state.frontend.screen),
+                                ],
+                            )?;
                         (position, position, Some(slot))
                     }
                     MapGesture::CommandBar { .. } => {
@@ -739,9 +749,15 @@ impl TacticalCaptureSession {
                             })
                     };
                 if matches!(scheduled.gesture, MapGesture::Drag { .. }) {
-                    let shown = |state: &AppState| {
-                        crate::app::presentation::ui_overlays::shown_cursor_id(state)
-                            .map(|id| format!("{id:?}"))
+                    let shown = |state: &mut AppState| {
+                        crate::app::presentation::ui_overlays::shown_cursor_id(
+                            &state.platform,
+                            &state.renderer,
+                            &state.frontend,
+                            &mut state.match_state,
+                            &state.persistence,
+                        )
+                        .map(|id| format!("{id:?}"))
                     };
                     let press = shown(state);
                     move_cursor(state, to);

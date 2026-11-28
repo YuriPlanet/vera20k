@@ -15,8 +15,13 @@ pub(super) fn scenario() -> Option<HeadlessScenario> {
 
 /// The Battle on [`MAP`] against one computer house.
 pub(super) fn session_with_computer() -> crate::skirmish_launch::SkirmishLaunchSession {
+    session_against_computer(MAP)
+}
+
+/// The Battle on `map` against one computer house.
+fn session_against_computer(map: &str) -> crate::skirmish_launch::SkirmishLaunchSession {
     crate::headless_scenario::battle_session(
-        MAP,
+        map,
         &[(
             crate::skirmish_launch::LaunchCountry::Russia,
             crate::skirmish_launch::AiDifficulty::Easy,
@@ -246,6 +251,107 @@ fn a_rust_built_module_runs() {
     );
 }
 
+/// Actual AssemblyScript modules from the SDK's example build, played on both
+/// sides of a player-world restore. The short regression compares all saved
+/// module data, including memory, globals, RNG, triggers and pending orders.
+#[test]
+fn typescript_modules_restore_their_complete_state() {
+    check_typescript_module_restore(30, false);
+}
+
+/// RFC 0001 open question 2 additionally requires whole-game equality across
+/// 9,000 frames, no traps and bounded module memory. Keep that stronger
+/// criterion independently runnable while compiler selection remains open.
+#[test]
+#[ignore = "slow; RFC 0001 whole-game compiler acceptance experiment"]
+fn typescript_modules_resume_from_a_save_exactly() {
+    check_typescript_module_restore(4500, true);
+}
+
+fn check_typescript_module_restore(half: u32, whole_game: bool) {
+    let Some(paths) = std::env::var_os("VERA20K_TEST_TS_WASM") else {
+        return;
+    };
+    let save = |scene: &HeadlessScenario| {
+        crate::sim::snapshot::GameSnapshot::save_validated(
+            scene.sim(),
+            0,
+            scene.runtime.resources.rules.simulation_config_hash(),
+            "ext modules",
+            0,
+        )
+    };
+    let module_state = |scene: &HeadlessScenario| {
+        crate::util::save_codec::serialize(scene.sim().ext_modules()).expect("module state saves")
+    };
+    for path in std::env::split_paths(&paths) {
+        let Some(mut live) = scenario_with_computer() else {
+            return;
+        };
+        let bytes = std::fs::read(&path).expect("module file reads");
+        live.runtime
+            .simulation
+            .install_ext_module(&live.runtime.resources.rules, ModuleSource::Mod, &bytes)
+            .expect("module installs");
+        for _ in 0..half {
+            live.tick();
+        }
+        let halfway = live.sim().ext_modules().memory_bytes()[0];
+        let mut resumed = scenario_with_computer().expect("second load");
+        let snapshot = crate::sim::snapshot::GameSnapshot::load(&save(&live)).expect("save loads");
+        let (restored, _) = snapshot
+            .restore_player_world(
+                crate::sim::world::SnapshotProcessState::Live(live.sim()),
+                &resumed.runtime.resources.rules,
+                resumed.sim().resolved_terrain().expect("terrain").clone(),
+                *resumed.sim().terrain_speed_config(),
+                crate::sim::snapshot::PlayerSaveCells::FixtureBaseline,
+            )
+            .expect("player world restores");
+        resumed.runtime.simulation = restored;
+        assert!(
+            module_state(&resumed) == module_state(&live),
+            "{} at restore",
+            path.display()
+        );
+        for frame in 1..=half {
+            live.tick();
+            resumed.tick();
+            if frame % 500 == 0 || frame == half {
+                assert!(
+                    module_state(&resumed) == module_state(&live),
+                    "{} after {frame} frames",
+                    path.display()
+                );
+            }
+        }
+        let status = live.sim().ext_modules().status();
+        assert_eq!(status[0].1, None, "{} stopped", path.display());
+        assert_eq!(resumed.sim().ext_modules().status(), status);
+        if whole_game {
+            let end = live.sim().ext_modules().memory_bytes()[0];
+            assert_eq!(
+                end,
+                halfway,
+                "{}: memory grew after frame {half}",
+                path.display()
+            );
+            assert_eq!(
+                resumed.sim().state_hash(),
+                live.sim().state_hash(),
+                "{}: final game hash",
+                path.display()
+            );
+            assert!(
+                save(&resumed) == save(&live),
+                "{}: the saves differ at frame {}",
+                path.display(),
+                2 * half
+            );
+        }
+    }
+}
+
 /// Smoke-runs the playtest mods (`sdk/examples/veteran-fury`,
 /// `siege-doctrine`, `meteor-storm`, `trigger-lab`) when
 /// `VERA20K_TEST_PLAYTEST_WASM` lists their modules, `:`-separated: each
@@ -321,11 +427,13 @@ fn ini_demo_mods_reach_their_marks() {
             .unwrap_or_else(|e| panic!("{ini}: {e}"));
         sim.install_ini_triggers(rules, &triggers)
             .unwrap_or_else(|e| panic!("{ini}: {e}"));
+        // The engine keeps only the latest log lines; collect them as they come.
+        let mut log = Vec::new();
         for _ in 0..frames {
             scene.tick();
+            log.extend(scene.runtime.simulation.ext_modules_mut().take_log());
         }
         let status = scene.sim().ext_modules().status();
-        let log = scene.runtime.simulation.ext_modules_mut().take_log();
         eprintln!("== {wasm}");
         for line in &log {
             eprintln!("   {line}");
@@ -348,6 +456,186 @@ fn ini_demo_mods_reach_their_marks() {
             );
         }
     }
+}
+
+/// The Control Bench (`sdk/examples/control-bench`) played as a mod when
+/// `VERA20K_TEST_CONTROL_BENCH` names its built module
+/// (`VERA20K_TEST_CONTROL_BENCH_FRAMES` frames, 6000 by default). The test
+/// makes the mod's folder as a modder ships it (docs/modding.md): the module
+/// as `rules.wasm`; `rulesmd.ini`, the retail file with the bench's
+/// `rulesmd.ini` merged in, since a mod's `rulesmd.ini` takes the place of
+/// the game's; `mod.ini`; and the bench's `ControlBench.map`. The match then loads through
+/// the mod: the module's `vera_init` and `on_rules` run while the rules are
+/// processed, its `Wasm.Tags` triggers come from the mod's `rulesmd.ini`.
+/// A Battle on the bench's map against one computer house runs that many
+/// frames. The module must still be running, reach `DEMO-OK bench.all` and
+/// log no refusals or `BENCH-FAIL` lines. A failure names the marks
+/// of the bench's latest `BENCH-MISSING` lines that no `DEMO-OK` line
+/// reached later. Prints the log
+/// (`--nocapture`).
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+#[test]
+fn control_bench_reaches_every_mark() {
+    const BENCH_MAP: &str = "ControlBench.map";
+    let Some(wasm) = std::env::var_os("VERA20K_TEST_CONTROL_BENCH") else {
+        return;
+    };
+    let Some((retail, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+        return;
+    };
+    let frames: u32 = std::env::var("VERA20K_TEST_CONTROL_BENCH_FRAMES").map_or(6000, |f| {
+        f.trim()
+            .parse()
+            .expect("VERA20K_TEST_CONTROL_BENCH_FRAMES is a number")
+    });
+    let bench = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("sdk/examples/control-bench");
+    let read = |name: &str| {
+        std::fs::read_to_string(bench.join(name))
+            .unwrap_or_else(|e| panic!("{}: {e}", bench.join(name).display()))
+    };
+    let retail_file = |name: &str| {
+        assets
+            .resolve_ref(name)
+            .unwrap_or_else(|| panic!("the installation has no {name}"))
+            .bytes
+            .to_vec()
+    };
+    let folder = tempfile::tempdir().expect("create the bench mod folder");
+    std::fs::copy(&wasm, folder.path().join("rules.wasm")).expect("the module copies");
+    let files = [
+        ("mod.ini", read("mod.ini").into_bytes()),
+        (
+            "rulesmd.ini",
+            merge_ini_text(&retail_file("rulesmd.ini"), &read("rulesmd.ini")),
+        ),
+        (
+            BENCH_MAP,
+            merge_ini_text(&retail_file(MAP), &read("map.ini")),
+        ),
+    ];
+    for (name, bytes) in files {
+        std::fs::write(folder.path().join(name), bytes).expect("the mod's file is written");
+    }
+    let mut scene = crate::headless_scenario::load_with_mod_folder(
+        &retail,
+        BENCH_MAP,
+        SEED,
+        session_against_computer(BENCH_MAP),
+        folder.path(),
+    )
+    .expect("the bench loads as a mod");
+    // The rules stage's lines, then each frame's: the engine keeps only the
+    // latest lines, so collect them as they come.
+    let mut log = scene.runtime.simulation.ext_modules_mut().take_log();
+    for _ in 0..frames {
+        scene.tick();
+        log.extend(scene.runtime.simulation.ext_modules_mut().take_log());
+    }
+    eprintln!("== Control Bench, {frames} frames");
+    for line in &log {
+        eprintln!("   {line}");
+    }
+    let status = scene.sim().ext_modules().status();
+    assert!(
+        matches!(status.as_slice(), [(ModuleSource::Mod, None)]),
+        "the bench is not running: {status:?}"
+    );
+    let failures: Vec<_> = log
+        .iter()
+        .filter(|line| line.starts_with("BENCH-FAIL ") || line.contains("refused"))
+        .collect();
+    let complete = log.iter().any(|line| line == "DEMO-OK bench.all");
+    if !complete || !failures.is_empty() {
+        // The latest report's list (the lines after the last `BENCH frame`
+        // line that has any), less the marks that came after it.
+        let mut missing: Vec<&str> = Vec::new();
+        let mut report_seen = false;
+        for line in &log {
+            if line.starts_with("BENCH frame") {
+                report_seen = true;
+            } else if let Some(name) = line.strip_prefix("BENCH-MISSING ") {
+                if report_seen {
+                    missing.clear();
+                    report_seen = false;
+                }
+                missing.push(name);
+            }
+        }
+        let reached: std::collections::HashSet<&str> = log
+            .iter()
+            .filter_map(|l| l.strip_prefix("DEMO-OK "))
+            .collect();
+        missing.retain(|name| !reached.contains(name));
+        panic!(
+            "after {frames} frames: bench.all={complete}, missing={missing:?}, failures={failures:?}"
+        );
+    }
+}
+
+/// `fragment` merged into the INI text `full` as a modder adds a mod's
+/// sections to a full copy of a file: the entries of each fragment section
+/// go right after the first header of that section in `full` (a section's
+/// first copy of a key wins), a section `full` lacks is appended. Comments
+/// and blank lines of the fragment are dropped. Works on bytes: retail INI
+/// text is not UTF-8.
+fn merge_ini_text(full: &[u8], fragment: &str) -> Vec<u8> {
+    let header = |line: &[u8]| -> Option<Vec<u8>> {
+        let line = line.trim_ascii_start();
+        let rest = line.strip_prefix(b"[")?;
+        let end = rest.iter().position(|&b| b == b']')?;
+        Some(rest[..end].to_vec())
+    };
+    let mut sections: Vec<(Vec<u8>, Vec<&str>, bool)> = Vec::new();
+    for line in fragment.lines().map(str::trim) {
+        if line.is_empty() || line.starts_with(';') {
+            continue;
+        }
+        if let Some(name) = header(line.as_bytes()) {
+            sections.push((name, Vec::new(), false));
+        } else if let Some(section) = sections.last_mut() {
+            section.1.push(line);
+        }
+    }
+    let mut out = Vec::with_capacity(full.len() + fragment.len());
+    for line in full.split_inclusive(|&b| b == b'\n') {
+        out.extend_from_slice(line);
+        if !line.ends_with(b"\n") {
+            out.push(b'\n');
+        }
+        let Some(name) = header(line) else { continue };
+        if let Some(section) = sections.iter_mut().find(|s| !s.2 && s.0 == name) {
+            for entry in &section.1 {
+                out.extend_from_slice(entry.as_bytes());
+                out.push(b'\n');
+            }
+            section.2 = true;
+        }
+    }
+    for (name, entries, merged) in &sections {
+        if *merged {
+            continue;
+        }
+        out.push(b'[');
+        out.extend_from_slice(name);
+        out.extend_from_slice(b"]\n");
+        for entry in entries {
+            out.extend_from_slice(entry.as_bytes());
+            out.push(b'\n');
+        }
+    }
+    out
+}
+
+#[test]
+fn a_mod_fragment_merges_into_the_full_file() {
+    let full = b"[A]\r\nX=1\r\n[B]\r\nY=2";
+    let merged = merge_ini_text(full, "; note\n[B]\nZ=3\n\n[C]\nW=4\n");
+    assert_eq!(
+        String::from_utf8(merged).unwrap(),
+        "[A]\r\nX=1\r\n[B]\r\nZ=3\nY=2\n[C]\nW=4\n"
+    );
 }
 
 /// The player's units in Muster Field's camp, by cell: (id, cell, type).
@@ -618,6 +906,119 @@ fn muster_field_ends_when_the_last_banner_falls() {
         log.iter().any(|l| l.contains("最后一面军旗倒下")),
         "{log:?}"
     );
+}
+
+/// Muster Field's variable `name` of house `index`, as its `ui.wasm` reads
+/// it (the module publishes the camp, `muster_field_data::proto`).
+fn muster_var(scene: &HeadlessScenario, index: usize, name: &str) -> i64 {
+    let sim = scene.sim();
+    let var = sim
+        .ext_modules
+        .vars
+        .lookup(ModuleSource::Mod, name)
+        .unwrap_or_else(|| panic!("Muster Field declares {name}"));
+    let holder = sim
+        .module_var_holder(house_ref(index), var)
+        .expect("a house variable");
+    sim.ext_modules.vars.read(var, holder).0
+}
+
+/// Sends the interface's two-byte message as its button does: through the
+/// command stream to the mod's `on_message`.
+fn muster_button(
+    scene: &mut HeadlessScenario,
+    house: crate::sim::intern::InternedId,
+    what: u8,
+    index: u8,
+) {
+    use crate::sim::command::CommandEnvelope;
+    let sim = &mut scene.runtime.simulation;
+    let record = sim
+        .encode_module_message_record(house, 0, &[what, index])
+        .expect("the message encodes");
+    let tick = sim.session.tick();
+    sim.queue_command(CommandEnvelope::synchronized(record, tick));
+    for _ in 0..4 {
+        scene.tick();
+    }
+}
+
+/// Plays Muster Field from its interface alone, when
+/// `VERA20K_TEST_MUSTER_UI_WASM` names its `ui.wasm` (and
+/// `VERA20K_TEST_MUSTER_WASM` its `rules.wasm`): the published camp, and
+/// each button doing what its key does (hire, keep, redraw, improve, a
+/// dismissal, the battle).
+#[test]
+fn muster_field_plays_from_its_interface() {
+    let Some(ui_path) = std::env::var_os("VERA20K_TEST_MUSTER_UI_WASM") else {
+        return;
+    };
+    let ui = std::fs::read(ui_path).expect("ui.wasm reads");
+    let client = vera20k_wasm_ext::ClientModule::load(&ui, vera20k_wasm_ext::Limits::MOD)
+        .unwrap_or_else(|e| panic!("ui.wasm loads: {e}"));
+    for export in ["client_on_start", "client_on_render", "client_on_events"] {
+        assert!(client.has_export(export), "ui.wasm exports {export}");
+    }
+    let Some((mut scene, player, house)) = muster_field() else {
+        return;
+    };
+    // proto's message kinds and variable layout.
+    const HIRE: u8 = 1;
+    const KEEP: u8 = 2;
+    const REDRAW: u8 = 3;
+    const IMPROVE: u8 = 4;
+    const START: u8 = 5;
+    const DISMISS: u8 = 7;
+    let var = |scene: &HeadlessScenario, name| muster_var(scene, player, name);
+    let byte = |packed: i64, at: usize| (packed >> (8 * at)) as u8;
+    let member = |scene: &HeadlessScenario, at: usize| byte(var(scene, "MfCompanyLow"), at);
+
+    assert_eq!(var(&scene, "MfPhase"), 1, "the muster is published");
+    assert_eq!(var(&scene, "MfWave"), 1);
+    assert_eq!(var(&scene, "MfBanners"), 3);
+    assert_eq!(var(&scene, "MfFlags") & 1, 1, "the officer stands");
+    let offers = var(&scene, "MfOffers");
+    for at in 0..3 {
+        assert_eq!(byte(offers, at) & 0x40, 0x40, "offer {at} stands: {offers:x}");
+    }
+    assert_eq!(byte(offers, 3), 0, "three offers at camp rank 1");
+
+    // Hire offer 0: it joins the company where the line begins.
+    let kind = byte(offers, 0) & 0x1f;
+    muster_button(&mut scene, house, HIRE, 0);
+    assert!(credits(&scene, player) < 1600, "the button hired");
+    assert_eq!(member(&scene, 0) & 0x1f, kind, "member 0 is the offer hired");
+
+    // Keep offer 1, then let it go.
+    muster_button(&mut scene, house, KEEP, 1);
+    assert_eq!(byte(var(&scene, "MfOffers"), 1) & 0x20, 0x20, "kept");
+    muster_button(&mut scene, house, KEEP, 1);
+    assert_eq!(byte(var(&scene, "MfOffers"), 1) & 0x20, 0, "let go");
+
+    let money = credits(&scene, player);
+    muster_button(&mut scene, house, REDRAW, 0);
+    assert_eq!(credits(&scene, player), money - 50, "a redraw");
+    muster_button(&mut scene, house, IMPROVE, 0);
+    assert_eq!(credits(&scene, player), money - 650, "an improvement");
+    assert_eq!(var(&scene, "MfRank"), 1);
+    assert_eq!(byte(var(&scene, "MfOffers"), 3) & 0x40, 0x40, "four offers");
+
+    // A dismissal pays half back and empties the place.
+    let money = credits(&scene, player);
+    muster_button(&mut scene, house, DISMISS, 0);
+    assert!(credits(&scene, player) > money, "the dismissal refunds");
+    assert_eq!(member(&scene, 0), 0, "member 0 left");
+
+    // An empty company may fight: the battle starts and is published.
+    muster_button(&mut scene, house, START, 0);
+    assert_eq!(var(&scene, "MfPhase"), 2, "the battle began");
+    for _ in 0..60 {
+        scene.tick();
+    }
+    let battle = var(&scene, "MfBattle");
+    assert!((battle >> 32) & 0xffff > 0, "raiders arrived: {battle:x}");
+    let log = scene.runtime.simulation.ext_modules_mut().take_log();
+    assert_eq!(scene.sim().ext_modules().status()[0].1, None, "{log:?}");
 }
 
 /// Spawns a Grizzly for the first computer house beside its base.
@@ -2100,4 +2501,14 @@ fn wasm_budgets_default_clamp_and_refuse() {
     let error = WasmPolicy::read(&low, 0).expect_err("below the floor");
     assert!(error.contains("MapBudget=5000"), "{error}");
     assert!(WasmPolicy::read(&IniFile::empty(), 100).is_err());
+}
+
+#[test]
+fn map_ui_is_read_from_the_mods_rules_alone() {
+    use super::MapUi;
+    let read = |text: &str| MapUi::read(&IniFile::from_str(text));
+    assert_eq!(read(""), MapUi::Overlay);
+    assert_eq!(read("[VeraWasm]\nMapUI=full\n"), MapUi::Full);
+    assert_eq!(read("[VeraWasm]\nMapUI=No\n"), MapUi::No);
+    assert_eq!(read("[VeraWasm]\nMapUI=sideways\n"), MapUi::Overlay);
 }

@@ -2,7 +2,6 @@
 //!
 //! Split from the presentation render path. Part of the app layer — may depend on everything.
 
-use crate::app::AppState;
 use crate::app::frontend::state::FrontendState;
 use crate::app::input::cursor::{
     CursorTargets, current_cursor_feedback_kind, cursor_id_for_feedback,
@@ -650,6 +649,60 @@ fn admitted_techno_observer(
         observer,
     )?;
     Some(observer)
+}
+
+/// VERA module status templates (`ui_modules::status`): where an object's
+/// templates draw from, for an object the local player sees, else `None`.
+/// The anchor is where the original's health bar starts: a building's first
+/// health pip ([`BuildingBarGeometry::first_pip`]), a mobile's draw point
+/// lowered by its `PixelSelectionBracketDelta=`. An object counts when it
+/// is drawn ([`admitted_techno_observer`]), not sinking or in a transport,
+/// and is the player's own or in its sight (`FogState::shows_objects_to`),
+/// so a template never shows more than the screen does; one disguised to the
+/// player counts as what it wears (`ui_modules::field`). Without a local
+/// player every drawn object counts.
+pub(crate) fn module_status_anchor(
+    sim: &crate::sim::world::Simulation,
+    entity: &ObjectRecord,
+    rules: Option<&RuleSet>,
+    player: Option<crate::sim::intern::InternedId>,
+    ignore_visibility: bool,
+) -> Option<(f32, f32)> {
+    if entity.sinking.is_active() || entity.passenger_role.is_inside_transport() || entity.in_tube
+        || entity.place.structure.is_some_and(|art| art.invisible_in_game)
+    {
+        return None;
+    }
+    let visible_type = if entity.seen.disguised_to_observer {
+        let worn = entity.disguise.as_ref()?;
+        worn.house()?;
+        worn.type_id()?
+    } else {
+        entity.type_ref()
+    };
+    admitted_techno_observer(sim, entity, player)?;
+    if let Some(viewer) = player.filter(|viewer| !ignore_visibility && *viewer != entity.owner()) {
+        if !sim.fog().shows_objects_to(
+                viewer,
+                entity.position.rx(),
+                entity.position.ry(),
+                sim.session().game_options().fog_of_war,
+            )
+        {
+            return None;
+        }
+    }
+    let coord = entity.hud.get_coords;
+    let (sx, sy) = crate::util::lepton::absolute_leptons_to_screen(coord.x, coord.y, coord.z);
+    let object = rules.and_then(|rules| sim.interner().object_type(visible_type, rules));
+    if entity.seen.disguised_to_observer && object.is_none() {
+        return None;
+    }
+    if object.is_some_and(|object| EntityCategory::from(object.category) == EntityCategory::Structure) {
+        return Some(BuildingBarGeometry::new(rules?, object?).first_pip(sx, sy));
+    }
+    let delta = object.map_or(0.0, |object| object.pixel_selection_bracket_delta as f32);
+    Some((sx, sy + delta))
 }
 
 /// Native `DrawHealthBar @0x006F64A0` guards its class `vt+0x450` pip/status
@@ -1545,6 +1598,9 @@ impl StatusViewport {
 pub(crate) struct TechnoExtras {
     ///6F519B..524E: BOMBCURS/MOUSEPAL N1 prefix, before every other status.
     pub bomb_clock: Option<SpriteInstance>,
+    /// The Ares `IvanBomb.Image` strip `bomb_clock` was cut from
+    /// (`SelectionOverlay::bomb_image`); `None` is BOMBCURS.SHP.
+    pub bomb_image: Option<usize>,
     ///6F5253..5345: WRENCH/MOUSEPAL N1 prefix, before rank and Building lines.
     pub wrench: Option<SpriteInstance>,
     /// Ares 10049FE0 (hook 0x6F526C): the POWEROFF/MOUSEPAL marker drawn
@@ -1579,6 +1635,64 @@ pub(crate) struct TechnoExtras {
 }
 
 impl TechnoExtras {
+    /// Move the status strip as a unit, preserving its chosen native mark
+    /// offsets and its fixed-pixel sizing under wheel zoom.
+    pub(super) fn shift_owner(&mut self, offset: [f32; 2]) {
+        if offset == [0.0; 2] {
+            return;
+        }
+        let sprites = self
+            .bomb_clock
+            .iter_mut()
+            .chain(&mut self.wrench)
+            .chain(&mut self.power_off)
+            .chain(&mut self.rank)
+            .chain(&mut self.background)
+            .chain(&mut self.shield_background)
+            .chain(&mut self.fills)
+            .chain(&mut self.scale)
+            .chain(&mut self.self_heal)
+            .chain(&mut self.talk_bubble)
+            .chain(self.digital_shapes.iter_mut().map(|(_, shape)| shape));
+        let labels = self
+            .digital_text
+            .iter_mut()
+            .chain(&mut self.info_text)
+            .chain(std::iter::once(&mut self.group))
+            .flat_map(|label| label.text.iter_mut().chain(&mut label.rectangles));
+        for piece in sprites.chain(labels) {
+            piece.position[0] += offset[0];
+            piece.position[1] += offset[1];
+        }
+    }
+
+    /// Leaves out the families the mod's or map's status templates hide
+    /// (`ui_modules::status::hide`): the health strip with its bracket and
+    /// shield bar (the garrison pips share its list), the pip scale, the
+    /// marks, the group number.
+    pub(crate) fn hide_families(&mut self, hidden: u8) {
+        use crate::app::ui_modules::status::hide;
+        if hidden & hide::HEALTH_BARS != 0 {
+            self.background = None;
+            self.shield_background = None;
+            self.fills.clear();
+        }
+        if hidden & hide::PIPS != 0 {
+            self.scale.clear();
+        }
+        if hidden & hide::MARKS != 0 {
+            self.bomb_clock = None;
+            self.wrench = None;
+            self.power_off = None;
+            self.rank = None;
+            self.rank_insignia = None;
+            self.self_heal = None;
+        }
+        if hidden & hide::GROUPS != 0 {
+            self.group = StatusTextOverlayInstances::default();
+        }
+    }
+
     /// Wheel zoom changes health geometry after SHP instance creation. Cull
     /// only the final world rectangles, so fixed-pixel pips can reach in from
     /// an anchor outside the viewport. Native zoom uses the same 48px margin.
@@ -2219,7 +2333,7 @@ pub(crate) fn techno_extras_for_parent(
         };
         if bomb_visible
             && rules.is_some()
-            && let (Some(bomb), Some(shape)) = (bomb, overlay.bomb_image(images))
+            && let (Some(bomb), Some((image, shape))) = (bomb, overlay.bomb_image(images))
             && let Some(frame) = bomb.clock_frame(
                 sim.session().binary_frame() as i32,
                 shape.frame_count(),
@@ -2228,6 +2342,7 @@ pub(crate) fn techno_extras_for_parent(
             && let Ok(frame) = usize::try_from(frame)
         {
             strip.bomb_clock = prefix(shape, Mark::BombClock, frame, 0.0);
+            strip.bomb_image = image;
         }
         let binary_frame = sim.session().binary_frame() as i32;
         let options = sim.session().game_options();
@@ -3006,10 +3121,12 @@ fn scale_pip_rows(
     pips
 }
 
-/// Resolve the active cursor id and sequence for the current game state.
-/// Maps game-state intent → CursorId → loaded sequence via HashMap lookup.
-/// The id travels with the sequence because the animation phase is keyed on it —
-/// changing shape restarts the sequence at frame 0.
+/// Resolve the active cursor id for the current game state, noting it as the
+/// shown cursor. Maps game-state intent → CursorId → loaded sequence via
+/// HashMap lookup: `None` when no sequence is loaded for it. The caller reads
+/// that sequence with [`loaded_cursor_sequence`]; the id travels with the
+/// sequence because the animation phase is keyed on it — changing shape
+/// restarts the sequence at frame 0.
 ///
 /// This per-frame resolution stands in for MouseClass's stored shapes. In
 /// gamemd the hover cursor is the *default* one (`SetCursorFromAction`
@@ -3020,49 +3137,90 @@ fn scale_pip_rows(
 /// start `DefaultCursor` at row 0. Re-deriving the shape every frame shows the
 /// same row once its owner re-issues it; `GetDefaultCursor` (`0x0040D280`,
 /// slot +0xA0) has no display caller among the 47 `call [reg+0xA0]` sites.
-fn active_cursor_sequence<'a>(
-    state: &'a AppState,
+fn active_cursor_id(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    persistence: &PersistenceState,
     targets: &CursorTargets,
-) -> Option<(CursorId, &'a SoftwareCursorSequence)> {
-    let cursor = state
-        .match_state
-        .match_presentation
-        .software_cursor
-        .as_ref()?;
+) -> Option<CursorId> {
+    match_state.match_presentation.software_cursor.as_ref()?;
     let kind = current_cursor_feedback_kind(
-        &state.platform,
-        &state.renderer,
-        &state.frontend,
-        &state.match_state,
-        &state.persistence,
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        persistence,
         targets,
     );
-    state.match_state.input.note_shown_cursor(kind);
+    match_state.input.note_shown_cursor(kind);
     let id: CursorId = kind
         .and_then(cursor_id_for_feedback)
         .unwrap_or(CursorId::Default);
-    cursor.get(id).map(|sequence| (id, sequence))
+    loaded_cursor_sequence(&match_state.match_presentation, id).map(|_| id)
+}
+
+/// The loaded software cursor sequence for `id`.
+fn loaded_cursor_sequence(
+    presentation: &MatchPresentationState,
+    id: CursorId,
+) -> Option<&SoftwareCursorSequence> {
+    presentation.software_cursor.as_ref()?.get(id)
 }
 
 /// The cursor id the production draw shows now. Like a draw, it notes the
 /// shown cursor, so a held button over the sidebar keeps it.
-pub(crate) fn shown_cursor_id(state: &AppState) -> Option<CursorId> {
-    active_cursor_sequence(
-        state,
-        &CursorTargets::read(&state.platform, &state.frontend, &state.match_state),
+pub(crate) fn shown_cursor_id(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    persistence: &PersistenceState,
+) -> Option<CursorId> {
+    let targets = CursorTargets::read(platform, frontend, match_state);
+    active_cursor_id(
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        persistence,
+        &targets,
     )
-    .map(|(id, _)| id)
 }
 
 /// Observation of the same cursor selection used by the production draw.
 /// Map captures admit only a static arrow, so cursor wall time cannot alter it.
-pub(crate) fn static_default_cursor(state: &AppState) -> bool {
-    state.use_software_cursor()
-        && active_cursor_sequence(
-            state,
-            &CursorTargets::read(&state.platform, &state.frontend, &state.match_state),
-        )
-        .is_some_and(|(id, sequence)| id == CursorId::Default && sequence.interval_ms == 0)
+pub(crate) fn static_default_cursor(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    persistence: &PersistenceState,
+) -> bool {
+    if !crate::app::state::use_software_cursor(
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        persistence,
+    ) {
+        return false;
+    }
+    let targets = CursorTargets::read(platform, frontend, match_state);
+    active_cursor_id(
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        persistence,
+        &targets,
+    )
+    .is_some_and(|id| {
+        id == CursorId::Default
+            && loaded_cursor_sequence(&match_state.match_presentation, id)
+                .is_some_and(|sequence| sequence.interval_ms == 0)
+    })
 }
 
 /// The software cursor frame a draw shows. Its sprite and its texture come
@@ -3075,41 +3233,53 @@ pub(crate) struct SoftwareCursorDraw {
 
 /// The draw's cursor sprite, for its cursor `targets`.
 pub(crate) fn build_software_cursor_instances(
-    state: &AppState,
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    persistence: &PersistenceState,
     targets: &CursorTargets,
 ) -> (Vec<SpriteInstance>, Option<SoftwareCursorDraw>) {
-    if !state.use_software_cursor() || !state.match_state.input.cursor_visibility.is_visible() {
+    if !crate::app::state::use_software_cursor(
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        persistence,
+    ) || !match_state.input.cursor_visibility.is_visible()
+    {
         return (Vec::new(), None);
     }
-    let Some((id, sequence)) = active_cursor_sequence(state, targets) else {
+    let Some(id) = active_cursor_id(
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        persistence,
+        targets,
+    ) else {
+        return (Vec::new(), None);
+    };
+    let Some(sequence) = loaded_cursor_sequence(&match_state.match_presentation, id) else {
         return (Vec::new(), None);
     };
     // Row 0 is still the shape shown over a node, so its phase steps:
     // leaving the node restarts the next cursor's animation.
-    let Some(animated) = state
-        .match_state
-        .input
-        .software_cursor_frame_index(id, sequence)
-    else {
+    let Some(animated) = match_state.input.software_cursor_frame_index(id, sequence) else {
         return (Vec::new(), None);
     };
     let (id, sequence, index) = if id == CursorId::Default
         && crate::app::input::planning_mode::node_at_cursor(
-            &state.platform,
-            &state.renderer,
-            &state.frontend,
-            &state.match_state,
-            &state.persistence,
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            persistence,
         )
         .is_some()
     {
         //63AC41..4E selects row0's static small frame when only hovering.
-        let Some(cursor) = state
-            .match_state
-            .match_presentation
-            .software_cursor
-            .as_ref()
-        else {
+        let Some(cursor) = match_state.match_presentation.software_cursor.as_ref() else {
             return (Vec::new(), None);
         };
         let (small, frame) = cursor.planning_arrow();
@@ -3124,10 +3294,10 @@ pub(crate) fn build_software_cursor_instances(
         return (Vec::new(), None);
     };
     if crate::app::input::hardware_cursor::takes_cursor(
-        &state.platform,
-        &state.renderer,
-        &state.frontend.screen,
-        &state.match_state.input,
+        platform,
+        renderer,
+        &frontend.screen,
+        &match_state.input,
         id,
         index,
     ) {
@@ -3139,10 +3309,8 @@ pub(crate) fn build_software_cursor_instances(
     // Note: cursor_x/y are in screen space; camera offset is NOT applied (cursor is UI).
     let sprite = SpriteInstance {
         position: [
-            state.match_state.input.cursor_x + state.match_state.input.camera_x
-                - sequence.hotspot[0],
-            state.match_state.input.cursor_y + state.match_state.input.camera_y
-                - sequence.hotspot[1],
+            match_state.input.cursor_x + match_state.input.camera_x - sequence.hotspot[0],
+            match_state.input.cursor_y + match_state.input.camera_y - sequence.hotspot[1],
         ],
         size: [frame.width, frame.height],
         uv_origin: [0.0, 0.0],

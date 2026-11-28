@@ -397,10 +397,18 @@ fn render_skirmish_shell_with_atlas(
     // that clears "Working / Please Wait" is the one showing the finished map.
     // While a job is in flight the shell keeps asking for frames -- nothing else
     // is driving redraws, and without this the dialog would freeze on the first
-    // "working" frame until the player moved the mouse.
-    if crate::app::App::poll_random_map_generation(state)
-        || state.frontend.random_map_generation.is_some()
-    {
+    // "working" frame until the player moved the mouse. An OK that waited
+    // for the map begins its teardown slide here, before the frame lays
+    // anything out.
+    let (changed, step) = crate::app::App::poll_random_map_generation(
+        &mut state.frontend,
+        &mut state.match_state.sim_runtime,
+        &mut state.process_assets,
+    );
+    if let Some(step) = step {
+        crate::app::App::apply_step(state, step);
+    }
+    if changed || state.frontend.random_map_generation.is_some() {
         state.platform.window.request_redraw();
     }
     let layout =
@@ -686,7 +694,7 @@ fn render_skirmish_shell_with_atlas(
         _ if message_box_up => None,
         (Some(_), Some(seed_layout)) => shell.saved_seed_browser.as_ref().map(|browser| {
             let (key, fallback) = browser.mode.title_label();
-            let title = state.csf_label(key, fallback);
+            let title = state.process_assets.csf_label(key, fallback);
             saved_games::seed_browser_paint(
                 &state.platform.ime,
                 &state.renderer,
@@ -873,8 +881,8 @@ fn render_skirmish_shell_with_atlas(
         .create_instance_buffer(&state.renderer.gpu, &marker_label_instances);
     state.renderer.batch_renderer.update_camera(
         &state.renderer.gpu,
-        state.render_width() as f32,
-        state.render_height() as f32,
+        state.renderer.render_width(&state.frontend.screen) as f32,
+        state.renderer.render_height(&state.frontend.screen) as f32,
         0.0,
         0.0,
         1.0,
@@ -911,11 +919,17 @@ fn render_skirmish_shell_with_atlas(
                 .create_instance_buffer(&state.renderer.gpu, &d.instances)
         })
         .collect();
-    let cursor_instances: Vec<SpriteInstance> =
-        crate::app::frontend::shell_pass::software_cursor(state, SHELL_CURSOR_DEPTH)
-            .map(|(_, instance)| instance)
-            .into_iter()
-            .collect();
+    let cursor_instances: Vec<SpriteInstance> = crate::app::frontend::shell_pass::software_cursor(
+        &mut state.platform,
+        &state.renderer,
+        &state.frontend,
+        &mut state.match_state,
+        &state.persistence,
+        SHELL_CURSOR_DEPTH,
+    )
+    .map(|(_, instance)| instance)
+    .into_iter()
+    .collect();
     let cursor_buffer = state
         .renderer
         .batch_renderer
@@ -932,7 +946,9 @@ fn render_skirmish_shell_with_atlas(
         .map(|frame| &frame.texture);
 
     // A game room's Choose Map is one of the online client's screens.
-    let smooth_art = state.smooth_online_menus()
+    let smooth_art = state
+        .persistence
+        .smooth_online_menus(state.frontend.native_shell_ui)
         && state.frontend.shell_route == crate::app::shell_route::ShellRoute::NetworkSetup;
     let mut pass = begin_shell_pass(encoder, target, "Skirmish Shell");
     state.renderer.batch_renderer.draw_chrome(
@@ -976,7 +992,12 @@ fn render_skirmish_shell_with_atlas(
         &shell_draws,
         &scissored_text_buffers,
     );
-    pass.set_scissor_rect(0, 0, state.render_width(), state.render_height());
+    pass.set_scissor_rect(
+        0,
+        0,
+        state.renderer.render_width(&state.frontend.screen),
+        state.renderer.render_height(&state.frontend.screen),
+    );
     if let Some((buffer, count)) = dropdown_buffer.as_ref() {
         state.renderer.batch_renderer.draw_chrome(
             &mut pass,
@@ -993,7 +1014,12 @@ fn render_skirmish_shell_with_atlas(
         &dropdown_text_buffers,
     );
     // Reset scissor to full render so any subsequent draws / passes aren't clipped.
-    pass.set_scissor_rect(0, 0, state.render_width(), state.render_height());
+    pass.set_scissor_rect(
+        0,
+        0,
+        state.renderer.render_width(&state.frontend.screen),
+        state.renderer.render_height(&state.frontend.screen),
+    );
     if let Some(buffers) = zoom_buffers.as_ref() {
         draw_zoom(
             &mut pass,
@@ -2005,44 +2031,8 @@ mod wol_lobby;
 mod wol_login;
 mod wol_page;
 mod wol_quick_match;
-/// Android: the room chat edit's rect beside VERA's send key, sized as the
-/// online room's: the log's width less the send tile and its gap (`26 + 6`
-/// authored px).
-#[cfg(target_os = "android")]
-pub(crate) fn room_chat_text_rect(
-    chat: crate::ui::shell::geom::RectPx,
-    log: crate::ui::shell::geom::RectPx,
-    scale: crate::ui::shell::geom::ShellScale,
-) -> crate::ui::shell::geom::RectPx {
-    let tile = (26.0 * scale.factor()).round() as i32;
-    let gap = (6.0 * scale.factor()).round() as i32;
-    crate::ui::shell::geom::RectPx::new(chat.x, chat.y, (log.w - tile - gap).max(1), chat.h)
-}
-
-/// Android: the room's send tile, at the online room's emote slot: just
-/// right of the box, one pixel above it and `26 x 23` authored px. A phone has
-/// no Enter key, so a press on it sends the line.
-#[cfg(target_os = "android")]
-pub(crate) fn room_chat_send_rect(
-    chat: crate::ui::shell::geom::RectPx,
-    log: crate::ui::shell::geom::RectPx,
-    scale: crate::ui::shell::geom::ShellScale,
-) -> crate::ui::shell::geom::RectPx {
-    let text = room_chat_text_rect(chat, log, scale);
-    let tile_w = (26.0 * scale.factor()).round() as i32;
-    let tile_h = (23.0 * scale.factor()).round() as i32;
-    let gap = (6.0 * scale.factor()).round() as i32;
-    crate::ui::shell::geom::RectPx::new(
-        text.x + text.w + gap,
-        chat.y - (1.0 * scale.factor()).round() as i32,
-        tile_w,
-        tile_h,
-    )
-}
-
-/// Android: VERA's send key in `rect`, drawn with the online room's emote
-/// button art (`0x3ED`'s released image, as `Picture::Emote` draws it).
-#[cfg(target_os = "android")]
+/// VERA's send key in `rect`, drawn with the online room's emote button art
+/// (`0x3ED`'s released image, as `Picture::Emote` draws it).
 fn push_chat_send_key(
     controls: &mut Vec<crate::render::batch::SpriteInstance>,
     atlas: &crate::render::skirmish_shell_chrome::SkirmishShellChromeAtlas,
@@ -2077,8 +2067,8 @@ pub(crate) use wol_lobby::{
 };
 pub(crate) use wol_login::{paint_wol_account_form, paint_wol_login_children};
 pub(crate) use wol_page::{
-    in_match_page_draw, paint_wol_add_buddy, paint_wol_page_dialog, paint_wol_page_received,
-    paint_wol_verify,
+    paint_wol_add_buddy, paint_wol_page_dialog, paint_wol_page_received, paint_wol_verify,
+    surrender_draw,
 };
 pub(crate) use wol_quick_match::paint_wol_quick_match_children;
 mod coop_score;

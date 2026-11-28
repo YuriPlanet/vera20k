@@ -45,7 +45,7 @@ pub(crate) enum StockClass {
 pub(crate) const fn stock_class(kind: i32) -> Option<StockClass> {
     use StockClass::*;
     Some(match kind {
-        1 | 4 | 6 | 7 | 29 | 34 | 35 | 38..=44 | 48 | 49 => Object,
+        1..=4 | 6 | 7 | 29 | 34 | 35 | 38..=44 | 48 | 49 => Object,
         62..=74 | 79 | 80 | 83..=85 => Object,
         25 | 26 => Cell,
         23 | 50 | 75..=77 => Global,
@@ -169,6 +169,12 @@ impl Simulation {
             return (holds, carried);
         }
         match kind {
+            // `ThievedBy` (VERA's module raise, `ext_modules::events`): the
+            // thief's House, which the record carries.
+            3 => {
+                let thief = house_of(reading.other);
+                (thief.is_some() && thief == u32::try_from(value).ok(), thief)
+            }
             // HasOccurred71EE57: the source Techno's House at predicate time.
             44 => (
                 house_of(reading.other).is_some_and(|index| Ok(index) == u32::try_from(value)),

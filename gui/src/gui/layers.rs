@@ -229,6 +229,68 @@ impl Gui {
         best.map(|(_, _, id)| id)
     }
 
+    /// The node named `name` (ASCII case aside) among `origin`'s alone, the
+    /// first in paint order, in any layer: a bridge's lookup that walks the
+    /// origins in an order of its own (RFC 0001 section 10, "lookup by
+    /// name"). It is the host's query: the bridge decides what its client
+    /// may reach.
+    pub fn find_by(&self, origin: Origin, name: &str) -> Option<NodeId> {
+        let mut found = None;
+        self.visit(|id| {
+            if found.is_some() || self.meta.get(&id).is_none_or(|m| m.origin != origin) {
+                return;
+            }
+            if self.tree.node(id).is_ok_and(|n| n.text_prop(Prop::Name).is_some_and(|n| n.eq_ignore_ascii_case(name))) {
+                found = Some(id);
+            }
+        });
+        found
+    }
+
+    /// `layer`'s top-level nodes, bottom to top.
+    pub fn roots(&self, layer: Layer) -> &[NodeId] {
+        &self.roots[layer as usize]
+    }
+
+    /// The node limit [`Gui::new`] was given; [`Origin::share`] of it is what
+    /// an origin other than the host may hold.
+    pub fn node_limit(&self) -> usize {
+        self.tree.max_nodes()
+    }
+
+    /// Whether the node and every ancestor are `Visible` (unset is shown).
+    pub fn shown(&self, id: NodeId) -> bool {
+        self.tree.effective(id, Prop::Visible)
+    }
+
+    /// Whether the node and every ancestor are `Enabled` (unset is enabled).
+    pub fn enabled(&self, id: NodeId) -> bool {
+        self.tree.effective(id, Prop::Enabled)
+    }
+
+    /// The topmost shown node at `x`, `y` that `accept` takes, over
+    /// `layers` given top first: in each, the later root over the earlier
+    /// and a child over its parent, as they paint. A node hits in its
+    /// `HitRect`, else its `Rect`; a hidden node's subtree never hits. This
+    /// is no input routing: a bridge asks it which of its client's nodes a
+    /// pointer is over (hover, click, a press outside).
+    pub fn top_at(&self, layers: &[Layer], x: i32, y: i32, accept: impl Fn(NodeId) -> bool) -> Option<NodeId> {
+        for &layer in layers {
+            for &root in self.roots[layer as usize].iter().rev() {
+                let mut hit = None;
+                self.tree.walk_visible(root, |id| {
+                    if self.tree.screen_hit_rect(id).is_ok_and(|r| r.contains(x, y)) && accept(id) {
+                        hit = Some(id);
+                    }
+                });
+                if hit.is_some() {
+                    return hit;
+                }
+            }
+        }
+        None
+    }
+
     /// Every node in paint order, parents before children. No recursion: a
     /// caller may nest as deep as the node limit.
     pub(crate) fn visit(&self, mut f: impl FnMut(NodeId)) {

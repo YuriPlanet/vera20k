@@ -494,9 +494,14 @@ impl RestartCapture {
             &state.match_state.match_presentation,
         )
         .context("no sidebar view")?;
-        let rect = state
-            .sidebar_frame()
-            .rect_to_frame(view.top_buttons[0].rect);
+        let rect = crate::app::state::sidebar_frame(
+            &state.platform,
+            &state.persistence,
+            &state.renderer,
+            &state.frontend.screen,
+            &state.match_state.match_presentation.sidebar_layout_spec,
+        )
+        .rect_to_frame(view.top_buttons[0].rect);
         let point = [rect.x + rect.w / 2.0, rect.y + rect.h / 2.0];
         state.match_state.input.cursor_x = point[0];
         state.match_state.input.cursor_y = point[1];
@@ -509,7 +514,7 @@ impl RestartCapture {
             "the 0xF2 tab did not open the restate briefing"
         );
         // ALL01UMD.MAP's MISSIONMD Briefing key.
-        let expected = state.csf_text("Brief:ALL01md");
+        let expected = state.process_assets.csf_text("Brief:ALL01md");
         ensure!(
             presentation.restate_text == expected,
             "the restate briefing did not resolve Brief:ALL01md"
@@ -647,7 +652,9 @@ impl RestartCapture {
             }
             Step::Settling(_) | Step::Done => {}
             Step::AwaitObjective => {
-                let expected = state.csf_label("MISSION:Sov2Obj2", "MISSION:Sov2Obj2");
+                let expected = state
+                    .process_assets
+                    .csf_label("MISSION:Sov2Obj2", "MISSION:Sov2Obj2");
                 let row = state
                     .match_state
                     .match_presentation
@@ -822,7 +829,7 @@ impl RestartCapture {
                         crate::app::frontend::state::ShellMessageBoxPurpose::CampaignVictory(_)
                     )
                 {
-                    let expected = state.csf_text("MSG:UnableMapSelect");
+                    let expected = state.process_assets.csf_text("MSG:UnableMapSelect");
                     ensure!(
                         message.shell_box.body == expected,
                         "MapSelect notice has wrong text"
@@ -875,8 +882,8 @@ impl RestartCapture {
                     } else {
                         let layout = crate::ui::shell::modal::menu_message_box(
                             1,
-                            state.render_width() as i32,
-                            state.render_height() as i32,
+                            state.renderer.render_width(&state.frontend.screen) as i32,
+                            state.renderer.render_height(&state.frontend.screen) as i32,
                         );
                         set_window_pointer_to_rect_center(
                             &state.renderer,
@@ -1245,34 +1252,41 @@ impl RestartCapture {
             "physical": audio.music_player.as_ref().map(|player| format!("{:?}", player.state()))}));
     }
 
-    pub(super) fn ready(&self, state: &AppState) -> Result<bool> {
+    pub(super) fn ready(
+        &self,
+        platform: &PlatformState,
+        renderer: &RendererState,
+        frontend: &FrontendState,
+        match_state: &MatchState,
+        persistence: &PersistenceState,
+    ) -> Result<bool> {
         Ok(match self.target {
             RestartTarget::AbortShown => {
                 self.step == Step::Settling(0)
-                    && state.match_state.match_presentation.in_game_menu
+                    && match_state.match_presentation.in_game_menu
                         == crate::ui::pause_menu::InGameMenuState::AbortConfirm
                     && crate::app::input::abort::current_abort_layout(
-                        &state.platform,
-                        &state.renderer,
-                        &state.frontend,
-                        &state.match_state,
-                        &state.persistence,
+                        platform,
+                        renderer,
+                        frontend,
+                        match_state,
+                        persistence,
                     )
                     .is_some_and(|layout| layout.secondary.is_some())
             }
             RestartTarget::DefeatPrompt => {
-                self.step == Step::Settling(0) && state.frontend.shell_message_box.is_some()
+                self.step == Step::Settling(0) && frontend.shell_message_box.is_some()
             }
             RestartTarget::DefeatReturned
             | RestartTarget::DefeatReturnedEnter
             | RestartTarget::DefeatReturnedNumpadEnter
             | RestartTarget::DefeatReturnedEscape
             | RestartTarget::DefeatReturnedRepeatedEnter => {
-                self.step == Step::Done && state.frontend.screen == GameScreen::MainMenu
+                self.step == Step::Done && frontend.screen == GameScreen::MainMenu
             }
             RestartTarget::Restate => {
                 self.step == Step::Settling(0)
-                    && state.match_state.match_presentation.in_game_menu
+                    && match_state.match_presentation.in_game_menu
                         == crate::ui::pause_menu::InGameMenuState::MissionBriefing
             }
             RestartTarget::AbortRestarted
@@ -1281,20 +1295,19 @@ impl RestartCapture {
             | RestartTarget::MenuDefeatReplayed
             | RestartTarget::SavedVictory
             | RestartTarget::InheritedTimerVictory => {
-                self.step == Step::Done && state.frontend.screen == GameScreen::InGame
+                self.step == Step::Done && frontend.screen == GameScreen::InGame
             }
             RestartTarget::MapSelectFailurePrompt => {
-                self.step == Step::HoldMapSelectFailure(0)
-                    && state.frontend.shell_message_box.is_some()
+                self.step == Step::HoldMapSelectFailure(0) && frontend.shell_message_box.is_some()
             }
             RestartTarget::MapSelectFailureReplayed | RestartTarget::MapSelectFailureEscape => {
-                self.step == Step::Done && state.frontend.screen == GameScreen::InGame
+                self.step == Step::Done && frontend.screen == GameScreen::InGame
             }
             RestartTarget::AlternateHomeVictory => {
-                self.step == Step::Done && state.frontend.screen == GameScreen::InGame
+                self.step == Step::Done && frontend.screen == GameScreen::InGame
             }
             RestartTarget::ObjectiveExpiry => {
-                self.step == Step::Done && state.frontend.screen == GameScreen::InGame
+                self.step == Step::Done && frontend.screen == GameScreen::InGame
             }
         })
     }

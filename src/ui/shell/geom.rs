@@ -50,6 +50,31 @@ pub fn fit_window<L: ScaledRects>(
     vera20k_gui::shell::geom::fit_window(SHELL_BASE_W, SHELL_BASE_H, screen_w, screen_h, base)
 }
 
+/// The room chat edit's rect beside VERA's send key, sized as the online
+/// room's: the log's width less the send tile and its gap (`26 + 6` authored
+/// px). Callers that do not show the key keep the chat edit's own rect.
+pub(crate) fn room_chat_text_rect(chat: RectPx, log: RectPx, scale: ShellScale) -> RectPx {
+    let tile = (26.0 * scale.factor()).round() as i32;
+    let gap = (6.0 * scale.factor()).round() as i32;
+    RectPx::new(chat.x, chat.y, (log.w - tile - gap).max(1), chat.h)
+}
+
+/// The room's send tile, at the online room's emote slot: just right of the
+/// box, one pixel above it and `26 x 23` authored px. A platform without an
+/// Enter key shows it; a press sends the line.
+pub(crate) fn room_chat_send_rect(chat: RectPx, log: RectPx, scale: ShellScale) -> RectPx {
+    let text = room_chat_text_rect(chat, log, scale);
+    let tile_w = (26.0 * scale.factor()).round() as i32;
+    let tile_h = (23.0 * scale.factor()).round() as i32;
+    let gap = (6.0 * scale.factor()).round() as i32;
+    RectPx::new(
+        text.x + text.w + gap,
+        chat.y - (1.0 * scale.factor()).round() as i32,
+        tile_w,
+        tile_h,
+    )
+}
+
 // --- DLU base metrics (MS Sans Serif 8pt) ---
 pub const DLU_BASE_X: i32 = 6;
 pub const DLU_BASE_Y: i32 = 13;

@@ -1170,6 +1170,46 @@ fn tumble_selects_one_physical_section_for_body_and_shadow() {
     );
 }
 
+/// A world whose only voxel unit draws a declared model
+/// (`docs/picture-model-art.md`) still makes the atlas, reading no VXL: the
+/// unit draw visits objects only while an atlas exists, so without one that
+/// unit, and every other, drew nothing.
+#[test]
+fn a_world_of_declared_models_makes_the_atlas() {
+    let directory = crate::map::source::test_support::TestDirectory::new("declared-atlas");
+    let glb = crate::assets::model_file::test_glb::box_model(2.0, 1.0, 4.0, &[]);
+    std::fs::write(directory.path().join("tank.glb"), &glb).unwrap();
+    let assets = AssetManager::from_loose_root_for_test(directory.path());
+    let art = IniFile::from_str("[BODY]\nVoxel=yes\nModel=tank.glb\nModelSize=120\n");
+    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
+        &IniFile::from_str("[VehicleTypes]\n0=TEST\n[TEST]\nImage=BODY\nStrength=300\n"),
+        &art,
+    )
+    .unwrap();
+    rules.install_art_fixture(crate::rules::art_data::ArtRegistry::from_ini(&art));
+    rules.bind_effect_assets(&assets, "TEM", "TEMPERATE");
+    assert!(rules.draws_declared_model("TEST"));
+    let mut entity =
+        crate::sim::game_entity::GameEntity::test_default(1, "TEST", "Americans", 5, 5);
+    entity.set_is_voxel_for_test(true);
+    let mut world = crate::sim::entity_store::EntityStore::new();
+    world.insert(entity);
+    let interner = crate::sim::intern::test_interner();
+    let rules = Some(&rules);
+
+    assert!(!atlas_covers_world(None, &world, rules, Some(&interner)));
+    let mut atlas = None;
+    admit_world_models(&mut atlas, &world, &assets, rules, Some(&interner), 8192);
+    let atlas = atlas.expect("a world of declared models makes the atlas");
+    assert!(atlas.models.is_empty(), "no VXL is read");
+    assert!(atlas_covers_world(
+        Some(&atlas),
+        &world,
+        rules,
+        Some(&interner)
+    ));
+}
+
 /// A placed sprite waits for its upload as the resident cache's pixels
 /// themselves, not a second copy of them.
 #[test]

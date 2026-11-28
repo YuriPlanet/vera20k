@@ -24,8 +24,16 @@ pub(crate) fn world_source(body: &str) -> String {
     ))
 }
 
+/// VERA-only, experimental: a picture page entry's house colour, looked up
+/// as it draws (`picture_atlas::PICTURE_HOUSE`).
+pub(crate) const PICTURE_HOUSE: &str = include_str!("picture_house.wgsl");
+
 /// The source page an SHP-family blitter reads, RGBA or palette-indexed.
-pub(crate) const SPRITE_SOURCE: &str = include_str!("sprite_source.wgsl");
+pub(crate) const SPRITE_SOURCE: &str = concat!(
+    include_str!("picture_house.wgsl"),
+    "\n",
+    include_str!("sprite_source.wgsl")
+);
 
 /// World blitters that read a source page: the batch and Z-tested SHP shaders
 /// and the terrain passes built on the SHP projection.

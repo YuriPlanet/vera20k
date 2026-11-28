@@ -1032,7 +1032,15 @@ pub(crate) fn service_event(state: &mut AppState, event: WolServiceEvent) {
     }
     let event = match event {
         WolServiceEvent::Account(result) => {
-            super::login::account_answered(state, result);
+            let step = super::login::account_answered(
+                &mut state.frontend,
+                &state.renderer,
+                state.platform.game_config.as_ref(),
+                result,
+            );
+            if let Some(step) = step {
+                App::apply_step(state, step);
+            }
             return;
         }
         WolServiceEvent::Page { from, text, ansi } => {
@@ -1338,7 +1346,11 @@ fn apply(state: &mut AppState, step: WolStep) {
                 .reset_to(crate::ui::wol_shell::WAIT_DIALOG);
         }
         WolStep::Message { key, yes_no, then } => {
-            let message = message_box(&state.process_assets, state.csf_text(key), yes_no);
+            let message = message_box(
+                &state.process_assets,
+                state.process_assets.csf_text(key),
+                yes_no,
+            );
             let dialog = message.dialog;
             let visit = state.frontend.wol.as_mut().expect("WOL visit");
             visit.page = WolPage::Message { message, then };
@@ -1435,7 +1447,7 @@ fn connect_succeeded(state: &mut AppState) {
         file.as_ref(),
         &nickname,
         server.as_ref().map(WolServer::persona_server),
-        &|key| state.csf_text(key),
+        &|key| state.process_assets.csf_text(key),
     );
     // The nickname becomes the session handle [0xA8B380], the persona's
     // Country and Color the MultiPlayer picks, and WriteMultiPlayerSettings
@@ -1649,7 +1661,9 @@ pub(super) fn box_command(state: &mut AppState, answer: usize) {
     };
     let step = match &visit.page {
         WolPage::Lobby | WolPage::QuickMatch(_) => {
-            super::lobby::box_command(state, answer);
+            if let Some(step) = super::lobby::box_command(state, answer) {
+                App::apply_step(state, step);
+            }
             state.platform.window.request_redraw();
             return;
         }

@@ -47,6 +47,8 @@ impl Simulation {
         if cached == level {
             return;
         }
+        // The rank a promotion reached, for the Wasm module `Promoted`.
+        let mut promoted = None;
         if cached != LEVEL_UNSAMPLED
             && let Some(object) = self.entity_object_type(entity, rules)
         {
@@ -84,6 +86,7 @@ impl Simulation {
             };
             if let Some(rank) = rank {
                 let elite = rank == PromotedRank::Elite;
+                promoted = Some(if elite { 2 } else { 1 });
                 let global_sound = if elite {
                     rules.general.upgrade_elite_sound.as_deref()
                 } else {
@@ -125,6 +128,11 @@ impl Simulation {
         }
         if let Some(entity) = self.substrate.entities.get_mut(id) {
             entity.veterancy.store_level(level);
+        }
+        // Wasm module `Promoted` (1 veteran, 2 elite), after the rank is
+        // stored; a silent update (a passenger, a gunner) raises it too.
+        if let Some(rank) = promoted {
+            self.raise_module_promoted(rules, effects, id, rank);
         }
     }
 

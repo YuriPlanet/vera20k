@@ -75,6 +75,14 @@ impl MpModeClass {
         (Self::Cooperative, "Cooperative"),
     ];
 
+    /// The class's `mpmodes` section name (`Battle`, `FreeForAll`, ...).
+    pub fn section(self) -> &'static str {
+        Self::SECTIONS
+            .iter()
+            .find(|(class, _)| *class == self)
+            .map_or("", |(_, section)| section)
+    }
+
     /// Exhaustive mode policy row for this multiplayer mode class.
     pub const fn policy(self) -> ModePolicy {
         match self {

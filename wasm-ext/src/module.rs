@@ -5,16 +5,60 @@
 use std::ptr::NonNull;
 use std::sync::Arc;
 
-use wasmparser::{Payload, TypeRef, Validator, WasmFeatures};
+use wasmparser::{FuncType, Payload, TypeRef, ValType, Validator, WasmFeatures};
 
-use crate::decide::DecideRecord;
+use crate::client::{CLIENT_IMPORT_MODULE, CLIENT_IMPORTS};
+use crate::decide::{DecideRecord, ResultArea};
 use crate::host::Ctx;
 use crate::instrument::{self, DEPTH, METER, STOP, STOP_BUDGET, STOP_DEPTH};
-use crate::sections::{Delivery, Sections};
+use crate::sections::{self, Delivery, Sections};
 use crate::{
-    EventRecord, Export, Fault, IMPORTS, Limits, LoadError, ModuleState, PAGE_BYTES,
-    SIM_IMPORT_MODULE, SimHost, VarDecl,
+    EventRecord, Export, Fault, IMPORTS, Limits, LoadError, MAX_MESSAGE_BYTES, ModuleState,
+    PAGE_BYTES, SIM_IMPORT_MODULE, SimHost, VarDecl,
 };
+
+/// Which world a module belongs to (RFC section 1): it decides the import
+/// module a module may import from and the imports a runtime links.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum World {
+    /// `rules.wasm`, `vera:sim@1.0` ([`crate::host`]).
+    Sim,
+    /// `ui.wasm`, `vera:client@1.0` ([`crate::client_host`]).
+    Client,
+}
+
+impl World {
+    pub(crate) const fn import_module(self) -> &'static str {
+        match self {
+            Self::Sim => SIM_IMPORT_MODULE,
+            Self::Client => CLIENT_IMPORT_MODULE,
+        }
+    }
+
+    const fn imports(self) -> &'static [(&'static str, &'static str)] {
+        match self {
+            Self::Sim => IMPORTS,
+            Self::Client => CLIENT_IMPORTS,
+        }
+    }
+
+    /// The SDK-generated initialization export that replaces `start`.
+    const fn init_export(self) -> &'static str {
+        match self {
+            Self::Sim => "vera_init",
+            Self::Client => "client_init",
+        }
+    }
+}
+
+/// One argument of an export call.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum Arg {
+    I32(i32),
+    I64(i64),
+    /// `client_on_render`'s `dt` and `alpha`.
+    F32(f32),
+}
 
 /// Most records one `on_events` call receives (RFC 15.4), within what the
 /// delivery area holds, so that a burst is many calls that can wait instead
@@ -64,16 +108,20 @@ impl TrapKind {
 
 /// What executes rewritten module bytes: Wasmtime on the desktop, the
 /// browser's own WebAssembly engine in the browser. Every import goes through
-/// [`crate::host`]. Module memory is reached by copying, since a browser's
-/// lives outside the engine's memory.
+/// [`crate::host`] or, for a client module, [`crate::client_host`]. Module
+/// memory is reached by copying, since a browser's lives outside the
+/// engine's memory.
 pub(crate) trait Runtime: Sized {
-    /// Compiles and instantiates the rewritten module. No module code runs.
-    fn instantiate(bytes: &[u8], ctx: Ctx) -> Result<Self, String>;
+    /// Compiles and instantiates the rewritten module with `world`'s
+    /// imports. No module code runs.
+    fn instantiate(bytes: &[u8], ctx: Ctx, world: World) -> Result<Self, String>;
     /// Runs `f` on the context the imports share.
     fn with_ctx<T>(&mut self, f: impl FnOnce(&mut Ctx) -> T) -> T;
-    /// Calls export `name` (a function of `args.len()` i32 parameters and
-    /// no results, checked at load) with `args`.
-    fn call(&mut self, name: &str, args: &[i32]) -> Result<(), TrapKind>;
+    /// Calls export `name` (a function taking `args`' types and returning
+    /// nothing, checked at load) with `args`. A runtime supports the
+    /// argument lists the engine's exports take: none, `(i32, i32)`,
+    /// `(i64, i32, i32)` and `(f32, f32)`.
+    fn call(&mut self, name: &str, args: &[Arg]) -> Result<(), TrapKind>;
     /// The module's memory size in bytes, 0 without memory.
     fn memory_len(&self) -> usize;
     /// Copies module memory at `offset` into `buf`; false out of bounds.
@@ -98,6 +146,8 @@ pub struct SimModuleOn<R> {
     exports: [bool; 4],
     on_events: bool,
     on_decide: bool,
+    /// `on_message(sender: i64, ptr, len)` (appendix 1.2, phase 2).
+    on_message: bool,
     /// `vera.delivery`, checked against memory at load.
     delivery: Option<Delivery>,
     /// Every mutable global the module declares, in global index order.
@@ -112,28 +162,18 @@ impl<R: Runtime> SimModuleOn<R> {
     /// Checks, rewrites and instantiates the module. No module code runs:
     /// modules with a `start` section are rejected.
     pub fn load(bytes: &[u8], limits: Limits) -> Result<Self, LoadError> {
-        check(bytes)?;
+        check(bytes, World::Sim)?;
         let sections = Arc::new(Sections::read(bytes).map_err(LoadError::Invalid)?);
         let delivery = sections.delivery;
         let max_pages = (limits.memory_bytes / PAGE_BYTES) as u64;
         let rewritten = instrument::rewrite(bytes, max_pages).map_err(LoadError::Invalid)?;
         // An export the engine calls takes `params` i32s and returns nothing.
         let export = |export: Export, params: usize| {
-            let Some((_, ty)) = rewritten.exports.iter().find(|(name, _)| name == export.name())
-            else {
-                return Ok(false);
-            };
-            let fits = ty.params().len() == params
-                && ty.params().iter().all(|p| *p == wasmparser::ValType::I32)
-                && ty.results().is_empty();
-            match fits {
-                true => Ok(true),
-                false => Err(LoadError::Invalid(format!(
-                    "export {} must have signature ({}) -> ()",
-                    export.name(),
-                    vec!["i32"; params].join(", ")
-                ))),
-            }
+            export_fits(
+                &rewritten.exports,
+                export.name(),
+                &vec![ValType::I32; params],
+            )
         };
         let mut exports = [false; 4];
         for (slot, name) in exports.iter_mut().zip(Export::ALL) {
@@ -141,10 +181,34 @@ impl<R: Runtime> SimModuleOn<R> {
         }
         let on_events = export(Export::Events, 2)?;
         let on_decide = export(Export::Decide, 2)?;
-        let rt = R::instantiate(&rewritten.bytes, Ctx::new(Arc::clone(&sections)))
-            .map_err(LoadError::Invalid)?;
-        check_delivery(delivery, on_events || on_decide, rt.memory_len())
-            .map_err(LoadError::Invalid)?;
+        let on_message = export_fits(
+            &rewritten.exports,
+            Export::Message.name(),
+            &[ValType::I64, ValType::I32, ValType::I32],
+        )?;
+        let rt = R::instantiate(
+            &rewritten.bytes,
+            Ctx::new(Arc::clone(&sections)),
+            World::Sim,
+        )
+        .map_err(LoadError::Invalid)?;
+        // A message is written into the delivery area; any valid area holds
+        // the largest one (appendix "Custom sections").
+        check_delivery(
+            delivery,
+            if on_events {
+                Some(Export::Events.name())
+            } else if on_decide {
+                Some(Export::Decide.name())
+            } else if on_message {
+                Some(Export::Message.name())
+            } else {
+                None
+            },
+            EventRecord::SIZE,
+            rt.memory_len(),
+        )
+        .map_err(LoadError::Invalid)?;
         // `on_decide` reads one `DecideRecord` in place.
         if on_decide && delivery.is_some_and(|area| (area.bytes as usize) < DecideRecord::SIZE) {
             return Err(LoadError::Invalid(format!(
@@ -159,6 +223,7 @@ impl<R: Runtime> SimModuleOn<R> {
             exports,
             on_events,
             on_decide,
+            on_message,
             delivery,
             globals: rewritten.mutable_globals,
             global_bits: Vec::new(),
@@ -232,6 +297,12 @@ impl<R: Runtime> SimModuleOn<R> {
         self.sections.action_key(name)
     }
 
+    /// The notification names the module's `vera.notify` declares, with
+    /// their IDs ([`crate::notify_id`]).
+    pub fn notify_names(&self) -> &[(String, i32)] {
+        &self.sections.notify
+    }
+
     /// The raw bits of every mutable global after the latest call.
     pub fn globals(&self) -> &[u64] {
         &self.global_bits
@@ -266,6 +337,7 @@ impl<R: Runtime> SimModuleOn<R> {
         match export {
             Export::Events => self.on_events,
             Export::Decide => self.on_decide,
+            Export::Message => self.on_message,
             _ => self.exports.get(export as usize).copied().unwrap_or(false),
         }
     }
@@ -288,7 +360,9 @@ impl<R: Runtime> SimModuleOn<R> {
         budget: u64,
         host: &mut dyn SimHost,
     ) -> Result<u64, Fault> {
-        if !matches!(export, Export::Events | Export::Decide) && self.has_export(export) {
+        if !matches!(export, Export::Events | Export::Decide | Export::Message)
+            && self.has_export(export)
+        {
             return self.run(export, budget, host, &[]);
         }
         Ok(0)
@@ -317,8 +391,39 @@ impl<R: Runtime> SimModuleOn<R> {
         }
         let bytes: Vec<u8> = records.iter().flat_map(EventRecord::to_bytes).collect();
         self.write_delivery(area, &bytes)?;
-        let args = [area.offset as i32, records.len() as i32];
+        let args = [Arg::I32(area.offset as i32), Arg::I32(records.len() as i32)];
         self.run(Export::Events, budget, host, &args)
+    }
+
+    /// Writes one client message's `data` at the start of the delivery area
+    /// and calls `on_message(sender, ptr, len)` with `budget` operations
+    /// (RFC 0001 section 10, appendix 1.2). `sender` is the sending player's
+    /// house reference, which the engine fills. Without the export no call
+    /// is made and nothing is used. A message over [`MAX_MESSAGE_BYTES`] is
+    /// the engine's error, refused before the call.
+    pub fn deliver_message(
+        &mut self,
+        sender: i64,
+        data: &[u8],
+        budget: u64,
+        host: &mut dyn SimHost,
+    ) -> Result<u64, Fault> {
+        let (true, Some(area)) = (self.on_message, self.delivery) else {
+            return Ok(0);
+        };
+        if data.len() > MAX_MESSAGE_BYTES || data.len() > area.bytes as usize {
+            return Err(Fault::Invalid(format!(
+                "a {}-byte message exceeds the delivery area",
+                data.len()
+            )));
+        }
+        self.write_delivery(area, data)?;
+        let args = [
+            Arg::I64(sender),
+            Arg::I32(area.offset as i32),
+            Arg::I32(data.len() as i32),
+        ];
+        self.run(Export::Message, budget, host, &args)
     }
 
     /// Writes `record` into the delivery area and calls `on_decide(ptr, 1)`
@@ -326,22 +431,53 @@ impl<R: Runtime> SimModuleOn<R> {
     /// ([`DecideRecord::answer`]) and the operations used. Without the
     /// export no call is made and the answer is `None`. During the call a
     /// write import stops the module.
+    ///
+    /// `result` is the request's result area (RFC 6f, appendix "Fixed
+    /// layouts"): it follows the record in the delivery area, its `cap`
+    /// lowered to what the area holds there (0 when nothing fits), and holds
+    /// the previous link's bytes, the rest zeroed. After a handled call
+    /// `result.bytes` is the whole area as the handler left it.
     pub fn decide(
         &mut self,
         record: &DecideRecord,
+        result: &mut ResultArea,
         budget: u64,
         host: &mut dyn SimHost,
     ) -> Result<(Option<i64>, u64), Fault> {
         let (true, Some(area)) = (self.on_decide, self.delivery) else {
             return Ok((None, 0));
         };
-        self.write_delivery(area, &record.to_bytes())?;
-        let used = self.run(Export::Decide, budget, host, &[area.offset as i32, 1])?;
+        let room = (area.bytes as usize).saturating_sub(DecideRecord::SIZE);
+        result.cap = result.cap.min(room);
+        let previous_len = result.bytes.len().min(result.cap);
+        let at = area.offset as usize + DecideRecord::SIZE;
+        let (area_at, cap) = match result.cap {
+            0 => (0, 0),
+            cap => (at as i32, cap as i32),
+        };
+        self.write_delivery(area, &record.to_bytes(area_at, cap, previous_len as i32))?;
+        if result.cap > 0 {
+            let mut bytes = vec![0u8; result.cap];
+            bytes[..previous_len].copy_from_slice(&result.bytes[..previous_len]);
+            if !self.rt.write_memory(at, &bytes) {
+                return Err(Fault::Trap("delivery area: out of bounds".into()));
+            }
+        }
+        let args = [Arg::I32(area.offset as i32), Arg::I32(1)];
+        let used = self.run(Export::Decide, budget, host, &args)?;
         let mut bytes = [0u8; DecideRecord::SIZE];
         if !self.rt.read_memory(area.offset as usize, &mut bytes) {
             return Err(Fault::Trap("delivery area: out of bounds".into()));
         }
-        Ok((DecideRecord::answer(&bytes), used))
+        let answer = DecideRecord::answer(&bytes);
+        if answer.is_some() && result.cap > 0 {
+            let mut bytes = vec![0u8; result.cap];
+            if !self.rt.read_memory(at, &mut bytes) {
+                return Err(Fault::Trap("delivery area: out of bounds".into()));
+            }
+            result.bytes = bytes;
+        }
+        Ok((answer, used))
     }
 
     /// Load checked the area lies inside memory, which never shrinks.
@@ -358,7 +494,7 @@ impl<R: Runtime> SimModuleOn<R> {
         export: Export,
         budget: u64,
         host: &mut dyn SimHost,
-        args: &[i32],
+        args: &[Arg],
     ) -> Result<u64, Fault> {
         // The store outlives this call but the host does not: erase the
         // borrow's lifetime and clear the pointer before returning.
@@ -367,33 +503,15 @@ impl<R: Runtime> SimModuleOn<R> {
         let host: NonNull<dyn SimHost> = unsafe { std::mem::transmute(host) };
         self.rt.with_ctx(|ctx| {
             ctx.host = Some(host);
-            ctx.fault = None;
             ctx.export = Some(export);
-            ctx.budget = budget;
         });
-        let started = [(METER, budget), (DEPTH, 0), (STOP, 0)]
-            .into_iter()
-            .try_for_each(|(name, bits)| self.rt.set_global(name, bits));
-        let result = match started {
-            Ok(()) => self.rt.call(export.name(), args),
-            Err(_) => Err(TrapKind::Other),
-        };
-        let fault = self.rt.with_ctx(|ctx| {
+        let result = invoke(&mut self.rt, export.name(), args, budget);
+        self.rt.with_ctx(|ctx| {
             ctx.host = None;
             ctx.export = None;
-            ctx.fault.take()
         });
-        let used = budget.saturating_sub(self.rt.global(METER));
-        let stop = self.rt.global(STOP) as u32 as i32;
         self.read_globals();
-        match result {
-            Ok(()) => Ok(used),
-            Err(trap) => Err(fault.unwrap_or_else(|| match stop {
-                STOP_BUDGET => Fault::Budget,
-                STOP_DEPTH => Fault::Trap(TrapKind::StackOverflow.text().into()),
-                _ => Fault::Trap(trap.text().into()),
-            })),
-        }
+        result
     }
 
     /// A copy of the module's linear memory, empty when it has none.
@@ -415,6 +533,63 @@ impl<R: Runtime> SimModuleOn<R> {
     }
 }
 
+/// Calls export `name` with `args` and `budget` operations, once the caller
+/// has put its host into the context (and takes it out after). Returns the
+/// operations used, or the fault: the first a host call raised, else what
+/// stopped the module.
+pub(crate) fn invoke<R: Runtime>(
+    rt: &mut R,
+    name: &str,
+    args: &[Arg],
+    budget: u64,
+) -> Result<u64, Fault> {
+    rt.with_ctx(|ctx| {
+        ctx.fault = None;
+        ctx.budget = budget;
+    });
+    let started = [(METER, budget), (DEPTH, 0), (STOP, 0)]
+        .into_iter()
+        .try_for_each(|(name, bits)| rt.set_global(name, bits));
+    let result = match started {
+        Ok(()) => rt.call(name, args),
+        Err(_) => Err(TrapKind::Other),
+    };
+    let fault = rt.with_ctx(|ctx| ctx.fault.take());
+    let used = budget.saturating_sub(rt.global(METER));
+    let stop = rt.global(STOP) as u32 as i32;
+    match result {
+        Ok(()) => Ok(used),
+        Err(trap) => Err(fault.unwrap_or_else(|| match stop {
+            STOP_BUDGET => Fault::Budget,
+            STOP_DEPTH => Fault::Trap(TrapKind::StackOverflow.text().into()),
+            _ => Fault::Trap(trap.text().into()),
+        })),
+    }
+}
+
+/// Whether the module exports function `name`; one that does must take
+/// `params` and return nothing.
+pub(crate) fn export_fits(
+    exports: &[(String, FuncType)],
+    name: &str,
+    params: &[ValType],
+) -> Result<bool, LoadError> {
+    let Some((_, ty)) = exports.iter().find(|(export, _)| export == name) else {
+        return Ok(false);
+    };
+    match ty.params() == params && ty.results().is_empty() {
+        true => Ok(true),
+        false => Err(LoadError::Invalid(format!(
+            "export {name} must have signature ({}) -> ()",
+            params
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ))),
+    }
+}
+
 /// The Wasm features modules may use (RFC section 3): MVP plus mutable
 /// globals, sign extension, non-trapping float-to-int, bulk memory and
 /// multi-value. `GC_TYPES` only admits the MVP `funcref` table type.
@@ -429,9 +604,11 @@ pub(crate) fn allowed_features() -> WasmFeatures {
 }
 
 /// The RFC section 3 checks: the feature allowlist, no `start` section,
-/// imports only from `vera:sim@1.0` with known names, and shape limits.
-/// [`Sections::read`] reads the custom sections.
-fn check(bytes: &[u8]) -> Result<(), LoadError> {
+/// imports only from `world`'s import module with known names, and shape
+/// limits. [`Sections::read`] reads the custom sections; a client module may
+/// not declare `vera.vars` or `vera.notify`, which are the simulation's
+/// (appendix "Custom sections", RFC 10 "Notifications").
+pub(crate) fn check(bytes: &[u8], world: World) -> Result<(), LoadError> {
     let invalid = |why: String| LoadError::Invalid(why);
     if bytes.len() > MAX_MODULE_BYTES {
         return Err(invalid(format!(
@@ -449,23 +626,34 @@ fn check(bytes: &[u8]) -> Result<(), LoadError> {
     for payload in wasmparser::Parser::new(0).parse_all(bytes) {
         match payload.map_err(|e| invalid(e.to_string()))? {
             Payload::StartSection { .. } => {
-                return Err(invalid(
-                    "has a start section; export vera_init instead".into(),
-                ));
+                return Err(invalid(format!(
+                    "has a start section; export {} instead",
+                    world.init_export()
+                )));
+            }
+            Payload::CustomSection(section)
+                if world == World::Client
+                    && matches!(section.name(), sections::VARS | sections::NOTIFY) =>
+            {
+                return Err(invalid(format!(
+                    "a client module declares {}, which only simulation modules declare",
+                    section.name()
+                )));
             }
             Payload::ImportSection(imports) => {
+                let module = world.import_module();
                 for import in imports.into_imports() {
                     let import = import.map_err(|e| invalid(e.to_string()))?;
-                    if import.module != SIM_IMPORT_MODULE {
+                    if import.module != module {
                         return Err(invalid(format!(
-                            "imports {}::{}; only {SIM_IMPORT_MODULE} is available",
+                            "imports {}::{}; only {module} is available",
                             import.module, import.name
                         )));
                     }
                     if !matches!(import.ty, TypeRef::Func(_)) {
                         return Err(invalid(format!("imports non-function {}", import.name)));
                     }
-                    if !IMPORTS.iter().any(|(name, _)| *name == import.name) {
+                    if !world.imports().iter().any(|(name, _)| *name == import.name) {
                         return Err(invalid(format!("imports unknown function {}", import.name)));
                     }
                 }
@@ -488,24 +676,26 @@ fn check(bytes: &[u8]) -> Result<(), LoadError> {
     Ok(())
 }
 
-/// `vera.delivery` must hold at least one `EventRecord`, start 8-byte
-/// aligned (records are read in place) and lie inside the initial memory. A
-/// module exporting `on_events` must declare it.
-fn check_delivery(
+/// `vera.delivery` must hold at least `min_bytes` (one `EventRecord` for a
+/// simulation module, [`crate::client::CLIENT_DELIVERY_MIN`] for a client
+/// module), start 8-byte aligned (records are read in place) and lie inside
+/// the initial memory. A module exporting `needed_by` must declare it.
+pub(crate) fn check_delivery(
     delivery: Option<Delivery>,
-    on_events: bool,
+    needed_by: Option<&str>,
+    min_bytes: usize,
     memory_bytes: usize,
 ) -> Result<(), String> {
     let Some(area) = delivery else {
-        return match on_events {
-            true => Err("exports on_events without a vera.delivery section".into()),
-            false => Ok(()),
+        return match needed_by {
+            Some(export) => Err(format!("exports {export} without a vera.delivery section")),
+            None => Ok(()),
         };
     };
     let end = u64::from(area.offset) + u64::from(area.bytes);
-    if area.offset % 8 != 0 || (area.bytes as usize) < EventRecord::SIZE {
+    if area.offset % 8 != 0 || (area.bytes as usize) < min_bytes {
         return Err(format!(
-            "vera.delivery at {} of {} bytes is unaligned or smaller than one record",
+            "vera.delivery at {} of {} bytes is unaligned or smaller than {min_bytes} bytes",
             area.offset, area.bytes
         ));
     }

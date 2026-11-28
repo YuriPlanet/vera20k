@@ -286,8 +286,7 @@ pub(crate) fn apply_action(state: &mut AppState, action: SetupAction) {
                 &mut state.match_state,
                 &state.process_assets,
                 &state.renderer,
-                &mut state.audio,
-                &mut state.persistence,
+                None,
             );
             Ok(())
         }

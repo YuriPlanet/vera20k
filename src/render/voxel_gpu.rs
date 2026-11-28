@@ -10,9 +10,9 @@
 //! native order (sections in 754510's order, columns in the raster loop's,
 //! voxels along the walk), and only a later store passes the test.
 //!
-//! A draw stays on the CPU where native rasterizes it depth-tested
-//! (UseBuffer, 757980/757BF0), where a section's forward and backward walks
-//! read different voxels, or where the CPU raster would fail.
+//! For an admitted live UseBuffer image (757980/757BF0), the shared CPU depth
+//! map decides which stores pass. The GPU writes their palette bytes into the
+//! pose page. Other live draws and unsupported encoded walks use the CPU raster.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -60,8 +60,7 @@ impl LimbKey {
     }
 }
 
-/// A voxel image the GPU raster draws: an ordinary draw's sections, or a
-/// shadow stencil.
+/// A voxel image drawn into a pose page.
 #[derive(Debug, Clone)]
 pub(crate) enum GpuImage {
     Paint {
@@ -74,6 +73,48 @@ pub(crate) enum GpuImage {
         limb: LimbKey,
         raster: StencilRaster,
     },
+    /// Accepted UseBuffer stores in native order. Each first address occupies
+    /// the low 16 bits and its post-VPL colour the following byte.
+    Buffered { crop: [i32; 4], stores: Vec<u32> },
+}
+
+impl GpuImage {
+    /// Check before replaying the program on the shared depth map. A render
+    /// order from 1 through the store count must fit the GPU depth key exactly.
+    pub(crate) fn can_buffer([x, y, w, h]: [i32; 4], maximum_stores: usize) -> bool {
+        crate::render::vxl_raster::crop_fits([0, 0, x, y, w, h])
+            && maximum_stores < SEQUENCE_LIMIT as usize
+    }
+
+    /// A program admitted by `can_buffer`, after replay on the CPU depth map.
+    pub(crate) fn buffered(crop: [i32; 4], stores: Vec<u32>) -> Self {
+        debug_assert!(Self::can_buffer(crop, stores.len()));
+        Self::Buffered { crop, stores }
+    }
+
+    /// The cropped palette bytes for a native body-mask consumer. This is
+    /// requested only when that consumer needs the frame-local image on CPU.
+    pub(crate) fn buffered_indices(&self) -> Option<Vec<u8>> {
+        let Self::Buffered {
+            crop: [x, y, w, h],
+            stores,
+        } = self
+        else {
+            return None;
+        };
+        let mut pixels = vec![0; (w * h) as usize];
+        for &store in stores {
+            let first = store as u16;
+            for address in std::iter::once(first).chain(first.checked_add(1)) {
+                let dx = i32::from(address & 255) - x;
+                let dy = i32::from(address >> 8) - y;
+                if (0..*w).contains(&dx) && (0..*h).contains(&dy) {
+                    pixels[(dy * w + dx) as usize] = (store >> 16) as u8;
+                }
+            }
+        }
+        Some(pixels)
+    }
 }
 
 /// An image's place on a page: its corner, and the image.
@@ -239,6 +280,7 @@ impl VoxelGpu {
         raster.fit_depth(device, page_size);
         let blocks = draw_blocks(pages, page_size, raster.vpl_rows);
         let mut offsets = raster.write_draws(device, queue, &blocks).into_iter();
+        let mut store_ranges = raster.write_stores(device, queue, pages).into_iter();
         self.upload(device, queue);
         let raster = self.raster.as_ref().expect("created above");
         for page in pages.iter().filter(|page| !page.images.is_empty()) {
@@ -302,6 +344,17 @@ impl VoxelGpu {
                         pass.set_bind_group(0, &raster.draws, &[offset]);
                         pass.set_vertex_buffer(0, buffer.slice(..));
                         pass.draw(0..2, 0..columns.len() as u32);
+                    }
+                    GpuImage::Buffered { stores, .. } => {
+                        if !stores.is_empty() {
+                            let (buffer, range) =
+                                store_ranges.next().expect("a nonempty buffered draw");
+                            pass.set_pipeline(&raster.buffered);
+                            // The clear's block also supplies this draw's crop and page.
+                            pass.set_bind_group(0, &raster.draws, &[offset]);
+                            pass.set_vertex_buffer(0, raster.store_buffers[buffer].slice(range));
+                            pass.draw(0..2, 0..stores.len() as u32);
+                        }
                     }
                 }
             }
@@ -376,6 +429,7 @@ fn draw_blocks(
                     }
                 }
                 GpuImage::Stencil { raster, .. } => blocks.push(stencil_draw(raster, target)),
+                GpuImage::Buffered { .. } => {}
             }
         }
     }
@@ -445,13 +499,17 @@ fn paint_draw(
 
 /// The image's clear: its size as the crop's.
 fn clear_draw(image: &GpuImage, target: [u32; 4]) -> [u8; DRAW_SIZE] {
-    let [width, height] = match image {
-        GpuImage::Paint { crop, .. } => [crop[2], crop[3]],
-        GpuImage::Stencil { raster, .. } => [raster.rect[4], raster.rect[5]],
+    let crop = match image {
+        GpuImage::Paint { crop, .. } | GpuImage::Buffered { crop, .. } => *crop,
+        GpuImage::Stencil { raster, .. } => [
+            raster.rect[2],
+            raster.rect[3],
+            raster.rect[4],
+            raster.rect[5],
+        ],
     };
     let mut words = [0; 20];
-    words[14] = width as u32;
-    words[15] = height as u32;
+    words[12..16].copy_from_slice(&crop.map(|v| v as u32));
     words[16..].copy_from_slice(&target);
     draw_block(words, &[0; 256])
 }
@@ -489,6 +547,11 @@ struct Raster {
     clear: wgpu::RenderPipeline,
     paint: wgpu::RenderPipeline,
     stencil: wgpu::RenderPipeline,
+    buffered: wgpu::RenderPipeline,
+    /// Packed live draws share a queue write, with extra chunks only at
+    /// the device's maximum buffer size. Slicing restarts each image's order at 1.
+    store_buffers: Vec<wgpu::Buffer>,
+    store_words: Vec<u32>,
     draw_layout: wgpu::BindGroupLayout,
     skip_layout: wgpu::BindGroupLayout,
     /// The lighting table: one row of 256 indices per VPL page.
@@ -615,6 +678,19 @@ impl Raster {
             false,
             wgpu::CompareFunction::Always,
         );
+        let buffered = pipeline(
+            "Voxel accepted UseBuffer stores (757980/757BF0)",
+            &[Some(&draw_layout)],
+            "vs_buffered",
+            Some(wgpu::VertexBufferLayout {
+                array_stride: 4,
+                step_mode: wgpu::VertexStepMode::Instance,
+                attributes: &column_attributes,
+            }),
+            wgpu::PrimitiveTopology::PointList,
+            true,
+            wgpu::CompareFunction::Greater,
+        );
         let pages = vpl.map_or(&[][..], VplFile::pages_slice);
         let vpl_rows = pages.len() as u32;
         let vpl = uint_texture(
@@ -640,6 +716,9 @@ impl Raster {
             clear,
             paint,
             stencil,
+            buffered,
+            store_buffers: Vec::new(),
+            store_words: Vec::new(),
             draw_layout,
             skip_layout,
             vpl,
@@ -658,6 +737,67 @@ impl Raster {
             self.depth = depth_view(device, size);
             self.depth_size = size;
         }
+    }
+
+    /// Gather accepted stores across all pose pages before opening any pass.
+    fn write_stores(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        pages: &[PagePass<'_>],
+    ) -> Vec<(usize, std::ops::Range<u64>)> {
+        let mut ranges = Vec::new();
+        let mut buffer = 0;
+        let max_words = device.limits().max_buffer_size / 4;
+        for page in pages {
+            for &(_, image) in &page.images {
+                let GpuImage::Buffered { stores, .. } = image else {
+                    continue;
+                };
+                if stores.is_empty() {
+                    continue;
+                }
+                // Each admitted image is smaller than 64 MiB, within the
+                // WebGPU and WebGL2 downlevel device limits.
+                if (self.store_words.len() + stores.len()) as u64 > max_words {
+                    self.flush_stores(device, queue, buffer);
+                    buffer += 1;
+                }
+                let start = self.store_words.len() as u64 * 4;
+                self.store_words.extend_from_slice(stores);
+                ranges.push((buffer, start..self.store_words.len() as u64 * 4));
+            }
+        }
+        if !self.store_words.is_empty() {
+            self.flush_stores(device, queue, buffer);
+        }
+        ranges
+    }
+
+    fn flush_stores(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, index: usize) {
+        let data: &[u8] = bytemuck::cast_slice(&self.store_words);
+        let needed = data.len() as u64;
+        if self
+            .store_buffers
+            .get(index)
+            .is_none_or(|b| b.size() < needed)
+        {
+            let next = device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("Voxel accepted stores"),
+                size: needed
+                    .next_power_of_two()
+                    .min(device.limits().max_buffer_size),
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+            if let Some(old) = self.store_buffers.get_mut(index) {
+                *old = next;
+            } else {
+                self.store_buffers.push(next);
+            }
+        }
+        queue.write_buffer(&self.store_buffers[index], 0, data);
+        self.store_words.clear();
     }
 
     /// Write every draw's block and return their dynamic offsets.

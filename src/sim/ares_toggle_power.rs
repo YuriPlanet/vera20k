@@ -20,7 +20,6 @@
 use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::intern::InternedId;
-use crate::sim::power_system::native_building_power_drain;
 use crate::sim::world::{FrameEffects, Simulation};
 
 impl Simulation {
@@ -66,7 +65,7 @@ impl Simulation {
                     return None;
                 }
                 let object = self.object_type(building.type_ref(), rules)?;
-                let drain = native_building_power_drain(object.power);
+                let drain = object.power_drain();
                 if !object.toggle_power
                     || drain <= 0
                     || building.building_art.stuff_enabled() != low_power

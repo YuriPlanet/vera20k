@@ -15,25 +15,15 @@ use vera20k_sdk::{NO_HANDLE, get, set};
 
 use crate::content::{self, MERCS, Merc};
 use crate::state::{self, CAMP_RANK, COMPANY, MAX_COMPANY, MAX_OFFERS, Member, Num, PICKS};
-use crate::text::Line;
+use crate::text::{Line, Say};
 use crate::{perks, world};
+use muster_field_data::camp::{self, IMPROVE, ODDS, PLACES, REDRAW, ROW};
+use muster_field_data::proto;
 
 /// The quartermaster; armed, or the Guard key would send no order.
 pub const OFFICER: &str = "SSRV";
 /// What stands for a supply to pick.
 pub const CRATES: [&str; 3] = ["TRUCKB", "PICK", "BUS"];
-
-// By camp rank.
-const ROW: [usize; 3] = [3, 4, 5];
-const PLACES: [usize; 3] = [5, 7, 9];
-/// Percent of the draws that are of tier 0, 1 and 2.
-const ODDS: [[i32; 3]; 3] = [[88, 12, 0], [52, 38, 10], [28, 44, 28]];
-const IMPROVE: [i32; 2] = [600, 1400];
-
-const REDRAW: i32 = 50;
-/// A dismissal pays back this part of the price. With a champion paid back
-/// as three, more would make merge and dismiss a cheap way to supplies.
-const REFUND_PERCENT: i32 = 50;
 
 /// Cells between two offers.
 const SPACING: i32 = 3;
@@ -165,7 +155,7 @@ fn merc(kind: usize) -> &'static Merc {
 }
 
 fn camp_rank() -> usize {
-    (CAMP_RANK.get().max(0) as usize).min(ROW.len() - 1)
+    camp::rank(CAMP_RANK.get())
 }
 
 fn places() -> usize {
@@ -485,8 +475,7 @@ fn dismiss(steps: &[Step]) -> bool {
             continue;
         }
         one = (member.kind(), member.is_champion());
-        let three = if member.is_champion() { 3 } else { 1 };
-        refund += three * (merc(member.kind()).price * REFUND_PERCENT / 100);
+        refund += camp::refund(merc(member.kind()).price, member.is_champion());
         count += 1;
         member.clear();
         PLACED[at].set(-1);
@@ -1071,6 +1060,112 @@ fn stand(kind: usize, wanted: Cell) -> Cell {
     place
 }
 
+// --------------------------------------------------------------- Interface
+
+/// The order a player would give a camp unit for the interface's message
+/// `what` (`proto::MSG_*`) about offer, truck or member `index`: a button
+/// does what the order does, through [`apply`]. `None` when the unit it
+/// needs is not in camp.
+pub fn ui_order(what: u8, index: usize) -> Option<Order> {
+    let order = |unit: Techno, command: Command, cell: Cell| Order {
+        unit,
+        command: command as i32,
+        cell,
+    };
+    let offer = || row().get(index).and_then(Offer::unit);
+    // The officer, or any camp unit the same key works on.
+    let officer = || some_unit(&OFFICER_UNIT);
+    let camp = state::camp();
+    match what {
+        proto::MSG_HIRE => Some(order(offer()?, Command::Move, free_place())),
+        proto::MSG_KEEP => Some(order(offer()?, Command::Guard, Cell(NO_HANDLE))),
+        proto::MSG_REDRAW => {
+            let unit = officer().or_else(|| row().iter().find_map(Offer::unit))?;
+            Some(order(unit, Command::Stop, Cell(NO_HANDLE)))
+        }
+        proto::MSG_IMPROVE => Some(order(officer()?, Command::Guard, Cell(NO_HANDLE))),
+        proto::MSG_START => {
+            let member = COMPANY.iter().find_map(Member::unit);
+            let unit = officer()
+                .or(member)
+                .or_else(|| row().iter().find_map(Offer::unit))?;
+            Some(order(unit, Command::Scatter, Cell(NO_HANDLE)))
+        }
+        proto::MSG_PICK => {
+            let truck = TRUCKS.get(index).and_then(some_unit)?;
+            let away = world::offset(camp, 0, SUPPLY_DY - 2);
+            Some(order(truck, Command::Move, away))
+        }
+        // Into the row: a dismissal.
+        proto::MSG_DISMISS => Some(order(COMPANY.get(index)?.unit()?, Command::Move, camp)),
+        _ => None,
+    }
+}
+
+/// The first place of the starting line that no member calls home.
+fn free_place() -> Cell {
+    let camp = state::camp();
+    for at in 0..MAX_COMPANY as i32 {
+        let spot = world::offset(camp, (at % 5 - 2) * 2, 4 + at / 5 * 2);
+        if COMPANY.iter().all(|member| member.home.get() != spot.0) {
+            return spot;
+        }
+    }
+    world::offset(camp, 0, 4)
+}
+
+/// The camp as `proto` publishes it.
+pub struct View {
+    pub offers: i64,
+    pub choices: i64,
+    pub company: [i64; 2],
+    pub flags: i64,
+}
+
+pub fn ui_view() -> View {
+    let mut offers = 0;
+    for (at, offer) in row().iter().enumerate() {
+        let kind = offer.kind.get();
+        let packed = proto::Offer {
+            kind: (kind >= 0).then_some(kind as usize),
+            kept: offer.is_kept(),
+            standing: offer.unit().is_some(),
+        };
+        offers = proto::with_byte(offers, at, packed.pack());
+    }
+    let trucks = TRUCKS.iter().any(|truck| some_unit(truck).is_some());
+    let mut choices = 0;
+    for (at, (truck, choice)) in TRUCKS.iter().zip(&CHOICES).enumerate() {
+        let perk = choice.get();
+        if some_unit(truck).is_some() && perk >= 0 && PICKS.get() > 0 {
+            choices = proto::with_byte(choices, at, perk as u8 + 1);
+        }
+    }
+    let mut company = [0; 2];
+    for (at, member) in COMPANY.iter().enumerate() {
+        let packed = proto::Member {
+            kind: (!member.is_empty()).then(|| member.kind()),
+            champion: member.is_champion(),
+            standing: member.unit().is_some(),
+        };
+        let half = &mut company[at / 5];
+        *half = proto::with_byte(*half, at % 5, packed.pack());
+    }
+    let mut flags = 0;
+    if some_unit(&OFFICER_UNIT).is_some() {
+        flags |= proto::FLAG_OFFICER;
+    }
+    if trucks && PICKS.get() > 0 {
+        flags |= proto::FLAG_TRUCKS;
+    }
+    View {
+        offers,
+        choices,
+        company,
+        flags,
+    }
+}
+
 // ------------------------------------------------------------------ Phases
 
 /// Puts the camp and the company on the cleared field.
@@ -1116,10 +1211,12 @@ pub fn open() {
     opening(missing);
 }
 
-/// At most four lines, the row last: the newest line stays longest.
+/// At most five lines, the row last: the newest line stays longest. The
+/// first muster opens with the credit (README.md).
 fn opening(missing: i64) {
     let muster = MUSTERS.get();
     if muster == 1 {
+        log("玩法参考 B 站 UP 主 MK 的红警酒馆，致谢。");
         log("把货位佣兵移到空地＝雇佣；队员移动＝列阵，移回货位＝遣散退半价。");
         Line::new()
             .text("军需官：S 换货 ")

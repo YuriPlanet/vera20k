@@ -142,6 +142,8 @@ impl Simulation {
                 .houses
                 .get(&unit.owner())
                 .is_none_or(|house| house.is_controlled_by_human(self.session.rule_policy()))
+            // A house whose `Forces` a Wasm module claims (RFC 0001 6i).
+            || self.module_claims(unit.owner(), vera20k_wasm_ext::DOMAIN_FORCES)
             || unit.mission.queued() != MissionId::NONE
         {
             return;

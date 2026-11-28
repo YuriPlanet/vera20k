@@ -1063,7 +1063,11 @@ impl Simulation {
                     if placed {
                         if !aircraft {
                             sim.team_member_queue_mission(member, MissionType::Guard, rules);
-                            sim.team_member_commence(member, rules);
+                            // TeamTypeClass::Place_Reinforcement_Members at 0x0065E46B
+                            // commences Guard immediately, even at a War Factory exit.
+                            let _ = sim
+                                .substrate
+                                .mission_commence_exact(member, sim.session.binary_frame());
                         }
                         return (true, None);
                     }

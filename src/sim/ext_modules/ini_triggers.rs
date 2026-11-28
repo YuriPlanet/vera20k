@@ -729,7 +729,7 @@ fn action_params(kind: i32) -> Option<&'static [Param]> {
         return Some(match name {
             "FireWeapon" => &[Id(Weapon), Value, Cell],
             "LaunchSuperWeapon" => &[Id(SuperWeapon), Cell],
-            "SpawnAnim" => &[Id(Anim)],
+            "SpawnAnim" | "DetachAnim" => &[Id(Anim)],
             "AttachAnim" => &[Id(Anim), Value2],
             "Damage" | "DetonateWarhead" => &[Id(Warhead), Value],
             "Heal" | "AddExperience" | "AddMoney" | "AddAmmo" | "SetScore" | "AddScore" => &[Value],
@@ -752,7 +752,8 @@ fn action_params(kind: i32) -> Option<&'static [Param]> {
             "EndFor" => &[Enum(EnumKind::Outcome)],
             "Log" => &[Text],
             "Convert" => &[Id(TechnoType), Value2],
-            "Push" => &[Cell, Value],
+            "Push" => &[Cell, Value, Value2],
+            "SetFacing" => &[Value],
             "CreateTeamUnlimited" => &[Id(TeamType)],
             "RaiseEvent" => &[Id(ModuleEvent), Value, Value2],
             "CreateProjectile" | "Module" => return None,

@@ -28,6 +28,7 @@ use crate::sim::mission::MissionId;
 use crate::sim::mission::authority::LiveReadyInputProvider;
 use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::occupancy::CellObjectMember;
+use crate::sim::pathfinding::zone_hierarchy::ThreatPrecheckMemo;
 use crate::sim::pathfinding::zone_map::{ZoneGrid, ZoneQueryCell};
 use crate::sim::pathfinding::{CODE2_CHAIN_MAX_HOPS, TrainSearchPose};
 use crate::sim::world::FrameChannel;
@@ -740,6 +741,26 @@ impl Simulation {
                 }
             }
         };
+        // A Wasm module's `PathFound` (`ext_modules::paths`) at the adoption,
+        // whichever search answered: it may replace the route or refuse one.
+        let searched = if request.retain_head {
+            searched
+        } else {
+            use super::movement_path::MovePathFailure as Failure;
+            use crate::sim::pathfinding::zone_search::PathSearchFailure as Search;
+            let native = match &searched {
+                Ok(directions) => Some(Some(directions.as_slice())),
+                Err(Failure::Search(Search::NativeEntryRejected | Search::CellSearchExhausted)) => {
+                    Some(None)
+                }
+                Err(_) => None,
+            };
+            match native.and_then(|native| self.module_path_found(rules, id, goal, native)) {
+                Some(Some(directions)) => Ok(directions),
+                Some(None) => Err(Failure::Search(Search::CellSearchExhausted)),
+                None => searched,
+            }
+        };
         //4D3E82..3E9F copies a successful route before Mark1's callbacks.
         if let Ok(directions) = &searched {
             let actor = self
@@ -1313,8 +1334,15 @@ impl Simulation {
                 let cells = NativeCellQuery::canonical(terrain);
                 let target_bridge = cells.flags(cells.lookup(target)) & 0x100 != 0;
                 let near_bridge = cells.flags(cells.lookup(near)) & 0x100 != 0;
-                let cost =
-                    self.estimate_zone_cost(id, near, target, near_bridge, target_bridge, rules)?;
+                let cost = self.estimate_zone_cost(
+                    id,
+                    near,
+                    target,
+                    near_bridge,
+                    target_bridge,
+                    rules,
+                    None,
+                )?;
                 let direct = (i32::from(near.0) - i32::from(target.0))
                     .abs()
                     .max((i32::from(near.1) - i32::from(target.1)).abs());
@@ -1455,6 +1483,8 @@ impl Simulation {
     /// one through 583180, preserving real aliases and shared-Dummy ordering.
     /// Evidence: tools/spatial_oracle/fv_cell_attack/{pursuit,zone_cost}.json.
     /// No RNG, timer, destination or detach effect belongs to this function.
+    /// A caller asking repeatedly for one Foot within one House threat passes
+    /// a `memo` that answers the threat-weighted precheck's repeated searches.
     pub(crate) fn estimate_zone_cost(
         &self,
         id: u64,
@@ -1463,8 +1493,9 @@ impl Simulation {
         start_bridge: bool,
         goal_bridge: bool,
         rules: &RuleSet,
+        memo: Option<&ThreatPrecheckMemo>,
     ) -> Result<i32, String> {
-        self.estimate_zone_cost_in_query(
+        self.estimate_zone_cost_in(
             id,
             ZoneQueryCell::Copied(start),
             ZoneQueryCell::Copied(goal),
@@ -1472,6 +1503,7 @@ impl Simulation {
             goal_bridge,
             rules,
             None,
+            memo,
         )
     }
 
@@ -1491,9 +1523,33 @@ impl Simulation {
         rules: &RuleSet,
         movement_override: Option<MovementZone>,
     ) -> Result<i32, String> {
+        self.estimate_zone_cost_in(
+            id,
+            start,
+            goal,
+            start_bridge,
+            goal_bridge,
+            rules,
+            movement_override,
+            None,
+        )
+    }
+
+    fn estimate_zone_cost_in(
+        &self,
+        id: u64,
+        start: ZoneQueryCell,
+        goal: ZoneQueryCell,
+        start_bridge: bool,
+        goal_bridge: bool,
+        rules: &RuleSet,
+        movement_override: Option<MovementZone>,
+        memo: Option<&ThreatPrecheckMemo>,
+    ) -> Result<i32, String> {
         use crate::sim::pathfinding::zone_build::find_high_bridge_record_index;
         use crate::sim::pathfinding::zone_hierarchy::{
             ZonePrecheckExclusions, ZonePrecheckOutcome, ZonePrecheckThreat, zone_precheck_flat,
+            zone_precheck_flat_memoized,
         };
         use crate::sim::pathfinding::zone_search::native_path_entry::live_hierarchy_projection;
 
@@ -1550,15 +1606,26 @@ impl Simulation {
                 .ok_or("EstimateZoneCost threat requires a live House")?
                 .spatial_threat_at_padded_index(index)
         };
-        let ZonePrecheckOutcome::Passed(path) = zone_precheck_flat(
-            hierarchy,
-            start_zone,
-            goal_zone,
-            movement_zone,
-            &ZonePrecheckExclusions::default(),
-            Some(ZonePrecheckThreat::new(coefficient, &threat_lookup)),
-        )?
-        else {
+        let threat = ZonePrecheckThreat::new(coefficient, &threat_lookup);
+        let outcome = match memo {
+            Some(memo) => zone_precheck_flat_memoized(
+                hierarchy,
+                start_zone,
+                goal_zone,
+                movement_zone,
+                threat,
+                memo,
+            )?,
+            None => zone_precheck_flat(
+                hierarchy,
+                start_zone,
+                goal_zone,
+                movement_zone,
+                &ZonePrecheckExclusions::default(),
+                Some(threat),
+            )?,
+        };
+        let ZonePrecheckOutcome::Passed(path) = outcome else {
             return Ok(i32::MAX);
         };
         let packed = |cell: (i16, i16)| (cell.0 as u16, cell.1 as u16);

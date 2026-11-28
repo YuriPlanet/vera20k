@@ -420,10 +420,11 @@ impl App {
         );
         let options_profile = options_load.retained_profile;
         // RA2 mode holds for the whole launch, as the mod does: the `-ra2`
-        // switch or the saved Options choice, before any archive or CSF opens.
+        // switch or the saved edition, before any archive or CSF opens.
         if let Some(config) = game_config.as_mut() {
             config.use_ra2_mode(
-                options_profile.ra2_mode && crate::ui::main_menu_dialogs::options::HAS_RA2_MODE,
+                options_profile.ra2_mode
+                    && !cfg!(all(target_arch = "wasm32", target_os = "unknown")),
             );
         }
         if crate::util::ra2_launch::enabled() {
@@ -1068,10 +1069,19 @@ impl App {
                 // arrow and hides the OS cursor, matching the original which hides the
                 // OS cursor for the whole process and blits the cursor SHP every frame.
                 let startup_software_cursor = startup_asset_manager.as_ref().and_then(|assets| {
+                    // Before a match, `mouse.png`'s `PictureSize=` comes
+                    // from the process's fixed art INI.
+                    let sizes = process_assets.native_rules().map_or(
+                        crate::render::interface_picture::PictureSizes::None,
+                        |rules| {
+                            crate::render::interface_picture::PictureSizes::Ini(rules.fixed_art())
+                        },
+                    );
                     crate::render::cursor_atlas::build_software_cursor(
                         &gpu,
                         &batch_renderer,
                         assets,
+                        sizes,
                     )
                 });
                 let hotkey_bindings = game_config.as_ref().map_or_else(
@@ -1245,6 +1255,7 @@ impl App {
                     electric_bolts: Default::default(),
                     radiation_beams: Default::default(),
                     tactical_composite: Default::default(),
+                    unit_motion: Default::default(),
                     airstrike_shades: Default::default(),
                     placement_range_pulse: Default::default(),
                     superweapon_range_pulse: Default::default(),
@@ -1309,6 +1320,8 @@ impl App {
                     house_color_map: HashMap::new(),
                     house_roster: HouseRoster::default(),
                     relation_colors: false,
+                    team_colors: false,
+                    team_by_owner: None,
                     superweapon_building_timers: false,
                     convenience_help: false,
                     relation_color_map: None,
@@ -1356,6 +1369,7 @@ impl App {
                 configured_input_delay_ticks: input_delay_ticks,
                 sandbox_full_visibility: false,
                 debug_pause: false,
+                ui_modules: None,
             },
             frontend: crate::app::frontend::state::FrontendState {
                 shell_dialog_background: None,
@@ -1478,7 +1492,6 @@ impl App {
                 depth_view,
                 shell_surface_presenter,
                 upscale_pass: None,
-                world_zoom_pass: None,
                 sidebar_surface: None,
                 in_game_shell_surface: None,
                 status_screen_fill,
@@ -1487,13 +1500,11 @@ impl App {
                 window_ui,
                 outcome_banner_art,
                 vxl_pose_frame_cache: std::cell::RefCell::new(Default::default()),
+                model_frame: Default::default(),
                 retail_screenshot_frame_cache: Default::default(),
                 terrain_picture: Default::default(),
                 native_z_seed: Default::default(),
-                hd_art: None,
-                hd_terrain: None,
-                hd_voxel: None,
-                hd_art_seen: false,
+                hd_voxels_seen: false,
                 hd_art_zoom_pending: true,
             },
             process_assets,

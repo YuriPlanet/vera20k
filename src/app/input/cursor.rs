@@ -197,8 +197,7 @@ fn find_cursor_feedback_kind(
     targets: &CursorTargets,
 ) -> Option<CursorFeedbackKind> {
     // State_Machine entry (`StateMachine__EnterPause` 0x00683EB0) sets the
-    // normal arrow (`SetCursor(0)`) for the whole modal; the in-match 0xCF
-    // shows it over the battlefield.
+    // normal arrow (`SetCursor(0)`) for the whole modal.
     if match_state.match_presentation.in_game_menu.is_open() {
         return None;
     }
@@ -2756,10 +2755,13 @@ pub(crate) fn hold_pointer_in_window(
             return false;
         }
         let physical = position.to_physical::<f64>(platform.window.scale_factor());
-        input.set_cursor_from_window(
-            (physical.x as f32, physical.y as f32),
-            renderer.tactical_zoom(screen),
-            platform.confines_pointer(),
+        crate::app::state::set_cursor_from_window(
+            platform,
+            renderer,
+            screen,
+            input,
+            physical.x as f32,
+            physical.y as f32,
         );
         true
     }

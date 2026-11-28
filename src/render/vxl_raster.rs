@@ -33,7 +33,9 @@ mod native;
 #[path = "vxl_shadow.rs"]
 pub(crate) mod shadow;
 
-pub(crate) use native::{NativeRaster, PreparedDraw, RasterParams, section_voxels};
+pub(crate) use native::{
+    BufferedVoxelRaster, NativeRaster, PreparedDraw, RasterParams, crop_fits, section_voxels,
+};
 
 /// Shared ordinary VXL preparation for CPU and GPU visibility writes, on the
 /// shared `depth` map when depth-tested (None draws on a clear one). Preview
@@ -395,6 +397,13 @@ fn voxel_params_draw_rotation(params: &VxlRenderParams, step: u8) -> Mat4 {
     }
 }
 
+/// VERA-only, experimental (`docs/picture-model-art.md`): the camera-space
+/// draw matrix a body drawn through `params` takes, every locomotor arm
+/// included, for a declared model's parts.
+pub(crate) fn body_draw_matrix(params: &VxlRenderParams) -> Mat4 {
+    voxel_params_draw_rotation(params, voxel_facing_step(params.facing))
+}
+
 /// Ordinary stationary slope/facing combinations are finite. Build their
 /// native products once: turret pivots consume this every displayed frame,
 /// unlike the atlas which only prepares geometry on a cache miss. Blended
@@ -437,12 +446,9 @@ fn voxel_draw_rotation_for_state(slope_type: u8, blend: Option<VxlSlopeBlend>, s
     }][usize::from(step)]
 }
 
-/// The double at `0x00B1D008`: model units per lepton. Static initializers
-/// `0x00735180`, `0x007351B0` and `0x007351D0` form `1 / (sqrt(2 * 256^2) / 60)`,
-/// a cell's 60-pixel width over its lepton diagonal, but take the root with
-/// the table square root `0x004CAC40`, so the value is not the exact quotient.
-/// Executed in `tools/voxel_oracle/barrel_pitch.py`.
-const TURRET_OFFSET_UNITS_PER_LEPTON: u64 = 0x3FC5_3694_862E_9021;
+/// The double at `0x00B1D008`: model units per lepton
+/// ([`crate::util::lepton::MODEL_UNITS_PER_LEPTON_BITS`]).
+use crate::util::lepton::MODEL_UNITS_PER_LEPTON_BITS as TURRET_OFFSET_UNITS_PER_LEPTON;
 
 /// `TurretOffset=` (`Type+0x720`) in model units, as `UnitClass::DrawVoxelBody`
 /// forms it before translating the turret along the hull's X column: `FILD`
@@ -561,15 +567,53 @@ pub fn building_gun_screen_offsets(
     recoil: [f32; 2],
 ) -> [[f32; 2]; 2] {
     let yaw = voxel_body_facing(voxel_facing_step(facing));
+    building_gun_translations(turret_offset, yaw, barrel_pitch, recoil).map(|translation| {
+        let screen = voxel_camera_view().transform_vector3(translation);
+        [screen.x, -screen.y]
+    })
+}
+
+/// [`building_gun_screen_offsets`] before the camera: the B8 turret's and C0
+/// barrel's translations in voxel space, `yaw` being the facing's matrix.
+fn building_gun_translations(
+    turret_offset: i32,
+    yaw: Mat4,
+    barrel_pitch: i8,
+    recoil: [f32; 2],
+) -> [Vec3; 2] {
     let translation = yaw.transform_vector3(Vec3::new((turret_offset / 8) as f32, 0.0, 0.0));
     let turret = translation - yaw.x_axis.truncate() * recoil[0];
     let pitched = voxel_barrel_pitch(Mat4::IDENTITY, barrel_pitch).transform_vector3(translation);
     let barrel = translation + yaw.transform_vector3(pitched - translation)
         - yaw.x_axis.truncate() * recoil[1];
-    [turret, barrel].map(|translation| {
-        let screen = voxel_camera_view().transform_vector3(translation);
-        [screen.x, -screen.y]
-    })
+    [turret, barrel]
+}
+
+/// VERA-only, experimental (`docs/picture-model-art.md`): the camera-space
+/// draw matrices of a building's B8 turret and C0 barrel (Building draw
+/// `43DA80`) for a declared model, each part's translation included: the
+/// turret turns by the facing, the barrel turns and pitches as its VXL draws
+/// ([`voxel_pitched_draw_rotation`] on level ground), each moved by
+/// [`building_gun_translations`]. A C0-only building (`has_turret` false)
+/// translates nothing, as its VXL draw does.
+pub(crate) fn building_gun_draw_matrices(
+    turret_offset: i32,
+    facing: u8,
+    barrel_pitch: i8,
+    recoil: [f32; 2],
+    has_turret: bool,
+) -> [Mat4; 2] {
+    let yaw = voxel_body_facing(voxel_facing_step(facing));
+    let [turret, barrel] = if has_turret {
+        building_gun_translations(turret_offset, yaw, barrel_pitch, recoil)
+    } else {
+        [Vec3::ZERO; 2]
+    };
+    let camera = voxel_camera_view();
+    [
+        camera * Mat4::from_translation(turret) * yaw,
+        camera * Mat4::from_translation(barrel) * voxel_barrel_pitch(yaw, barrel_pitch),
+    ]
 }
 
 #[cfg(all(test, tests_render_s_z))]
@@ -699,16 +743,19 @@ pub struct VxlSprite {
     pub offset_x: f32,
     /// Y offset from model center to sprite top-left.
     pub offset_y: f32,
-    /// VERA's HD art voxels ([`set_hd_voxels`]): the same draw at twice
-    /// the resolution, `2 * width` by `2 * height`, aligned with this one.
+    /// VERA's HD voxels ([`set_hd_voxels`]): the same draw at twice the
+    /// resolution, `2 * width` by `2 * height`, aligned with this one.
     pub hd: Option<std::sync::Arc<VxlHd>>,
 }
 
-/// VERA's HD art voxels, VERA-only: no gamemd counterpart. A draw's stores
-/// placed at twice the resolution, each covering two by two pixels at the
-/// half pixel its cursor reached ([`native::PaintWrite::half`]), so a model
-/// with more voxels than its native picture has pixels shows them when the
-/// wheel zoom magnifies it (`render::hd_art`). The native picture is
+/// VERA's HD voxels, VERA-only, experimental (`docs/zoom-one-pass.md`): no
+/// gamemd counterpart. A draw's stores placed at twice the resolution, each
+/// covering two by two pixels at the half pixel its cursor reached
+/// ([`native::PaintWrite::half`]), so a model with more voxels than its
+/// native picture has pixels shows them while the camera zooms in: the unit
+/// atlas and the pose cache bind these pictures beside their pages, and the
+/// voxel blitters read them at a camera zoom above 1
+/// (`sprite_voxel_shader.wgsl` `voxel_byte_at`). The native picture is
 /// unchanged.
 #[derive(Debug, Clone)]
 pub struct VxlHd {
@@ -720,8 +767,9 @@ pub struct VxlHd {
 
 static HD_VOXELS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
-/// Whether voxel draws also make their [`VxlHd`] picture. Set from the
-/// HD art switch; pictures made before it was on stay native.
+/// Whether voxel draws also make their [`VxlHd`] picture. Set once the
+/// camera has zoomed in (it is not part of the HD art switch); pictures made
+/// before it was on stay native.
 pub fn set_hd_voxels(on: bool) {
     HD_VOXELS.store(on, std::sync::atomic::Ordering::Relaxed);
 }
@@ -735,8 +783,7 @@ static HD_POSES: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::
 /// Whether this frame's posed voxels (tilted, crashing, rocking, tumbling:
 /// `render::unit_pose_cache`) are rasterized on the CPU, which makes their
 /// [`VxlHd`] picture, instead of by the GPU raster, which makes none. Set
-/// each frame while the HD pass draws: HD art on and the wheel zoom at 1.5x
-/// or more.
+/// each frame while the camera zooms in (a zoom above 1).
 pub fn set_hd_poses(on: bool) {
     HD_POSES.store(on, std::sync::atomic::Ordering::Relaxed);
 }

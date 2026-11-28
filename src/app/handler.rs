@@ -3,6 +3,8 @@
 //! Event priority and consumption order are player-visible contracts; this
 //! module keeps the original handler body intact.
 
+use super::audio_runtime::AppAudioRuntime;
+use super::diagnostics::state::DiagnosticsState;
 use super::frame::{FramePass, FrameRenderOutcome};
 use super::frontend::menu_page_render::FamilyPage;
 use super::frontend::state::FrontendState;
@@ -11,6 +13,7 @@ use super::input::hotkeys::HotkeyCommand;
 use super::input::precedence::{InputLayer, ModalPage, ScreenPage};
 use super::input::state::MatchInputState;
 use super::match_runtime::state::MatchState;
+use super::persistence::PersistenceState;
 use super::persistence::options_profile::RetailOptionsProfile;
 use super::presentation::state::MatchPresentationState;
 use super::process_assets::ProcessAssets;
@@ -77,7 +80,7 @@ impl App {
         pressed: bool,
         repeat: bool,
     ) -> bool {
-        if !state.main_menu_dialog_open() {
+        if !state.frontend.main_menu_dialog_open() {
             return false;
         }
         let is_escape = code == KeyCode::Escape && pressed && !repeat;
@@ -92,7 +95,17 @@ impl App {
         {
             return true;
         }
-        if is_escape && Self::close_shell_menu_list(state) {
+        if is_escape
+            && Self::close_shell_menu_list(
+                &mut state.platform,
+                &mut state.renderer,
+                &mut state.frontend,
+                &mut state.match_state,
+                &mut state.process_assets,
+                &mut state.audio,
+                &mut state.persistence,
+            )
+        {
             return true;
         }
         if state.frontend.shell_message_box.is_some() {
@@ -155,22 +168,34 @@ impl App {
         }
     }
 
-    fn resize_surface_for_window_size(state: &mut AppState, size: PhysicalSize<u32>) {
-        state.renderer.gpu.resize(size.width, size.height);
-        state.renderer.depth_view = state.renderer.gpu.create_depth_texture();
-        state
-            .renderer
-            .shell_surface_presenter
-            .resize(&state.renderer.gpu);
+    fn resize_surface_for_window_size(
+        platform: &PlatformState,
+        renderer: &mut RendererState,
+        diag: &DiagnosticsState,
+        frontend: &mut FrontendState,
+        match_state: &mut MatchState,
+        process_assets: &ProcessAssets,
+        audio: &mut AppAudioRuntime,
+        persistence: &PersistenceState,
+        size: PhysicalSize<u32>,
+    ) {
+        renderer.gpu.resize(size.width, size.height);
+        renderer.depth_view = renderer.gpu.create_depth_texture();
+        renderer.shell_surface_presenter.resize(&renderer.gpu);
         // The frame-index wave is driven by wall-clock ticks and repaints every
         // frame, so a mid-flight resize simply lets it finish; no snap/cancel.
-        Self::invalidate_main_menu_movie_if_base_changed(&state.renderer.gpu, &mut state.frontend);
-        Self::sync_zoom_pass(
-            &state.platform,
-            &mut state.renderer,
-            &state.persistence.options_profile,
+        Self::invalidate_main_menu_movie_if_base_changed(&renderer.gpu, frontend);
+        Self::sync_zoom_pass(platform, renderer, &persistence.options_profile);
+        crate::app::presentation::sidebar_render::refresh_sidebar_projection(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            audio,
+            persistence,
         );
-        crate::app::presentation::sidebar_render::refresh_sidebar_projection(state);
     }
 
     /// Keep the zoom pass matching the window and the Options choices: a
@@ -359,12 +384,21 @@ impl App {
     /// 0.30.12's Windows `set_fullscreen` notes such a race: marking the window
     /// full screen sends resize messages with the old size. A sealed capture
     /// keeps its fixed surface, and a minimised window has no size to fit.
-    pub(super) fn follow_window_size(state: &mut AppState) {
-        if state.platform.capture_client_size.is_some() {
+    pub(super) fn follow_window_size(
+        platform: &mut PlatformState,
+        renderer: &mut RendererState,
+        diag: &DiagnosticsState,
+        frontend: &mut FrontendState,
+        match_state: &mut MatchState,
+        process_assets: &ProcessAssets,
+        audio: &mut AppAudioRuntime,
+        persistence: &PersistenceState,
+    ) {
+        if platform.capture_client_size.is_some() {
             return;
         }
-        let size = state.platform.window.inner_size();
-        let config = &state.renderer.gpu.config;
+        let size = platform.window.inner_size();
+        let config = &renderer.gpu.config;
         if size.width == 0
             || size.height == 0
             || (size.width, size.height) == (config.width, config.height)
@@ -378,8 +412,18 @@ impl App {
             config.width,
             config.height
         );
-        Self::resize_surface_for_window_size(state, size);
-        crate::app::input::cursor::apply_cursor_confinement(&mut state.platform);
+        Self::resize_surface_for_window_size(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            audio,
+            persistence,
+            size,
+        );
+        crate::app::input::cursor::apply_cursor_confinement(platform);
     }
 
     /// The screen page's pointer route: a move (`edge` `None`) or a button
@@ -426,7 +470,19 @@ impl App {
                     crate::app::input::multiplayer_setup::mouse(state, button, edge.is_pressed())
                 }
             },
-            ScreenPage::MovieList if left => Self::handle_movie_list_mouse(state, down),
+            ScreenPage::MovieList if left => {
+                let step = Self::handle_movie_list_mouse(
+                    &state.renderer.gpu,
+                    &mut state.frontend,
+                    &state.match_state,
+                    &state.process_assets,
+                    &mut state.audio.sfx_player,
+                    down,
+                );
+                if let Some(step) = step {
+                    Self::apply_step(state, step);
+                }
+            }
             ScreenPage::Mods if left => Self::handle_mods_mouse(state, down),
             ScreenPage::Campaign if left => match down {
                 None => Self::handle_campaign_mouse_move(
@@ -457,7 +513,7 @@ impl App {
             ScreenPage::LauncherOptions if left => Self::handle_launcher_options_mouse(state, down),
             // A retained main-menu dialog takes the click: the SHP
             // quit-confirm modal hit-tests its OK/Cancel here.
-            _ if down.is_some() && state.main_menu_dialog_open() => {
+            _ if down.is_some() && state.frontend.main_menu_dialog_open() => {
                 if screen == ScreenPage::MainMenu
                     && state.frontend.shell_message_box.is_some()
                     && left
@@ -582,7 +638,20 @@ impl App {
             InputLayer::Screen(ScreenPage::NetworkSetup | ScreenPage::Skirmish)
         );
         match input {
-            Input::Key(event) if Self::window_key(state, event) => return,
+            Input::Key(event)
+                if Self::window_key(
+                    &mut state.platform,
+                    &mut state.renderer,
+                    &state.diag,
+                    &mut state.frontend,
+                    &mut state.match_state,
+                    &mut state.process_assets,
+                    &state.persistence,
+                    event,
+                ) =>
+            {
+                return;
+            }
             // VERA's enlarged map preview is a modal over the page: nothing
             // under it follows the pointer; only the cursor over it moves.
             Input::Move
@@ -675,7 +744,16 @@ impl App {
                             &mut state.frontend,
                             &state.match_state.input,
                         );
-                        Self::shell_menu_pointer(state, None);
+                        Self::shell_menu_pointer(
+                            &mut state.platform,
+                            &mut state.renderer,
+                            &mut state.frontend,
+                            &mut state.match_state,
+                            &mut state.process_assets,
+                            &mut state.audio,
+                            &mut state.persistence,
+                            None,
+                        );
                     }
                     Input::Button(MouseButton::Left, edge) => {
                         Self::raise_shell_message_box(&mut state.frontend);
@@ -736,29 +814,38 @@ impl App {
     /// The keys taken ahead of every page: the release that ends an
     /// admitted planning gesture, and VERA's every-screen window keys. True
     /// when the key was used.
-    fn window_key(state: &mut AppState, event: &KeyEvent) -> bool {
+    fn window_key(
+        platform: &mut PlatformState,
+        renderer: &mut RendererState,
+        diag: &DiagnosticsState,
+        frontend: &mut FrontendState,
+        match_state: &mut MatchState,
+        process_assets: &mut ProcessAssets,
+        persistence: &PersistenceState,
+        event: &KeyEvent,
+    ) -> bool {
         // Host delivery adaptation: dialogs may consume ordinary keys,
         // but a release for an admitted planning gesture must still
         // end that gesture. Opening a menu itself never commits it.
         if !event.state.is_pressed()
-            && state.frontend.screen == GameScreen::InGame
+            && frontend.screen == GameScreen::InGame
             && let PhysicalKey::Code(code) = event.physical_key
-            && state.match_state.input.planning.owns_key(code)
+            && match_state.input.planning.owns_key(code)
         {
             crate::app::input::planning_mode::key_edge(
-                &state.platform,
-                &state.renderer,
-                &state.diag,
-                &state.frontend,
-                &mut state.match_state,
-                &state.process_assets,
-                &state.persistence,
+                platform,
+                renderer,
+                diag,
+                frontend,
+                match_state,
+                process_assets,
+                persistence,
                 crate::app::input::hotkeys::HotkeyResolution::Unhandled,
                 code,
                 event.state,
                 event.repeat,
             );
-            state.match_state.input.keys_held.remove(&code);
+            match_state.input.keys_held.remove(&code);
             return true;
         }
         // VERA's every-screen keys, as the Keyboard page's VERA section
@@ -768,7 +855,7 @@ impl App {
         // extras ahead of the bindings. All are consumed before retail
         // key dispatch, but a key the Keyboard page is capturing goes
         // to the page.
-        let modifiers = state.platform.live_modifiers;
+        let modifiers = platform.live_modifiers;
         let fixed = match event.physical_key {
             PhysicalKey::Code(KeyCode::ScrollLock) => Some(HotkeyCommand::LockCursor),
             PhysicalKey::Code(KeyCode::KeyF)
@@ -781,8 +868,7 @@ impl App {
             }
             _ => None,
         };
-        let capturing = state
-            .frontend
+        let capturing = frontend
             .keyboard_dialog
             .as_ref()
             .is_some_and(|dialog| dialog.capture_focused());
@@ -796,21 +882,28 @@ impl App {
                 &unmodified,
                 event.location,
             );
-            state.match_state.input.hotkey_bindings.window_command(
-                logical,
-                event.location,
-                modifiers,
-            )
+            match_state
+                .input
+                .hotkey_bindings
+                .window_command(logical, event.location, modifiers)
         });
         // A capture keeps its fixed surface, and its Full Screen key
         // goes on to the screen.
         let Some(command) = window_command.filter(|command| {
-            *command != HotkeyCommand::FullScreen || state.platform.capture_client_size.is_none()
+            *command != HotkeyCommand::FullScreen || platform.capture_client_size.is_none()
         }) else {
             return false;
         };
         if event.state.is_pressed() && !event.repeat {
-            dispatch::run_window_command(state, command);
+            dispatch::run_window_command(
+                platform,
+                &mut renderer.performance_overlay,
+                frontend,
+                match_state,
+                process_assets,
+                &persistence.options_profile,
+                command,
+            );
         }
         true
     }
@@ -1062,28 +1155,16 @@ impl App {
             // 0x005D36A0: IDOK and IDCANCEL both answer result 1.
             _ if in_game && menu == InGameMenuState::Surrender => {
                 if fresh_press && enter_or_escape {
-                    crate::app::input::surrender::key(state);
-                }
-                return;
-            }
-            // 0xCF's loop takes every key; Escape names nothing. A release
-            // still drops its held key: the loop's KeyboardClear
-            // (0x0077D861) leaves nothing latched.
-            _ if in_game && menu == InGameMenuState::Page => {
-                if pressed {
-                    crate::app::shell_wol::page::key_press(
-                        &mut state.frontend,
+                    crate::app::input::surrender::key(
                         &mut state.platform,
+                        &state.renderer,
+                        &state.diag,
+                        &mut state.frontend,
                         &mut state.match_state,
                         &state.process_assets,
-                        &state.renderer,
                         &mut state.audio,
                         &mut state.persistence,
-                        Some(code),
-                        event.text.as_deref(),
                     );
-                } else {
-                    state.match_state.input.keys_held.remove(&code);
                 }
                 return;
             }
@@ -1103,7 +1184,14 @@ impl App {
             ScreenPage::InGameShell(InGameMenuState::AbortConfirm) => {
                 if fresh_press && matches!(code, KeyCode::Enter | KeyCode::NumpadEnter) {
                     crate::app::input::abort::activate(
-                        state,
+                        &mut state.platform,
+                        &state.renderer,
+                        &state.diag,
+                        &mut state.frontend,
+                        &mut state.match_state,
+                        &state.process_assets,
+                        &mut state.audio,
+                        &mut state.persistence,
                         crate::ui::shell::abort::AbortButton::Resume,
                     );
                 }
@@ -1134,7 +1222,16 @@ impl App {
         // Escape goes through the bindings below; Options opens B5 only if
         // selected, or as the native fallback.
         if is_escape && Self::in_game_menu_owns_escape(&state.match_state.match_presentation) {
-            return Self::route_in_game_menu_escape(state);
+            return Self::route_in_game_menu_escape(
+                &mut state.platform,
+                &mut state.renderer,
+                &state.diag,
+                &mut state.frontend,
+                &mut state.match_state,
+                &mut state.process_assets,
+                &mut state.audio,
+                &mut state.persistence,
+            );
         }
         let unmodified = event.key_without_modifiers();
         crate::app::input::keyboard::in_game_key_edge(
@@ -1201,8 +1298,8 @@ impl App {
                     return;
                 }
                 // Optional player setting: over the battlefield the wheel
-                // changes the view distance tier, anchored on the tactical
-                // centre. Over the sidebar and the bottom strip it keeps
+                // zooms the camera continuously, toward the point under the
+                // cursor. Over the sidebar and the bottom strip it keeps
                 // gamemd's native SidebarUp/SidebarDown routing.
                 if state.persistence.options_profile.mouse_wheel_zoom
                     && crate::app::input::camera::cursor_over_battlefield(
@@ -1213,14 +1310,7 @@ impl App {
                         &state.persistence,
                     )
                 {
-                    crate::app::input::camera::cycle_view_distance(
-                        &state.platform,
-                        &state.renderer,
-                        &state.frontend.screen,
-                        &mut state.match_state,
-                        &state.persistence,
-                        lines,
-                    );
+                    crate::app::input::camera::wheel_zoom(&mut state.match_state.input, lines);
                 } else if let Some(action) = dispatch::wheel_notch(lines) {
                     // Every wheel notch scrolls the active build strip by
                     // one row. gamemd routes the wheel message straight to
@@ -1313,7 +1403,16 @@ impl App {
                 #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
                 crate::app::persistence::startup_backend::start_finished();
                 // Resizes may have arrived while startup owned the renderer.
-                Self::follow_window_size(&mut state);
+                Self::follow_window_size(
+                    &mut state.platform,
+                    &mut state.renderer,
+                    &state.diag,
+                    &mut state.frontend,
+                    &mut state.match_state,
+                    &state.process_assets,
+                    &mut state.audio,
+                    &state.persistence,
+                );
                 if let Some(request) = self.replay_request.take() {
                     let loading = request.replay.standalone_startup().and_then(|startup| {
                         crate::app::loading::pump::LoadingRequest::replay(
@@ -1364,7 +1463,11 @@ impl App {
                     }
                 }
                 if let Some(session) = self.shell_capture.as_mut() {
-                    session.prepare_state(&mut state);
+                    session.prepare_state(
+                        &mut state.frontend,
+                        &mut state.match_state,
+                        &mut state.process_assets,
+                    );
                 }
                 if let Some(session) = self.hidden_run.as_mut()
                     && let Err(err) = session.prepare_state(&mut state)
@@ -1453,11 +1556,43 @@ impl App {
     }
 }
 
+/// Camera displacement in screen pixels. The normal camera clamp runs per frame.
+#[cfg(not(target_os = "linux"))]
+fn pan_touch_camera(input: &mut MatchInputState, dx: f32, dy: f32) {
+    let zoom = input.zoom_level.max(0.01);
+    let position = (input.camera_x + dx / zoom, input.camera_y + dy / zoom);
+    crate::app::input::camera::set_camera_position(input, position);
+}
+
+/// Android: turns the activity's queued pointing-device events into window events.
+#[cfg(target_os = "android")]
+fn pump_android_pointer(app: &mut App, event_loop: &ActiveEventLoop) {
+    let window_id = app.state.as_ref().map(|state| state.platform.window.id())
+        .or_else(|| app.pending_initialization.as_ref().map(|job| job.window_id()));
+    let Some(window_id) = window_id else { return };
+    let mut translated = Vec::new();
+    for event in crate::app::input::android_mouse::take() {
+        let in_game = app.state.as_ref().is_some_and(|state| {
+            state.frontend.screen == GameScreen::InGame && !state.match_state.paused()
+        });
+        app.android_pointer.translate(event, in_game, &mut translated);
+        for event in translated.drain(..) {
+            app.window_event(event_loop, window_id, event);
+        }
+    }
+}
+
 impl ApplicationHandler for App {
     fn new_events(&mut self, _event_loop: &ActiveEventLoop, _cause: winit::event::StartCause) {
         if let Some(job) = self.pending_initialization.as_mut() {
             job.admit_event_loop_turn();
         }
+        // Android: the activity consumes hardware mouse and touchpad events,
+        // which winit's Android backend would otherwise drop or read as touches.
+        // They arrive before this loop turn's redraw, so the engine's pointer is
+        // not a frame behind the system one.
+        #[cfg(target_os = "android")]
+        pump_android_pointer(self, _event_loop);
     }
 
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
@@ -1475,7 +1610,16 @@ impl ApplicationHandler for App {
                 }
                 // This owner resizes depth and offscreen targets as well, even
                 // when Android changed dimensions without a resize event.
-                Self::follow_window_size(state);
+                Self::follow_window_size(
+                    &mut state.platform,
+                    &mut state.renderer,
+                    &state.diag,
+                    &mut state.frontend,
+                    &mut state.match_state,
+                    &state.process_assets,
+                    &mut state.audio,
+                    &state.persistence,
+                );
                 state.platform.window.request_redraw();
             }
             return;
@@ -1533,6 +1677,8 @@ impl ApplicationHandler for App {
             // this callback returns. A startup continuation owns its GPU in a
             // closure, so drop it too and restart initialization on resume.
             // https://docs.rs/winit/0.30.13/winit/application/trait.ApplicationHandler.html#method.suspended
+            self.android_pointer = Default::default();
+            let _ = crate::app::input::android_mouse::take();
             self.pending_initialization = None;
             if let Some(state) = self.state.as_mut() {
                 state.renderer.gpu.suspend_surface();
@@ -1627,6 +1773,20 @@ impl ApplicationHandler for App {
         // the parked touch cursor, not the hardware pointer.
         let from_touch = self.dispatching_touch;
 
+        #[cfg(target_os = "android")]
+        if let WindowEvent::PanGesture { delta, .. } = &event {
+            if !shell_capture_active && !hidden_run_active
+                && let Some(state) = self.state.as_mut()
+                && state.frontend.screen == GameScreen::InGame
+                && !state.match_state.paused()
+                && state.persistence.pending_load.is_none()
+            {
+                pan_touch_camera(&mut state.match_state.input, -delta.x, -delta.y);
+                state.platform.window.request_redraw();
+            }
+            return;
+        }
+
         // Touchscreens have no OS cursor, so each contact is re-issued as the
         // mouse events its gesture means; `input::touch` owns that mapping and
         // carries the per-platform gate. Capture sessions stay input-sealed:
@@ -1702,18 +1862,7 @@ impl ApplicationHandler for App {
                 if let Some((dx, dy)) = output.pan
                     && in_game
                 {
-                    // Screen pixels to world pixels; the camera moves against
-                    // the fingers so the map follows them. The per-frame camera
-                    // clamp keeps an overshoot from leaving the playable area.
-                    let zoom = state.match_state.input.zoom_level.max(0.01);
-                    let (x, y) = (
-                        state.match_state.input.camera_x,
-                        state.match_state.input.camera_y,
-                    );
-                    crate::app::input::camera::set_camera_position(
-                        &mut state.match_state.input,
-                        (x + dx / zoom, y + dy / zoom),
-                    );
+                    pan_touch_camera(&mut state.match_state.input, dx, dy);
                 }
                 self.dispatching_touch = true;
                 for event in output.events.into_iter().flatten() {
@@ -1725,7 +1874,11 @@ impl ApplicationHandler for App {
         }
 
         let Some(state) = &mut self.state else { return };
-        state.sync_cursor_space();
+        crate::app::state::sync_cursor_space(
+            &state.renderer,
+            &state.frontend.screen,
+            &mut state.match_state.input,
+        );
         // Playback has presentation-only input. Exit is local and never
         // schedules EventClass EXIT or changes the recorded simulation. A
         // watcher's is presentation-only too: it gives no orders, Tab follows
@@ -1744,7 +1897,26 @@ impl ApplicationHandler for App {
                 WindowEvent::KeyboardInput { event, .. } => {
                     if let PhysicalKey::Code(code) = event.physical_key {
                         let pressed = event.state.is_pressed();
-                        if replay && code == KeyCode::Escape {
+                        // The modules' hotkeys read Shift/Ctrl/Alt from the
+                        // key edges, as a player's keys do below.
+                        crate::app::input::hotkeys::record_modifier_key(
+                            &mut state.platform.held_modifier_keys,
+                            &mut state.platform.live_modifiers,
+                            &mut state.match_state.input.hotkey_modifiers,
+                            code,
+                            pressed,
+                            false,
+                        );
+                        let in_game = state.frontend.screen == GameScreen::InGame;
+                        if code == KeyCode::Escape
+                            && pressed
+                            && !event.repeat
+                            && in_game
+                            && crate::app::ui_modules::key_escape(state)
+                        {
+                            // Esc dismissed a client module's node before
+                            // the viewer's own Esc (RFC 0001 section 10).
+                        } else if replay && code == KeyCode::Escape {
                             if pressed {
                                 event_loop.exit();
                             }
@@ -1772,24 +1944,62 @@ impl ApplicationHandler for App {
                             } else {
                                 state.match_state.input.keys_held.remove(&code);
                             }
+                        } else if pressed && !event.repeat && in_game {
+                            // A key the viewer does not use goes to the
+                            // client modules' hotkeys, as a player's unused
+                            // key does (`input::keyboard`).
+                            let unmodified = event.key_without_modifiers();
+                            let key = crate::app::input::hotkeys::binding_logical_key(
+                                &event.logical_key,
+                                &unmodified,
+                                event.location,
+                            );
+                            let modifiers = state.match_state.input.hotkey_modifiers;
+                            crate::app::ui_modules::key_unused(
+                                state,
+                                key,
+                                event.location,
+                                modifiers,
+                            );
                         }
                     }
                     return;
                 }
                 WindowEvent::CursorMoved { position, .. } => {
-                    state.set_cursor_from_window(position.x as f32, position.y as f32);
+                    crate::app::state::set_cursor_from_window(
+                        &state.platform,
+                        &state.renderer,
+                        &state.frontend.screen,
+                        &mut state.match_state.input,
+                        position.x as f32,
+                        position.y as f32,
+                    );
+                    // Client module nodes take a viewer's pointer too.
+                    if state.frontend.screen == GameScreen::InGame {
+                        crate::app::ui_modules::pointer_moved(state);
+                    }
                     return;
                 }
+                // Client module nodes take a viewer's buttons first; a
+                // replay's do nothing else.
                 WindowEvent::MouseInput {
                     state: button_state,
                     button,
                     ..
-                } if watching => {
-                    crate::app::match_runtime::watching::mouse(
-                        state,
-                        *button,
-                        button_state.is_pressed(),
-                    );
+                } => {
+                    if !crate::app::ui_modules::pointer_button(state, *button, button_state.is_pressed())
+                        && watching
+                    {
+                        crate::app::match_runtime::watching::mouse(
+                            &state.platform,
+                            &mut state.renderer,
+                            &state.frontend,
+                            &mut state.match_state,
+                            &state.persistence,
+                            *button,
+                            button_state.is_pressed(),
+                        );
+                    }
                     return;
                 }
                 WindowEvent::MouseWheel { delta, .. } => {
@@ -1799,7 +2009,7 @@ impl ApplicationHandler for App {
                             (position.y as f32 / 30.0).clamp(-3.0, 3.0)
                         }
                     };
-                    crate::app::input::camera::apply_zoom(&mut state.match_state.input, lines);
+                    crate::app::input::camera::wheel_zoom(&mut state.match_state.input, lines);
                     return;
                 }
                 // A watcher's window closes as a player's does.
@@ -1841,7 +2051,17 @@ impl ApplicationHandler for App {
                 }
                 WindowEvent::Resized(size) => {
                     if session.accepts_size(size) {
-                        Self::resize_surface_for_window_size(state, size);
+                        Self::resize_surface_for_window_size(
+                            &state.platform,
+                            &mut state.renderer,
+                            &state.diag,
+                            &mut state.frontend,
+                            &mut state.match_state,
+                            &state.process_assets,
+                            &mut state.audio,
+                            &state.persistence,
+                            size,
+                        );
                     } else {
                         event_loop.exit();
                     }
@@ -1898,7 +2118,17 @@ impl ApplicationHandler for App {
                         ));
                         event_loop.exit();
                     } else {
-                        Self::resize_surface_for_window_size(state, size);
+                        Self::resize_surface_for_window_size(
+                            &state.platform,
+                            &mut state.renderer,
+                            &state.diag,
+                            &mut state.frontend,
+                            &mut state.match_state,
+                            &state.process_assets,
+                            &mut state.audio,
+                            &state.persistence,
+                            size,
+                        );
                     }
                 }
                 WindowEvent::Focused(true) => {
@@ -2039,12 +2269,28 @@ impl ApplicationHandler for App {
                 let hidden = size.width == 0
                     || size.height == 0
                     || state.platform.window.is_minimized().unwrap_or(false);
-                Self::set_window_hidden(&mut state.platform, &mut state.frontend, hidden);
+                Self::set_window_hidden(
+                    &mut state.platform,
+                    &mut state.frontend,
+                    state.match_state.session_mode(),
+                    &mut state.match_state.match_presentation,
+                    hidden,
+                );
                 // A minimise carries no usable client size: the surface cannot
                 // be configured to 0x0 and the UI-scale heuristic would read a
                 // zero viewport. The restore edge delivers the real size.
                 if !hidden {
-                    Self::resize_surface_for_window_size(state, size);
+                    Self::resize_surface_for_window_size(
+                        &state.platform,
+                        &mut state.renderer,
+                        &state.diag,
+                        &mut state.frontend,
+                        &mut state.match_state,
+                        &state.process_assets,
+                        &mut state.audio,
+                        &state.persistence,
+                        size,
+                    );
                     // A resized window changes the rectangle the cursor is
                     // clipped to, so re-apply the lock (no-op if it is off).
                     crate::app::input::cursor::apply_cursor_confinement(&mut state.platform);
@@ -2056,6 +2302,10 @@ impl ApplicationHandler for App {
                 state.match_state.input.reset_window_cursor_motion();
             }
             WindowEvent::Focused(active) => {
+                #[cfg(target_os = "android")]
+                if !active {
+                    self.android_pointer = Default::default();
+                }
                 state.match_state.input.reset_window_cursor_motion();
                 // The OS drops the cursor clip on alt-tab, so re-apply the
                 // player's confinement choice whenever the window returns.
@@ -2142,7 +2392,17 @@ impl ApplicationHandler for App {
                     }
                     Self::release_campaign_slider(&mut state.frontend.shell_controller);
                 }
-                Self::set_window_active(state, active);
+                Self::set_window_active(
+                    &mut state.platform,
+                    &state.renderer,
+                    &state.diag,
+                    &mut state.frontend,
+                    &mut state.match_state,
+                    &state.process_assets,
+                    &state.persistence,
+                    &mut state.audio,
+                    active,
+                );
             }
             WindowEvent::Occluded(occluded) => {
                 // Fully covered on the backends that report it. Windows does
@@ -2153,6 +2413,8 @@ impl ApplicationHandler for App {
                 Self::set_window_hidden(
                     &mut state.platform,
                     &mut state.frontend,
+                    state.match_state.session_mode(),
+                    &mut state.match_state.match_presentation,
                     occluded && !invisible_spawn,
                 );
             }
@@ -2206,7 +2468,14 @@ impl ApplicationHandler for App {
                 if !from_touch {
                     state.match_state.input.cursor_from_touch = false;
                 }
-                state.set_cursor_from_window(position.x as f32, position.y as f32);
+                crate::app::state::set_cursor_from_window(
+                    &state.platform,
+                    &state.renderer,
+                    &state.frontend.screen,
+                    &mut state.match_state.input,
+                    position.x as f32,
+                    position.y as f32,
+                );
                 Self::route_input(state, Input::Move);
             }
             WindowEvent::MouseInput {
@@ -2459,7 +2728,18 @@ impl ApplicationHandler for App {
                     target_os = "linux",
                     target_os = "android"
                 ))]
-                Self::poll_mod_import,
+                |state| {
+                    Self::poll_mod_import(
+                        &state.platform,
+                        &state.renderer,
+                        &state.diag,
+                        &mut state.frontend,
+                        &mut state.match_state,
+                        &state.process_assets,
+                        &mut state.audio,
+                        &state.persistence,
+                    )
+                },
                 |state| {
                     Self::poll_choose_map_scroll(
                         &state.platform.window,
@@ -2506,7 +2786,16 @@ impl ApplicationHandler for App {
                         &state.persistence,
                     )
                 },
-                crate::app::mods::poll,
+                |state| {
+                    crate::app::mods::poll(
+                        &state.platform,
+                        &state.renderer,
+                        &mut state.frontend,
+                        &state.match_state,
+                        &state.process_assets,
+                        &state.persistence,
+                    )
+                },
                 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
                 crate::app::updater::poll,
             ];

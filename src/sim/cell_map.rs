@@ -72,15 +72,17 @@ pub(crate) struct CellMap<V> {
 struct Cells<V> {
     /// Dense cells per side: [`RETAIL_SIDE`], or [`SIDE`] once grown.
     side: usize,
-    /// One column each; the presentation copy takes only the columns written
+    /// One column each; the presentation copy takes only the cells written
     /// since its last sync ([`CellMap::sync_into`], docs/sim-thread.md).
     strips: Vec<Option<Box<[Option<V>]>>>,
     /// One bit per slot, set while the slot holds a value.
     filled: Vec<u64>,
     filled_count: usize,
     outside: BTreeMap<(u16, u16), V>,
-    /// One bit per strip written since the last sync.
-    changed: Vec<u64>,
+    /// One bit per dense slot written since the last sync, so a sync that a
+    /// moving crowd dirties across most strips still copies only the cells
+    /// that changed. Empty until the dense storage is allocated.
+    changed_cells: Vec<u64>,
     /// The layout or `outside` changed since the last sync.
     reshaped: bool,
     stamps: Stamps,
@@ -172,7 +174,7 @@ impl<V> Default for Cells<V> {
             filled: Vec::new(),
             filled_count: 0,
             outside: BTreeMap::new(),
-            changed: Vec::new(),
+            changed_cells: Vec::new(),
             reshaped: true,
             stamps: Stamps::default(),
         }
@@ -195,14 +197,39 @@ impl<V: Clone> Clone for CellMap<V> {
     }
 }
 
-/// Mark strip `strip` written since the last sync.
+/// Mark `slot` written since the last sync, in a dense map of `side` slots per
+/// strip.
 #[inline]
-fn note_strip(changed: &mut Vec<u64>, strip: usize) {
-    let word = strip / 64;
-    if word >= changed.len() {
-        changed.resize(word + 1, 0);
+fn note_slot(changed_cells: &mut Vec<u64>, side: usize, slot: usize) {
+    let words = side * side / 64;
+    if changed_cells.len() < words {
+        changed_cells.resize(words, 0);
     }
-    changed[word] |= 1 << (strip % 64);
+    changed_cells[slot / 64] |= 1 << (slot % 64);
+}
+
+/// A cell value the presentation copy can bring up to date in place.
+///
+/// [`CellMap::sync_into`] copies only the cells a write reached; for a value
+/// that owns a `Vec` (the occupancy lists) an ordinary `clone_from` would drop
+/// and reallocate the destination's storage on every sync. This lets the value
+/// reuse it instead.
+pub(crate) trait CellValue: Clone {
+    fn copy_cell_from(&mut self, source: &Self);
+}
+
+impl CellValue for u32 {
+    #[inline]
+    fn copy_cell_from(&mut self, source: &Self) {
+        *self = *source;
+    }
+}
+
+impl CellValue for u64 {
+    #[inline]
+    fn copy_cell_from(&mut self, source: &Self) {
+        *self = *source;
+    }
 }
 
 /// Whether `key` lies in the largest dense array rather than `outside`.
@@ -258,8 +285,10 @@ impl<V: Clone> CellMap<V> {
     fn owns_cells(&self) -> bool {
         self.view.is_none() && self.set_aside.is_none()
     }
+}
 
-    /// Bring `mirror`, the presentation copy, up to this map: the strips
+impl<V: Clone + CellValue> CellMap<V> {
+    /// Bring `mirror`, the presentation copy, up to this map: the cells
     /// written since the last sync into it, or all of it when it is another
     /// copy or the layout changed.
     pub(crate) fn sync_into(&mut self, mirror: &mut Self) {
@@ -268,27 +297,46 @@ impl<V: Clone> CellMap<V> {
             "sync of a shared or forked cell map"
         );
         let (cells, copy) = (&mut self.own, &mut mirror.own);
-        if cells.reshaped || !self.mark.knows(&mirror.mark) {
+        let full = cells.reshaped || !self.mark.knows(&mirror.mark);
+        if full {
             copy.side = cells.side;
             copy.strips.clone_from(&cells.strips);
             copy.outside.clone_from(&cells.outside);
         } else {
-            for (word, bits) in cells.changed.iter().enumerate() {
+            let side = cells.side;
+            for (word, bits) in cells.changed_cells.iter().enumerate() {
                 let mut bits = *bits;
                 while bits != 0 {
-                    let strip = word * 64 + bits.trailing_zeros() as usize;
+                    let slot = word * 64 + bits.trailing_zeros() as usize;
                     bits &= bits - 1;
-                    copy.strips[strip].clone_from(&cells.strips[strip]);
+                    let strip = slot / side;
+                    let offset = slot % side;
+                    let Some(source) = cells
+                        .strips
+                        .get(strip)
+                        .and_then(|strip| strip.as_deref())
+                        .map(|strip| &strip[offset])
+                    else {
+                        continue;
+                    };
+                    let target = copy.strips[strip]
+                        .get_or_insert_with(|| vec![None; side].into_boxed_slice());
+                    match (&mut target[offset], source) {
+                        (Some(target), Some(source)) => target.copy_cell_from(source),
+                        (target, source) => *target = source.clone(),
+                    }
                 }
             }
         }
         copy.filled.clone_from(&cells.filled);
         copy.filled_count = cells.filled_count;
-        cells.changed.iter_mut().for_each(|word| *word = 0);
+        cells.changed_cells.iter_mut().for_each(|word| *word = 0);
         cells.reshaped = false;
         self.mark.synced(&mirror.mark);
     }
+}
 
+impl<V: Clone> CellMap<V> {
     #[inline]
     pub(crate) fn get(&self, key: &(u16, u16)) -> Option<&V> {
         match &self.view {
@@ -579,18 +627,12 @@ impl<V: Clone> Cells<V> {
         Some(&strip[offset])
     }
 
-    fn slot_mut(&mut self, slot: usize) -> Option<&mut Option<V>> {
-        let (strip, offset) = self.strip_and_offset(slot);
-        let slots = self.strips.get_mut(strip)?.as_mut()?;
-        note_strip(&mut self.changed, strip);
-        Some(&mut slots[offset])
-    }
-
     /// Relay the dense storage out at the largest side. Runs once, on the
     /// first key of an extended map's array beyond the retail side; the
     /// pass's stamps follow their cells.
     fn grow(&mut self) {
         self.reshaped = true;
+        self.changed_cells.clear();
         let stamped = std::mem::take(&mut self.stamps.0);
         let old_side = std::mem::replace(&mut self.side, SIDE);
         let old_strips = std::mem::take(&mut self.strips);
@@ -634,8 +676,8 @@ impl<V: Clone> Cells<V> {
             Some(slot) => {
                 let (strip, offset) = self.strip_and_offset(slot);
                 let slots = self.strips.get_mut(strip)?.as_mut()?;
-                note_strip(&mut self.changed, strip);
                 let value = slots[offset].as_mut()?;
+                note_slot(&mut self.changed_cells, self.side, slot);
                 self.stamps.set(slot);
                 Some(value)
             }
@@ -658,9 +700,10 @@ impl<V: Clone> Cells<V> {
         if self.strips.is_empty() {
             self.strips.resize_with(self.side, || None);
             self.filled = vec![0; self.side * self.side / 64];
+            self.changed_cells.clear();
             self.reshaped = true;
         }
-        note_strip(&mut self.changed, strip);
+        note_slot(&mut self.changed_cells, self.side, slot);
         self.stamps.set(slot);
         let strip =
             self.strips[strip].get_or_insert_with(|| (0..strip_slots).map(|_| None).collect());
@@ -683,7 +726,10 @@ impl<V: Clone> Cells<V> {
                 self.outside.remove(key)
             };
         };
-        let value = self.slot_mut(slot)?.take()?;
+        let (strip, offset) = self.strip_and_offset(slot);
+        let slots = self.strips.get_mut(strip)?.as_mut()?;
+        let value = slots[offset].take()?;
+        note_slot(&mut self.changed_cells, self.side, slot);
         self.filled[slot / 64] &= !(1 << (slot % 64));
         self.filled_count -= 1;
         self.stamps.set(slot);
@@ -1002,6 +1048,34 @@ mod tests {
             crate::util::save_codec::serialize(&cells).unwrap(),
             crate::util::save_codec::serialize(&BTreeMap::<(u16, u16), u32>::new()).unwrap()
         );
+    }
+
+    #[test]
+    fn sync_brings_a_mirror_up_to_the_cells_written_since_its_last_copy() {
+        let mut source: CellMap<u32> = CellMap::new();
+        let mut mirror: CellMap<u32> = CellMap::new();
+        assert!(source.get_mut(&(3, 4)).is_none());
+        assert!(source.remove(&(3, 4)).is_none());
+        assert!(source.own.changed_cells.is_empty());
+        source.insert((3, 4), 1);
+        source.sync_into(&mut mirror);
+        assert_eq!(mirror.get(&(3, 4)), Some(&1));
+
+        // One cell in a strip the mirror already holds, one in a strip it
+        // has never allocated.
+        source.insert((3, 5), 2);
+        source.insert((200, 6), 3);
+        source.sync_into(&mut mirror);
+        assert_eq!(mirror.get(&(3, 4)), Some(&1));
+        assert_eq!(mirror.get(&(3, 5)), Some(&2));
+        assert_eq!(mirror.get(&(200, 6)), Some(&3));
+
+        // An emptied cell clears in the mirror beside the cells it keeps.
+        source.remove(&(3, 5));
+        source.sync_into(&mut mirror);
+        assert_eq!(mirror.get(&(3, 4)), Some(&1));
+        assert_eq!(mirror.get(&(3, 5)), None);
+        assert_eq!(mirror.get(&(200, 6)), Some(&3));
     }
 
     #[test]

@@ -96,7 +96,8 @@ impl GameEntity {
 mod receiver {
     use super::*;
     use crate::map::entities::EntityCategory;
-    use crate::rules::{ruleset::RuleSet, warhead_type::WarheadType};
+    use crate::rules::{object_type::ObjectType, ruleset::RuleSet, warhead_type::WarheadType};
+    use crate::sim::ext_modules::modifiers::Immunity;
     use crate::sim::{
         anim_class::AnimWorldCoord,
         components::AnimClassSpawnDescriptor,
@@ -135,6 +136,26 @@ mod receiver {
             Some(MissionType::Unload | MissionType::Selling | MissionType::Construction)
         )
     }
+    impl GameEntity {
+        /// isEMPImmune10062D90's type and rank terms: the type's
+        /// `ImmuneToEMP=`, else IsTypeEMPProne's default, or the rank's
+        /// `EMPIMMUNE`. A type without EMP rules is immune.
+        pub(crate) fn ares_emp_immune(&self, object: &ObjectType, rules: &RuleSet) -> bool {
+            let Some(kind) = object.emp_rules() else {
+                return true;
+            };
+            let default_immune = match self.category() {
+                EntityCategory::Infantry => !object.cyborg,
+                // IsTypeEMPProne: every other Foot type is prone unless Organic.
+                EntityCategory::Unit | EntityCategory::Aircraft => object.organic,
+                EntityCategory::Structure => !building_emp_prone(object, rules),
+            };
+            kind.immune().unwrap_or(default_immune)
+                || object
+                    .promotion_abilities()
+                    .is_some_and(|abilities| abilities.emp_immune(self.veterancy.rank()))
+        }
+    }
     /// IsTypeEMPProne for a BuildingType, inlined in isEMPImmune10062D90
     /// (10062DC0..10062E32): an InvisibleInGame (+0x1701) type never is; a
     /// Powered (+0x1573) type with a positive drain (+0xEE4) is, and so is a
@@ -152,8 +173,7 @@ mod receiver {
                 .is_some()
         };
         !object.invisible_in_game
-            && ((object.powered
-                && crate::sim::power_system::native_building_power_drain(object.power) > 0)
+            && ((object.powered && object.power_drain() > 0)
                 || object.radar
                 || super_weapon(object.super_weapon.as_deref())
                 || super_weapon(object.super_weapon2.as_deref())
@@ -446,17 +466,8 @@ mod receiver {
             {
                 return EmpDelivery::Rejected;
             }
-            let default_immune = match victim.category() {
-                EntityCategory::Infantry => !object.cyborg,
-                // IsTypeEMPProne: every other Foot type is prone unless Organic.
-                EntityCategory::Unit | EntityCategory::Aircraft => object.organic,
-                EntityCategory::Structure => !building_emp_prone(object, rules),
-            };
-            if kind.immune().unwrap_or(default_immune)
-                || object
-                    .promotion_abilities()
-                    .is_some_and(|abilities| abilities.emp_immune(victim.veterancy.rank()))
-            {
+            // A module's `ImmunityFlags` bit 5 replaces the type and rank terms.
+            if victim.module_immune(Immunity::Emp, victim.ares_emp_immune(object, rules)) {
                 return EmpDelivery::Rejected;
             }
             if source_owner == Some(victim.owner()) && object.type_immune {

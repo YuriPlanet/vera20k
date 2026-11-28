@@ -849,7 +849,7 @@ pub(crate) fn skirmish_spawn_mouse(
             );
         }
         (MouseButton::Right, true) => {
-            let cursor = state.cursor_position();
+            let cursor = state.match_state.input.cursor_position();
             state
                 .match_state
                 .input

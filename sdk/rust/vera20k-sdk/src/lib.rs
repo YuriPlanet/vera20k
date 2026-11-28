@@ -1,4 +1,5 @@
-//! Rust SDK for VERA20K simulation modules (`rules.wasm`), RFC 0001 preview.
+//! Rust SDK for VERA20K simulation modules (`rules.wasm`), RFC 0001 preview,
+//! and client modules (`ui.wasm`, [`client`]).
 //!
 //! Each wrapper makes the host calls appendix section 3 lists, usually one.
 //! A failed call returns `Err(Status)`; the host already wrote the empty
@@ -15,24 +16,33 @@
 //! ```
 #![no_std]
 
+pub mod client;
 pub mod decide;
 pub mod ini;
+pub mod notify;
 mod props;
 pub mod sys;
 pub mod triggers;
 pub mod vars;
 
 pub use decide::{
-    CommandAllowedDecision, DecideRecord, DefeatDecision, ProductionAllowedDecision,
-    ProductionQueuedDecision, TakeDamageDecision,
+    ApproachPointDecision, CommandAllowedDecision, CrushAllowedDecision, DamageIncomingDecision, DecideRecord,
+    DefeatDecision, DeployAllowedDecision, DestinationSetDecision, FatalDamageDecision,
+    FireAllowedDecision, FireDecision, HarvestCellDecision, IdleMissionDecision, LaunchDecision,
+    MissionStepDecision, MoveFrameDecision, PathFoundDecision, PathKind,
+    ProductionAllowedDecision, ProductionQueuedDecision, ProjectileFrameDecision,
+    RetaliateDecision, TakeDamageDecision,
 };
 pub use ini::{
     EventScope, IniEntryRecord, IniKeyRecord, IniSection, ModuleEvent, ModuleEventRecord,
 };
+pub use notify::Notify;
 pub use triggers::{
-    AttackedByEvent, BirthEvent, FatalDamageEvent, HouseTransferredEvent, KilledByWarheadEvent,
-    ModifierEvent, ModifierStacksEvent, PassengerAddedEvent, PassengerRemovedEvent, PollEvent,
-    StockEvent, SuperWeaponLaunchedEvent, TransportEnteredEvent, TransportExitedEvent,
+    AttackedByEvent, BirthEvent, CloakEvent, CrushedEvent, DeployedEvent, DetonatedEvent,
+    ExperienceGainedEvent, FatalDamageEvent, HouseTransferredEvent, KilledByWarheadEvent,
+    MissionChangedEvent, ModifierEvent, ModifierStacksEvent, PassengerAddedEvent,
+    PassengerRemovedEvent, PollEvent, PromotedEvent, StockEvent, SuperWeaponLaunchedEvent,
+    TargetChangedEvent, TransportEnteredEvent, TransportExitedEvent,
 };
 pub use triggers::{
     ActionDef, DELIVERY_SECTION, Event, EventRecord, FireEvent, KilledEvent, TakeDamageEvent,
@@ -42,8 +52,12 @@ pub use triggers::{
 pub mod prelude {
     pub use crate::vars::{GlobalVar, HouseVar, ObjectVar};
     pub use crate::{
-        Action, ActionDef, Blocked, Category, Cell, Command, CommandAllowedDecision, DecideRecord,
-        DefeatDecision, Event, EventRecord, EventScope, FIXED_ONE, Find, FireEvent, Global, House,
+        Action, ActionDef, ApproachPointDecision, Blocked, Category, Cell, Command,
+        CommandAllowedDecision, DecideRecord,
+        DefeatDecision, Event, EventRecord, EventScope, FIXED_ONE, FatalDamageDecision, Find,
+        FireDecision, FireEvent,
+        Global, House, LaunchDecision, MoveFrameDecision, PathFoundDecision, PathKind, Projectile,
+        ProjectileFrameDecision,
         IniEntryRecord, IniKeyRecord, IniSection, KilledEvent, Layer, Mission, Modifier,
         ModifierOp, ModuleEvent, ModuleEventRecord, NameKind, Op, Order, Outcome,
         ProductionAllowedDecision, ProductionQueuedDecision, Prop, Ref, Relation, Rules, SpeedType,
@@ -54,6 +68,7 @@ pub mod prelude {
         BirthEvent, PassengerAddedEvent, TransportEnteredEvent, TransportExitedEvent,
         PassengerRemovedEvent,
     };
+    pub use crate::{NO_HANDLE, Notify};
 }
 
 /// A host call's failure (appendix "Status"). `Ok` is never an `Err`.
@@ -122,6 +137,12 @@ macro_rules! reference {
 reference!(
     /// A unit or building: kind 0, its creation serial.
     Techno
+);
+reference!(
+    /// A projectile (bullet): kind 0, its creation serial. Its properties
+    /// are appendix 7.4's (`Type`, `X`..`Z`, `VX`..`VZ`, `Source`,
+    /// `Target`, `Data0`, `Data1`).
+    Projectile
 );
 reference!(
     /// A house.
@@ -214,6 +235,12 @@ impl TypeRef {
     pub const fn id(self) -> i32 {
         self.0 as i32
     }
+
+    /// The wildcard of name kind `kind` (ID `0xFFFFFFFF`), for
+    /// [`Find::types`] only.
+    pub const fn any(kind: NameKind) -> Self {
+        Self::new(kind, -1)
+    }
 }
 
 // ------------------------------------------------------------------- Enums
@@ -246,6 +273,8 @@ pub enum NameKind {
     Property = 19,
     EventKind = 20,
     ActionKind = 21,
+    /// A hotkey this client module registered (`client::Local::register_hotkey`).
+    Hotkey = 22,
     /// Module events any source registered ([`ini::event`]); the ID is the
     /// event ID.
     ModuleEvent = 24,
@@ -576,13 +605,11 @@ impl Find {
     /// half the callback's budget, so a page that is not full, even an empty
     /// one, is the last only when that position is 0.
     pub fn page(&mut self, out: &mut [i64], after: i64) -> Result<(usize, i64)> {
-        self.0.query.after = after;
-        let len =
-            size_of::<sys::Query>() + size_of::<sys::Clause>() * self.0.query.clause_count as usize;
+        let (query, len) = self.raw(after);
         let mut result = sys::FindResult::default();
         let status = unsafe {
             sys::find(
-                (&raw const self.0).cast(),
+                query,
                 len as i32,
                 out.as_mut_ptr(),
                 out.len() as i32,
@@ -591,6 +618,15 @@ impl Find {
         };
         check(status)?;
         Ok((result.count as usize, result.next))
+    }
+
+    /// The `Query` with its clauses, from position `after`, and its length:
+    /// what `find` and `client_find` take.
+    pub(crate) fn raw(&mut self, after: i64) -> (*const u8, usize) {
+        self.0.query.after = after;
+        let len =
+            size_of::<sys::Query>() + size_of::<sys::Clause>() * self.0.query.clause_count as usize;
+        ((&raw const self.0).cast(), len)
     }
 
     /// The first match, or `NO_HANDLE`. Follows pages until there is one,
@@ -766,7 +802,10 @@ impl Action {
     pub const ADD_SCORE: i32 = 1032;
     pub const LOG: i32 = 1033;
     pub const CONVERT: i32 = 1034;
+    pub const PUSH: i32 = 1035;
     pub const RAISE_EVENT: i32 = 1042;
+    pub const SET_FACING: i32 = 1045;
+    pub const DETACH_ANIM: i32 = 1046;
     /// Trigger-only kinds ([`ActionDef::set_var`], [`ActionDef::module`]).
     pub const SET_VAR: i32 = 1024;
     pub const MODULE: i32 = 1036;
@@ -982,6 +1021,26 @@ impl Action {
         Self::run(Self::CONVERT, target.0, &params).map(drop)
     }
 
+    /// Pushes `target` (a vehicle or infantryman on the ground) `distance`
+    /// leptons toward the center of `toward` (negative: away from it), over
+    /// `frames` frames (0: one per 64 leptons), on top of its own movement.
+    /// 0 ends its push.
+    pub fn push(target: Techno, toward: Cell, distance: i32, frames: u32) -> Result<()> {
+        let params = params!(
+            cell: toward.raw(),
+            value: i64::from(distance),
+            value2: i64::from(frames),
+        );
+        Self::run(Self::PUSH, target.0, &params).map(drop)
+    }
+
+    /// Turns `target`'s body toward `facing` (0..255) through its
+    /// locomotor.
+    pub fn set_facing(target: Techno, facing: u8) -> Result<()> {
+        let params = params!(value: i64::from(facing));
+        Self::run(Self::SET_FACING, target.0, &params).map(drop)
+    }
+
     /// Fires `shooter`'s weapon `slot` (0 primary, 1 secondary) at its
     /// current target now; `Err(Refused)` when it cannot fire now (reloading,
     /// out of range, ...), `Err(Gone)` without a target.
@@ -1006,6 +1065,19 @@ impl Action {
     /// [`Action::spawn_anim`] takes) once, attached to `target`.
     pub fn attach_anim(target: Techno, anim: i32) -> Result<()> {
         Self::run(Self::ATTACH_ANIM, target.0, &params!(id: anim)).map(drop)
+    }
+
+    /// As [`Action::attach_anim`], but the animation keeps looping on
+    /// `target` for `frames` frames, or until [`Action::detach_anim`] when
+    /// `frames` is negative. It goes with the object.
+    pub fn attach_anim_for(target: Techno, anim: i32, frames: i64) -> Result<()> {
+        Self::run(Self::ATTACH_ANIM, target.0, &params!(id: anim, value2: frames)).map(drop)
+    }
+
+    /// Removes the animations [`Action::attach_anim_for`] of this module
+    /// keeps on `target`: those of animation `anim`, or all with -1.
+    pub fn detach_anim(target: Techno, anim: i32) -> Result<()> {
+        Self::run(Self::DETACH_ANIM, target.0, &params!(id: anim)).map(drop)
     }
 
     /// Forbids (`false`) TechnoType `kind` to `house`, or lifts this
@@ -1376,26 +1448,38 @@ impl<'a> Order<'a> {
     }
 }
 
+impl Order<'_> {
+    /// The `Order` layout as i64 words (kind and count, target, value, then
+    /// the unit handles) and its byte length. `Err(Refused)` past
+    /// [`ORDER_UNITS`] units.
+    pub(crate) fn words(&self) -> Result<([i64; 3 + ORDER_UNITS], usize)> {
+        let count = self.units.len();
+        if count > ORDER_UNITS {
+            return Err(Status::Refused);
+        }
+        let mut words = [0i64; 3 + ORDER_UNITS];
+        words[0] = (self.command as i32 as u32 as i64) | ((count as i64) << 32);
+        words[1] = self.target;
+        words[2] = self.value;
+        for (word, unit) in words[3..].iter_mut().zip(self.units) {
+            *word = unit.0;
+        }
+        Ok((words, (3 + count) * 8))
+    }
+}
+
 impl House {
     /// Queues `order` for this computer house; it runs next frame, checked
     /// like its player's command. `Err(Refused)` for a player's house or a
     /// command-table violation, or more than [`ORDER_UNITS`] units.
     pub fn order(self, order: &Order) -> Result<()> {
-        let count = order.units.len();
-        if count > ORDER_UNITS {
-            return Err(Status::Refused);
-        }
-        // The `Order` layout as i64 words: kind and count, target, value,
-        // then the unit handles.
-        let mut words = [0i64; 3 + ORDER_UNITS];
-        words[0] = (order.command as i32 as u32 as i64) | ((count as i64) << 32);
-        words[1] = order.target;
-        words[2] = order.value;
-        for (word, unit) in words[3..].iter_mut().zip(order.units) {
-            *word = unit.0;
-        }
-        let len = (3 + count) * 8;
+        let (words, len) = order.words()?;
         check(unsafe { sys::order(self.0, words.as_ptr().cast(), len as i32) })
+    }
+
+    /// The house's credits.
+    pub fn money(self) -> Result<i64> {
+        get(self, Prop::Money)
     }
 }
 
@@ -1485,6 +1569,13 @@ impl Find {
     /// [`Find::within`].
     pub fn cells() -> Self {
         Self::scope(2)
+    }
+
+    /// Types, by type ID: [`TypeRef::any`] lists every type of its name
+    /// kind, a specific type only itself (TechnoTypes, Weapons, Warheads).
+    /// A `Buildable` clause reads for [`Find::seen_by`]'s house.
+    pub fn types(ty: TypeRef) -> Self {
+        Self::scope(3).of_type(ty)
     }
 }
 

@@ -984,6 +984,43 @@ fn reinforcement_exit_breaks_slot_zero_instead_of_the_new_members_contact() {
 }
 
 #[test]
+fn vehicle_reinforcement_commences_guard_on_a_war_factory_exit() {
+    use crate::sim::mission::{MissionId, MissionType};
+
+    let Some((ini, art)) = retail_rules_and_art() else {
+        return;
+    };
+    let rules =
+        crate::rules::retail_ini_fixture::retail_unlayered_rules_with_art().expect("retail rules");
+    let terrain_rules = TerrainRules::from_ini(&ini);
+    let overlay = OverlayTypeRegistry::from_ini(&ini, Some(&art));
+    let input = serde_json::json!({"entries": [["MTNK", 1]], "origin": [85, 50]});
+    let mut sim = reinforcement_world(&rules, &terrain_rules, &input);
+    sim.spawn_object_at_height("GAWEAP", "Americans", 85, 49, 4, 0, &rules)
+        .unwrap();
+    let team_type = sim.interner.get("TT").unwrap();
+    let (placed, review_cell) = sim.spawn_team_reinforcements(
+        team_type,
+        -1,
+        &rules,
+        Some(&overlay),
+        &mut FrameEffects::default(),
+    );
+    assert!(placed);
+    assert_eq!(review_cell, Some((85, 50)));
+    let tank = sim
+        .entities()
+        .values()
+        .find(|e| e.category() == EntityCategory::Unit)
+        .unwrap();
+    assert_eq!(
+        tank.mission.current(),
+        MissionId::from_known(MissionType::Guard)
+    );
+    assert_eq!(tank.mission.queued(), MissionId::NONE);
+}
+
+#[test]
 fn mixed_reinforcements_bypass_the_building_exit_branch() {
     let Some((ini, art)) = retail_rules_and_art() else {
         return;

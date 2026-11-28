@@ -1,0 +1,19 @@
+{
+  "kind": "ui",
+  "vars": [
+    {"name": "MfPhase", "scope": "house", "visibility": "private", "initial": 0},
+    {"name": "MfWave", "scope": "house", "visibility": "private", "initial": 0},
+    {"name": "MfBanners", "scope": "house", "visibility": "private", "initial": 0},
+    {"name": "MfRank", "scope": "house", "visibility": "private", "initial": 0},
+    {"name": "MfPicks", "scope": "house", "visibility": "private", "initial": 0},
+    {"name": "MfFlags", "scope": "house", "visibility": "private", "initial": 0},
+    {"name": "MfOffers", "scope": "house", "visibility": "private", "initial": 0},
+    {"name": "MfChoices", "scope": "house", "visibility": "private", "initial": 0},
+    {"name": "MfCompanyLow", "scope": "house", "visibility": "private", "initial": 0},
+    {"name": "MfCompanyHigh", "scope": "house", "visibility": "private", "initial": 0},
+    {"name": "MfTaken", "scope": "house", "visibility": "private", "initial": 0},
+    {"name": "MfBattle", "scope": "house", "visibility": "private", "initial": 0},
+    {"name": "MfFront", "scope": "house", "visibility": "private", "initial": 0},
+    {"name": "MfLast", "scope": "house", "visibility": "private", "initial": 0}
+  ]
+}

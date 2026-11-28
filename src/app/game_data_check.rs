@@ -64,9 +64,12 @@ fn inspect(game_dir: &Path) -> InstallReport {
         .optional
         .extend(crate::audio::theme::missing_install_music(&assets));
     // Sound effects are optional at runtime too: the game logs a missing or
-    // malformed index and continues without its sound bank.
+    // malformed index and continues without its sound bank. A package that
+    // ships its sounds as `.opus` overrides instead (docs/opus-audio.md) has
+    // no bank to miss; that is asked only when the bank is absent.
     match assets.load_audio_index() {
         Ok(Some(_)) => {}
+        Ok(None) if sounds_ship_as_opus(&assets) => {}
         Ok(None) => report
             .optional
             .push("audio.idx / audio.bag: sound bank unavailable".into()),
@@ -75,6 +78,16 @@ fn inspect(game_dir: &Path) -> InstallReport {
             .push(format!("audio.idx / audio.bag: {error}")),
     }
     report
+}
+
+/// Whether any `Sounds=` sample of the selected sound INI has a `.opus`
+/// override, as the player loads one (`ClipCache::load_override`).
+fn sounds_ship_as_opus(assets: &AssetManager) -> bool {
+    let definitions = crate::rules::audio_sources::AudioDefinitions::select(assets);
+    definitions
+        .sounds()
+        .sample_names()
+        .any(|name| assets.contains(&crate::assets::opus_file::override_name(name)))
 }
 
 /// Write UTF-8 issue lists and the decimal CSF language ID consumed by Inno
@@ -138,6 +151,30 @@ mod tests {
         assert_eq!(
             std::fs::read_to_string(report_dir.path().join("language.txt")).unwrap(),
             "0"
+        );
+    }
+
+    /// A miniHD-style install ships `.opus` files for the music and the
+    /// sounds instead of the WAV tracks and audio.idx/audio.bag: neither is
+    /// then reported missing.
+    #[test]
+    fn opus_overrides_count_as_the_music_and_the_sound_bank() {
+        let dir = fixture();
+        let opus = crate::test_fixture::bytes("tests/fixtures/audio/sine440.opus");
+        std::fs::write(
+            dir.path().join("soundmd.ini"),
+            "[SoundList]\n1=Click\n[Click]\nSounds=click\n",
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("click.opus"), opus).unwrap();
+        std::fs::write(dir.path().join("test-song.opus"), opus).unwrap();
+        let report = inspect(dir.path());
+        assert!(
+            !report
+                .optional
+                .iter()
+                .any(|issue| issue.contains("test-song") || issue.contains("audio.idx")),
+            "{report:?}"
         );
     }
 

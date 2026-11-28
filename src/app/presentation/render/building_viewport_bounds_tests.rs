@@ -1,6 +1,7 @@
 //! Physical RushHr building through the production SHP atlas and emitter.
 //! Component admission and pixels through the actual lowerer, BUILDNGZ, SHP
-//! dispatcher and wheel-zoom pass. This is not a native whole-Display capture.
+//! dispatcher, drawn at a wheel zoom of 4 by the world camera
+//! (`docs/zoom-one-pass.md`). This is not a native whole-Display capture.
 
 use super::draw_plan_lowering::{NativeDisplayOrder, PlannedObjects, lower_object_instances};
 use super::merge_passes::{ObjectDrawPhase, draw_native_object_pass};
@@ -53,13 +54,10 @@ fn retail_rushhr_roof_below_viewport_keeps_its_visible_body() {
         &gpu.queue,
         wgpu::TextureFormat::Bgra8UnormSrgb,
     );
-    let world_zoom = crate::render::upscale_pass::WorldZoomPass::new(
-        &gpu.device,
-        &gpu.queue,
-        wgpu::TextureFormat::Bgra8UnormSrgb,
-        [1024, 768],
-        4.,
-    );
+    // The 1024x768 target at zoom 4 shows 256x192 world pixels; its
+    // 856x736 battlefield is 214x184 of them.
+    let (_depth, depth) =
+        crate::render::scaled_copy::create_depth_target(&gpu.device, "Roof", (1024, 768));
     let colors = HouseColorMap::from([("Neutral".to_owned(), NO_REMAP)]);
     // Only this physical building's image is needed, while its simulation
     // still comes from the complete unmodified retail scenario constructor.
@@ -129,6 +127,8 @@ fn retail_rushhr_roof_below_viewport_keeps_its_visible_body() {
     let mut parents = PlannedObjects::default();
     build_shp_instances_from_inputs(
         &ShpInputs {
+            motion: None,
+            diagnostics: None,
             runtime: &scene.runtime,
             frame: &crate::app::presentation::frame::PresentationFrame::capture(
                 &scene.runtime,
@@ -144,17 +144,14 @@ fn retail_rushhr_roof_below_viewport_keeps_its_visible_body() {
             camera: [1160., 2502.],
             render_size: [1024, 768],
             zoom: 4.,
-            building_viewport: super::tactical_world_viewport(
-                [1160., 2502.],
-                [0, 0, 856, 736],
-                Some(&world_zoom),
-            ),
+            building_viewport: super::tactical_world_viewport([1160., 2502.], [0, 0, 214, 184]),
             axis: DepthAxis::NONE,
             local_owner: None,
             ignore_visibility: true,
             lighting: &lighting,
             house_colors: &colors,
             building_zshape: Some((0, 0)),
+            model_frame: None,
         },
         &mut parents,
         &order,
@@ -167,9 +164,10 @@ fn retail_rushhr_roof_below_viewport_keeps_its_visible_body() {
     assert!(!parent.building_pieces.as_ref().unwrap().is_empty());
     assert_eq!((sim.state_hash(), sim.rng_state()), before);
 
-    let size = world_zoom.source_size();
-    assert_eq!(size, [256, 192]);
+    let size = [1024, 768];
+    let world = [256, 192];
     let mut view = camera(size);
+    view.zoom = 4.;
     view.camera_pos = [1160., 2502.];
     view.world_origin_y = 0.;
     view.world_height = 1.;
@@ -177,9 +175,9 @@ fn retail_rushhr_roof_below_viewport_keeps_its_visible_body() {
     let fog = crate::render::shroud_buffer::ShroudBuffer::fixture(
         &gpu.device,
         &gpu.queue,
-        size,
+        world,
         view.camera_pos,
-        &vec![127; size[0] as usize * size[1] as usize],
+        &vec![127; world[0] as usize * world[1] as usize],
     );
     batch.bind_shroud(&gpu.device, Some(&fog));
     let layer_index = parent.parent.layer.0 as usize;
@@ -195,12 +193,7 @@ fn retail_rushhr_roof_below_viewport_keeps_its_visible_body() {
         wgpu::TextureFormat::Bgra8UnormSrgb,
         &batch,
     );
-    terrain.prepare(
-        &gpu.device,
-        &color,
-        world_zoom.depth_view(),
-        batch.camera_uniform(),
-    );
+    terrain.prepare(&gpu.device, &color, &depth, batch.camera_uniform());
     let mut encoder = gpu.device.create_command_encoder(&Default::default());
     let background = wgpu::Color {
         r: 1.,
@@ -211,7 +204,7 @@ fn retail_rushhr_roof_below_viewport_keeps_its_visible_body() {
     clear(
         &mut encoder,
         &color_view,
-        world_zoom.depth_view(),
+        &depth,
         u16::MAX,
         wgpu::LoadOp::Clear(background),
     );
@@ -220,9 +213,9 @@ fn retail_rushhr_roof_below_viewport_keeps_its_visible_body() {
             &mut encoder,
             phase,
             &color_view,
-            world_zoom.depth_view(),
+            &depth,
             &mut terrain,
-            world_zoom.world_clip([0, 0, 856, 736]),
+            [0, 0, 856, 736],
             &batch,
             pool.get("roof"),
             layer,
@@ -236,14 +229,7 @@ fn retail_rushhr_roof_below_viewport_keeps_its_visible_body() {
             None,
         );
     }
-    world_zoom.composite(
-        &gpu.device,
-        &mut encoder,
-        &color,
-        [0, 0, 856, 736],
-        background,
-    );
-    let read = gpu.read(&mut encoder, world_zoom.color_texture());
+    let read = gpu.read(&mut encoder, &color);
     let pixels = gpu.finish(encoder, &[read], [1024, 768]).remove(0);
     let pixel = |x: usize, y: usize| -> [u8; 4] {
         pixels[(y * 1024 + x) * 4..(y * 1024 + x + 1) * 4]

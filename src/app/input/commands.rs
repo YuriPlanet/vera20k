@@ -958,7 +958,7 @@ pub(crate) fn preferred_local_owner(match_state: &MatchState) -> Option<String> 
 }
 
 /// The issuer's primary House can differ from the represented view House.
-pub(super) fn preferred_command_owner(sim_runtime: &SimHost) -> Option<String> {
+pub(crate) fn preferred_command_owner(sim_runtime: &SimHost) -> Option<String> {
     let sim = &sim_runtime.runtime()?.simulation;
     let owner = sim.control_projection().local_command_house()?;
     Some(sim.interner().resolve(owner).to_owned())
@@ -1018,6 +1018,10 @@ pub(crate) fn schedule_command_in_sim(
         }
         Command::Cheer => {
             let record = sim.encode_cheer_record(owner_id)?;
+            CommandEnvelope::synchronized(record, execute_tick)
+        }
+        Command::ModuleMessage { source, data } => {
+            let record = sim.encode_module_message_record(owner_id, source, &data)?;
             CommandEnvelope::synchronized(record, execute_tick)
         }
         Command::ExitMatch => {

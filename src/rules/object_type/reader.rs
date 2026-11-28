@@ -151,6 +151,7 @@ impl ObjectType {
             ui_name: section.read_name("UIName", 0x20).map(str::to_owned),
             cost: section.read_int("Cost", 0),
             soylent: section.read_int("Soylent", 0),
+            points: section.read_int("Points", 0),
             factory_plant: section.read_bool("FactoryPlant", false),
             cost_bonuses: [
                 "InfantryCostBonus",

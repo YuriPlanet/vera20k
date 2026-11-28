@@ -85,7 +85,8 @@ pub(crate) struct NodeDraw {
     /// own size.
     pub(crate) reveal: Option<u32>,
     /// The tint a fill or a plain text draws in, where the host's colour
-    /// is not whole 255ths; otherwise the node's colour.
+    /// is not whole 255ths; otherwise the node's colour. A picture is
+    /// multiplied by it (none: as it is).
     pub(crate) tint: Option<[f32; 3]>,
 }
 
@@ -158,7 +159,10 @@ impl HudPaint {
                         if let Some(clip) = command.clip {
                             clip_from(&mut self.instances, start, clip, space);
                         }
-                        self.extend_runs(Material::Pictures, start as u32..self.instances.len() as u32);
+                        self.extend_runs(
+                            Material::Pictures,
+                            start as u32..self.instances.len() as u32,
+                        );
                         continue;
                     }
                     let Some(picture) = node.picture else {
@@ -168,7 +172,7 @@ impl HudPaint {
                         node.position.unwrap_or_else(|| space.point(rect.x, rect.y)),
                         picture.pixel_size.map(|length| length * space.scale),
                         (picture.uv_origin, picture.uv_size),
-                        [1.0; 3],
+                        node.tint.unwrap_or([1.0; 3]),
                         1.0,
                         node.depth,
                     ));
@@ -299,13 +303,16 @@ impl HudPaint {
     pub(crate) fn take_lanes(&mut self, materials: &[Material]) -> Vec<SpriteInstance> {
         let rank = |material: Material| materials.iter().position(|of| *of == material);
         let mut last = 0;
-        let in_order = self.runs().iter().all(|(material, _)| match rank(*material) {
-            Some(at) if at >= last => {
-                last = at;
-                true
-            }
-            _ => false,
-        });
+        let in_order = self
+            .runs()
+            .iter()
+            .all(|(material, _)| match rank(*material) {
+                Some(at) if at >= last => {
+                    last = at;
+                    true
+                }
+                _ => false,
+            });
         if in_order {
             self.runs.clear();
             return std::mem::take(&mut self.instances);
@@ -441,7 +448,14 @@ fn fill(rect: Rect, color: Rgba, space: HudSpace, node: NodeDraw) -> SpriteInsta
     let size = node
         .size
         .unwrap_or_else(|| [rect.w as f32 * space.scale, rect.h as f32 * space.scale]);
-    quad(position, size, ([0.0; 2], [1.0; 2]), tint, alpha, node.depth)
+    quad(
+        position,
+        size,
+        ([0.0; 2], [1.0; 2]),
+        tint,
+        alpha,
+        node.depth,
+    )
 }
 
 /// A colour as a quad's tint and alpha: the batch shader writes tints
@@ -497,7 +511,9 @@ mod tests {
         let root = hud
             .create_root(Layer::Field, Origin::Host, NodeKind::Panel)
             .unwrap();
-        let bar = hud.create_by(NodeKind::Bar, Some(root), Origin::Host).unwrap();
+        let bar = hud
+            .create_by(NodeKind::Bar, Some(root), Origin::Host)
+            .unwrap();
         hud.set(bar, Prop::Rect, Value::Rect(Rect::new(4, 6, 40, 10)))
             .unwrap();
         hud.set(bar, Prop::Fill, Value::Int(42)).unwrap();
@@ -553,7 +569,10 @@ mod tests {
             paint.draw(material, |out, _| out.push(at(x)));
         }
         let popup = paint.take_lane(Material::Popup);
-        assert_eq!(popup.iter().map(|q| q.position[0]).collect::<Vec<_>>(), [1.0]);
+        assert_eq!(
+            popup.iter().map(|q| q.position[0]).collect::<Vec<_>>(),
+            [1.0]
+        );
         // The controls around it join.
         assert_eq!(
             paint.runs(),
@@ -565,7 +584,10 @@ mod tests {
         let buffer = paint.instances().as_ptr();
         let controls = paint.take_lane(Material::Controls);
         assert_eq!(controls.as_ptr(), buffer);
-        assert_eq!(controls.iter().map(|q| q.position[0]).collect::<Vec<_>>(), [0.0, 2.0]);
+        assert_eq!(
+            controls.iter().map(|q| q.position[0]).collect::<Vec<_>>(),
+            [0.0, 2.0]
+        );
         assert!(paint.runs().is_empty() && paint.instances().is_empty());
         // More runs than kept in place.
         let mut many = HudPaint::default();

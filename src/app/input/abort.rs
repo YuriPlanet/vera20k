@@ -4,13 +4,16 @@
 //! authority.
 
 use super::dialog_page::InGameDialog;
+use crate::app::App;
 use crate::app::PlatformState;
+use crate::app::audio_runtime::AppAudioRuntime;
+use crate::app::diagnostics::state::DiagnosticsState;
 use crate::app::frontend::state::FrontendState;
 use crate::app::match_runtime::session::SessionMode;
 use crate::app::match_runtime::state::MatchState;
 use crate::app::persistence::PersistenceState;
+use crate::app::process_assets::ProcessAssets;
 use crate::app::renderer_state::RendererState;
-use crate::app::{App, AppState};
 use crate::ui::pause_menu::{AbortConfirmAction, resolve_abort_action};
 use crate::ui::shell::abort::{self, AbortButton, AbortLayout, AbortSecondary, abort_layout};
 use crate::ui::shell::page::PageEvent;
@@ -119,25 +122,30 @@ pub(crate) fn sync(
 }
 
 /// One pointer message on B6 (`down`: `None` moves).
-pub(super) fn pointer(state: &mut AppState, down: Option<bool>) {
-    let Some(layout) = current_abort_layout(
-        &state.platform,
-        &state.renderer,
-        &state.frontend,
-        &state.match_state,
-        &state.persistence,
-    ) else {
+pub(super) fn pointer(
+    platform: &mut PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    persistence: &mut PersistenceState,
+    down: Option<bool>,
+) {
+    let Some(layout) = current_abort_layout(platform, renderer, frontend, match_state, persistence)
+    else {
         return;
     };
     let nodes = || abort::spec(layout.secondary_kind);
     let events = DIALOG.route(
-        &state.platform,
-        &state.renderer,
-        &state.frontend,
-        &mut state.match_state,
-        &state.process_assets,
-        &mut state.audio.sfx_player,
-        &state.persistence,
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        process_assets,
+        &mut audio.sfx_player,
+        persistence,
         down,
         nodes,
         |id| layout.rect(id),
@@ -147,21 +155,36 @@ pub(super) fn pointer(state: &mut AppState, down: Option<bool>) {
         if let PageEvent::Activated(id) = event
             && let Some(button) = AbortButton::from_id(id)
         {
-            activate(state, button);
+            activate(
+                platform,
+                renderer,
+                diag,
+                frontend,
+                match_state,
+                process_assets,
+                audio,
+                persistence,
+                button,
+            );
         }
     }
 }
 
 /// Callback4F18B0 writes the result B6 init stored for the pressed button:
 /// Leave6C9 `[0xA8EE7C]` (2, or 3 beside Observe), 712 `[0xA8EE80]`.
-pub(crate) fn activate(state: &mut AppState, button: AbortButton) {
-    let Some(layout) = current_abort_layout(
-        &state.platform,
-        &state.renderer,
-        &state.frontend,
-        &state.match_state,
-        &state.persistence,
-    ) else {
+pub(crate) fn activate(
+    platform: &mut PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    persistence: &mut PersistenceState,
+    button: AbortButton,
+) {
+    let Some(layout) = current_abort_layout(platform, renderer, frontend, match_state, persistence)
+    else {
         return;
     };
     let action = match (button, layout.secondary_kind) {
@@ -172,7 +195,17 @@ pub(crate) fn activate(state: &mut AppState, button: AbortButton) {
         (AbortButton::Secondary, AbortSecondary::Hidden) => return,
         (AbortButton::Resume, _) => AbortConfirmAction::Cancel,
     };
-    App::apply_in_game_modal_outcome(state, resolve_abort_action(action));
+    App::apply_in_game_modal_outcome(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        audio,
+        persistence,
+        resolve_abort_action(action),
+    );
 }
 
 #[cfg(all(test, tests_app_input_a_c))]

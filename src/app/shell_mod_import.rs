@@ -18,16 +18,20 @@ use crate::i18n::{tr, tr_fill};
 use crate::ui::shell::descriptor::DialogResourceId;
 use crate::ui::shell::geom::{RectPx, ShellScale};
 use crate::ui::shell::modal::{BoxParts, Footer, ShellBox, control};
-use crate::util::mod_package::{ModImport, PreparedModImport};
+use crate::util::mod_package::{ModImport, PreparedModAppend, PreparedModImport};
 use crate::util::time::{Duration, Instant};
 use vera20k_gui::shell::list::ROW_HEIGHT;
 use vera20k_gui::{NodeId, NodeKind, Prop, Value};
 
-use super::{App, AppState};
+use super::App;
 use crate::app::PlatformState;
+use crate::app::audio_runtime::AppAudioRuntime;
+use crate::app::diagnostics::state::DiagnosticsState;
 use crate::app::frontend::state::FrontendState;
 use crate::app::frontend::state::ShellMessageBox;
 use crate::app::input::state::MatchInputState;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
 use crate::app::persistence::options_profile::RetailOptionsProfile;
 use crate::app::process_assets::ProcessAssets;
 use crate::app::renderer_state::RendererState;
@@ -56,6 +60,8 @@ pub(crate) struct Selection {
     top: usize,
     can_browse: bool,
     choosing_kind: bool,
+    /// The selected installed mod when adding parts.
+    append: Option<String>,
     error: Option<String>,
 }
 
@@ -86,6 +92,7 @@ impl Selection {
             top: 0,
             can_browse: mod_import_picker::available(),
             choosing_kind: false,
+            append: None,
             error: None,
         }
     }
@@ -190,6 +197,14 @@ impl Selection {
             "VERA:Cancel"
         });
         let title = self.error.clone().unwrap_or_else(|| {
+            if let Some(mod_name) = self.append.as_deref() {
+                if self.previewing() {
+                    return tr_fill("VERA:ModAppendPrompt", &[("mod", &mod_name)]);
+                }
+                if self.can_browse {
+                    return tr_fill("VERA:ModAppendChoose", &[("mod", &mod_name)]);
+                }
+            }
             tr(if self.previewing() {
                 "VERA:ModImportOrder"
             } else if self.can_browse {
@@ -204,6 +219,8 @@ impl Selection {
                 tr("VERA:ModImportFolders"),
                 cancel,
             )
+        } else if self.previewing() && self.append.is_some() {
+            (tr("VERA:ModAppend"), String::new(), cancel)
         } else if self.previewing() {
             (tr("VERA:ModImportPlay"), tr("VERA:ModImportOnly"), cancel)
         } else if self.can_browse {
@@ -232,7 +249,14 @@ impl Selection {
     }
 }
 
-/// `shell_box` in Add Mod's arrangement, with room for the parts `list`.
+/// Add Mod's box arrangement for a box outside the picker (the Mods page's
+/// New-or-append question), so both share one layout: three buttons on the
+/// footer row, the same body area.
+pub(super) fn choice_box(shell_box: ShellBox) -> ShellBox {
+    import_box(shell_box, false)
+}
+
+/// Add Mod's footer, with room for the parts list when shown.
 fn import_box(shell_box: ShellBox, list: bool) -> ShellBox {
     shell_box.footer(Footer {
         list,
@@ -250,7 +274,16 @@ pub(crate) fn is_preview_button(id: u16) -> bool {
 pub(crate) struct Preparation {
     play: bool,
     stop: Arc<AtomicBool>,
-    result: Receiver<anyhow::Result<PreparedModImport>>,
+    result: Receiver<anyhow::Result<Prepared>>,
+}
+
+#[derive(Debug)]
+enum Prepared {
+    New(PreparedModImport),
+    Append {
+        folder: String,
+        files: PreparedModAppend,
+    },
 }
 
 impl Drop for Preparation {
@@ -576,6 +609,30 @@ impl App {
         );
     }
 
+    /// Add parts to an installed mod's folder: the Mods page's Add Mod asks
+    /// first when a mod is selected, since a file manager cannot extend a mod
+    /// inside the app's own storage on Android and a desktop mod's folder is
+    /// the same operation.
+    pub(super) fn open_append_import(
+        window: &Window,
+        renderer: &RendererState,
+        frontend: &mut FrontendState,
+        process_assets: &ProcessAssets,
+        options_profile: &RetailOptionsProfile,
+        folder: String,
+    ) {
+        let mut selection = Selection::new();
+        selection.append = Some(folder);
+        Self::show_import_selection(
+            window,
+            renderer,
+            frontend,
+            process_assets,
+            options_profile,
+            selection,
+        );
+    }
+
     /// Android: a ZIP or folder the system file manager copied in joins the
     /// selection, and its box is rebuilt with the preview's buttons. A part
     /// that arrives after Add Mod closed is deleted.
@@ -812,6 +869,7 @@ impl App {
                     options_profile,
                     plan,
                     action == 0,
+                    selection.append.clone(),
                 );
             }
             return;
@@ -920,6 +978,7 @@ impl App {
         options_profile: &RetailOptionsProfile,
         plan: ModImport,
         play: bool,
+        append: Option<String>,
     ) {
         let Some(config) = platform.game_config.as_ref() else {
             Self::mod_import_failed(
@@ -933,10 +992,19 @@ impl App {
             return;
         };
         let mods = config.paths.mods_dir();
-        let title = tr_fill("VERA:ModImportWorking", &[("mod", &plan.name())]);
+        let title = match append.as_deref() {
+            Some(mod_name) => tr_fill("VERA:ModAppendPrompt", &[("mod", &mod_name)]),
+            None => tr_fill("VERA:ModImportWorking", &[("mod", &plan.name())]),
+        };
         let stop = Arc::new(AtomicBool::new(false));
         let Some(result) = crate::app::worker::spawn("mod-import", stop.clone(), move |stop| {
-            Ok(plan.prepare(&mods, stop)?)
+            Ok(match append {
+                Some(folder) => Prepared::Append {
+                    files: plan.prepare_append(&mods, &folder, stop)?,
+                    folder,
+                },
+                None => Prepared::New(plan.prepare(&mods, stop)?),
+            })
         }) else {
             Self::mod_import_failed(
                 &platform.window,
@@ -960,22 +1028,31 @@ impl App {
         );
     }
 
-    pub(super) fn poll_mod_import(state: &mut AppState) -> Option<Instant> {
+    pub(super) fn poll_mod_import(
+        platform: &PlatformState,
+        renderer: &RendererState,
+        diag: &DiagnosticsState,
+        frontend: &mut FrontendState,
+        match_state: &mut MatchState,
+        process_assets: &ProcessAssets,
+        audio: &mut AppAudioRuntime,
+        persistence: &PersistenceState,
+    ) -> Option<Instant> {
         #[cfg(target_os = "android")]
         Self::drain_picked_part(
-            &state.platform.window,
-            &state.renderer,
-            &mut state.frontend,
-            &state.process_assets,
-            &state.persistence.options_profile,
+            &platform.window,
+            renderer,
+            frontend,
+            process_assets,
+            &persistence.options_profile,
         );
         let ShellMessageBoxPurpose::ModImport(dialog) =
-            &state.frontend.shell_message_box.as_ref()?.purpose
+            &frontend.shell_message_box.as_ref()?.purpose
         else {
             return None;
         };
         let Dialog::Preparing(preparation) = dialog.as_ref() else {
-            let next = poll_scroll(&state.platform.window, &state.renderer, &mut state.frontend);
+            let next = poll_scroll(&platform.window, renderer, frontend);
             // Android: the system file manager's copy lands with no event of
             // its own, so the box looks for it a few times a second.
             #[cfg(target_os = "android")]
@@ -988,43 +1065,88 @@ impl App {
             Ok(result) => result,
         };
         let play = preparation.play;
-        Self::close_shell_message_box_from_controller(&mut state.frontend);
+        Self::close_shell_message_box_from_controller(frontend);
         // Android: the picked copies are installed or failed; either way they
         // are done with.
         #[cfg(target_os = "android")]
         crate::util::mod_actions::clear_picked();
-        match result.and_then(|prepared| Ok(prepared.install()?)) {
-            Ok(folder) => Self::mod_imported(state, folder, play),
+        match result.and_then(|prepared| match prepared {
+            Prepared::New(files) => Ok((files.install()?, None)),
+            Prepared::Append { folder, files } => Ok((folder, Some(files.publish()?))),
+        }) {
+            Ok((folder, Some(count))) => {
+                Self::select_installed_mod(platform.game_config.as_ref(), frontend, &folder);
+                Self::mod_import_notice(
+                    &platform.window,
+                    renderer,
+                    frontend,
+                    process_assets,
+                    &persistence.options_profile,
+                    tr_fill(
+                        "VERA:ModAppended",
+                        &[("mod", &folder), ("count", &count.to_string())],
+                    ),
+                );
+            }
+            Ok((folder, None)) => Self::mod_imported(
+                platform,
+                renderer,
+                diag,
+                frontend,
+                match_state,
+                process_assets,
+                audio,
+                persistence,
+                folder,
+                play,
+            ),
             Err(error) => Self::mod_import_failed(
-                &state.platform.window,
-                &state.renderer,
-                &mut state.frontend,
-                &state.process_assets,
-                &state.persistence.options_profile,
+                &platform.window,
+                renderer,
+                frontend,
+                process_assets,
+                &persistence.options_profile,
                 error,
             ),
         }
         None
     }
 
-    fn mod_imported(state: &mut AppState, folder: String, play: bool) {
+    fn mod_imported(
+        platform: &PlatformState,
+        renderer: &RendererState,
+        diag: &DiagnosticsState,
+        frontend: &mut FrontendState,
+        match_state: &mut MatchState,
+        process_assets: &ProcessAssets,
+        audio: &mut AppAudioRuntime,
+        persistence: &PersistenceState,
+        folder: String,
+        play: bool,
+    ) {
         // Android: the folder gets the id a pinned shortcut finds it by.
         #[cfg(target_os = "android")]
-        if let Some(config) = state.platform.game_config.as_ref() {
+        if let Some(config) = platform.game_config.as_ref() {
             let _ = crate::app::mods::ensure_mod_id(&config.paths.mods_dir().join(&folder));
         }
-        Self::select_installed_mod(
-            state.platform.game_config.as_ref(),
-            &mut state.frontend,
-            &folder,
-        );
-        let selected = Self::mods_selected(&state.frontend.shell_controller);
-        if play && state.frontend.mods.switch_to(selected).is_some() {
-            Self::answer_mod_restart(state, Some(folder), true);
+        Self::select_installed_mod(platform.game_config.as_ref(), frontend, &folder);
+        let selected = Self::mods_selected(&frontend.shell_controller);
+        if play && frontend.mods.switch_to(selected).is_some() {
+            Self::answer_mod_restart(
+                platform,
+                renderer,
+                diag,
+                frontend,
+                match_state,
+                process_assets,
+                audio,
+                persistence,
+                Some(folder),
+                true,
+            );
             return;
         }
-        let row = state
-            .frontend
+        let row = frontend
             .mods
             .page
             .as_ref()
@@ -1040,11 +1162,11 @@ impl App {
             added
         };
         Self::mod_import_notice(
-            &state.platform.window,
-            &state.renderer,
-            &mut state.frontend,
-            &state.process_assets,
-            &state.persistence.options_profile,
+            &platform.window,
+            renderer,
+            frontend,
+            process_assets,
+            &persistence.options_profile,
             title,
         );
     }

@@ -226,6 +226,8 @@ impl Scene {
         let mut parents = PlannedObjects::default();
         build_shp_instances_from_inputs(
             &ShpInputs {
+                motion: None,
+                diagnostics: None,
                 runtime: &self.runtime,
                 frame: &presented,
                 atlas: Some(atlas),
@@ -240,7 +242,6 @@ impl Scene {
                 building_viewport: crate::app::presentation::render::tactical_world_viewport(
                     vera_camera(),
                     CLIP,
-                    None,
                 ),
                 axis: DepthAxis::NONE,
                 local_owner: Some(OWNER),
@@ -248,6 +249,7 @@ impl Scene {
                 lighting: light,
                 house_colors: colors,
                 building_zshape: None,
+                model_frame: None,
             },
             &mut parents,
             &order,
@@ -267,6 +269,7 @@ impl Scene {
         let detail = RefCell::new(detail);
         let hidden = Default::default();
         let input = DisplayEffectInputs {
+            unit_motion: None,
             sim,
             frame: &presented,
             rules: &self.runtime.resources.rules,

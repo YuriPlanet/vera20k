@@ -269,6 +269,9 @@ pub(crate) fn tactical_entity_admission(
         // Unit DrawIt 73D30E skips both voxel and SHP bodies in a tube;
         // Infantry DrawIt 5190DE branches to AddSelectable at 519609.
         || (purpose == TacticalEntityPurpose::Drawing && entity.in_tube)
+        // VERA: a client module's `Decoration` with `HideAnchor` hides the
+        // body on this screen; it is still listed and selected.
+        || (purpose == TacticalEntityPurpose::Drawing && entity.local_look().hidden)
         || entity.lifecycle.in_limbo()
         || entity.passenger_role.is_inside_transport()
         // UnitClass::DrawIt returns before AddSelectable while the unit
@@ -380,12 +383,11 @@ fn tactical_bounded_entity_encounter_order(
 
     compose_tactical_screen_entity_encounter_order(
         sim,
-        &frame,
+        frame,
+        &match_state.match_presentation.unit_motion,
         (min_x, min_y, max_x, max_y),
         local_owner_id,
-        sim.fog(),
         match_state.sandbox_full_visibility,
-        sim.session().binary_frame(),
         bulk_register_live_buildings,
     )
 }
@@ -393,11 +395,10 @@ fn tactical_bounded_entity_encounter_order(
 fn compose_tactical_screen_entity_encounter_order(
     sim: &crate::sim::world::Simulation,
     frame: &crate::app::presentation::frame::PresentationFrame,
+    unit_motion: &crate::app::presentation::unit_motion::UnitMotion,
     bounds: (f32, f32, f32, f32),
     local_owner_id: Option<InternedId>,
-    fog: &FogState,
     ignore_visibility: bool,
-    current_frame: u32,
     bulk_register_live_buildings: bool,
 ) -> Vec<u64> {
     let (min_x, min_y, max_x, max_y) = bounds;
@@ -435,9 +436,9 @@ fn compose_tactical_screen_entity_encounter_order(
                         TacticalEntityPurpose::ScreenSelection,
                         entity,
                         local_owner_id,
-                        fog,
+                        sim.fog(),
                         ignore_visibility,
-                        current_frame,
+                        sim.session().binary_frame(),
                         0,
                         entity.seen.observer,
                     )
@@ -447,8 +448,10 @@ fn compose_tactical_screen_entity_encounter_order(
                     return false;
                 }
                 // `entity_pick::PresentedWorld::screen_position`.
-                let [x, y] = entity.pose.screen;
-                let y = y - f32::from(entity.ion_blast_lift_pixels());
+                let [x, y] = unit_motion.painted_anchor(*id).unwrap_or_else(|| {
+                    let [x, y] = entity.pose.screen;
+                    [x, y - entity.pose.visual_lift]
+                });
                 x >= min_x && x <= max_x && y >= min_y && y <= max_y
             })
         })
@@ -778,28 +781,32 @@ pub(crate) fn cell_visibility_for_local_owner(
     let Some(fog) = fog else {
         return CellVisibilityState::Visible;
     };
+    let cells = terrain.map(crate::map::resolved_terrain::NativeCellQuery::isolated);
+    if cell_revealed(fog, local_owner_id, (rx, ry), cells.as_ref()) {
+        CellVisibilityState::Visible
+    } else {
+        CellVisibilityState::Shrouded
+    }
+}
+
+/// Read the viewer's shroud with the caller's cell query. A draw shares
+/// its isolated query (including its private Dummy) across visible objects.
+pub(super) fn cell_revealed(
+    fog: &FogState,
+    viewer: InternedId,
+    cell: (u16, u16),
+    cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
+) -> bool {
     // Display::ProcessClickCoords69244C..692480 asks Map578080 for the
     // clicked Cell centre's floor, then IsShrouded586360. The shroud lattice
     // is flat: raw map coordinates reject visible high-ground targets.
     // CellGetCoords486840 has the same floor input and no bridge-deck term.
     // Executed suffix/Pick controls: spatial_oracle/click_shroud.json.
     // Standard YR has FogOfWar=false; current sight is not an extra gate.
-    let shrouded = terrain.map_or_else(
-        || !fog.is_cell_revealed(local_owner_id, rx, ry),
-        |terrain| {
-            crate::sim::vision::cell_is_shrouded(
-                fog,
-                &crate::map::resolved_terrain::NativeCellQuery::isolated(terrain),
-                local_owner_id,
-                (rx, ry),
-            )
-        },
-    );
-    if !shrouded {
-        CellVisibilityState::Visible
-    } else {
-        CellVisibilityState::Shrouded
-    }
+    cells.map_or_else(
+        || fog.is_cell_revealed(viewer, cell.0, cell.1),
+        |cells| !crate::sim::vision::cell_is_shrouded(fog, cells, viewer, cell),
+    )
 }
 
 /// The battlefield every Display member is admitted in, in world pixels: its
@@ -1046,11 +1053,10 @@ mod tests {
         let candidates = compose_tactical_screen_entity_encounter_order(
             sim,
             frame,
+            &Default::default(),
             bounds,
             Some(owner),
-            sim.fog(),
             true,
-            0,
             true,
         );
         assert_eq!(candidates, [2, 1]);
@@ -1443,11 +1449,10 @@ mod tests {
             compose_tactical_screen_entity_encounter_order(
                 &sim,
                 &frame,
+                &Default::default(),
                 bounds,
                 Some(owner),
-                sim.fog(),
                 false,
-                0,
                 bulk,
             )
         };
@@ -1518,11 +1523,10 @@ mod tests {
         let order = compose_tactical_screen_entity_encounter_order(
             &sim,
             &frame,
+            &Default::default(),
             (-1.0e6, -1.0e6, 1.0e6, 1.0e6),
             Some(owner),
-            sim.fog(),
             true,
-            0,
             false,
         );
         assert_eq!(order, [1]);
@@ -1592,21 +1596,19 @@ mod tests {
         let visible = compose_tactical_screen_entity_encounter_order(
             &sim,
             &frame,
+            &Default::default(),
             bounds,
             Some(local_owner),
-            sim.fog(),
             false,
-            0,
             false,
         );
         let preflight = compose_tactical_screen_entity_encounter_order(
             &sim,
             &frame,
+            &Default::default(),
             bounds,
             Some(local_owner),
-            sim.fog(),
             false,
-            0,
             true,
         );
 

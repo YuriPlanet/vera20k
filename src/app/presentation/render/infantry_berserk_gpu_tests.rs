@@ -583,6 +583,8 @@ fn render_original_body_pixels(
                 let zshape_skips = std::cell::RefCell::default();
                 build_shp_instances_from_inputs(
                     &ShpInputs {
+                        motion: None,
+                        diagnostics: None,
                         runtime: &runtime,
                         frame: &presented,
                         atlas: Some(&atlas),
@@ -598,7 +600,6 @@ fn render_original_body_pixels(
                             crate::app::presentation::render::tactical_world_viewport(
                                 view.camera_pos,
                                 [0, 0, size[0], size[1]],
-                                None,
                             ),
                         axis: crate::render::batch::DepthAxis::NONE,
                         local_owner: Some("PreparedHouse"),
@@ -606,6 +607,7 @@ fn render_original_body_pixels(
                         lighting: &light_grid,
                         house_colors: &house_colors,
                         building_zshape: None,
+                        model_frame: None,
                     },
                     &mut objects,
                     &order,

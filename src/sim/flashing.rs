@@ -160,6 +160,22 @@ impl crate::sim::world::Simulation {
             );
         }
     }
+
+    /// A client module's `FlashObject` (RFC 0001 appendix 5.4): vt+0x148
+    /// `Flash(frames)` on one object, on this machine only. The countdown is
+    /// presentation state outside the state hash (`world_hash::entity`),
+    /// like the Phobos selection flash above.
+    pub fn flash_object_locally(&mut self, id: u64, frames: i32) {
+        Self::flash_object(
+            &self.interner,
+            &self.session,
+            &self.fog,
+            &self.house_alliances,
+            &mut self.substrate,
+            id,
+            frames,
+        );
+    }
 }
 
 #[cfg(all(test, tests_sim_c_g))]

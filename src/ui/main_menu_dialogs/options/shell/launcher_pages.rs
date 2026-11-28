@@ -1,7 +1,5 @@
 use super::*;
-use crate::ui::main_menu_dialogs::options::{
-    HAS_GRAPHICS_API, HAS_HD_MAP_PREVIEWS, HAS_RA2_MODE, HAS_VSYNC,
-};
+use crate::ui::main_menu_dialogs::options::{HAS_GRAPHICS_API, HAS_HD_MAP_PREVIEWS, HAS_VSYNC};
 use crate::ui::shell::geom::{SDBTNANM_CELL_H, SDBTNANM_CELL_W_NARROW};
 use LauncherCheckboxId as Check;
 use LauncherComboId as Combo;
@@ -60,6 +58,7 @@ pub(super) fn controls(
             }
             check(&mut row, Check::LockCursor, x, 176);
             check(&mut row, Check::OriginalShape, x, 200);
+            check_with_width(&mut row, Check::RenderInterpolation, x, 222, 390);
 
             section(&mut row, Category::Gameplay, 243);
             check(&mut row, Check::ShiftQueue, x, 271);
@@ -119,9 +118,10 @@ pub(super) fn controls(
                 Check::SmoothOnlineMenus,
                 Check::ShowStringKeys,
                 Check::PerformanceStats,
+                #[cfg(target_os = "android")]
+                Check::Ra2Mode,
             ]
             .into_iter()
-            .chain(HAS_RA2_MODE.then_some(Check::Ra2Mode))
             .enumerate()
             {
                 check(&mut row, id, x, 405 + i as i32 * 24);

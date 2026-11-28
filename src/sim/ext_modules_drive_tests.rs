@@ -306,7 +306,7 @@ fn factory_properties_follow_a_queued_production() {
     );
     let read = |sim: &mut crate::sim::world::Simulation, name: &str| {
         sim.with_module_host(rules, ModuleSource::Map, |host| {
-            host.read(house, prop(name))
+            host.reader().read(house, prop(name))
         })
         .expect("a valid read")
     };
@@ -431,4 +431,298 @@ fn find_super_weapons_lists_the_houses_granted_supers() {
     assert!((0..=100).contains(&mem_i64(&scene, 0, 664)));
     // SetPercentage's f32 0.01 leaves 50% one frame short of half.
     assert!((49..=50).contains(&mem_i64(&scene, 0, 680)));
+}
+
+/// A host read of `name` on `reference`, without a viewpoint.
+fn host_read(scene: &mut HeadlessScenario, reference: i64, name: &str) -> (i64, Status) {
+    let runtime = &mut scene.runtime;
+    runtime
+        .simulation
+        .with_module_host(&runtime.resources.rules, ModuleSource::Map, |host| {
+            host.reader().read(reference, prop(name))
+        })
+        .expect("a valid read")
+}
+
+/// `NearbyEnemyCount` counts the enemy GIs within the GI's `Sight=`, not a
+/// friend beside it or an enemy far off. `TargetInRange` and
+/// `CanFireAtTarget` read 0 without a target and against the far enemy;
+/// against the near one InRange holds and `CanFireAtTarget` is
+/// GetFireError's Ok. A GI is not cloaked and has no door or working body
+/// mode.
+#[test]
+fn a_gi_reads_its_nearby_enemies_and_its_target() {
+    use crate::sim::combat::TargetKind;
+    use crate::sim::combat::fire_error::FireError;
+    let Some((mut scene, attacker, target)) = gi_duel() else {
+        return;
+    };
+    let far = {
+        let crate::sim::runtime::SimRuntime {
+            simulation: sim,
+            resources,
+        } = &mut scene.runtime;
+        let rules = &resources.rules;
+        let (x, y) = sim
+            .entities()
+            .get(attacker)
+            .map(|e| (e.position.rx(), e.position.ry()))
+            .expect("attacker");
+        sim.spawn_object("E1", "Russians", x + 1, y + 1, 0, rules)
+            .expect("a second near enemy");
+        sim.spawn_object("E1", "Americans", x, y + 1, 0, rules)
+            .expect("a friend");
+        let far = (x + 30..x + 90)
+            .find_map(|fx| sim.spawn_object("E1", "Russians", fx, y, 0, rules))
+            .expect("a far enemy");
+        sim.resolve_type_handles(rules);
+        far
+    };
+    let ok = |value| (value, Status::Ok);
+    let me = attacker as i64;
+    assert_eq!(host_read(&mut scene, me, "NearbyEnemyCount"), ok(2));
+    assert_eq!(host_read(&mut scene, me, "TargetInRange"), ok(0));
+    assert_eq!(host_read(&mut scene, me, "CanFireAtTarget"), ok(0));
+    let aim = |scene: &mut HeadlessScenario, at: u64| {
+        scene
+            .runtime
+            .simulation
+            .substrate
+            .entities
+            .get_mut(attacker)
+            .expect("attacker")
+            .attack_target
+            .set_for_test(Some(TargetKind::Entity(at)));
+    };
+    aim(&mut scene, far);
+    assert_eq!(host_read(&mut scene, me, "TargetInRange"), ok(0));
+    assert_eq!(host_read(&mut scene, me, "CanFireAtTarget"), ok(0));
+    aim(&mut scene, target);
+    let error = {
+        let runtime = &scene.runtime;
+        runtime.simulation.selected_weapon_fire_error(
+            &runtime.resources.rules,
+            attacker,
+            TargetKind::Entity(target),
+            true,
+        )
+    };
+    assert_ne!(error, FireError::Range, "two cells off is in range");
+    assert_eq!(host_read(&mut scene, me, "TargetInRange"), ok(1));
+    assert_eq!(
+        host_read(&mut scene, me, "CanFireAtTarget"),
+        ok(i64::from(error == FireError::Ok))
+    );
+    assert_eq!(host_read(&mut scene, me, "Cloaked"), ok(0));
+    let unsupported = (0, Status::Unsupported);
+    assert_eq!(host_read(&mut scene, me, "DoorOpen"), unsupported);
+    assert_eq!(host_read(&mut scene, me, "Animating"), unsupported);
+}
+
+/// `DoorOpen` reads a war factory's door: closed as placed, open once it
+/// opens; a power plant has no door. Neither building is in its working
+/// body mode (`Animating` 0).
+#[test]
+fn a_war_factory_reads_its_door() {
+    let Some((mut scene, attacker, _)) = gi_duel() else {
+        return;
+    };
+    let (factory, plant) = {
+        let crate::sim::runtime::SimRuntime {
+            simulation: sim,
+            resources,
+        } = &mut scene.runtime;
+        let rules = &resources.rules;
+        let americans = sim.interner.get("Americans").expect("Americans");
+        let plant = sim
+            .entities()
+            .iter_sorted()
+            .find(|(_, e)| e.category() == EntityCategory::Structure && e.owner() == americans)
+            .map(|(id, _)| id)
+            .expect("the American power plant");
+        let (x, y) = sim
+            .entities()
+            .get(attacker)
+            .map(|e| (e.position.rx(), e.position.ry()))
+            .expect("attacker");
+        let factory = (20..120_u16)
+            .flat_map(|fy| (20..120_u16).map(move |fx| (fx, fy)))
+            .filter(|&(fx, fy)| fx.abs_diff(x).max(fy.abs_diff(y)) >= 8)
+            .find_map(|(fx, fy)| sim.spawn_object("GAWEAP", "Americans", fx, fy, 0, rules))
+            .expect("a war factory");
+        sim.resolve_type_handles(rules);
+        (factory, plant)
+    };
+    let ok = |value| (value, Status::Ok);
+    let unsupported = (0, Status::Unsupported);
+    assert_eq!(host_read(&mut scene, factory as i64, "DoorOpen"), ok(0));
+    assert_eq!(host_read(&mut scene, plant as i64, "DoorOpen"), unsupported);
+    assert_eq!(host_read(&mut scene, factory as i64, "Animating"), ok(0));
+    assert_eq!(host_read(&mut scene, plant as i64, "Animating"), ok(0));
+    let frame = scene.sim().session.binary_frame();
+    scene
+        .runtime
+        .simulation
+        .substrate
+        .entities
+        .get_mut(factory)
+        .expect("factory")
+        .open_door(10, frame);
+    assert_eq!(host_read(&mut scene, factory as i64, "DoorOpen"), ok(1));
+    // A write holds how the door is drawn and leaves the door alone; -1
+    // lets it go. A power plant has no door to hold.
+    let write = |scene: &mut HeadlessScenario, reference: u64, value: i64| {
+        let runtime = &mut scene.runtime;
+        runtime
+            .simulation
+            .with_module_host(&runtime.resources.rules, ModuleSource::Map, |host| {
+                vera20k_wasm_ext::SimHost::set(host, reference as i64, prop("DoorOpen"), value)
+            })
+            .expect("a valid write")
+    };
+    assert_eq!(write(&mut scene, factory, 0), Status::Ok);
+    assert_eq!(scene.sim().ext_module_door(factory), Some(false));
+    assert_eq!(host_read(&mut scene, factory as i64, "DoorOpen"), ok(1), "the door runs on");
+    assert_eq!(write(&mut scene, plant, 1), Status::Unsupported);
+    assert_eq!(write(&mut scene, factory, -1), Status::Ok);
+    assert_eq!(scene.sim().ext_module_door(factory), None);
+}
+
+/// A type's `Name` is a string ID of its rules ID, which `get` adds and
+/// every later read repeats, and a filter read finds only once held;
+/// TechnoType `Points` is the rules' value. The global `GameMode` names the
+/// session's multiplayer mode class. `find(Types)` lists every TechnoType
+/// for a wildcard, one for a specific type, and with a `Buildable` clause
+/// the types `buildable_by_player` allows the viewpoint house; a plain
+/// `Buildable` read has no viewpoint (`Unsupported`), and a Types query
+/// without a type is invalid.
+#[test]
+fn types_read_their_names_points_and_buildability() {
+    use vera20k_wasm_ext::{
+        Area, Clause, ClauseSubject, MAX_SCAN, NAME_STRING, NAME_TECHNO_TYPE, Op, Query,
+        SCOPE_TYPES, SimHost,
+    };
+    let Some(mut scene) = scenario_with_computer() else {
+        return;
+    };
+    let crate::sim::runtime::SimRuntime {
+        simulation: sim,
+        resources,
+    } = &mut scene.runtime;
+    let rules = &resources.rules;
+    let techno = |name: &str| {
+        super::type_ref(
+            NAME_TECHNO_TYPE,
+            rules.type_handle(name).expect("a TechnoType").0,
+        )
+    };
+    let (mtnk, htnk) = (techno("MTNK"), techno("HTNK"));
+    let points = rules.object("MTNK").expect("MTNK").points;
+    let mode = sim
+        .session
+        .multiplayer_mode_class()
+        .map_or("", crate::skirmish_modes::MpModeClass::section)
+        .to_owned();
+    let total = rules.all_objects().count();
+    let shared: &crate::sim::world::Simulation = sim;
+    let expected: Vec<Vec<i64>> = shared
+        .houses
+        .order()
+        .iter()
+        .map(|&house| {
+            rules
+                .all_objects()
+                .enumerate()
+                .filter(|(_, object)| {
+                    crate::sim::production::buildable_by_player(shared, rules, house, object)
+                })
+                .map(|(id, _)| super::type_ref(NAME_TECHNO_TYPE, id as u32))
+                .collect()
+        })
+        .collect();
+    let query = |viewpoint: i64, type_ref: i64, buildable: Option<i64>| Query {
+        scope: SCOPE_TYPES,
+        area: Area::Map,
+        type_ref,
+        owner: 0,
+        viewpoint,
+        after: 0,
+        clauses: buildable
+            .map(|value| Clause {
+                subject: ClauseSubject::Property(prop("Buildable")),
+                op: Op::Eq,
+                value,
+            })
+            .into_iter()
+            .collect(),
+        max_scan: MAX_SCAN,
+    };
+    let refs = |page: &vera20k_wasm_ext::FindPage| -> Vec<i64> {
+        page.found.iter().map(|&(_, reference)| reference).collect()
+    };
+    let any = super::type_ref(NAME_TECHNO_TYPE, u32::MAX);
+    sim.with_module_host(rules, ModuleSource::Map, |host| {
+        let name = prop("Name");
+        assert_eq!(
+            host.reader().read(htnk, name).expect("read"),
+            (0, Status::NotFound),
+            "no get has held HTNK"
+        );
+        let (id, status) = host.get(mtnk, name).expect("get");
+        assert_eq!(status, Status::Ok);
+        assert!(id > 0, "a string ID");
+        assert_eq!(
+            host.name_of(NAME_STRING, id as i32).expect("name_of"),
+            ("MTNK".to_owned(), Status::Ok)
+        );
+        assert_eq!(host.get(mtnk, name).expect("get"), (id, Status::Ok));
+        assert_eq!(host.reader().read(mtnk, name).expect("read"), (id, Status::Ok));
+        assert_eq!(
+            host.get(mtnk, prop("Points")).expect("get"),
+            (i64::from(points), Status::Ok)
+        );
+        let (mode_id, status) = host.get(4 << 48, prop("GameMode")).expect("get");
+        let text = if mode_id == 0 {
+            String::new()
+        } else {
+            host.name_of(NAME_STRING, mode_id as i32)
+                .expect("name_of")
+                .0
+        };
+        assert_eq!((text, status), (mode, Status::Ok));
+        let (all, status) = host.find(&query(0, any, None), 4096).expect("find");
+        assert_eq!((all.found.len(), status), (total, Status::Ok));
+        let (one, _) = host.find(&query(0, mtnk, None), 16).expect("find");
+        assert_eq!(refs(&one), [mtnk]);
+        for (index, expected) in expected.iter().enumerate() {
+            let view = house_ref(index);
+            let (yes, _) = host.find(&query(view, any, Some(1)), 4096).expect("find");
+            let (no, _) = host.find(&query(view, any, Some(0)), 4096).expect("find");
+            assert_eq!(&refs(&yes), expected, "house {index}");
+            assert_eq!(yes.found.len() + no.found.len(), total);
+        }
+        assert_eq!(
+            host.reader().read(mtnk, prop("Buildable")).expect("read"),
+            (0, Status::Unsupported)
+        );
+        assert!(host.find(&query(0, 0, None), 16).is_err());
+    });
+}
+
+/// `Points=` parses into TechnoType `Points`, 0 when absent.
+#[test]
+fn techno_type_points_read_the_rules_key() {
+    use crate::rules::ini_parser::IniFile;
+    use crate::rules::ruleset::RuleSet;
+    use vera20k_wasm_ext::NAME_TECHNO_TYPE;
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[VehicleTypes]\n0=SCORED\n1=PLAIN\n[SCORED]\nPoints=37\n[PLAIN]\nStrength=100\n",
+    ))
+    .expect("rules parse");
+    let points = |name: &str| {
+        let id = rules.type_handle(name).expect("a TechnoType").0;
+        super::type_property(&rules, NAME_TECHNO_TYPE, id, "Points").expect("a valid read")
+    };
+    assert_eq!(points("SCORED"), (37, Status::Ok));
+    assert_eq!(points("PLAIN"), (0, Status::Ok));
 }

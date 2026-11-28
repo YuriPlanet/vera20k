@@ -80,7 +80,7 @@ impl crate::sim::world::Simulation {
                 || candidate.lifecycle.in_limbo()
                 || !candidate.is_object_alive()
                 || !candidate.in_playfield()
-                || candidate.temporal.is_warped()
+                || candidate.is_warped_out() // Ares 3.0 10043030..1004303A, vt+1D4
                 || crate::sim::superweapon::invulnerability::is_invulnerable(
                     candidate.invulnerability.as_ref(),
                     self.session.binary_frame(),

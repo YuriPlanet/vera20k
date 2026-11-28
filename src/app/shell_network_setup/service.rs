@@ -730,7 +730,9 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
                 protocol.accept_eligible = true;
             }
             if !ready {
-                let text = state.csf_label("GUI:HostGameStartJoiner", "GUI:HostGameStartJoiner");
+                let text = state
+                    .process_assets
+                    .csf_label("GUI:HostGameStartJoiner", "GUI:HostGameStartJoiner");
                 crate::app::shell_lan::append_room_chat(
                     &state.renderer,
                     &mut state.frontend,
@@ -898,17 +900,7 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
             );
         }
         NetworkSetupEvent::GameStarted { users, pings } => {
-            super::wol::game_started(
-                &mut state.platform,
-                &state.renderer,
-                &mut state.frontend,
-                &mut state.match_state,
-                &state.process_assets,
-                &mut state.audio,
-                &mut state.persistence,
-                users,
-                pings,
-            )?;
+            super::wol::game_started(&mut state.frontend, &mut state.match_state, users, pings)?;
         }
         NetworkSetupEvent::VerifyStarted { pairs } => {
             if pairs {
@@ -1218,12 +1210,16 @@ pub(crate) fn fail_go_handoff(state: &mut AppState) {
     fail_go_handoff_with_notice(state, "TXT_UNABLE_PLAY_WAAUGH", "TXT_UNABLE_PLAY_WAAUGH");
 }
 
-pub(crate) fn fail_go_delivery(state: &mut AppState) {
-    fail_go_handoff_with_notice(
-        state,
-        "TXT_SYSTEM_NOT_RESPONDING",
-        "The other system is not responding.",
-    );
+/// GO's delivery failed: the step that fails the handoff with the
+/// not-responding notice.
+pub(crate) fn fail_go_delivery() -> crate::app::shell_main_menu::ClientStep {
+    crate::app::shell_main_menu::ClientStep::Now(Box::new(|state: &mut AppState| {
+        fail_go_handoff_with_notice(
+            state,
+            "TXT_SYSTEM_NOT_RESPONDING",
+            "The other system is not responding.",
+        )
+    }))
 }
 
 fn fail_go_handoff_with_notice(state: &mut AppState, label: &str, fallback: &str) {
@@ -1247,8 +1243,8 @@ fn fail_go_handoff_with_notice(state: &mut AppState, label: &str, fallback: &str
         App::fail_external_launch(state, "the direct start handshake failed");
         return;
     }
-    let message = state.csf_label(label, fallback);
-    let ok = state.csf_label("TXT_OK", "OK");
+    let message = state.process_assets.csf_label(label, fallback);
+    let ok = state.process_assets.csf_label("TXT_OK", "OK");
     state
         .frontend
         .multiplayer_setup

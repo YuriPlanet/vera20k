@@ -74,9 +74,10 @@ use sign_in::{
 use winit::window::Window;
 
 // The deployment sets this at build time; a runtime override supports staging.
+const PUBLIC_LOBBY_URL: &str = "https://lobby.vera20k.org";
 const DEFAULT_LOBBY_URL: &str = match option_env!("VERA20K_LOBBY_URL") {
     Some(value) => value,
-    None => "https://lobby.vera20k.org",
+    None => PUBLIC_LOBBY_URL,
 };
 const POLL_INTERVAL: Duration = Duration::from_millis(50);
 const RELAY_TIMEOUT: Duration = Duration::from_secs(30);
@@ -131,6 +132,11 @@ pub(crate) struct LobbyAnswer {
 #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
 pub(crate) fn lobby_get(path: &str, if_none_match: Option<&str>) -> Result<LobbyAnswer> {
     let url = format!("{}{path}", lobby_base_url()?.trim_end_matches('/'));
+    public_get(&url, if_none_match)
+}
+
+#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+fn public_get(url: &str, if_none_match: Option<&str>) -> Result<LobbyAnswer> {
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .https_only(true)
         .max_redirects(0)
@@ -140,7 +146,7 @@ pub(crate) fn lobby_get(path: &str, if_none_match: Option<&str>) -> Result<Lobby
         .timeout_per_read(Some(std::time::Duration::from_secs(30)))
         .build()
         .into();
-    let mut request = agent.get(&url).header("User-Agent", http::USER_AGENT);
+    let mut request = agent.get(url).header("User-Agent", http::USER_AGENT);
     if let Some(tag) = if_none_match {
         request = request.header("If-None-Match", tag);
     }
@@ -163,6 +169,16 @@ pub(crate) fn lobby_get(path: &str, if_none_match: Option<&str>) -> Result<Lobby
 #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
 pub(crate) fn lobby_get(_path: &str, _if_none_match: Option<&str>) -> Result<LobbyAnswer> {
     anyhow::bail!("the browser build reads the lobby only through its session")
+}
+
+/// Optional gallery metadata for the official lobby. A custom lobby owns its
+/// own catalog and never contacts the production website for these categories.
+pub(crate) fn gallery_categories_get() -> Result<Option<LobbyAnswer>> {
+    #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+    if lobby_base_url()?.trim_end_matches('/') == PUBLIC_LOBBY_URL {
+        return public_get("https://vera20k.org/maps/categories.json", None).map(Some);
+    }
+    Ok(None)
 }
 
 /// The departing visit's same HTTP/cleanup owner survives the menu teardown.
@@ -934,7 +950,9 @@ pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
                     log::warn!("Online setup request failed: {error:#}");
                     let text = if let Some(MapTooSmall(capacity)) = error.downcast_ref() {
                         crate::assets::csf_file::format_csf(
-                            &state.csf_label("TXT_SCENARIO_TOO_SMALL", "TXT_SCENARIO_TOO_SMALL"),
+                            &state
+                                .process_assets
+                                .csf_label("TXT_SCENARIO_TOO_SMALL", "TXT_SCENARIO_TOO_SMALL"),
                             &[crate::assets::csf_file::CsfArg::Int(i64::from(*capacity))],
                         )
                     } else {
@@ -1017,7 +1035,17 @@ pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
             service.poll_renewal(crate::app::match_runtime::frame_pacer::wall_clock_ms() as u32);
         }
         if service.spawned {
-            poll_spawned_exit(state, &mut service);
+            poll_spawned_exit(
+                &state.platform,
+                &state.renderer,
+                &state.diag,
+                &mut state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                &mut state.audio,
+                &state.persistence,
+                &mut service,
+            );
         }
         show_problem_line(
             &mut state.frontend,

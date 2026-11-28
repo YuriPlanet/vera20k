@@ -512,7 +512,7 @@ impl WolCapture {
                 }
             }
             WolPhase::Rejected => {
-                let expected = state.csf_label("TXT_BADPASS", "TXT_BADPASS");
+                let expected = state.process_assets.csf_label("TXT_BADPASS", "TXT_BADPASS");
                 ensure!(
                     state
                         .frontend
@@ -580,7 +580,7 @@ impl WolCapture {
                 self.settle();
             }
             WolPhase::AutoLoginBox => {
-                let expected = state.csf_label("TXT_BADPASS", "TXT_BADPASS");
+                let expected = state.process_assets.csf_label("TXT_BADPASS", "TXT_BADPASS");
                 ensure!(
                     state
                         .frontend
@@ -611,7 +611,8 @@ impl WolCapture {
             WolPhase::PersonaClosing if state.frontend.shell_exit.is_none() => {
                 let file = info_file(&state.platform.game_config)?;
                 if let Some(locale) = self.chosen_locale {
-                    let persona = file.load_persona(NICKNAME, &|key| state.csf_label(key, key));
+                    let persona = file
+                        .load_persona(NICKNAME, &|key| state.process_assets.csf_label(key, key));
                     ensure!(
                         (persona.locale, persona.locale_verified) == (locale, false),
                         "0xFE OK did not save the persona's locale: {persona:?}"
@@ -649,10 +650,7 @@ impl WolCapture {
                     received.reply_to
                 );
                 self.event(frame, "page on 0x10E: 0x11E opened");
-                let layout = crate::app::shell_wol::page::received_layout(
-                    &state.renderer,
-                    &state.frontend.screen,
-                );
+                let layout = crate::app::shell_wol::page::received_layout(&state.renderer);
                 match self.target {
                     WolTarget::PageReceivedReply => {
                         welcome_click(state, layout.rect_of(0x540).unwrap_or_default());
@@ -860,7 +858,7 @@ impl WolCapture {
                             .context("the game channel stays until its leave")?;
                     service_event(state, WolServiceEvent::ChannelLeft);
                     let left = crate::assets::csf_file::format_csf(
-                        &state.csf_label("TXT_YOULEFT", "TXT_YOULEFT"),
+                        &state.process_assets.csf_label("TXT_YOULEFT", "TXT_YOULEFT"),
                         &[crate::assets::csf_file::CsfArg::Str(&game.name)],
                     );
                     let shown = Self::lobby(&state.frontend.wol)?
@@ -939,10 +937,7 @@ impl WolCapture {
                 if self.target.clan_match() {
                     return self.clan_match(state, frame);
                 }
-                if matches!(
-                    self.target,
-                    WolTarget::IngamePage | WolTarget::IngamePageCancel
-                ) {
+                if self.target == WolTarget::IngamePage {
                     self.ingame_page(state, frame)?;
                     return Ok(());
                 }
@@ -966,7 +961,9 @@ impl WolCapture {
                             WolServiceEvent::NetStatus(crate::app::shell_wol::NET_STATUS_LOST),
                         );
                     }
-                    let lost = state.csf_label("TXT_WOL_CONNLOST", "TXT_WOL_CONNLOST");
+                    let lost = state
+                        .process_assets
+                        .csf_label("TXT_WOL_CONNLOST", "TXT_WOL_CONNLOST");
                     let messages = state.match_state.match_presentation.message_list.messages();
                     ensure!(
                         rows(state) == before + 1
@@ -1026,7 +1023,9 @@ impl WolCapture {
                 if !house.left_game() || (!house.is_defeated() && waited < 300) {
                     return Ok(());
                 }
-                let left = state.csf_label("TXT_LEFT_GAME", "TXT_LEFT_GAME");
+                let left = state
+                    .process_assets
+                    .csf_label("TXT_LEFT_GAME", "TXT_LEFT_GAME");
                 let posted = state
                     .match_state
                     .match_presentation
@@ -1210,7 +1209,9 @@ impl WolCapture {
                     // The one chat lobby is named nowhere: no list, no join line
                     // (rows start with their time).
                     let joined = crate::assets::csf_file::format_csf(
-                        &state.csf_label("TXT_JOINED_S", "TXT_JOINED_S"),
+                        &state
+                            .process_assets
+                            .csf_label("TXT_JOINED_S", "TXT_JOINED_S"),
                         &[crate::assets::csf_file::CsfArg::Str("")],
                     );
                     let layout = crate::app::shell_wol::lobby::layout(
@@ -1282,7 +1283,9 @@ impl WolCapture {
                         &state.process_assets,
                     );
                     ensure!(
-                        help == state.csf_label("VERA:RankedGameHelp", "VERA:RankedGameHelp"),
+                        help == state
+                            .process_assets
+                            .csf_label("VERA:RankedGameHelp", "VERA:RankedGameHelp"),
                         "Ranked game's help read {help:?}"
                     );
                     self.event(frame, json!({"Ranked game help": help}));
@@ -1311,7 +1314,7 @@ impl WolCapture {
                         &state.match_state.input,
                         &state.process_assets,
                     );
-                    let label = |key: &str| state.csf_label(key, key);
+                    let label = |key: &str| state.process_assets.csf_label(key, key);
                     let expected = crate::i18n::fill(
                         &label("VERA:PlayerHelp"),
                         &[
@@ -1357,13 +1360,15 @@ impl WolCapture {
                         &state.process_assets,
                     );
                     let expected = crate::i18n::fill(
-                        &state.csf_label("VERA:MessageHelp", "VERA:MessageHelp"),
+                        &state
+                            .process_assets
+                            .csf_label("VERA:MessageHelp", "VERA:MessageHelp"),
                         &[("name", &"Tanya")],
                     );
                     ensure!(help == expected, "Message's help read {help:?}");
                     // The season row: her OS to the hundredth, and what OS
                     // is under the pointer.
-                    let label = |key: &str| state.csf_label(key, key);
+                    let label = |key: &str| state.process_assets.csf_label(key, key);
                     let rows = crate::app::shell_wol::player_card::view(
                         &state.frontend,
                         &state.process_assets,
@@ -1515,7 +1520,9 @@ impl WolCapture {
                             .map(|line| String::from_utf16_lossy(&line.text))
                             .collect();
                         if self.target == WolTarget::GuestKicked {
-                            let kicked = state.csf_label("TXT_YOURE_KICKED", "TXT_YOURE_KICKED");
+                            let kicked = state
+                                .process_assets
+                                .csf_label("TXT_YOURE_KICKED", "TXT_YOURE_KICKED");
                             let expected = crate::assets::csf_file::format_csf(
                                 &kicked,
                                 &[
@@ -1596,7 +1603,13 @@ impl WolCapture {
                 if self.target == WolTarget::ModernRoomOptions {
                     use crate::ui::multiplayer_setup::GAME_OPTIONS;
                     setup_button(state, GAME_OPTIONS)?;
-                    let crates = setup_view(state)?.checks[2];
+                    let crates = setup_view(
+                        &state.renderer,
+                        &state.frontend,
+                        &state.match_state,
+                        &state.process_assets,
+                    )?
+                    .checks[2];
                     ensure!(
                         state
                             .frontend
@@ -1619,7 +1632,14 @@ impl WolCapture {
                         ),
                     );
                     ensure!(
-                        setup_view(state)?.checks[2] != crates,
+                        setup_view(
+                            &state.renderer,
+                            &state.frontend,
+                            &state.match_state,
+                            &state.process_assets,
+                        )?
+                        .checks[2]
+                            != crates,
                         "Crates did not toggle in Game Options"
                     );
                     self.event(frame, "C2 Game Options: Crates toggled");
@@ -1650,14 +1670,25 @@ impl WolCapture {
                         ),
                     );
                     ensure!(
-                        setup_view(state)?.room_checks[no_france],
+                        setup_view(
+                            &state.renderer,
+                            &state.frontend,
+                            &state.match_state,
+                            &state.process_assets,
+                        )?
+                        .room_checks[no_france],
                         "No France did not toggle in Game Options"
                     );
-                    let french = state
-                        .rules()
-                        .and_then(|rules| rules.trigger_house_type_index("French"))
-                        .map(|index| i32::from(index.0));
-                    let view = setup_view(state)?;
+                    let french =
+                        crate::app::state::active_rules(&state.frontend, &state.match_state)
+                            .and_then(|rules| rules.trigger_house_type_index("French"))
+                            .map(|index| i32::from(index.0));
+                    let view = setup_view(
+                        &state.renderer,
+                        &state.frontend,
+                        &state.match_state,
+                        &state.process_assets,
+                    )?;
                     ensure!(
                         row_combo(&view, crate::ui::multiplayer_setup::SetupColumn::Country, 0)
                             .is_some_and(|(_, combo)| {
@@ -1738,7 +1769,12 @@ impl WolCapture {
                     );
                     // Online, Teams offers Balance and leaves the Team lists
                     // open: nothing balances the room by itself.
-                    let view = setup_view(state)?;
+                    let view = setup_view(
+                        &state.renderer,
+                        &state.frontend,
+                        &state.match_state,
+                        &state.process_assets,
+                    )?;
                     let team_list = row_combo(&view, SetupColumn::Team, 0)
                         .is_some_and(|(_, combo)| combo.enabled);
                     let balance = view.combo(TEAM_MENU).is_some_and(|menu| {
@@ -1803,7 +1839,12 @@ impl WolCapture {
                             })
                     };
                     let natasha = guest_row(state).context("Natasha")?;
-                    let view = setup_view(state)?;
+                    let view = setup_view(
+                        &state.renderer,
+                        &state.frontend,
+                        &state.match_state,
+                        &state.process_assets,
+                    )?;
                     let (_, side) = row_combo(
                         &view,
                         SetupColumn::Country,
@@ -1837,7 +1878,12 @@ impl WolCapture {
                     );
                     // The host drags the guest's name onto Team A's box: the
                     // list the press opened closes, and the guest moves.
-                    let view = setup_view(state)?;
+                    let view = setup_view(
+                        &state.renderer,
+                        &state.frontend,
+                        &state.match_state,
+                        &state.process_assets,
+                    )?;
                     let layout = crate::app::input::multiplayer_setup::layout(
                         &state.renderer,
                         &state.frontend,
@@ -1928,7 +1974,12 @@ impl WolCapture {
                             value: 15,
                         },
                     );
-                    let wide = setup_view(state)?;
+                    let wide = setup_view(
+                        &state.renderer,
+                        &state.frontend,
+                        &state.match_state,
+                        &state.process_assets,
+                    )?;
                     let letters: Vec<&str> = row_combo(&wide, SetupColumn::Team, 0)
                         .map(|(_, combo)| {
                             combo
@@ -1975,7 +2026,14 @@ impl WolCapture {
                     ensure!(
                         room_input::open_list(&state.frontend, &state.match_state)
                             .is_some_and(|(id, list)| id == color.id && list.popup.first > 0)
-                            && setup_view(state)?.first_row == wide.first_row,
+                            && setup_view(
+                                &state.renderer,
+                                &state.frontend,
+                                &state.match_state,
+                                &state.process_assets,
+                            )?
+                            .first_row
+                                == wide.first_row,
                         "the colour thumb drag failed to scroll just the list"
                     );
                     // Reach the end, then scroll farther with a fractional trackpad delta.
@@ -1989,7 +2047,14 @@ impl WolCapture {
                                 id == color.id
                                     && list.popup.first == popup.total - popup.visible_rows
                             }
-                        ) && setup_view(state)?.first_row == wide.first_row,
+                        ) && setup_view(
+                            &state.renderer,
+                            &state.frontend,
+                            &state.match_state,
+                            &state.process_assets,
+                        )?
+                        .first_row
+                            == wide.first_row,
                         "wheeling to the end of the colour list moved the roster or closed the list"
                     );
                     setup_click(state, face);
@@ -1997,7 +2062,12 @@ impl WolCapture {
                     for _ in 0..4 {
                         room_input::wheel(state, -100.0);
                     }
-                    let foot = setup_view(state)?;
+                    let foot = setup_view(
+                        &state.renderer,
+                        &state.frontend,
+                        &state.match_state,
+                        &state.process_assets,
+                    )?;
                     for _ in 0..4 {
                         room_input::wheel(state, 100.0);
                     }
@@ -2153,7 +2223,12 @@ impl WolCapture {
                     // The host adds an AI to Team B past the map's seats too,
                     // and Team Starts starts it on Team B's start, beside
                     // its people.
-                    let view = setup_view(state)?;
+                    let view = setup_view(
+                        &state.renderer,
+                        &state.frontend,
+                        &state.match_state,
+                        &state.process_assets,
+                    )?;
                     let team_b = view
                         .headers
                         .iter()
@@ -2173,7 +2248,12 @@ impl WolCapture {
                     team_tool(state, TeamTool::Starts);
                     // People may still watch with an AI playing: the
                     // Spectators box stays, with its open seat.
-                    let watched = setup_view(state)?;
+                    let watched = setup_view(
+                        &state.renderer,
+                        &state.frontend,
+                        &state.match_state,
+                        &state.process_assets,
+                    )?;
                     ensure!(
                         watched.headers.iter().flatten().any(|header| {
                             header.group == crate::ui::multiplayer_setup::SetupGroup::Spectators
@@ -2240,7 +2320,12 @@ impl WolCapture {
                     self.event(frame, json!({"Host": "watches, plays and watches again"}));
                     // The watching host's orange and the random seats no
                     // longer vote. Boris supplies A's blue, Ivan B's red.
-                    let view = setup_view(state)?;
+                    let view = setup_view(
+                        &state.renderer,
+                        &state.frontend,
+                        &state.match_state,
+                        &state.process_assets,
+                    )?;
                     for (team, color) in [(0, 2), (1, 1)] {
                         ensure!(
                             view.headers.iter().flatten().any(|header| header.group
@@ -2335,8 +2420,9 @@ impl WolCapture {
                 let Some(message) = &verify.mismatch else {
                     return Ok(());
                 };
-                let expected =
-                    state.csf_label("TXT_SCENARIOS_DO_NOT_MATCH", "TXT_SCENARIOS_DO_NOT_MATCH");
+                let expected = state
+                    .process_assets
+                    .csf_label("TXT_SCENARIOS_DO_NOT_MATCH", "TXT_SCENARIOS_DO_NOT_MATCH");
                 ensure!(
                     message.body == expected
                         && verify.names == [NICKNAME.to_owned(), SERVICE_GUEST.to_owned()]
@@ -2419,7 +2505,9 @@ impl WolCapture {
                     crate::app::shell_wol::lobby::current_channel(state.frontend.wol.as_ref())
                         .context("C2's game channel")?;
                 let line = crate::assets::csf_file::format_csf(
-                    &state.csf_label("TXT_USER_KICKED", "TXT_USER_KICKED"),
+                    &state
+                        .process_assets
+                        .csf_label("TXT_USER_KICKED", "TXT_USER_KICKED"),
                     &[
                         crate::assets::csf_file::CsfArg::Str(SERVICE_GUEST),
                         crate::assets::csf_file::CsfArg::Str(&channel.name),

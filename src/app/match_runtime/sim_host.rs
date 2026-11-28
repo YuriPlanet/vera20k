@@ -71,6 +71,8 @@ pub(crate) enum SimWrite {
 pub(crate) struct SimHost {
     /// `None` while uninstalled or lent.
     runtime: Option<SimRuntime>,
+    /// Plain IonBlast records from the last world while no world is installed.
+    dominator_ripples: crate::sim::world::RetainedDominatorRipples,
     /// Whether the runtime is on the simulation thread.
     lent: bool,
     /// The last job's result, once the runtime is back.
@@ -118,6 +120,11 @@ pub(crate) struct SimHost {
     /// Whether frames capture VERA's Convenience Help status rows
     /// ([`Self::show_status_rows`]); off, the capture skips them.
     status_rows: bool,
+    /// The client modules' local looks of objects ([`Self::set_local_looks`]).
+    local_looks: crate::app::presentation::frame::LocalLooks,
+    /// Whether frames capture the status templates' amounts
+    /// ([`Self::capture_status_amounts`]).
+    status_amounts: bool,
     /// Global B04474 and its comparison timer (`FrameChecksumState`):
     /// process state that launch and load retain, written and compared only
     /// inside a multiplayer tick.
@@ -365,6 +372,16 @@ impl SimHost {
             .map(SimRuntime::take_radar_terrain_dirty)
     }
 
+    /// The simulation's client outbox (`Simulation::take_client_outbox`):
+    /// the `Notify`s and `SimEvent`s its frames since the last take left
+    /// for client modules (RFC 0001 section 10). A [`SimWrite::Presentation`]
+    /// write: hand-off state that is neither saved nor hashed. `None`
+    /// without a world. Taken at a frame's tail, while the runtime is home.
+    pub(crate) fn take_client_outbox(&mut self) -> Option<crate::sim::ext_modules::ClientOutbox> {
+        self.write_sim(SimWrite::Presentation)
+            .map(|runtime| runtime.simulation.take_client_outbox())
+    }
+
     /// Mutable access to the installed runtime for one write route; a lent
     /// runtime comes back first.
     pub(crate) fn write_sim(&mut self, _route: SimWrite) -> Option<&mut SimRuntime> {
@@ -427,10 +444,12 @@ impl SimHost {
         let runtime = self.runtime.as_ref()?;
         Some(self.frame.get_or_init(|| {
             let started = Instant::now();
-            let frame = Box::new(PresentationFrame::capture(
+            let frame = Box::new(PresentationFrame::capture_with_looks(
                 runtime,
                 &self.sidebar_types,
                 self.status_rows,
+                &self.local_looks,
+                self.status_amounts,
             ));
             let mut costs = self.snapshot_costs.get();
             costs.capture += started.elapsed();
@@ -458,6 +477,31 @@ impl SimHost {
     /// Have frames capture VERA's Convenience Help status rows, or stop.
     /// A home frame captured the other way is dropped, so the next read
     /// captures it; a lent tick's frame stands until the tick comes back.
+    /// Have frames carry the client modules' local looks of objects
+    /// (`ui_modules`, `Decoration`). A home frame captured with others is
+    /// dropped; a lent tick's frame stands until the tick comes back.
+    pub(crate) fn set_local_looks(&mut self, looks: crate::app::presentation::frame::LocalLooks) {
+        if self.local_looks == looks {
+            return;
+        }
+        self.local_looks = looks;
+        if !self.lent {
+            self.forget_frame();
+        }
+    }
+
+    /// Have frames capture the amounts the client modules' status templates
+    /// read (`ui_modules::status`), or stop.
+    pub(crate) fn capture_status_amounts(&mut self, on: bool) {
+        if self.status_amounts == on {
+            return;
+        }
+        self.status_amounts = on;
+        if !self.lent {
+            self.forget_frame();
+        }
+    }
+
     pub(crate) fn show_status_rows(&mut self, on: bool) {
         if self.status_rows == on {
             return;
@@ -512,16 +556,12 @@ impl SimHost {
     }
 
     /// Install `runtime` in place of any current one.
-    pub(crate) fn install(&mut self, runtime: Option<SimRuntime>) {
-        // A job's result belongs to the world it ran on.
-        self.reclaim(true);
-        self.report_early_returns();
-        self.job_result = None;
-        self.lend_cost = None;
+    pub(crate) fn install(&mut self, mut runtime: Option<SimRuntime>) {
+        drop(self.take_runtime());
+        if let Some(incoming) = &mut runtime {
+            self.dominator_ripples.resume_in(&mut incoming.simulation);
+        }
         self.runtime = runtime;
-        self.forget_frame();
-        self.sidebar_types = SidebarTypes::default();
-        self.spare = None;
         // The first copy of the world is a whole one, tens of milliseconds
         // at 20,000 objects. Taken while the scenario loads, the first lent
         // tick only brings it up to date.
@@ -533,7 +573,7 @@ impl SimHost {
         }
     }
 
-    /// Remove and return the installed runtime.
+    /// Remove the installed runtime, retaining the process's Dominator ripples.
     pub(crate) fn take_runtime(&mut self) -> Option<SimRuntime> {
         self.reclaim(true);
         self.report_early_returns();
@@ -542,7 +582,9 @@ impl SimHost {
         self.forget_frame();
         self.sidebar_types = SidebarTypes::default();
         self.spare = None;
-        self.runtime.take()
+        let mut runtime = self.runtime.take()?;
+        self.dominator_ripples.take_from(&mut runtime.simulation);
+        Some(runtime)
     }
 }
 
@@ -633,7 +675,7 @@ impl SimWorker {
         std::thread::Builder::new()
             .name("simulation".into())
             // The main thread's size: a tick recurses as deep there.
-            .stack_size(8 << 20)
+            .stack_size(crate::util::GAME_STACK_BYTES)
             .spawn(move || run_jobs(&job_queue, &send_back))
             .expect("start the simulation thread");
         Self { jobs, returned }
@@ -826,6 +868,57 @@ mod tests {
     use super::*;
     use crate::sim::command_queue::{ChecksumMismatch, FrameInfo, FrameInfoCompareGate};
     use crate::sim::world::Simulation;
+
+    fn strike_dominator(runtime: &mut SimRuntime, cell: (i16, i16)) {
+        *runtime.simulation.psychic_dominator_mut_for_test() =
+            crate::sim::superweapon::psychic_dominator::PsychicDominatorState::for_test(
+                2, cell, None, None,
+            );
+        runtime.advance_frame_for_tooling(&[], 67).unwrap();
+    }
+
+    #[test]
+    fn player_load_keeps_the_live_workers_dominator_ripples_at_their_current_ages() {
+        use crate::sim::snapshot::GameSnapshot;
+        let mut outgoing = SimRuntime::from_simulation(Simulation::new());
+        strike_dominator(&mut outgoing, (3, 4));
+        let bytes = GameSnapshot::save(&outgoing.simulation, 0, 0, "", 0);
+        let saved = GameSnapshot::load(&bytes)
+            .unwrap()
+            .into_simulation_for_test();
+        assert_eq!(saved.ion_blasts().count(), 0);
+        let mut host = SimHost::default();
+        host.install(Some(outgoing));
+        assert!(host.lend(Box::new(|runtime| {
+            strike_dominator(runtime, (5, 6));
+            Box::new(())
+        })));
+        host.install(Some(SimRuntime::from_simulation(saved)));
+        let world = &host.runtime().unwrap().simulation;
+        assert_eq!(
+            world.ion_blasts().collect::<Vec<_>>(),
+            [([896, 1152, 0], 2), ([1408, 1664, 0], 1)]
+        );
+    }
+
+    #[test]
+    fn scenario_restart_keeps_dominator_ripples_through_an_empty_shell() {
+        let mut outgoing = SimRuntime::from_simulation(Simulation::new());
+        strike_dominator(&mut outgoing, (3, 4));
+        let mut host = SimHost::default();
+        host.install(Some(outgoing));
+        drop(host.take_runtime());
+        host.install(None);
+        let mut incoming = SimRuntime::from_simulation(Simulation::new());
+        strike_dominator(&mut incoming, (7, 8));
+        host.install(Some(incoming));
+        let live = host.write_sim(SimWrite::Tick).unwrap();
+        live.advance_frame_for_tooling(&[], 67).unwrap();
+        assert_eq!(
+            live.simulation.ion_blasts().collect::<Vec<_>>(),
+            [([896, 1152, 0], 2), ([1920, 2176, 0], 2)]
+        );
+    }
 
     #[cfg(not(target_arch = "wasm32"))]
     #[test]

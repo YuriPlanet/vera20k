@@ -2,9 +2,10 @@ use super::*;
 use crate::app::PlatformState;
 use crate::app::audio_runtime::AppAudioRuntime;
 use crate::app::diagnostics::performance_overlay::PerformanceOverlay;
+use crate::app::diagnostics::state::DiagnosticsState;
 use crate::app::frontend::menu_page_render::FamilyPage;
 use crate::app::frontend::shell_layout;
-use crate::app::frontend::shell_transition::ShellSlideKind;
+use crate::app::frontend::shell_transition::{ShellExitThen, ShellSlideKind};
 use crate::app::frontend::state::FrontendState;
 use crate::app::frontend::state::ShellMessageBoxPurpose as Purpose;
 use crate::app::input::state::MatchInputState;
@@ -217,6 +218,26 @@ fn game_installation_label(game_files: Option<&std::path::Path>) -> String {
             }
         },
     )
+}
+
+/// What an input handler or poll asks its entry point to run, at the point it
+/// returned ([`App::apply_step`]).
+#[must_use = "a step runs only when App::apply_step applies it"]
+pub(crate) enum ClientStep {
+    /// `leave_shell_dialog(kind, then)`: slide out, run `then` when the slide ends.
+    Leave(ShellSlideKind, ShellExitThen),
+    /// A route change or rebuild step that runs at once.
+    Now(ShellExitThen),
+}
+
+/// One thing a transport service's translator would have applied, in its
+/// order ([`App::apply_service_steps`]).
+#[must_use = "a step runs only when App::apply_service_steps applies it"]
+pub(crate) enum ServiceStep {
+    /// `shell_network_setup::service_event(event)`: its error stops the list.
+    Setup(crate::app::shell_network_setup::NetworkSetupEvent),
+    /// A page step or a rebuild step ([`App::apply_step`]).
+    Client(ClientStep),
 }
 
 impl App {
@@ -667,7 +688,16 @@ impl App {
             // A relay launch first reports its result to the match service;
             // its live service starts the same quit once that settles.
             if !crate::app::shell_wol::end_spawned_match(state.frontend.wol.as_mut()) {
-                Self::start_quit_cascade(state);
+                Self::start_quit_cascade(
+                    &state.platform,
+                    &state.renderer,
+                    &state.diag,
+                    &mut state.frontend,
+                    &mut state.match_state,
+                    &state.process_assets,
+                    &mut state.audio,
+                    &state.persistence,
+                );
             }
             return;
         }
@@ -1014,17 +1044,23 @@ impl App {
     /// true when one picked a language, after which the dialog's captions
     /// read again ([`Self::launcher_options_labels`]).
     pub(crate) fn run_launcher_options_events(
-        state: &mut AppState,
+        platform: &mut PlatformState,
+        renderer: &mut RendererState,
+        frontend: &mut FrontendState,
+        match_state: &mut MatchState,
+        process_assets: &mut ProcessAssets,
+        audio: &mut AppAudioRuntime,
+        persistence: &mut PersistenceState,
         cues: Vec<PageCue>,
         events: Vec<crate::ui::main_menu_dialogs::options::LauncherOptionsEvent>,
     ) -> bool {
         use crate::ui::main_menu_dialogs::options::LauncherOptionsEvent;
         for cue in cues {
             Self::play_page_cue(
-                &state.frontend,
-                &state.match_state,
-                &state.process_assets,
-                &mut state.audio.sfx_player,
+                frontend,
+                match_state,
+                process_assets,
+                &mut audio.sfx_player,
                 cue,
             );
         }
@@ -1033,7 +1069,14 @@ impl App {
             .any(|event| matches!(event, LauncherOptionsEvent::LanguageSelected(_)));
         for event in events {
             crate::app::persistence::options::launcher::dispatch_launcher_preview_event(
-                state, event,
+                platform,
+                renderer,
+                frontend,
+                match_state,
+                process_assets,
+                audio,
+                persistence,
+                event,
             );
         }
         language
@@ -1047,7 +1090,17 @@ impl App {
         mut dialog: crate::ui::main_menu_dialogs::OptionsDialogState,
     ) {
         let output = dialog.drain_output();
-        if Self::run_launcher_options_events(state, output.cues, output.events) {
+        if Self::run_launcher_options_events(
+            &mut state.platform,
+            &mut state.renderer,
+            &mut state.frontend,
+            &mut state.match_state,
+            &mut state.process_assets,
+            &mut state.audio,
+            &mut state.persistence,
+            output.cues,
+            output.events,
+        ) {
             dialog.set_labels(Self::launcher_options_labels(
                 state.frontend.shell_route,
                 &state.process_assets,
@@ -1199,7 +1252,13 @@ impl App {
             state.match_state.input.cursor_x as i32,
             state.match_state.input.cursor_y as i32,
         );
-        let layout = shell_layout::launcher_options_layout(state, dialog.category());
+        let layout = shell_layout::launcher_options_layout(
+            &state.platform,
+            &state.renderer,
+            &state.frontend.screen,
+            &state.persistence.options_profile,
+            dialog.category(),
+        );
         match down {
             Some(true) => dialog.shell_mouse_down(x, y, &layout),
             Some(false) => dialog.shell_mouse_up(x, y, &layout),
@@ -1497,7 +1556,17 @@ impl App {
                     Self::leave_shell_dialog(
                         state,
                         ShellSlideKind::MoviesAndCredits,
-                        move |state| App::handle_movies_credits_action(state, action),
+                        move |state| {
+                            let step = App::handle_movies_credits_action(
+                                &state.renderer.gpu,
+                                &mut state.frontend,
+                                &state.persistence.options_profile,
+                                action,
+                            );
+                            if let Some(step) = step {
+                                App::apply_step(state, step);
+                            }
+                        },
                     );
                 }
             }
@@ -1529,7 +1598,17 @@ impl App {
         }
         #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
         crate::app::updater::notes::sync(&state.renderer.gpu, &mut state.frontend);
-        if Self::shell_menu_pointer(state, Some(down)) && down {
+        if Self::shell_menu_pointer(
+            &mut state.platform,
+            &mut state.renderer,
+            &mut state.frontend,
+            &mut state.match_state,
+            &mut state.process_assets,
+            &mut state.audio,
+            &mut state.persistence,
+            Some(down),
+        ) && down
+        {
             return;
         }
         #[cfg(any(
@@ -1653,8 +1732,20 @@ impl App {
         let yes = answer == 0;
         match message_box.purpose {
             Purpose::ShellMenu(_) => Self::answer_shell_menu(state, answer),
-            Purpose::ExitGame if yes => Self::confirm_quit(state),
-            Purpose::ExitGame | Purpose::Notice => state.platform.window.request_redraw(),
+            Purpose::ExitGame if yes => Self::confirm_quit(
+                &state.platform,
+                &state.renderer,
+                &state.diag,
+                &mut state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                &mut state.audio,
+                &state.persistence,
+            ),
+            Purpose::SwitchEdition { ra2 } if yes => Self::confirm_edition_switch(state, ra2),
+            Purpose::ExitGame | Purpose::SwitchEdition { .. } | Purpose::Notice => {
+                state.platform.window.request_redraw();
+            }
             Purpose::CampaignReplay(retry) => Self::answer_campaign_replay(state, retry, answer),
             Purpose::CampaignVictory(victory) => Self::advance_campaign_victory(state, *victory),
             Purpose::AuthoredCampaignResult(choice) => {
@@ -1679,7 +1770,18 @@ impl App {
             ),
             #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
             Purpose::UpdateCheck => crate::app::updater::cancel_check(&mut state.frontend),
-            Purpose::ModRestart(folder) => Self::answer_mod_restart(state, folder, yes),
+            Purpose::ModRestart(folder) => Self::answer_mod_restart(
+                &state.platform,
+                &state.renderer,
+                &state.diag,
+                &mut state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                &mut state.audio,
+                &state.persistence,
+                folder,
+                yes,
+            ),
             Purpose::ModFiles(which) => Self::answer_mod_files(
                 &state.platform.window,
                 &state.renderer,
@@ -1725,6 +1827,43 @@ impl App {
                 *dialog,
                 answer,
             ),
+            #[cfg(any(
+                windows,
+                target_os = "macos",
+                target_os = "linux",
+                target_os = "android"
+            ))]
+            Purpose::ModAddChoice(folder) => match answer {
+                0 => Self::open_add_mod(
+                    &state.platform.window,
+                    &state.renderer,
+                    &mut state.frontend,
+                    &state.process_assets,
+                    &state.persistence.options_profile,
+                ),
+                2 => Self::open_append_import(
+                    &state.platform.window,
+                    &state.renderer,
+                    &mut state.frontend,
+                    &state.process_assets,
+                    &state.persistence.options_profile,
+                    folder,
+                ),
+                _ => {}
+            },
+            #[cfg(target_os = "android")]
+            Purpose::ModExportChoice(folder) => match answer {
+                0 | 2 => Self::answer_mod_export(
+                    &state.platform.window,
+                    &state.renderer,
+                    &mut state.frontend,
+                    &state.process_assets,
+                    &state.persistence.options_profile,
+                    &folder,
+                    answer == 0,
+                ),
+                _ => {}
+            },
         }
     }
 
@@ -1732,10 +1871,28 @@ impl App {
     /// VERA.INI, then run the graceful cascade (music fade → trailing-voice
     /// wait → hard stop → exit) via render_frame instead of exiting
     /// immediately. The updater quits the same way once its update is ready.
-    pub(super) fn confirm_quit(state: &mut AppState) {
-        Self::close_shell_message_box_from_controller(&mut state.frontend);
-        Self::persist_settings_on_quit(&state.platform, &state.persistence.options_profile);
-        Self::start_quit_cascade(state);
+    pub(super) fn confirm_quit(
+        platform: &PlatformState,
+        renderer: &RendererState,
+        diag: &DiagnosticsState,
+        frontend: &mut FrontendState,
+        match_state: &mut MatchState,
+        process_assets: &ProcessAssets,
+        audio: &mut AppAudioRuntime,
+        persistence: &PersistenceState,
+    ) {
+        Self::close_shell_message_box_from_controller(frontend);
+        Self::persist_settings_on_quit(platform, &persistence.options_profile);
+        Self::start_quit_cascade(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            audio,
+            persistence,
+        );
     }
 
     /// What ending the program from any shell page saves first.
@@ -1810,6 +1967,36 @@ impl App {
         Self::begin_leaving_shell_dialog(state, kind, false, Box::new(then));
     }
 
+    /// Run the step a handler returned, where it returned: a leave begins as
+    /// [`Self::leave_shell_dialog`] begins it, and a route change or rebuild
+    /// step runs at once.
+    pub(super) fn apply_step(state: &mut AppState, step: ClientStep) {
+        match step {
+            ClientStep::Leave(kind, then) => {
+                Self::begin_leaving_shell_dialog(state, kind, false, then)
+            }
+            ClientStep::Now(then) => then(state),
+        }
+    }
+
+    /// Run a translator's steps in order, where it returned them. The first
+    /// setup error stops the rest and is returned, as the translator's `?`
+    /// stopped it.
+    pub(super) fn apply_service_steps(
+        state: &mut AppState,
+        steps: Vec<ServiceStep>,
+    ) -> anyhow::Result<()> {
+        for step in steps {
+            match step {
+                ServiceStep::Setup(event) => {
+                    crate::app::shell_network_setup::service_event(state, event)?
+                }
+                ServiceStep::Client(step) => Self::apply_step(state, step),
+            }
+        }
+        Ok(())
+    }
+
     /// Leave network setup `dialog` for the agreed start: the only result the
     /// covered room commits without a presented slide.
     pub(super) fn leave_shell_dialog_for_network_start(
@@ -1859,9 +2046,13 @@ impl App {
 
     /// Run a finished teardown slide's result.
     pub(super) fn drive_shell_exit(state: &mut AppState) {
-        if let Some(then) =
-            crate::app::frontend::shell_transition::advance_shell_exit(state, Instant::now())
-        {
+        if let Some(then) = crate::app::frontend::shell_transition::advance_shell_exit(
+            &state.platform,
+            &mut state.frontend,
+            &state.match_state,
+            &mut state.audio.sfx_player,
+            Instant::now(),
+        ) {
             then(state);
         }
     }
@@ -2093,6 +2284,17 @@ impl App {
                 &state.process_assets,
                 &state.persistence.options_profile,
             ),
+            Action::SwitchEdition => {
+                let ra2 = !crate::util::ra2_launch::enabled();
+                Self::open_terminal_confirm(
+                    &state.platform.window,
+                    &state.renderer,
+                    &mut state.frontend,
+                    &state.process_assets,
+                    &state.persistence.options_profile,
+                    Purpose::SwitchEdition { ra2 },
+                );
+            }
             Action::SinglePlayer => {
                 Self::open_single_player_shell(&mut state.frontend, &state.persistence.repository)
             }
@@ -2115,8 +2317,26 @@ impl App {
             Action::Network | Action::WwOnline => {
                 state.process_assets.read_mod_files_ahead();
                 match action {
-                    Action::Network => Self::open_lan_lobby(state),
-                    _ => Self::open_wol_welcome_page(state),
+                    Action::Network => Self::open_lan_lobby(
+                        &state.platform,
+                        &state.renderer,
+                        &mut state.frontend,
+                        &mut state.match_state,
+                        &mut state.process_assets,
+                        &mut state.audio.sfx_player,
+                        &mut state.persistence.options_profile,
+                    ),
+                    _ => {
+                        let step = Self::open_wol_welcome_page(
+                            &mut state.frontend,
+                            state.platform.game_config.as_ref(),
+                            &state.process_assets,
+                            &state.renderer,
+                            &mut state.persistence.options_profile,
+                            &mut state.audio,
+                        );
+                        Self::apply_step(state, step);
+                    }
                 }
             }
         }
@@ -2130,12 +2350,35 @@ impl App {
         process_assets: &ProcessAssets,
         options_profile: &RetailOptionsProfile,
     ) {
+        Self::open_terminal_confirm(
+            window,
+            renderer,
+            frontend,
+            process_assets,
+            options_profile,
+            Purpose::ExitGame,
+        );
+    }
+
+    fn open_terminal_confirm(
+        window: &Window,
+        renderer: &RendererState,
+        frontend: &mut FrontendState,
+        process_assets: &ProcessAssets,
+        options_profile: &RetailOptionsProfile,
+        purpose: Purpose,
+    ) {
         // State 6 runs after 0xE2 is destroyed: it paints the empty shell
         // backdrop (`0x0052FEC0`) and asks; Cancel builds a new 0xE2 (state
         // 0x12, `0x0052DE39..0x0052DE42`).
         Self::destroy_current_shell_dialog(frontend);
         let csf = |key: &str, fallback: &str| process_assets.csf_label(key, fallback);
-        let shell_box = crate::ui::main_menu_dialogs::exit_confirm(&csf);
+        let shell_box = match purpose {
+            Purpose::SwitchEdition { ra2 } => {
+                crate::ui::main_menu_dialogs::edition_confirm(&csf, ra2)
+            }
+            _ => crate::ui::main_menu_dialogs::exit_confirm(&csf),
+        };
         Self::open_shell_message_box(
             window,
             renderer,
@@ -2143,7 +2386,43 @@ impl App {
             process_assets,
             options_profile,
             shell_box,
-            Purpose::ExitGame,
+            purpose,
+        );
+    }
+
+    fn confirm_edition_switch(state: &mut AppState, ra2: bool) {
+        let mut profile = state.persistence.options_profile.clone();
+        profile.ra2_mode = ra2;
+        let result = state
+            .platform
+            .game_config
+            .as_ref()
+            .ok_or_else(|| std::io::Error::other("no game configuration"))
+            .and_then(|config| profile.commit_settings(config.paths.settings_dir()));
+        if let Err(error) = result {
+            log::warn!("Could not save the selected game edition: {error}");
+            Self::open_shell_notice(
+                &state.platform.window,
+                &state.renderer,
+                &mut state.frontend,
+                &state.process_assets,
+                &state.persistence.options_profile,
+                crate::i18n::tr("VERA:SwitchEditionNotSaved"),
+            );
+            return;
+        }
+
+        state.persistence.options_profile = profile;
+        crate::app::restart::ask_for_edition();
+        Self::start_quit_cascade(
+            &state.platform,
+            &state.renderer,
+            &state.diag,
+            &mut state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            &mut state.audio,
+            &state.persistence,
         );
     }
 

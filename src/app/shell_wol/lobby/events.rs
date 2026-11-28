@@ -41,7 +41,10 @@ pub(in crate::app::shell_wol) fn service_event(state: &mut AppState, event: WolS
             let lobby = lobby_mut(state.frontend.wol.as_mut()).expect("checked");
             if kind == GAME_CHANNEL && lobby.runner == Runner::QuickMatch {
                 lobby.games = channels.clone();
-                super::quick_match::games_listed(state, &channels);
+                let step = super::quick_match::games_listed(state, &channels);
+                if let Some(step) = step {
+                    App::apply_step(state, step);
+                }
                 return;
             }
             if kind == GAME_CHANNEL {
@@ -60,7 +63,19 @@ pub(in crate::app::shell_wol) fn service_event(state: &mut AppState, event: WolS
                     let name = name.clone();
                     lobby.step = Step::Ready;
                     close_wait(&mut state.frontend);
-                    super::buddy::game_listed(state, &name, true);
+                    let step = super::buddy::game_listed(
+                        &mut state.frontend,
+                        &state.platform.window,
+                        &mut state.match_state,
+                        &state.process_assets,
+                        &state.renderer,
+                        &state.persistence.options_profile,
+                        &name,
+                        true,
+                    );
+                    if let Some(step) = step {
+                        App::apply_step(state, step);
+                    }
                 }
                 return;
             }
@@ -694,7 +709,9 @@ pub(in crate::app::shell_wol) fn kicked(
         // made it their channel.
         if user.flags & MEMBER_LOCAL != 0 && visiting(state.frontend.wol.as_ref()) {
             let text = format_csf(
-                &state.csf_text(setup::kicked_key(&state.match_state.session)),
+                &state
+                    .process_assets
+                    .csf_text(setup::kicked_key(&state.match_state.session)),
                 &[CsfArg::Str(&channel.name), CsfArg::Str(&by.name)],
             );
             visit_settles(
@@ -714,7 +731,7 @@ pub(in crate::app::shell_wol) fn kicked(
         if user.flags & MEMBER_LOCAL != 0 {
             let key = setup::kicked_key(&state.match_state.session);
             let text = format_csf(
-                &state.csf_text(key),
+                &state.process_assets.csf_text(key),
                 &[CsfArg::Str(&channel.name), CsfArg::Str(&by.name)],
             );
             crate::app::shell_lan::append_wol_lobby_chat(
@@ -732,7 +749,7 @@ pub(in crate::app::shell_wol) fn kicked(
             return;
         }
         let text = format_csf(
-            &state.csf_text("TXT_USER_KICKED"),
+            &state.process_assets.csf_text("TXT_USER_KICKED"),
             &[
                 CsfArg::Str(&user.name),
                 CsfArg::Str(&channel.name),
@@ -749,14 +766,14 @@ pub(in crate::app::shell_wol) fn kicked(
     }
     if user.flags & MEMBER_LOCAL != 0 {
         let text = format_csf(
-            &state.csf_text("TXT_YOURE_KICKED"),
+            &state.process_assets.csf_text("TXT_YOURE_KICKED"),
             &[CsfArg::Str(&channel.name), CsfArg::Str(&by.name)],
         );
         let message = service::message_box(&state.process_assets, text, false);
         put_box(&mut state.frontend, message, BoxThen::Kicked);
     } else {
         let text = format_csf(
-            &state.csf_text("TXT_USER_KICKED"),
+            &state.process_assets.csf_text("TXT_USER_KICKED"),
             &[
                 CsfArg::Str(&user.name),
                 CsfArg::Str(&channel.name),
@@ -809,10 +826,8 @@ pub(in crate::app::shell_wol) fn channel_ban(
 /// on (`0x005E2790`); the first transcript `0x53F` (`0x113`, C2/C9 or an
 /// open `0x11E`) takes it and the walk stops; with none, `0x11E` opens.
 /// In a match (`[0xB77DC1]`, `0x007A92F9..0x007A93DC`) the line is a Grey
-/// MessageList row, the ANSI sink adds `TXT_HOW_TO_REPLY` under it, an open
-/// `0xCF` takes the line too, and the ANSI sink arms the reply window
-/// (now, 300) that prefills the next `0xCF`. `[AudioVisual] IncomingMessage`
-/// plays last in both.
+/// MessageList row. VERA keeps the match playable when a page arrives and
+/// omits the retail reply hint. `[AudioVisual] IncomingMessage` plays last.
 /// RESIDUAL: the auto-reply `[0xB77E40]`/`[0xB76230]` has no writer here.
 pub(in crate::app::shell_wol) fn page_received(
     frontend: &mut FrontendState,
@@ -850,7 +865,7 @@ pub(in crate::app::shell_wol) fn page_received(
     };
     if in_game {
         let row = String::from_utf16_lossy(&line.text);
-        crate::app::input::messages::post_wol_page_rows(
+        crate::app::input::messages::post_wol_row(
             platform,
             renderer,
             diag,
@@ -860,18 +875,7 @@ pub(in crate::app::shell_wol) fn page_received(
             sfx_player,
             persistence,
             &row,
-            ansi,
         );
-        super::page::append_page_line(frontend, renderer, line);
-        if ansi {
-            let now = crate::ui::wol_page::reply_window_now(
-                crate::app::match_runtime::frame_pacer::wall_clock_ms(),
-            );
-            frontend
-                .wol_lobby_globals
-                .page_reply_window
-                .arm(now, crate::ui::wol_page::REPLY_WINDOW_TICKS);
-        }
     } else {
         super::page::append_page_line(frontend, renderer, line.clone());
         // The walk down the stack stops at the first `0x53F`: the lobby's

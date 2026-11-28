@@ -654,6 +654,9 @@ fn engine_per_client_reads_have_pinned_callers() {
         (
             "is_observer_house",
             &[
+                // A client module's message from an observer is dropped;
+                // each peer holds the same observer list from the room.
+                ("sim/ext_modules/messages.rs", 1),
                 ("sim/scenario_session.rs", 1),
                 ("sim/score.rs", 1),
                 // The same offline command refuses a local observer.
@@ -2215,6 +2218,24 @@ fn mutable_handouts_and_setters_are_owner_operations() {
         ),
         (
             "rules/personal_rules.rs",
+            "set_automation_allowed",
+            "VERA's own switch with no native member: the room switch \"Allow automation\" \
+             (Wasm client modules, RFC 0001 6i), which the app passes in for the next scenario",
+        ),
+        (
+            "sim/ext_modules/rules.rs",
+            "set_automation_allowed",
+            "VERA's own switch with no native member: the loader hands the room's \"Allow \
+             automation\" to the prepared Wasm modules (global AutomationAllowed, RFC 0001 7.8)",
+        ),
+        (
+            "sim/trigger_runtime.rs",
+            "set_client_forwarding",
+            "VERA-only presentation flag with no native member: whether event sites also build \
+             SimEvent payloads for Wasm client modules (sim::ext_modules::client_outbox)",
+        ),
+        (
+            "rules/personal_rules.rs",
             "set_terrain_deformation",
             "VERA's own switch with no native member: the skirmish Game Options' Terrain \
              Deformation box, which the app passes in for the rules the next scenario reads",
@@ -2251,20 +2272,9 @@ fn mutable_handouts_and_setters_are_owner_operations() {
              ordinary aircraft unload (0x00415548)",
         ),
         (
-            "sim/ammo.rs",
-            "set_dock",
-            "the +0x6CC writers and PointerExpired's clear",
-        ),
-        (
             "sim/building_entry.rs",
             "set_nearest_occupiable_seek",
             "Ares writes the +0x691 seek latch with its scan's answer (0x10046A8B/0x10046ACC)",
-        ),
-        (
-            "sim/combat/attack_target.rs",
-            "set",
-            "the TarCom class setter; callers port each native writer, such as \
-             PointerExpired's NULL store (0x00707A33)",
         ),
         (
             "sim/combat/base_defense_response.rs",
@@ -2287,6 +2297,11 @@ fn mutable_handouts_and_setters_are_owner_operations() {
             "set_attached",
             "Ares RecalculateStats 0x100460A0 derives Foot+580 from the attachment vector; \
              GameEntity::set_attached_speed records here whether it differs from the crate baseline",
+        ),
+        (
+            "sim/economy.rs",
+            "set_score",
+            "the module SetScore action assigns the house score outright (RFC 0001 appendix 5.3)",
         ),
         (
             "sim/game_entity.rs",
@@ -2476,6 +2491,16 @@ fn mutable_handouts_and_setters_are_owner_operations() {
             "SuperClass::SetRechargeTime (0x006CC280, TAction 132) changes only Super+24",
         ),
         (
+            "sim/movement/facing_class.rs",
+            "set_rate_word",
+            "the module ROTMultiplier writes the scaled body rate and restores the native rate word when it expires",
+        ),
+        (
+            "sim/trigger_runtime/module_triggers.rs",
+            "set_production_refusals",
+            "the ProductionAllowed step installs all its vetoes together after asking every decider",
+        ),
+        (
             "sim/vehicle_theft.rs",
             "set_killed_from_owner",
             "Ares copies the new owner's MultiplayPassive into the driver-killed flag \
@@ -2486,11 +2511,6 @@ fn mutable_handouts_and_setters_are_owner_operations() {
             "set_vehicle_seek",
             "the Ares vehicle-seek latch (Ext+0xB0), written by its scan and by script actions \
              64/67 (dispatcher 0x1003A110)",
-        ),
-        (
-            "sim/world/sim_map_services.rs",
-            "set_input_delay_ticks",
-            "the match's configured input delay, installed by the app at match start",
         ),
     ];
     let src_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");

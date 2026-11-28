@@ -23,15 +23,23 @@
 //! | `Deployed` | the native deployed state (`GameEntity::is_fully_deployed`: Unit `+0x6E0`, infantry Doing 28..30) |
 //! | `UnderConstruction` | a building whose BState (`Building+0x534`) is 0, the build-up animation |
 //! | `Parasite` | ParasiteEatingMe (`Foot+0x694`): the object whose parasite holds it, 0 for none |
-//! | `ControlGroup` | `Unsupported`: client only |
+//! | `Cloaked` | CloakState (`TechnoClass+0x220`) is 2, fully cloaked (`CloakRuntime::is_fully_cloaked`); 1 cloaking and 3 uncloaking read 0 |
+//! | `NearbyEnemyCount` | the objects on the map within the object's `Sight=` (cells, as leptons from its centre) whose owner its owner's `Relation` calls an enemy |
+//! | `TargetInRange`, `CanFireAtTarget` | `Simulation::target_check` against TarCom, for the slot SelectWeapon (vt+0x2E4) picks: CanFireAt's InRange (`0x006F77B0`), and GetFireError with range (vt+0x3C0) answering Ok; 0 without a target |
+//! | `DoorOpen` | the DoorClass (`Techno+0x350`) is not closed (opening, open or closing): a `WeaponsFactory=` or `Gate=` building, a vehicle with `Passengers=` |
+//! | `Animating` | a building whose BState (`Building+0x534`) is Active (2), Begin_Mode's working body mode |
+//! | `ImageOverride` | the TechnoType a module draws the object as (`held::ActionHeld`), 0 for itself |
+//! | `ControlGroup` | `Unsupported`: client only, the local player's groups (reading it in the simulation would desync) |
 //! | `Visible` | `Simulation::object_seen_by` for the viewpoint house: fog (`FogState::shows_objects_to`, current sight under FogOfWar) and the screen GetVisualState (`0x00703860`) for cloaking and sensors |
 //! | `Engage` | `Simulation::engage_check` for the viewpoint object: GetFireError without range (vt+0x3BC) of the weapon SelectWeapon picks, that Warhead's Verses against the target's armor, and CanFireAt's InRange (`0x006F77B0`) |
 //! | House `Factory.<Kind>.*` | `FactoryRegistry::owner_view`: the House slot, else the first building-held factory of the category |
+//! | TechnoType `Buildable` | `production::buildable_by_player` for the viewpoint house: HouseClass::CanBuild with the human arm's requirements and prerequisites (`0x004F7BF1..0x004F7F52`) |
+//! | Type `Name`, global `GameMode` | string IDs of the engine's string table (`IniNames`, the one `ini_register` and the parameter texts use): a type's rules ID, the session's multiplayer mode class (its `mpmodes` section, 0 without one) |
 //!
 //! Type references read the rules' parsed values: TechnoType `Category`,
 //! `Strength`, `Cost`, `Soylent`, `Speed` (INI percent), `ROT`, `Crushable`,
 //! `Selfhealing`, `Explodes`, `Power`, `Sight`, `Ammo`, `InitialAmmo`,
-//! `Storage`, `Passengers`, `SizeLimit`, `TechLevel`, `Armor`; Weapon
+//! `Storage`, `Passengers`, `SizeLimit`, `TechLevel`, `Armor`, `Points`; Weapon
 //! `Damage`, `ROF`, `Burst`, `MinimumRange`, `Range` (leptons); Warhead
 //! `CellSpread` (leptons, truncated), `PercentAtMax` (fixed, truncated),
 //! `Wall`, `Wood`, `Sparky`, `Fire`, `Conventional`, `Rocker`, `InfDeath`.
@@ -39,7 +47,13 @@
 //!
 //! A query's `viewpoint` may be an object: `Engage` reads for it, the house
 //! viewpoint properties for its owner. Filter clauses keep the trigger house
-//! (no object), so `Engage` there answers `Unsupported`.
+//! (no object), so `Engage` there answers `Unsupported`. `Buildable` is read
+//! in `find` scope 3 `Types` (`find_types`), with a house viewpoint.
+//!
+//! A string property's `get` adds its text to the string table when new
+//! (simulation state, saved and hashed like the parameter texts); a filter
+//! clause only looks the text up, so it matches a string ID some call
+//! already holds.
 //!
 //! Residuals:
 //! - `Engage` takes the target type's own `Armor=` for the Verses test (no
@@ -52,24 +66,29 @@
 //!   darkens but still draws objects on explored cells. A tunnel unit's
 //!   underground ripple counts as visible.
 //! - `Team` and `Tag` answer `Unsupported` for an object in a team or with a
-//!   tag: teams and map tags have no references yet (teams number from their
-//!   own counter, not the creation counter).
-//! - `DisguiseType` answers `Unsupported` for a Mirage disguised as terrain,
-//!   which has no type reference.
-//! - `Cloaked`, `NearbyEnemyCount`, `TargetInRange`, `CanFireAtTarget`,
-//!   `DoorOpen` and `Animating` (all `v1?`) are not read; nor are `Name`
-//!   (string IDs) and `Buildable` (needs the prerequisite owner's answer for
-//!   a viewpoint house). TechnoType `Points` is not parsed by the rules.
+//!   tag: the appendix gives teams and tags kind 0 handles from the shared
+//!   creation counter, but teams number from their own counter and tags are
+//!   tag-storage indices, so a reference would change the save layout.
+//! - `DisguiseType` answers `Unsupported` for a Mirage disguised as terrain:
+//!   no name kind holds terrain types.
+//! - `DoorOpen` reads the door itself; its write only holds how a war
+//!   factory's or gate's door is drawn (`held::ActionHeld`). `Animating` is
+//!   read-only: VERA binds no art `AnimActive=` body range a write could
+//!   show, and reads 1 only where a native caller begins Active (the
+//!   missile silo).
+//! - `TargetInRange` reads the weapon SelectWeapon picks against the target,
+//!   the primary unless the target calls for the secondary.
+//! - A house's `Name` is not read (player names are not simulation state).
 //! - `Experience` converts the float with one f32-to-f64 widening and a
 //!   multiply by 100 (exact IEEE operations, truncated); it is a report, not
 //!   a value the simulation computes with.
 
 use vera20k_wasm_ext::{
-    ENGAGE_ILLEGAL, ENGAGE_NO_DAMAGE, ENGAGE_OK, ENGAGE_OUT_OF_RANGE, Invalid, NAME_TECHNO_TYPE,
-    NAME_WARHEAD, NAME_WEAPON, Query, SCOPE_CELLS, Status,
+    Area, ENGAGE_ILLEGAL, ENGAGE_NO_DAMAGE, ENGAGE_OK, ENGAGE_OUT_OF_RANGE, FindPage, Invalid,
+    NAME_TECHNO_TYPE, NAME_WARHEAD, NAME_WEAPON, Query, SCOPE_CELLS, Status,
 };
 
-use super::{Host, Ref, cell_ref, decode_ref, house_ref, techno_type, type_ref};
+use super::{Reader, Ref, cell_ref, decode_ref, house_ref, techno_type, type_ref};
 use crate::map::entities::EntityCategory;
 use crate::rules::object_type::ObjectCategory;
 use crate::rules::ruleset::RuleSet;
@@ -88,17 +107,18 @@ const RELATION_NEUTRAL: i64 = 3;
 /// Whom a viewpoint property is read for (appendix 7, "Viewpoint"): the
 /// trigger house in a filter clause, the query's `viewpoint` in `find`, no
 /// one in a direct `get` (the property then answers `Unsupported`).
+/// A client module's viewpoint is always its own house (RFC 10).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub(super) struct View {
+pub(crate) struct View {
     /// The viewpoint house's array index: the query's house, or its
     /// viewpoint object's owner.
-    pub(super) house: Option<usize>,
+    pub(crate) house: Option<usize>,
     /// The query's viewpoint object, which object viewpoint properties
     /// (`Engage`) read for.
-    pub(super) object: Option<u64>,
+    pub(crate) object: Option<u64>,
     /// The query's TechnoType ID, which `Placeable` places (cells queries
     /// only).
-    pub(super) placing: Option<u32>,
+    pub(crate) placing: Option<u32>,
 }
 
 impl View {
@@ -112,7 +132,7 @@ impl View {
     }
 }
 
-impl Host<'_, '_> {
+impl Reader<'_> {
     /// A query's view: its `viewpoint`, which must be 0, a house or an
     /// object (whose owner is then the viewpoint house; a gone object leaves
     /// the house unset), and for a cells query its TechnoType.
@@ -303,11 +323,177 @@ impl Host<'_, '_> {
                 entity.category() == EntityCategory::Structure && entity.in_construction_bstate(),
             ),
             "Parasite" => entity.parasite.eater().map_or(0, |eater| eater as i64),
-            // The local player's control group exists only on the client.
+            "Cloaked" => i64::from(
+                entity
+                    .cloak
+                    .as_ref()
+                    .is_some_and(|cloak| cloak.is_fully_cloaked()),
+            ),
+            "NearbyEnemyCount" => self.nearby_enemy_count(entity, |other| Some(other.owner())),
+            "TargetInRange" | "CanFireAtTarget" => match entity.attack_target.target() {
+                None => 0,
+                Some(target) => {
+                    let (in_range, can_fire) = self.sim.target_check(self.rules, id, target);
+                    i64::from(if name == "TargetInRange" {
+                        in_range
+                    } else {
+                        can_fire
+                    })
+                }
+            },
+            "DoorOpen" => {
+                let has_door = object().is_some_and(|o| match entity.category() {
+                    EntityCategory::Structure => o.weapons_factory || o.gate,
+                    EntityCategory::Unit => o.passengers > 0,
+                    _ => false,
+                });
+                if !has_door {
+                    return (0, Status::Unsupported);
+                }
+                i64::from(entity.door_phase() != crate::sim::door::DoorPhase::ClosedStable)
+            }
+            "Animating" if entity.category() == EntityCategory::Structure => {
+                i64::from(entity.in_active_bstate())
+            }
+            "Animating" => return (0, Status::Unsupported),
+            "ImageOverride" => match self.sim.ext_module_image(id) {
+                None => 0,
+                Some(image) => match self.rules.type_handle(image) {
+                    Some(handle) => type_ref(NAME_TECHNO_TYPE, handle.0),
+                    None => 0,
+                },
+            },
+            // The local player's control groups exist only on the client: a
+            // simulation read would differ between the machines.
             "ControlGroup" => return (0, Status::Unsupported),
             _ => return (0, Status::Unsupported),
         };
         (value, Status::Ok)
+    }
+
+    /// `NearbyEnemyCount`: the objects on the map within `entity`'s
+    /// `Sight=` (cells, measured in leptons between the centres) whose owner
+    /// is an enemy of `entity`'s owner, as `Relation` reads it. A client
+    /// supplies the house it can see, or `None` for a hidden object.
+    pub(super) fn nearby_enemy_count(
+        &self,
+        entity: &GameEntity,
+        owner_of: impl Fn(&GameEntity) -> Option<InternedId>,
+    ) -> i64 {
+        use crate::sim::movement::ground_pose::position_world_xy;
+        let Some(owner) = self.sim.houses.index_of(entity.owner()) else {
+            return 0;
+        };
+        let view = View {
+            house: Some(owner),
+            ..View::default()
+        };
+        let reach = i64::from(entity.seldom.sight.range().max(0)) * 256;
+        let [x, y] = position_world_xy(&entity.position);
+        self.sim
+            .entities()
+            .values()
+            .filter(|other| other.lifecycle.object_alive() && !other.lifecycle.in_limbo())
+            .filter(|other| {
+                let [ox, oy] = position_world_xy(&other.position);
+                let (dx, dy) = (i64::from(ox) - i64::from(x), i64::from(oy) - i64::from(y));
+                dx * dx + dy * dy <= reach * reach
+            })
+            .filter_map(owner_of)
+            .filter(|&owner| self.relation(owner, view) == (RELATION_ENEMY, Status::Ok))
+            .count() as i64
+    }
+
+    /// TechnoType `Buildable` for the viewpoint house
+    /// (`production::buildable_by_player`); `Unsupported` without one.
+    pub(super) fn buildable(&self, id: u32, view: View) -> Result<(i64, Status), Invalid> {
+        let object = i32::try_from(id)
+            .ok()
+            .and_then(|id| techno_type(self.rules, id))
+            .ok_or_else(|| Invalid(format!("no TechnoType {id}")))?;
+        Ok(match self.viewpoint(view) {
+            Ok(house) => (
+                i64::from(crate::sim::production::buildable_by_player(
+                    self.sim, self.rules, house, object,
+                )),
+                Status::Ok,
+            ),
+            Err(status) => (0, status),
+        })
+    }
+
+    /// `find` over types (scope 3), by type ID: a wildcard type
+    /// (`0xFFFFFFFF`) lists every type of its name kind, a specific one only
+    /// itself. TechnoTypes, Weapons and Warheads, the kinds with type
+    /// properties; another kind, an area or an owner answers `Unsupported`.
+    pub(super) fn find_types(
+        &self,
+        query: &Query,
+        cap: usize,
+    ) -> Result<(FindPage, Status), Invalid> {
+        let Some(Ref::Type { kind, id }) = decode_ref(query.type_ref)? else {
+            return Err(Invalid(format!(
+                "{:#x} is not a type for a Types query",
+                query.type_ref
+            )));
+        };
+        if query.area != Area::Map || query.owner != 0 {
+            return Ok((FindPage::default(), Status::Unsupported));
+        }
+        let count = match kind {
+            NAME_TECHNO_TYPE => self.rules.all_objects().count(),
+            NAME_WEAPON => (0..)
+                .take_while(|&i| self.rules.weapon_at(i).is_some())
+                .count(),
+            NAME_WARHEAD => (0..)
+                .take_while(|&i| self.rules.warhead_at(i).is_some())
+                .count(),
+            _ => return Ok((FindPage::default(), Status::Unsupported)),
+        };
+        let count = u32::try_from(count).unwrap_or(u32::MAX);
+        let ids = match id {
+            u32::MAX => 0..count,
+            id if id < count => id..id + 1,
+            _ => return Err(Invalid(format!("name kind {kind} has no ID {id}"))),
+        };
+        let first = u32::try_from(query.after).unwrap_or(u32::MAX);
+        let mut page = FindPage::default();
+        for id in ids.start.max(first)..ids.end {
+            let key = i64::from(id);
+            if page.found.len() == cap || !page.examine(key, query) {
+                break;
+            }
+            let reference = type_ref(kind, id);
+            match self.passes(reference, query)? {
+                Some(true) => page.found.push((key, reference)),
+                Some(false) => {}
+                None => return Ok((FindPage::default(), Status::Unsupported)),
+            }
+        }
+        Ok((page, Status::Ok))
+    }
+
+    /// A string property's text (value type `string`): a type's `Name`, its
+    /// rules ID, and the global `GameMode`, the multiplayer mode class's
+    /// `mpmodes` section (empty without one). `None` for other properties.
+    pub(super) fn property_text(
+        &self,
+        reference: Ref,
+        name: &str,
+    ) -> Result<Option<Result<String, Status>>, Invalid> {
+        Ok(Some(match (reference, name) {
+            (Ref::Type { kind, id }, "Name") => match type_name(self.rules, kind, id)? {
+                Some(text) => Ok(text.to_owned()),
+                None => Err(Status::Unsupported),
+            },
+            (Ref::Global, "GameMode") => Ok(self
+                .sim
+                .session
+                .multiplayer_mode_class()
+                .map_or("", crate::skirmish_modes::MpModeClass::section)
+                .to_owned()),
+            _ => return Ok(None),
+        }))
     }
 
     /// `Visible`: the viewpoint house sees the object now, as its screen
@@ -405,6 +591,18 @@ const fn type_category(category: ObjectCategory) -> i64 {
     }
 }
 
+/// A type's `Name`: the rules ID `lookup` takes. `None` for a name kind
+/// without rules names; an ID that names nothing is invalid.
+pub(super) fn type_name(rules: &RuleSet, kind: i32, id: u32) -> Result<Option<&str>, Invalid> {
+    let invalid = || Invalid(format!("name kind {kind} has no ID {id}"));
+    let signed = i32::try_from(id).map_err(|_| invalid())?;
+    match super::rules_id_name(rules, kind, signed) {
+        None => Ok(None),
+        Some(Some(name)) => Ok(Some(name)),
+        Some(None) => Err(invalid()),
+    }
+}
+
 /// A type's property (appendix 7.7). A wildcard or unknown ID is invalid;
 /// a name kind without properties answers `Unsupported`.
 pub(super) fn type_property(
@@ -439,6 +637,7 @@ pub(super) fn type_property(
                 "SizeLimit" => object.size_limit as i64,
                 "TechLevel" => i64::from(object.tech_level),
                 "Armor" => object.armor_id().index() as i64,
+                "Points" => i64::from(object.points),
                 _ => return Ok((0, Status::Unsupported)),
             }
         }

@@ -75,6 +75,17 @@ impl ModelSlots {
             )
             .flat_map(|pair| [&mut pair.vxl, &mut pair.hva])
     }
+
+    fn references(&self) -> impl Iterator<Item = u32> + '_ {
+        [&self.main, &self.auxiliary, &self.barrel]
+            .into_iter()
+            .chain(
+                self.indexed
+                    .iter()
+                    .flat_map(|gun| [&gun.turret, &gun.barrel]),
+            )
+            .flat_map(|pair| [pair.vxl, pair.hva])
+    }
 }
 
 /// The fields already read when TechnoType71609C calls the shared loader.
@@ -614,6 +625,62 @@ impl VoxelModelPlan {
     #[cfg(test)]
     pub(crate) fn node_count(&self) -> usize {
         self.conditions.len() + self.references.len() + self.allocations.len()
+    }
+
+    /// Every library request `slots` can resolve to or depend on: their
+    /// allocations in every alternative, and the presence, validity and
+    /// retirement conditions that choose among them. VERA-only, experimental
+    /// (`docs/picture-model-art.md`): asset binding leaves unopened the VXL and
+    /// HVA files only a declared `Model=` type would read.
+    pub(crate) fn slot_requests<'a>(
+        &self,
+        slots: impl IntoIterator<Item = &'a ModelSlots>,
+    ) -> BTreeSet<LibraryRequest> {
+        let mut seen_references = vec![false; self.references.len()];
+        let mut seen_conditions = vec![false; self.conditions.len()];
+        let mut references: Vec<u32> = slots.into_iter().flat_map(ModelSlots::references).collect();
+        let mut conditions: Vec<u32> = Vec::new();
+        let mut out = BTreeSet::new();
+        loop {
+            if let Some(id) = references.pop() {
+                let Some(seen) = seen_references.get_mut(id as usize) else {
+                    continue;
+                };
+                if std::mem::replace(seen, true) {
+                    continue;
+                }
+                match &self.references[id as usize] {
+                    Reference::Null => {}
+                    Reference::Allocation(allocation) => {
+                        if let Some(allocation) = self.allocations.get(*allocation as usize) {
+                            out.insert(allocation.request.clone());
+                            conditions.push(allocation.retired);
+                        }
+                    }
+                    Reference::Select(condition, yes, no) => {
+                        conditions.push(*condition);
+                        references.extend([*yes, *no]);
+                    }
+                }
+            } else if let Some(id) = conditions.pop() {
+                let Some(seen) = seen_conditions.get_mut(id as usize) else {
+                    continue;
+                };
+                if std::mem::replace(seen, true) {
+                    continue;
+                }
+                match &self.conditions[id as usize] {
+                    Condition::False | Condition::True => {}
+                    Condition::Present(request) | Condition::Valid(request) => {
+                        out.insert(request.clone());
+                    }
+                    Condition::Not(a) => conditions.push(*a),
+                    Condition::And(a, b) | Condition::Or(a, b) => conditions.extend([*a, *b]),
+                }
+            } else {
+                return out;
+            }
+        }
     }
 
     pub(crate) fn requests(&self) -> impl Iterator<Item = &LibraryRequest> {

@@ -7,7 +7,6 @@
 //! ## Dependency rules
 //! - Internal to `presentation::render` — only called from mod.rs.
 
-use crate::app::AppState;
 use crate::app::diagnostics::debug_overlays;
 use crate::app::diagnostics::state::DiagnosticsState;
 use crate::app::frontend::state::FrontendState;
@@ -65,6 +64,9 @@ pub(super) struct WorldInstances {
     /// PixelFX water/ore sparkles — 1-pixel cell dots emitted per frame.
     /// Empty when the live `[Options] DetailLevel` projection is zero.
     pub cell_sparkles: Vec<SpriteInstance>,
+    /// The mod's and the map's status templates over the battlefield
+    /// (`ui_modules::field`).
+    pub module_field: crate::app::ui_modules::field::FieldInstances,
     /// What the terrain tile walk and the Display object walk took, for the
     /// performance panel's Most CPU row (`RenderPhases::terrain`,
     /// `RenderPhases::objects`).
@@ -482,6 +484,7 @@ pub(super) fn build_world_instances(
             let local_owner = crate::app::input::commands::preferred_local_owner_name(match_state)
                 .and_then(|name| runtime.simulation.interner().get(&name));
             instances::DisplayEffectInputs {
+                unit_motion: Some(&presentation.unit_motion),
                 sim: &runtime.simulation,
                 frame,
                 rules: &runtime.resources.rules,
@@ -585,6 +588,12 @@ pub(super) fn build_world_instances(
         match_state.match_presentation.selection_overlay.as_ref(),
     ) {
         let speech_wall_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
+        // The original's families the mod's or map's status templates hide
+        // (`ui_modules::status`).
+        let hidden_native = match_state
+            .ui_modules
+            .as_ref()
+            .map_or(0, |ui| ui.status.hidden());
         // The text families' built-in templates (`health_templates`) may hide
         // or move them; asked once for the frame.
         let info_shift = crate::app::presentation::health_templates::family(
@@ -728,6 +737,13 @@ pub(super) fn build_world_instances(
                             });
                     }
                 }
+                status.hide_families(hidden_native);
+                status.shift_owner(
+                    match_state
+                        .match_presentation
+                        .unit_motion
+                        .offset(entity.stable_id()),
+                );
                 status
             });
         }
@@ -752,10 +768,21 @@ pub(super) fn build_world_instances(
                 instances::translucent_fog_conceals(sim, viewer, &entity.position, entity.owner())
             };
             let members = frame.display_members(sim);
+            let trace = match_state
+                .match_diagnostics
+                .traces_actor_draws()
+                .then_some(&match_state.match_diagnostics);
             planned_objects.retain(|parent| {
                 let id = parent.parent.id;
                 if let Some(entity) = frame.object(id) {
-                    return !concealed(entity);
+                    if concealed(entity) {
+                        match_state.match_presentation.unit_motion.conceal(id);
+                        if let Some(trace) = trace {
+                            trace.discard_actor_draw(id);
+                        }
+                        return false;
+                    }
+                    return true;
                 }
                 // Particles owned by an object follow it out of the fog.
                 if let Some(place) = members.particle_place(id) {
@@ -817,6 +844,13 @@ pub(super) fn build_world_instances(
         persistence,
         &building_body_opportunities,
     );
+    if let Some(rt) = match_state.sim_runtime.presentation() {
+        display_order.apply_unit_motion(
+            &mut planned_objects,
+            &match_state.match_presentation.unit_motion,
+            &rt.simulation,
+        );
+    }
     let mut object_layers = super::draw_plan_lowering::lower_object_instances(planned_objects);
     let mut fogged_objects = instances::build_fogged_instances(
         platform,
@@ -872,7 +906,36 @@ pub(super) fn build_world_instances(
         );
     });
 
+    // The status templates' layer reads the frame the strips read.
+    let module_field = match (
+        match_state.ui_modules.as_ref(),
+        match_state.sim_runtime.presentation(),
+        match_state.sim_runtime.frame(),
+    ) {
+        (Some(ui), Some(runtime), Some(frame)) => {
+            let sim = &runtime.simulation;
+            let local_owner = crate::app::input::commands::preferred_local_owner_name(match_state);
+            let view = crate::app::ui_modules::field::FieldView {
+                unit_motion: &match_state.match_presentation.unit_motion,
+                sim,
+                frame,
+                rules: crate::app::state::active_rules(frontend, match_state),
+                player: local_owner.as_deref().and_then(|name| sim.interner().get(name)),
+                hovered: crate::app::presentation::ui_overlays::health_hover_target(hover),
+                viewport: crate::app::presentation::ui_overlays::StatusViewport {
+                    camera: [match_state.input.camera_x, match_state.input.camera_y],
+                    size: [sw, sh],
+                    zoom: match_state.input.zoom_level,
+                    ignore_visibility: match_state.sandbox_full_visibility,
+                },
+            };
+            crate::app::ui_modules::field::build(ui, &view, &renderer.bit_font)
+        }
+        _ => Default::default(),
+    };
+
     WorldInstances {
+        module_field,
         terrain,
         cell_bodies,
         cell_body_draws,
@@ -1233,16 +1296,28 @@ pub(super) fn update_minimap(
 /// (63D8B8), mind-control links (704E40), psychic detection lines (4DC340)
 /// and the airstrike wobble move with it once per composite.
 pub(super) fn build_ui_instances(
-    state: &AppState,
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    persistence: &PersistenceState,
     wall_ms: u32,
     cursor: &crate::app::input::cursor::CursorTargets,
 ) -> UiInstances {
-    let (software_cursor, software_cursor_draw) = build_software_cursor_instances(state, cursor);
-    let drag = match &state.match_state.match_presentation.selection_overlay {
+    let (software_cursor, software_cursor_draw) = build_software_cursor_instances(
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        persistence,
+        cursor,
+    );
+    let drag = match &match_state.match_presentation.selection_overlay {
         Some(o) => o.build_drag_rect(
-            &state.match_state.input.selection_state,
-            state.match_state.input.camera_x,
-            state.match_state.input.camera_y,
+            &match_state.input.selection_state,
+            match_state.input.camera_x,
+            match_state.input.camera_y,
         ),
         None => Vec::new(),
     };
@@ -1251,11 +1326,10 @@ pub(super) fn build_ui_instances(
     // ground, with the ferry's circles.
     let mut ground_marks = Vec::new();
     if let (Some(path), Some(palette)) = (
-        state.match_state.input.formation_line.path(),
-        state
-            .match_state
+        match_state.input.formation_line.path(),
+        match_state
             .match_presentation
-            .surface_palette(state.process_assets.manager()),
+            .surface_palette(process_assets.manager()),
     ) {
         ground_marks.extend(
             crate::render::selection_overlay::SelectionOverlay::build_formation_dots(
@@ -1265,35 +1339,36 @@ pub(super) fn build_ui_instances(
         );
     }
     let placement_preview = build_placement_preview(
-        &state.platform,
-        &state.renderer,
-        &state.frontend,
-        &state.match_state,
-        &state.process_assets,
-        &state.persistence,
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        process_assets,
+        persistence,
     );
 
-    let input = &state.match_state.input;
+    let input = &match_state.input;
     let view = tactical_world_view(
-        &state.platform,
-        &state.renderer,
-        &state.frontend.screen,
-        &state.match_state,
-        &state.persistence,
+        platform,
+        renderer,
+        &frontend.screen,
+        match_state,
+        persistence,
     );
     // The drained action stores go onto the whole logical surface, whose
     // pixels start at the frame's corner: the view's camera less the
     // battlefield's corner, which is the stored camera rounded as the view's.
     let camera = [input.camera_x, input.camera_y].map(|v| v.round() as i32);
-    // All path, planning and rally pixels go onto the native world surface.
-    // Its camera/clip and the final WorldZoomPass own the scale. Pre-scaling
-    // individual spans here would quantize them again on that smaller/larger
-    // attachment, distorting dash spacing and node borders at fractional zoom.
+    // All path, planning and rally pixels go onto the world surface in world
+    // pixels. Its camera owns the scale (each world pixel a block of the
+    // camera's zoom, `docs/zoom-one-pass.md`). Pre-scaling individual spans
+    // here would quantize them twice, distorting dash spacing and node
+    // borders at fractional zoom.
     let mut designations = std::collections::HashMap::new();
-    if !state.match_state.input.planning.active()
+    if !match_state.input.planning.active()
         && let (Some(runtime), Some(frame)) = (
-            state.match_state.sim_runtime.presentation(),
-            state.match_state.sim_runtime.frame(),
+            match_state.sim_runtime.presentation(),
+            match_state.sim_runtime.frame(),
         )
     {
         // Health 0 skips only the CaptureManager links (`0x006D47A4` jumps
@@ -1326,32 +1401,31 @@ pub(super) fn build_ui_instances(
             tactical_line_calls.push(TacticalLineCall::Designation { id, coords, style });
         }
     };
-    let ground_strokes = ferry_lines::build_rings(&state.match_state, view);
+    let ground_strokes = ferry_lines::build_rings(match_state, view);
     let (mut target_line, planning_highlights) = planning_lines::build(
-        &state.platform,
-        &state.renderer,
-        &state.frontend,
-        &state.match_state,
-        &state.persistence,
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        persistence,
         view,
         wall_ms,
     );
-    target_line.extend(ferry_lines::build_paths(&state.match_state, view, wall_ms));
+    target_line.extend(ferry_lines::build_paths(match_state, view, wall_ms));
     let action_lines = crate::app::presentation::target_lines::build_target_line_strokes(
-        &state.match_state.match_presentation.target_lines,
-        state.match_state.input.planning.active(),
-        state
-            .match_state
+        Some(&match_state.match_presentation.unit_motion),
+        &match_state.match_presentation.target_lines,
+        match_state.input.planning.active(),
+        match_state
             .sim_runtime
             .presentation()
             .map(|rt| &rt.simulation),
-        state.match_state.sim_runtime.frame(),
-        state.rules(),
-        state
-            .match_state
+        match_state.sim_runtime.frame(),
+        crate::app::state::active_rules(frontend, match_state),
+        match_state
             .match_presentation
-            .surface_palette(state.process_assets.manager()),
-        &state.match_state.match_presentation.house_color_map,
+            .surface_palette(process_assets.manager()),
+        &match_state.match_presentation.house_color_map,
         wall_ms,
         view,
         if interleave_enabled {
@@ -1364,16 +1438,15 @@ pub(super) fn build_ui_instances(
     target_line.extend(planning_highlights);
     let [factory_rally_first, factory_rally_second] =
         crate::app::presentation::target_lines::build_factory_rally_line_strokes(
-            state
-                .match_state
+            match_state
                 .sim_runtime
                 .presentation()
                 .map(|rt| &rt.simulation),
-            state.match_state.sim_runtime.frame(),
-            state.rules(),
+            match_state.sim_runtime.frame(),
+            crate::app::state::active_rules(frontend, match_state),
             &cursor.selected,
-            &state.match_state.match_presentation.house_color_map,
-            preferred_local_owner(&state.match_state).as_deref(),
+            &match_state.match_presentation.house_color_map,
+            preferred_local_owner(match_state).as_deref(),
             view,
         );
 
@@ -1390,7 +1463,7 @@ pub(super) fn build_ui_instances(
         tactical_line_calls,
         factory_rally_first,
         factory_rally_second,
-        beacons: build_beacon_instances(&state.match_state),
+        beacons: build_beacon_instances(match_state),
     }
 }
 
@@ -1411,22 +1484,33 @@ pub(crate) fn tactical_world_view(
         &match_state.match_presentation,
         persistence,
     );
+    // The world camera carries the wheel zoom (`docs/zoom-one-pass.md`), so
+    // the view is in world pixels: the frame's battlefield divided by the
+    // zoom. At zoom 1 it is the frame's.
     tactical_world_viewport(
         [input.camera_x, input.camera_y],
-        [x, y, width, height],
-        renderer.world_zoom_pass.as_ref(),
+        world_pixels([x, y, width, height], input.zoom_level),
     )
 }
 
-/// [`tactical_world_view`] of a stored `camera` and `tactical` rect.
+/// The frame rect `[x, y, width, height]` in the world pixels a world camera
+/// at `zoom` shows there: its edges floored and ceiled outwards, so it covers
+/// every world pixel part of it shows.
+fn world_pixels([x, y, width, height]: [u32; 4], zoom: f32) -> [u32; 4] {
+    let left = (x as f32 / zoom).floor() as u32;
+    let top = (y as f32 / zoom).floor() as u32;
+    let right = ((x + width) as f32 / zoom).ceil() as u32;
+    let bottom = ((y + height) as f32 / zoom).ceil() as u32;
+    [left, top, right - left, bottom - top]
+}
+
+/// [`tactical_world_view`] of a stored `camera` and `tactical` rect in world
+/// pixels.
 pub(crate) fn tactical_world_viewport(
     camera: [f32; 2],
     tactical: [u32; 4],
-    zoom: Option<&crate::render::upscale_pass::WorldZoomPass>,
 ) -> crate::app::presentation::target_lines::TacticalViewport {
-    let clip = zoom
-        .map_or(tactical, |zoom| zoom.world_clip(tactical))
-        .map(|v| v as i32);
+    let clip = tactical.map(|v| v as i32);
     // The view is in the battlefield's own pixels: its camera is the world
     // point at the battlefield's corner, the stored camera (the frame
     // corner's) in by the clip's corner, and its clip starts at 0, 0.
@@ -1665,6 +1749,20 @@ pub(super) fn build_sidebar_instances(
         crate::app::presentation::sidebar_render::minimap_shown(&match_state.match_presentation);
 
     let (minimap, viewport_rect, content_boundary) = if minimap_visible {
+        let markers = match_state.ui_modules.as_ref().map(|ui| {
+            let sim = match_state.sim_runtime.presentation().map(|rt| &rt.simulation);
+            let frame = match_state.sim_runtime.frame();
+            let player = crate::app::input::commands::preferred_local_owner_name(match_state);
+            let player = sim.and_then(|sim| player.as_deref().and_then(|name| sim.interner().get(name)));
+            let rules = crate::app::state::active_rules(frontend, match_state);
+            crate::app::ui_modules::field::radar_markers(ui, |id| {
+                let entity = frame?.object(id)?;
+                crate::app::presentation::ui_overlays::module_status_anchor(
+                    sim?, entity, rules, player, match_state.sandbox_full_visibility,
+                )?;
+                Some((entity.position.rx(), entity.position.ry()))
+            })
+        });
         match &mut match_state.match_presentation.minimap {
             Some(mm) => {
                 let quad = mm.build_minimap_instance_in_rect(
@@ -1688,7 +1786,7 @@ pub(super) fn build_sidebar_instances(
                     .minimap_hud
                     .draw(MINIMAP_AREA, Some((area, quad)))
                     .to_vec();
-                let viewport_rect = sidebar_surface.map_or_else(Vec::new, |sidebar_surface| {
+                let mut viewport_rect = sidebar_surface.map_or_else(Vec::new, |sidebar_surface| {
                     mm.build_viewport_rect_in_rect(
                         match_state.input.camera_x,
                         match_state.input.camera_y,
@@ -1716,6 +1814,18 @@ pub(super) fn build_sidebar_instances(
                         sidebar_color,
                     )
                 });
+                // VERA: the client modules' map markers on the radar.
+                if let Some(markers) = markers {
+                    viewport_rect.extend(mm.build_marker_dots_in_rect(
+                        match_state.input.camera_x,
+                        match_state.input.camera_y,
+                        minimap_rect.x,
+                        minimap_rect.y,
+                        minimap_rect.w,
+                        minimap_rect.h,
+                        markers,
+                    ));
+                }
                 (minimap, viewport_rect, content_boundary)
             }
             None => {

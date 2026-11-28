@@ -60,6 +60,8 @@ pub(crate) struct IdleSleep {
     /// Steady objects' AI visits counted instead of run (or, when checking,
     /// run and compared; `world::steady_ai`).
     pub(super) steady: u64,
+    /// Quiet ground locomotor visits that took the resting fast path.
+    pub(super) locomotor: u64,
     /// When checking: the frame after the last whose steady visit had the
     /// state hash compared too (`world::steady_ai`).
     pub(super) steady_hashed: u32,
@@ -136,6 +138,11 @@ impl Simulation {
     /// (`world::steady_ai`).
     pub fn steady_ai_visits(&self) -> u64 {
         self.idle_sleep.steady
+    }
+
+    /// How many quiet ground locomotor visits took the resting fast path.
+    pub fn locomotor_rest_visits(&self) -> u64 {
+        self.idle_sleep.locomotor
     }
 
     /// The pass reached `id`'s slot: count its visit if it sleeps on.
@@ -404,7 +411,7 @@ impl Simulation {
             && entity.invulnerability.is_none()
             && entity.airstrike_link().is_none()
             && entity.emp_remaining() == 0
-            && !entity.ai_frozen()
+            && !entity.needs_warp_ai()
             && !entity.temporal.is_warping_someone()
             && entity.bomb.is_none()
             && !entity.constructing_or_selling()
@@ -473,7 +480,10 @@ impl Simulation {
     /// checked at each visit ([`Self::infantry_disturbed`]).
     fn infantry_sleep(&self, id: u64, rules: &RuleSet) -> Option<(u32, u8)> {
         use crate::sim::movement::infantry_action::{DO_GUARD, DO_READY};
+        // A Wasm module's push or `MoveFrame` (`ext_modules::motion`) acts at
+        // the locomotor Process of a standing infantryman too.
         if self.extension_steps_unsorted(rules)
+            || self.module_motion_active()
             || self.session.uses_local_player_shroud()
             || !self.session.rule_policy().allows_idle_object_sleep()
         {
@@ -511,7 +521,6 @@ impl Simulation {
             && entity.ion_blast_lift_pixels() == 0
             && entity.flashing.frames() == 0
             && entity.emp_remaining() == 0
-            && !entity.ai_frozen()
             && !entity.temporal.is_warping_someone()
             && !entity.berserk.is_active()
             && !entity.deactivated.is_offline()
@@ -560,8 +569,7 @@ fn infantry_rests(entity: &crate::sim::game_entity::GameEntity, object: &ObjectT
         && entity.lifecycle.object_alive()
         && !entity.lifecycle.in_limbo()
         && !entity.death.is_dying()
-        && !entity.is_warped_out()
-        && !entity.is_warping_in()
+        && !entity.needs_warp_ai()
         // The tube tests return before the AI counter.
         && entity.active_tube().is_none()
         && entity.drain.is_idle()

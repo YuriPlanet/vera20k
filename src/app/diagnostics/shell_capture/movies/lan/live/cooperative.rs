@@ -147,7 +147,9 @@ impl CooperativeRun {
             {
                 let labels = click_cooperative_mode(state)?;
                 if self.saved {
-                    let label = state.csf_label("TXT_COOP_USE_SAVE", "TXT_COOP_USE_SAVE");
+                    let label = state
+                        .process_assets
+                        .csf_label("TXT_COOP_USE_SAVE", "TXT_COOP_USE_SAVE");
                     let row = labels
                         .iter()
                         .position(|row| *row == label)

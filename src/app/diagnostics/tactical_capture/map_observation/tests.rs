@@ -280,16 +280,35 @@ fn presentation_takes_only_options_values() {
         sidebar: 150,
         hd_radar: true,
         smooth_sidebar: true,
+        wheel_zoom: Some(1.5),
     });
     profile.validate().unwrap();
-    for (zoom, sidebar) in [(125, 100), (100, 120)] {
+    // Any view distance in the wheel's continuous range, not only a step.
+    for wheel_zoom in [0.25, 0.667, 2.0] {
+        profile.presentation = Some(MapPresentationProfile {
+            wheel_zoom: Some(wheel_zoom),
+            ..profile.presentation.unwrap()
+        });
+        profile.validate().unwrap();
+    }
+    for (zoom, sidebar, wheel_zoom) in [
+        (125, 100, None),
+        (100, 120, None),
+        (100, 100, Some(2.5)),
+        (100, 100, Some(0.2)),
+        (100, 100, Some(0.0)),
+    ] {
         profile.presentation = Some(MapPresentationProfile {
             zoom,
             sidebar,
             hd_radar: false,
             smooth_sidebar: false,
+            wheel_zoom,
         });
-        assert!(profile.validate().is_err(), "{zoom} {sidebar}");
+        assert!(
+            profile.validate().is_err(),
+            "{zoom} {sidebar} {wheel_zoom:?}"
+        );
     }
 }
 
