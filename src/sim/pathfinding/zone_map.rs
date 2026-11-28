@@ -346,8 +346,26 @@ impl ZoneGrid {
         if terrain.width() != self.width || terrain.height() != self.height {
             return Err("saved navigation dimensions differ from the bound map".into());
         }
+        // A save can retain base clusters that no longer match its class/level
+        // plane: an older Recalc changed the bytes without rebuilding the
+        // topology, or a load inherited a split left by a pre-repair build.
+        // Rebuilding is only observable when the partitions differ; matching
+        // partitions keep the saved cluster numbering and history.
+        let rebuilt = zone_build::rebuild_base_zone_topology(
+            self.base_topology.movement_classes.clone(),
+            self.base_topology.levels.clone(),
+            terrain.terrain_deformation(),
+            records,
+            self.width,
+            self.height,
+            self.base_topology.native_bridge_source_size,
+        );
+        if !same_partition(&self.base_topology.zone_ids, &rebuilt.zone_ids) {
+            self.base_topology = rebuilt;
+        }
         self.invalidate_navigation_history();
         self.rebuilt_unchanged = None;
+        self.topology_dirty = false;
         self.maps = Self::project_movement_rows(
             &self.base_topology,
             path,
@@ -1233,6 +1251,35 @@ impl ZoneGrid {
         let za = zone_map.zone_at(from.0, from.1, from_layer);
         za != ZONE_INVALID && za == zone_map.zone_at(to.0, to.1, to_layer)
     }
+}
+
+/// Whether two cell-to-cluster planes describe the same partition, ignoring
+/// cluster numbering. A zero on either side is the invalid/outside slot and
+/// must agree exactly.
+fn same_partition(saved: &[ZoneId], rebuilt: &[ZoneId]) -> bool {
+    if saved.len() != rebuilt.len() {
+        return false;
+    }
+    let mut saved_to_rebuilt = BTreeMap::<ZoneId, ZoneId>::new();
+    let mut rebuilt_to_saved = BTreeMap::<ZoneId, ZoneId>::new();
+    for (&saved, &rebuilt) in saved.iter().zip(rebuilt) {
+        if saved == ZONE_INVALID || rebuilt == ZONE_INVALID {
+            if saved != rebuilt {
+                return false;
+            }
+            continue;
+        }
+        if saved_to_rebuilt.insert(saved, rebuilt).is_some_and(|old| old != rebuilt) {
+            return false;
+        }
+        if rebuilt_to_saved
+            .insert(rebuilt, saved)
+            .is_some_and(|old| old != saved)
+        {
+            return false;
+        }
+    }
+    true
 }
 
 pub(crate) fn cell_is_in_native_map_diamond(
