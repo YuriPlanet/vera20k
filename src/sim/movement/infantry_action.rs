@@ -346,6 +346,10 @@ impl Simulation {
                 // does not recheck the mapped record's count before admission.
                 requested = match requested {
                     0 | 2 => DO_TREAD,
+                    // NPatch (NPExt item 69, #2983): the native table leaves
+                    // Down out of the water remap, so a hero on water lies
+                    // down. NPatch remaps it to Tread like Walk/Stop.
+                    5 if rules.npatch_fixes() => DO_TREAD,
                     3 | 6 => DO_SWIM,
                     9 => 18,
                     10 => 19,

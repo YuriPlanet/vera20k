@@ -91,6 +91,8 @@ fn object_threshold_and_first_damage_order_matches_original_eighteen_controls() 
     for row in rows {
         let input = &row["input"];
         let output = &row["output"];
+        // Stock rows pin native; the NPatch boundary is covered by
+        // `npatch_exact_yellow_hit_crosses_once`.
         let mut entity = GameEntity::test_default(1, "X", "Owner", 2, 2);
         entity
             .health
@@ -124,6 +126,7 @@ fn object_threshold_and_first_damage_order_matches_original_eighteen_controls() 
         let mut host = LocalHealthHost {
             entity: &mut entity,
             strength: &strength,
+            npatch: false,
             callback,
         };
         let mut packet = input["damage"].as_i64().unwrap() as i32;
@@ -252,6 +255,7 @@ fn object_live_reads_and_callback_returns_match_original_twenty_three_mutations(
         let mut host = LocalHealthHost {
             entity: &mut entity,
             strength: &strength,
+            npatch: false,
             callback,
         };
         let mut packet = input["damage"].as_i64().unwrap() as i32;

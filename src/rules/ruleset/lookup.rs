@@ -902,6 +902,30 @@ impl RuleSet {
         self.npatch
     }
 
+    /// Whether NPatch's bug-fix chains apply. Separate from [`Self::npatch`]
+    /// so an individual NPatch feature key enables only its own feature; the
+    /// fixes need the explicit `[General] NPatch=yes` master switch.
+    #[inline]
+    pub fn npatch_fixes(&self) -> bool {
+        self.npatch_fixes
+    }
+
+    /// Test hook for chains whose fixture INI is a captured corpus: turn the
+    /// per-game switch on after loading. `npatch_switch_tests` covers the
+    /// data reading itself.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_npatch_for_test(&mut self, npatch: bool) {
+        self.npatch = npatch;
+        self.npatch_fixes = npatch;
+    }
+
+    /// Test hook for the master switch alone, so a fixture can compare games
+    /// that share every feature key and file but differ on the fixes.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_npatch_fixes_for_test(&mut self, fixes: bool) {
+        self.npatch_fixes = fixes;
+    }
+
     /// VERA: whether this game plays RA2 Mode (docs/ra2-mode.md): original
     /// Red Alert 2's rules where they differ from Yuri's Revenge. Sim and
     /// rules read this one answer; app, asset and INI-root code read the

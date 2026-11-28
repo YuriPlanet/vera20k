@@ -516,6 +516,7 @@ fn wave_active_inactive_dummy_links_roundtrip_with_identical_hash() {
             target_position: Some(active_endpoint),
             ares: None,
             target_is_unit: false,
+            magnetic_range_leptons: None,
         },
         None,
     ));
@@ -529,6 +530,7 @@ fn wave_active_inactive_dummy_links_roundtrip_with_identical_hash() {
             target_position: Some(moved_endpoint),
             ares: None,
             target_is_unit: false,
+            magnetic_range_leptons: None,
         },
         None,
     );

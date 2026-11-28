@@ -889,7 +889,7 @@ pub(super) fn update_prism(
                 let (modifier, damage_add) =
                     tower_type(sim, rules, id).map_or((0, 0), |(_, prism)| {
                         (
-                            prism.support_modifier(rules.general.prism_support.modifier),
+                            prism.support_modifier(rules.prism_support_modifier()),
                             prism.damage_add(),
                         )
                     });

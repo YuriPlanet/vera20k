@@ -39,11 +39,6 @@ const _: () = assert!(
     cfg!(feature = "verax") == rules::VERAX_ENABLED,
     "enable VeraX through the vera20k package's verax feature"
 );
-// The same boundary for the NPBUG bug-fix capability.
-const _: () = assert!(
-    cfg!(feature = "npbug") == rules::NPBUG_ENABLED,
-    "enable NPBUG through the vera20k package's npbug feature"
-);
 
 // Opaque process-RNG cursor receipt shared by map generation and simulation.
 use vera20k_core::rng_continuation;

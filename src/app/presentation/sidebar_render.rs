@@ -925,6 +925,26 @@ fn shows_alt_cameo(
                 ObjectCategory::Building => house.building_veterancy(),
             };
     }
+    if rules.npatch_fixes() {
+        if rules.country_starts_veteran(country, obj) {
+            return true;
+        }
+        // NPatch (NPExt items 82-83, #2932): country veteran lists count for
+        // every category, and a naval type never takes the spy-granted
+        // war-factory veteran flag; only its country's initial veterans.
+        if obj.naval {
+            return false;
+        }
+        return obj.trainable
+            && match obj.category {
+                ObjectCategory::Infantry => house.veteran_infantry(),
+                ObjectCategory::Vehicle => house.veteran_units(),
+                ObjectCategory::Building => {
+                    house.veteran_units() && obj.undeploys_into.is_some()
+                }
+                ObjectCategory::Aircraft => false,
+            };
+    }
     obj.trainable
         && match obj.category {
             ObjectCategory::Infantry => house.veteran_infantry(),

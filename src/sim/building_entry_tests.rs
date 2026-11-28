@@ -2967,3 +2967,36 @@ fn ares_armory_unload_kicks_out_its_trainee_on_guard() {
     let area_guard = MissionId::from_known(MissionType::AreaGuard);
     assert!(trainee.mission.current() == area_guard || trainee.mission.queued() == area_guard);
 }
+
+
+/// NPatch #2966 (NPExt changelog item 34): `BuildingClass::CanBeOccupiedBy`
+/// @ 0x00457CE0 refuses any `CanBeOccupied=` building at or below red health
+/// (`IsRedHP @ 0x005F5CD0` at `0x00457D8F`) with no owner exemption, so infantry
+/// released from a battle bunker that dropped to red could never re-enter
+/// it. Under npatch the owner's own building admits again, exactly on the
+/// threshold (`condition_red` defaults to 0.5; 250 is half of NABNKR's 500).
+#[test]
+fn npatch_own_red_health_bunker_admits_its_owner_again() {
+    let mut rules = rules();
+    rules.set_npatch_for_test(true);
+    let (mut sim, _) = arena(&rules);
+    let bunker = spawn(&mut sim, &rules, "NABNKR", "YuriCountry", 16, 10);
+    let infantry = spawn(&mut sim, &rules, "E1", "YuriCountry", 10, 10);
+    sim.substrate
+        .entities
+        .get_mut(bunker)
+        .unwrap()
+        .health
+        .set_for_test(250);
+
+    let admits =
+        |sim: &Simulation, id| crate::sim::passenger::can_enter_transport(sim, &rules, id, bunker);
+    assert!(
+        admits(&sim, infantry),
+        "the owner's own red bunker admits its occupier again"
+    );
+    assert!(
+        garrison_seek(&mut sim, &rules, infantry),
+        "the battle-bunker seek takes the own red bunker"
+    );
+}

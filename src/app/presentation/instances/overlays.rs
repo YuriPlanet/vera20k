@@ -530,6 +530,24 @@ pub(crate) fn build_display_effect_instances(
             .owner_entity()
             .is_some_and(|owner| input.frame.parachute_animation(owner) == Some(stable_id));
         let type_name: &str = sim.interner().resolve(anim.type_id());
+        // NPatch (NPExt item 64, #2976): a control ring must not reveal a
+        // cloaked victim. The ring anim itself stays; only its draw is gated,
+        // so it reappears when the victim decloaks.
+        let is_control_ring = [
+            input.rules.mind_control.controlled_anim.as_deref(),
+            input.rules.mind_control.perma_controlled_anim.as_deref(),
+        ]
+        .into_iter()
+        .flatten()
+        .any(|ring| ring.eq_ignore_ascii_case(type_name));
+        if input.rules.npatch_fixes()
+            && is_control_ring
+            && anim
+                .owner_entity()
+                .is_some_and(|owner| sim.is_object_cloaked(owner))
+        {
+            continue;
+        }
         let AnimTypeArt {
             config,
             frame_count,

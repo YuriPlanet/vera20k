@@ -42,6 +42,9 @@ pub(crate) struct ProcessAssets {
     /// The launch's Kratos setting (`util::kratos_launch::KratosSetting`),
     /// kept so a rebuilt manager selects the same games.
     kratos_setting: crate::util::kratos_launch::KratosSetting,
+    /// The launch's NPatch setting (`util::npatch_launch::NpatchSetting`),
+    /// kept so a rebuilt manager selects the same games.
+    npatch_setting: crate::util::npatch_launch::NpatchSetting,
     /// Whether that setting on Auto mounts `ares.mix` for this game
     /// (`AssetManager::auto_mounts_ares`), and whether set to Off it keeps
     /// the startup Rules' own Ares keys from turning Ares on
@@ -50,6 +53,12 @@ pub(crate) struct ProcessAssets {
     auto_mounts_ares: bool,
     /// Whether the resolved startup rules play Kratos, retained while assets are leased.
     startup_kratos: bool,
+    /// Whether the resolved startup Rules play any NPatch feature, retained
+    /// while assets are leased and compared as the `npatch` setting part.
+    startup_npatch: bool,
+    /// Whether the resolved startup Rules play the NPExt fix chains, retained
+    /// while assets are leased and compared as the `npatch_fixes` setting part.
+    startup_npatch_fixes: bool,
     rules_keep_ares_off: bool,
     /// That folder's files, read once: the pre-match check compares their
     /// digest.
@@ -208,8 +217,11 @@ impl ProcessAssets {
             media_archive_mode,
             ares_setting: Default::default(),
             kratos_setting: Default::default(),
+            npatch_setting: Default::default(),
             auto_mounts_ares: false,
             startup_kratos: false,
+            startup_npatch: false,
+            startup_npatch_fixes: false,
             rules_keep_ares_off: false,
             mod_files: Default::default(),
             mod_files_ahead: false,
@@ -273,6 +285,14 @@ impl ProcessAssets {
         setting: crate::util::kratos_launch::KratosSetting,
     ) -> Self {
         self.kratos_setting = setting;
+        self
+    }
+
+    pub(crate) fn with_npatch_setting(
+        mut self,
+        setting: crate::util::npatch_launch::NpatchSetting,
+    ) -> Self {
+        self.npatch_setting = setting;
         self
     }
 
@@ -443,6 +463,7 @@ impl ProcessAssets {
         )?
         .with_mod_sources(&self.resources);
         assets.set_kratos_setting(self.kratos_setting);
+        assets.set_npatch_setting(self.npatch_setting);
         Ok(if let Some(roots) = &self.selected_ini_roots {
             assets.with_selected_ini_roots(roots.clone())
         } else {
@@ -524,6 +545,8 @@ impl ProcessAssets {
         self.native_rules = Some(owner);
         self.auto_mounts_ares = assets.auto_mounts_ares();
         self.startup_kratos = rules.as_ref().is_some_and(|rules| rules.kratos());
+        self.startup_npatch = rules.as_ref().is_some_and(|rules| rules.npatch());
+        self.startup_npatch_fixes = rules.as_ref().is_some_and(|rules| rules.npatch_fixes());
         self.rules_keep_ares_off = rules.as_ref().is_some_and(|rules| rules.ares_kept_off());
         Ok((rules, projection))
     }
@@ -733,6 +756,16 @@ impl ProcessAssets {
         }
         if self.startup_kratos {
             bytes.extend_from_slice(b"kratos on\0");
+        }
+        // VERA: what the NPatch launch setting made the startup rules play,
+        // which the digested sources leave out: On adds both, Off disables
+        // both, and Auto follows the data. A peer whose same files play the
+        // other answer must not agree.
+        if self.startup_npatch {
+            bytes.extend_from_slice(b"npatch features on\0");
+        }
+        if self.startup_npatch_fixes {
+            bytes.extend_from_slice(b"npatch fixes on\0");
         }
         // VERA: RA2 mode (docs/ra2-mode.md) also plays RA2's rules in the
         // simulation (`util::ra2_launch`), which its INI roots alone do not
@@ -977,6 +1010,8 @@ impl ProcessAssets {
             // a mod only On mounts it, and Off never does.
             ares_mix: assets.ares_mix_mounted(),
             kratos: self.startup_kratos,
+            npatch: self.startup_npatch,
+            npatch_fixes: self.startup_npatch_fixes,
             ini_roots_stock: self.stock_ini_roots(),
             // As the digest counts it.
             ra2: crate::util::ra2_launch::enabled(),
@@ -1608,6 +1643,53 @@ mod tests {
         )
         .unwrap();
         assert_ne!(digest(false), original, "actual rule changes still differ");
+    }
+
+    #[test]
+    fn npatch_setting_matches_the_game_and_names_it_in_the_rules_parts() {
+        use crate::assets::asset_manager::test_support::audio_test_install;
+        use crate::util::npatch_launch::NpatchSetting::{Auto, Off, On};
+
+        let install = audio_test_install("npatch-agreement");
+        for (file, data) in [
+            ("aimd.ini", "[AI]\nValue=1\n"),
+        ] {
+            std::fs::write(install.path().join(file), data).unwrap();
+        }
+        std::fs::write(install.path().join("artmd.ini"), "[GI]\n").unwrap();
+        let game = |setting, general: &str| {
+            std::fs::write(
+                install.path().join("rulesmd.ini"),
+                format!("{general}[InfantryTypes]\n0=GI\n[GI]\nPrimary=GUN\n"),
+            )
+            .unwrap();
+            let mut process = ProcessAssets::new(MediaArchiveMode::STOCK_DIGITAL, false)
+                .with_npatch_setting(setting);
+            let assets = process.reconstruct_manager(install.path()).unwrap();
+            process.initialize_sources_if_needed(&assets).unwrap();
+            process.return_from_loading(assets);
+            let parts = process.multiplayer_rules_parts(&[""]).unwrap().remove(0);
+            let parts: serde_json::Value = serde_json::from_str(&parts.json()).unwrap();
+            (
+                process.multiplayer_rules_digest("").unwrap(),
+                parts["settings"].clone(),
+            )
+        };
+        let stock = game(Auto, "");
+        assert!(stock.1.get("npatch").is_none());
+        assert!(stock.1.get("npatch_fixes").is_none());
+        let off_stock = game(Off, "");
+        assert_eq!(off_stock, stock, "Off on stock data changes nothing");
+        let off_data = game(Off, "[General]\nNPatch=yes\n");
+        assert_ne!(off_data.0, stock.0);
+        assert!(off_data.1.get("npatch").is_none());
+        let auto_data = game(Auto, "[General]\nNPatch=yes\n");
+        assert_eq!(auto_data.1["npatch"], serde_json::Value::Bool(true));
+        assert_eq!(auto_data.1["npatch_fixes"], serde_json::Value::Bool(true));
+        let enabled = game(On, "");
+        assert_ne!(enabled.0, stock.0);
+        assert_eq!(enabled.1["npatch"], serde_json::Value::Bool(true));
+        assert_eq!(enabled.1["npatch_fixes"], serde_json::Value::Bool(true));
     }
 
     #[test]

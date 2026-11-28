@@ -270,6 +270,11 @@ impl GattlingState {
             report_latch,
         }
     }
+
+    /// Whether a `Report=` loop handle is still held.
+    pub(crate) const fn report_latched(&self) -> bool {
+        self.report_latch
+    }
 }
 
 /// The stage call the unit's per-frame firing update makes.
@@ -510,6 +515,32 @@ impl crate::sim::world::Simulation {
                     owner: gattling_sound_owner(id),
                 });
             frame_effects.flush_sound(self, rules);
+        });
+        if let Some(entity) = self.substrate.entities.get_mut(id) {
+            entity.gattling = state;
+        }
+    }
+
+    /// NPatch (NPExt item 73, #2970): a sold gattling must not keep its
+    /// `Report=` loop through the sale stages. Releases the same handle the
+    /// limbo visit would, at the sale order instead of stage 2.
+    pub(crate) fn gattling_stop_sale_loop(&mut self, id: u64) {
+        let Some(mut state) = self
+            .substrate
+            .entities
+            .get(id)
+            .map(|entity| entity.gattling)
+        else {
+            return;
+        };
+        if !state.report_latched() {
+            return;
+        }
+        state.limbo(|| {
+            self.sound_events
+                .emit(crate::sim::world::SimSoundEvent::GattlingLoopRelease {
+                    owner: gattling_sound_owner(id),
+                });
         });
         if let Some(entity) = self.substrate.entities.get_mut(id) {
             entity.gattling = state;

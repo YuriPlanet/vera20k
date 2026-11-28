@@ -50,6 +50,26 @@ fn structure(id: u64, owner: InternedId, type_ref: InternedId) -> GameEntity {
     entity
 }
 
+fn vehicle(id: u64, owner: InternedId, type_ref: InternedId) -> GameEntity {
+    let mut entity = GameEntity::new_at_frame_zero_for_test(
+        id,
+        10 + id as u16,
+        10,
+        0,
+        0,
+        owner,
+        Health::new(100),
+        type_ref,
+        EntityCategory::Unit,
+        0,
+        5,
+        false,
+    );
+    entity.lifecycle.set_object_alive_for_test(true);
+    entity.lifecycle.set_in_limbo_for_test(false);
+    entity
+}
+
 /// `(sim, order)`, with entity 1 selected and entity 2 of the same type.
 fn two_buildings(type_id: &str) -> (Simulation, Vec<u64>) {
     let mut sim = Simulation::new();
@@ -129,4 +149,72 @@ fn the_switch_is_read_from_the_general_section() {
     // `no` is the same as absent.
     assert!(!rules("BuildingTypeSelectable=no\n").structure_type_selectable("GAPOWR"));
     assert!(rules("BuildingTypeSelectable=yes\n").structure_type_selectable("GAPOWR"));
+}
+
+/// NPatch (NPExt bug-fix changelog item 45, issue #2980): the native seed set
+/// grows the `DeploysInto`/`UndeploysInto` counterpart type
+/// (`TypeSelect__BuildSeedTypeIDs @ 0x00732D10`, Type+0x404/+0x408), so T
+/// gathers the MCV and the Construction Yard together. Under npatch the seed
+/// set stays the selected types alone, and neither side reaches for the other.
+#[test]
+fn npatch_type_select_keeps_the_mcv_and_the_yard_apart() {
+    let mut rules = RuleSet::from_ini(&IniFile::from_str(
+        "[BuildingTypes]\n0=GACNST\n[VehicleTypes]\n0=AMCV\n\
+         [GACNST]\nStrength=1000\nUndeploysInto=AMCV\n\
+         [AMCV]\nStrength=200\nDeploysInto=GACNST\n\
+         [General]\nVehicleParachute=VEHCHUTE\n",
+    ))
+    .expect("rules read");
+    assert!(rules.npatch(), "the fixture key turns NPatch on");
+    rules.set_npatch_for_test(true);
+    assert!(rules.structure_type_selectable("GACNST"));
+    let mut sim = Simulation::new();
+    let owner = sim.intern("me");
+    let mcv_type = sim.intern("AMCV");
+    let yard_type = sim.intern("GACNST");
+    sim.entities_mut_for_test()
+        .insert(vehicle(1, owner, mcv_type));
+    sim.entities_mut_for_test()
+        .insert(structure(2, owner, yard_type));
+    let order = vec![1u64, 2];
+
+    // T with the MCV selected gathers MCVs, not the yard it deploys into.
+    let result = compute_type_select_tap_with_playfield(
+        sim.entities(),
+        &order,
+        &order,
+        &[1],
+        None,
+        Some("me"),
+        Some(&rules),
+        Some(sim.interner()),
+        true,
+        false,
+    );
+    assert_eq!(result.outcome, TypeSelectOutcome::Map);
+    assert_eq!(
+        result.mutation.select,
+        vec![1],
+        "the yard the MCV deploys into stays out of the T group"
+    );
+
+    // T with the yard selected gathers yards, not the MCV it undeploys into.
+    let result = compute_type_select_tap_with_playfield(
+        sim.entities(),
+        &order,
+        &order,
+        &[2],
+        None,
+        Some("me"),
+        Some(&rules),
+        Some(sim.interner()),
+        true,
+        false,
+    );
+    assert_eq!(result.outcome, TypeSelectOutcome::Map);
+    assert_eq!(
+        result.mutation.select,
+        vec![2],
+        "the MCV the yard undeploys into stays out of the T group"
+    );
 }

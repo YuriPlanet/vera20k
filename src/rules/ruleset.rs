@@ -999,8 +999,13 @@ pub struct RuleSet {
     kratos: bool,
     /// Whether NPatch plays in this game, decided once from the reads its
     /// processed rules and projection made by `rules::npatch_switch`. Read
-    /// through [`Self::npatch`].
+    /// through [`Self::npatch`]. Individual NPatch keys may turn this on so
+    /// their own feature runs.
     npatch: bool,
+    /// Whether NPatch's bug-fix chains apply. They need the explicit
+    /// `[General] NPatch=yes` master switch: one feature key must not
+    /// silently turn every NPExt fix on. Read through [`Self::npatch_fixes`].
+    npatch_fixes: bool,
     /// VERA: whether this game plays RA2 Mode (docs/ra2-mode.md), decided once
     /// at load from the launch's choice (`util::ra2_launch`). Read through
     /// [`Self::ra2`].

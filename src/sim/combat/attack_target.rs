@@ -339,6 +339,7 @@ pub fn install_entity_attack_target_for_test(
         Some(TargetKind::Entity(target_id)),
         Some(TargetKind::Entity(target_id)),
         RuleSet::empty_for_test().ares_form(),
+        RuleSet::empty_for_test().npatch_fixes(),
     );
 
     true
@@ -388,6 +389,7 @@ pub fn install_cell_attack_target_for_test(
         Some(TargetKind::Cell(target_rx, target_ry)),
         // An armed attacker was read from these rules above.
         rules.is_some_and(RuleSet::ares_form),
+        rules.is_some_and(RuleSet::npatch),
     );
     true
 }

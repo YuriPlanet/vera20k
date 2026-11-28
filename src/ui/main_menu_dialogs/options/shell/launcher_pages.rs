@@ -148,9 +148,10 @@ pub(super) fn controls(
                 RectPx::new(x, 86, OPTIONS_COMBO_W, COMBO_FACE_H),
             );
             combo(&mut row, Combo::Kratos, right, 86);
+            combo(&mut row, Combo::Npatch, right, 132);
             // VERA's HD art switch (`render::hd_switch`).
             combo(&mut row, Combo::HdLook, right, 193);
-            heading(&mut row, "VERA:ExtensionsVeraHeading", 166);
+            heading(&mut row, "VERA:ExtensionsVeraHeading", 182);
             for (i, id) in [
                 Check::CommanderFeedback,
                 Check::CustomEndGameBanner,
@@ -160,7 +161,7 @@ pub(super) fn controls(
             .into_iter()
             .enumerate()
             {
-                check(&mut row, id, x, 193 + i as i32 * 24);
+                check(&mut row, id, x, 209 + i as i32 * 24);
             }
         }
         _ => unreachable!(),

@@ -510,12 +510,17 @@ impl Simulation {
         {
             self.release_locomotor(target, true, rules, registry, effects);
         }
-        // Phobos applies the warhead's Jumpjet overrides while the new
-        // Jumpjet locomotor links (`Link_To_Object @ 0x54AD30`, hook
-        // `0x54AD41`); another installed kind never
-        // reads them.
+        // NPATCH (NPExt item 19, #2956): a lifted object is not
+        // self-propelled, so it flies on its ordinary `Speed=` rather than the
+        // Jumpjet block's much higher `JumpjetSpeed=`. Native copies the
+        // victim's type block at `0x54AD5C`; VERA now substitutes the type's
+        // ground/air `Speed` when NPatch plays. Phobos's warhead override still
+        // applies afterwards, so an explicit `JumpjetSpeed=` override wins.
         let jumpjet_params = (kind == LocomotorKind::Jumpjet).then(|| {
             let mut params = object.jumpjet_params.clone();
+            if rules.npatch_fixes() {
+                params.speed = crate::util::fixed_math::SimFixed::saturating_from_num(object.speed);
+            }
             jumpjet_override.apply_to(&mut params);
             params
         });

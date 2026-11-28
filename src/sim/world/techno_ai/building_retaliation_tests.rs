@@ -421,6 +421,28 @@ fn a_deployed_slave_miner_pings_the_ore_miner_line() {
     );
 }
 
+/// NPatch (NPExt item 81, #2939): a fatal C4 packet still warns the owner
+/// even though the surviving-building hit response never runs.
+#[test]
+fn npatch_c4_demolition_alarm_reaches_the_owner() {
+    let mut rules = production_rules("");
+    rules.set_npatch_for_test(true);
+    let (mut sim, building, _source) = production_fixture(&rules, "DEF", false, OUT_OF_RANGE);
+    sim.building_c4_alarm(
+        building,
+        &rules,
+        None,
+        &mut crate::sim::world::FrameEffects::default(),
+    );
+    assert_eq!(
+        sim.sound_events
+            .iter()
+            .filter(|event| matches!(event, SimSoundEvent::UnderAttack { .. }))
+            .count(),
+        1
+    );
+}
+
 /// A computer's defence whose target has left its range drops it when that
 /// target hits it: BuildingClass::SetTarget hands the base setter NULL
 /// (`0x00443BFE`), whose same-target test then compares NULL, both in

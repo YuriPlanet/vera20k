@@ -68,6 +68,40 @@ use crate::sim::mission::MissionType;
 use crate::sim::world::{FrameEffects, Simulation};
 
 impl Simulation {
+    /// NPatch (NPExt item 81, #2939): a C4 demolition is one fatal packet,
+    /// so the receiver's non-fatal hit response never runs. NPExt still
+    /// warns the owner; this emits the same NotifyUnderAttack ping without
+    /// the retaliation tail a dying building cannot use.
+    pub(crate) fn building_c4_alarm(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        overlay_registry: Option<&OverlayTypeRegistry>,
+        effects: &mut FrameEffects<'_>,
+    ) {
+        let Some(building) = self.substrate.entities.get(id) else {
+            return;
+        };
+        let Some(obj) = self.object_type(building.type_ref(), rules) else {
+            return;
+        };
+        if obj.insignificant || obj.is_1x1_with_undeploy() {
+            return;
+        }
+        let Some((rx, ry, _, _)) = resolve_target_coords(&TargetKind::Entity(id), self) else {
+            return;
+        };
+        let ping = UnderAttackEvent {
+            rx,
+            ry,
+            owner: building.owner(),
+            victim_type: building.type_ref(),
+            own_alert: true,
+            line: crate::sim::combat::UnderAttackLine::House { allies: true },
+        };
+        self.notify_house_under_attack(ping, rules, overlay_registry, effects);
+    }
+
     /// The block for building `id`, alive after a hit whose ReceiveDamage
     /// `result` is not PostMortem. Returns the already submitted
     /// NotifyUnderAttack ping for component observations.

@@ -288,6 +288,41 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
     ) -> Vec<CaptureLinkCoordinates> {
+        self.capture_link_coordinates_inner(id, rules, false)
+    }
+
+    /// NPatch (NPExt items 62-63, #2974/#2975): a selected transport or
+    /// battle fortress also exposes the links of the psychics riding inside,
+    /// and their origin follows the outermost hull the chain rides in.
+    pub fn selected_capture_link_coordinates(
+        &self,
+        id: u64,
+        rules: &RuleSet,
+    ) -> Vec<CaptureLinkCoordinates> {
+        let mut links = self.capture_link_coordinates_inner(id, rules, false);
+        if !rules.npatch_fixes() {
+            return links;
+        }
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return links;
+        };
+        if entity.capture_manager.is_some() {
+            return links;
+        }
+        if let Some(cargo) = entity.passenger_role().cargo() {
+            for passenger in cargo.passengers() {
+                links.extend(self.capture_link_coordinates_inner(*passenger, rules, true));
+            }
+        }
+        links
+    }
+
+    fn capture_link_coordinates_inner(
+        &self,
+        id: u64,
+        rules: &RuleSet,
+        force_selected: bool,
+    ) -> Vec<CaptureLinkCoordinates> {
         use crate::rules::flh::Flh;
         use crate::sim::combat::fire_coord::{FireSource, fire_coordinate};
         use crate::sim::movement::ground_pose::position_world_coord;
@@ -300,7 +335,17 @@ impl Simulation {
         let Some(object) = self.object_type(controller.type_ref(), rules) else {
             return Vec::new();
         };
-        let selected = controller.seldom.selection.is_selected();
+        let selected = force_selected || controller.seldom.selection.is_selected();
+        // A controller riding in a hull keeps a stale position. NPExt draws
+        // from the outermost transport instead.
+        let origin = if rules.npatch_fixes() {
+            self.outermost_transporter(id).unwrap_or(id)
+        } else {
+            id
+        };
+        let Some(origin_entity) = self.substrate.entities.get(origin) else {
+            return Vec::new();
+        };
         #[cfg(feature = "phobos")]
         let visible_to = rules.mind_control_link_visible_to_house_for(object);
         // Rendering queries isolate the canonical fallback CellClass.
@@ -327,7 +372,7 @@ impl Simulation {
                     let from = fire_coordinate(
                         self,
                         rules,
-                        &FireSource::of_entity(controller),
+                        &FireSource::of_entity_at(controller, origin_entity),
                         object,
                         -1 - (index % 5) as i32,
                         controller.seldom.weapon_burst.index() as u8,
@@ -349,6 +394,37 @@ impl Simulation {
                 })
                 .collect()
         })
+    }
+
+    /// Whether `id`'s cloak is active (state 1..3), for draw consumers that
+    /// must not reveal a cloaked owner.
+    pub fn is_object_cloaked(&self, id: u64) -> bool {
+        self.substrate
+            .entities
+            .get(id)
+            .and_then(|entity| entity.cloak.as_ref())
+            .is_some_and(|cloak| cloak.state() != 0)
+    }
+
+    /// Follow `TechnoClass+0x11C` links outward. A cycle or a missing hull
+    /// keeps the last known controller position.
+    pub(crate) fn outermost_transporter(&self, id: u64) -> Option<u64> {
+        let mut current = id;
+        for _ in 0..8 {
+            let Some(next) = self
+                .substrate
+                .entities
+                .get(current)
+                .and_then(|entity| entity.passenger_role().transporter())
+            else {
+                break;
+            };
+            if next == id || self.substrate.entities.get(next).is_none() {
+                break;
+            }
+            current = next;
+        }
+        (current != id).then_some(current)
     }
 }
 
@@ -1464,6 +1540,11 @@ impl Simulation {
             .filter(|(_, node)| node.victim == victim_id)
             .map(|(index, node)| (index, node.original_owner))
             .collect();
+        let controller_owner = self
+            .substrate
+            .entities
+            .get(controller_id)
+            .map(|controller| controller.owner());
         for (index, original_owner) in matches {
             // The ring goes (`vt+0xF8` UnInit), then MindClearedSound: the
             // type's own, else the global.
@@ -1481,7 +1562,19 @@ impl Simulation {
                     .and_then(|object| object.mind_cleared_sound.as_deref())
                     .or(rules.mind_control.mind_cleared_sound.as_deref());
                 if let Some(sound) = sound {
-                    let event = SimSoundEvent::voc_at(rules.sound_name(sound), &victim.position);
+                    // NPATCH (NPExt bug-fix changelog item 70, issue #2984):
+                    // the removal sound is audible only to the two involved
+                    // parties, the controller and the original owner the
+                    // victim returns to. Native plays it through a plain
+                    // `VocClass::PlayAt`, so every player heard it.
+                    let audience = controller_owner
+                        .filter(|_| rules.npatch_fixes())
+                        .map(|controller| [controller, original_owner]);
+                    let event = SimSoundEvent::voc_at_for(
+                        rules.sound_name(sound),
+                        audience,
+                        &victim.position,
+                    );
                     self.sound_events.emit(event);
                 }
             }

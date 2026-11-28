@@ -158,6 +158,9 @@ pub struct WaveUpdateContext {
     pub target_position: Option<ProjectileCoord>,
     /// Native What_Am_I==1 reverses type3's geometry arguments.
     pub target_is_unit: bool,
+    /// NPATCH (#2986): the owner's weapon 0 `Range=`, the magnetic wave's
+    /// tracking bound. `None` unless NPatch plays.
+    pub magnetic_range_leptons: Option<i32>,
     /// Ares WaveClass_Update_Beam's verdict for a wave with WaveExt data;
     /// `None` unless Ares plays.
     pub ares: Option<AresWaveTracking>,
@@ -586,6 +589,28 @@ impl Wave {
             && let (Some(owner), Some(target)) = (context.owner_position, context.target_position)
             && distance_3d_leptons([owner.x, owner.z, owner.y], [target.x, target.z, target.y])
                 > MAX_TRACKING_DISTANCE_LEPTONS
+        {
+            self.active_geometry = false;
+            self.decaying = true;
+        }
+
+        // NPATCH (NPExt bug-fix changelog item 85, issue #2986): the magnetic
+        // wave decays once its held target leaves the range of the owner's
+        // weapon 0, the slot the wave code reads (GetWeapon(0) at
+        // `0x0075F330`). Native skips type 3 in the tracking-distance decay, so a
+        // magnetron beam followed its target at any distance. The 2172-lepton
+        // bound of the other types would end beams inside the retail
+        // MagneticBeam's 12-cell range. The context carries `Some` only when
+        // NPatch plays.
+        if self.active_geometry
+            && self.wave_type == 3
+            && let (Some(range), Some(owner), Some(target)) = (
+                context.magnetic_range_leptons,
+                context.owner_position,
+                context.target_position,
+            )
+            && distance_3d_leptons([owner.x, owner.z, owner.y], [target.x, target.z, target.y])
+                > range
         {
             self.active_geometry = false;
             self.decaying = true;

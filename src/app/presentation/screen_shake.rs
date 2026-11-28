@@ -54,6 +54,18 @@ impl ScreenShakeState {
         self.last_presented_offset_px = offset_px;
     }
 
+    /// NPatch (NPExt bug-fix changelog item 79, issue #2931): scenario
+    /// transitions clear the residual offset. Native's shake is the global
+    /// Map's `+4`/`+8` (`0x0087F7E8`), written only by
+    /// `BulletClass::DetonateAtCoord` (`0x004690FA`, `0x0046912B`) and decayed
+    /// only by `0x004F4BB0` while battle input runs; the GScreenClass init
+    /// slots (`0x004F42B0`, `0x004F42D0`, `0x004F42E0`) leave it, so quitting
+    /// mid-shake started the next game with leftover camera movement.
+    pub(crate) fn reset_for_scenario(&mut self) {
+        self.offset_px = [0, 0];
+        self.last_presented_offset_px = [0, 0];
+    }
+
     /// Apply Logic's native-ordered detonation writes after the render's
     /// pre-Logic offset snapshot has been taken.
     pub(crate) fn apply_updates(&mut self, updates: &[crate::sim::combat::ScreenShakeUpdate]) {
@@ -141,5 +153,31 @@ mod tests {
         assert!(shake.decays_at(12));
         assert_eq!(shake.service_offset_snapshot(Some(12), true), [3, 0]);
         assert_eq!(shake.service_offset_snapshot(Some(12), true), [-2, 0]);
+    }
+}
+
+#[cfg(all(test))]
+mod npatch_reset_tests {
+    use super::ScreenShakeState;
+    use crate::sim::combat::ScreenShakeUpdate;
+
+    /// NPatch (NPExt bug-fix changelog item 79, issue #2931): the scenario
+    /// transition clears both the live offset and the presented-offset
+    /// cache, so the next game starts steady.
+    #[test]
+    fn npatch_the_scenario_reset_clears_a_mid_shake_offset() {
+        let mut shake = ScreenShakeState::default();
+        shake.apply_updates(&[ScreenShakeUpdate {
+            x: Some(10),
+            y: Some(-4),
+        }]);
+        shake.record_presented([10, -4]);
+        shake.reset_for_scenario();
+        assert_eq!(shake.offset_px, [0, 0]);
+        assert_eq!(
+            shake.service_offset_snapshot(None, false),
+            [0, 0],
+            "a focus-frozen redraw presents a steady frame"
+        );
     }
 }

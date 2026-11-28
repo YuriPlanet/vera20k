@@ -38,7 +38,7 @@ fn ares_gap_radius_keeps_the_whole_int() {
     let object =
         ObjectType::from_ini_section("GAP", ini.section_or_empty("GAP"), ObjectCategory::Building);
     assert_eq!(object.gap_radius_in_cells, 128);
-    assert_eq!(object.building_sensor_range(false, None, true), 128);
+    assert_eq!(object.building_sensor_range(false, None, true, false), 128);
 }
 
 /// Ares BuildingClass_GetRangeOfRadial_Radius (10048E60, hook 0x4566B0):
@@ -57,7 +57,7 @@ fn ares_radial_indicator_radius_answers_the_sensor_range() {
         rules
             .object(name)
             .unwrap()
-            .building_sensor_range(true, Some(0x800), rules.ares())
+            .building_sensor_range(true, Some(0x800), rules.ares(), rules.npatch_fixes())
     };
     assert_eq!(range("GAP"), 3);
     assert_eq!(range("PSY"), 9);
@@ -125,7 +125,7 @@ fn constructors_and_each_admitted_radial_reader_history_match_original() {
                     continue;
                 }
                 assert_eq!(
-                    object.building_sensor_range(flag != 0, None, ares_way),
+                    object.building_sensor_range(flag != 0, None, ares_way, false),
                     expected.as_i64().unwrap() as i32
                 );
             }
@@ -157,4 +157,30 @@ fn stock_radial_fields_and_ranges_use_physical_rules_mode_map_and_art() {
             .unwrap()
             .has_radial_indicator()
     );
+}
+
+/// NPATCH (NPExt bug-fix changelog item 53, issue #2930): the ring radius no
+/// longer consults `SensorArray=`. A `SensorArray=yes` building keeps the
+/// normal weapon-range radius instead of drawing `CloakRadiusInCells=`, while
+/// a cloak generator's arm stays native.
+#[test]
+fn npatch_sensor_array_ring_uses_the_weapon_range_not_the_cloak_radius() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[BuildingTypes]\n0=SENS\n1=CLAK\n\
+         [SENS]\nSensorArray=yes\nCloakRadiusInCells=11\n\
+         [CLAK]\nCloakGenerator=yes\nCloakRadiusInCells=11\n",
+    ))
+    .unwrap();
+    let sensor = rules.object("SENS").unwrap();
+    assert!(sensor.sensor_array && !sensor.cloak_generator);
+    // Stock's SensorArray arm returns 11; NPatch falls through to the
+    // weapon-range radius, 800/256.
+    assert_eq!(sensor.building_sensor_range(false, Some(800), false, false), 11);
+    assert_eq!(sensor.building_sensor_range(false, Some(800), false, true), 3);
+    assert_eq!(sensor.building_sensor_range(true, Some(800), false, true), 3);
+    assert_eq!(sensor.building_sensor_range(false, None, false, true), 0);
+    // The cloak-generator arm is unchanged: still CloakRadiusInCells.
+    let cloak = rules.object("CLAK").unwrap();
+    assert!(cloak.cloak_generator && !cloak.sensor_array);
+    assert_eq!(cloak.building_sensor_range(false, Some(800), false, true), 11);
 }

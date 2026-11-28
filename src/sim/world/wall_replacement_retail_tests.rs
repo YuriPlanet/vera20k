@@ -15,6 +15,9 @@ fn retail_paid_two_gap_wall_retains_constructor_identities_until_deferred_drain(
     let Some((root, _assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
         return;
     };
+    if !crate::test_fixture::RECORDED_STOCK_START_IDS {
+        return;
+    }
     let profile = crate::test_fixture::json("tools/map_observation.concrete-wall.example.json");
     let launch: crate::skirmish_launch::SkirmishLaunchSession =
         serde_json::from_value(profile["launch"].clone()).unwrap();
@@ -176,6 +179,9 @@ fn retail_paid_owned_wall_replacement_clears_the_old_cell_attack_target() {
     let Some((root, _assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
         return;
     };
+    if !crate::test_fixture::RECORDED_STOCK_START_IDS {
+        return;
+    }
     let profile = crate::test_fixture::json("tools/map_observation.concrete-wall.example.json");
     let launch: crate::skirmish_launch::SkirmishLaunchSession =
         serde_json::from_value(profile["launch"].clone()).unwrap();

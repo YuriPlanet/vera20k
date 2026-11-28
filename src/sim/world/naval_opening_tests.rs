@@ -375,6 +375,8 @@ fn a_failed_water_search_still_snaps_the_offset_null_cell() {
     // Change only the supplied map prior: no water can satisfy the first
     // Float/Water search. The original caller still sends(2,2) to443860.
     crate::sim::arena_fixture::flat_ground(&mut sim, rules);
+    // NPatch (#2953) refuses a naval yard's land rally cell; this native case
+    // pins stock rules.
     let expected = sim
         .factory_rally_cell_input(id, (2, 2), rules)
         .unwrap()
@@ -436,7 +438,8 @@ fn two_searches_and_event_birth_match_the_original_supplied_map_control() {
         sim.session.set_binary_frame_for_test(frame);
         sim.initialize_naval_rally_point(1, &rules);
         let pending = sim.pending_command_snapshot();
-        assert_eq!(pending.len(), usize::from(!zero_speeds));
+        // The (7,7) control cell is land in this fixture; stock accepts it.
+        assert_eq!(pending.len(), usize::from(!zero_speeds), "frame {frame}");
         if !zero_speeds {
             assert_eq!(
                 pending[0].payload,

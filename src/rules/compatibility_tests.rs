@@ -108,9 +108,7 @@ fn stock_rules_hash_records_the_compiled_capability() {
 /// while the features themselves stay mixable.
 #[test]
 fn all_capability_combinations_round_trip_and_describe_themselves() {
-    // save_codec writes a fixed little-endian u32 variant index. Appending
-    // VeraX and NPBUG modes must not reinterpret the existing Ares+Phobos
-    // wire tag.
+    // VeraX modes must not reinterpret the existing Ares+Phobos wire tag.
     let legacy = [4, 0, 0, 0];
     assert_eq!(
         crate::util::save_codec::serialize(&RulesCompatibility::AresPhobos).unwrap(),
@@ -125,28 +123,18 @@ fn all_capability_combinations_round_trip_and_describe_themselves() {
         crate::util::save_codec::serialize(&RulesCompatibility::AresPhobosNpatchVeraX).unwrap(),
         verax_last
     );
-    let npbug_first = [16, 0, 0, 0];
-    assert_eq!(
-        crate::util::save_codec::serialize(&RulesCompatibility::Npbug).unwrap(),
-        npbug_first
-    );
     for ares in [false, true] {
         for phobos in [false, true] {
             for npatch in [false, true] {
                 for verax in [false, true] {
-                    for npbug in [false, true] {
-                        let mode = RulesCompatibility::from_capabilities(
-                            ares, phobos, npatch, verax, npbug,
-                        );
-                        assert_eq!(mode.has_ares(), ares);
-                        assert_eq!(mode.has_phobos(), phobos);
-                        assert_eq!(mode.has_npatch(), npatch);
-                        assert_eq!(mode.has_verax(), verax);
-                        assert_eq!(mode.has_npbug(), npbug);
-                        let wire = serde_json::to_value(mode).unwrap();
-                        let restored: RulesCompatibility = serde_json::from_value(wire).unwrap();
-                        assert_eq!(restored, mode, "{mode:?} must survive the wire");
-                    }
+                    let mode = RulesCompatibility::from_capabilities(ares, phobos, npatch, verax);
+                    assert_eq!(mode.has_ares(), ares);
+                    assert_eq!(mode.has_phobos(), phobos);
+                    assert_eq!(mode.has_npatch(), npatch);
+                    assert_eq!(mode.has_verax(), verax);
+                    let wire = serde_json::to_value(mode).unwrap();
+                    let restored: RulesCompatibility = serde_json::from_value(wire).unwrap();
+                    assert_eq!(restored, mode, "{mode:?} must survive the wire");
                 }
             }
         }
@@ -168,7 +156,6 @@ fn all_capability_combinations_round_trip_and_describe_themselves() {
         !PHOBOS_ENABLED,
         true,
         !VERAX_ENABLED,
-        !crate::rules::NPBUG_ENABLED,
     );
     assert!(
         !other.matches_build(),

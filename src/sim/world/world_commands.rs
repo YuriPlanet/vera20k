@@ -680,6 +680,23 @@ impl Simulation {
                 // Event Stop4C75F8 invokes virtual+3C8 AFTER its null
                 // destination4C75ED, including the Infantry class effects.
                 let _ = self.assign_target_represented(*entity_id, None, rules, frame_effects);
+                // NPatch (NPExt item 74, #2962): Stop must drop what this
+                // techno holds aloft, not only its radio and destination.
+                if rules.npatch_fixes()
+                    && self
+                        .substrate
+                        .entities
+                        .get(*entity_id)
+                        .is_some_and(|entity| entity.lift.target().is_some())
+                {
+                    self.release_locomotor(
+                        *entity_id,
+                        true,
+                        rules,
+                        overlay_registry,
+                        frame_effects,
+                    );
+                }
                 // `0x004C75FE..0x004C7624`: a `BalloonHover=` type takes both
                 // again. Its setter's arm (`0x00741983`) kept the NavCom while
                 // the Target stood; without the Target this one clears it.

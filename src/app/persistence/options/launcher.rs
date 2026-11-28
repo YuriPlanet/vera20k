@@ -77,6 +77,7 @@ pub(crate) fn launcher_values_from_profile(
         health_bars: profile.health_bars,
         ares: profile.ares,
         kratos: profile.kratos,
+        npatch: profile.npatch,
         graphics_api: profile.graphics_api,
         color_vision: profile.color_vision,
         // Without an HD art pack the list shows Off whatever was saved.
@@ -165,6 +166,7 @@ pub(crate) fn dispatch_launcher_preview_event(
         // opened its files with.
         E::AresSelected(setting) => profile.ares = setting,
         E::KratosSelected(setting) => profile.kratos = setting,
+        E::NpatchSelected(setting) => profile.npatch = setting,
         // Read at the next start (`startup_backend`): this launch keeps the
         // API it draws through.
         E::GraphicsApiSelected(api) => profile.graphics_api = api,

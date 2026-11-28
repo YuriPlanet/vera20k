@@ -362,7 +362,13 @@ impl ConcreteMissionEffects for RepresentedConcreteMissionEffects<'_> {
             //51B2A2: a same-target assignment still invalidates Foot+5E0.
             entity.clear_live_path_head();
         }
-        if represented_assign_target_admitted(entity, requested, stored, self.rules.ares_form()) {
+        if represented_assign_target_admitted(
+            entity,
+            requested,
+            stored,
+            self.rules.ares_form(),
+            self.rules.npatch_fixes(),
+        ) {
             sim.assign_target_fire_teardown(
                 prepared.receiver,
                 self.rules,
@@ -672,12 +678,13 @@ pub(crate) fn represented_assign_target(
     entity: &mut crate::sim::game_entity::GameEntity,
     requested: Option<TargetKind>,
     ares: bool,
+    npatch: bool,
 ) {
     debug_assert!(
         !matches!(requested, Some(TargetKind::Entity(_))),
         "an object target needs assign_target_stored"
     );
-    represented_assign_target_admitted(entity, requested, requested, ares);
+    represented_assign_target_admitted(entity, requested, requested, ares, npatch);
 }
 
 /// The represented `Assign_Target` write set, entity-local; `stored` is
@@ -699,12 +706,14 @@ pub(crate) fn represented_assign_target(
 /// with the world to run [`crate::sim::world::Simulation::assign_target_fire_teardown`].
 ///
 /// `ares` is the game's `RuleSet::ares_form`: Ares keeps the burst index on a
-/// NULL target.
+/// NULL target. `npatch` is `RuleSet::npatch`: NPatch keeps a MID-burst index
+/// (issue #2945) and still resets a completed one.
 pub(crate) fn represented_assign_target_admitted(
     entity: &mut crate::sim::game_entity::GameEntity,
     requested: Option<TargetKind>,
     stored: Option<TargetKind>,
     ares: bool,
+    npatch: bool,
 ) -> bool {
     // The original's target assignment clears the passive-acquire flag as
     // its first statement, ahead of any same-target short-circuit, so a
@@ -745,7 +754,12 @@ pub(crate) fn represented_assign_target_admitted(
         }
         // `0x006FCF53..0x006FCF5B` resets CurrentBurstIndex; Ares 3.0
         // TechnoClass_SetTarget_Burst (1005D320, hook 0x6FCF53) keeps it.
-        if !ares {
+        // NPATCH (NPExt bug-fix changelog item 54, issue #2945): a mid-burst
+        // reset let the next attack start a fresh burst inside the old
+        // per-shot rearm, cycling Burst weapons past their full reload. The
+        // interrupted burst resumes instead, so the full ROF still separates
+        // bursts; a completed index still resets.
+        if !ares && !(npatch && entity.seldom.weapon_burst.index() != 0) {
             entity.seldom.weapon_burst.reset();
         }
     }

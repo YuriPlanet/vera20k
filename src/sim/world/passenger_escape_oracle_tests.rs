@@ -295,6 +295,7 @@ fn scene(input: &Value) -> Scene {
                 Some(TargetKind::Entity(attacker)),
                 stored,
                 rules.ares_form(),
+                rules.npatch_fixes(),
             );
         }
     }

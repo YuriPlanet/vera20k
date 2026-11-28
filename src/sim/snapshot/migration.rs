@@ -90,6 +90,12 @@ const HELD_IMAGES: u32 = 0xAA20_1352;
 const DRIVER_POLICY: u32 = 0xD5A9_6CCA;
 // This writer saves Techno+270 independently of its erase head and locomotor.
 const SHARED_WARP_OUT: u32 = 0xC0BB_86C8;
+// NPatch's branch writer stores the NPatch key reads, the player's launch
+// setting, the modules and the image swap, without main's later fields.
+const NPATCH_SETTING: u32 = 0xA4F1_2FAC;
+// The merged writer stores main's shared warp-out flag beside the NPatch
+// launch setting and every field above.
+const NPATCH_SETTING_AND_SHARED_WARP_OUT: u32 = 0xC347_5E7D;
 
 /// The rules digest a converted save carries: the loader takes the rules the
 /// game has instead of proving the digest the old writer computed, whose
@@ -123,7 +129,7 @@ pub fn supports(header: &GameSnapshotHeader) -> bool {
         && previous_layout(header.layout).is_some()
         && header.compatibility().matches_build()
         && SNAPSHOT_ENVELOPE_VERSION == MIGRATION_ENVELOPE_VERSION
-        && snapshot_layout() == SHARED_WARP_OUT
+        && snapshot_layout() == NPATCH_SETTING_AND_SHARED_WARP_OUT
 }
 
 fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
@@ -155,6 +161,12 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
     // Worlds older than the NPatch switch stored no key reads either: their
     // rules kept the switch off, which the all-zero empty read list restores.
     const NPATCH_KEYS: (&str, &[&str]) = ("ProcessedRulesLayers", &["npatch_inputs"]);
+    // The NPatch branch writer added the launch setting; earlier saves decode
+    // it as Auto.
+    const NPATCH_SETTING_FIELD: (&str, &[&str]) = ("NPatchInputs", &["setting"]);
+    // The NPatch fix keeps the exact PrismSupportModifier beside the native
+    // scaled value; earlier saves held only the native value.
+    const NPATCH_MODIFIER: (&str, &[&str]) = ("PrismSupportRules", &["npatch_modifier"]);
     const MESSAGES: (&str, &[&str]) = ("SavedExtModules", &["messages", "automation_allowed"]);
     const HELD_VISUALS: (&str, &[&str]) = ("ActionHeld", &["anims", "doors", "images"]);
     const DOORS_AND_IMAGES: (&str, &[&str]) = ("ActionHeld", &["doors", "images"]);
@@ -164,6 +176,7 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
     let absent_fields: &'static [_] = match source {
         V0_3_8_AND_0_3_9 | V0_4_0 => &[
             WARP_OUT,
+            NPATCH_MODIFIER,
             POLICY,
             HELD_VISUALS,
             IMAGE_FLAGS,
@@ -192,6 +205,7 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
         ],
         ALPHA_SHAPE_LISTENER => &[
             WARP_OUT,
+            NPATCH_MODIFIER,
             POLICY,
             HELD_VISUALS,
             IMAGE_FLAGS,
@@ -219,6 +233,7 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
         ],
         ALTERNATE_THEATER_ART => &[
             WARP_OUT,
+            NPATCH_MODIFIER,
             POLICY,
             HELD_VISUALS,
             DECK,
@@ -245,6 +260,7 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
         ],
         BRIDGE_DECK_AND_FLY_SPIN => &[
             WARP_OUT,
+            NPATCH_MODIFIER,
             POLICY,
             HELD_VISUALS,
             DEGRADES,
@@ -268,6 +284,7 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
         ],
         HOUSE_DEGRADES => &[
             WARP_OUT,
+            NPATCH_MODIFIER,
             POLICY,
             HELD_VISUALS,
             ICE_TIMER,
@@ -290,6 +307,7 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
         ],
         TS_ICE => &[
             WARP_OUT,
+            NPATCH_MODIFIER,
             POLICY,
             HELD_VISUALS,
             DENT,
@@ -309,6 +327,7 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
         ],
         TERRAIN_DENT => &[
             WARP_OUT,
+            NPATCH_MODIFIER,
             POLICY,
             HELD_VISUALS,
             LIMPETS,
@@ -327,6 +346,7 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
         ],
         TS_LIMPETS => &[
             WARP_OUT,
+            NPATCH_MODIFIER,
             POLICY,
             HELD_VISUALS,
             ANIM_SOUNDS,
@@ -343,6 +363,7 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
         ],
         TS_ANIM_SOUNDS => &[
             WARP_OUT,
+            NPATCH_MODIFIER,
             POLICY,
             HELD_VISUALS,
             KRATOS_INPUTS,
@@ -358,6 +379,7 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
         ],
         KRATOS_FLH => &[
             WARP_OUT,
+            NPATCH_MODIFIER,
             POLICY,
             HELD_VISUALS,
             WEB,
@@ -371,6 +393,7 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
         ],
         TS_WEBS => &[
             WARP_OUT,
+            NPATCH_MODIFIER,
             POLICY,
             HELD_VISUALS,
             EXT_MODULES,
@@ -380,6 +403,7 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
         ],
         WASM_MODULES => &[
             WARP_OUT,
+            NPATCH_MODIFIER,
             POLICY,
             HELD_VISUALS,
             CONTROL_POINT_STATE,
@@ -390,6 +414,7 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
         ],
         ART_IMAGE_SWAP => &[
             WARP_OUT,
+            NPATCH_MODIFIER,
             POLICY,
             HELD_VISUALS,
             EXT_MODULES,
@@ -398,6 +423,7 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
         ],
         MODULES_AND_IMAGE_SWAP => &[
             WARP_OUT,
+            NPATCH_MODIFIER,
             POLICY,
             HELD_VISUALS,
             CONTROL_POINT_STATE,
@@ -407,6 +433,7 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
         ],
         CONTROL_POINTS => &[
             WARP_OUT,
+            NPATCH_MODIFIER,
             POLICY,
             HELD_VISUALS,
             IMAGE_SWAP,
@@ -415,13 +442,57 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
         ],
         NPATCH_INPUTS => &[
             WARP_OUT,
+            NPATCH_MODIFIER,
             POLICY,
             HELD_VISUALS,
+            NPATCH_SETTING_FIELD,
             EXT_MODULES,
             MODULE_TRIGGERS,
             IMAGE_SWAP,
         ],
         MODULES_SWAP_AND_NPATCH => &[
+            WARP_OUT,
+            NPATCH_MODIFIER,
+            POLICY,
+            HELD_VISUALS,
+            CONTROL_POINT_STATE,
+            NATIVE_ROTS,
+            NPATCH_SETTING_FIELD,
+            MESSAGES,
+        ],
+        CONTROL_POINTS_SWAP_AND_NPATCH => &[
+            WARP_OUT,
+            NPATCH_MODIFIER,
+            POLICY,
+            HELD_VISUALS,
+            NPATCH_SETTING_FIELD,
+            MESSAGES,
+        ],
+        CLIENT_MESSAGES => &[
+            WARP_OUT,
+            POLICY,
+            HELD_VISUALS,
+            NPATCH_SETTING_FIELD,
+            NPATCH_MODIFIER,
+        ],
+        HELD_ANIMS => &[
+            WARP_OUT,
+            POLICY,
+            DOORS_AND_IMAGES,
+            NPATCH_SETTING_FIELD,
+            NPATCH_MODIFIER,
+        ],
+        HELD_DOORS => &[
+            WARP_OUT,
+            POLICY,
+            IMAGES,
+            NPATCH_SETTING_FIELD,
+            NPATCH_MODIFIER,
+        ],
+        HELD_IMAGES => &[WARP_OUT, POLICY, NPATCH_SETTING_FIELD, NPATCH_MODIFIER],
+        DRIVER_POLICY => &[WARP_OUT, NPATCH_SETTING_FIELD, NPATCH_MODIFIER],
+        SHARED_WARP_OUT => &[NPATCH_SETTING_FIELD, NPATCH_MODIFIER],
+        NPATCH_SETTING => &[
             WARP_OUT,
             POLICY,
             HELD_VISUALS,
@@ -429,12 +500,6 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
             NATIVE_ROTS,
             MESSAGES,
         ],
-        CONTROL_POINTS_SWAP_AND_NPATCH => &[WARP_OUT, POLICY, HELD_VISUALS, MESSAGES],
-        CLIENT_MESSAGES => &[WARP_OUT, POLICY, HELD_VISUALS],
-        HELD_ANIMS => &[WARP_OUT, POLICY, DOORS_AND_IMAGES],
-        HELD_DOORS => &[WARP_OUT, POLICY, IMAGES],
-        HELD_IMAGES => &[WARP_OUT, POLICY],
-        DRIVER_POLICY => &[WARP_OUT],
         _ => return None,
     };
     Some(save_codec::PreviousLayout {
@@ -450,7 +515,9 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
 /// only its stock Arctic setting and latch. Keep both exactly as saved.
 pub fn migrate(bytes: &mut Vec<u8>) -> Result<(), MigrationError> {
     let target = snapshot_layout();
-    if SNAPSHOT_ENVELOPE_VERSION != MIGRATION_ENVELOPE_VERSION || target != SHARED_WARP_OUT {
+    if SNAPSHOT_ENVELOPE_VERSION != MIGRATION_ENVELOPE_VERSION
+        || target != NPATCH_SETTING_AND_SHARED_WARP_OUT
+    {
         return Err(MigrationError::UnsupportedTarget(target));
     }
 
@@ -571,6 +638,31 @@ mod tests {
     }
 
     #[test]
+    fn the_current_writer_layout_is_the_audited_migration_target() {
+        assert_eq!(snapshot_layout(), NPATCH_SETTING_AND_SHARED_WARP_OUT);
+    }
+
+    #[test]
+    fn the_shared_warp_out_layout_reads_the_missing_npatch_setting_as_auto() {
+        use crate::rules::ini_parser::IniFile;
+        use crate::rules::native_processing::{ProcessedRulesLayers, RulesLayerStack};
+
+        let processed = RulesLayerStack::new(IniFile::from_str("[General]\n"))
+            .process()
+            .unwrap();
+        let previous = previous_layout(SHARED_WARP_OUT).unwrap();
+        let bytes = save_codec::serialize_previous(&processed, &previous).unwrap();
+        let (restored, rest) = save_codec::deserialize_previous::<ProcessedRulesLayers>(
+            &bytes,
+            previous,
+            &mut Vec::new(),
+        )
+        .unwrap();
+        assert!(rest.is_empty());
+        save_codec::serialize(&restored).unwrap();
+    }
+
+    #[test]
     fn migration_leaves_unsupported_and_invalid_snapshots_byte_exact() {
         let wrong_layout = V0_3_8_AND_0_3_9 ^ 1;
         let mut bytes = save_codec::serialize(&GameSnapshotPreamble {
@@ -583,7 +675,7 @@ mod tests {
         let error = migrate(&mut bytes).unwrap_err();
         assert_eq!(bytes, original);
         if SNAPSHOT_ENVELOPE_VERSION != MIGRATION_ENVELOPE_VERSION
-            || snapshot_layout() != SHARED_WARP_OUT
+            || snapshot_layout() != NPATCH_SETTING_AND_SHARED_WARP_OUT
         {
             assert!(matches!(error, MigrationError::UnsupportedTarget(_)));
             return;

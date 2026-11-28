@@ -333,3 +333,44 @@ pub(super) fn gsi_05_02_projectile(source_id: u64, fuse_frames: Option<u16>) -> 
         collision: ProjectileCollisionPolicy::NONE,
     }
 }
+
+
+/// NPatch (NPExt bug-fix changelog item 99, issue #2951): a dying or docking
+/// aircraft's PointerExpired repair loses the missile's target instead of
+/// substituting the pad's ground cell — native's low-flying repair flew the
+/// shot into the airbase.
+#[test]
+fn npatch_a_downed_landing_aircraft_does_not_repair_to_the_pad() {
+    let mut rules =
+        crate::rules::ruleset::RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
+            "[AircraftTypes]\n0=HORV\n[HORV]\nStrength=200\n\n\
+         [VehicleTypes]\n0=NAMISL\n[NAMISL]\nStrength=1000\n\n\
+         [Warheads]\n0=AP\n[AP]\nVersus=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
+        ))
+        .unwrap();
+    rules.set_npatch_for_test(true);
+    let mut sim = Simulation::new();
+    crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    // The firer and its downed landing target.
+    insert_entity(&mut sim, 1, crate::map::entities::EntityCategory::Unit);
+    insert_entity(&mut sim, 2, crate::map::entities::EntityCategory::Aircraft);
+    let aircraft = 2;
+    // The downed landing aircraft: dying, docked at its pad.
+    let entity = sim.substrate.entities.get_mut(aircraft).unwrap();
+    entity.death.set_dying_for_test(true);
+    let mut ammo = crate::sim::ammo::TechnoAmmo::new(2);
+    ammo.set_dock(Some(999), crate::sim::game_entity::NameNote::fixture());
+    entity.install_ammo_for_test(Some(ammo));
+    let mut shot = gsi_05_02_projectile(1, None);
+    shot.target = ProjectileTarget::Entity(aircraft);
+    sim.admit_projectile(77, shot);
+    sim.lose_projectile_targets(aircraft, &rules);
+    let bullet = sim.projectiles.get(77).unwrap();
+    assert_eq!(
+        bullet.target(),
+        ProjectileTarget::None,
+        "the missile loses its target instead of the pad cell"
+    );
+}

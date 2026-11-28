@@ -146,6 +146,7 @@ fn give_up(sim: &mut Simulation, id: u64, rules: &RuleSet, frame_effects: &mut F
             entity,
             None,
             rules.ares_form(),
+            rules.npatch_fixes(),
         );
     }
     // Wasm module `TargetChanged` (`ext_modules::control`).

@@ -285,12 +285,31 @@ impl Simulation {
                     .wave_reversed_against(target_class.unwrap_or(WaveReverseTarget::Other)),
             }
         });
+        // NPATCH (NPExt bug-fix changelog item 85, issue #2986): the magnetic
+        // wave's tracking bound is the owner's weapon 0 range, the slot the
+        // wave code reads (GetWeapon(0) at `0x0075F330`).
+        let magnetic_range_leptons = (rules.npatch_fixes() && wave.wave_type() == 3)
+            .then(|| {
+                let entity = owner?;
+                let object = self.interner.object_type(entity.type_ref(), rules)?;
+                crate::sim::combat::combat_weapon::get_weapon(
+                    entity,
+                    object,
+                    0,
+                    &self.substrate.entities,
+                    rules,
+                    &self.interner,
+                )
+                .map(|weapon| weapon.range_leptons)
+            })
+            .flatten();
         crate::sim::wave::WaveUpdateContext {
             owner_position,
             owner_fire_coordinate,
             owner_current_target,
             target_position,
             target_is_unit,
+            magnetic_range_leptons,
             ares,
         }
     }
@@ -637,11 +656,49 @@ impl Simulation {
         }
         let context =
             self.wave_update_context(self.waves.get(id).expect("represented Wave"), rules);
+        // NPatch (NPExt item 75, #2962): a wave that decays (a target switch
+        // or a range end) must not leave its held victim aloft with no beam.
+        let held_by_this_wave = rules
+            .npatch_fixes()
+            .then(|| {
+                let wave = self.waves.get(id)?;
+                let owner = wave.owner_id()?;
+                self.substrate
+                    .entities
+                    .get(owner)
+                    .and_then(|entity| entity.lift.target())
+                    .map(|target| (owner, target))
+            })
+            .flatten();
+        let beam_was_active = self
+            .waves
+            .get(id)
+            .is_some_and(|wave| wave.active_geometry());
         let terrain = self.resolved_terrain.as_ref();
         let (request, result) = self
             .waves
             .advance_one(id, context, terrain)
             .expect("wave remained present for its Logic slot");
+        // A wave whose tracking failed (`active_geometry` cleared) stops
+        // drawing its magnetic beam; NPatch also lets its held victim go
+        // there, without waiting for the fade's terminal UnInit.
+        let beam_gone = result.uninitialized
+            || (beam_was_active
+                && self
+                    .waves
+                    .get(id)
+                    .is_some_and(|wave| !wave.active_geometry()));
+        if beam_gone {
+            if let Some((owner, target)) = held_by_this_wave
+                && self
+                    .substrate
+                    .entities
+                    .get(owner)
+                    .is_some_and(|entity| entity.lift.target() == Some(target))
+            {
+                self.release_locomotor(owner, true, rules, ctx.overlay_registry, &mut ctx.effects);
+            }
+        }
         // Fade-terminal UnInit dispatches exact pointer expiry before the
         // stale AI-20 cell vector is damaged on AI-21.
         if result.uninitialized {

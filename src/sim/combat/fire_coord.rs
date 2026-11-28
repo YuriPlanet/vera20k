@@ -168,6 +168,24 @@ impl FireSource {
             tar_com: entity.attack_target.target(),
         }
     }
+
+    /// `entity`'s class and weapon state at `origin`'s live position. NPatch
+    /// (#2974) uses this for a garrisoned psychic whose own stored position
+    /// froze at boarding: the port still resolves through the infantry arm,
+    /// but from the outermost hull.
+    pub(crate) fn of_entity_at(
+        entity: &crate::sim::game_entity::GameEntity,
+        origin: &crate::sim::game_entity::GameEntity,
+    ) -> Self {
+        let mut source = Self::of_entity(entity);
+        source.rx = origin.position.rx();
+        source.ry = origin.position.ry();
+        source.sub_x = origin.position.sub_x();
+        source.sub_y = origin.position.sub_y();
+        source.level = origin.position.z();
+        source.exact_z_leptons = origin.position.exact_z_leptons();
+        source
+    }
 }
 
 impl From<&AttackerSnapshot> for FireSource {
@@ -884,7 +902,17 @@ fn open_topped_port_coordinate(
         .iter()
         .position(|&id| id == snap.stable_id)?;
     let transport_obj = world.interner.object_type(transport.type_ref(), rules)?;
-    let source = FireSource::of_entity(transport);
+    // NPatch (#2974): a fortress riding inside another hull keeps the port
+    // offset but takes the outermost hull's live position.
+    let outer = rules
+        .npatch_fixes()
+        .then(|| world.outermost_transporter(transport_id))
+        .flatten()
+        .and_then(|id| entities.get(id));
+    let source = outer.map_or_else(
+        || FireSource::of_entity(transport),
+        |outer| FireSource::of_entity_at(transport, outer),
+    );
     let base = fire_coordinate_base(world, rules, &source, transport_obj);
     let flh = transport_obj.alternate_fire_flh(port);
     let burst_index = (transport.seldom.weapon_burst.index() & 1) as u8;

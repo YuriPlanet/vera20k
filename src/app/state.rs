@@ -46,6 +46,7 @@ pub(crate) fn reset_scenario_exit_runtime(
     frontend: &mut crate::app::frontend::state::FrontendState,
     match_state: &mut crate::app::match_runtime::state::MatchState,
     audio: &mut crate::app::audio_runtime::AppAudioRuntime,
+    npatch: bool,
 ) {
     match_state.scenario_outcome = None;
     match_state.scenario_exit = None;
@@ -58,6 +59,17 @@ pub(crate) fn reset_scenario_exit_runtime(
     crate::app::ui_modules::drop_modules(match_state);
     crate::app::lan_service::return_transport(frontend, match_state);
     audio.restore_sound_master();
+    // NPATCH (NPExt bug-fix changelog item 79, issue #2931): a mid-shake
+    // exit carries the offset into the next scenario, as native's Map
+    // `+4`/`+8` only decays while battle input runs (`0x004F4BB0`). Clear it
+    // at every transition. The caller reads the active rules before its
+    // mutable borrows.
+    if npatch {
+        match_state
+            .match_presentation
+            .screen_shake
+            .reset_for_scenario();
+    }
 }
 
 /// The correction matrix for `[VERA] ColorVisionMode=`, or `None` for `Off`.

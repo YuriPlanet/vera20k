@@ -67,12 +67,14 @@ switch off. Later writers each stored part of the current layout: the
 #5205, layout `0x8C73B1B3`, the swap, the `2e39b88dd` writer's layout
 `0xB65C0664` the modules and the swap, the `2e67ebaa8` writer's layout
 `0xE5279FB2` only the NPatch reads, the `fb29ff473` writer's layout
-`0xBA51A42C` all three without the modules' control points, and the
-`d17e45e42` writer's layout `0x919AB3CD` the modules with their control points.
+`0xBA51A42C` all three without the modules' control points, the NPatch branch's
+`0xA4F12FAC` its launch setting, and the `d17e45e42` writer's layout
+`0x919AB3CD` the modules with their control points.
 Each converts with its missing parts empty: no projectile path, push or
 immunity modifier, no swapped image, and without the reads the switch stays
-off, as those matches played. No frozen save holds `0x8C73B1B3`. The
-`b268ba798` writer's layout `0xC66CE753` holds everything but the client
+off, or without the setting it reads Auto, as those matches played. No frozen
+save holds `0x8C73B1B3`. The `b268ba798` writer's layout `0xC66CE753` holds
+everything but the client
 modules' state of layout `0x9909B4E7` (RFC 0001 section 10: the
 messages waiting for `on_message` and the room's `AutomationAllowed`); its
 saves convert with no message waiting and automation not allowed. The
@@ -85,11 +87,13 @@ On load, those computer houses resume ordinary AI with their saved money,
 units and production queues. Any saved Wasm control claims still apply.
 The next save clears the retired settings.
 
-Layout `0xC0BB86C8` saves each object's warp-out flag. A Chronosphere can clear
-it while a Chrono Legionnaire is still erasing the object. Earlier layouts,
-including `0xD5A96CCA`, recover the state those games used from the stored erase
-head, Teleport departure flag and Ares building chronoshift flag. A current save
-preserves which effect last wrote the flag.
+The `0xC0BB86C8` writer saves each object's warp-out flag. A Chronosphere can
+clear it while a Chrono Legionnaire is still erasing the object. Earlier
+layouts, including `0xD5A96CCA`, recover the state those games used from the
+stored erase head, Teleport departure flag and Ares building chronoshift flag.
+Its saves convert with no NPatch launch setting, which reads as Auto. The
+merged current writer's layout `0xC3475E7D` stores that setting beside the
+warp-out flag; a current save preserves which effect last wrote the flag.
 
 Run the menu and compatibility tests with this command.
 

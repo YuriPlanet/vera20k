@@ -448,6 +448,15 @@ impl App {
                 kratos_setting.ini_value()
             );
         }
+        // The NPatch setting holds for the whole launch too; the rules the
+        // manager selects carry it into every game (`RuleSet::npatch`).
+        let npatch_setting = options_profile.npatch;
+        if npatch_setting != crate::util::npatch_launch::NpatchSetting::Auto {
+            log::info!(
+                "NPatch setting for this start: {}",
+                npatch_setting.ini_value()
+            );
+        }
         // Before the first CSF load below, which layers this language over it.
         crate::i18n::init(
             game_config
@@ -695,6 +704,7 @@ impl App {
                 resources,
                 ares_setting,
                 kratos_setting,
+                npatch_setting,
             )
         };
         #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
@@ -725,6 +735,7 @@ impl App {
         resources: crate::util::mod_definition::ResourceConfig,
         ares_setting: crate::util::ares_launch::AresSetting,
         kratos_setting: crate::util::kratos_launch::KratosSetting,
+        npatch_setting: crate::util::npatch_launch::NpatchSetting,
     ) -> Result<InitializationStep> {
         let batch_renderer: BatchRenderer = BatchRenderer::new(&gpu);
         let status_screen_fill = batch_renderer.create_texture(&gpu, &[255; 4], 1, 1);
@@ -776,6 +787,7 @@ impl App {
         // This is the game the launch plays (`util::ares_launch`).
         if let Some(assets) = &mut startup_asset_manager {
             assets.set_kratos_setting(kratos_setting);
+            assets.set_npatch_setting(npatch_setting);
             assets.open_for_play();
         }
         // Native process startup seeds Scenario before the MPModes loader. The
@@ -896,7 +908,8 @@ impl App {
             .with_mod_name(mods.active.as_ref().map(|active| active.folder.clone()))
             .with_personal_rules(personal_rules)
             .with_ares_setting(ares_setting)
-            .with_kratos_setting(kratos_setting);
+            .with_kratos_setting(kratos_setting)
+            .with_npatch_setting(npatch_setting);
             process_assets.csf = startup_csf;
             let (startup_rules, startup_rules_projection) = startup_asset_manager
                 .as_ref()

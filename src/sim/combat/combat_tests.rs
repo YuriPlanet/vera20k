@@ -529,3 +529,126 @@ fn flat_level_zero_terrain(
         }
     })
 }
+
+
+/// NPatch #2968 (NPExt bug-fix changelog item 65): damage landing exactly on
+/// `strength >> 1` classifies as the yellow crossing, so the global
+/// `[AudioVisual] BuildingDamageSound` plays. Native Object5F5390 answers
+/// Damaged for the exact boundary (`post < yellow`) and Building442230's
+/// result table never reaches the cue.
+#[test]
+fn npatch_building_hit_landing_exactly_on_yellow_plays_the_damage_cue() {
+    let ini = IniFile::from_str(
+        "\
+[General]\nFlightLevel=500\n\n\
+[AudioVisual]\nBuildingDamageSound=BuildingDamaged\nConditionRed=25%\n\n\
+[InfantryTypes]\n0=E1\n\n\
+[VehicleTypes]\n0=MTNK\n\n\
+[AircraftTypes]\n\n\
+[BuildingTypes]\n0=GAPOWR\n\n\
+[E1]\nStrength=100\nArmor=none\n\n\
+[MTNK]\nStrength=300\nArmor=none\nSpeed=6\nPrimary=Plain\n\n\
+[GAPOWR]\nStrength=100\nArmor=none\n\n\
+[Plain]\nDamage=10\nROF=20\nRange=6\nWarhead=PlainWH\n\n\
+[PlainWH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
+    );
+    let mut rules = RuleSet::from_ini(&ini).expect("building damage-sound rules parse");
+    rules.bind_type_sound_references(
+        &ini,
+        &crate::rules::sound_ini::SoundRegistry::from_ini(&IniFile::from_str(
+            "[SoundList]\n0=BuildingDamaged\n",
+        )),
+    );
+    rules.set_npatch_for_test(true);
+    // Authored receiver inputs exercise the integration; these values are not
+    // claimed as executed native receiver goldens.
+    let coordinate = crate::sim::components::DriveCoord {
+        x: 1057,
+        y: 1859,
+        z: 42,
+    };
+    let cues = |sounds: &[SimSoundEvent]| -> Vec<crate::sim::components::DriveCoord> {
+        sounds
+            .iter()
+            .filter_map(|sound| match sound {
+                SimSoundEvent::VocAtCoord {
+                    sound_id,
+                    coordinate,
+                    flags: 0,
+                } if sound_id.name_in(&rules) == "BuildingDamaged" => Some(*coordinate),
+                _ => None,
+            })
+            .collect()
+    };
+    let hit = |damage: i32| -> (Vec<SimSoundEvent>, i32) {
+        let mut entities = EntityStore::new();
+        let mut attacker = GameEntity::test_default(1, "MTNK", "Americans", 10, 10);
+        attacker.lifecycle.set_in_limbo_for_test(false);
+        attacker.set_in_playfield(true);
+        entities.insert(attacker);
+        let mut victim = GameEntity::test_default(2, "GAPOWR", "Soviet", 4, 7);
+        victim.set_category_for_test(EntityCategory::Structure);
+        victim.health = Health::new(100);
+        victim.position.put_location(coordinate);
+        victim.lifecycle.set_in_limbo_for_test(false);
+        victim.set_in_playfield(true);
+        entities.insert(victim);
+
+        let mut interner = test_interner();
+        let allies = interner.intern("Americans");
+        let soviet = interner.intern("Soviet");
+        let warhead_ref = interner.intern("PlainWH");
+
+        let mut houses = computer_houses(&[soviet, allies]);
+        let mut occupancy = OccupancyGrid::new();
+        let mut main_rng = SimRng::new(11);
+        let mut scenario_rng = SimRng::new(13);
+        let mut handled_deaths = Vec::new();
+        let mut hooks = None;
+        let mut collected: Vec<SimSoundEvent> = Vec::new();
+        let mut sound_sink: Option<&mut Vec<SimSoundEvent>> = Some(&mut collected);
+
+        let records = [EntityDamageEvent::direct_receiver(
+            2,
+            damage,
+            0,
+            1,
+            Some(allies),
+            warhead_ref,
+            ReceiverCallFlags {
+                ignore_defenses: false,
+                arg6: false,
+            },
+        )];
+        let _ = commit_damage_events(
+            &records,
+            &mut entities,
+            &mut occupancy,
+            &rules,
+            &mut interner,
+            &mut houses,
+            &HouseAllianceMap::new(),
+            &mut main_rng,
+            &mut scenario_rng,
+            &mut handled_deaths,
+            None,
+            None,
+            None,
+            100,
+            &mut hooks,
+            &mut sound_sink,
+        );
+        let hp = entities.get(2).map_or(0, |victim| victim.health.current());
+        (collected, hp)
+    };
+
+    // 100 -> 50 lands exactly on `strength >> 1` = 50: the crossing cue.
+    let (sounds, hp) = hit(50);
+    assert_eq!(hp, 50);
+    assert_eq!(cues(&sounds), [coordinate]);
+
+    // 100 -> 51 stays Damaged: silent in npatch as in native.
+    let (sounds, hp) = hit(49);
+    assert_eq!(hp, 51);
+    assert!(cues(&sounds).is_empty());
+}

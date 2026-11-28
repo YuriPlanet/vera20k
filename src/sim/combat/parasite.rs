@@ -449,6 +449,7 @@ impl Simulation {
                     entity,
                     None,
                     rules.ares_form(),
+                    rules.npatch_fixes(),
                 );
             }
             // Wasm module `TargetChanged` (`ext_modules::control`).
@@ -1284,12 +1285,16 @@ impl Simulation {
         // 0x004D998C..0x004D99A4: an expiring eater that is dead drops the
         // link (the scenario-ended arm has no represented state).
         if eater == expired && eater_health(self, eater) == 0 {
-            self.substrate
+            let frame = self.session.binary_frame();
+            let entity = self
+                .substrate
                 .entities
                 .get_mut(listener)
-                .unwrap()
-                .parasite
-                .eater = None;
+                .unwrap();
+            entity.parasite.eater = None;
+            if rules.npatch_fixes() {
+                entity.parasite.end_paralysis(frame);
+            }
         }
         // 0x004D99AA..0x004D99C6: forward to a live eater's ParasiteClass.
         if let Some(eater) = self
@@ -1346,6 +1351,7 @@ impl Simulation {
                     source,
                     None,
                     rules.ares_form(),
+                    rules.npatch_fixes(),
                 );
             }
             // Wasm module `TargetChanged` (`ext_modules::control`).

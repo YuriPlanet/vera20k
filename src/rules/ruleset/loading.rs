@@ -55,7 +55,10 @@ impl RuleSet {
         rules.ares_kept_off = processed.ares_inputs().kept_off(&reads);
         rules.phobos = crate::rules::phobos_switch::decide(&reads);
         rules.kratos = processed.kratos_inputs().decide(&reads);
-        rules.npatch = processed.npatch_inputs().decide(&reads);
+        let npatch_inputs = processed.npatch_inputs();
+        let npatch_global = rules.general.npatch_enabled;
+        rules.npatch = npatch_inputs.decide(npatch_global, &reads);
+        rules.npatch_fixes = npatch_inputs.fixes(npatch_global);
         rules.reads_ares_way = processed.native_registry_state().reads_ares_way();
         rules.apply_ra2(crate::util::ra2_launch::enabled());
         Ok(rules)
@@ -2003,6 +2006,7 @@ impl RuleSet {
             phobos: false,
             kratos: false,
             npatch: false,
+            npatch_fixes: false,
             ra2: false,
             reads_ares_way: false,
             ares_global_controls: processed.ares_global_controls().clone(),

@@ -120,6 +120,8 @@ pub(crate) struct LiveParticles {
 /// Everything GetROF reads besides the Scenario RNG.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct RofQuery<'a> {
+    /// [`RuleSet::npatch`](crate::rules::ruleset::RuleSet::npatch).
+    pub npatch: bool,
     /// A building's `Ammo` (`+0x2FC`); `None` for every other class.
     pub building_ammo: Option<i32>,
     /// GetWeapon (vt+0x3F8) at the asked index; `None` for an empty slot.
@@ -194,6 +196,17 @@ pub(crate) fn get_rof(query: &RofQuery<'_>, rng: &mut SimRng) -> i32 {
         || (weapon.use_fire_particles && query.live.fire)
         || (weapon.is_railgun && query.live.railgun)
     {
+        // NPatch (NPExt bug-fix changelog item 59, issue #2946): the early
+        // return also takes the veteran/elite ROF-ability reduction
+        // (`0x006FD0E2..0x006FD14C`) instead of handing back the raw `ROF=`.
+        // The jitter, House bias and occupant arms stay out of this return,
+        // as native keeps them.
+        if query.npatch && query.rof_ability {
+            return X::ftol_i32_low_masked(X::mul(
+                X::load_i32(weapon.rof),
+                X::load_f64(NativeF64Bits::from_bits(query.veteran_rof.to_bits())),
+            ));
+        }
         return weapon.rof;
     }
     if query.burst_index < weapon.burst {
@@ -282,6 +295,7 @@ mod tests {
         };
         let rof_with = |occupants: i32, rng_seed: u64| {
             let query = RofQuery {
+                npatch: false,
                 building_ammo: None,
                 weapon: Some(&weapon),
                 live: LiveParticles::default(),
@@ -376,6 +390,7 @@ mod tests {
         let ordinary = weapon("[GUN]\nROF=40\nBurst=1\n");
         fn query<'a>(weapon: &'a WeaponType, ae_rof: f64) -> RofQuery<'a> {
             RofQuery {
+                npatch: false,
                 building_ammo: None,
                 weapon: Some(weapon),
                 live: LiveParticles::default(),
@@ -463,6 +478,7 @@ mod tests {
                 (Some(NativeF64Bits::from_bits(factor)), ares),
             ] {
                 let query = RofQuery {
+                    npatch: false,
                     building_ammo: ammo,
                     weapon: Some(&weapon),
                     live: LiveParticles::default(),
@@ -495,7 +511,8 @@ mod tests {
     /// every arm (supplied class, weapon slot, garrison and occupant queries;
     /// the original RNG, veterancy predicates and ftol execute) and records the
     /// value and the Scenario RNG state before and after. Every row replays
-    /// through [`get_rof`] from the same seed.
+    /// through [`get_rof`] from the same seed. No row reaches the veteran arm
+    /// NPatch (#2946) adds to the early return, so it holds in both builds.
     #[test]
     fn get_rof_matches_the_original() {
         let rows: Vec<serde_json::Value> = serde_json::from_str(crate::test_fixture::text(
@@ -538,6 +555,7 @@ mod tests {
                 std::array::from_fn(|index| delays[index].as_i64().unwrap() as i32)
             });
             let query = RofQuery {
+                npatch: false,
                 building_ammo: (class == 6).then(|| int("building_ammo", 0)),
                 weapon: (!input["no_weapon"].as_bool().unwrap_or(false)).then_some(&weapon),
                 live: LiveParticles {
@@ -576,5 +594,44 @@ mod tests {
                 "{input}"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod npatch_tests {
+    use super::*;
+    use crate::rules::ini_parser::IniFile;
+
+    /// NPatch (NPExt bug-fix changelog item 59, issue #2946): a sonic weapon
+    /// and a weapon with a live spark system take the ROF-ability reduction
+    /// in the early return; without the ability the raw ROF= stays.
+    #[test]
+    fn npatch_sonic_and_particle_weapons_take_the_veteran_rof_bonus() {
+        let ini = IniFile::from_str("[GUN]\nROF=45\nBurst=1\nIsSonic=yes\n");
+        let weapon = WeaponType::from_ini_section("GUN", ini.section("GUN").unwrap());
+        let query = |ability: bool| RofQuery {
+            npatch: true,
+            building_ammo: None,
+            weapon: Some(&weapon),
+            live: LiveParticles::default(),
+            burst_index: 1,
+            unit_burst_delays: None,
+            house_rof: NativeF64Bits::ONE,
+            ae_rof: 1.0,
+            attached_rof: None,
+            rof_ability: ability,
+            veteran_rof: 0.8,
+            occupants: None,
+            bunkered: false,
+            occupy_rof_multiplier: 1.0,
+            bunker_rof_multiplier: 1.0,
+        };
+        let mut rng = SimRng::new(31);
+        assert_eq!(
+            get_rof(&query(true), &mut rng),
+            36,
+            "ftol(45 x 0.8) — the veteran reduction applies"
+        );
+        assert_eq!(get_rof(&query(false), &mut rng), 45, "no ability, raw ROF");
     }
 }

@@ -153,6 +153,9 @@ pub fn visit_starting_mtnk_concrete_attack(
     ),
 ) {
     use crate::sim::world::{FrameEffects, TickLane};
+    if !crate::test_fixture::RECORDED_STOCK_START_IDS {
+        return;
+    }
     let profile =
         crate::test_fixture::json("tools/map_observation.low-concrete-bridge.example.json");
     let native =

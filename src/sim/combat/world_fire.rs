@@ -1432,6 +1432,7 @@ pub(crate) fn snapshot_get_rof(
     let firer = substrate.entities.get(snap.stable_id);
     super::rof::get_rof(
         &super::rof::RofQuery {
+            npatch: rules.npatch_fixes(),
             // GetROF6FCFA9: a Building with more than one round returns1
             // before weapon queries and the ordinary ROF variation draw.
             building_ammo: firer
@@ -2855,7 +2856,7 @@ fn commit_fire_bookkeeping(
         }
         let before = world.module_target_before(drainer_id);
         if let Some(drainer) = world.substrate.entities.get_mut(drainer_id) {
-            represented_assign_target(drainer, None, rules.ares_form());
+            represented_assign_target(drainer, None, rules.ares_form(), rules.npatch_fixes());
         }
         // Wasm module `TargetChanged` (`ext_modules::control`).
         world.raise_module_target_changed(rules, effects, drainer_id, before);

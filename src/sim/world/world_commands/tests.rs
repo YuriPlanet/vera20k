@@ -67,6 +67,28 @@ pub(super) fn spawn_rule_backed_unit(
     sim.substrate.entities.insert(entity);
 }
 
+/// NPExt item 15: a carrier's `Spawned=yes` aircraft is not selectable under
+/// NPatch; stock reads only `Selectable=` at `Object5F6C30 +138`.
+#[test]
+fn npatch_keeps_a_spawned_aircraft_unselectable() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[AircraftTypes]\n0=HORNET\n\
+         [HORNET]\nStrength=100\nSelectable=yes\nSpawned=yes\n",
+    ))
+    .expect("HORNET rules");
+    let mut sim = Simulation::new();
+    let type_ref = sim.interner.intern("HORNET");
+    let mut entity = GameEntity::test_default(101, "HORNET", "Test", 20, 5);
+    entity.set_type_ref_for_test(type_ref);
+    entity.set_category_for_test(EntityCategory::Aircraft);
+    entity.lifecycle.set_in_limbo_for_test(false);
+    sim.substrate.entities.insert(entity);
+    assert!(sim.object_is_selectable(101, &rules));
+    let mut npatch = rules.clone();
+    npatch.set_npatch_for_test(true);
+    assert!(!sim.object_is_selectable(101, &npatch));
+}
+
 #[test]
 fn delegated_mission_only_unit_cannot_be_selected() {
     use crate::sim::control_authority::{ControlGrant, ControlGrantLevel};
@@ -1410,3 +1432,51 @@ fn bunker_full_lifecycle_enter_install_then_eject() {
         BunkerState::Idle
     );
 }
+
+
+/// NPatch (NPExt bug-fix changelog item 10, issue #2955): the guard
+    /// hotkey's miner fallback (Guard730D60) must not retask a foreign ore
+    /// miner onto area guard; the player's own harvester keeps it.
+    #[test]
+    fn npatch_guard_hotkey_refuses_a_foreign_harvester() {
+        let ini = IniFile::from_str(
+            "[InfantryTypes]\n\
+             [VehicleTypes]\n\
+             0=HARV\n\
+             [AircraftTypes]\n\
+             [BuildingTypes]\n\
+             [HARV]\n\
+             Strength=1000\n\
+             Speed=4\n\
+             Sight=8\n\
+             Harvester=yes\n\
+             Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n",
+        );
+        let mut rules = RuleSet::from_ini(&ini).expect("harvester rules");
+        rules.set_npatch_for_test(true);
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 77);
+        sim.intern_rule_type_ids(&rules);
+        sim.resolve_type_handles(&rules);
+        let foreign = sim
+            .spawn_object("HARV", "Russians", 16, 16, 0, &rules)
+            .expect("foreign harvester");
+        let owned = sim
+            .spawn_object("HARV", "Americans", 18, 16, 0, &rules)
+            .expect("owned harvester");
+        let americans = sim.interner.intern("Americans");
+        sim.session_mut_for_test()
+            .set_current_house_for_test(Some(americans));
+        assert!(
+            sim.substrate.entities.get(foreign).unwrap().is_harvester(),
+            "the fixture's HARV carries the native Harvester flag"
+        );
+        assert_eq!(
+            sim.area_guard_key_command(foreign, &rules),
+            None,
+            "the G hotkey's miner fallback must not admit a foreign harvester"
+        );
+        assert!(
+            sim.area_guard_key_command(owned, &rules).is_some(),
+            "the player's own harvester keeps its miner fallback"
+        );
+    }

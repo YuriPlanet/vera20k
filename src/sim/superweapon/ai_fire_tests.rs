@@ -441,7 +441,7 @@ fn the_best_rally_target_matches_native() {
         }
         let mut rng = SimRng::new(int(&row["seed"]) as u64);
         assert_eq!(
-            pick_best_rally_target(&entries, &mut rng, rules.ares()),
+            pick_best_rally_target(&entries, &mut rng, rules.ares(), rules.npatch_fixes()),
             cell(&row["cell"]),
             "{row}"
         );
@@ -468,7 +468,7 @@ fn ares_a_cloaked_rally_target_is_skipped_without_a_draw() {
     };
     let entries = [entry((5, 5), 900, true), entry((9, 9), 1, false)];
     let mut rng = SimRng::new(0x50CFAA);
-    assert_eq!(pick_best_rally_target(&entries, &mut rng, true), (9, 9));
+    assert_eq!(pick_best_rally_target(&entries, &mut rng, true, false), (9, 9));
     assert_eq!(rng.logical_state(), SimRng::new(0x50CFAA).logical_state());
 }
 
@@ -1345,4 +1345,50 @@ fn the_psychic_dominator_target_matches_native() {
             .clear_preferred_super_weapon_target();
         assert_eq!(psychic_dominator_target(&sim, &rules, computer), expected);
     }
+}
+
+
+/// NPatch (NPExt bug-fix changelog item 9, issue #2935): a fully cloaked
+/// candidate no longer draws `RandomRanged(0, best + 10)` against the real
+/// candidates — the AI super weapon skips it outright, draws nothing for it,
+/// and fires at nothing when only cloaked entries remain.
+#[test]
+fn npatch_rally_target_skips_fully_cloaked_entries() {
+    let real = RallyEntry {
+        candidate: true,
+        value: 4,
+        cell: (5, 6),
+        in_playfield: true,
+        cloaked: false,
+    };
+    let cloaked_high = RallyEntry {
+        candidate: true,
+        value: 9,
+        cell: (7, 8),
+        in_playfield: true,
+        cloaked: true,
+    };
+    let cloaked_only = RallyEntry {
+        candidate: true,
+        value: 9,
+        cell: (7, 8),
+        in_playfield: true,
+        cloaked: true,
+    };
+    for seed in [1u64, 0x5EED, 0xDEAD_BEEF] {
+        let mut rng = SimRng::new(seed);
+        assert_eq!(
+            pick_best_rally_target(&[real, cloaked_high], &mut rng, false, true),
+            (5, 6),
+            "seed {seed}"
+        );
+    }
+    let mut rng = SimRng::new(7);
+    let before = rng.native_state_hex();
+    assert_eq!(pick_best_rally_target(&[cloaked_only], &mut rng, false, true), NO_CELL);
+    assert_eq!(
+        rng.native_state_hex(),
+        before,
+        "a skipped entry draws nothing"
+    );
 }

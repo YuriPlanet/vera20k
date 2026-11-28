@@ -124,7 +124,8 @@ ships it. With retail data the game plays as gamemd. Ares has its switch
 get their switches the same way; until then their wrapped code stays as it is, and the
 first PR that adds code for one of them adds its switch. A VERA
 feature stays off until a player option or an INI key turns it on; a bug gamemd itself
-has stays unless the maintainer asks for an opt-in fix (`npbug`). A change in or beside
+has stays unless the maintainer asks for an opt-in fix (NPatch's NPExt bug-fix
+chains). A change in or beside
 a [capability](docs/capabilities.md) compiles with it on as well as off
 (`python -m tools.capability_tests build <name>`; `focus <name>` runs its tests).
 

@@ -85,9 +85,6 @@ wasm-threads = ["wasm", "dep:rayon", "dep:wasm_sync"]
 phobos = []
 # VERA20K's own first-party extension capability.
 verax = []
-# VERA20K's opt-in bug-fix extension adopting the NPExt changelog corrections;
-# builds without it keep every native path.
-npbug = []
 # The client's Ctrl+Shift dev chord reaches simulation and utility hooks.
 dev-overlays = []
 # Read-only snapshots and opt-in frame timing for the browser dashboard.

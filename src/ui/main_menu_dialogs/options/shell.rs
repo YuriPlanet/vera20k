@@ -977,6 +977,12 @@ impl OptionsDialogState {
                 |s| super::kratos_label(*s),
                 E::KratosSelected,
             ),
+            LauncherComboId::Npatch => LauncherList::new(
+                super::npatch_choices(),
+                &v.npatch,
+                |s| super::npatch_label(*s),
+                E::NpatchSelected,
+            ),
             LauncherComboId::GraphicsApi => LauncherList::new(
                 super::GraphicsApi::choices(),
                 &v.graphics_api,

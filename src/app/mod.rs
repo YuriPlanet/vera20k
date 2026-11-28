@@ -156,11 +156,10 @@ pub(crate) mod worker;
 /// Main window title. The single-instance gate finds a running copy's window by
 /// this exact title, so `main` hands the same constant to
 /// `util::single_instance::acquire`.
-pub const WINDOW_TITLE: &str = match (crate::rules::PHOBOS_ENABLED, crate::rules::NPBUG_ENABLED) {
-    (true, false) => "VERA20K [Phobos]",
-    (false, false) => "VERA20K",
-    (true, true) => "VERA20K [Phobos+NPBug]",
-    (false, true) => "VERA20K [NPBug]",
+pub const WINDOW_TITLE: &str = if crate::rules::PHOBOS_ENABLED {
+    "VERA20K [Phobos]"
+} else {
+    "VERA20K"
 };
 
 /// Identity stamp shared by the status screen and the telemetry capture. Not a

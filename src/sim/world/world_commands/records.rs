@@ -576,8 +576,17 @@ impl Simulation {
         }
         let ordinary =
             self.local_techno_controllable(id, rules) && self.local_techno_is_active(id, rules);
-        let miner = actor.category() == EntityCategory::Unit
+        let mut miner = actor.category() == EntityCategory::Unit
             && (actor.slave_manager.is_some() || actor.is_harvester());
+        // NPATCH (NPExt bug-fix changelog item 10, issue #2955): the native
+        // Guard730D60 miner fallback carries no ownership test, and the
+        // MEGAMISSION executor (Queue 0x004C73B9) rechecks neither owner nor
+        // friendship, so a foreign harvester caught in the selection is
+        // retasked onto area guard and stalls. Under NPatch the fallback also
+        // demands the issuing house's control, like the ordinary arm.
+        if rules.npatch_fixes() && miner && !player_can_order_actor {
+            miner = false;
+        }
         if !ordinary && !miner {
             return None;
         }
