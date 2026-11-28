@@ -672,8 +672,7 @@ fn android_main(app: AndroidApp) {
     // for ever. End the process instead, so that tap is a cold start.
     if !claim_event_loop() {
         log::error!("android_main called again; ending this process for a cold relaunch");
-        log::logger().flush();
-        std::process::exit(0);
+        exit_android_process();
     }
 
     let event_loop: winit::event_loop::EventLoop<()> = match winit::event_loop::EventLoop::builder()
@@ -719,13 +718,20 @@ fn android_main(app: AndroidApp) {
         Ok(status) => log::warn!("VERA20k exited with status {status}"),
         Err(error) => log::error!("VERA20k stopped: {error:#}"),
     }
-    log::logger().flush();
-
     // One process runs one game. Exiting here (rather than returning and letting
     // Android cache the process) is what makes the launcher's next tap start
     // from a clean slate: the event loop above cannot be rebuilt, so a cached
     // process would serve the new activity nothing but its splash.
-    std::process::exit(0);
+    exit_android_process();
+}
+
+fn exit_android_process() -> ! {
+    log::logger().flush();
+    // GameTextInput's process-wide destructor uses the activity thread's
+    // JNIEnv. Running it via exit(3) on android_main aborts in CheckJNI.
+    // SAFETY: the engine has finished or declined a second event loop. End
+    // this process directly so the next launch still gets a fresh loop.
+    unsafe { libc::_exit(0) }
 }
 
 /// Claims this process's single event loop.
