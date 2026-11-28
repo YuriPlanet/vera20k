@@ -146,6 +146,12 @@ impl CaptureManagerState {
         }
     }
 
+    /// Whether `CaptureManagerClass::Update @ 0x00471A50` can enter its
+    /// countdown and overload body.
+    pub(crate) fn is_infinite(&self) -> bool {
+        self.infinite
+    }
+
     /// `IsFull @ 0x004722A0`: a finite manager at its limit. Gates
     /// `ShouldRetaliate` (`0x0070882F`) and `CanAcquireTarget` (`0x00709230`).
     /// Phobos replaces the native count with `GetControlledCount`: the sum of

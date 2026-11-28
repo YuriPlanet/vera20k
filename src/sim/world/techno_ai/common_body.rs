@@ -1143,19 +1143,56 @@ pub(super) fn techno_after_acquisition(
     // The mission and scan before may have written it: asked here.
     let quiet = sim.quiet(id);
     if !quiet {
-        outcome.bridge_state_changed |=
-            sim.bomb_fuse_step(id, rules, ctx.overlay_registry, &mut ctx.effects);
-        if let Err(error) = sim.slave_manager_ai(id, rules, ctx.overlay_registry, &mut ctx.effects)
-        {
-            outcome.frame_error = Some(super::FrameAdvanceError::new(
-                sim.session.tick(),
-                sim.session.binary_frame(),
-                id,
-                error.to_string(),
-            ));
-            return false;
+        // Bomb6FA6F5, Slave6FA717 and Capture6FA726: skip only when the
+        // helper's first write cannot happen. A called helper may change the
+        // next owner's state, so re-read before the following call.
+        let frame = sim.session.binary_frame() as i32;
+        let managers = |sim: &Simulation| {
+            sim.substrate
+                .entities
+                .get(id)
+                .map_or((true, true, true), |entity| {
+                    (
+                        entity.bomb.as_ref().is_some_and(|bomb| {
+                            bomb.expired(frame) && !entity.lifecycle.in_limbo()
+                        }),
+                        entity
+                            .slave_manager
+                            .as_ref()
+                            .is_some_and(|manager| manager.ai_timer_expired(frame)),
+                        entity
+                            .capture_manager
+                            .as_ref()
+                            .is_some_and(|manager| manager.is_infinite()),
+                    )
+                })
+        };
+        let (bomb, mut slave, mut capture) = managers(sim);
+        if bomb {
+            outcome.bridge_state_changed |=
+                sim.bomb_fuse_step(id, rules, ctx.overlay_registry, &mut ctx.effects);
+            let (_, next_slave, next_capture) = managers(sim);
+            slave = next_slave;
+            capture = next_capture;
         }
-        sim.capture_manager_update(id, rules, ctx.overlay_registry, &mut ctx.effects);
+        if slave {
+            if let Err(error) =
+                sim.slave_manager_ai(id, rules, ctx.overlay_registry, &mut ctx.effects)
+            {
+                outcome.frame_error = Some(super::FrameAdvanceError::new(
+                    sim.session.tick(),
+                    sim.session.binary_frame(),
+                    id,
+                    error.to_string(),
+                ));
+                return false;
+            }
+            let (_, _, next_capture) = managers(sim);
+            capture = next_capture;
+        }
+        if capture {
+            sim.capture_manager_update(id, rules, ctx.overlay_registry, &mut ctx.effects);
+        }
         if !ai_alive(&sim.substrate, id) {
             return false;
         }

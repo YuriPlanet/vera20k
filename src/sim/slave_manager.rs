@@ -248,6 +248,11 @@ impl SlaveManager {
         self.state
     }
 
+    /// Whether `SlaveManagerClass::AI @ 0x006AF5F0` would start this visit.
+    pub(crate) fn ai_timer_expired(&self, frame: i32) -> bool {
+        self.ai_timer.expired(frame)
+    }
+
     #[cfg(any(test, feature = "test-support"))]
     pub fn frame(&self) -> i32 {
         self.frame
