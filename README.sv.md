@@ -139,6 +139,14 @@ Utbetalningar till medverkande:
   <a href="https://www.youtube.com/watch?v=ucz-EiMeW88">Red Alert 2 i VERA20K 0.41</a><br clear="all">
 </p>
 
+## Kartredigerare
+
+<p>
+  <a href="https://github.com/996666925/ra2-map-editor"><img src="https://avatars.githubusercontent.com/u/52450772?s=128" width="64" height="64" align="left" alt="996666925"></a>
+  <a href="https://github.com/996666925/ra2-map-editor">YR Map Editor</a><br>
+  Skapa kartor för Yuri’s Revenge och provspela dem i VERA20K.<br clear="all">
+</p>
+
 ## Tack och juridisk information
 
 Tack till OpenRA, XCC Mixer, ModEnc-wikin, Project Perfect Mod, EA:s GPL-utgåva av källkoden till

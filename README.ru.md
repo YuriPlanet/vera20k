@@ -139,6 +139,14 @@ Phobos по-прежнему нужна версия игры, собранна�
   <a href="https://www.youtube.com/watch?v=ucz-EiMeW88">Red Alert 2 в VERA20K 0.41</a><br clear="all">
 </p>
 
+## Редакторы карт
+
+<p>
+  <a href="https://github.com/996666925/ra2-map-editor"><img src="https://avatars.githubusercontent.com/u/52450772?s=128" width="64" height="64" align="left" alt="996666925"></a>
+  <a href="https://github.com/996666925/ra2-map-editor">YR Map Editor</a><br>
+  Создавайте карты для Yuri’s Revenge и тестируйте их в VERA20K.<br clear="all">
+</p>
+
 ## Благодарности и правовая информация
 
 Спасибо OpenRA, XCC Mixer, вики ModEnc, Project Perfect Mod, EA за публикацию исходного кода
