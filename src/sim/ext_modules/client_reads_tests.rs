@@ -619,6 +619,41 @@ fn find_clauses_read_through_the_gate() {
 }
 
 #[test]
+fn raised_cells_list_and_report_the_same_exploration() {
+    use crate::map::resolved_terrain::NativeCellQuery;
+    use crate::sim::vision::MapRevealProjection;
+
+    let mut scene = scene();
+    let sim = &mut scene.runtime.simulation;
+    let player = sim.interner.get("Americans").unwrap();
+    let terrain = sim.resolved_terrain.as_mut().unwrap();
+    // The first cell projects onto the last explored column. The second
+    // projects off the map, onto the explored fallback cell.
+    for x in [EXPLORED, 0] {
+        terrain.cell_mut_for_test(x, 10).unwrap().level = 2;
+    }
+    let cells = NativeCellQuery::isolated(terrain);
+    sim.fog.reveal_map_cell(
+        player,
+        (u16::MAX, 9),
+        false,
+        Some(&cells),
+        MapRevealProjection::Source,
+    );
+    sim.session.game_options_mut_for_test().fog_of_war = true;
+
+    let view = scene.player();
+    let result = [EXPLORED, 0].map(|x| {
+        (
+            view.cell_listed(x, 10),
+            read(&view, cell_ref(x, 10), "Revealed"),
+        )
+    });
+    assert_eq!(result, [(true, (1, Status::Ok)); 2]);
+    assert!(!view.cell_in_sight(0, 10));
+}
+
+#[test]
 fn find_lists_only_explored_cells_and_no_simulation_scopes() {
     let scene = scene();
     let view = scene.player();

@@ -114,7 +114,13 @@ impl Reader<'_> {
                 0
             }
             "Revealed" => match self.viewpoint(view) {
-                Ok(house) => i64::from(self.sim.fog.is_cell_revealed(house, x, y)),
+                Ok(house) => {
+                    i64::from(
+                        self.sim
+                            .fog
+                            .shows_objects_to(house, x, y, false, Some(terrain)),
+                    )
+                }
                 Err(status) => return (0, status),
             },
             "Placeable" => return self.placeable(x, y, view),
