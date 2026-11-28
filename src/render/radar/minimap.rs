@@ -60,11 +60,11 @@ use super::terrain_updates::{
 #[cfg(test)]
 use super::tracker::RadarTrackerEntry;
 use super::tracker::{
-    RadarProjectionFacts, RetainedRadarTracker, radar_combat_flash_inverts,
+    RadarObjectUpdate, RadarProjectionFacts, RetainedRadarTracker, radar_combat_flash_inverts,
     radar_entity_owner_color, radar_pixel_candidate_eligible,
 };
 use super::viewport::NativeRadarViewportState;
-use super::visibility::build_radar_object_update;
+use super::visibility::{build_radar_object_update, radar_object_update_is_dummy_free};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum MinimapCellRadarSource {
@@ -98,6 +98,69 @@ fn playfield_authority_needs_reconcile(
     revision: u64,
 ) -> bool {
     installed != Some(PlayfieldAuthorityStamp { bounds, revision })
+}
+
+#[derive(Default)]
+struct RadarProjectionScratch<'a> {
+    cells: Option<crate::map::resolved_terrain::NativeCellQuery<'a>>,
+}
+
+impl Clone for RadarProjectionScratch<'_> {
+    fn clone(&self) -> Self {
+        // map_with clones its seed per worker; a query's Dummy must stay private.
+        Self::default()
+    }
+}
+
+fn prepare_logic_order_updates<'a>(
+    frame: &impl crate::render::snapshot::SnapshotObjects,
+    logic_order: &[u64],
+    local_owner: Option<InternedId>,
+    fog: &FogState,
+    alliances: &crate::sim::house_diplomacy::HouseAlliances,
+    full_visibility: bool,
+    control: &ControlProjection<'_>,
+    rules: Option<&RuleSet>,
+    interner: Option<&crate::sim::intern::StringInterner>,
+    projection: RadarProjectionFacts,
+    playfield_bounds: Option<PlayfieldBounds>,
+    resolved_terrain: Option<&'a crate::map::resolved_terrain::ResolvedTerrainGrid>,
+) -> Vec<Option<RadarObjectUpdate>> {
+    crate::sim::parallel::map_with(
+        logic_order,
+        RadarProjectionScratch::default(),
+        |scratch, stable_id| {
+            let entity = frame.object(*stable_id)?;
+            if !radar_object_update_is_dummy_free(
+                entity,
+                local_owner,
+                full_visibility,
+                projection,
+                playfield_bounds,
+                resolved_terrain,
+            ) {
+                return None;
+            }
+            let cells = resolved_terrain.map(|terrain| {
+                scratch.cells.get_or_insert_with(|| {
+                    crate::map::resolved_terrain::NativeCellQuery::isolated(terrain)
+                })
+            });
+            Some(build_radar_object_update(
+                entity,
+                local_owner,
+                fog,
+                alliances,
+                full_visibility,
+                control,
+                rules,
+                interner,
+                projection,
+                playfield_bounds,
+                cells.as_deref(),
+            ))
+        },
+    )
 }
 
 /// Minimap renderer — manages terrain image, unit overlay, and viewport rectangle.
@@ -532,23 +595,39 @@ impl MinimapRenderer {
                 }
             }
         }
-        for &stable_id in logic_order {
+        let prepared = prepare_logic_order_updates(
+            frame,
+            logic_order,
+            local_owner,
+            fog,
+            alliances,
+            full_visibility,
+            &control,
+            rules,
+            interner,
+            projection,
+            self.playfield_bounds,
+            resolved_terrain,
+        );
+        for (&stable_id, prepared) in logic_order.iter().zip(prepared) {
             let Some(entity) = frame.object(stable_id) else {
                 continue;
             };
-            let update = build_radar_object_update(
-                entity,
-                local_owner,
-                fog,
-                alliances,
-                full_visibility,
-                &control,
-                rules,
-                interner,
-                projection,
-                self.playfield_bounds,
-                cells.as_ref(),
-            );
+            let update = prepared.unwrap_or_else(|| {
+                build_radar_object_update(
+                    entity,
+                    local_owner,
+                    fog,
+                    alliances,
+                    full_visibility,
+                    &control,
+                    rules,
+                    interner,
+                    projection,
+                    self.playfield_bounds,
+                    cells.as_ref(),
+                )
+            });
             if let Some(event) = self.radar_tracker.update_object(update, false) {
                 self.create_enemy_sensed_event(event, sim_tick, rules);
             }

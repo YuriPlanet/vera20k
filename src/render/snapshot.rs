@@ -7,7 +7,7 @@ use crate::map::entities::EntityCategory;
 use crate::sim::intern::InternedId;
 
 /// One object of the presentation frame, as the render drawers read it.
-pub(crate) trait SnapshotObject {
+pub(crate) trait SnapshotObject: Sync {
     fn stable_id(&self) -> u64;
     fn category(&self) -> EntityCategory;
     fn owner(&self) -> InternedId;
@@ -39,8 +39,8 @@ pub(crate) trait SnapshotObject {
 }
 
 /// The presentation frame's objects, by stable id.
-pub(crate) trait SnapshotObjects {
-    type Object: SnapshotObject;
+pub(crate) trait SnapshotObjects: Sync {
+    type Object: SnapshotObject + Sync;
     fn object(&self, id: u64) -> Option<&Self::Object>;
     fn objects(&self) -> impl Iterator<Item = &Self::Object>;
 }

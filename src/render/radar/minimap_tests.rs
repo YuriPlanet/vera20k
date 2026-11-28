@@ -597,6 +597,21 @@ fn radar_frame(
     )
 }
 
+fn radar_frame_on_terrain(
+    entities: &crate::sim::entity_store::EntityStore,
+    interner: &crate::sim::intern::StringInterner,
+    terrain: &crate::map::resolved_terrain::ResolvedTerrainGrid,
+) -> crate::app::presentation::frame::PresentationFrame {
+    let mut sim = crate::sim::world::Simulation::new();
+    *sim.interner_mut_for_test() = interner.clone();
+    *sim.entities_mut_for_test() = entities.clone();
+    *sim.resolved_terrain_mut_for_test() = Some(terrain.clone());
+    crate::app::presentation::frame::PresentationFrame::of_test(
+        &sim,
+        crate::rules::ruleset::RuleSet::empty_for_test(),
+    )
+}
+
 /// [`radar_frame`]'s record of `entity` alone.
 fn radar_record(
     entity: &crate::sim::game_entity::GameEntity,
@@ -638,6 +653,228 @@ fn radar_gate_fixture(
         owner_id, 0, None, false, 0, 10,
     ));
     (entities, interner, houses)
+}
+
+#[test]
+fn radar_dummy_free_projection_checks_the_odd_raised_second_cell() {
+    let terrain = flat_resolved_terrain(1);
+    let mut entity = crate::sim::game_entity::GameEntity::test_default(1, "DOT", "Enemy", 1, 1);
+    entity.lifecycle.set_in_limbo_for_test(false);
+    entity
+        .position
+        .set_exact_z_leptons_for_test(Some(crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS));
+    let mut entities = crate::sim::entity_store::EntityStore::new();
+    entities.insert(entity);
+    let interner = crate::sim::intern::test_interner();
+    let frame = radar_frame_on_terrain(&entities, &interner, &terrain);
+    let record = frame.object(1).unwrap();
+    let projection = RadarProjectionFacts {
+        native_surface: None,
+        world_origin_x: 0.0,
+        world_origin_y: 0.0,
+        world_width: 1.0,
+        world_height: 1.0,
+        map_offset_x: 0.0,
+        map_offset_y: 0.0,
+        map_pixel_w: MINIMAP_WIDTH as f32,
+        map_pixel_h: MINIMAP_HEIGHT as f32,
+    };
+    let local = test_intern("Local");
+    assert!(
+        !super::super::visibility::radar_object_update_is_dummy_free(
+            record,
+            Some(local),
+            false,
+            projection,
+            None,
+            Some(&terrain),
+        ),
+        "the odd raised lattice also looks up the next cell"
+    );
+    assert!(super::super::visibility::radar_object_update_is_dummy_free(
+        record,
+        Some(local),
+        true,
+        projection,
+        None,
+        Some(&terrain),
+    ));
+}
+
+#[test]
+fn radar_parallel_projection_keeps_dummy_objects_serial_and_ordered() {
+    let terrain = flat_resolved_terrain(64);
+    let bounds = Some(PlayfieldBounds::from_normalized_local_size(
+        32, 0, 0, 127, 127,
+    ));
+    let mut entities = crate::sim::entity_store::EntityStore::new();
+    for (id, rx, ry) in [(1, 30, 30), (2, 31, 31), (3, 30, 30), (4, 70, 70)] {
+        let mut entity =
+            crate::sim::game_entity::GameEntity::test_default(id, "DOT", "Enemy", rx, ry);
+        entity.set_in_playfield(true);
+        entity.lifecycle.set_in_limbo_for_test(false);
+        let kind = if id == 3 {
+            crate::rules::locomotor_type::LocomotorKind::Walk
+        } else {
+            crate::rules::locomotor_type::LocomotorKind::Teleport
+        };
+        entity.locomotor =
+            Some(crate::sim::movement::locomotor::LocomotorState::for_test_kind(kind));
+        if id == 3 {
+            entity
+                .locomotor
+                .as_mut()
+                .unwrap()
+                .set_step_head_for_test(Some(crate::sim::components::DriveCoord::cell(70, 70, 0)));
+        }
+        entities.insert(entity);
+    }
+    let interner = crate::sim::intern::test_interner();
+    let frame = radar_frame_on_terrain(&entities, &interner, &terrain);
+    let surface =
+        crate::render::radar::geometry::NativeRadarSurfaceGeometry::from_raw_rect(0, 0, 2, 1)
+            .unwrap();
+    let projection = RadarProjectionFacts {
+        native_surface: Some(surface),
+        world_origin_x: 0.0,
+        world_origin_y: 0.0,
+        world_width: 1.0,
+        world_height: 1.0,
+        map_offset_x: 0.0,
+        map_offset_y: 0.0,
+        map_pixel_w: MINIMAP_WIDTH as f32,
+        map_pixel_h: MINIMAP_HEIGHT as f32,
+    };
+    assert!(super::super::visibility::radar_object_update_is_dummy_free(
+        frame.object(1).unwrap(),
+        None,
+        true,
+        projection,
+        bounds,
+        Some(&terrain),
+    ));
+    assert!(
+        !super::super::visibility::radar_object_update_is_dummy_free(
+            frame.object(3).unwrap(),
+            None,
+            true,
+            projection,
+            bounds,
+            Some(&terrain),
+        )
+    );
+    let rules = RuleSet::empty_for_test();
+    let fog = FogState::default();
+    let alliances = Default::default();
+    let houses = crate::sim::houses::Houses::default();
+    let session = test_radar_session(ScenarioGameMode::Skirmish);
+    let control = ControlProjection::for_native_view(&session, &houses);
+    let logic_order = [1, 3, 2, 99, 4];
+    let serial_cells = crate::map::resolved_terrain::NativeCellQuery::isolated(&terrain);
+    serial_cells.lookup((70, 70));
+    let mut serial_tracker = super::super::tracker::RetainedRadarTracker::default();
+    let mut serial_updates = Vec::new();
+    let mut serial_events = Vec::new();
+    for &id in &logic_order {
+        let Some(entity) = frame.object(id) else {
+            continue;
+        };
+        let update = build_radar_object_update(
+            entity,
+            None,
+            &fog,
+            &alliances,
+            true,
+            &control,
+            Some(&rules),
+            Some(&interner),
+            projection,
+            bounds,
+            Some(&serial_cells),
+        );
+        serial_updates.push(update);
+        if let Some(event) = serial_tracker.update_object(update, false) {
+            serial_events.push(event);
+        }
+    }
+    let serial_winners = serial_tracker.visible_winners(|_| true);
+    assert_eq!(
+        serial_updates[0].surface_edge.unwrap().in_playfield_origin,
+        serial_updates[1].surface_edge.unwrap().in_playfield_origin,
+    );
+    assert!(
+        serial_updates[0]
+            .surface_edge
+            .unwrap()
+            .in_playfield_origin
+            .is_some()
+    );
+    assert!(serial_winners.iter().any(|entry| entry.stable_id == 1));
+    assert!(!serial_winners.iter().any(|entry| entry.stable_id == 3));
+    for threads in [1, 4] {
+        let pool = crate::sim::parallel::worker_pool()
+            .num_threads(threads)
+            .build()
+            .unwrap();
+        let (winners, events, dummy) = pool.install(|| {
+            let prepared = prepare_logic_order_updates(
+                &frame,
+                &logic_order,
+                None,
+                &fog,
+                &alliances,
+                true,
+                &control,
+                Some(&rules),
+                Some(&interner),
+                projection,
+                bounds,
+                Some(&terrain),
+            );
+            assert!(prepared[0].is_some());
+            assert!(prepared[1].is_none());
+            assert!(prepared[2].is_some());
+            assert!(prepared[3].is_none());
+            assert!(prepared[4].is_none());
+            assert_eq!(prepared[0], Some(serial_updates[0]));
+            assert_eq!(prepared[2], Some(serial_updates[2]));
+            let cells = crate::map::resolved_terrain::NativeCellQuery::isolated(&terrain);
+            cells.lookup((70, 70));
+            let mut tracker = super::super::tracker::RetainedRadarTracker::default();
+            let mut events = Vec::new();
+            for (&id, prepared) in logic_order.iter().zip(prepared) {
+                let Some(entity) = frame.object(id) else {
+                    continue;
+                };
+                let update = prepared.unwrap_or_else(|| {
+                    build_radar_object_update(
+                        entity,
+                        None,
+                        &fog,
+                        &alliances,
+                        true,
+                        &control,
+                        Some(&rules),
+                        Some(&interner),
+                        projection,
+                        bounds,
+                        Some(&cells),
+                    )
+                });
+                if let Some(event) = tracker.update_object(update, false) {
+                    events.push(event);
+                }
+            }
+            (
+                tracker.visible_winners(|_| true),
+                events,
+                cells.dummy().snapshot(),
+            )
+        });
+        assert_eq!(winners, serial_winners);
+        assert_eq!(events, serial_events);
+        assert_eq!(dummy, serial_cells.dummy().snapshot());
+    }
 }
 
 /// RenderCellPixel (`0x00655D06..0x00655D5B`) asks IsShrouded at the radar

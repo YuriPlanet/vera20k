@@ -61,6 +61,13 @@ const POOL_ENTRY_PINS: &[(&str, usize, &str)] = &[
         "never looks a cell up: the LAN socket's I/O worker moves packets",
     ),
     (
+        "render/radar/minimap.rs",
+        1,
+        "isolated: each worker lazily retains its own `NativeCellQuery::isolated`; \
+         only updates whose cells and retained navigation identity cannot read or \
+         stamp the Dummy enter the pool",
+    ),
+    (
         "sim/combat/greatest_threat.rs",
         1,
         "detached: `flat_scores` scores each candidate inside `detached_stamps` and \
