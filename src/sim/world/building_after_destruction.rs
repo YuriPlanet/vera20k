@@ -116,6 +116,7 @@ impl Simulation {
                 &self.substrate.entities,
                 &self.interner,
                 rules,
+                self.resolved_terrain.as_ref(),
                 &cells,
             )
         } else {

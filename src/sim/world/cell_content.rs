@@ -55,13 +55,7 @@ impl Simulation {
                 terrain.shared_cell_dummy().write_overlay_identity(-1);
             }
         }
-        let blocked = super::navigation::structure_blocked_among(
-            &self.substrate.entities,
-            &self.interner,
-            rules,
-            &[coord],
-        );
-        self.publish_cell_and_assign_orphaned_zone(rules, coord, Some(&blocked));
+        self.publish_cell_and_assign_orphaned_zone(rules, coord, None);
         self.stop_all_targeting_cell(coord.0, coord.1, rules, effects);
         true
     }

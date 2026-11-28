@@ -299,6 +299,50 @@ fn an_aircraft_click_keeps_a_river_cell() {
     assert_eq!(graph.nodes[0].members, vec![gi, harrier]);
 }
 
+/// On shrouded water the Black Eagle still asks Find_Nearby_Passable_Cell
+/// (0x004DE528). Its Winged speed admits the cell before the zone comparison
+/// (CellClass::CheckCellPassability, 0x004834A7).
+#[test]
+fn a_shrouded_aircraft_click_keeps_the_cell_when_its_fly_zone_is_split() {
+    let Some(battle) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("amazon.mmx")
+    else {
+        return;
+    };
+    let (mut sim, rules, _) = Simulation::walk_cell_input_test_scene_with(battle.rules, false);
+    let owner = sim.interner.get("Local").unwrap();
+    let eagle = sim.spawn_object("BEAG", "Local", 6, 4, 0, &rules).unwrap();
+    sim.resolve_type_handles(&rules);
+    let eagle_type = rules.object("BEAG").unwrap();
+    assert!(eagle_type.move_to_shroud);
+
+    let shrouded = (9, 5);
+    *sim.fog = crate::sim::vision::FogState::new(16, 16);
+    sim.fog.reveal_cells_for_owner(owner, [(6, 4)]);
+    assert!(!sim.fog.is_cell_revealed(owner, shrouded.0, shrouded.1));
+
+    let zones = sim.zone_grid.as_mut().unwrap();
+    let index = usize::from(shrouded.1) * usize::from(zones.width()) + usize::from(shrouded.0);
+    let base = zones.base_topology_mut_for_test();
+    let cluster = base.zone_ids_mut_for_test()[index];
+    let row = MovementZone::Fly.matrix_row().unwrap();
+    base.raw_zone_ids_by_row_mut_for_test()[row][cluster as usize] = 999;
+    let terrain = sim.resolved_terrain.as_ref().unwrap();
+    let fly_zone = |cell| {
+        zones
+            .get_zone_id_native(terrain, cell, MovementZone::Fly, false)
+            .unwrap()
+    };
+    assert_ne!(fly_zone((6, 4)), fly_zone(shrouded));
+
+    let goal = sim
+        .cell_click_destination(owner, eagle, shrouded, false, &rules)
+        .unwrap();
+    assert_eq!(
+        (goal, eagle_type.speed_type),
+        (Some(shrouded), SpeedType::Winged)
+    );
+}
+
 /// A Teleporter whose own What_Action answers Move keeps the clicked Cell,
 /// even across the river (`0x004DE467..0x004DE47E`). Over the river its
 /// Can_Enter_Cell answers NoMove, so the zone test and FNPC send it to its

@@ -413,24 +413,26 @@ fn held_factory_and_consumed_upgrade_stay_off_navigation_through_frame_and_resto
     assert!(restored.path_grid_snapshot().unwrap().is_walkable(6, 6));
 }
 
+fn normal_zone_storage(sim: &Simulation) -> *const crate::sim::pathfinding::zone_map::ZoneId {
+    use crate::rules::locomotor_type::MovementZone;
+    sim.zone_grid
+        .as_ref()
+        .unwrap()
+        .map_for(MovementZone::Normal)
+        .unwrap()
+        .zone_ids_slice()
+        .as_ptr()
+}
+
 #[test]
 fn structure_changes_publish_footprint_cells_without_rebuilding_zones() {
-    use crate::rules::locomotor_type::MovementZone;
     let (rules, overlays) = rules_and_overlays();
     let mut sim = Simulation::with_seed(0x442048);
     sim.install_resolved_terrain_for_new_map(gsi_04_10_clear_terrain(16, 16));
     *sim.overlay_grid = Some(OverlayGrid::new(16, 16));
     assert!(sim.rebuild_dynamic_navigation(&rules));
     let open = sim.path_grid_snapshot().unwrap();
-    let zone_storage = |sim: &Simulation| {
-        sim.zone_grid
-            .as_ref()
-            .and_then(|zones| zones.map_for(MovementZone::Normal))
-            .unwrap()
-            .zone_ids_slice()
-            .as_ptr() as usize
-    };
-    let zones_before = zone_storage(&sim);
+    let zones_before = normal_zone_storage(&sim);
 
     let mut structure =
         crate::sim::game_entity::GameEntity::test_default(9, "YARD", "Americans", 6, 6);
@@ -445,7 +447,7 @@ fn structure_changes_publish_footprint_cells_without_rebuilding_zones() {
     let placed = sim.path_grid_snapshot().unwrap();
     assert_only_marked_foundation(&sim);
     assert_eq!(
-        zone_storage(&sim),
+        normal_zone_storage(&sim),
         zones_before,
         "structures do not change the terrain-class zone map"
     );
@@ -462,10 +464,48 @@ fn structure_changes_publish_footprint_cells_without_rebuilding_zones() {
         .unwrap()
         .lifecycle
         .set_cell_marked_for_test(false);
-    let zones_before = zone_storage(&sim);
+    let zones_before = normal_zone_storage(&sim);
     sim.finalize_frame_overlays_and_navigation(&rules, Some(&overlays), false, true);
     assert_eq!(*sim.path_grid_snapshot().unwrap(), *open);
-    assert_eq!(zone_storage(&sim), zones_before);
+    assert_eq!(normal_zone_storage(&sim), zones_before);
+}
+
+#[test]
+fn building_mark_skips_missing_cells_and_blocks_real_foundation_aliases() {
+    let (rules, _) = rules_and_overlays();
+    let mut terrain = gsi_04_10_clear_terrain(512, 4);
+    // The first foundation row visits (511,1), the missing (0,2), then (1,2).
+    let real_cells = [(511, 1), (1, 2), (511, 2)];
+    terrain.test_set_native_allocated_cells(&real_cells);
+    let mut sim = Simulation::with_seed(0x47d2b0);
+    sim.install_resolved_terrain_for_new_map(terrain);
+    assert!(sim.rebuild_dynamic_navigation(&rules));
+    let zones_before = normal_zone_storage(&sim);
+
+    let mut building = crate::sim::game_entity::GameEntity::test_default_of_category(
+        9,
+        "HELD",
+        "Americans",
+        511,
+        1,
+        EntityCategory::Structure,
+    );
+    building.set_type_ref_for_test(sim.interner.intern("HELD"));
+    building
+        .seldom
+        .type_facts
+        .set_foundation_for_test(rules.object("HELD").unwrap().foundation.clone().into());
+    sim.substrate.entities.insert(building);
+    assert!(sim.mark_entity_put(9, super::UninitContext::new(&rules)));
+
+    for (x, y) in real_cells {
+        assert!(!sim.path_grid().unwrap().is_walkable(x, y), "{x},{y}");
+    }
+    assert_eq!(
+        *sim.structure_navigation_cells,
+        std::collections::BTreeSet::from(real_cells)
+    );
+    assert_eq!(normal_zone_storage(&sim), zones_before);
 }
 
 #[test]
@@ -513,7 +553,13 @@ fn structure_mark_publishes_presence_and_preserves_other_marked_blockers() {
     assert_eq!(*sim.path_grid_snapshot().unwrap(), *empty);
     assert_eq!(
         *sim.structure_navigation_cells,
-        super::navigation::structure_movement_cells(&sim.substrate.entities, &sim.interner, &rules),
+        super::navigation::structure_movement_cells(
+            &sim.substrate.entities,
+            &sim.interner,
+            &rules,
+            sim.resolved_terrain.as_ref().unwrap()
+        )
+        .collect::<std::collections::BTreeSet<_>>(),
         "the published structure-cell cache follows the same Mark authority"
     );
 }

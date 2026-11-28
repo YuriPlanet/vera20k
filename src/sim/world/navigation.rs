@@ -27,7 +27,7 @@ use crate::util::forked::Forked;
 /// BRIDGE_OCCUPANCY_OBJECT_LISTS_GHIDRA_REPORT.md. Held factory objects and
 /// retained attached upgrades have no independent marked footprint. A dying
 /// structure still blocks until the lifecycle owner unmarks it.
-pub(super) fn marked_structure_movement_cells<'a>(
+fn marked_structure_movement_cells<'a>(
     entity: &'a GameEntity,
     interner: &StringInterner,
     rules: &'a RuleSet,
@@ -50,31 +50,19 @@ pub(super) fn marked_structure_movement_cells<'a>(
         .flatten()
 }
 
-/// Structure presence over every marked structure. Consumers are
-/// order-insensitive (cell blocks, sets and presence tests). The store's
-/// category column picks the structures, so no other object is loaded.
-fn visit_structure_movement_cells(
-    entities: &EntityStore,
-    interner: &StringInterner,
-    rules: &RuleSet,
-    mut visit: impl FnMut((u16, u16)),
-) {
-    for entity in entities.values_of_category(EntityCategory::Structure) {
-        marked_structure_movement_cells(entity, interner, rules).for_each(&mut visit);
-    }
-}
-
-/// Every cell a marked structure blocks for movement.
-pub(super) fn structure_movement_cells(
-    entities: &EntityStore,
-    interner: &StringInterner,
-    rules: &RuleSet,
-) -> BTreeSet<(u16, u16)> {
-    let mut cells = BTreeSet::new();
-    visit_structure_movement_cells(entities, interner, rules, |cell| {
-        cells.insert(cell);
-    });
-    cells
+/// The real cells blocked by marked structures. MapClass::Place_Down
+/// (0x0056846B) and Pick_Up (0x005688AD) resolve each foundation offset
+/// through the map's cell array and skip missing slots.
+pub(super) fn structure_movement_cells<'a>(
+    entities: &'a EntityStore,
+    interner: &'a StringInterner,
+    rules: &'a RuleSet,
+    terrain: &'a ResolvedTerrainGrid,
+) -> impl Iterator<Item = (u16, u16)> + 'a {
+    entities
+        .values_of_category(EntityCategory::Structure)
+        .flat_map(move |entity| marked_structure_movement_cells(entity, interner, rules))
+        .filter_map(move |coord| terrain.allocated_cell_coord(coord))
 }
 
 /// The requested cells a marked structure blocks, from one structure scan.
@@ -82,19 +70,22 @@ pub(super) fn structure_blocked_among(
     entities: &EntityStore,
     interner: &StringInterner,
     rules: &RuleSet,
+    terrain: Option<&ResolvedTerrainGrid>,
     cells: &[(u16, u16)],
 ) -> BTreeSet<(u16, u16)> {
-    let mut blocked = BTreeSet::new();
-    if cells.is_empty() {
-        return blocked;
+    let Some(terrain) = terrain else {
+        return BTreeSet::new();
+    };
+    let requested: BTreeSet<_> = cells
+        .iter()
+        .filter_map(|&coord| terrain.allocated_cell_coord(coord))
+        .collect();
+    if requested.is_empty() {
+        return requested;
     }
-    let requested: BTreeSet<(u16, u16)> = cells.iter().copied().collect();
-    visit_structure_movement_cells(entities, interner, rules, |marked| {
-        if requested.contains(&marked) {
-            blocked.insert(marked);
-        }
-    });
-    blocked
+    structure_movement_cells(entities, interner, rules, terrain)
+        .filter(|cell| requested.contains(cell))
+        .collect()
 }
 
 /// The world's zone and path caches are its fields as they are
@@ -110,8 +101,7 @@ pub(super) struct NavigationCaches<'a> {
 }
 
 impl NavigationCaches<'_> {
-    /// Ordinary movement supplies structure presence from this cell's live
-    /// list. It must not scan every object/footprint for every paid crossing.
+    /// Publish one real Recalc receiver with its marked-structure presence.
     pub(super) fn publish_recalculated_cell_with_presence(
         &mut self,
         terrain: &ResolvedTerrainGrid,
@@ -158,7 +148,8 @@ impl NavigationCaches<'_> {
     ) -> Result<BTreeSet<(u16, u16)>, String> {
         let mut grid = PathGrid::from_resolved_terrain_with_bridges(terrain, self.overlays);
 
-        let structure_cells = structure_movement_cells(entities, interner, rules);
+        let structure_cells: BTreeSet<_> =
+            structure_movement_cells(entities, interner, rules, terrain).collect();
         for &(x, y) in &structure_cells {
             grid.block_structure_cell(x, y);
         }
@@ -193,24 +184,10 @@ impl NavigationCaches<'_> {
         rules: &RuleSet,
         coord: (u16, u16),
     ) -> Result<(), String> {
-        self.publish_recalculated_cells(terrain, entities, interner, rules, &[coord])
-    }
-
-    /// Batch form of [`Self::publish_recalculated_cell`]: one structure scan
-    /// supplies every cell's presence, then each cell publishes in order.
-    pub(super) fn publish_recalculated_cells(
-        &mut self,
-        terrain: &ResolvedTerrainGrid,
-        entities: &EntityStore,
-        interner: &StringInterner,
-        rules: &RuleSet,
-        cells: &[(u16, u16)],
-    ) -> Result<(), String> {
-        let blocked = structure_blocked_among(entities, interner, rules, cells);
-        for &coord in cells {
-            self.publish_recalculated_cell_with_presence(terrain, coord, blocked.contains(&coord))?;
-        }
-        Ok(())
+        // The bridge callback already holds the real Cell receiver.
+        let blocked =
+            structure_movement_cells(entities, interner, rules, terrain).any(|cell| cell == coord);
+        self.publish_recalculated_cell_with_presence(terrain, coord, blocked)
     }
 
     /// Current Cell/path view only. Native ramp repair's raw +11B writes can
@@ -233,10 +210,8 @@ impl NavigationCaches<'_> {
             if path.width() != terrain.width() || path.height() != terrain.height() {
                 return Err("path dimensions differ from terrain".into());
             }
-            let mut structure_blocked = false;
-            visit_structure_movement_cells(entities, interner, rules, |marked| {
-                structure_blocked |= marked == coord;
-            });
+            let structure_blocked = structure_movement_cells(entities, interner, rules, terrain)
+                .any(|marked| marked == coord);
             if !Arc::make_mut(path).refresh_resolved_cell(cell, self.overlays, structure_blocked) {
                 return Err("current path cell could not be published".into());
             }

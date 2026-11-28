@@ -768,7 +768,9 @@ impl ObjectType {
                     ) {
                         SpeedType::Foot
                     } else {
-                        SpeedType::default()
+                        // AircraftTypeClass::AircraftTypeClass (0x0041C8B6) passes
+                        // Winged (4) to TechnoTypeClass, stored at 0x007110E0.
+                        SpeedType::Winged
                     },
                 )
             },

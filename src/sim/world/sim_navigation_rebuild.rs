@@ -183,8 +183,16 @@ impl Simulation {
     /// zone map is built from terrain movement classes, which structures do
     /// not change; zone IDs therefore stay as they are.
     fn publish_structure_navigation(&mut self, rules: &RuleSet) {
-        let current =
-            navigation::structure_movement_cells(&self.substrate.entities, &self.interner, rules);
+        let Some(terrain) = self.resolved_terrain.as_ref() else {
+            return;
+        };
+        let current: BTreeSet<_> = navigation::structure_movement_cells(
+            &self.substrate.entities,
+            &self.interner,
+            rules,
+            terrain,
+        )
+        .collect();
         let candidates: Vec<_> = current
             .union(&self.structure_navigation_cells)
             .copied()
@@ -268,6 +276,7 @@ impl Simulation {
             &self.substrate.entities,
             &self.interner,
             rules,
+            self.resolved_terrain.as_ref(),
             cells,
         );
         self.publish_recalculated_cells_with_presence(rules, cells, &blocked);
@@ -295,16 +304,21 @@ impl Simulation {
             overlays: self.overlay_grid.as_ref(),
             playfield_bounds: *self.playfield_bounds,
         };
-        let published = cells.iter().try_for_each(|&coord| {
-            caches.publish_recalculated_cell_with_presence(terrain, coord, blocked.contains(&coord))
-        });
-        if let Err(error) = published {
-            log::warn!("Recalc navigation publication fell back to a rebuild: {error}");
-            let _ = self.rebuild_dynamic_navigation(rules);
-            return;
-        }
-        for &coord in cells {
-            if blocked.contains(&coord) {
+        // CellClass::RecalcAttributes (0x0047D2B8) returns on the shared Dummy.
+        // Skip missing receivers and keep publishing later real cells.
+        for coord in cells
+            .iter()
+            .filter_map(|&coord| terrain.allocated_cell_coord(coord))
+        {
+            let structure_blocked = blocked.contains(&coord);
+            if let Err(error) =
+                caches.publish_recalculated_cell_with_presence(terrain, coord, structure_blocked)
+            {
+                log::warn!("Recalc navigation publication fell back to a rebuild: {error}");
+                let _ = self.rebuild_dynamic_navigation(rules);
+                return;
+            }
+            if structure_blocked {
                 self.structure_navigation_cells.insert(coord);
             } else {
                 self.structure_navigation_cells.remove(&coord);
@@ -379,21 +393,12 @@ impl Simulation {
             .iter()
             .chain(terrain_changed_cells)
             .copied()
-            // Dummy Recalc47D2B8 has no path publication or structure scan.
-            // Test allocation without performing the ordered lookup early.
-            .filter_map(|(x, y)| {
-                self.resolved_terrain.as_ref().map_or(Some((x, y)), |grid| {
-                    let index = grid.native_fixed_cell_index(x as i16, y as i16)?;
-                    let (x, y) = grid
-                        .native_cell_coord(crate::map::cell_index::NativeCellIdentity::Real(index));
-                    Some((x as u16, y as u16))
-                })
-            })
             .collect();
         let blocked = navigation::structure_blocked_among(
             &self.substrate.entities,
             &self.interner,
             rules,
+            self.resolved_terrain.as_ref(),
             &all_cells,
         );
         self.publish_recalculated_cells_with_presence(rules, &overlay_cells, &blocked);
@@ -404,26 +409,17 @@ impl Simulation {
             // Dummy, whose Recalc47D2B0 immediately returns (47D2B8).
             // Resize565C10's allocation diamond excludes cell0, so the
             // never-Unlimbo'd zero constructor has no real-cell Recalc work.
-            let recalc_cell = self
-                .resolved_terrain
-                .as_ref()
-                .map_or(Some(cell), |terrain| {
-                    match terrain.native_cell_identity((cell.0 as i16, cell.1 as i16)) {
-                        crate::map::cell_index::NativeCellIdentity::Real(index) => {
-                            let (x, y) = terrain.native_cell_coord(
-                                crate::map::cell_index::NativeCellIdentity::Real(index),
-                            );
-                            Some((x as u16, y as u16))
-                        }
-                        crate::map::cell_index::NativeCellIdentity::Dummy => None,
-                    }
-                });
+            let real = self.resolved_terrain.as_ref().is_some_and(|terrain| {
+                matches!(
+                    terrain.native_cell_identity((cell.0 as i16, cell.1 as i16)),
+                    crate::map::cell_index::NativeCellIdentity::Real(_)
+                )
+            });
             let initializing = self.object_placement_scope_active();
-            if let Some(recalc_cell) = recalc_cell {
-                // Recalc71CA23 uses the allocated Cell receiver's coordinate.
-                // Zone/hierarchy71CA42/51 instead retain the packed Location;
-                // their own index/geometry is not the Map's fixed512 alias.
-                self.publish_recalculated_cells_with_presence(rules, &[recalc_cell], &blocked);
+            if real {
+                // Recalc resolves the real receiver. Zone/hierarchy71CA42/51
+                // below independently index the original packed Location.
+                self.publish_recalculated_cells_with_presence(rules, &[cell], &blocked);
             }
             // 71CA2F..71CA60 gates zone/hierarchy only on ScenarioInit.
             // A Map-Dummy can select a real retained zone record because
@@ -472,6 +468,7 @@ impl Simulation {
                     &self.substrate.entities,
                     &self.interner,
                     rules,
+                    self.resolved_terrain.as_ref(),
                     &[cell],
                 );
                 &owned_blocked
