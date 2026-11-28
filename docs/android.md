@@ -35,7 +35,10 @@ official installation, open the newer APK on the same device. Android checks
 the signing certificate and keeps the app's files and settings.
 
 The Release workflow uses the shipping native library and Gradle's release
-build. Its `android-signing` job requires maintainer approval on `main`.
+build. The maintainer approves signing in the `android-signing` environment
+on `main`. To build a signed APK for device testing without publishing a release,
+run `gh workflow run android-release.yml --ref main` and download the
+`android-arm64` artifact after signing.
 Dev builds and stable releases use the same signing key and package ID
 (`org.vera20k`). Promotion publishes the exact APK tested in the dev build.
 

@@ -74,7 +74,7 @@ You need your own copy of Yuri's Revenge.
 - **Windows:** run the `-setup.exe`. If SmartScreen warns, click More info, then Run anyway.
 - **macOS:** open the `macos-arm64.dmg` (Apple Silicon) or `macos-x64.dmg` (Intel) and drag VERA20K into Applications.
 - **Linux:** make the `.AppImage` executable and start it.
-- **Android (ARM64)** — open the `-android-arm64.apk` on your device to install or update VERA20K. On first launch, choose **Import Game Files** and select your game folder.
+- **Android (ARM64)** — open the `.apk` on your device to install or update VERA20K. On first launch, choose **Import Game Files** and select your game folder.
 EOF
   echo
   echo "Free software under the [GNU GPL version 3]($repo_url/blob/$COMMIT/LICENSE-GPL)."

@@ -118,13 +118,16 @@ jobs:
           version=$(python3 -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["package"]["version"])')
           echo "version=$version" >> "$GITHUB_OUTPUT"
           assets=android/app/src/release/assets
-          cp LICENSE-GPL "$assets/"
+          cp LICENSE-GPL LEGAL.md "$assets/"
+          mkdir -p "$assets/LICENSES"
+          cp LICENSES/KratosPP.txt "$assets/LICENSES/"
           sed -e "s/@VERSION@/$version/g" -e "s/@BUILD@/$STAMP/g" -e "s/@COMMIT@/$GITHUB_SHA/g" \
             .github/release/README.txt.in > "$assets/README.txt"
           ./android/gradlew -p android "-PveraVersionCode=$VERSION_CODE" :app:assembleRelease
           apk=android/app/build/outputs/apk/release/app-release-unsigned.apk
           python3 .github/release/android/apk.py check-unsigned "$apk" --version "$version" --version-code "$VERSION_CODE"
-          unzip -tq "$apk" assets/LICENSE-GPL assets/THIRD_PARTY_LICENSES.html assets/NOTICE-Android assets/README.txt
+          unzip -tq "$apk" assets/LICENSE-GPL assets/LEGAL.md assets/THIRD_PARTY_LICENSES.html \
+            assets/NOTICE-Android assets/README.txt assets/LICENSES/KratosPP.txt
           mv "$apk" vera20k-android-arm64-unsigned.apk
 
       - name: Test release signing with a disposable certificate
